@@ -1,0 +1,1071 @@
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
+@using Propia.Web.Components.Shared.Modals
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IModalService Modals
+@inject IJSRuntime Js
+
+@if (!Embedded) { <PageTitle>Residentes - PROPIA</PageTitle> }
+
+@* Residentes: vista agregada de TODAS las personas de las unidades (propietarios, residentes,
+   arrendatarios, familiares, apoderados). Misma vista tabla estandar del sistema: barra de
+   filtros + agrupacion + columnas, expander por fila, alta inline al pie y footer con paginacion.
+   Toda alta reutiliza el endpoint de Unidades Privadas, que ya asegura el registro en Directorio. *@
+
+@if (!Embedded)
+{
+    <div class="res-pagehead">
+        <h1 class="res-pagetitle">Residentes</h1>
+        <p class="res-pagesub">Todas las personas de las unidades de @(_copNombre ?? "la copropiedad"). Cada registro queda tambien en el Directorio.</p>
+    </div>
+}
+
+@if (!_authChecked || _jwt is null)
+{
+    <div class="res-loading"><div class="spinner-border" style="color: var(--propia-brand, var(--propia-brand));"></div></div>
+}
+else
+{
+    @* ===== Barra estandar: Filtros + buscador + Agrupar + Columnas ===== *@
+    <div class="res-filtros">
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+        <div class="res-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="res-search-inp" placeholder="Buscar por nombre, documento o unidad..."
+                   @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
+        </div>
+        <div class="res-filtros-spacer"></div>
+
+        @* Agrupar *@
+        <div class="res-menu-wrap">
+            <button type="button" class="res-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar residentes">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
+            </button>
+            @if (_showAgrupar)
+            {
+                <div class="res-menu-bd" @onclick="() => _showAgrupar = false"></div>
+                <div class="res-menu">
+                    @foreach (var g in new[] { ("", "Sin agrupar"), ("rol", "Rol"), ("unidad", "Unidad"), ("torre", "Torre") })
+                    {
+                        var gk = g.Item1;
+                        <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
+                    }
+                </div>
+            }
+        </div>
+
+        @* Columnas *@
+        <div class="res-menu-wrap">
+            <button type="button" class="res-fbtn @(_showCols ? "on" : "")" @onclick="() => _showCols = !_showCols" title="Campos y columnas de la tabla">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showCols)
+            {
+                <div class="res-menu-bd" @onclick="() => _showCols = false"></div>
+                <div class="res-colsmenu">
+                    <div class="res-colsmenu-h">COLUMNAS (orden, visibilidad y nombre)</div>
+                    @for (int i = 0; i < _colOrder.Count; i++)
+                    {
+                        var idx = i;
+                        var col = Catalogo.First(c => c.Key == _colOrder[idx]);
+                        var pref = PrefDe(col.Key);
+                        var key = col.Key;
+                        <div class="res-colsmenu-i">
+                            <div class="res-colsmenu-ord">
+                                <button class="res-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
+                                <button class="res-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
+                            </div>
+                            <label class="res-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
+                                <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
+                            </label>
+                            <input class="res-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
+                            @if (!col.Hideable) { <span class="res-cfg-req">fija</span> }
+                        </div>
+                    }
+                    <div class="res-colsmenu-acts">
+                        <button type="button" class="res-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* Campos: gestor de campos PROPIOS del residente (persona), igual que en Unidades. Antes esta
+           pagina solo tenia el menu de COLUMNAS; el gestor real (crear/renombrar/ordenar/ocultar campos,
+           y los tipos Formula/Usuario/Directorio de Fase 2) faltaba. *@
+        <button type="button" class="res-fbtn @(_configCamposAbierto ? "on" : "")" @onclick="() => _configCamposAbierto = true" title="Campos del residente: crear, renombrar, ordenar y ocultar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+            <span>Campos</span>
+        </button>
+
+        @* Toggle Tarjetas/Tabla, canon del sistema (Tarjetas primero). Se recuerda por modulo. *@
+        <div class="res-viewtoggle">
+            <button type="button" class="res-vt @(_vista == "tarjetas" ? "on" : "")" @onclick='() => SetVista("tarjetas")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="res-vt @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                Tabla
+            </button>
+        </div>
+    </div>
+
+    @* Modal del gestor de campos del residente (persona), montado como en Unidades (Distribucion). *@
+    @if (_configCamposAbierto)
+    {
+        <div class="cg-back" @onclick="() => _configCamposAbierto = false">
+            <div class="cg-modal cg-modal--wide" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+                <div class="cg-head">
+                    <div>
+                        <div class="cg-title">Campos del residente</div>
+                        <div class="cg-sub">Orden, visibilidad, tipo y comportamiento de cada campo del residente.</div>
+                    </div>
+                    <button class="cg-x" type="button" @onclick="() => _configCamposAbierto = false" aria-label="Cerrar">&times;</button>
+                </div>
+                <div class="cg-body">
+                    <ConfigCamposEntidad Prefijo="personas"
+                                         EntidadConfig="personas"
+                                         TiposAvanzados="true"
+                                         TituloSingular="residente"
+                                         TituloPlural="residentes"
+                                         Ejemplo="Ej. Numero de parqueadero, Fecha de ingreso"
+                                         Jwt="@_jwt"
+                                         Cambiado="RecargarCamposAsync" />
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="res-msg @(_msgError ? "err" : "ok")">@_msg</div> }
+
+    @* ===== Vista Tarjetas ===== (con 0 residentes se fuerza la tabla, para poder dar de alta el primero) *@
+    @if (_vista == "tarjetas" && _residentes.Count > 0)
+    {
+        <div class="res-cardswrap">
+            <div class="res-cards">
+                @foreach (var item in FilasRender())
+                {
+                    if (item.EsGrupo)
+                    {
+                        <div class="res-cards-group"><span class="res-group-chip">@item.GrupoTitulo</span><span class="res-group-n">@item.GrupoCount</span></div>
+                        continue;
+                    }
+                    var r = item.Fila!;
+                    <div class="res-card @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-card-nuevo" : "")" @onclick="() => AbrirFicha(r)" title="Abrir ficha del residente">
+                        <div class="res-card-top">
+                            <span class="res-cod">@r.UnidadCodigo</span>
+                            @RolBadge(r.Rol)
+                        </div>
+                        <div class="res-card-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>
+                        <div class="res-card-line"><span class="res-card-k">Documento</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Documento) ? "-" : r.Documento)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Telefono</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Telefono) ? "-" : r.Telefono)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Email</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Email) ? "-" : r.Email)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Habita</span><span class="res-card-v">@(r.Habita ? "Si" : "No")</span></div>
+                        @foreach (var d in _defs)
+                        {
+                            var val = ValorDe(r.UnidadPersonaId, d.Id);
+                            var txt = (d.Tipo == TipoCampoTablero.Directorio || d.Tipo == TipoCampoTablero.Usuario) ? NombrePersona(val) : val;
+                            <div class="res-card-line"><span class="res-card-k">@d.Label</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(txt) ? "-" : txt)</span></div>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_agruparPor == "")
+            {
+                <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
+                            PaginaChanged="p => { _pagina = p; }"
+                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            }
+        </div>
+    }
+    else
+    {
+    @* ===== Tabla ===== *@
+    <div class="res-table">
+        <div class="res-scroll">
+            <div class="res-head res-grid" style="grid-template-columns:@GridCols">
+                <div></div>
+                @foreach (var c in ColsVisibles) { <div class="@(c.Center ? "res-c" : "")">@Etiqueta(c)</div> }
+                @foreach (var d in _defs) { <div>@d.Label.ToUpperInvariant()</div> }
+                <div></div>
+            </div>
+
+            @foreach (var item in FilasRender())
+            {
+                if (item.EsGrupo)
+                {
+                    <div class="res-group">
+                        <span class="res-group-chip">@item.GrupoTitulo</span>
+                        <span class="res-group-n">@item.GrupoCount</span>
+                    </div>
+                    continue;
+                }
+                var r = item.Fila!;
+                <div class="res-row res-grid @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="grid-template-columns:@GridCols">
+                    <div class="res-exp-col">
+                        <button type="button" class="res-exp" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </button>
+                    </div>
+                    @foreach (var c in ColsVisibles)
+                    {
+                        switch (c.Key)
+                        {
+                            case "unidad": <div class="res-c-cell"><span class="res-cod">@r.UnidadCodigo</span></div>; break;
+                            case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
+                            case "documento": <div class="res-c-cell">@r.Documento</div>; break;
+                            case "rol": <div class="res-c-cell res-c">@RolBadge(r.Rol)</div>; break;
+                            case "telefono": <input class="res-editcell" value="@r.Telefono" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Telefono, e.Value?.ToString())" />; break;
+                            case "email": <input class="res-editcell" value="@r.Email" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Email, e.Value?.ToString())" />; break;
+                            case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
+                        }
+                    }
+                    @foreach (var d in _defs)
+                    {
+                        var def = d;
+                        var val = ValorDe(r.UnidadPersonaId, def.Id);
+                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <div class="res-selcell">
+                                @if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    var col = ColorOpcion(def, val);
+                                    <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                }
+                                <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            </div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Formula)
+                        {
+                            <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Usuario)
+                        {
+                            <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
+                                <option value="">-</option>
+                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                            </select>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Directorio)
+                        {
+                            <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
+                        }
+                        else
+                        {
+                            <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())" />
+                        }
+                    }
+                    <div></div>
+                </div>
+            }
+
+            @* Alta inline al pie, alineada a las columnas (misma logica que el modal de Unidades
+               Privadas: se escribe la persona y se hace buscar-o-crear por documento; asi tambien
+               queda en el Directorio). El expander crea y abre la ficha; "+ Agregar" solo crea. *@
+            <div class="res-newrow res-grid" style="grid-template-columns:@GridCols">
+                <div class="res-exp-col">
+                    <button type="button" class="res-exp res-exp-nf" tabindex="-1" title="Agregar y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@(_busy || !AltaValida)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    </button>
+                </div>
+                @foreach (var c in ColsVisibles)
+                {
+                    switch (c.Key)
+                    {
+                        case "unidad":
+                            <div class="res-nf-unidad">
+                                <input class="res-nf-inp" placeholder="Ej. A1-101" @bind="_unidadQuery" @bind:event="oninput" @onfocus="() => _unidadDrop = true" autocomplete="off" />
+                                @if (_unidadDrop && UnidadesFiltradas().Any())
+                                {
+                                    <div class="res-drop">
+                                        @foreach (var u in UnidadesFiltradas())
+                                        {
+                                            <button type="button" class="res-drop-it" @onclick="() => ElegirUnidad(u)">
+                                                <span class="res-drop-cod">@CodigoUnidad(u)</span>
+                                                <span class="res-drop-meta">@u.Tipo@(u.PropietarioNombre is { Length: > 0 } pn ? " - " + pn : "")</span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            break;
+                        case "nombre":
+                            @* Control de terceros: busca en el Directorio y, si no existe, lo crea ahi
+                               mismo. Al elegirlo, la celda muestra SOLO el nombre (no deforma) y se
+                               llenan documento/telefono/email con la ultima info del tercero. *@
+                            <div class="res-nf-persona">
+                                @if (_personaSel is null)
+                                {
+                                    <SelectorPersona Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." EmailInicial="@_ptEmail" TelefonoInicial="@_ptTel" />
+                                }
+                                else
+                                {
+                                    <div class="res-nf-selname" title="@_personaSel.NombreCompleto">
+                                        <span>@_personaSel.NombreCompleto</span>
+                                        <button type="button" class="res-nf-selx" title="Cambiar tercero" @onclick="LimpiarPersonaSel">&times;</button>
+                                    </div>
+                                }
+                            </div>
+                            break;
+                        case "documento":
+                            @* Documento del tercero: campo con caja (fila homogenea) pero NO editable
+                               -> la identidad la resuelve el control de terceros, no se escribe aqui. *@
+                            <input class="res-nf-inp res-nf-ro-inp" readonly tabindex="-1" placeholder="Documento"
+                                   value="@(_personaSel is null ? "" : $"{_personaSel.TipoDocumento} {_personaSel.DocumentoEnmascarado}")" />
+                            break;
+                        case "rol":
+                            <select class="res-nf-inp" @bind="_rolNuevo">
+                                @foreach (var r in Enum.GetValues<RolUnidadPersona>()) { <option value="@r">@RolLabel(r)</option> }
+                            </select>
+                            break;
+                        case "telefono":
+                            <input class="res-nf-inp" placeholder="Telefono" @bind="_ptTel" @bind:event="oninput" />
+                            break;
+                        case "email":
+                            <input class="res-nf-inp" placeholder="Email" @bind="_ptEmail" @bind:event="oninput" />
+                            break;
+                        case "habita":
+                            <label class="res-nf-habchk" title="Reside en la unidad"><input type="checkbox" @bind="_habitaNuevo" /> <span>Si</span></label>
+                            break;
+                    }
+                }
+                @foreach (var d in _defs)
+                {
+                    var def = d;
+                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                    if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="res-c-cell res-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
+                    }
+                    else
+                    {
+                        <input class="res-nf-inp" placeholder="@def.Label" value="@dv"
+                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    }
+                }
+                <div class="res-nf-act">
+                    <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@_busy">@(_busy ? "Creando..." : "+ Agregar")</button>
+                </div>
+            </div>
+
+            @if (_residentes.Count > 0 && Filtrados.Count == 0)
+            {
+                <div class="res-empty">Ningun registro coincide con el filtro.</div>
+            }
+            else if (_residentes.Count == 0)
+            {
+                <div class="res-empty">Aun no hay personas en las unidades. Agrega la primera en la fila de arriba.</div>
+            }
+        </div>
+
+        @* Footer canonico (solo sin agrupacion: agrupar y paginar juntos confunde). *@
+        @if (_agruparPor == "")
+        {
+            <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
+                        PaginaChanged="p => { _pagina = p; }"
+                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        }
+    </div>
+    }
+}
+
+@* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
+<ModalHost />
+
+@code {
+    // Cuando el hub de Configuracion lo embebe, oculta su page-head/PageTitle (chrome redundante).
+    [Parameter] public bool Embedded { get; set; }
+
+    private bool _authChecked;
+    private string? _jwt;
+    private string? _copNombre;
+    private bool _busy;
+    private string _msg = "";
+    private bool _msgError;
+
+    private List<ResidenteResumenDto> _residentes = new();
+    private List<UnidadDto> _unidades = new();
+
+    // Filtros
+    private FiltroDinamico? _fd;
+    private string _q = "";
+
+    // Agrupacion
+    private string _agruparPor = "";
+    private bool _showAgrupar;
+    private const string AgruparKey = "propia_residentes_group";
+
+    // Paginacion
+    private int _porPagina = 25;
+    private int _pagina = 1;
+
+    // Columnas
+    private bool _showCols;
+    // Fase 2: gestor de campos propios del residente (persona).
+    private bool _configCamposAbierto;
+    // El gestor compartido cambio algo (crear/renombrar/ocultar campo): refresca la vista.
+    private async Task RecargarCamposAsync() { await CargarAsync(); StateHasChanged(); }
+    private const string ColsKey = "propia_residentes_cols";
+
+    // Vista Tabla/Tarjetas (canon del sistema), recordada por modulo.
+    private string _vista = "tabla";
+    private const string VistaKey = "propia_view_residentes";
+    private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
+    private async Task RestaurarVistaAsync()
+    {
+        try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v == "tabla" || v == "tarjetas") _vista = v; } catch { }
+    }
+
+    // ---------- Fase 2: campos propios del residente (persona) como columnas dinamicas ----------
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();   // unidadPersonaId -> (defId -> valor)
+    private readonly Dictionary<Guid, string> _nuDinamicos = new();         // captura en la fila de alta
+    private List<UsuarioOpc> _usuariosTenant = new();                       // campo Usuario (tenant, RLS)
+    private Dictionary<Guid, string> _usuarioNombre = new();                // id -> nombre (Usuario y Directorio)
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    private string? ValorDe(Guid registroId, Guid defId)
+        => _valores.TryGetValue(registroId, out var d) && d.TryGetValue(defId, out var v) ? v : null;
+    private string? NombrePersona(string? val)
+        => !string.IsNullOrWhiteSpace(val) && Guid.TryParse(val, out var g) && _usuarioNombre.TryGetValue(g, out var n) ? n : val;
+    private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
+    private static string? ColorOpcion(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
+
+    // Directorio en la fila de alta: guarda el id y cachea el nombre para el render inmediato.
+    private void OnDirectorioNuevo(Guid defId, PersonaCandidatoDto? c)
+    {
+        if (c is null) { _nuDinamicos.Remove(defId); return; }
+        SetDinamicoNuevo(defId, c.PersonaId.ToString());
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
+
+    // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
+    private async Task CargarCamposAsync(HttpClient http)
+    {
+        var defs = await http.GetFromJsonAsync<List<PersonaCampoDefinicionDto>>("/api/mi-copropiedad/personas-campos") ?? new();
+        _defs = defs.OrderBy(d => d.Orden).ThenBy(d => d.Label)
+                    .Select(d => new CampoDinDef(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToList();
+        var vals = await http.GetFromJsonAsync<List<PersonaCampoValorFlatDto>>("/api/mi-copropiedad/personas-campos-valores") ?? new();
+        _valores = vals.GroupBy(v => v.UnidadPersonaId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
+        try
+        {
+            var vinc = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _usuarioNombre = new(); }
+    }
+
+    // Edicion inline de un campo propio de una fila existente (PUT MERGE al valor del registro).
+    private async Task GuardarDinamicoAsync(Guid registroId, Guid defId, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{registroId}/{defId}", new SetCampoValorRequest(valor));
+            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo guardar el campo: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            if (!_valores.TryGetValue(registroId, out var d)) _valores[registroId] = d = new();
+            d[defId] = valor;
+        }
+        catch (Exception ex) { _msg = "No se pudo guardar el campo: " + ex.Message; _msgError = true; }
+    }
+
+    // Alta: la unidad por codigo (autocompletado) + la persona por el control de terceros
+    // (SelectorPersona), que la busca/crea en el Directorio. El backend asegura el vinculo.
+    private string _unidadQuery = "";
+    private bool _unidadDrop;
+    private PersonaCandidatoDto? _personaSel;
+    private string _ptTel = "";       // se precarga con el telefono del tercero elegido (editable)
+    private string _ptEmail = "";      // idem correo
+    private string _ptTelOrig = "";    // valor original del tercero, para sincronizar solo si cambio
+    private string _ptEmailOrig = "";
+    private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
+    private bool _habitaNuevo = true;
+    private readonly HashSet<Guid> _resRecienCreados = new();   // V-09: ids de filas recien creadas (resaltado)
+
+    // La unidad se resuelve por el codigo escrito (o elegido del desplegable): el boton se activa
+    // aunque no se haya hecho clic en la sugerencia, siempre que el codigo exista.
+    private UnidadDto? UnidadElegida =>
+        _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool AltaValida => UnidadElegida is not null && _personaSel is not null;
+    private bool _sinUnidades => _unidades.Count == 0;   // V-02: guia cuando el tenant no tiene unidades
+
+    // ---------- Catalogo de columnas ----------
+    private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable, bool Center = false);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("unidad", "UNIDAD", "150px", false),
+        new("nombre", "NOMBRE", "2fr", false),
+        new("documento", "DOCUMENTO", "150px", false),
+        new("rol", "ROL", "128px", false, true),
+        new("telefono", "TELEFONO", "1.1fr", true),
+        new("email", "EMAIL", "1.5fr", true),
+        new("habita", "HABITA", "80px", true, true),
+    };
+    private sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
+    private Dictionary<string, ColPref> _colPrefs = new();
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+
+    private ColPref PrefDe(string key) => _colPrefs.TryGetValue(key, out var p) ? p : (_colPrefs[key] = new ColPref());
+    private bool EsVisible(ColDef c) => !c.Hideable || !_colPrefs.TryGetValue(c.Key, out var p) || p.Visible;
+    private string Etiqueta(ColDef c) => (_colPrefs.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
+    private IEnumerable<ColDef> ColsVisibles
+    {
+        get
+        {
+            var byKey = Catalogo.ToDictionary(c => c.Key);
+            return _colOrder.Where(byKey.ContainsKey).Select(k => byKey[k]).Where(EsVisible);
+        }
+    }
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width))
+        + string.Concat(_defs.Select(_ => " minmax(140px,1fr)")) + " 116px";
+
+    private async Task SetColVisible(string key, bool vis) { PrefDe(key).Visible = vis; await GuardarColsAsync(); }
+    private async Task SetColLabel(string key, string? label) { PrefDe(key).Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(); await GuardarColsAsync(); }
+    private async Task MoverCol(int idx, int dir)
+    {
+        var j = idx + dir;
+        if (j < 0 || j >= _colOrder.Count) return;
+        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+        await GuardarColsAsync();
+    }
+    private async Task RestablecerCols()
+    {
+        _colPrefs = new();
+        _colOrder = Catalogo.Select(c => c.Key).ToList();
+        await GuardarColsAsync();
+    }
+    private async Task GuardarColsAsync()
+    {
+        try
+        {
+            var data = new { order = _colOrder, prefs = _colPrefs.ToDictionary(k => k.Key, v => new { v.Value.Visible, v.Value.Label }) };
+            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(data));
+        }
+        catch { }
+    }
+    private async Task RestaurarColsAsync()
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
+            if (string.IsNullOrWhiteSpace(raw)) return;
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("order", out var ord) && ord.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var keys = ord.EnumerateArray().Select(e => e.GetString()).Where(s => s is not null).Cast<string>().ToList();
+                var valid = Catalogo.Select(c => c.Key).ToHashSet();
+                _colOrder = keys.Where(valid.Contains).Concat(Catalogo.Select(c => c.Key).Where(k => !keys.Contains(k))).ToList();
+            }
+            if (doc.RootElement.TryGetProperty("prefs", out var pr) && pr.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var p in pr.EnumerateObject())
+                {
+                    var cp = new ColPref();
+                    if (p.Value.TryGetProperty("Visible", out var v)) cp.Visible = v.GetBoolean();
+                    if (p.Value.TryGetProperty("Label", out var l) && l.ValueKind == System.Text.Json.JsonValueKind.String) cp.Label = l.GetString();
+                    _colPrefs[p.Name] = cp;
+                }
+            }
+        }
+        catch { }
+    }
+
+    // ---------- Carga / auth ----------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
+            _jwt = stored;
+            await RestaurarColsAsync();
+            await RestaurarVistaAsync();
+            try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var resp = await http.GetAsync("/api/mi-copropiedad/residentes");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt; http = Auth();
+                resp = await http.GetAsync("/api/mi-copropiedad/residentes");
+            }
+            resp.EnsureSuccessStatusCode();
+            _residentes = await resp.Content.ReadFromJsonAsync<List<ResidenteResumenDto>>() ?? new();
+            _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
+            await CargarCamposAsync(http);
+        }
+        catch (Exception ex) { _msg = "No se pudo cargar: " + ex.Message; _msgError = true; }
+    }
+
+    // ---------- Filtro dinamico de la tabla ----------
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "rol", Label = "Rol", Kind = "sel",
+                Opciones = Enum.GetValues<RolUnidadPersona>().Select(r => (r.ToString(), RolLabel(r))).ToList() },
+        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+        new() { Key = "torre", Label = "Torre", Kind = "sel",
+                Opciones = TorresDistintas().Select(t => (t, t)).ToList() },
+        new() { Key = "habita", Label = "Habita", Kind = "sel",
+                Opciones = new List<(string, string)> { ("si", "Si"), ("no", "No") } },
+    };
+
+    private IEnumerable<string> TorresDistintas() =>
+        _residentes.Where(r => !string.IsNullOrWhiteSpace(r.TorreNombre)).Select(r => r.TorreNombre!).Distinct().OrderBy(x => x);
+
+    private string? ValorFiltro(ResidenteResumenDto r, string key) => key switch
+    {
+        "rol" => r.Rol.ToString(),
+        "unidad" => r.UnidadCodigo,
+        "torre" => r.TorreNombre,
+        "habita" => r.Habita ? "si" : "no",
+        _ => null
+    };
+
+    private List<ResidenteResumenDto> Filtrados
+    {
+        get
+        {
+            var seq = _residentes.AsEnumerable();
+            if (_fd is not null && _fd.Hay)
+                seq = seq.Where(r => _fd.Pasa(k => ValorFiltro(r, k)));
+            var q = _q.Trim();
+            if (q.Length > 0)
+                seq = seq.Where(r =>
+                    r.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.Documento.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || r.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase));
+            return seq.ToList();
+        }
+    }
+
+    private int TotalPaginas => Filtrados.Count == 0 ? 1 : (int)Math.Ceiling(Filtrados.Count / (double)_porPagina);
+    private IEnumerable<ResidenteResumenDto> Pagina => Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    // ---------- Agrupacion ----------
+    private async Task SetAgrupar(string v)
+    {
+        _agruparPor = v; _pagina = 1; _showAgrupar = false;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, v); } catch { }
+    }
+    private string AgruparLabel(string k) => k switch { "rol" => "Rol", "unidad" => "Unidad", "torre" => "Torre", _ => "" };
+
+    private readonly record struct FilaR(bool EsGrupo, string? GrupoTitulo, int GrupoCount, ResidenteResumenDto? Fila);
+
+    private IEnumerable<FilaR> FilasRender()
+    {
+        if (_agruparPor == "")
+        {
+            foreach (var r in Pagina) yield return new FilaR(false, null, 0, r);
+            yield break;
+        }
+        // Agrupacion sobre la lista filtrada completa (sin paginar).
+        Func<ResidenteResumenDto, string> clave = _agruparPor switch
+        {
+            "rol" => r => RolLabel(r.Rol),
+            "unidad" => r => r.UnidadCodigo,
+            "torre" => r => string.IsNullOrWhiteSpace(r.TorreNombre) ? "Sin torre" : r.TorreNombre!,
+            _ => r => ""
+        };
+        foreach (var g in Filtrados.GroupBy(clave).OrderBy(g => g.Key))
+        {
+            yield return new FilaR(true, g.Key, g.Count(), null);
+            foreach (var r in g) yield return new FilaR(false, null, 0, r);
+        }
+    }
+
+    // ---------- Autocompletado de unidad ----------
+    private static string CodigoUnidad(UnidadDto u)
+    {
+        var torreShort = string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : u.TorreNombre!.Split(' ').Last();
+        return torreShort.Length > 0 ? $"{torreShort}-{u.Numero}" : u.Numero;
+    }
+    private IEnumerable<UnidadDto> UnidadesFiltradas()
+    {
+        var q = _unidadQuery.Trim();
+        var seq = _unidades.AsEnumerable();
+        if (q.Length > 0)
+            seq = seq.Where(u => CodigoUnidad(u).Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase));
+        return seq.OrderBy(CodigoUnidad).Take(8);
+    }
+    private void ElegirUnidad(UnidadDto u) { _unidadQuery = CodigoUnidad(u); _unidadDrop = false; }
+
+    // ---------- Tercero (control del Directorio) ----------
+    private async Task OnPersonaSel(PersonaCandidatoDto? p)
+    {
+        _personaSel = p;
+        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
+        if (p is not null)
+        {
+            // El selector trae los contactos (filas de directorio). Si la persona no tiene filas
+            // (ej. datos semilla), se trae el detalle para el correo/telefono denormalizado (ultima info).
+            var tel = TelDe(p); var email = EmailDe(p);
+            if (tel is null || email is null)
+            {
+                try
+                {
+                    var url = p.EntidadTipo == EntidadDirectorio.Empresa
+                        ? $"/api/directorio/empresas/{p.PersonaId}"
+                        : $"/api/directorio/personas/{p.PersonaId}";
+                    var resp = await Auth().GetAsync(url);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                        // El detalle 360 anida la entidad bajo "persona"/"empresa"; leemos de ahi o de la raiz.
+                        var obj = doc.RootElement;
+                        if (obj.TryGetProperty("persona", out var pe)) obj = pe;
+                        else if (obj.TryGetProperty("empresa", out var ee)) obj = ee;
+                        if (tel is null && obj.TryGetProperty("telefono", out var te) && te.ValueKind == System.Text.Json.JsonValueKind.String) tel = te.GetString();
+                        if (email is null && obj.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String) email = em.GetString();
+                    }
+                }
+                catch { }
+            }
+            _ptTel = _ptTelOrig = tel ?? "";
+            _ptEmail = _ptEmailOrig = email ?? "";
+        }
+        StateHasChanged();
+    }
+
+    private void LimpiarPersonaSel()
+    {
+        _personaSel = null;
+        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
+    }
+
+    private static string? TelDe(PersonaCandidatoDto? p) => ContactoDe(p, TipoContacto.Telefono);
+    private static string? EmailDe(PersonaCandidatoDto? p) => ContactoDe(p, TipoContacto.Email);
+    private static string? ContactoDe(PersonaCandidatoDto? p, TipoContacto tipo)
+    {
+        if (p?.Contactos is null) return null;
+        return p.Contactos.FirstOrDefault(c => c.Tipo == tipo && c.Principal)?.Valor
+            ?? p.Contactos.FirstOrDefault(c => c.Tipo == tipo)?.Valor;
+    }
+
+    // Sincroniza un contacto (correo/telefono) en el Directorio SIN perder los demas: trae los
+    // actuales, reemplaza los de ese tipo y reenvia el set completo (reemplazar borra todos los
+    // tipos gestionados, por eso hay que reenviarlos).
+    private async Task<bool> SincronizarContactoAsync(EntidadDirectorio tipo, Guid entidadId, TipoContacto cual, string? valor)
+    {
+        try
+        {
+            var http = Auth();
+            var actuales = await http.GetFromJsonAsync<List<ContactoRapidoDto>>(
+                $"/api/directorio/contactos-rapidos?tipo={tipo}&id={entidadId}") ?? new();
+            var nuevos = actuales.Where(c => c.Tipo != cual).ToList();
+            if (!string.IsNullOrWhiteSpace(valor))
+                nuevos.Add(new ContactoRapidoDto(cual, valor.Trim(), "Principal", null, true));
+            var resp = await http.PutAsJsonAsync("/api/directorio/contactos-rapidos",
+                new ReemplazarContactosRequest(tipo, entidadId, nuevos));
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    // Edicion inline de un contacto en una fila existente -> sincroniza al Directorio (global).
+    private async Task EditarContactoAsync(ResidenteResumenDto r, TipoContacto cual, string? valor)
+    {
+        var actual = cual == TipoContacto.Email ? r.Email : r.Telefono;
+        if (string.Equals((valor ?? "").Trim(), (actual ?? "").Trim(), StringComparison.OrdinalIgnoreCase)) return;
+        var entidadId = r.EntidadTipo == EntidadDirectorio.Empresa ? r.EmpresaId : r.PersonaId;
+        if (entidadId is not Guid id) return;
+        _busy = true; _msg = ""; _msgError = false;
+        var ok = await SincronizarContactoAsync(r.EntidadTipo, id, cual, valor);
+        _busy = false;
+        if (ok) { _msg = $"Contacto de {r.Nombre} actualizado en el Directorio."; _msgError = false; await CargarAsync(); }
+        else { _msg = "No se pudo actualizar el contacto (correo en uso u otro error)."; _msgError = true; }
+    }
+
+    // ---------- Alta ----------
+    private async Task AgregarAsync(bool abrir)
+    {
+        if (_busy) return;
+        // V-02: validar minimos al clic con mensaje (canon regla 8), en vez de un retorno mudo.
+        if (UnidadElegida is not { } unidad)
+        {
+            _msg = _sinUnidades
+                ? "Primero crea las unidades privadas (en Unidades Privadas). Luego escribe su codigo aqui."
+                : "Selecciona una unidad existente: escribe su codigo en el campo Unidad y elige de la lista.";
+            _msgError = true; return;
+        }
+        if (_personaSel is not { } sel)
+        {
+            _msg = "Busca o crea la persona (residente/propietario) antes de agregar."; _msgError = true; return;
+        }
+        _busy = true; _msg = ""; _msgError = false;
+        try
+        {
+            var esEmpresa = sel.EntidadTipo == EntidadDirectorio.Empresa;
+            var req = new AgregarPersonaUnidadRequest(
+                "", "", "", null, null,
+                _rolNuevo, _habitaNuevo, null,
+                PersonaId: esEmpresa ? null : sel.PersonaId,
+                EntidadTipo: sel.EntidadTipo,
+                EmpresaId: esEmpresa ? sel.PersonaId : null);
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{unidad.Id}/personas", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = "No se pudo agregar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return;
+            }
+            var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
+            if (creada is not null)
+            {
+                _resRecienCreados.Add(creada.Id);   // V-09: resalta la fila hasta el proximo refresco
+                // Los campos propios se guardan despues del alta: necesitan el id del registro (UnidadPersona).
+                foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{creada.Id}/{defId}", new SetCampoValorRequest(valor));
+            }
+            // Si el usuario ajusto correo/telefono del tercero, se sincroniza al Directorio.
+            if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
+            if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
+            _msg = $"{sel.NombreCompleto} agregado a {_unidadQuery}."; _msgError = false;
+            LimpiarPersonaSel(); _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false; _nuDinamicos.Clear();
+            await CargarAsync();
+            if (abrir && creada is not null)
+            {
+                // Empresa: sigue en el Directorio (aun no tiene ficha rapida). Persona: modal en sitio.
+                if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+                else if (creada.PersonaId != Guid.Empty) await AbrirFichaPersonaAsync(creada.PersonaId, sel.NombreCompleto);
+            }
+        }
+        catch (Exception ex) { _msg = "Error: " + ex.Message; _msgError = true; }
+        finally { _busy = false; }
+    }
+
+    // El expander abre una ficha RAPIDA en un modal (editar datos, foto, documentos) SIN salir de
+    // Residentes. Empresas siguen al Directorio (no tienen ficha rapida todavia).
+    private async Task AbrirFicha(ResidenteResumenDto r)
+    {
+        if (r.EntidadTipo == EntidadDirectorio.Empresa)
+        {
+            if (r.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+            return;
+        }
+        if (r.PersonaId is Guid pid) await AbrirFichaPersonaAsync(pid, r.Nombre);
+    }
+
+    private async Task AbrirFichaPersonaAsync(Guid personaId, string? nombre)
+    {
+        var parameters = new ModalParameters()
+            .Set("Jwt", _jwt).Set("PersonaId", personaId).Set("NombreInicial", nombre);
+        var options = new ModalOptions { Width = "720px", Height = "auto" };
+        var cambio = await Modals.OpenAsync<FichaResidenteModal, bool>(parameters, options);
+        // Si se edito algo (datos/foto/documentos) se refresca la tabla para reflejar el cambio global.
+        if (cambio == true) await CargarAsync();
+    }
+
+    private static string RolLabel(RolUnidadPersona r) => r switch
+    {
+        RolUnidadPersona.Propietario => "Propietario",
+        RolUnidadPersona.Residente => "Residente",
+        RolUnidadPersona.Familiar => "Familiar",
+        RolUnidadPersona.Arrendatario => "Arrendatario",
+        RolUnidadPersona.Apoderado => "Apoderado",
+        _ => r.ToString()
+    };
+
+    private RenderFragment RolBadge(RolUnidadPersona r) => builder =>
+    {
+        var cls = r switch
+        {
+            RolUnidadPersona.Propietario => "res-rol res-rol-prop",
+            RolUnidadPersona.Residente => "res-rol res-rol-resi",
+            RolUnidadPersona.Arrendatario => "res-rol res-rol-arr",
+            _ => "res-rol res-rol-otro"
+        };
+        builder.AddMarkupContent(0, $"<span class=\"{cls}\">{RolLabel(r)}</span>");
+    };
+}
+
+<style>
+    .res-pagehead { margin-bottom: 18px; }
+    .res-pagetitle { font-size: 30px; font-weight: 800; color: var(--propia-text-h1); margin: 0 0 4px; letter-spacing: -.5px; }
+    .res-pagesub { font-size: 14px; color: var(--propia-text-muted); margin: 0; }
+    .res-loading { display: flex; justify-content: center; padding: 60px 0; }
+
+    /* ---- Barra de filtros ---- */
+    .res-filtros { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .res-search { display: flex; align-items: center; gap: 8px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 8px 12px; min-width: 240px; flex: 1; color: var(--propia-text-muted); }
+    .res-search-inp { border: 0; outline: none; font-size: 13.5px; color: var(--propia-text-h1); width: 100%; background: transparent; }
+    .res-filtros-spacer { flex: 1; }
+    .res-fbtn { display: inline-flex; align-items: center; gap: 7px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; white-space: nowrap; }
+    .res-fbtn:hover { border-color: #C9CFE8; }
+    .res-fbtn.on { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); }
+
+    .res-menu-wrap { position: relative; }
+    .res-menu-bd { position: fixed; inset: 0; z-index: 20; }
+    .res-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 21; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; box-shadow: 0 12px 30px rgba(16,32,52,.14); padding: 6px; min-width: 180px; }
+    .res-menu-it { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--propia-text-body); cursor: pointer; }
+    .res-menu-it:hover { background: var(--propia-brand-soft-2); }
+    .res-menu-it.on { color: var(--propia-brand, var(--propia-brand)); font-weight: 700; background: var(--propia-brand-soft-2); }
+
+    .res-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 21; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; box-shadow: 0 12px 30px rgba(16,32,52,.14); padding: 10px; min-width: 320px; }
+    .res-colsmenu-h { font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; padding: 2px 4px 8px; }
+    .res-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 3px 2px; }
+    .res-colsmenu-ord { display: flex; flex-direction: column; gap: 1px; }
+    .res-colsmenu-mv { width: 18px; height: 14px; line-height: 1; border: 1px solid var(--propia-border-card); border-radius: 4px; background: var(--propia-bg-card); color: var(--propia-text-muted); font-size: 8px; cursor: pointer; padding: 0; }
+    .res-colsmenu-mv:disabled { opacity: .3; cursor: default; }
+    .res-cfg-vis { display: flex; align-items: center; margin: 0; }
+    .res-cfg-inp { flex: 1; border: 1px solid var(--propia-border-card); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); outline: none; }
+    .res-cfg-inp:focus { border-color: var(--propia-brand, var(--propia-brand)); }
+    .res-cfg-req { font-size: 10px; font-weight: 700; color: #B0BAC6; }
+    .res-colsmenu-acts { display: flex; justify-content: flex-end; padding-top: 8px; }
+    .res-colsmenu-act { background: none; border: 0; color: var(--propia-brand, var(--propia-brand)); font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    .res-msg { margin-bottom: 12px; font-size: 13px; padding: 8px 12px; border-radius: 9px; }
+    .res-msg.ok { background: var(--propia-ok-soft); color: #15703F; }
+    .res-msg.err { background: var(--propia-danger-soft); color: #C0392B; }
+
+    /* ---- Tabla ---- */
+    .res-table { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
+    .res-scroll { overflow: auto; max-height: calc(100vh - 320px); }
+    .res-grid { display: grid; align-items: center; gap: 8px; padding: 6px 14px; min-width: 900px; }
+    .res-head { position: sticky; top: 0; z-index: 6; background: var(--propia-bg-table-head); font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; border-bottom: 1px solid var(--propia-border-card); }
+    .res-head .res-c { text-align: center; }
+    .res-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13.5px; }
+    .res-row:hover { background: var(--propia-bg-hover); }
+    .res-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 #34C759; }   /* V-09: fila recien creada */
+    .res-c-cell { color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-c-cell.res-c { text-align: center; }
+    .res-cod { font-weight: 700; color: var(--propia-brand-text); }
+    .res-nom { font-weight: 600; color: var(--propia-text-h1); }
+    .res-mut { color: var(--propia-text-muted); }
+    .res-tag { font-size: 10px; font-weight: 700; color: var(--propia-text-muted); background: var(--propia-border-divider); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+    .res-empty { text-align: center; color: var(--propia-text-muted); padding: 30px 0; }
+
+    .res-exp-col { display: flex; align-items: center; justify-content: center; }
+    .res-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .res-row:hover .res-exp { opacity: 1; }
+    .res-exp:hover { background: var(--propia-brand-soft); }
+
+    /* Alta inline al pie: misma grilla que las filas, un input por columna (como el modal). */
+    .res-newrow { border-top: 1px solid var(--propia-border-card); background: var(--propia-bg-card-soft); }
+    .res-newrow .res-exp.res-exp-nf { opacity: .4; }
+    .res-newrow:focus-within .res-exp.res-exp-nf, .res-newrow:hover .res-exp.res-exp-nf { opacity: 1; }
+    .res-newrow .res-exp.res-exp-nf:disabled { opacity: .2; cursor: default; }
+    /* Canon (skill homogenizar-vista-tabla, 9-A): inputs de la fila de alta PUNTEADOS en reposo,
+       solidos + glow violeta al focus. */
+    .res-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .res-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .res-nf-unidad { position: relative; }
+    .res-nf-persona { min-width: 0; }
+    /* El selector de terceros trae su propio input; que ocupe el ancho de la celda del nombre. */
+    .res-nf-persona .sp, .res-nf-persona .sp-search, .res-nf-persona .sp-chip { width: 100%; min-width: 0; }
+    /* Buscador de terceros: misma altura y mismo borde punteado que los demas inputs de la fila. */
+    .res-nf-persona .sp-search { border: 1px dashed var(--propia-border-input); border-radius: 7px; }
+    .res-nf-persona .sp-search:focus-within { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .res-nf-persona .sp-search-inp { min-width: 0; padding: 5px 0; font-size: 12.5px; }
+    .res-nf-ro { font-size: 12px; color: var(--propia-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Documento del tercero: misma caja que los demas inputs pero no editable (atenuado). */
+    .res-nf-ro-inp { background: var(--propia-bg-card-soft); color: var(--propia-text-muted); cursor: default; }
+    .res-nf-ro-inp:focus { border-color: #D8E0E8; box-shadow: none; }
+    /* Tercero elegido: solo el nombre (no deforma la celda) + boton para cambiarlo. */
+    .res-nf-selname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--propia-text-h1); }
+    .res-nf-selname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-nf-selx { flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; border: 0; border-radius: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); font-size: 14px; cursor: pointer; }
+    .res-nf-selx:hover { background: var(--propia-brand-soft); }
+    /* Celda editable en filas existentes (correo/telefono): se lee como texto y se marca al hover/foco. */
+    .res-editcell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 13px; color: var(--propia-text-muted); background: transparent; outline: none; font-family: inherit; }
+    .res-editcell:hover { border-color: var(--propia-border-card); background: var(--propia-bg-card-soft); }
+    .res-editcell:focus { border-color: var(--propia-brand, var(--propia-brand)); background: var(--propia-bg-card); color: var(--propia-text-body); }
+    .res-nf-habchk { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; color: var(--propia-text-body); }
+    .res-nf-act { display: flex; justify-content: flex-end; }
+    /* Canon (skill 9-D): "+ Agregar" violeta SUAVE (no relleno solido). */
+    .res-nf-add { background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 7px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .res-nf-add:hover { background: var(--propia-brand-soft); }
+    .res-nf-add:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow, y un dropdown
+       hacia abajo quedaria recortado. Hacia arriba se muestra sobre las filas, sin recorte. */
+    .res-drop { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; z-index: 30; background: var(--propia-bg-card); border: 1px solid #D8E0E8; border-radius: 10px; box-shadow: 0 -8px 28px rgba(16,32,52,.16); overflow: hidden; max-height: 260px; overflow-y: auto; }
+    .res-drop-it { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; cursor: pointer; }
+    .res-drop-it:hover { background: var(--propia-brand-soft-2); }
+    .res-drop-cod { font-weight: 700; color: var(--propia-brand-text); font-size: 13px; }
+    .res-drop-meta { font-size: 12px; color: var(--propia-text-muted); }
+
+    .res-group { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; border-top: 1px solid var(--propia-border-divider); }
+    .res-group:first-of-type { border-top: 0; }
+    .res-group-chip { font-size: 12px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); border-radius: 8px; padding: 3px 11px; }
+    .res-group-n { font-size: 11.5px; font-weight: 700; color: var(--propia-text-muted); background: var(--propia-bg-card-soft); border-radius: 10px; padding: 1px 9px; }
+
+    .res-rol { font-size: 11px; font-weight: 700; border-radius: 8px; padding: 2px 9px; }
+    .res-rol-prop { background: #EAF1FE; color: #2857C4; }
+    .res-rol-resi { background: var(--propia-ok-soft); color: #15804A; }
+    .res-rol-arr { background: var(--propia-warn-soft); color: #B7651B; }
+    .res-rol-otro { background: var(--propia-bg-card-soft); color: var(--propia-text-muted); }
+
+    /* Toggle Tarjetas/Tabla (canon del sistema: Tarjetas primero). */
+    .res-viewtoggle { display: inline-flex; gap: 2px; background: var(--propia-border-divider); border-radius: 9px; padding: 3px; }
+    .res-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--propia-text-muted); font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .res-vt.on { background: var(--propia-bg-card); color: var(--propia-brand); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+
+    /* Campo propio en la tabla: celda calculada (Formula) y celda de lista con chip de color. */
+    .res-auto { color: var(--propia-text-faint); font-style: italic; font-size: 12px; }
+    .res-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .res-selcell .res-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
+    .res-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Vista Tarjetas: rejilla de fichas por residente (incluye los campos propios). */
+    .res-cardswrap { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
+    .res-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 14px; }
+    .res-cards-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
+    .res-card { border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 12px 14px; background: var(--propia-bg-card); cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+    .res-card:hover { border-color: var(--propia-brand); box-shadow: 0 4px 14px rgba(16,32,52,.08); }
+    .res-card-nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .res-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .res-card-nom { font-weight: 700; color: var(--propia-text-h1); font-size: 14.5px; margin-bottom: 8px; }
+    .res-card-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; }
+    .res-card-k { color: var(--propia-text-muted); flex: 0 0 auto; }
+    .res-card-v { color: var(--propia-text-body); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
