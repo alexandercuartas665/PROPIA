@@ -72,6 +72,24 @@ public sealed record CampoFormulaConfig(
         => tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda;
 
     /// <summary>
+    /// Computa el TEXTO de un campo Formula en lectura (helper COMPARTIDO por todas las superficies): parsea
+    /// la config de <paramref name="opciones"/>, aplica la operacion con <paramref name="valorDe"/> (que
+    /// cada superficie construye desde sus valores propios + su resolver de campos de sistema), y formatea
+    /// recortando ceros de cola (los campos de sistema son numeric con escala). Devuelve null si la config
+    /// no es valida o el agregado es vacio (celda en blanco).
+    /// </summary>
+    public static string? ComputarTexto(string? opciones, Func<string, decimal?> valorDe)
+    {
+        var cfg = Parse(opciones);
+        if (cfg is null) return null;
+        var r = cfg.Computar(valorDe);
+        if (r is null) return null;
+        var s = r.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (s.Contains('.')) s = s.TrimEnd('0').TrimEnd('.');
+        return s;
+    }
+
+    /// <summary>
     /// Valida las fuentes de una formula. <paramref name="tipoDe"/> devuelve el Tipo de un campo fuente por
     /// su clave (null si la clave no existe). Devuelve el motivo del rechazo, o null si es valida. Prohibe:
     /// lista vacia, clave inexistente, y fuentes que no sean Numero/Moneda (esto excluye por diseno otra

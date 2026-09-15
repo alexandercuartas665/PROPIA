@@ -877,23 +877,14 @@ public partial class MiCopropiedadService
     // (cd:{guid}, via el mapa {definicionId -> valor}) y campos de SISTEMA Numero/Moneda (via los numeros
     // de la unidad). Solo lectura; devuelve null si la config no es valida o el agregado es vacio.
     private static string? ComputarFormulaTexto(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosUnidad? nums)
-    {
-        var cfg = CampoFormulaConfig.Parse(opciones);
-        if (cfg is null) return null;
-        decimal? ValorDe(string clave)
+        // Computo + formato = helper COMPARTIDO; aqui solo se aporta el resolver de valor de ESTA superficie
+        // (campos propios via EAV + campos de sistema de la unidad).
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
         {
             if (clave.StartsWith("cd:", StringComparison.Ordinal))
                 return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
             return nums is not null ? ValorSistemaUnidad(clave, nums) : null;
-        }
-        var r = cfg.Computar(ValorDe);
-        if (r is null) return null;
-        // Formato limpio: los campos de sistema son numeric con escala (2.0000), asi que se recortan los
-        // ceros de cola para no mostrar "10.0000" (InvariantCulture -> separador '.').
-        var s = r.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        if (s.Contains('.')) s = s.TrimEnd('0').TrimEnd('.');
-        return s;
-    }
+        });
 
     private static decimal? ParseDecimalInv(string? s)
     {
@@ -1082,29 +1073,9 @@ public partial class MiCopropiedadService
             ? true : throw new InvalidOperationException("Unidad no encontrada.");
         var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
 
-        // Type-gate del valor por el Tipo del campo (Fase 2):
-        // - Formula es calculado y de SOLO LECTURA: no admite valor.
-        // - Usuario/Directorio guardan un Guid y se valida pertenencia al tenant (personas es GLOBAL).
-        //   Las consultas van acotadas por RLS al tenant activo, asi que un id de OTRO tenant no valida.
-        if (def.Tipo == TipoCampoTablero.Formula)
-            throw new InvalidOperationException("Un campo Formula es calculado y de solo lectura; no admite valor.");
-        if (valor is not null && def.Tipo == TipoCampoTablero.Usuario)
-        {
-            if (!Guid.TryParse(valor, out var personaId))
-                throw new InvalidOperationException("El valor de un campo Usuario debe ser el id de un usuario del tenant.");
-            var esUsuarioDelTenant = await _db.UsuariosTenant.AnyAsync(u => u.PersonaId == personaId, ct);
-            if (!esUsuarioDelTenant)
-                throw new InvalidOperationException("El usuario seleccionado no pertenece a esta copropiedad.");
-        }
-        if (valor is not null && def.Tipo == TipoCampoTablero.Directorio)
-        {
-            if (!Guid.TryParse(valor, out var entidadId))
-                throw new InvalidOperationException("El valor de un campo Directorio debe ser el id de una persona del directorio.");
-            var enDirectorio = await _db.DirectorioVinculos.AnyAsync(v =>
-                v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct);
-            if (!enDirectorio)
-                throw new InvalidOperationException("La persona seleccionada no esta en el directorio de esta copropiedad.");
-        }
+        // Type-gate del valor por el Tipo del campo (Fase 2): Formula solo lectura, Usuario/Directorio con
+        // pertenencia al tenant (rechazo cross-tenant). Helper COMPARTIDO por las 8 superficies.
+        await CamposAvanzados.ValidarValorAsync(_db, def.Tipo, valor, ct);
 
         var existente = await _db.UnidadCamposValores
             .FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.UnidadId == unidadId, ct);
