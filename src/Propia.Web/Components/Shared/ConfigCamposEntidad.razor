@@ -43,7 +43,7 @@ else
         var clave = item.Clave;
         var vis = VisibleDe(clave);
         var tefe = TipoEfectivo(item);
-        var permitidos = item.EsCustom ? TiposOfrecidos : TiposPermitidos(item);
+        var permitidos = item.EsCustom ? TiposEditablesCustom(tefe) : TiposPermitidos(item);
         var fmt = FormatoDe(clave);
 
         <div class="cga-grid cga-row @(_dragClave == clave ? "cga-row--drag" : "")"
@@ -80,14 +80,32 @@ else
             <div class="cga-tipo">
                 @if (permitidos.Length > 0)
                 {
+                    @* Mismo agrupado por categoria que al crear (0.3), filtrado a los tipos convertibles:
+                       asi crear y editar se ven IGUAL. Los tipos Avanzados (Formula/Usuario/Directorio) no
+                       son convertibles (Formula no guarda valor; Usuario/Directorio guardan un id) y por eso
+                       no salen aqui: solo se eligen al crear. Un campo que YA es avanzado se muestra bloqueado. *@
                     <select class="cga-inp cga-tipo-sel" value="@tefe" @onchange="@(e => SetTipoAsync(item, e.Value?.ToString()))" disabled="@_busy">
-                        @foreach (var t in permitidos) { <option value="@t" selected="@(t == tefe)">@TipoLabel(t)</option> }
+                        @foreach (var (cat, tipos) in CategoriasTipos)
+                        {
+                            var opts = tipos.Where(permitidos.Contains).ToArray();
+                            if (opts.Length > 0)
+                            {
+                                <optgroup label="@cat">
+                                    @foreach (var t in opts) { <option value="@t" selected="@(t == tefe)">@TipoLabel(t)</option> }
+                                </optgroup>
+                            }
+                        }
                     </select>
                 }
                 else
                 {
+                    @* Tipo bloqueado: fijo del sistema, o campo propio AVANZADO que no se puede convertir sin
+                       corromper su dato -> se cambia recreando el campo. El tooltip dice el motivo real. *@
+                    var motivoFijo = item.EsCustom
+                        ? $"El tipo {TipoLabel(tefe)} no se puede cambiar. Para cambiarlo, elimina el campo y crealo de nuevo."
+                        : "Tipo fijo del sistema.";
                     <span class="cga-tipo-badge">@TipoLabel(tefe)</span>
-                    <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Tipo fijo del sistema"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="@motivoFijo"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
                     <span class="cga-fija">FIJA</span>
                 }
             </div>
@@ -289,17 +307,36 @@ else
             </div>
             <div>
                 <label class="dst-nfc-lbl">Tipo</label>
-                @* 0.3: tipos agrupados por categoria. El <select> nativo no admite iconos SVG en las
-                   opciones; se agrupa con optgroup (accesible). El icono por categoria queda para un
-                   dropdown custom si se decide despues. *@
-                <select class="dst-nf-inp" @bind="_nvTipo">
-                    @foreach (var (cat, tipos) in CategoriasTipos)
+                @* 0.4: dropdown custom con categorias y DESCRIPCION por tipo (mas amigable que el <select>
+                   nativo, que no admite descripciones). El panel abre al pie del boton; se cierra con el
+                   backdrop o al elegir. Los tipos van agrupados por categoria en orden logico. *@
+                <div class="cga-tp @(_tipoPickerOpen ? "cga-tp--open" : "")">
+                    <button type="button" class="dst-nf-inp cga-tp-btn" @onclick="() => _tipoPickerOpen = !_tipoPickerOpen">
+                        <span class="cga-tp-cur">
+                            <span class="cga-tp-cur-lbl">@TipoLabel(_nvTipo)</span>
+                            <span class="cga-tp-cur-desc">@TipoDescripcion(_nvTipo)</span>
+                        </span>
+                        <svg class="cga-tp-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                    @if (_tipoPickerOpen)
                     {
-                        <optgroup label="@cat">
-                            @foreach (var t in tipos) { <option value="@t">@TipoLabel(t)</option> }
-                        </optgroup>
+                        <div class="cga-tp-bd" @onclick="() => _tipoPickerOpen = false"></div>
+                        <div class="cga-tp-panel">
+                            @foreach (var (cat, tipos) in CategoriasTipos)
+                            {
+                                <div class="cga-tp-cat">@cat</div>
+                                @foreach (var t in tipos)
+                                {
+                                    var tt = t;
+                                    <button type="button" class="cga-tp-opt @(_nvTipo == tt ? "on" : "")" @onclick="() => ElegirTipoNuevo(tt)">
+                                        <span class="cga-tp-opt-lbl">@TipoLabel(tt)</span>
+                                        <span class="cga-tp-opt-desc">@TipoDescripcion(tt)</span>
+                                    </button>
+                                }
+                            }
+                        </div>
                     }
-                </select>
+                </div>
             </div>
         </div>
         @if (_nvTipo == TipoCampoTablero.Seleccion)
@@ -507,7 +544,10 @@ else
 
     private string _nvLabel = "";
     private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
+    private bool _tipoPickerOpen;   // 0.4: dropdown custom del tipo (categorias + descripcion)
     private string _nvOpciones = "";
+
+    private void ElegirTipoNuevo(TipoCampoTablero t) { _nvTipo = t; _tipoPickerOpen = false; }
     // Editor del tipo Formula (Fase 2): operacion + claves de campos fuente (Numero/Moneda).
     private OperacionFormula _nvOperacion = OperacionFormula.Suma;
     private readonly HashSet<string> _nvFuentes = new(StringComparer.Ordinal);
@@ -522,6 +562,15 @@ else
         ("Contacto", new[] { TipoCampoTablero.Telefono, TipoCampoTablero.Email, TipoCampoTablero.Url }),
     };
     private static readonly TipoCampoTablero[] TiposOfrecidos = TiposPorCategoria.SelectMany(c => c.Tipos).ToArray();
+
+    // Al EDITAR un campo propio: los tipos AVANZADOS (Formula/Usuario/Directorio) NO se pueden convertir
+    // (Formula no guarda valor y necesita su config de operacion+fuentes; Usuario/Directorio guardan un id).
+    // Un dropdown simple los corromperia -> se muestran BLOQUEADOS (candado con motivo) y solo se eligen al
+    // CREAR. Los tipos base si se intercambian entre si. Esto unifica el porque crear ofrece mas que editar.
+    private static TipoCampoTablero[] TiposEditablesCustom(TipoCampoTablero actual)
+        => actual is TipoCampoTablero.Formula or TipoCampoTablero.Usuario or TipoCampoTablero.Directorio
+            ? Array.Empty<TipoCampoTablero>()
+            : TiposOfrecidos;
 
     // Categorias del picker: agrega "Avanzados" (Formula/Usuario/Directorio) SOLO si TiposAvanzados.
     // Con el gate OFF devuelve exactamente TiposPorCategoria -> los demas consumidores no ven cambios.
@@ -575,6 +624,28 @@ else
         TipoCampoTablero.Usuario => "Usuario",
         TipoCampoTablero.Directorio => "Directorio",
         _ => "Texto"
+    };
+
+    // 0.4: descripcion corta por tipo para el dropdown amigable (una linea, sin tecnicismos).
+    private static string TipoDescripcion(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto corto de una linea",
+        TipoCampoTablero.AreaTexto => "Texto largo de varias lineas",
+        TipoCampoTablero.Numero => "Cantidad numerica",
+        TipoCampoTablero.Moneda => "Valor en pesos (COP)",
+        TipoCampoTablero.Porcentaje => "Valor porcentual (%)",
+        TipoCampoTablero.Fecha => "Fecha (dia/mes/ano)",
+        TipoCampoTablero.FechaHora => "Fecha con hora",
+        TipoCampoTablero.Hora => "Hora del dia",
+        TipoCampoTablero.Seleccion => "Lista de opciones a elegir",
+        TipoCampoTablero.Booleano => "Si o No",
+        TipoCampoTablero.Telefono => "Numero telefonico",
+        TipoCampoTablero.Email => "Direccion de correo",
+        TipoCampoTablero.Url => "Direccion web (enlace)",
+        TipoCampoTablero.Formula => "Se calcula desde otros campos",
+        TipoCampoTablero.Usuario => "Un usuario de la copropiedad",
+        TipoCampoTablero.Directorio => "Una persona del directorio",
+        _ => ""
     };
 
     private static string OperacionLabel(OperacionFormula op) => op switch
