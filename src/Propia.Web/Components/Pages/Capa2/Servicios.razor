@@ -228,6 +228,7 @@ else
                                 <ConfigCamposEntidad Prefijo="contratos"
                                                      EntidadConfig="contrato"
                                                      Catalogo="@ContratoCatalogo"
+                                                     TiposAvanzados="true"
                                                      TituloSingular="contrato"
                                                      TituloPlural="Contratos"
                                                      Ejemplo="Ej. N de poliza, Responsable"
@@ -501,15 +502,30 @@ else
                                                                         <input type="number" class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
                                                                                @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
                                                                         break;
+                                                                    case TipoCampoTablero.Usuario:
+                                                                        <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CCampoSelChange(cc, cpo, e)' @onblur="CancelarCEd">
+                                                                            <option value="">-</option>
+                                                                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId">@u.NombreCompleto</option> }
+                                                                        </select>
+                                                                        break;
+                                                                    case TipoCampoTablero.Directorio:
+                                                                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona del directorio..."
+                                                                                         SeleccionadaChanged="(cand) => OnDirectorioSelContrato(cc, cpo, cand)" />
+                                                                        break;
                                                                     default:
                                                                         <input class="ctr-inp" @bind="_cEditVal" @bind:event="oninput" autofocus
                                                                                @onblur='() => GuardarCVal(cc, cpo)' @onkeydown='(e) => CValKeydown(e, cc, cpo)' />
                                                                         break;
                                                                 }
                                                             }
+                                                            else if (cpo.Tipo == TipoCampoTablero.Formula)
+                                                            {
+                                                                @* Fase 2: Formula es de solo lectura (se computa en lectura); no entra en edicion. *@
+                                                                <span class="ctr-cval" title="@cpo.Label">@(MostrarCampoContrato(c, cpo) is { Length: > 0 } vf ? vf : "-")</span>
+                                                            }
                                                             else
                                                             {
-                                                                <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "campo:" + cpo.Id, ValorCampo(cc, cpo.Id))' title="@cpo.Label">@(ValorCampo(c, cpo.Id) is { Length: > 0 } vv ? vv : "-")</span>
+                                                                <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "campo:" + cpo.Id, ValorCampo(cc, cpo.Id))' title="@cpo.Label">@(MostrarCampoContrato(c, cpo) is { Length: > 0 } vv ? vv : "-")</span>
                                                             }
                                                         }
                                                         break;
@@ -1733,6 +1749,18 @@ else
         try { _cCampos = await GetAuthAsync<List<ContratoCampoDto>>("/api/mi-copropiedad/contratos/campos") ?? new(); }
         catch (SesionRedirigidaException) { return; }
         catch { _cCampos = new(); }
+        // Tipos avanzados (Fase 2): usuarios del tenant (campo Usuario) + mapa id->nombre para Usuario/Directorio.
+        try { _usuariosTenant = await GetAuthAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); }
+        catch (SesionRedirigidaException) { return; }
+        catch { _usuariosTenant = new(); }
+        try
+        {
+            var vinc = await GetAuthAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(v => v.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch (SesionRedirigidaException) { return; }
+        catch { _usuarioNombre = new(); }
+        foreach (var u in _usuariosTenant) _usuarioNombre.TryAdd(u.PersonaId, u.NombreCompleto);
         await CargarConfigContratoAsync();
         try { _etapas = await GetAuthAsync<List<ContratoEtapaDto>>("/api/mi-copropiedad/contratos/etapas") ?? new(); }
         catch (SesionRedirigidaException) { return; }
@@ -1781,6 +1809,32 @@ else
     }
     private static IEnumerable<string> OpcionesDe(ContratoCampoDto c)
         => (c.Opciones ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    // ---- Tipos avanzados del Selector de Campos (Fase 2): Usuario / Directorio / Formula ----
+    // Usuarios del tenant para el campo Usuario, y mapa id->nombre para mostrar el nombre de un valor
+    // Usuario/Directorio (que persiste el Guid). Formula llega ya computada del backend. Se cargan una vez.
+    private List<UsuarioOpc> _usuariosTenant = new();
+    private Dictionary<Guid, string> _usuarioNombre = new();
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    // Nombre a mostrar en la celda de un campo Usuario/Directorio (o el valor crudo si no se resuelve).
+    private string? MostrarCampoContrato(ContratoServicioDto c, ContratoCampoDto cpo)
+    {
+        var raw = ValorCampo(c, cpo.Id);
+        if (string.IsNullOrWhiteSpace(raw)) return raw;
+        if ((cpo.Tipo == TipoCampoTablero.Usuario || cpo.Tipo == TipoCampoTablero.Directorio)
+            && Guid.TryParse(raw, out var g) && _usuarioNombre.TryGetValue(g, out var n)) return n;
+        return raw;   // Formula ya llega computada; Numero/Moneda/Texto: valor crudo
+    }
+
+    // Campo Directorio elegido con el SelectorPersona (inline): guarda el PersonaId y cachea el nombre.
+    private Task OnDirectorioSelContrato(ContratoServicioDto c, ContratoCampoDto cpo, PersonaCandidatoDto? cand)
+    {
+        if (cand is null) { _cEditVal = ""; return GuardarCVal(c, cpo); }
+        _usuarioNombre[cand.PersonaId] = cand.NombreCompleto;
+        _cEditVal = cand.PersonaId.ToString();
+        return GuardarCVal(c, cpo);
+    }
 
     // ---- Vista Tabla/Tarjetas (Kanban) + etapas de flujo ----
     private string _vistaC = "tabla";              // "tabla" | "tarjetas"

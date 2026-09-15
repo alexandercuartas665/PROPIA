@@ -79,8 +79,28 @@ public partial class MiCopropiedadService
             .Where(v => ids.Contains(v.ContratoId))
             .ToListAsync(ct);
         var porContrato = valores.GroupBy(v => v.ContratoId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<ContratoCampoValorDto>)g
-                .Select(v => new ContratoCampoValorDto(v.ContratoCampoId, v.Valor)).ToList());
+            .ToDictionary(g => g.Key, g => g.Select(v => new ContratoCampoValorDto(v.ContratoCampoId, v.Valor)).ToList());
+
+        // Formula (Fase 2): valor calculado en lectura (no persiste); se inyecta a los campos-valores para que
+        // la columna aparezca en la tabla. Usuario/Directorio guardan el Guid y su nombre lo resuelve la pagina.
+        var formulaDefs = await _db.ContratoCampos.AsNoTracking()
+            .Where(d => d.Activo && d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0 && contratos.Count > 0)
+        {
+            foreach (var c in contratos)
+            {
+                var eav = (IReadOnlyDictionary<Guid, string?>)valores.Where(v => v.ContratoId == c.Id)
+                    .ToDictionary(v => v.ContratoCampoId, v => v.Valor);
+                var nums = new NumerosContrato(c.ValorTotal, c.FormaPagoCuotas, c.ValorMensual, c.DiasAnticipacionAlerta);
+                if (!porContrato.TryGetValue(c.Id, out var lst)) { lst = new(); porContrato[c.Id] = lst; }
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoContrato(fd.Opciones, eav, nums);
+                    if (txt is not null) lst.Add(new ContratoCampoValorDto(fd.Id, txt));
+                }
+            }
+        }
 
         // "Asociado a": resolver nombres de equipos/zonas referenciados, en batch.
         var equipoIds = contratos.Where(c => c.AsociadoTipo == TipoActivoMantenimiento.Equipo && c.AsociadoId.HasValue).Select(c => c.AsociadoId!.Value).Distinct().ToList();
@@ -420,15 +440,46 @@ public partial class MiCopropiedadService
     // Selector de Campos (Fase 1): valores en la forma estandar (espejo de ListTodosCamposValoresEquipoAsync
     // / ListCamposDinEquipoAsync). Proyecciones finas; la logica de campos no se duplica.
     public async Task<IReadOnlyList<ContratoCampoValorFlatDto>> ListTodosCamposValoresContratoAsync(CancellationToken ct)
-        => await _db.ContratoCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new ContratoCampoValorFlatDto(v.ContratoId, v.ContratoCampoId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.ContratoCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.ContratoId, v.ContratoCampoId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new ContratoCampoValorFlatDto(v.ContratoId, v.ContratoCampoId, v.Valor)).ToList();
+
+        // Formula (Fase 2): se COMPUTA en lectura (no persiste). Se emite el valor por contrato para la tabla.
+        var formulaDefs = await _db.ContratoCampos.AsNoTracking()
+            .Where(d => d.Activo && d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefs.Count > 0)
+        {
+            var contratos = await _db.ContratosServicio.AsNoTracking()
+                .Select(c => new { c.Id, N = new NumerosContrato(c.ValorTotal, c.FormaPagoCuotas, c.ValorMensual, c.DiasAnticipacionAlerta) })
+                .ToListAsync(ct);
+            var porContrato = valores.GroupBy(v => v.ContratoId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.ContratoCampoId, x => x.Valor));
+            IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+            foreach (var c in contratos)
+            {
+                var dict = porContrato.TryGetValue(c.Id, out var d0) ? d0 : vacio;
+                foreach (var fd in formulaDefs)
+                {
+                    var txt = ComputarFormulaTextoContrato(fd.Opciones, dict, c.N);
+                    if (txt is not null) res.Add(new ContratoCampoValorFlatDto(c.Id, fd.Id, txt));
+                }
+            }
+        }
+        return res;
+    }
 
     public async Task<IReadOnlyList<ContratoCampoDinDto>> ListCamposDinContratoAsync(Guid contratoId, CancellationToken ct)
     {
         var defs = await _db.ContratoCampos.AsNoTracking().Where(c => c.Activo).OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var vals = await _db.ContratoCampoValores.AsNoTracking().Where(v => v.ContratoId == contratoId).ToListAsync(ct);
+        var porDef = vals.ToDictionary(v => v.ContratoCampoId, v => v.Valor);
+        var nums = await _db.ContratosServicio.AsNoTracking().Where(c => c.Id == contratoId)
+            .Select(c => new NumerosContrato(c.ValorTotal, c.FormaPagoCuotas, c.ValorMensual, c.DiasAnticipacionAlerta)).FirstOrDefaultAsync(ct);
         return defs.Select(d => new ContratoCampoDinDto(d.Id, d.Label, d.Orden,
-            vals.FirstOrDefault(v => v.ContratoCampoId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaTextoContrato(d.Opciones, porDef, nums) : porDef.GetValueOrDefault(d.Id),
+            d.Tipo, d.Opciones)).ToList();
     }
 
     public async Task<ContratoCampoDto> CrearContratoCampoAsync(CrearContratoCampoRequest req, CancellationToken ct)
@@ -440,7 +491,7 @@ public partial class MiCopropiedadService
         {
             Label = req.Label.Trim(),
             Tipo = req.Tipo,
-            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            Opciones = await PrepararOpcionesContratoAsync(req.Tipo, req.Opciones, null, ct),
             Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
             Orden = maxOrden + 1,
             Activo = true
@@ -459,7 +510,7 @@ public partial class MiCopropiedadService
         // (asi el edit del componente no borra la descripcion ni oculta el campo con Activo=false).
         if (!string.IsNullOrWhiteSpace(req.Label)) campo.Label = req.Label.Trim();
         campo.Tipo = req.Tipo;
-        campo.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        campo.Opciones = await PrepararOpcionesContratoAsync(req.Tipo, req.Opciones, campoId, ct);
         campo.Orden = req.Orden;
         if (req.Descripcion is not null)
             campo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
@@ -484,9 +535,12 @@ public partial class MiCopropiedadService
     {
         var contrato = await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct);
         if (!contrato) return false;
-        var campo = await _db.ContratoCampos.AnyAsync(c => c.Id == campoId, ct);
-        if (!campo) return false;
+        var campo = await _db.ContratoCampos.FirstOrDefaultAsync(c => c.Id == campoId, ct);
+        if (campo is null) return false;
         var val = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        // Type-gate del valor por el Tipo del campo (Fase 2): Formula solo lectura, Usuario/Directorio con
+        // pertenencia al tenant (rechazo cross-tenant via RLS). Helper COMPARTIDO por las superficies del Selector.
+        await CamposAvanzados.ValidarValorAsync(_db, campo.Tipo, val, ct);
         var existente = await _db.ContratoCampoValores
             .FirstOrDefaultAsync(v => v.ContratoId == contratoId && v.ContratoCampoId == campoId, ct);
         if (existente is null)
@@ -505,6 +559,60 @@ public partial class MiCopropiedadService
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    // ---- Tipos avanzados del Selector de Campos (Fase 2) en contratos: Formula/Usuario/Directorio ----
+    // Prepara la columna POLIMORFICA Opciones: para Formula valida (fuentes existentes y Numero/Moneda) y
+    // serializa el JSON de CampoFormulaConfig; para el resto conserva el texto (opciones de Seleccion). El
+    // computo/validacion en si son helpers COMPARTIDOS; aqui solo se aporta el resolver de sistema del contrato.
+    private async Task<string?> PrepararOpcionesContratoAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo == TipoCampoTablero.Formula)
+        {
+            var cfg = CampoFormulaConfig.Parse(opciones)
+                ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+            var defs = await _db.ContratoCampos.AsNoTracking()
+                .Where(d => excluirId == null || d.Id != excluirId)
+                .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct);
+            var porGuid = defs.ToDictionary(d => d.Id, d => d.Tipo);
+            TipoCampoTablero? TipoDe(string clave)
+            {
+                if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                    return Guid.TryParse(clave[3..], out var g) && porGuid.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+                return FuentesSistemaContrato.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+            }
+            var err = CampoFormulaConfig.Validar(cfg, TipoDe);
+            if (err is not null) throw new InvalidOperationException(err);
+            return cfg.Serializar();
+        }
+        return string.IsNullOrWhiteSpace(opciones) ? null : opciones.Trim();
+    }
+
+    // Computa el texto de un campo Formula para un contrato. Fuentes: campos PROPIOS Numero/Moneda (cd:{guid})
+    // via el mapa {campoId -> valor} + campos de SISTEMA Numero/Moneda del contrato. ParseDecimalInv es
+    // compartido (partial: definido en la particion Unidades). Solo lectura.
+    private static string? ComputarFormulaTextoContrato(string? opciones, IReadOnlyDictionary<Guid, string?> valoresPorDef, NumerosContrato? nums)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+            return nums is not null ? ValorSistemaContrato(clave, nums) : null;
+        });
+
+    // Resolver de SISTEMA del contrato (claves del catalogo ContratoCamposSistema con Tipo Numero/Moneda).
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaContrato =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        {
+            ["valortotal"] = TipoCampoTablero.Moneda, ["formapago"] = TipoCampoTablero.Numero,
+            ["valor"] = TipoCampoTablero.Moneda, ["dias"] = TipoCampoTablero.Numero,
+        };
+
+    private sealed record NumerosContrato(decimal? ValorTotal, int? FormaPagoCuotas, decimal? ValorMensual, int Dias);
+
+    private static decimal? ValorSistemaContrato(string clave, NumerosContrato n) => clave switch
+    {
+        "valortotal" => n.ValorTotal, "formapago" => n.FormaPagoCuotas, "valor" => n.ValorMensual, "dias" => n.Dias,
+        _ => (decimal?)null
+    };
 
     // ---- Etapas de flujo (Kanban) de contratos ----
     // Siembra las 4 etapas base por copropiedad si no existen y ancla los contratos sin etapa a "Activo".

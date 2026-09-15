@@ -124,6 +124,75 @@ public class SegurosCamposTests
         await CleanupTenantAsync(tenantId);
     }
 
+    // ----- Fase 2: tipos avanzados (Formula / Usuario / Directorio) en polizas -----
+
+    [Fact]
+    public async Task Formula_en_poliza_computa_sobre_campo_propio_y_de_sistema()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] Formula poliza");
+        var svc = BuildService(tenantId);
+        var p = await svc.CrearPolizaAsync(new CrearPolizaRequest("[SELLO] Aseg formula",
+            FechaInicio: new DateOnly(2026, 1, 1), FechaFin: new DateOnly(2026, 12, 31), ValorPoliza: 100m), CancellationToken.None);
+        // Campo propio Numero con valor 40; formula = Suma(valorpoliza sistema + cd:propio) = 100 + 40 = 140.
+        var num = await svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Extra", TipoCampoTablero.Numero, null, null), CancellationToken.None);
+        await svc.GuardarCampoValorAsync(p.Id, num.Id, new GuardarPolizaCampoValorRequest("40"), CancellationToken.None);
+        var f = await svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Total", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(OperacionFormula.Suma, new[] { "valorpoliza", "cd:" + num.Id }).Serializar(), null), CancellationToken.None);
+
+        var din = await svc.ListCamposDinPolizaAsync(p.Id, CancellationToken.None);
+        Assert.Equal("140", din.First(d => d.DefinicionId == f.Id).Valor);
+        // Y la lectura flat (la que pinta la tabla) tambien emite el valor calculado.
+        var flat = await svc.ListTodosCamposValoresPolizaAsync(CancellationToken.None);
+        Assert.Contains(flat, v => v.PolizaId == p.Id && v.DefinicionId == f.Id && v.Valor == "140");
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Formula_en_poliza_es_solo_lectura_y_rechaza_fuente_no_numerica()
+    {
+        var tenantId = await SeedTenantAsync("[SELLO] Formula RO poliza");
+        var svc = BuildService(tenantId);
+        // Fuente no numerica -> rechazo al CREAR la formula (anti-nesting / tipo).
+        var texto = await svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Texto", TipoCampoTablero.Texto, null, null), CancellationToken.None);
+        await Assert.ThrowsAnyAsync<Exception>(() => svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Mala", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + texto.Id }).Serializar(), null), CancellationToken.None));
+        // Formula valida, pero de SOLO LECTURA: no admite escribir su valor.
+        var num = await svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] N", TipoCampoTablero.Numero, null, null), CancellationToken.None);
+        var f = await svc.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Suma", TipoCampoTablero.Formula,
+            new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + num.Id }).Serializar(), null), CancellationToken.None);
+        var p = await svc.CrearPolizaAsync(new CrearPolizaRequest("[SELLO] Aseg RO", FechaInicio: new DateOnly(2026, 1, 1)), CancellationToken.None);
+        await Assert.ThrowsAnyAsync<Exception>(() => svc.GuardarCampoValorAsync(p.Id, f.Id, new GuardarPolizaCampoValorRequest("5"), CancellationToken.None));
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task Usuario_y_Directorio_en_poliza_rechazan_ids_de_otro_tenant()
+    {
+        var tA = await SeedTenantAsync("[SELLO] Adv poliza A");
+        var tB = await SeedTenantAsync("[SELLO] Adv poliza B");
+        var usuarioA = await SeedUsuarioTenantAsync(tA);
+        var personaDirA = await SeedPersonaGlobalAsync();
+        await SeedDirectorioVinculoAsync(tA, personaDirA);
+
+        var svcA = BuildService(tA);
+        var pA = await svcA.CrearPolizaAsync(new CrearPolizaRequest("[SELLO] pA", FechaInicio: new DateOnly(2026, 1, 1)), CancellationToken.None);
+        var campoU = await svcA.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Resp", TipoCampoTablero.Usuario, null, null), CancellationToken.None);
+        var campoD = await svcA.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Contacto", TipoCampoTablero.Directorio, null, null), CancellationToken.None);
+        // En A: ids validos -> se guardan.
+        await svcA.GuardarCampoValorAsync(pA.Id, campoU.Id, new GuardarPolizaCampoValorRequest(usuarioA.ToString()), CancellationToken.None);
+        await svcA.GuardarCampoValorAsync(pA.Id, campoD.Id, new GuardarPolizaCampoValorRequest(personaDirA.ToString()), CancellationToken.None);
+
+        var svcB = BuildService(tB);
+        var pB = await svcB.CrearPolizaAsync(new CrearPolizaRequest("[SELLO] pB", FechaInicio: new DateOnly(2026, 1, 1)), CancellationToken.None);
+        var campoUB = await svcB.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Resp", TipoCampoTablero.Usuario, null, null), CancellationToken.None);
+        var campoDB = await svcB.CrearCampoAsync(new CrearPolizaCampoRequest("[SELLO] Contacto", TipoCampoTablero.Directorio, null, null), CancellationToken.None);
+        // En B: el mismo id NO pertenece a B (personas es global) -> rechazo CROSS-TENANT.
+        await Assert.ThrowsAnyAsync<Exception>(() => svcB.GuardarCampoValorAsync(pB.Id, campoUB.Id, new GuardarPolizaCampoValorRequest(usuarioA.ToString()), CancellationToken.None));
+        await Assert.ThrowsAnyAsync<Exception>(() => svcB.GuardarCampoValorAsync(pB.Id, campoDB.Id, new GuardarPolizaCampoValorRequest(personaDirA.ToString()), CancellationToken.None));
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     // Contexto de aplicacion (respeta RLS/tenant) para leer el estado crudo del campo en las aserciones,
@@ -165,12 +234,45 @@ public class SegurosCamposTests
         return t.Id;
     }
 
+    // Fase 2: seeders de usuario/directorio del tenant para el rechazo cross-tenant (personas es GLOBAL).
+    private async Task<Guid> SeedUsuarioTenantAsync(Guid tenantId)
+    {
+        var personaId = await SeedPersonaGlobalAsync();
+        await using var ctx = OwnerDb();
+        ctx.UsuariosTenant.Add(new UsuarioTenant
+        { TenantId = tenantId, PersonaId = personaId, Rol = "Residente", Estado = EstadoUsuarioTenant.Activo });
+        await ctx.SaveChangesAsync();
+        return personaId;
+    }
+
+    private async Task<Guid> SeedPersonaGlobalAsync()
+    {
+        await using var ctx = OwnerDb();
+        var p = new Persona { TipoDocumento = TipoDocumento.CC, Documento = "D" + Guid.NewGuid().ToString("N")[..10], Nombres = "Sello", Apellidos = "Test" };
+        ctx.Personas.Add(p);
+        await ctx.SaveChangesAsync();
+        return p.Id;
+    }
+
+    private async Task SeedDirectorioVinculoAsync(Guid tenantId, Guid personaId)
+    {
+        await using var ctx = OwnerDb();
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId, EntidadTipo = EntidadDirectorio.Persona, EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow), Estado = EstadoVinculo.Activo
+        });
+        await ctx.SaveChangesAsync();
+    }
+
     private async Task CleanupTenantAsync(Guid tenantId)
     {
         await using var ctx = OwnerDb();
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campo_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM polizas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM directorio_vinculos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
 
