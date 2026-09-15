@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Propia.Api.Authorization;
+using Propia.Api.Security;   // T-09: lista blanca de adjuntos de tarea
 using Propia.Application.Tareas;
 using Propia.Application.UsuariosAccesos;
 // Contrato de config de columnas reusado (per-tablero). Alias puntual para no chocar con
@@ -465,8 +466,10 @@ public class TareasController : ControllerBase
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
-        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
-        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        // T-09: lista blanca de tipos (extension + Content-Type + magic bytes) ANTES de subir al blob.
+        // Cierra el hueco de aceptar cualquier archivo (.exe/.svg/.html/.js). Cubre tambien vacio y 10 MB.
+        var err = await AdjuntoTareaValidation.ValidarAsync(file, ct);
+        if (err is not null) return BadRequest(new { error = err });
         var ext = System.IO.Path.GetExtension(file.FileName);
         var key = $"tenants/{tenantId:N}/tareas/{id:N}/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();

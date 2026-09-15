@@ -739,6 +739,31 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tB);
     }
 
+    [Fact]
+    public async Task Borrar_adjunto_esta_acotado_por_tarea_y_tenant()
+    {
+        // T-09: el borrado de un adjunto se acota por TareaId (y por RLS, el tenant). Borrar el adjunto de
+        // una tarea usando el id de OTRA tarea no lo elimina; con la tarea correcta si. (El permiso Eliminar
+        // se exige en el endpoint; aqui se prueba el scoping del servicio.)
+        var tenantId = await SeedTenantAsync("Tareas Adjunto scoping");
+        var (svc, db, _) = Build(tenantId);
+        var tA = await svc.CrearTareaAsync(new CrearTareaRequest("Con adjunto", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+        var tB = await svc.CrearTareaAsync(new CrearTareaRequest("Sin adjunto", null, PrioridadTarea.Normal, null, null, null, null, null, null), CancellationToken.None);
+
+        var adj = await svc.AgregarAdjuntoAsync(tA.Id, "f.png", "https://x/tenants/t/tareas/a/f.png", null, CancellationToken.None);
+        Assert.NotNull(adj);
+
+        // Intentar borrarlo con la tarea EQUIVOCADA -> no elimina y el adjunto sigue.
+        Assert.False(await svc.EliminarAdjuntoAsync(tB.Id, adj!.Id, CancellationToken.None));
+        Assert.True(await db.TareaAdjuntos.AsNoTracking().AnyAsync(a => a.Id == adj.Id, CancellationToken.None));
+
+        // Con la tarea correcta -> elimina.
+        Assert.True(await svc.EliminarAdjuntoAsync(tA.Id, adj.Id, CancellationToken.None));
+        Assert.False(await db.TareaAdjuntos.AsNoTracking().AnyAsync(a => a.Id == adj.Id, CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
