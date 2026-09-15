@@ -156,11 +156,43 @@ else
             @* Distribucion al estilo PQRSD: controles (vistas, copropiedad, configurar) en la
                fila superior derecha y el CTA principal en su propia linea debajo. *@
             <div class="tb-board-actions tb-board-actions--col">
+                @* Barra superior en el orden homogeneo con Unidades Privadas (pedido de Alex):
+                   [Copropiedad] . Agrupar . Campos . [modos Tarjetas|Tabla|Calendario|Gantt] . Configurar.
+                   Agrupar y Campos van primero; Calendario/Gantt y Configurar quedan detras (extras propios de
+                   Tareas que Unidades no tiene). Agrupar se movio aqui desde las barras per-vista. *@
                 <div class="tb-actions-row">
                     <div class="tb-avatars tb-avatars-lg">
                         @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
                     </div>
-                    @* En "Cerrados" no hay diseno de tablero: solo una tabla de consulta. *@
+                    @* Selector de copropiedad (context-switcher) al inicio del cluster: no rompe la secuencia. *@
+                    @if (!Compacto) { @SelectorCopropiedad }
+                    @* Agrupar: solo aplica en Tablero/Lista; en Calendario/Gantt no se muestra (agrupar no tiene
+                       sentido ahi). Comparte estado (_cardGroup) con las vistas; el menu es el mismo. *@
+                    @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
+                    {
+                        <div class="tb-menuwrap">
+                            <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
+                            </button>
+                            @if (_cardGroupMenu)
+                            {
+                                <div class="tb-menu">
+                                    @foreach (var o in OpcionesGrupo())
+                                    {
+                                        var k = o.Key;
+                                        <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    @* Campos (gestor unificado, adopcion Selector opcion A): antes de los modos para la secuencia
+                       Agrupar.Campos.Tarjetas.Tabla. Exige el permiso Aprobar (configurar, no basta con trabajar). *@
+                    @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
+                    {
+                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
+                    }
+                    @* Modos de vista despues de Campos. En "Cerrados" no hay diseno de tablero: solo tabla de consulta. *@
                     @if (!_verCerradas)
                     {
                         <div class="tb-modeswitch">
@@ -173,16 +205,10 @@ else
                             }
                         </div>
                     }
-                    @if (!Compacto) { @SelectorCopropiedad }
-                    @* T-02: en modo Compacto (dentro del modal de un expediente) se oculta "Configurar":
-                       las columnas del tablero PQRSD compartido se administran desde /tareas, no por expediente. *@
-                    @* Configurar el tablero exige el permiso Aprobar (no basta con trabajar en el). *@
+                    @* Configurar al final del cluster (extra de Tareas; T-02: oculto en modo Compacto -las columnas
+                       del tablero PQRSD compartido se administran desde /tareas, no por expediente). *@
                     @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
                     {
-                        @* Selector de Campos (adopcion, opcion A): el gestor compartido administra los campos
-                           PROPIOS del tablero (label/tipo/opciones). Los flags avanzados + Total/Suma siguen en
-                           el editor retenido; visibilidad/orden/color de columnas del sistema en localStorage. *@
-                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
@@ -311,21 +337,8 @@ else
                         </div>
                     }
                 </div>
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar tarjetas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
-                    </button>
-                    @if (_cardGroupMenu)
-                    {
-                        <div class="tb-menu">
-                            @foreach (var o in OpcionesGrupo())
-                            {
-                                var k = o.Key;
-                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
-                            }
-                        </div>
-                    }
-                </div>
+                @* "Agrupar" se movio a la barra superior (orden homogeneo Agrupar.Campos.Tarjetas.Tabla). Aqui
+                   queda solo "Ordenar", que es propio de la vista Tablero. *@
             </div>
 
             @if (string.IsNullOrEmpty(_cardGroup) || _cardGroup == "none")
@@ -498,26 +511,9 @@ else
                 @BloqueFiltros
                 @* Buscador junto a "Filtros" (como en PQRSD). *@
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
-                <div class="tb-flex"></div>
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => _cardGroupMenu = !_cardGroupMenu" title="Agrupar filas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
-                    </button>
-                    @if (_cardGroupMenu)
-                    {
-                        <div class="tb-menu">
-                            @foreach (var o in OpcionesGrupo())
-                            {
-                                var k = o.Key;
-                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
-                            }
-                        </div>
-                    }
-                </div>
-                @* El orden/visibilidad/renombre de columnas se administra ahora en el gestor unificado
-                   (boton "Campos" junto a "Configurar", gateado por PuedeConfigurar): un solo boton que
-                   lista columnas de sistema + campos propios (adopcion Selector, per-tablero). Antes habia
-                   aqui un 2o menu "Campos" per-usuario en localStorage; se elimino para no duplicar. *@
+                @* Igual que Unidades: Filtros + Buscar en esta barra. "Agrupar" se movio a la barra superior
+                   (orden Agrupar.Campos.Tarjetas.Tabla) y el orden/visibilidad/renombre de columnas se
+                   administra en el gestor unificado (boton "Campos" de la barra superior). *@
             </div>
 
             @ColumnColorCss
