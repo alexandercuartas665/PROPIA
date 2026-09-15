@@ -174,43 +174,10 @@ else
         @if (item.EsCustom && _opcExpand == item.Campo!.Id && tefe == TipoCampoTablero.Seleccion)
         {
             var dd2 = item.Campo!;
+            @* MISMO editor que al crear (componente OpcionesLista, replica del prototipo). Persiste _opcs
+               al cambiar. *@
             <div class="cga-opts">
-                <div class="cga-opts-list">
-                    @for (var i = 0; i < _opcs.Count; i++)
-                    {
-                        var idx = i;
-                        var op = _opcs[idx];
-                        <div class="cga-opt-row">
-                            <div class="cga-opt-move">
-                                <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, -1)">&#9650;</button>
-                                <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == _opcs.Count - 1 || _busy)" @onclick="() => MoverOpcionAsync(dd2, idx, 1)">&#9660;</button>
-                            </div>
-                            @* Chip: muestra la opcion con su color (asi se ve igual que en la tabla/ficha). *@
-                            <span class="cga-chip" style="background:@(op.Color ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(op.Color)">@(string.IsNullOrWhiteSpace(op.K) ? "-" : op.K)</span>
-                            <input class="cga-inp cga-opt-inp" value="@op.K" title="Renombrar la opcion"
-                                   @onchange="@(e => RenombrarOpcionAsync(dd2, idx, e.Value?.ToString()))" disabled="@_busy" />
-                            <div class="cga-opt-colors">
-                                @foreach (var c in PaletaChips.Colores)
-                                {
-                                    var cc = c;
-                                    <button type="button" class="cga-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
-                                            style="background:@cc" title="Color" disabled="@_busy" @onclick="() => SetColorOpcionAsync(dd2, idx, cc)"></button>
-                                }
-                                <button type="button" class="cga-sw cga-sw-none @(op.Color is null ? "on" : "")" title="Sin color"
-                                        disabled="@_busy" @onclick="() => SetColorOpcionAsync(dd2, idx, null)">&times;</button>
-                            </div>
-                            <button type="button" class="cga-eye @(op.Oculta ? "" : "on")" title="@(op.Oculta ? "Oculta (no se ofrece)" : "Visible")"
-                                    @onclick="() => ToggleOcultaOpcionAsync(dd2, idx)" disabled="@_busy">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                            <button type="button" class="cga-opt-x" title="Quitar" @onclick="() => QuitarOpcionAsync(dd2, idx)" disabled="@_busy">&times;</button>
-                        </div>
-                    }
-                    <div class="cga-opt-add">
-                        <input class="cga-inp" placeholder="Anadir nueva opcion..." @bind="_nuevaOpc" @bind:event="oninput" />
-                        <button class="cga-add-btn" type="button" @onclick="() => AgregarOpcionAsync(dd2)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpc))">Anadir</button>
-                    </div>
-                </div>
+                <OpcionesLista Opciones="_opcs" OpcionesChanged="@(() => PersistirOpcsAsync(dd2))" />
             </div>
         }
 
@@ -243,7 +210,7 @@ else
                                        @onchange="@(e => RenombrarOpcionAsync(null, idx, e.Value?.ToString()))" disabled="@_busy" />
                             }
                             <div class="cga-opt-colors">
-                                @foreach (var c in PaletaChips.Colores)
+                                @foreach (var c in PaletaChips.ColoresPasteles)
                                 {
                                     var cc = c;
                                     <button type="button" class="cga-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
@@ -292,9 +259,11 @@ else
         </div>
         @if (_nvTipo == TipoCampoTablero.Seleccion)
         {
+            @* MISMO editor que al editar (componente OpcionesLista, replica del prototipo). En memoria
+               sobre _nvOpcs; se serializa al crear. *@
             <div style="margin-top:8px;">
-                <label class="dst-nfc-lbl">Opciones (una por linea)</label>
-                <textarea class="dst-nf-inp" rows="4" @bind="_nvOpciones" @bind:event="oninput"></textarea>
+                <label class="dst-nfc-lbl">Opciones de la lista</label>
+                <OpcionesLista Opciones="_nvOpcs" OpcionesChanged="StateHasChanged" />
             </div>
         }
         else if (_nvTipo == TipoCampoTablero.Formula)
@@ -542,7 +511,8 @@ else
 
     private string _nvLabel = "";
     private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
-    private string _nvOpciones = "";
+    // Opciones del campo Lista NUEVO (en memoria; el editor es el componente OpcionesLista, igual que al editar).
+    private readonly List<OpcionCampo> _nvOpcs = new();
 
     // Lo llama CampoTipoPicker (que maneja su propio abrir/cerrar) al elegir el tipo del campo nuevo.
     private void ElegirTipoNuevo(TipoCampoTablero t)
@@ -1062,7 +1032,8 @@ else
         string? opciones = null;
         if (_nvTipo == TipoCampoTablero.Seleccion)
         {
-            opciones = string.IsNullOrWhiteSpace(_nvOpciones) ? null : _nvOpciones;
+            var opcs = _nvOpcs.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList();
+            opciones = opcs.Count > 0 ? OpcionCampo.Serializar(opcs) : null;
         }
         else if (_nvTipo == TipoCampoTablero.Formula)
         {
@@ -1088,7 +1059,7 @@ else
                 new CrearCampoDefinicionRequest(label, _nvTipo, opciones));
             if (r.IsSuccessStatusCode)
             {
-                _nvLabel = ""; _nvOpciones = ""; _nvTipo = TipoCampoTablero.Texto;
+                _nvLabel = ""; _nvOpcs.Clear(); _nvTipo = TipoCampoTablero.Texto;
                 _nvPasos.Clear();
                 await CargarAsync(); await Cambiado.InvokeAsync();
             }

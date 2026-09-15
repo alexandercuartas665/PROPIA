@@ -1,10 +1,14 @@
 @using Propia.Domain.Enums
+@inject IJSRuntime JS
 
 @* Picker del TIPO de campo: dropdown custom con categorias + descripcion por tipo. UN SOLO widget que se
    usa tanto al CREAR como al EDITAR un campo (asi ambas listas se ven IDENTICAS). Al editar, los tipos que
    NO se pueden convertir se muestran BLOQUEADOS (candado + motivo) dentro del mismo panel; y si el campo ya
-   es de un tipo no-cambiable, el trigger sale con candado y no abre. Los estilos .cga-tp-* viven en
-   config-campos.css (global). *@
+   es de un tipo no-cambiable, el trigger sale con candado y no abre.
+
+   El PANEL flota con position:fixed (helper propiaFloatPos, CSP-safe, mismo patron que SelectorPersona
+   Flotante) para ESCAPAR el overflow del modal de campos: antes se recortaba y no se podia usar. Los
+   estilos .cga-tp-* viven en config-campos.css (global). *@
 
 <div class="cga-tp @(_open ? "cga-tp--open" : "")">
     @if (Bloqueado)
@@ -19,7 +23,7 @@
     }
     else
     {
-        <button type="button" class="dst-nf-inp cga-tp-btn" @onclick="() => _open = !_open" disabled="@Disabled">
+        <button type="button" class="dst-nf-inp cga-tp-btn" @onclick="Toggle" @ref="_triggerRef" disabled="@Disabled">
             <span class="cga-tp-cur">
                 <span class="cga-tp-cur-lbl">@Etiqueta(Tipo)</span>
                 <span class="cga-tp-cur-desc">@Descripcion(Tipo)</span>
@@ -28,8 +32,8 @@
         </button>
         @if (_open)
         {
-            <div class="cga-tp-bd" @onclick="() => _open = false"></div>
-            <div class="cga-tp-panel">
+            <div class="cga-tp-bd" @onclick="Cerrar"></div>
+            <div class="cga-tp-panel cga-tp-panel--float" style="@_panelStyle" @ref="_panelRef">
                 @foreach (var (cat, tipos) in Categorias)
                 {
                     <div class="cga-tp-cat">@cat</div>
@@ -81,11 +85,34 @@
     [Parameter] public bool Disabled { get; set; }
 
     private bool _open;
+    private string? _panelStyle;
+    private ElementReference _triggerRef;
+    private ElementReference _panelRef;
+
+    private void Toggle() { _open = !_open; if (!_open) _panelStyle = null; }
+    private void Cerrar() { _open = false; _panelStyle = null; }
 
     private async Task Elegir(TipoCampoTablero t)
     {
-        _open = false;
+        _open = false; _panelStyle = null;
         if (!EqualityComparer<TipoCampoTablero>.Default.Equals(t, Tipo))
             await TipoChanged.InvokeAsync(t);
+    }
+
+    // Posiciona el panel con position:fixed anclado al trigger (escapa el overflow del modal). Mismo helper
+    // CSP-safe que SelectorPersona Flotante; flip/clamp los resuelve el JS. Se recalcula mientras esta abierto.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_open || Bloqueado) return;
+        try
+        {
+            var r = await JS.InvokeAsync<double[]?>("propiaFloatPos", _triggerRef, _panelRef);
+            if (r is { Length: 4 })
+            {
+                var s = $"position:fixed; top:{r[0]}px; left:{r[1]}px; width:{r[2]}px; max-height:{r[3]}px; overflow-y:auto; z-index:4000;";
+                if (s != _panelStyle) { _panelStyle = s; StateHasChanged(); }
+            }
+        }
+        catch { }
     }
 }

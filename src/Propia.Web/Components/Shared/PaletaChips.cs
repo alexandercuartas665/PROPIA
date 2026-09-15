@@ -25,6 +25,18 @@ public static class PaletaChips
         "#EC4899", // rosa
     };
 
+    /// <summary>
+    /// Paleta PASTEL (10 colores) del prototipo de Unidades Privadas, para las opciones de los campos
+    /// LISTA/Seleccion del gestor de campos. Se ofrece como CHOOSER (el color guardado es un valor libre;
+    /// el chip lo pinta con TextoSobre para el contraste). Es SEPARADA de <see cref="Colores"/> (que sigue
+    /// usando Tareas) para no cambiar las etiquetas de Tareas: aqui solo cambia el chooser del campo Lista.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ColoresPasteles = new[]
+    {
+        "#AAD4FF", "#AEEBC7", "#FFE39B", "#FFC2A8", "#FFB9DA",
+        "#D2C0FB", "#BEEAEA", "#C9E7A9", "#F3C6C6", "#D9D9D9",
+    };
+
     /// <summary>Color de chip cuando la opcion no tiene color asignado (chip neutro).</summary>
     public const string Neutro = "#90A4B7";
 

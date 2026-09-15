@@ -1,0 +1,90 @@
+@* Editor de opciones de un campo LISTA/Seleccion. Replica el prototipo de Unidades Privadas (panel de
+   opciones): cada fila = [drag handle] + [swatch de color -> paleta popup de 10 pasteles] + [input label]
+   + [quitar], y abajo un link "+ Agregar opcion". IDENTICO al crear y al editar (mismo componente). Muta
+   `Opciones` in-place y avisa por OpcionesChanged (el padre persiste al editar, o solo re-renderiza al
+   crear). Sin arrows up/down, sin chip preview, sin ojo/visibilidad, sin fila de circulos inline. *@
+
+<div class="ol-panel">
+    @for (var i = 0; i < Opciones.Count; i++)
+    {
+        var idx = i;
+        var op = Opciones[idx];
+        <div class="ol-row @(_dragIdx == idx ? "ol-row--drag" : "")"
+             draggable="true" @ondragstart="() => _dragIdx = idx" @ondragend="() => _dragIdx = null"
+             @ondragover:preventDefault="true" @ondrop="() => Soltar(idx)">
+            <span class="ol-grip" title="Arrastra para reordenar">&#10287;</span>
+            <div class="ol-sw-wrap">
+                <button type="button" class="ol-sw" style="background:@(op.Color ?? PaletaChips.Neutro)"
+                        title="Color de la opcion" @onclick="() => _palIdx = (_palIdx == idx ? null : idx)"></button>
+                @if (_palIdx == idx)
+                {
+                    <div class="ol-pal-bd" @onclick="() => _palIdx = null"></div>
+                    <div class="ol-pal">
+                        @foreach (var c in PaletaChips.ColoresPasteles)
+                        {
+                            var cc = c;
+                            <button type="button" class="ol-pal-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
+                                    style="background:@cc" title="@cc" @onclick="() => SetColor(idx, cc)"></button>
+                        }
+                        <button type="button" class="ol-pal-sw ol-pal-none @(op.Color is null ? "on" : "")" title="Sin color" @onclick="() => SetColor(idx, null)">&times;</button>
+                    </div>
+                }
+            </div>
+            <input class="ol-lbl" value="@op.K" placeholder="Opcion" @onchange="@(e => Renombrar(idx, e.Value?.ToString()))" />
+            <button type="button" class="ol-x" title="Quitar" @onclick="() => Quitar(idx)">&times;</button>
+        </div>
+    }
+    <button type="button" class="ol-add" @onclick="Agregar">+ Agregar opcion</button>
+</div>
+
+@code {
+    /// <summary>Lista de opciones (se muta in-place).</summary>
+    [Parameter, EditorRequired] public List<OpcionCampo> Opciones { get; set; } = new();
+    /// <summary>Se dispara tras cada cambio (agregar/quitar/renombrar/color/reordenar).</summary>
+    [Parameter] public EventCallback OpcionesChanged { get; set; }
+
+    private int? _palIdx;    // fila cuyo popup de paleta esta abierto
+    private int? _dragIdx;   // fila en arrastre
+
+    private async Task Agregar()
+    {
+        Opciones.Add(new OpcionCampo(""));
+        await OpcionesChanged.InvokeAsync();
+    }
+
+    private async Task Quitar(int idx)
+    {
+        if (idx < 0 || idx >= Opciones.Count) return;
+        Opciones.RemoveAt(idx);
+        if (_palIdx == idx) _palIdx = null;
+        await OpcionesChanged.InvokeAsync();
+    }
+
+    private async Task Renombrar(int idx, string? v)
+    {
+        if (idx < 0 || idx >= Opciones.Count) return;
+        var val = (v ?? "").Trim();
+        if (string.Equals(val, Opciones[idx].K, StringComparison.Ordinal)) return;
+        Opciones[idx] = Opciones[idx] with { K = val };
+        await OpcionesChanged.InvokeAsync();
+    }
+
+    private async Task SetColor(int idx, string? color)
+    {
+        if (idx < 0 || idx >= Opciones.Count) return;
+        Opciones[idx] = Opciones[idx] with { Color = color };
+        _palIdx = null;
+        await OpcionesChanged.InvokeAsync();
+    }
+
+    private async Task Soltar(int destino)
+    {
+        if (_dragIdx is not int origen) return;
+        _dragIdx = null;
+        if (origen == destino || origen < 0 || origen >= Opciones.Count || destino < 0 || destino >= Opciones.Count) return;
+        var item = Opciones[origen];
+        Opciones.RemoveAt(origen);
+        Opciones.Insert(destino, item);
+        await OpcionesChanged.InvokeAsync();
+    }
+}
