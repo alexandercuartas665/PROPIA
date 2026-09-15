@@ -100,6 +100,18 @@ else
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
             <span>Campos</span>
         </button>
+
+        @* Toggle Tarjetas/Tabla, canon del sistema (Tarjetas primero). Se recuerda por modulo. *@
+        <div class="res-viewtoggle">
+            <button type="button" class="res-vt @(_vista == "tarjetas" ? "on" : "")" @onclick='() => SetVista("tarjetas")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="res-vt @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                Tabla
+            </button>
+        </div>
     </div>
 
     @* Modal del gestor de campos del residente (persona), montado como en Unidades (Distribucion). *@
@@ -130,12 +142,55 @@ else
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="res-msg @(_msgError ? "err" : "ok")">@_msg</div> }
 
+    @* ===== Vista Tarjetas ===== (con 0 residentes se fuerza la tabla, para poder dar de alta el primero) *@
+    @if (_vista == "tarjetas" && _residentes.Count > 0)
+    {
+        <div class="res-cardswrap">
+            <div class="res-cards">
+                @foreach (var item in FilasRender())
+                {
+                    if (item.EsGrupo)
+                    {
+                        <div class="res-cards-group"><span class="res-group-chip">@item.GrupoTitulo</span><span class="res-group-n">@item.GrupoCount</span></div>
+                        continue;
+                    }
+                    var r = item.Fila!;
+                    <div class="res-card @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-card-nuevo" : "")" @onclick="() => AbrirFicha(r)" title="Abrir ficha del residente">
+                        <div class="res-card-top">
+                            <span class="res-cod">@r.UnidadCodigo</span>
+                            @RolBadge(r.Rol)
+                        </div>
+                        <div class="res-card-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>
+                        <div class="res-card-line"><span class="res-card-k">Documento</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Documento) ? "-" : r.Documento)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Telefono</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Telefono) ? "-" : r.Telefono)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Email</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(r.Email) ? "-" : r.Email)</span></div>
+                        <div class="res-card-line"><span class="res-card-k">Habita</span><span class="res-card-v">@(r.Habita ? "Si" : "No")</span></div>
+                        @foreach (var d in _defs)
+                        {
+                            var val = ValorDe(r.UnidadPersonaId, d.Id);
+                            var txt = (d.Tipo == TipoCampoTablero.Directorio || d.Tipo == TipoCampoTablero.Usuario) ? NombrePersona(val) : val;
+                            <div class="res-card-line"><span class="res-card-k">@d.Label</span><span class="res-card-v">@(string.IsNullOrWhiteSpace(txt) ? "-" : txt)</span></div>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_agruparPor == "")
+            {
+                <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
+                            PaginaChanged="p => { _pagina = p; }"
+                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            }
+        </div>
+    }
+    else
+    {
     @* ===== Tabla ===== *@
     <div class="res-table">
         <div class="res-scroll">
             <div class="res-head res-grid" style="grid-template-columns:@GridCols">
                 <div></div>
                 @foreach (var c in ColsVisibles) { <div class="@(c.Center ? "res-c" : "")">@Etiqueta(c)</div> }
+                @foreach (var d in _defs) { <div>@d.Label.ToUpperInvariant()</div> }
                 <div></div>
             </div>
 
@@ -167,6 +222,44 @@ else
                             case "telefono": <input class="res-editcell" value="@r.Telefono" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Telefono, e.Value?.ToString())" />; break;
                             case "email": <input class="res-editcell" value="@r.Email" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Email, e.Value?.ToString())" />; break;
                             case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
+                        }
+                    }
+                    @foreach (var d in _defs)
+                    {
+                        var def = d;
+                        var val = ValorDe(r.UnidadPersonaId, def.Id);
+                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <div class="res-selcell">
+                                @if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    var col = ColorOpcion(def, val);
+                                    <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                }
+                                <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            </div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Formula)
+                        {
+                            <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Usuario)
+                        {
+                            <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
+                                <option value="">-</option>
+                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                            </select>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Directorio)
+                        {
+                            <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
+                        }
+                        else
+                        {
+                            <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())" />
                         }
                     }
                     <div></div>
@@ -243,6 +336,39 @@ else
                             break;
                     }
                 }
+                @foreach (var d in _defs)
+                {
+                    var def = d;
+                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                    if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="res-c-cell res-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
+                    }
+                    else
+                    {
+                        <input class="res-nf-inp" placeholder="@def.Label" value="@dv"
+                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
+                    }
+                }
                 <div class="res-nf-act">
                     <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@_busy">@(_busy ? "Creando..." : "+ Agregar")</button>
                 </div>
@@ -266,6 +392,7 @@ else
                         PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
         }
     </div>
+    }
 }
 
 @* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
@@ -302,6 +429,69 @@ else
     // El gestor compartido cambio algo (crear/renombrar/ocultar campo): refresca la vista.
     private async Task RecargarCamposAsync() { await CargarAsync(); StateHasChanged(); }
     private const string ColsKey = "propia_residentes_cols";
+
+    // Vista Tabla/Tarjetas (canon del sistema), recordada por modulo.
+    private string _vista = "tabla";
+    private const string VistaKey = "propia_view_residentes";
+    private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
+    private async Task RestaurarVistaAsync()
+    {
+        try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v == "tabla" || v == "tarjetas") _vista = v; } catch { }
+    }
+
+    // ---------- Fase 2: campos propios del residente (persona) como columnas dinamicas ----------
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();   // unidadPersonaId -> (defId -> valor)
+    private readonly Dictionary<Guid, string> _nuDinamicos = new();         // captura en la fila de alta
+    private List<UsuarioOpc> _usuariosTenant = new();                       // campo Usuario (tenant, RLS)
+    private Dictionary<Guid, string> _usuarioNombre = new();                // id -> nombre (Usuario y Directorio)
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    private string? ValorDe(Guid registroId, Guid defId)
+        => _valores.TryGetValue(registroId, out var d) && d.TryGetValue(defId, out var v) ? v : null;
+    private string? NombrePersona(string? val)
+        => !string.IsNullOrWhiteSpace(val) && Guid.TryParse(val, out var g) && _usuarioNombre.TryGetValue(g, out var n) ? n : val;
+    private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
+    private static string? ColorOpcion(CampoDinDef d, string? val)
+        => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
+
+    // Directorio en la fila de alta: guarda el id y cachea el nombre para el render inmediato.
+    private void OnDirectorioNuevo(Guid defId, PersonaCandidatoDto? c)
+    {
+        if (c is null) { _nuDinamicos.Remove(defId); return; }
+        SetDinamicoNuevo(defId, c.PersonaId.ToString());
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
+
+    // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
+    private async Task CargarCamposAsync(HttpClient http)
+    {
+        var defs = await http.GetFromJsonAsync<List<PersonaCampoDefinicionDto>>("/api/mi-copropiedad/personas-campos") ?? new();
+        _defs = defs.OrderBy(d => d.Orden).ThenBy(d => d.Label)
+                    .Select(d => new CampoDinDef(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToList();
+        var vals = await http.GetFromJsonAsync<List<PersonaCampoValorFlatDto>>("/api/mi-copropiedad/personas-campos-valores") ?? new();
+        _valores = vals.GroupBy(v => v.UnidadPersonaId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
+        try
+        {
+            var vinc = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _usuarioNombre = new(); }
+    }
+
+    // Edicion inline de un campo propio de una fila existente (PUT MERGE al valor del registro).
+    private async Task GuardarDinamicoAsync(Guid registroId, Guid defId, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{registroId}/{defId}", new SetCampoValorRequest(valor));
+            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo guardar el campo: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            if (!_valores.TryGetValue(registroId, out var d)) _valores[registroId] = d = new();
+            d[defId] = valor;
+        }
+        catch (Exception ex) { _msg = "No se pudo guardar el campo: " + ex.Message; _msgError = true; }
+    }
 
     // Alta: la unidad por codigo (autocompletado) + la persona por el control de terceros
     // (SelectorPersona), que la busca/crea en el Directorio. El backend asegura el vinculo.
@@ -351,7 +541,8 @@ else
             return _colOrder.Where(byKey.ContainsKey).Select(k => byKey[k]).Where(EsVisible);
         }
     }
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 116px";
+    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width))
+        + string.Concat(_defs.Select(_ => " minmax(140px,1fr)")) + " 116px";
 
     private async Task SetColVisible(string key, bool vis) { PrefDe(key).Visible = vis; await GuardarColsAsync(); }
     private async Task SetColLabel(string key, string? label) { PrefDe(key).Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(); await GuardarColsAsync(); }
@@ -415,6 +606,7 @@ else
             if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
             _jwt = stored;
             await RestaurarColsAsync();
+            await RestaurarVistaAsync();
             try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
             await CargarAsync();
             StateHasChanged();
@@ -447,6 +639,7 @@ else
             _residentes = await resp.Content.ReadFromJsonAsync<List<ResidenteResumenDto>>() ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
+            await CargarCamposAsync(http);
         }
         catch (Exception ex) { _msg = "No se pudo cargar: " + ex.Message; _msgError = true; }
     }
@@ -662,12 +855,18 @@ else
                 _msg = "No se pudo agregar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; return;
             }
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
-            if (creada is not null) _resRecienCreados.Add(creada.Id);   // V-09: resalta la fila hasta el proximo refresco
+            if (creada is not null)
+            {
+                _resRecienCreados.Add(creada.Id);   // V-09: resalta la fila hasta el proximo refresco
+                // Los campos propios se guardan despues del alta: necesitan el id del registro (UnidadPersona).
+                foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{creada.Id}/{defId}", new SetCampoValorRequest(valor));
+            }
             // Si el usuario ajusto correo/telefono del tercero, se sincroniza al Directorio.
             if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
             if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
             _msg = $"{sel.NombreCompleto} agregado a {_unidadQuery}."; _msgError = false;
-            LimpiarPersonaSel(); _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false;
+            LimpiarPersonaSel(); _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false; _nuDinamicos.Clear();
             await CargarAsync();
             if (abrir && creada is not null)
             {
@@ -841,4 +1040,28 @@ else
     .res-rol-resi { background: var(--propia-ok-soft); color: #15804A; }
     .res-rol-arr { background: var(--propia-warn-soft); color: #B7651B; }
     .res-rol-otro { background: var(--propia-bg-card-soft); color: var(--propia-text-muted); }
+
+    /* Toggle Tarjetas/Tabla (canon del sistema: Tarjetas primero). */
+    .res-viewtoggle { display: inline-flex; gap: 2px; background: var(--propia-border-divider); border-radius: 9px; padding: 3px; }
+    .res-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--propia-text-muted); font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    .res-vt.on { background: var(--propia-bg-card); color: var(--propia-brand); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+
+    /* Campo propio en la tabla: celda calculada (Formula) y celda de lista con chip de color. */
+    .res-auto { color: var(--propia-text-faint); font-style: italic; font-size: 12px; }
+    .res-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .res-selcell .res-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
+    .res-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Vista Tarjetas: rejilla de fichas por residente (incluye los campos propios). */
+    .res-cardswrap { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
+    .res-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 14px; }
+    .res-cards-group { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
+    .res-card { border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 12px 14px; background: var(--propia-bg-card); cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+    .res-card:hover { border-color: var(--propia-brand); box-shadow: 0 4px 14px rgba(16,32,52,.08); }
+    .res-card-nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .res-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .res-card-nom { font-weight: 700; color: var(--propia-text-h1); font-size: 14.5px; margin-bottom: 8px; }
+    .res-card-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; }
+    .res-card-k { color: var(--propia-text-muted); flex: 0 0 auto; }
+    .res-card-v { color: var(--propia-text-body); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
