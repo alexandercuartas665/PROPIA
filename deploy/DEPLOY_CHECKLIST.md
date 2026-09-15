@@ -1,10 +1,25 @@
 # PROPIA - Checklist de deploy
 
-> Actualizado 2026-09-12. Version visible: **0.0.93**
+> Actualizado **2026-09-15**. Version visible: **0.0.93** (`origin/main` @ `ab595f6`)
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
-> **ATENCION en esta tanda: 7 migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
-> Ver seccion 3. Todas aditivas; ninguna borra datos.
+> **ATENCION en esta tanda: migraciones nuevas, una de ellas de SEGURIDAD (RLS).**
+> El conteo/lista AUTORITATIVO de migraciones vive en `HANDOFF_DEPLOY.md` seccion 2 (**9 nuevas esta
+> tanda; la ultima `20260913005909_AddCostoEstimadoProgramacionTarea`; 17 pendientes vs prod 0.0.67**).
+> Ese numero SUPERSEDE cualquier "2 nuevas / 16 pendientes" que aparezca mas abajo (snapshot del 09-12,
+> antes de las migraciones de permiso-Operario y costo-estimado). Todas aditivas; ninguna borra datos.
+>
+> **Nuevo 2026-09-15 (delta solo-codigo desde el 0.0.93 original; NO sube version, NO agrega migracion):**
+> - **Fase 2 REFERENCIA en Unidades**: en el gestor de Campos de Unidades el selector de TIPO ofrece 3
+>   tipos nuevos (**Formula**, **Usuario**, **Directorio**). Enum-only (`TipoCampoTablero` 15/16/17 +
+>   `OperacionFormula`); la columna `opciones` ya existia -> **cero cambios de esquema**. Solo disponible
+>   en Unidades (aun NO replicado a Vehiculos/Mascotas/Residentes/etc.: eso vive en ramas, ver HANDOFF
+>   seccion "NO ESTA EN MAIN").
+> - **Factorizacion de helpers** (`CampoFormulaConfig.ComputarTexto`, `CamposAvanzados.ValidarValorAsync`).
+>   Refactor interno; sin efecto en datos ni en la UI existente.
+> - **Homogeneidad YUNQUE**: boton "Campos" en la barra canonica de Zonas/Equipos + modales a 980px. Solo UI.
+> - Verificacion: build Release 0 errores; 7/7 tests de integracion de Unidades para Fase 2; runtime OK
+>   (Formula computa en lectura, Usuario/Directorio validan tenant, F5 resuelve nombres).
 >
 > **PERMISOS: quien puede usar el gestor de campos (leer antes de reportar un bug).**
 > Las escrituras de "Configurar" exigen `MI_COPROPIEDAD / Editar`, con bypass solo si el rol es

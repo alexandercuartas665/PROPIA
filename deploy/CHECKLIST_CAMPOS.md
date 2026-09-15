@@ -1,8 +1,12 @@
-# Lista de chequeo - Campos y modulos de unidad (0.0.93)
+# Lista de chequeo - Campos y modulos de unidad (0.0.93, refrescado 2026-09-15)
 
 > Que revisar en prod despues del deploy 0.0.93, especifico del trabajo de CAMPOS y de los modulos
 > Unidades / Residentes / Vehiculos / Mascotas. El detalle de migraciones, variables y menu esta en
 > `HANDOFF_DEPLOY.md`. Marca cada punto en prod (copropiedad real, con un usuario Administrador).
+>
+> **Nuevo 2026-09-15 (Fase 2 REFERENCIA, solo en Unidades, sin migracion):** el gestor de Campos de
+> Unidades ahora ofrece 3 tipos de campo mas (Formula, Usuario, Directorio). Ver seccion 1b. Aun NO estan
+> en Vehiculos/Mascotas/Residentes (eso vive en ramas, no en main).
 
 ## 0. Antes de empezar
 
@@ -23,6 +27,20 @@
       copropiedad** (lo ve toda la copropiedad, no solo el usuario).
 - [ ] Renombrar (alias) un campo del sistema se refleja en el encabezado de la tabla.
 - [ ] Crear un campo propio de la unidad -> aparece como columna nueva y su valor se guarda inline.
+
+## 1b. Fase 2 REFERENCIA: tipos Formula / Usuario / Directorio (solo Unidades, 2026-09-15)
+
+> Sin migracion (enum-only; `opciones` ya existia). Solo disponible en el gestor de Campos de **Unidades**.
+
+- [ ] En Campos de Unidades, el selector **TIPO** del campo nuevo ofrece **Formula**, **Usuario** y
+      **Directorio** ademas de los tipos previos.
+- [ ] **Formula**: crear un campo Formula sobre campos numericos de la unidad (ej. Suma de coeficiente);
+      la columna se calcula **en lectura** (read-only) y no se puede escribir su valor a mano.
+- [ ] **Usuario**: crear un campo Usuario; su celda ofrece **solo usuarios de esta copropiedad**
+      (no de otras); al elegir uno y recargar (F5), la celda muestra el **nombre**, no el Guid.
+- [ ] **Directorio**: crear un campo Directorio; al elegir una persona vinculada y recargar, muestra el
+      **nombre** resuelto.
+- [ ] Un valor de Usuario/Directorio de OTRA copropiedad es rechazado (aislamiento por tenant).
 
 ## 2. Carga por Excel (plantilla + importacion)
 
