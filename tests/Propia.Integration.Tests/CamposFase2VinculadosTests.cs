@@ -33,7 +33,7 @@ public class CamposFase2VinculadosTests
             var a = (await svc.CrearCampoDefVehiculoAsync(new CrearCampoDefinicionRequest("Peajes", TipoCampoTablero.Numero, null), CancellationToken.None)).Id;
             var b = (await svc.CrearCampoDefVehiculoAsync(new CrearCampoDefinicionRequest("Multas", TipoCampoTablero.Moneda, null), CancellationToken.None)).Id;
             var f = (await svc.CrearCampoDefVehiculoAsync(new CrearCampoDefinicionRequest("Total gastos", TipoCampoTablero.Formula,
-                new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + a, "cd:" + b }).Serializar()), CancellationToken.None)).Id;
+                new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + a), OperandoFormula.DeCampo("cd:" + b) }) }).Serializar()), CancellationToken.None)).Id;
 
             await svc.SetCampoValorVehiculoDefAsync(placaId, a, new SetCampoValorRequest("15"), CancellationToken.None);
             await svc.SetCampoValorVehiculoDefAsync(placaId, b, new SetCampoValorRequest("35"), CancellationToken.None);
@@ -78,7 +78,7 @@ public class CamposFase2VinculadosTests
             var a = (await svc.CrearCampoDefMascotaAsync(new CrearCampoDefinicionRequest("Vacunas", TipoCampoTablero.Numero, null), CancellationToken.None)).Id;
             var b = (await svc.CrearCampoDefMascotaAsync(new CrearCampoDefinicionRequest("Consultas", TipoCampoTablero.Numero, null), CancellationToken.None)).Id;
             var f = (await svc.CrearCampoDefMascotaAsync(new CrearCampoDefinicionRequest("Total visitas", TipoCampoTablero.Formula,
-                new CampoFormulaConfig(OperacionFormula.Conteo, new[] { "cd:" + a, "cd:" + b }).Serializar()), CancellationToken.None)).Id;
+                new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Conteo, new[] { OperandoFormula.DeCampo("cd:" + a), OperandoFormula.DeCampo("cd:" + b) }) }).Serializar()), CancellationToken.None)).Id;
 
             await svc.SetCampoValorMascotaDefAsync(masId, a, new SetCampoValorRequest("3"), CancellationToken.None);
             // b queda vacio -> Conteo cuenta solo los campos CON valor.
@@ -100,7 +100,7 @@ public class CamposFase2VinculadosTests
             var a = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Aportes", TipoCampoTablero.Moneda, null), CancellationToken.None)).Id;
             var b = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Deudas", TipoCampoTablero.Moneda, null), CancellationToken.None)).Id;
             var f = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Saldo", TipoCampoTablero.Formula,
-                new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + a, "cd:" + b }).Serializar()), CancellationToken.None)).Id;
+                new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + a), OperandoFormula.DeCampo("cd:" + b) }) }).Serializar()), CancellationToken.None)).Id;
             await svc.SetCampoValorPersonaDefAsync(upId, a, new SetCampoValorRequest("120"), CancellationToken.None);
             await svc.SetCampoValorPersonaDefAsync(upId, b, new SetCampoValorRequest("80"), CancellationToken.None);
 

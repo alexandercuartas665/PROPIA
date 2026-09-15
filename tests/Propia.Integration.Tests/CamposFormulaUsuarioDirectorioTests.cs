@@ -100,12 +100,12 @@ public class CamposFormulaUsuarioDirectorioTests
             // Anti-nesting / tipo: una fuente que no es Numero/Moneda se rechaza al crear la formula.
             await Assert.ThrowsAnyAsync<Exception>(() => svc.CrearCampoDefinicionAsync(
                 new CrearCampoDefinicionRequest("Mala formula", TipoCampoTablero.Formula,
-                    new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + texto }).Serializar()), CancellationToken.None));
+                    new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + texto) }) }).Serializar()), CancellationToken.None));
 
             // Formula valida, pero es de SOLO LECTURA: no admite escribir su valor.
             var n = await CrearCampoAsync(svc, "Num", TipoCampoTablero.Numero);
             var f = (await svc.CrearCampoDefinicionAsync(new CrearCampoDefinicionRequest("Suma", TipoCampoTablero.Formula,
-                new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + n }).Serializar()), CancellationToken.None)).Id;
+                new CampoFormulaConfig(new[] { new PasoFormula(OperacionFormula.Suma, new[] { OperandoFormula.DeCampo("cd:" + n) }) }).Serializar()), CancellationToken.None)).Id;
             var uId = (await svc.CrearUnidadAsync(NuevaUnidad("T1-204"), CancellationToken.None)).Id;
             await Assert.ThrowsAnyAsync<Exception>(() => svc.SetCampoValorUnidadAsync(uId, f, new SetCampoValorRequest("123"), CancellationToken.None));
         }
@@ -187,7 +187,7 @@ public class CamposFormulaUsuarioDirectorioTests
         var svc = BuildService(tenantId);
         var f = (await svc.CrearCampoDefinicionAsync(new CrearCampoDefinicionRequest(
             $"F {op} {Guid.NewGuid():N}".Substring(0, 20), TipoCampoTablero.Formula,
-            new CampoFormulaConfig(op, fuentes).Serializar()), CancellationToken.None)).Id;
+            new CampoFormulaConfig(new[] { new PasoFormula(op, fuentes.Select(OperandoFormula.DeCampo).ToArray()) }).Serializar()), CancellationToken.None)).Id;
         var campos = await svc.ListCamposUnidadAsync(unidadId, CancellationToken.None);
         return campos.First(c => c.DefinicionId == f).Valor;
     }
