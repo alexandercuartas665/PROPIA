@@ -128,7 +128,10 @@ public class MantenimientoFlowTests : IAsyncLifetime
         var equipoId = await SeedEquipoAsync(tenantId, "Bomba");
         var (svc, _, _) = Build(tenantId);
 
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        // RN-02 se valida contra el "hoy" LOCAL de Colombia (MantenimientoService.HoyLocal): con UtcNow
+        // crudo, de 00:00 a 05:00 UTC "ayer UTC" == "hoy Colombia" y el servicio (correctamente) no lanza.
+        var hoy = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.UtcNow, Propia.Infrastructure.Programaciones.CronHelper.Zona(null)));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.CrearPlanAsync(new CrearPlanRequest(
                 TipoActivoMantenimiento.Equipo, equipoId,
