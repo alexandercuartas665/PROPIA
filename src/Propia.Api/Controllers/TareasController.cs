@@ -367,11 +367,23 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Presentacion (Label/Tipo/Opciones/Orden): lo edita el gestor de campos compartido. MERGE: no pisa
+    // los flags avanzados (esos van por .../avanzado). Adopcion Selector de Campos (hibrido, opcion A).
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
     [HttpPut("tableros/{id:guid}/campos/{campoId:guid}")]
-    public async Task<IActionResult> ActualizarCampo(Guid id, Guid campoId, [FromBody] GuardarCampoRequest req, CancellationToken ct)
+    public async Task<IActionResult> ActualizarCampo(Guid id, Guid campoId, [FromBody] ActualizarCampoDefRequest req, CancellationToken ct)
     {
         try { return await _svc.ActualizarCampoAsync(id, campoId, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Flags avanzados (Requerido/ValorPorDefecto/PermiteVarios/MostrarEnFiltro/Columna/Descripcion/CamposSuma):
+    // los edita el editor retenido del tablero. MERGE: no pisa Label/Tipo/Opciones/Orden.
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("tableros/{id:guid}/campos/{campoId:guid}/avanzado")]
+    public async Task<IActionResult> ActualizarCampoAvanzado(Guid id, Guid campoId, [FromBody] ActualizarCampoAvanzadoRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCampoAvanzadoAsync(id, campoId, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

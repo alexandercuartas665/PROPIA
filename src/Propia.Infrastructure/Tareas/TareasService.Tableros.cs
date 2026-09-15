@@ -117,7 +117,12 @@ public partial class TareasService
         return new TableroCampoDto(c2.Id, c2.Label, c2.Orden, c2.Tipo, c2.Opciones, c2.MostrarEnFiltro, c2.Columna, c2.Descripcion, c2.Requerido, c2.ValorPorDefecto, c2.PermiteVarios, c2.CamposSuma, c2.Activo);
     }
 
-    public async Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct)
+    // Adopcion Selector de Campos (hibrido, opcion A): este PUT es el que usa el gestor de campos compartido.
+    // MERGE de SOLO la presentacion (Label/Tipo/Opciones/Orden). NO toca los flags avanzados (Requerido,
+    // ValorPorDefecto, PermiteVarios, MostrarEnFiltro, Columna, Descripcion, CamposSuma): los edita
+    // ActualizarCampoAvanzadoAsync. Antes sobrescribia el registro completo y editar el label desde el
+    // componente habria borrado esos flags (regresion).
+    public async Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, ActualizarCampoDefRequest req, CancellationToken ct)
     {
         var c = await _db.TableroCampos.FirstOrDefaultAsync(x => x.Id == campoId && x.TableroId == tableroId, ct);
         if (c is null) return false;
@@ -129,6 +134,18 @@ public partial class TareasService
         c.Label = lab;
         c.Tipo = req.Tipo;
         c.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        c.Orden = req.Orden;
+        c.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Adopcion Selector de Campos (hibrido): este PUT lo usa el editor retenido del tablero. MERGE de SOLO
+    // los flags avanzados; NO toca Label/Tipo/Opciones/Orden (los edita el gestor compartido).
+    public async Task<bool> ActualizarCampoAvanzadoAsync(Guid tableroId, Guid campoId, ActualizarCampoAvanzadoRequest req, CancellationToken ct)
+    {
+        var c = await _db.TableroCampos.FirstOrDefaultAsync(x => x.Id == campoId && x.TableroId == tableroId, ct);
+        if (c is null) return false;
         c.MostrarEnFiltro = req.MostrarEnFiltro;
         c.Columna = ClampColumna(req.Columna);
         c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();

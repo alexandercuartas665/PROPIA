@@ -81,7 +81,12 @@ public interface ITareasService
 
     // Campos personalizados del tablero (tipados)
     Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, GuardarCampoRequest req, CancellationToken ct);
-    Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, GuardarCampoRequest req, CancellationToken ct);
+    /// <summary>Adopcion Selector de Campos (hibrido): MERGE de la presentacion (Label/Tipo/Opciones/Orden)
+    /// que edita el gestor compartido. NO toca los flags avanzados (Requerido/ValorPorDefecto/etc.).</summary>
+    Task<bool> ActualizarCampoAsync(Guid tableroId, Guid campoId, ActualizarCampoDefRequest req, CancellationToken ct);
+    /// <summary>MERGE de los flags avanzados (Requerido/ValorPorDefecto/PermiteVarios/MostrarEnFiltro/Columna/
+    /// Descripcion/CamposSuma) que edita el editor retenido del tablero. NO toca Label/Tipo/Opciones/Orden.</summary>
+    Task<bool> ActualizarCampoAvanzadoAsync(Guid tableroId, Guid campoId, ActualizarCampoAvanzadoRequest req, CancellationToken ct);
     Task<bool> EliminarCampoAsync(Guid tableroId, Guid campoId, CancellationToken ct);
     Task<bool> ReordenarCampoAsync(Guid tableroId, Guid campoId, int direccion, CancellationToken ct);
     /// <summary>Archiva (activo=false) o restaura (activo=true) un campo sin borrar sus valores.</summary>

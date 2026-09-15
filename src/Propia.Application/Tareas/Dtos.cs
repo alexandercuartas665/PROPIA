@@ -277,6 +277,16 @@ public record GuardarCampoRequest(
     bool PermiteVarios = false,
     string? CamposSuma = null);
 
+// Adopcion Selector de Campos (opcion A, hibrido). Un dueno por atributo, ambos con MERGE:
+// - El gestor compartido edita SOLO la presentacion (Label/Tipo/Opciones/Orden) via PUT tableros/{id}/campos/{campoId}.
+//   Mismos nombres de campo que ActualizarCampoDefinicionRequest del componente (bind por JSON).
+// - El editor retenido del tablero edita SOLO los flags avanzados via PUT tableros/{id}/campos/{campoId}/avanzado.
+// Ninguno pisa lo del otro (ActualizarCampoAsync no toca flags; ActualizarCampoAvanzadoAsync no toca presentacion).
+public record ActualizarCampoDefRequest(string Label, TipoCampoTablero Tipo, string? Opciones, int Orden);
+public record ActualizarCampoAvanzadoRequest(
+    bool MostrarEnFiltro, int Columna, string? Descripcion,
+    bool Requerido, string? ValorPorDefecto, bool PermiteVarios, string? CamposSuma);
+
 /// <summary>Vista completa de un tablero: el tablero + sus columnas/estados + sus tarjetas.</summary>
 public record TableroBoardDto(
     TableroDto Tablero,

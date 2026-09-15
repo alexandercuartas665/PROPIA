@@ -179,6 +179,10 @@ else
                     @* Configurar el tablero exige el permiso Aprobar (no basta con trabajar en el). *@
                     @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
                     {
+                        @* Selector de Campos (adopcion, opcion A): el gestor compartido administra los campos
+                           PROPIOS del tablero (label/tipo/opciones). Los flags avanzados + Total/Suma siguen en
+                           el editor retenido; visibilidad/orden/color de columnas del sistema en localStorage. *@
+                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
@@ -1031,6 +1035,36 @@ else
             <div class="tb-cierre-foot">
                 <button class="tb-btn tb-btn-ghost" @onclick="async () => { _cierreTarget = null; await RecargarBoard(); }">Cancelar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="ConfirmarCierreTarea" disabled="@string.IsNullOrEmpty(_cierreMotivoId)">Cerrar tarea</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ===================== Modal Campos del tablero (Selector de Campos, opcion A) ===================== *@
+@* El gestor compartido ConfigCamposEntidad administra las definiciones de campos PROPIOS del tablero
+   (label/tipo/opciones) contra /api/tareas/tableros/{id}/campos. SinConfigSistema: no toca visibilidad/orden/
+   color de columnas del sistema (siguen per-usuario en localStorage). Los flags avanzados + Total/Suma se
+   editan en el editor retenido. @key por tablero para recargar al cambiar. *@
+@if (_gestorCamposOpen && _board is not null)
+{
+    <div class="tb-modal-bd" @onclick="CerrarGestorCampos">
+        <div class="tb-modal" @onclick:stopPropagation="true">
+            <div class="tb-modal-head">
+                <div class="tb-modal-tt">
+                    <div class="tb-modal-h">Campos del tablero</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre · campos propios (tipo, opciones, orden)</div>
+                </div>
+                <button class="tb-modal-x" @onclick="CerrarGestorCampos"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="tb-modal-body">
+                <ConfigCamposEntidad Prefijo="tareas"
+                                     RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
+                                     SinConfigSistema="true"
+                                     TituloSingular="tarjeta" TituloPlural="Campos del tablero"
+                                     Ejemplo="Ej. Costo estimado, Proveedor"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarBoard"
+                                     @key="_board.Tablero.Id" />
             </div>
         </div>
     </div>
@@ -2809,6 +2843,7 @@ else
     private string _respPick = "";
     private bool _subiendo;
     private bool _cfgOpen;
+    private bool _gestorCamposOpen;   // Selector de Campos (opcion A): modal del gestor compartido de campos propios
 
     // Permisos del usuario sobre el modulo, traidos de GET /api/tareas/permisos. Se usa para NO
     // ofrecer lo que el backend va a rechazar con 403. No es seguridad: la seguridad esta en el
@@ -4864,6 +4899,9 @@ else
     // ----- Configurar tablero (estados + campos) -----
     private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; _tbBuscar = ""; _tbResultados.Clear(); _tbResultCopro.Clear(); await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
     private void CerrarConfigBoard() { _cfgOpen = false; }
+    // Selector de Campos (opcion A): abre/cierra el modal del gestor compartido de campos propios del tablero.
+    private void AbrirGestorCampos() { _gestorCamposOpen = true; }
+    private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarBoard(); }
 
     // ---- Config de motivos de cierre (modulo tareas) ----
     private string _nuevoMotivoTareaNombre = "";
@@ -4961,20 +4999,30 @@ else
         _busy = true;
         try
         {
-            var body = new GuardarCampoRequest(
-                _campoDraft.Label.Trim(),
-                _campoDraft.Tipo,
-                _campoDraft.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_campoDraft.Opciones) ? _campoDraft.Opciones.Trim() : null,
-                _campoDraft.MostrarEnFiltro,
-                _campoDraft.Columna,
-                string.IsNullOrWhiteSpace(_campoDraft.Descripcion) ? null : _campoDraft.Descripcion.Trim(),
-                _campoDraft.Requerido,
-                string.IsNullOrWhiteSpace(_campoDraft.ValorPorDefecto) ? null : _campoDraft.ValorPorDefecto.Trim(),
-                _campoDraft.PermiteVarios,
-                _campoDraft.Tipo == TipoCampoTablero.Total && _campoDraft.CamposSuma.Count > 0 ? string.Join(",", _campoDraft.CamposSuma) : null);
-            HttpResponseMessage resp = _campoDraft.Id is { } cid
-                ? await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{cid}", body)
-                : await Auth().PostAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos", body);
+            var opciones = _campoDraft.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_campoDraft.Opciones) ? _campoDraft.Opciones.Trim() : null;
+            var camposSuma = _campoDraft.Tipo == TipoCampoTablero.Total && _campoDraft.CamposSuma.Count > 0 ? string.Join(",", _campoDraft.CamposSuma) : null;
+            var descripcion = string.IsNullOrWhiteSpace(_campoDraft.Descripcion) ? null : _campoDraft.Descripcion.Trim();
+            var valorDef = string.IsNullOrWhiteSpace(_campoDraft.ValorPorDefecto) ? null : _campoDraft.ValorPorDefecto.Trim();
+            var baseUrl = $"/api/tareas/tableros/{_board.Tablero.Id}/campos";
+            HttpResponseMessage resp;
+            if (_campoDraft.Id is { } cid)
+            {
+                // 14+15 (adopcion Selector, opcion A): editar reparte en dos duenos con MERGE. La presentacion
+                // (Label/Tipo/Opciones/Orden) va al PUT del campo; los flags avanzados van a /avanzado. Asi el
+                // gestor compartido y el editor retenido no se pisan (el PUT ya solo toma presentacion).
+                var orden = _board.Tablero.Campos?.FirstOrDefault(x => x.Id == cid)?.Orden ?? 0;
+                resp = await Auth().PutAsJsonAsync($"{baseUrl}/{cid}",
+                    new { Label = _campoDraft.Label.Trim(), _campoDraft.Tipo, Opciones = opciones, Orden = orden });
+                if (resp.IsSuccessStatusCode)
+                    resp = await Auth().PutAsJsonAsync($"{baseUrl}/{cid}/avanzado",
+                        new { _campoDraft.MostrarEnFiltro, _campoDraft.Columna, Descripcion = descripcion, _campoDraft.Requerido, ValorPorDefecto = valorDef, _campoDraft.PermiteVarios, CamposSuma = camposSuma });
+            }
+            else
+            {
+                resp = await Auth().PostAsJsonAsync(baseUrl, new GuardarCampoRequest(
+                    _campoDraft.Label.Trim(), _campoDraft.Tipo, opciones, _campoDraft.MostrarEnFiltro, _campoDraft.Columna,
+                    descripcion, _campoDraft.Requerido, valorDef, _campoDraft.PermiteVarios, camposSuma));
+            }
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             _campoDraft = new CampoDraft();
             await RecargarBoard();
@@ -5096,12 +5144,13 @@ else
     private bool _copiaBusy;
     private void AbrirCopiaDialog(Guid id, string titulo, Guid estadoId)
     {
-        // H-6: si la tarjeta origen esta cerrada (estado terminal), la copia es trabajo nuevo y nace en el
-        // primer estado NO terminal; asi el modal no queda preseleccionado en un terminal, que el backend
-        // rechaza al crear (T-03b). El select de "Etapa destino" ademas solo ofrece estados no terminales.
-        var estados = _board?.Estados;
-        var esTerminal = estados?.FirstOrDefault(e => e.Id == estadoId)?.EsTerminal == true;
-        var inicial = esTerminal ? (estados?.FirstOrDefault(e => !e.EsTerminal)?.Id ?? estadoId) : estadoId;
+        // H-6 (fix): conserva el estado de origen SOLO si es un estado NO terminal del tablero; si la tarjeta
+        // origen esta cerrada (terminal), la copia nace en el PRIMER estado abierto. OJO: _board.Estados puede
+        // no incluir los terminales (son las columnas del kanban), por eso se compara contra el subconjunto
+        // no-terminal, no se busca el terminal (que no estaria). Asi no se preselecciona un terminal, que el
+        // backend rechaza al crear (T-03b).
+        var abiertos = _board?.Estados.Where(e => !e.EsTerminal).ToList();
+        var inicial = abiertos?.Any(e => e.Id == estadoId) == true ? estadoId : (abiertos?.FirstOrDefault()?.Id ?? estadoId);
         _copiaDlg = new CopiaDialog { TareaId = id, TareaTitulo = titulo, Titulo = (titulo + " (copia)").Trim(), EstadoId = inicial, Cantidad = 1 };
     }
     private void CerrarCopiaDialog() { _copiaDlg = null; }

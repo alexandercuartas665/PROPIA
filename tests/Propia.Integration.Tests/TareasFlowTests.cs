@@ -628,6 +628,56 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tB);
     }
 
+    [Fact]
+    public async Task Editar_presentacion_y_flags_del_campo_son_MERGE_independientes()
+    {
+        // Adopcion Selector de Campos (hibrido): el gestor compartido edita presentacion por
+        // ActualizarCampoAsync (Label/Tipo/Opciones/Orden) y el editor retenido edita los flags por
+        // ActualizarCampoAvanzadoAsync. Ninguno debe pisar lo del otro (anti-regresion, caso FARO).
+        var tenantId = await SeedTenantAsync("Tareas MERGE campos");
+        var (svc, _, _) = Build(tenantId);
+        var tab = await svc.CrearTableroAsync(
+            new GuardarTableroRequest("Tab merge", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+
+        // Campo con presentacion + todos los flags avanzados puestos.
+        var creado = await svc.AgregarCampoAsync(tab.Id, new GuardarCampoRequest(
+            "Costo", TipoCampoTablero.Seleccion, "A\nB",
+            MostrarEnFiltro: true, Columna: 2, Descripcion: "ayuda", Requerido: true,
+            ValorPorDefecto: "A", PermiteVarios: true, CamposSuma: null), CancellationToken.None);
+
+        // (1) Editar la PRESENTACION (path del componente) NO pisa los flags.
+        await svc.ActualizarCampoAsync(tab.Id, creado.Id,
+            new ActualizarCampoDefRequest("Costo estimado", TipoCampoTablero.Seleccion, "A\nB\nC", creado.Orden),
+            CancellationToken.None);
+        var d1 = (await svc.ListarCamposActivosAsync(tab.Id, CancellationToken.None)).Single(x => x.Id == creado.Id);
+        Assert.Equal("Costo estimado", d1.Label);          // presentacion cambio
+        Assert.Equal("A\nB\nC", d1.Opciones);
+        Assert.True(d1.Requerido);                          // flags SIGUEN
+        Assert.True(d1.MostrarEnFiltro);
+        Assert.Equal(2, d1.Columna);
+        Assert.Equal("ayuda", d1.Descripcion);
+        Assert.Equal("A", d1.ValorPorDefecto);
+        Assert.True(d1.PermiteVarios);
+
+        // (2) Editar los FLAGS (/avanzado) NO pisa la presentacion.
+        await svc.ActualizarCampoAvanzadoAsync(tab.Id, creado.Id,
+            new ActualizarCampoAvanzadoRequest(MostrarEnFiltro: false, Columna: 1, Descripcion: "otra",
+                Requerido: false, ValorPorDefecto: "B", PermiteVarios: false, CamposSuma: null),
+            CancellationToken.None);
+        var d2 = (await svc.ListarCamposActivosAsync(tab.Id, CancellationToken.None)).Single(x => x.Id == creado.Id);
+        Assert.Equal("Costo estimado", d2.Label);          // presentacion SIGUE
+        Assert.Equal("A\nB\nC", d2.Opciones);
+        Assert.Equal(TipoCampoTablero.Seleccion, d2.Tipo);
+        Assert.False(d2.Requerido);                         // flags cambiaron
+        Assert.False(d2.MostrarEnFiltro);
+        Assert.Equal(1, d2.Columna);
+        Assert.Equal("otra", d2.Descripcion);
+        Assert.Equal("B", d2.ValorPorDefecto);
+        Assert.False(d2.PermiteVarios);
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Helpers =====================
 
     private (ITareasService svc, PropiaDbContext db, IServiceScope scope) Build(Guid tenantId)
