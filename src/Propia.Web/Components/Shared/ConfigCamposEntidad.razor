@@ -78,36 +78,14 @@ else
                 }
             </div>
             <div class="cga-tipo">
-                @if (permitidos.Length > 0)
-                {
-                    @* Mismo agrupado por categoria que al crear (0.3), filtrado a los tipos convertibles:
-                       asi crear y editar se ven IGUAL. Los tipos Avanzados (Formula/Usuario/Directorio) no
-                       son convertibles (Formula no guarda valor; Usuario/Directorio guardan un id) y por eso
-                       no salen aqui: solo se eligen al crear. Un campo que YA es avanzado se muestra bloqueado. *@
-                    <select class="cga-inp cga-tipo-sel" value="@tefe" @onchange="@(e => SetTipoAsync(item, e.Value?.ToString()))" disabled="@_busy">
-                        @foreach (var (cat, tipos) in CategoriasTipos)
-                        {
-                            var opts = tipos.Where(permitidos.Contains).ToArray();
-                            if (opts.Length > 0)
-                            {
-                                <optgroup label="@cat">
-                                    @foreach (var t in opts) { <option value="@t" selected="@(t == tefe)">@TipoLabel(t)</option> }
-                                </optgroup>
-                            }
-                        }
-                    </select>
-                }
-                else
-                {
-                    @* Tipo bloqueado: fijo del sistema, o campo propio AVANZADO que no se puede convertir sin
-                       corromper su dato -> se cambia recreando el campo. El tooltip dice el motivo real. *@
-                    var motivoFijo = item.EsCustom
-                        ? $"El tipo {TipoLabel(tefe)} no se puede cambiar. Para cambiarlo, elimina el campo y crealo de nuevo."
-                        : "Tipo fijo del sistema.";
-                    <span class="cga-tipo-badge">@TipoLabel(tefe)</span>
-                    <svg class="cga-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="@motivoFijo"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                    <span class="cga-fija">FIJA</span>
-                }
+                @* MISMO widget que al crear (CampoTipoPicker) -> crear y editar se ven IDENTICAS. Al editar,
+                   los tipos NO convertibles salen bloqueados (candado + motivo) DENTRO del panel; si el campo
+                   no puede cambiar de tipo (permitidos vacio), el trigger sale con candado y no abre. *@
+                <CampoTipoPicker Tipo="tefe" TipoChanged="t => SetTipoAsync(item, t)" Categorias="CategoriasTipos"
+                                 Etiqueta="TipoLabel" Descripcion="TipoDescripcion"
+                                 MotivoBloqueo="t => MotivoBloqueoEdit(item, permitidos, t)"
+                                 Bloqueado="@(permitidos.Length == 0)" MotivoTrigger="@MotivoFijo(item, tefe)"
+                                 Disabled="_busy" />
             </div>
             <div class="cga-cfg">
                 @if (!item.EsCustom && tefe == TipoCampoTablero.Seleccion && item.Sis!.OpcionesEditables && item.Sis!.ListaExterna)
@@ -307,36 +285,9 @@ else
             </div>
             <div>
                 <label class="dst-nfc-lbl">Tipo</label>
-                @* 0.4: dropdown custom con categorias y DESCRIPCION por tipo (mas amigable que el <select>
-                   nativo, que no admite descripciones). El panel abre al pie del boton; se cierra con el
-                   backdrop o al elegir. Los tipos van agrupados por categoria en orden logico. *@
-                <div class="cga-tp @(_tipoPickerOpen ? "cga-tp--open" : "")">
-                    <button type="button" class="dst-nf-inp cga-tp-btn" @onclick="() => _tipoPickerOpen = !_tipoPickerOpen">
-                        <span class="cga-tp-cur">
-                            <span class="cga-tp-cur-lbl">@TipoLabel(_nvTipo)</span>
-                            <span class="cga-tp-cur-desc">@TipoDescripcion(_nvTipo)</span>
-                        </span>
-                        <svg class="cga-tp-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                    </button>
-                    @if (_tipoPickerOpen)
-                    {
-                        <div class="cga-tp-bd" @onclick="() => _tipoPickerOpen = false"></div>
-                        <div class="cga-tp-panel">
-                            @foreach (var (cat, tipos) in CategoriasTipos)
-                            {
-                                <div class="cga-tp-cat">@cat</div>
-                                @foreach (var t in tipos)
-                                {
-                                    var tt = t;
-                                    <button type="button" class="cga-tp-opt @(_nvTipo == tt ? "on" : "")" @onclick="() => ElegirTipoNuevo(tt)">
-                                        <span class="cga-tp-opt-lbl">@TipoLabel(tt)</span>
-                                        <span class="cga-tp-opt-desc">@TipoDescripcion(tt)</span>
-                                    </button>
-                                }
-                            }
-                        </div>
-                    }
-                </div>
+                @* MISMO widget que al editar (CampoTipoPicker): al crear todos los tipos son elegibles. *@
+                <CampoTipoPicker Tipo="_nvTipo" TipoChanged="ElegirTipoNuevo" Categorias="CategoriasTipos"
+                                 Etiqueta="TipoLabel" Descripcion="TipoDescripcion" />
             </div>
         </div>
         @if (_nvTipo == TipoCampoTablero.Seleccion)
@@ -591,12 +542,12 @@ else
 
     private string _nvLabel = "";
     private TipoCampoTablero _nvTipo = TipoCampoTablero.Texto;
-    private bool _tipoPickerOpen;   // 0.4: dropdown custom del tipo (categorias + descripcion)
     private string _nvOpciones = "";
 
+    // Lo llama CampoTipoPicker (que maneja su propio abrir/cerrar) al elegir el tipo del campo nuevo.
     private void ElegirTipoNuevo(TipoCampoTablero t)
     {
-        _nvTipo = t; _tipoPickerOpen = false;
+        _nvTipo = t;
         if (t == TipoCampoTablero.Formula && _nvPasos.Count == 0) _nvPasos.Add(new PasoEdit());
     }
 
@@ -910,12 +861,27 @@ else
     private static string Fmt(FormatoCampo f) => System.Text.Json.JsonSerializer.Serialize(f);
 
     // El tipo de un campo del sistema es un override en la config; el de uno propio va en su definicion.
-    private Task SetTipoAsync(Item it, string? v)
+    private Task SetTipoAsync(Item it, TipoCampoTablero t)
     {
-        if (!Enum.TryParse<TipoCampoTablero>(v, out var t)) return Task.CompletedTask;
         if (it.EsCustom) return CambiarTipoCustomAsync(it.Campo!, t);
         return EnCola(() => GuardarConfigAsync(FilaConfig(it.Clave) with { Tipo = t }));
     }
+
+    // Motivo por el que un tipo NO se puede elegir AL EDITAR este campo (null = elegible). Se muestra como
+    // candado + subtexto dentro del mismo dropdown custom que al crear.
+    private static string? MotivoBloqueoEdit(Item item, TipoCampoTablero[] permitidos, TipoCampoTablero t)
+    {
+        if (permitidos.Contains(t)) return null;
+        return item.EsCustom
+            ? "Solo al crear: un campo existente no se convierte a este tipo."
+            : "Tipo fijo del sistema.";
+    }
+
+    // Motivo del candado del TRIGGER cuando el campo no puede cambiar de tipo (permitidos vacio).
+    private static string MotivoFijo(Item item, TipoCampoTablero tefe)
+        => item.EsCustom
+            ? $"El tipo {TipoLabel(tefe)} no se puede cambiar. Para cambiarlo, elimina el campo y crealo de nuevo."
+            : "Tipo fijo del sistema.";
 
     // ===== Reordenamiento: un solo PUT con la fila completa de cada campo. =====
     private Task MoverAsync(string clave, int dir)

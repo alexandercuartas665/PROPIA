@@ -1,0 +1,91 @@
+@using Propia.Domain.Enums
+
+@* Picker del TIPO de campo: dropdown custom con categorias + descripcion por tipo. UN SOLO widget que se
+   usa tanto al CREAR como al EDITAR un campo (asi ambas listas se ven IDENTICAS). Al editar, los tipos que
+   NO se pueden convertir se muestran BLOQUEADOS (candado + motivo) dentro del mismo panel; y si el campo ya
+   es de un tipo no-cambiable, el trigger sale con candado y no abre. Los estilos .cga-tp-* viven en
+   config-campos.css (global). *@
+
+<div class="cga-tp @(_open ? "cga-tp--open" : "")">
+    @if (Bloqueado)
+    {
+        <div class="dst-nf-inp cga-tp-btn cga-tp-btn--lock" title="@MotivoTrigger">
+            <span class="cga-tp-cur">
+                <span class="cga-tp-cur-lbl">@Etiqueta(Tipo)</span>
+                <span class="cga-tp-cur-desc">Tipo fijo</span>
+            </span>
+            <svg class="cga-lock" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        </div>
+    }
+    else
+    {
+        <button type="button" class="dst-nf-inp cga-tp-btn" @onclick="() => _open = !_open" disabled="@Disabled">
+            <span class="cga-tp-cur">
+                <span class="cga-tp-cur-lbl">@Etiqueta(Tipo)</span>
+                <span class="cga-tp-cur-desc">@Descripcion(Tipo)</span>
+            </span>
+            <svg class="cga-tp-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        @if (_open)
+        {
+            <div class="cga-tp-bd" @onclick="() => _open = false"></div>
+            <div class="cga-tp-panel">
+                @foreach (var (cat, tipos) in Categorias)
+                {
+                    <div class="cga-tp-cat">@cat</div>
+                    @foreach (var t in tipos)
+                    {
+                        var tt = t;
+                        var motivo = MotivoBloqueo?.Invoke(tt);
+                        @if (motivo is null)
+                        {
+                            <button type="button" class="cga-tp-opt @(Tipo == tt ? "on" : "")" @onclick="() => Elegir(tt)">
+                                <span class="cga-tp-opt-lbl">@Etiqueta(tt)</span>
+                                <span class="cga-tp-opt-desc">@Descripcion(tt)</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="cga-tp-opt cga-tp-opt--lock" title="@motivo">
+                                <span class="cga-tp-opt-lbl">@Etiqueta(tt)
+                                    <svg class="cga-lock" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                                </span>
+                                <span class="cga-tp-opt-desc">@motivo</span>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Tipo actualmente seleccionado (se muestra en el trigger).</summary>
+    [Parameter, EditorRequired] public TipoCampoTablero Tipo { get; set; }
+    /// <summary>Se dispara al elegir un tipo NO bloqueado.</summary>
+    [Parameter] public EventCallback<TipoCampoTablero> TipoChanged { get; set; }
+    /// <summary>Categorias a mostrar (mismo agrupado que al crear).</summary>
+    [Parameter, EditorRequired] public IEnumerable<(string Categoria, TipoCampoTablero[] Tipos)> Categorias { get; set; } = Array.Empty<(string, TipoCampoTablero[])>();
+    /// <summary>Etiqueta legible de un tipo.</summary>
+    [Parameter, EditorRequired] public Func<TipoCampoTablero, string> Etiqueta { get; set; } = t => t.ToString();
+    /// <summary>Descripcion corta de un tipo.</summary>
+    [Parameter, EditorRequired] public Func<TipoCampoTablero, string> Descripcion { get; set; } = _ => "";
+    /// <summary>Devuelve el MOTIVO por el que un tipo esta bloqueado (candado en el panel), o null si es elegible.</summary>
+    [Parameter] public Func<TipoCampoTablero, string?>? MotivoBloqueo { get; set; }
+    /// <summary>true = el campo NO puede cambiar de tipo: el trigger sale con candado y no abre.</summary>
+    [Parameter] public bool Bloqueado { get; set; }
+    /// <summary>Tooltip del trigger cuando Bloqueado.</summary>
+    [Parameter] public string? MotivoTrigger { get; set; }
+    /// <summary>Deshabilita el trigger (p.ej. mientras se guarda).</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool _open;
+
+    private async Task Elegir(TipoCampoTablero t)
+    {
+        _open = false;
+        if (!EqualityComparer<TipoCampoTablero>.Default.Equals(t, Tipo))
+            await TipoChanged.InvokeAsync(t);
+    }
+}
