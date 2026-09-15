@@ -118,6 +118,21 @@ else
                                 </select>
                             </div>
                         }
+                        else if (def.Tipo == TipoCampoTablero.Formula)
+                        {
+                            <div class="veh-cell veh-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Usuario)
+                        {
+                            <select class="veh-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.PlacaId, def.Id, e.Value?.ToString())">
+                                <option value="">-</option>
+                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                            </select>
+                        }
+                        else if (def.Tipo == TipoCampoTablero.Directorio)
+                        {
+                            <div class="veh-cell veh-prop">@(NombrePersona(val) ?? "-")</div>
+                        }
                         else
                         {
                             <input class="veh-editcell" value="@val" placeholder="-"
@@ -156,6 +171,22 @@ else
                             @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
                         </select>
                     }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="veh-cell veh-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="veh-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
+                    }
                     else
                     {
                         <input class="veh-nf-inp" placeholder="@def.Label" value="@dv"
@@ -191,6 +222,7 @@ else
             <div class="veh-cg-body">
                 <ConfigCamposEntidad Prefijo="vehiculos"
                                      Catalogo="@VehiculoCatalogo"
+                                     TiposAvanzados="true"
                                      TituloSingular="vehiculo" TituloPlural="Vehiculos"
                                      Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt"
                                      Cambiado="RecargarCamposAsync" />
@@ -384,6 +416,32 @@ else
         var vals = await http.GetFromJsonAsync<List<VehiculoCampoValorFlatDto>>("/api/mi-copropiedad/vehiculos-campos-valores") ?? new();
         _valores = vals.GroupBy(v => v.UnidadPlacaId)
                        .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+
+        // Fase 2: usuarios del tenant (campo Usuario) + mapa id->nombre (Usuario y Directorio), ambos
+        // tenant-scoped por RLS -> no ofrecen ni resuelven datos de otras copropiedades.
+        try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
+        try
+        {
+            var vinc = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _usuarioNombre = new(); }
+    }
+
+    // ---- Fase 2: campos Usuario/Directorio ----
+    private List<UsuarioOpc> _usuariosTenant = new();
+    private Dictionary<Guid, string> _usuarioNombre = new();
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
+    private string? NombrePersona(string? val)
+        => !string.IsNullOrWhiteSpace(val) && Guid.TryParse(val, out var g) && _usuarioNombre.TryGetValue(g, out var n) ? n : val;
+
+    // Directorio en la fila de alta: guarda el id y cachea el nombre para el render inmediato.
+    private void OnDirectorioNuevo(Guid defId, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is null) { _nuDinamicos.Remove(defId); return; }
+        SetDinamicoNuevo(defId, c.PersonaId.ToString());
+        _usuarioNombre[c.PersonaId] = c.NombreCompleto;
     }
 
     private async Task AgregarAsync()
