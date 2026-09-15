@@ -25,7 +25,7 @@ public partial class MiCopropiedadService
         var existente = await _db.PersonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null) return new PersonaCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
         var maxOrden = await _db.PersonaCamposDefiniciones.AnyAsync(ct) ? await _db.PersonaCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new PersonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        var def = new PersonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = await OpcionesPersonaAsync(req.Tipo, req.Opciones, null, ct) };
         _db.PersonaCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
         return new PersonaCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
@@ -38,7 +38,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = await OpcionesPersonaAsync(req.Tipo, req.Opciones, def.Id, ct); def.Orden = req.Orden;
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -53,13 +53,28 @@ public partial class MiCopropiedadService
     }
 
     public async Task<IReadOnlyList<PersonaCampoValorFlatDto>> ListTodosCamposValoresPersonaAsync(CancellationToken ct)
-        => await _db.PersonaCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new PersonaCampoValorFlatDto(v.UnidadPersonaId, v.DefinicionId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.PersonaCamposValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.UnidadPersonaId, v.DefinicionId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new PersonaCampoValorFlatDto(v.UnidadPersonaId, v.DefinicionId, v.Valor)).ToList();
+        var defs = await _db.PersonaCamposDefiniciones.AsNoTracking().Select(d => new { d.Id, d.Tipo, d.Opciones }).ToListAsync(ct);
+        if (defs.Any(d => d.Tipo == TipoCampoTablero.Formula))
+        {
+            var ids = await _db.UnidadPersonas.AsNoTracking().Select(p => p.Id).ToListAsync(ct);
+            var calc = ComputarFormulasPropiasFlat(
+                defs.Select(d => (d.Id, d.Tipo, d.Opciones)).ToList(),
+                valores.Select(v => (v.UnidadPersonaId, v.DefinicionId, v.Valor)).ToList(), ids);
+            res.AddRange(calc.Select(c => new PersonaCampoValorFlatDto(c.RegistroId, c.DefId, c.Valor)));
+        }
+        return res;
+    }
 
     public async Task SetCampoValorPersonaDefAsync(Guid unidadPersonaId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct)
     {
         if (_tenant.CurrentTenantId is not Guid tid) throw new InvalidOperationException("Sin copropiedad activa.");
         var valor = string.IsNullOrWhiteSpace(req.Valor) ? null : req.Valor.Trim();
+        var defP = await _db.PersonaCamposDefiniciones.AsNoTracking().FirstOrDefaultAsync(d => d.Id == definicionId, ct);
+        if (defP is not null) await CamposAvanzados.ValidarValorAsync(_db, defP.Tipo, valor, ct);   // Fase 2
         var existente = await _db.PersonaCamposValores.FirstOrDefaultAsync(v => v.DefinicionId == definicionId && v.UnidadPersonaId == unidadPersonaId, ct);
         if (existente is null)
             _db.PersonaCamposValores.Add(new PersonaCampoValor { TenantId = tid, DefinicionId = definicionId, UnidadPersonaId = unidadPersonaId, Valor = valor });
@@ -317,6 +332,14 @@ public partial class MiCopropiedadService
         if (string.IsNullOrWhiteSpace(s)) return null;
         s = s.Trim().Replace(",", ".");
         return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : (decimal?)null;
+    }
+
+    private async Task<string?> OpcionesPersonaAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo != TipoCampoTablero.Formula) return NormalizarOpcionesCampo(tipo, opciones);
+        var defs = (await _db.PersonaCamposDefiniciones.AsNoTracking().Where(d => excluirId == null || d.Id != excluirId)
+            .Select(d => new { d.Id, d.Tipo }).ToListAsync(ct)).ToDictionary(d => d.Id, d => d.Tipo);
+        return PrepararOpcionesFormulaPropios(tipo, opciones, defs);
     }
 
     private async Task<string?> OpcionesVehiculoAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)

@@ -88,7 +88,58 @@ public class CamposFase2VinculadosTests
         finally { await CleanupAsync(t); }
     }
 
+    [Fact]
+    public async Task Residente_formula_sobre_campos_propios_computa_en_lectura()
+    {
+        var t = await SeedTenantAsync("F2 Res formula");
+        try
+        {
+            var svc = BuildService(t);
+            var uId = (await svc.CrearUnidadAsync(NuevaUnidad("T1-401"), CancellationToken.None)).Id;
+            var upId = await SeedResidenteAsync(t, uId);
+            var a = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Aportes", TipoCampoTablero.Moneda, null), CancellationToken.None)).Id;
+            var b = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Deudas", TipoCampoTablero.Moneda, null), CancellationToken.None)).Id;
+            var f = (await svc.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Saldo", TipoCampoTablero.Formula,
+                new CampoFormulaConfig(OperacionFormula.Suma, new[] { "cd:" + a, "cd:" + b }).Serializar()), CancellationToken.None)).Id;
+            await svc.SetCampoValorPersonaDefAsync(upId, a, new SetCampoValorRequest("120"), CancellationToken.None);
+            await svc.SetCampoValorPersonaDefAsync(upId, b, new SetCampoValorRequest("80"), CancellationToken.None);
+
+            var flat = await BuildService(t).ListTodosCamposValoresPersonaAsync(CancellationToken.None);
+            Assert.Equal("200", flat.First(x => x.UnidadPersonaId == upId && x.DefinicionId == f).Valor);
+            await Assert.ThrowsAnyAsync<Exception>(() => svc.SetCampoValorPersonaDefAsync(upId, f, new SetCampoValorRequest("1"), CancellationToken.None));
+        }
+        finally { await CleanupAsync(t); }
+    }
+
+    [Fact]
+    public async Task Residente_usuario_rechaza_un_usuario_de_otro_tenant()
+    {
+        var tA = await SeedTenantAsync("F2 Res usuario A");
+        var tB = await SeedTenantAsync("F2 Res usuario B");
+        try
+        {
+            var personaId = await SeedUsuarioTenantAsync(tA);   // usuario de A, NO de B
+            var svcB = BuildService(tB);
+            var uB = (await svcB.CrearUnidadAsync(NuevaUnidad("T1-402"), CancellationToken.None)).Id;
+            var upB = await SeedResidenteAsync(tB, uB);
+            var campoB = (await svcB.CrearCampoDefPersonaAsync(new CrearCampoDefinicionRequest("Responsable", TipoCampoTablero.Usuario, null), CancellationToken.None)).Id;
+            await Assert.ThrowsAnyAsync<Exception>(() => svcB.SetCampoValorPersonaDefAsync(
+                upB, campoB, new SetCampoValorRequest(personaId.ToString()), CancellationToken.None));
+        }
+        finally { await CleanupAsync(tA); await CleanupAsync(tB); }
+    }
+
     // ===================== helpers =====================
+    private async Task<Guid> SeedResidenteAsync(Guid tenantId, Guid unidadId)
+    {
+        var personaId = await SeedPersonaGlobalAsync();
+        await using var ctx = OwnerCtx();
+        var up = new UnidadPersona { TenantId = tenantId, UnidadId = unidadId, PersonaId = personaId, Rol = RolUnidadPersona.Residente };
+        ctx.UnidadPersonas.Add(up);
+        await ctx.SaveChangesAsync();
+        return up.Id;
+    }
+
     private static CrearUnidadRequest NuevaUnidad(string numero)
         => new(numero, TipoUnidad.Apartamento, null, null, 1.0m, null, null, null, null, null, null);
 
@@ -161,6 +212,9 @@ public class CamposFase2VinculadosTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM vehiculo_campos_definiciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM mascota_campos_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM mascota_campos_definiciones WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM persona_campos_valores WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM persona_campos_definiciones WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_personas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_placas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_mascotas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE tenant_id = {tenantId}");
