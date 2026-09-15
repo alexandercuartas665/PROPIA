@@ -117,11 +117,17 @@ public enum TipoCampoTablero
 /// </summary>
 public enum OperacionFormula
 {
+    // Agregados sobre N operandos (Fase 2 original).
     Suma = 0,
     Promedio = 1,
     Conteo = 2,
     Minimo = 3,
-    Maximo = 4
+    Maximo = 4,
+    // Binarias entre 2 operandos (Fase 2 multi-paso). Se serializan por NOMBRE (JsonStringEnumConverter),
+    // asi que agregarlas al final no rompe el JSON ya guardado de las formulas de 1-op existentes.
+    Resta = 5,
+    Multiplicacion = 6,
+    Division = 7
 }
 
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>
