@@ -198,14 +198,14 @@ Ese fue justamente el sintoma que costo diagnosticar.)
 - **0.0.64 - PQRSD alertas de plazo.**
 - Incluye lo de 0.0.63-0.0.67 que no haya llegado a prod (Contratos IA, hotfix 403 OCR, etc.).
 
-## 2. Migraciones a aplicar (16 pendientes vs prod, todas ADITIVAS)
+## 2. Migraciones a aplicar (17 pendientes vs prod, todas ADITIVAS)
 
 ```bash
 cd src/Propia.Api
 dotnet ef database update --project ../Propia.Infrastructure --startup-project .
 ```
 
-`ef database update` aplica SOLO las que falten (compara `__EFMigrationsHistory`). Las **8 nuevas de esta
+`ef database update` aplica SOLO las que falten (compara `__EFMigrationsHistory`). Las **9 nuevas de esta
 tanda**, en orden:
 
 1. `20260910005638_AddUnidadCampoConfig` - tabla nueva `unidad_campos_config` con RLS FORCE + policy + GRANT.
@@ -224,6 +224,9 @@ tanda**, en orden:
    `tarea_adjuntos`, `tarea_subtareas`. No cambia esquema ni datos.
 8. `20260912205405_AddPermisoCrearTareasOperario` - seed en la tabla global `rol_permisos`: da al rol
    Operario el permiso Crear sobre TAREAS. Solo datos (idempotente).
+9. `20260913005909_AddCostoEstimadoProgramacionTarea` - `programacion_tareas` +`costo_estimado`
+   numeric(14,2) NULL. Modulo Mantenimiento (YUNQUE): costo estimado de una programacion. Aditiva, sin
+   datos ni indices; el `Down()` hace DROP de la columna.
 
 (Las anteriores 0.0.68-0.0.83 estan listadas en `DEPLOY_CHECKLIST.md`.)
 
