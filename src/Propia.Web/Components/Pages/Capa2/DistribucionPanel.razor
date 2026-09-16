@@ -237,6 +237,24 @@
                                         <button type="button" class="cga-mini" title="Subir" disabled="@(idx == 0 || _cfgBusy)" @onclick="() => MoverOpcionListaAsync(lk, op.K, -1)">&#9650;</button>
                                         <button type="button" class="cga-mini" title="Bajar" disabled="@(idx == ops.Count - 1 || _cfgBusy)" @onclick="() => MoverOpcionListaAsync(lk, op.K, 1)">&#9660;</button>
                                     </div>
+                                    @* Color de la opcion: mismo modelo que OpcionesLista (swatch -> paleta pastel) *@
+                                    <div class="ol-sw-wrap">
+                                        <button type="button" class="ol-sw" style="background:@(op.Color ?? PaletaChips.Neutro)" title="Color de la opcion"
+                                                @onclick="() => _palSisIdx = (_palSisIdx == idx ? null : idx)" disabled="@_cfgBusy"></button>
+                                        @if (_palSisIdx == idx)
+                                        {
+                                            <div class="ol-pal-bd" @onclick="() => _palSisIdx = null"></div>
+                                            <div class="ol-pal">
+                                                @foreach (var c in PaletaChips.ColoresPasteles)
+                                                {
+                                                    var cc = c;
+                                                    <button type="button" class="ol-pal-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
+                                                            style="background:@cc" title="@cc" @onclick="() => SetColorOpcionSistemaAsync(lk, op.K, cc)"></button>
+                                                }
+                                                <button type="button" class="ol-pal-sw ol-pal-none @(op.Color is null ? "on" : "")" title="Sin color" @onclick="() => SetColorOpcionSistemaAsync(lk, op.K, null)">&times;</button>
+                                            </div>
+                                        }
+                                    </div>
                                     @if (semilla)
                                     {
                                         <svg class="cga-opt-lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Opcion de fabrica: se puede ocultar, no eliminar"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
@@ -1488,15 +1506,27 @@ else
     //
     // Claves: en Estado la clave ES el texto de la opcion; en Tipo es "e:<Enum>" para las base y
     // "c:<guid>" para las propias (que viven en tipos_unidad_custom).
-    private sealed record OpcionLista(string K, bool Oculta = false);
+    private sealed record OpcionLista(string K, bool Oculta = false, string? Color = null);
 
     private string? _listaAbierta;      // clave del campo cuya lista se administra en el popup
     private string _nuevaOpcion = "";
     private string? _listaMsg;
     private string? _estadoMsg;
+    private int? _palSisIdx;            // indice de fila cuyo popup de paleta de color esta abierto (listas de sistema)
 
-    private void AbrirLista(string clave) { _listaAbierta = clave; _nuevaOpcion = ""; _listaMsg = null; }
-    private void CerrarLista() { _listaAbierta = null; _nuevaOpcion = ""; _listaMsg = null; }
+    private void AbrirLista(string clave) { _listaAbierta = clave; _nuevaOpcion = ""; _listaMsg = null; _palSisIdx = null; }
+    private void CerrarLista() { _listaAbierta = null; _nuevaOpcion = ""; _listaMsg = null; _palSisIdx = null; }
+
+    // Color de una opcion de lista de sistema (Tipo/Estado): mismo modelo que OpcionesLista (swatch + paleta).
+    private async Task SetColorOpcionSistemaAsync(string clave, string k, string? color)
+    {
+        var ops = LeerOpciones(clave);
+        var i = ops.FindIndex(o => string.Equals(o.K, k, StringComparison.OrdinalIgnoreCase));
+        _palSisIdx = null;
+        if (i < 0) return;
+        ops[i] = ops[i] with { Color = string.IsNullOrWhiteSpace(color) ? null : color };
+        await GuardarOpcionesAsync(clave, ops);
+    }
     private void OnNuevaOpcionKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter" && _listaAbierta is { } k) _ = AgregarOpcionListaAsync(k); }
 
     private static bool EsSemilla(string clave, string k)
