@@ -391,7 +391,18 @@ else
                             {
                                 if (it.EsCustom)
                                 {
-                                    <div class="dst-td-campo" title="@it.Campo!.Label">@MostrarCampoCelda(uu.Id, it.Campo!)</div>
+                                    var _cv = MostrarCampoCelda(uu.Id, it.Campo!);
+                                    var _cc = ColorCampoCelda(uu.Id, it.Campo!);
+                                    <div class="dst-td-campo" title="@it.Campo!.Label">
+                                        @if (_cc is not null)
+                                        {
+                                            <span class="dst-cell-chip" style="background:@_cc">@_cv</span>
+                                        }
+                                        else
+                                        {
+                                            @_cv
+                                        }
+                                    </div>
                                     continue;
                                 }
                                 switch (it.Def!.Key)
@@ -546,7 +557,10 @@ else
                                     case TipoCampoTablero.Seleccion:
                                         <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
                                             <option value="">- elegir -</option>
-                                            @foreach (var op in OpcionesDe(cdd)) { <option value="@op">@op</option> }
+                                            @foreach (var o in OpcionCampo.Parse(cdd.Opciones).Where(x => !x.Oculta))
+                                            {
+                                                <option value="@o.K" style="@(o.Color is null ? null : $"background:{o.Color}")">@o.K</option>
+                                            }
                                         </select>
                                         break;
                                     case TipoCampoTablero.Numero:
@@ -775,6 +789,16 @@ else
             && Guid.TryParse(v, out var g) && _usuarioNombre.TryGetValue(g, out var n))
             return n;
         return v;
+    }
+
+    // Color del chip para el valor de un campo Lista (segun la opcion elegida). null = sin color / no aplica.
+    private string? ColorCampoCelda(Guid unidadId, UnidadCampoDefinicionDto def)
+    {
+        if (def.Tipo != TipoCampoTablero.Seleccion) return null;
+        var v = ValorCampo(unidadId, def.Id);
+        if (string.IsNullOrWhiteSpace(v)) return null;
+        return OpcionCampo.Parse(def.Opciones)
+            .FirstOrDefault(o => string.Equals(o.K, v, StringComparison.OrdinalIgnoreCase))?.Color;
     }
 
     // Campo Directorio en la fila de alta: guarda el id de la persona y cachea su nombre para el render.
@@ -1025,12 +1049,14 @@ else
     // Ancho de cada columna (lo unico que es propio de la tabla: el catalogo compartido no sabe de UI).
     private static readonly Dictionary<string, string> ColAnchos = new(StringComparer.Ordinal)
     {
-        ["num"] = "130px", ["tipo"] = "1fr", ["estado"] = "1fr", ["agrupacion"] = ".9fr", ["coef"] = ".9fr",
-        ["modcontrib1"] = "1fr", ["modcontrib2"] = "1fr", ["modcontrib3"] = "1fr",
-        ["modcontrib4"] = "1fr", ["modcontrib5"] = "1fr",
-        ["area"] = ".8fr", ["piso"] = "70px", ["habitaciones"] = "90px", ["banos"] = "70px",
-        ["parqueaderos"] = "100px", ["matricula"] = "1.1fr", ["refpago"] = "1.1fr",
-        ["pagaadmin"] = "90px", ["cuota"] = "1fr", ["observaciones"] = "1.3fr",
+        // minmax con piso en px: las columnas no se encogen bajo un ancho legible (no se topan) y aun crecen.
+        ["num"] = "130px", ["tipo"] = "minmax(130px,1fr)", ["estado"] = "minmax(130px,1fr)",
+        ["agrupacion"] = "minmax(120px,.9fr)", ["coef"] = "minmax(115px,.9fr)",
+        ["modcontrib1"] = "minmax(155px,1fr)", ["modcontrib2"] = "minmax(155px,1fr)", ["modcontrib3"] = "minmax(155px,1fr)",
+        ["modcontrib4"] = "minmax(155px,1fr)", ["modcontrib5"] = "minmax(155px,1fr)",
+        ["area"] = "minmax(95px,.8fr)", ["piso"] = "80px", ["habitaciones"] = "100px", ["banos"] = "80px",
+        ["parqueaderos"] = "110px", ["matricula"] = "minmax(140px,1.1fr)", ["refpago"] = "minmax(130px,1.1fr)",
+        ["pagaadmin"] = "110px", ["cuota"] = "minmax(130px,1fr)", ["observaciones"] = "minmax(170px,1.3fr)",
     };
     // TODOS los campos del sistema son columnas potenciales (mostrar/ocultar/reordenar). Se derivan
     // del catalogo compartido: agregar un campo alli lo hace aparecer aqui, en el panel de Configurar
@@ -1120,7 +1146,7 @@ else
     }
     private IEnumerable<ColItem> ColumnasVisibles => ColumnasOrdenadas.Where(EsVisibleItem);
     private string GridCols => "34px "
-        + string.Join(" ", ColumnasVisibles.Select(it => it.EsCustom ? "minmax(140px,170px)" : it.Def!.Width))
+        + string.Join(" ", ColumnasVisibles.Select(it => it.EsCustom ? "minmax(150px,190px)" : it.Def!.Width))
         + " 120px";
 
     // Fila COMPLETA de config del campo con su estado actual. El PUT reemplaza la fila entera, asi que
@@ -2342,7 +2368,7 @@ else
     .dst-pager-pos { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); min-width: 52px; text-align: center; }
 
     /* ===== Ola 4: tabla data-driven (expander + inline + grupos + configurar columnas) ===== */
-    .dst-grid2 { display: grid; align-items: center; gap: 8px; padding: 6px 16px; min-width: 940px; }
+    .dst-grid2 { display: grid; align-items: center; gap: 8px; padding: 6px 16px; min-width: max-content; }
     .dst-agrupar.on { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); font-weight: 700; }
     .dst-cols { display: inline-flex; align-items: center; gap: 6px; }
     /* Expander: se ve al pasar el mouse por la fila. */
@@ -2383,6 +2409,11 @@ else
     .dst-newrow .dst-exp-fijo { opacity: 1; }
     .dst-newrow .dst-exp-fijo:disabled { opacity: .35; cursor: default; }
     .dst-nf-mut { font-size: 11.5px; color: var(--propia-text-faint); display: flex; align-items: center; }
+    /* Inputs de la fila de alta: llenan su celda de grid (como .dst-cell) para ALINEAR con las columnas;
+       reposo punteado (input "fantasma"), foco violeta. Antes no tenian regla base -> ancho intrinseco y
+       se veian corridos respecto al encabezado. */
+    .dst-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-card); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .dst-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-brand-soft); }
     .dst-act-nf { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
     .dst-row-add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--propia-brand-border); background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .dst-row-add:hover:not(:disabled) { background: var(--propia-brand-soft); }
@@ -2411,6 +2442,7 @@ else
 
     /* Campos dinamicos: celda de valor en la tabla + modal Configurar */
     .dst-td-campo { font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dst-cell-chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--propia-text-body); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dst-newrow-campos { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 8px 12px 10px 46px; border-bottom: 1px solid var(--propia-border-divider); background: var(--propia-bg-subtle, transparent); }
     .dst-nfc-f { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
     .dst-nfc-empty { font-size: 13px; color: var(--propia-text-muted); padding: 6px 2px 14px; }
