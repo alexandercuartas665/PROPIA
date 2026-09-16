@@ -910,9 +910,8 @@
         public string? Valor { get; set; }
         public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
         public string? Opciones { get; set; }
-        public string[] OpcionesLista => string.IsNullOrWhiteSpace(Opciones)
-            ? System.Array.Empty<string>()
-            : Opciones.Split('\n', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+        // Parser compartido (JSON nuevo {"K","Oculta","Color"} o texto-por-linea legado); solo visibles.
+        public string[] OpcionesLista => OpcionCampo.VisiblesK(Opciones);
     }
 
     // Los estados posibles vienen de la config del tenant (EstadosConfig, semilla Habitada/Desocupada/Arrendada).
@@ -2326,8 +2325,11 @@
     {
         var ord = new List<Guid>();
         if (_camposConfig.TryGetValue("tipo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones))
-            foreach (var l in c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (Guid.TryParse(l, out var g)) ord.Add(g);
+            foreach (var o in OpcionCampo.Parse(c.Opciones))
+            {
+                var k = o.K.StartsWith("c:") ? o.K[2..] : o.K;   // 'tipo' guarda K = "c:{guid}" para tipos propios
+                if (Guid.TryParse(k, out var g)) ord.Add(g);
+            }
         _tiposCustom = _tiposCustom
             .Select(t => (t, i: ord.IndexOf(t.Id)))
             .OrderBy(x => x.i < 0 ? int.MaxValue : x.i)
