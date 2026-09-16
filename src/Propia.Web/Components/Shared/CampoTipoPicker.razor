@@ -1,14 +1,13 @@
 @using Propia.Domain.Enums
 @inject IJSRuntime JS
 
-@* Picker del TIPO de campo: dropdown custom con categorias + descripcion por tipo. UN SOLO widget que se
-   usa tanto al CREAR como al EDITAR un campo (asi ambas listas se ven IDENTICAS). Al editar, los tipos que
-   NO se pueden convertir se muestran BLOQUEADOS (candado + motivo) dentro del mismo panel; y si el campo ya
-   es de un tipo no-cambiable, el trigger sale con candado y no abre.
+@* Picker del TIPO de campo estilo Airtable: buscador arriba + lista PLANA de icono + nombre (sin
+   descripciones/ayudas). UN SOLO widget para CREAR y EDITAR (asi ambas listas se ven IDENTICAS). Al editar,
+   los tipos NO convertibles salen BLOQUEADOS (candado + motivo en tooltip); si el campo ya es de un tipo
+   no-cambiable, el trigger sale con candado y no abre.
 
    El PANEL flota con position:fixed (helper propiaFloatPos, CSP-safe, mismo patron que SelectorPersona
-   Flotante) para ESCAPAR el overflow del modal de campos: antes se recortaba y no se podia usar. Los
-   estilos .cga-tp-* viven en config-campos.css (global). *@
+   Flotante) para ESCAPAR el overflow del modal de campos. Los estilos .cga-tp-* viven en config-campos.css. *@
 
 <div class="cga-tp @(_open ? "cga-tp--open" : "")">
     @if (Bloqueado)
@@ -34,30 +33,34 @@
         {
             <div class="cga-tp-bd" @onclick="Cerrar"></div>
             <div class="cga-tp-panel cga-tp-panel--float" style="@_panelStyle" @ref="_panelRef">
-                @foreach (var (cat, tipos) in Categorias)
+                <div class="cga-tp-search" @onclick:stopPropagation="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                    <input class="cga-tp-search-inp" placeholder="Encuentra un tipo de campo" value="@_filtro" @oninput="OnFiltro" />
+                </div>
+                <div class="cga-tp-cat">Campos estandar</div>
+                @foreach (var t in TiposFiltrados)
                 {
-                    <div class="cga-tp-cat">@cat</div>
-                    @foreach (var t in tipos)
+                    var tt = t;
+                    var motivo = MotivoBloqueo?.Invoke(tt);
+                    @if (motivo is null)
                     {
-                        var tt = t;
-                        var motivo = MotivoBloqueo?.Invoke(tt);
-                        @if (motivo is null)
-                        {
-                            <button type="button" class="cga-tp-opt @(Tipo == tt ? "on" : "")" @onclick="() => Elegir(tt)">
-                                <span class="cga-tp-opt-lbl">@Etiqueta(tt)</span>
-                                <span class="cga-tp-opt-desc">@Descripcion(tt)</span>
-                            </button>
-                        }
-                        else
-                        {
-                            <div class="cga-tp-opt cga-tp-opt--lock" title="@motivo">
-                                <span class="cga-tp-opt-lbl">@Etiqueta(tt)
-                                    <svg class="cga-lock" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                                </span>
-                                <span class="cga-tp-opt-desc">@motivo</span>
-                            </div>
-                        }
+                        <button type="button" class="cga-tp-opt @(Tipo == tt ? "on" : "")" @onclick="() => Elegir(tt)">
+                            <span class="cga-tp-ico">@IconoTipo(tt)</span>
+                            <span class="cga-tp-opt-lbl">@Etiqueta(tt)</span>
+                        </button>
                     }
+                    else
+                    {
+                        <div class="cga-tp-opt cga-tp-opt--lock" title="@motivo">
+                            <span class="cga-tp-ico">@IconoTipo(tt)</span>
+                            <span class="cga-tp-opt-lbl">@Etiqueta(tt)</span>
+                            <svg class="cga-lock" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                        </div>
+                    }
+                }
+                @if (!TiposFiltrados.Any())
+                {
+                    <div class="cga-tp-empty">Sin coincidencias</div>
                 }
             </div>
         }
@@ -69,11 +72,11 @@
     [Parameter, EditorRequired] public TipoCampoTablero Tipo { get; set; }
     /// <summary>Se dispara al elegir un tipo NO bloqueado.</summary>
     [Parameter] public EventCallback<TipoCampoTablero> TipoChanged { get; set; }
-    /// <summary>Categorias a mostrar (mismo agrupado que al crear).</summary>
+    /// <summary>Categorias con los tipos elegibles (se aplanan en una sola lista, estilo Airtable).</summary>
     [Parameter, EditorRequired] public IEnumerable<(string Categoria, TipoCampoTablero[] Tipos)> Categorias { get; set; } = Array.Empty<(string, TipoCampoTablero[])>();
     /// <summary>Etiqueta legible de un tipo.</summary>
     [Parameter, EditorRequired] public Func<TipoCampoTablero, string> Etiqueta { get; set; } = t => t.ToString();
-    /// <summary>Descripcion corta de un tipo.</summary>
+    /// <summary>Descripcion corta de un tipo (solo la usa el TRIGGER; la lista ya no la muestra).</summary>
     [Parameter, EditorRequired] public Func<TipoCampoTablero, string> Descripcion { get; set; } = _ => "";
     /// <summary>Devuelve el MOTIVO por el que un tipo esta bloqueado (candado en el panel), o null si es elegible.</summary>
     [Parameter] public Func<TipoCampoTablero, string?>? MotivoBloqueo { get; set; }
@@ -85,11 +88,19 @@
     [Parameter] public bool Disabled { get; set; }
 
     private bool _open;
+    private string _filtro = "";
     private string? _panelStyle;
     private ElementReference _triggerRef;
     private ElementReference _panelRef;
 
-    private void Toggle() { _open = !_open; if (!_open) _panelStyle = null; }
+    // Lista PLANA de todos los tipos elegibles, filtrada por el buscador (por etiqueta, case-insensitive).
+    private IEnumerable<TipoCampoTablero> TiposFiltrados =>
+        Categorias.SelectMany(c => c.Tipos)
+                  .Where(t => string.IsNullOrWhiteSpace(_filtro)
+                              || Etiqueta(t).Contains(_filtro.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void OnFiltro(ChangeEventArgs e) => _filtro = e.Value?.ToString() ?? "";
+    private void Toggle() { _open = !_open; if (_open) _filtro = ""; else _panelStyle = null; }
     private void Cerrar() { _open = false; _panelStyle = null; }
 
     private async Task Elegir(TipoCampoTablero t)
@@ -97,6 +108,32 @@
         _open = false; _panelStyle = null;
         if (!EqualityComparer<TipoCampoTablero>.Default.Equals(t, Tipo))
             await TipoChanged.InvokeAsync(t);
+    }
+
+    // Icono simple por tipo (trazo, hereda currentColor). Solo iconos, sin texto de ayuda.
+    private static MarkupString IconoTipo(TipoCampoTablero t)
+    {
+        var inner = t switch
+        {
+            TipoCampoTablero.Texto      => "<path d='M4 7h16M4 12h11M4 17h8'/>",
+            TipoCampoTablero.AreaTexto  => "<path d='M4 6h16M4 10h16M4 14h16M4 18h9'/>",
+            TipoCampoTablero.Numero     => "<path d='M4 9h16M4 15h16M9 4 7 20M17 4l-2 16'/>",
+            TipoCampoTablero.Moneda     => "<path d='M12 2v20M16 6H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H8'/>",
+            TipoCampoTablero.Porcentaje => "<path d='M19 5 5 19'/><circle cx='6.5' cy='6.5' r='2.5'/><circle cx='17.5' cy='17.5' r='2.5'/>",
+            TipoCampoTablero.Fecha      => "<rect x='3' y='4' width='18' height='17' rx='2'/><path d='M3 9h18M8 2v4M16 2v4'/>",
+            TipoCampoTablero.FechaHora  => "<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>",
+            TipoCampoTablero.Hora       => "<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>",
+            TipoCampoTablero.Seleccion  => "<path d='M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01'/>",
+            TipoCampoTablero.Booleano   => "<rect x='3' y='3' width='18' height='18' rx='3'/><path d='M8 12l3 3 5-6'/>",
+            TipoCampoTablero.Telefono   => "<path d='M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z'/>",
+            TipoCampoTablero.Email      => "<rect x='3' y='5' width='18' height='14' rx='2'/><path d='m3 7 9 6 9-6'/>",
+            TipoCampoTablero.Url        => "<path d='M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1'/><path d='M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1'/>",
+            TipoCampoTablero.Formula    => "<path d='M4 20c4 0 3-16 7-16M3 12h9M14 9l7 6M21 9l-7 6'/>",
+            TipoCampoTablero.Usuario    => "<circle cx='12' cy='8' r='4'/><path d='M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1'/>",
+            TipoCampoTablero.Directorio => "<rect x='5' y='3' width='15' height='18' rx='2'/><circle cx='12' cy='10' r='2.5'/><path d='M8.5 17a3.5 3.5 0 0 1 7 0M3 7h2M3 12h2M3 17h2'/>",
+            _                            => "<circle cx='12' cy='12' r='9'/>",
+        };
+        return new MarkupString($"<svg viewBox='0 0 24 24' width='16' height='16' fill='none' stroke='currentColor' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'>{inner}</svg>");
     }
 
     // Posiciona el panel con position:fixed anclado al trigger (escapa el overflow del modal). Mismo helper
