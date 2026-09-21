@@ -43,7 +43,7 @@ public static class MenuCatalog
         new MenuItemDef("mi-config-hub", "tabMiPH", "Configuracion Copropiedad", "/configuracion-copropiedad", "fi-rr-settings", 1),
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 2),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 3),
-        new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes", "fi-rr-users", 4),
+        new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes-hub", "fi-rr-users", 4),
         // Vehiculos y Mascotas: hermanos de Residentes. Antes solo se llegaba a ellos abriendo la
         // ficha de cada unidad y su configuracion de campos vivia en el panel de Unidades Privadas.
         new MenuItemDef("mi-vehiculos", "tabMiPH", "Vehiculos", "/vehiculos", "fi-rr-car", 5),
