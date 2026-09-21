@@ -3,8 +3,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Propia.Api.Authorization;
+using Propia.Api.Security;   // T-09: lista blanca de adjuntos de tarea
 using Propia.Application.Tareas;
 using Propia.Application.UsuariosAccesos;
+// Contrato de config de columnas reusado (per-tablero). Alias puntual para no chocar con
+// Propia.Application.Tareas.SetCampoValorRequest (mismo nombre simple en ambos namespaces).
+using GuardarUnidadCampoConfigRequest = Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Storage;
 
@@ -418,6 +422,31 @@ public class TareasController : ControllerBase
     public async Task<IActionResult> CamposActivos(Guid id, CancellationToken ct)
         => Ok(await _svc.ListarCamposActivosAsync(id, ct));
 
+    // ---- Config de presentacion de COLUMNAS del tablero (alias/oculto/orden/tipo/formato) ----
+    // Per-tenant + per-tablero: compartida por la copropiedad (como Unidades/Directorio). La consume el gestor
+    // de campos compartido via RutaConfig="/api/tareas/tableros/{id}/columnas-config". El GET esta abierto al
+    // tenant (todos ven la config del tablero; RLS acota); las escrituras exigen Aprobar, igual que configurar
+    // el tablero. El query 'entidad' del componente se ignora (el scope es el tablero de la ruta).
+    [HttpGet("tableros/{id:guid}/columnas-config")]
+    public async Task<IActionResult> ColumnasConfig(Guid id, [FromQuery] string? entidad, CancellationToken ct)
+        => Ok(await _svc.ListarColumnasConfigAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("tableros/{id:guid}/columnas-config")]
+    public async Task<IActionResult> GuardarColumnaConfig(Guid id, [FromBody] GuardarUnidadCampoConfigRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarColumnaConfigAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("tableros/{id:guid}/columnas-config/lote")]
+    public async Task<IActionResult> GuardarColumnasConfigLote(Guid id, [FromBody] List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
+    {
+        try { return Ok(await _svc.GuardarColumnasConfigLoteAsync(id, filas, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Editar)]
     [HttpPut("{id:guid}/progreso")]
     public async Task<IActionResult> ActualizarProgreso(Guid id, [FromBody] ActualizarProgresoRequest req, CancellationToken ct)
@@ -437,8 +466,10 @@ public class TareasController : ControllerBase
     {
         var tenantId = GetTenantId();
         if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
-        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
-        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        // T-09: lista blanca de tipos (extension + Content-Type + magic bytes) ANTES de subir al blob.
+        // Cierra el hueco de aceptar cualquier archivo (.exe/.svg/.html/.js). Cubre tambien vacio y 10 MB.
+        var err = await AdjuntoTareaValidation.ValidarAsync(file, ct);
+        if (err is not null) return BadRequest(new { error = err });
         var ext = System.IO.Path.GetExtension(file.FileName);
         var key = $"tenants/{tenantId:N}/tareas/{id:N}/{Guid.NewGuid():N}{ext}";
         await using var stream = file.OpenReadStream();

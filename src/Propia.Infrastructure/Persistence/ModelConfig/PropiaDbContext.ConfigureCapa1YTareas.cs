@@ -209,6 +209,20 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Config de presentacion de columnas POR TABLERO (alias/oculto/orden/tipo/formato). Analogo a
+        // unidad_campos_config pero llaveado por tablero. Nombre explicito para que case con la tabla
+        // (la convencion daria "tablero_campo_configs"). Unico por (tenant, tablero, campo_clave).
+        modelBuilder.Entity<TableroCampoConfig>(b =>
+        {
+            b.ToTable("tablero_campos_config");
+            b.Property(x => x.CampoClave).IsRequired().HasMaxLength(64);
+            b.Property(x => x.Alias).HasMaxLength(80);
+            b.Property(x => x.Oculto).HasDefaultValue(false);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.TableroId, x.CampoClave }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<TareaCampoValor>(b =>
         {
             b.HasIndex(x => x.TenantId);

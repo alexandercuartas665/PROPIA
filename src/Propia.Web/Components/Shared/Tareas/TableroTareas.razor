@@ -1,4 +1,4 @@
-﻿@* Tablero de Tareas reutilizable (extraido de la pagina /tareas). Hospedado por TareasKanban (pagina)
+@* Tablero de Tareas reutilizable (extraido de la pagina /tareas). Hospedado por TareasKanban (pagina)
    y por el modal de PQRSD. Hereda el rendermode interactivo del host. *@
 @using System.Globalization
 @using Propia.Application.Tareas
@@ -109,7 +109,7 @@ else
                 {
                     var invit = invGal;
                     <div class="tb-card">
-                        <div class="tb-card-bar" style="background:@(invit.TableroColor ?? "#6D4FE3")"></div>
+                        <div class="tb-card-bar" style="background:@(invit.TableroColor ?? "var(--propia-brand)")"></div>
                         <div class="tb-card-body">
                             <div class="tb-card-top">
                                 <div class="tb-card-id">
@@ -118,7 +118,7 @@ else
                                 </div>
                             </div>
                             <div class="tb-card-foot">
-                                <span class="tb-copro-chip">Invitado · @invit.TenantNombre</span>
+                                <span class="tb-copro-chip">Invitado - @invit.TenantNombre</span>
                             </div>
                             <button class="tb-card-open" @onclick="() => AbrirBoardInvitadoAsync(invit)">Abrir tablero<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
                         </div>
@@ -156,11 +156,43 @@ else
             @* Distribucion al estilo PQRSD: controles (vistas, copropiedad, configurar) en la
                fila superior derecha y el CTA principal en su propia linea debajo. *@
             <div class="tb-board-actions tb-board-actions--col">
+                @* Barra superior en el orden homogeneo con Unidades Privadas (pedido de Alex):
+                   [Copropiedad] . Agrupar . Campos . [modos Tarjetas|Tabla|Calendario|Gantt] . Configurar.
+                   Agrupar y Campos van primero; Calendario/Gantt y Configurar quedan detras (extras propios de
+                   Tareas que Unidades no tiene). Agrupar se movio aqui desde las barras per-vista. *@
                 <div class="tb-actions-row">
                     <div class="tb-avatars tb-avatars-lg">
                         @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
                     </div>
-                    @* En "Cerrados" no hay diseno de tablero: solo una tabla de consulta. *@
+                    @* Selector de copropiedad (context-switcher) al inicio del cluster: no rompe la secuencia. *@
+                    @if (!Compacto) { @SelectorCopropiedad }
+                    @* Agrupar: solo aplica en Tablero/Lista; en Calendario/Gantt no se muestra (agrupar no tiene
+                       sentido ahi). Comparte estado (_cardGroup) con las vistas; el menu es el mismo. *@
+                    @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
+                    {
+                        <div class="tb-menuwrap">
+                            <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
+                            </button>
+                            @if (_cardGroupMenu)
+                            {
+                                <div class="tb-menu">
+                                    @foreach (var o in OpcionesGrupo())
+                                    {
+                                        var k = o.Key;
+                                        <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    @* Campos (gestor unificado, adopcion Selector opcion A): antes de los modos para la secuencia
+                       Agrupar.Campos.Tarjetas.Tabla. Exige el permiso Aprobar (configurar, no basta con trabajar). *@
+                    @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
+                    {
+                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
+                    }
+                    @* Modos de vista despues de Campos. En "Cerrados" no hay diseno de tablero: solo tabla de consulta. *@
                     @if (!_verCerradas)
                     {
                         <div class="tb-modeswitch">
@@ -173,16 +205,10 @@ else
                             }
                         </div>
                     }
-                    @if (!Compacto) { @SelectorCopropiedad }
-                    @* T-02: en modo Compacto (dentro del modal de un expediente) se oculta "Configurar":
-                       las columnas del tablero PQRSD compartido se administran desde /tareas, no por expediente. *@
-                    @* Configurar el tablero exige el permiso Aprobar (no basta con trabajar en el). *@
+                    @* Configurar al final del cluster (extra de Tareas; T-02: oculto en modo Compacto -las columnas
+                       del tablero PQRSD compartido se administran desde /tareas, no por expediente). *@
                     @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
                     {
-                        @* Selector de Campos (adopcion, opcion A): el gestor compartido administra los campos
-                           PROPIOS del tablero (label/tipo/opciones). Los flags avanzados + Total/Suma siguen en
-                           el editor retenido; visibilidad/orden/color de columnas del sistema en localStorage. *@
-                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
                         <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
                     }
                 </div>
@@ -225,7 +251,7 @@ else
                 @foreach (var es in _board.Estados)
                 {
                     <div class="tb-bkpi">
-                        <div class="tb-bkpi-ic" style="background:#F0F3F8;color:@(es.Color ?? "#516F90")"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg></div>
+                        <div class="tb-bkpi-ic" style="background:var(--propia-bg-hover);color:@(es.Color ?? "var(--propia-text-secondary)")"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg></div>
                         <div><div class="tb-bkpi-val">@_board.Tareas.Count(t => t.EstadoId == es.Id)</div><div class="tb-bkpi-lbl">@es.Nombre.ToLowerInvariant()</div></div>
                     </div>
                 }
@@ -269,10 +295,10 @@ else
                                 <tr class="tb-cerr-row" @onclick="() => AbrirCardDraft(tarea, null)" title="Abrir">
                                     <td class="tb-cerr-num">@t.NumeroTarea</td>
                                     <td class="tb-cerr-tit">@t.Titulo</td>
-                                    <td>@if (Enum.IsDefined(t.Prioridad)) { <span class="tb-cerr-prio tb-cerr-prio-@t.Prioridad">@t.Prioridad</span> } else { <span class="tb-cerr-prio">—</span> }</td>
+                                    <td>@if (Enum.IsDefined(t.Prioridad)) { <span class="tb-cerr-prio tb-cerr-prio-@t.Prioridad">@t.Prioridad</span> } else { <span class="tb-cerr-prio">-</span> }</td>
                                     <td><span class="tb-cerr-est" style="background:@(t.EstadoColor ?? "#64748b")">@t.EstadoNombre</span></td>
-                                    <td class="tb-cerr-mot">@(string.IsNullOrWhiteSpace(t.MotivoCierre) ? "—" : t.MotivoCierre)</td>
-                                    <td class="tb-cerr-dt">@(t.CerradaAt is DateTimeOffset ca ? FechaHora(ca) : "—")</td>
+                                    <td class="tb-cerr-mot">@(string.IsNullOrWhiteSpace(t.MotivoCierre) ? "-" : t.MotivoCierre)</td>
+                                    <td class="tb-cerr-dt">@(t.CerradaAt is DateTimeOffset ca ? FechaHora(ca) : "-")</td>
                                     <td class="tb-cerr-act">
                                         <button class="tb-cerr-reab" @onclick:stopPropagation="true" @onclick="() => ReabrirTareaCerrada(tarea.Id)" title="Reabrir: vuelve al tablero activo">
                                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reabrir
@@ -311,21 +337,8 @@ else
                         </div>
                     }
                 </div>
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar tarjetas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
-                    </button>
-                    @if (_cardGroupMenu)
-                    {
-                        <div class="tb-menu">
-                            @foreach (var o in OpcionesGrupo())
-                            {
-                                var k = o.Key;
-                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
-                            }
-                        </div>
-                    }
-                </div>
+                @* "Agrupar" se movio a la barra superior (orden homogeneo Agrupar.Campos.Tarjetas.Tabla). Aqui
+                   queda solo "Ordenar", que es propio de la vista Tablero. *@
             </div>
 
             @if (string.IsNullOrEmpty(_cardGroup) || _cardGroup == "none")
@@ -342,7 +355,7 @@ else
                          ondragover="event.preventDefault()"
                          @ondrop="() => SoltarEnEstado(estado.Id)">
                         <div class="tb-col-head">
-                            <span class="tb-col-dot" style="background:@(est.Color ?? "#94a3b8")"></span>
+                            <span class="tb-col-dot" style="background:@(est.Color ?? EstadoColorDefault)"></span>
                             <span class="tb-col-nom">@est.Nombre</span>
                             <span class="tb-col-count">@cards.Count</span>
                         </div>
@@ -498,56 +511,9 @@ else
                 @BloqueFiltros
                 @* Buscador junto a "Filtros" (como en PQRSD). *@
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
-                <div class="tb-flex"></div>
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => _cardGroupMenu = !_cardGroupMenu" title="Agrupar filas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
-                    </button>
-                    @if (_cardGroupMenu)
-                    {
-                        <div class="tb-menu">
-                            @foreach (var o in OpcionesGrupo())
-                            {
-                                var k = o.Key;
-                                <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
-                            }
-                        </div>
-                    }
-                </div>
-                <button class="tb-filter-btn" @onclick="() => _colsMenu = !_colsMenu" title="Columnas visibles">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
-                </button>
-                @if (_colsMenu)
-                {
-                    <div class="tb-colsmenu">
-                        <div class="tb-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
-                        @* Cada fila: flechas para reordenar + casilla para mostrar/ocultar + nombre. El orden real
-                           de la tabla se aplica por CSS (order) segun _colOrden, sin tocar el markup de las filas. *@
-                        @for (int i = 0; i < _colOrden.Count; i++)
-                        {
-                            var idx = i; var key = _colOrden[idx];
-                            <div class="tb-colsmenu-i @(ColKeyVisible(key) ? "" : "tb-colsmenu-off")">
-                                <span class="tb-colord">
-                                    <button type="button" class="tb-colord-b" title="Subir" disabled="@(idx == 0)" @onclick="() => MoverColumna(idx, -1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 15l6-6 6 6"/></svg></button>
-                                    <button type="button" class="tb-colord-b" title="Bajar" disabled="@(idx == _colOrden.Count - 1)" @onclick="() => MoverColumna(idx, 1)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg></button>
-                                </span>
-                                @if (ColKeyBloqueada(key))
-                                {
-                                    <span class="tb-chk tb-chk-lock" title="Columna fija (no se puede ocultar)"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#90A4B7" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
-                                }
-                                else
-                                {
-                                    <button type="button" class="tb-chk-btn" @onclick="() => ToggleColKey(key)"><span class="tb-chk @(ColKeyVisible(key) ? "on" : "")">@if (ColKeyVisible(key)){<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>}</span></button>
-                                }
-                                <span class="tb-colsmenu-lbl">@ColKeyLabel(key)</span>
-                            </div>
-                        }
-                        <div class="tb-colsmenu-acts">
-                            <button class="tb-colsmenu-act" @onclick="ColsTodos">Mostrar todas</button>
-                            <button class="tb-colsmenu-act" @onclick="ColsNinguno">Ocultar todas</button>
-                        </div>
-                    </div>
-                }
+                @* Igual que Unidades: Filtros + Buscar en esta barra. "Agrupar" se movio a la barra superior
+                   (orden Agrupar.Campos.Tarjetas.Tabla) y el orden/visibilidad/renombre de columnas se
+                   administra en el gestor unificado (boton "Campos" de la barra superior). *@
             </div>
 
             @ColumnColorCss
@@ -560,17 +526,19 @@ else
                 <div class="tb-list-hdr">
                     @* Columna del expansor (primera, fija): abre el modal; se ve al pasar el mouse. *@
                     <div class="tb-lc tb-lc-exp"></div>
-                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>TITULO</span>@SortInd("titulo")</div>
-                    @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>DESCRIPCION</span>@ColorDot("desc")</div> }
-                    @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" @onclick='() => SortBy("numero")'><span>CODIGO</span>@SortInd("numero")@ColorDot("cod")</div> }
-                    <div class="tb-lc tb-lc-est"><span>ETAPA</span>@ColorDot("est")</div>
-                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>ASIGNADO</span>@SortInd("asignado")@ColorDot("resp")</div> }
-                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>PROGRESO</span>@SortInd("progreso")@ColorDot("prog")</div>
-                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"><span>ETIQUETAS</span>@ColorDot("etiq")</div> }
-                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>PRIORIDAD</span>@SortInd("prioridad")@ColorDot("prio")</div> }
-                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>VENCE</span>@SortInd("vence")@ColorDot("due")</div> }
-                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>VALOR</span>@SortInd("valor")@ColorDot("valor")</div> }
-                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>RELACIONADO CON</span>@SortInd("origen")@ColorDot("orig")</div> }
+                    @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
+                       gestor (alias en columnas-config), se muestra el alias; si no, la etiqueta de fabrica. *@
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")</div>
+                    @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" @onclick='() => SortBy("descripcion")'><span>@ColLabel("desc", "DESCRIPCION")</span>@ColorDot("desc")</div> }
+                    @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" @onclick='() => SortBy("numero")'><span>@ColLabel("cod", "CODIGO")</span>@SortInd("numero")@ColorDot("cod")</div> }
+                    <div class="tb-lc tb-lc-est"><span>@ColLabel("est", "ETAPA")</span>@ColorDot("est")</div>
+                    @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" @onclick='() => SortBy("asignado")'><span>@ColLabel("resp", "ASIGNADO")</span>@SortInd("asignado")@ColorDot("resp")</div> }
+                    <div class="tb-lc tb-lc-prog tb-lc-sort" @onclick='() => SortBy("progreso")'><span>@ColLabel("prog", "PROGRESO")</span>@SortInd("progreso")@ColorDot("prog")</div>
+                    @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"><span>@ColLabel("etiq", "ETIQUETAS")</span>@ColorDot("etiq")</div> }
+                    @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>@ColLabel("prio", "PRIORIDAD")</span>@SortInd("prioridad")@ColorDot("prio")</div> }
+                    @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>@ColLabel("due", "VENCE")</span>@SortInd("vence")@ColorDot("due")</div> }
+                    @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>@ColLabel("valor", "VALOR")</span>@SortInd("valor")@ColorDot("valor")</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "RELACIONADO CON")</span>@SortInd("origen")@ColorDot("orig")</div> }
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)<button type="button" class="tb-lc-ed" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>@ColorDot(cid)</div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
@@ -596,7 +564,7 @@ else
                     @* Con filtros activos se ocultan las etapas que quedan sin tareas (no se muestran encabezados vacios). *@
                     if (HayFiltros && grupo.Count == 0) { continue; }
                     var estado = est;
-                    @EncabezadoGrupoLista(estado.Nombre, estado.Color ?? "#94a3b8", grupo.Count, estado.Id, grupo)
+                    @EncabezadoGrupoLista(estado.Nombre, estado.Color ?? EstadoColorDefault, grupo.Count, estado.Id, grupo)
                     @foreach (var t in grupo)
                     {
                         @RenderArbol(t, 0)
@@ -755,7 +723,7 @@ else
                                     @foreach (var t in cell.Cards.Take(3))
                                     {
                                         var tarea = t;
-                                        <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@t.Titulo - @TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
+                                        <button class="tcal-ev @(t.Vencida ? "venc" : "")" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "var(--propia-brand)")" title="@t.Titulo - @TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">@t.Titulo</button>
                                     }
                                     @if (cell.Cards.Count > 3) { <span class="tcal-more">+@(cell.Cards.Count - 3) mas</span> }
                                 </div>
@@ -777,7 +745,7 @@ else
                                     @foreach (var t in d.Cards)
                                     {
                                         var tarea = t;
-                                        <button class="tcal-wev" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" title="@TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">
+                                        <button class="tcal-wev" style="border-left-color:@(t.Color ?? t.EstadoColor ?? "var(--propia-brand)")" title="@TooltipEstado(t)" @onclick="() => AbrirCardDraft(tarea, null)">
                                             <div class="tcal-wev-t">@t.Titulo</div>
                                             @if (!string.IsNullOrWhiteSpace(t.AsignadoNombre)) { <div class="tcal-wev-r">@t.AsignadoNombre</div> }
                                         </button>
@@ -801,7 +769,7 @@ else
             <div class="tg">
                 <div class="tg-titlebar">
                     <button class="tcal-nav" title="Anterior" @onclick="() => GanttMover(-1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
-                    <div class="tg-title">Cronograma · @FechaCortaSimple(gIni) – @FechaCortaSimple(gIni.AddDays(gDias - 1))</div>
+                    <div class="tg-title">Cronograma - @FechaCortaSimple(gIni) - @FechaCortaSimple(gIni.AddDays(gDias - 1))</div>
                     <button class="tcal-nav" title="Siguiente" @onclick="() => GanttMover(1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
                     <button class="tcal-today" @onclick="GanttHoy">Hoy</button>
                     <div class="tb-flex"></div>
@@ -840,7 +808,7 @@ else
                                         </button>
                                     }
                                     else { <span class="tg-exp-sp"></span> }
-                                    <span class="tg-dot" style="background:@(t.EstadoColor ?? "#94a3b8")"></span>
+                                    <span class="tg-dot" style="background:@(t.EstadoColor ?? EstadoColorDefault)"></span>
                                     <button class="tg-task-btn" @onclick="() => AbrirCardDraft(tarea, null)" title="@TooltipEstado(t)"><span class="tg-task-t" style="font-weight:@(depth == 0 ? 700 : 500)">@t.Titulo</span></button>
                                 </div>
                                 <div class="tg-time tg-lane">
@@ -862,7 +830,7 @@ else
                                         {
                                             var clipL = off < 0;             // empieza antes de la ventana
                                             var clipR = off + dur > gDias;   // termina despues de la ventana
-                                            <button class="tg-bar @(clipL ? "tg-bar-cl" : "") @(clipR ? "tg-bar-cr" : "")" style="left:@(visIni * GColW + 2)px;width:@((visFin - visIni) * GColW - 4)px;background:@(t.Color ?? t.EstadoColor ?? "#6D4FE3")" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo (@t.Progreso%)">
+                                            <button class="tg-bar @(clipL ? "tg-bar-cl" : "") @(clipR ? "tg-bar-cr" : "")" style="left:@(visIni * GColW + 2)px;width:@((visFin - visIni) * GColW - 4)px;background:@(t.Color ?? t.EstadoColor ?? "var(--propia-brand)")" @onclick="() => AbrirCardDraft(tarea, null)" title="@t.Titulo (@t.Progreso%)">
                                                 @if (t.Progreso < 100) { <span class="tg-bar-rest" style="left:@(t.Progreso)%"></span> }
                                                 <span class="tg-bar-lbl">@t.Titulo</span>
                                             </button>
@@ -1041,10 +1009,12 @@ else
 }
 
 @* ===================== Modal Campos del tablero (Selector de Campos, opcion A) ===================== *@
-@* El gestor compartido ConfigCamposEntidad administra las definiciones de campos PROPIOS del tablero
-   (label/tipo/opciones) contra /api/tareas/tableros/{id}/campos. SinConfigSistema: no toca visibilidad/orden/
-   color de columnas del sistema (siguen per-usuario en localStorage). Los flags avanzados + Total/Suma se
-   editan en el editor retenido. @key por tablero para recargar al cambiar. *@
+@* Gestor UNIFICADO (como Unidades/Directorio): una sola grilla lista las columnas del SISTEMA (titulo,
+   etapa, asignado, vence...) inyectadas por Catalogo y los campos PROPIOS del tablero. Alias (renombre),
+   visibilidad y orden de columnas persisten en la config PER-TENANT + PER-TABLERO via RutaConfig
+   (/columnas-config); las definiciones de campos propios (label/tipo/opciones) van por RutaCatalogo
+   (/campos). Reemplaza al 2o menu "Campos" per-usuario (localStorage) que habia en la barra. Los flags
+   avanzados + Total/Suma siguen en el editor retenido. @key por tablero para recargar al cambiar. *@
 @if (_gestorCamposOpen && _board is not null)
 {
     <div class="tb-modal-bd" @onclick="CerrarGestorCampos">
@@ -1052,18 +1022,20 @@ else
             <div class="tb-modal-head">
                 <div class="tb-modal-tt">
                     <div class="tb-modal-h">Campos del tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre · campos propios (tipo, opciones, orden)</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre - columnas y campos propios (renombre, tipo, visibilidad, orden)</div>
                 </div>
                 <button class="tb-modal-x" @onclick="CerrarGestorCampos"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
             <div class="tb-modal-body">
                 <ConfigCamposEntidad Prefijo="tareas"
                                      RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
-                                     SinConfigSistema="true"
+                                     RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
+                                     EntidadConfig="tablero"
+                                     Catalogo="ColumnasSistemaCatalogo"
                                      TituloSingular="tarjeta" TituloPlural="Campos del tablero"
                                      Ejemplo="Ej. Costo estimado, Proveedor"
                                      Jwt="@_jwt"
-                                     Cambiado="RecargarBoard"
+                                     Cambiado="RecargarTrasCambioCampos"
                                      @key="_board.Tablero.Id" />
             </div>
         </div>
@@ -1078,7 +1050,7 @@ else
             <div class="tb-modal-head">
                 <div class="tb-modal-tt">
                     <div class="tb-modal-h">Configurar tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre · estados y campos</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre - estados y campos</div>
                 </div>
                 <button class="tb-modal-x" @onclick="CerrarConfigBoard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
@@ -1093,7 +1065,7 @@ else
                             var idxEst = iEst;
                             <div class="tbcfg-est">
                                 <span style="position:relative;display:inline-flex;">
-                                    <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(est.Color ?? "#94a3b8")" title="Cambiar color" @onclick="() => _estColorId = _estColorId == est.Id ? null : est.Id"></button>
+                                    <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(est.Color ?? EstadoColorDefault)" title="Cambiar color" @onclick="() => _estColorId = _estColorId == est.Id ? null : est.Id"></button>
                                     @if (_estColorId == est.Id)
                                     {
                                         <div class="tb-tagpop-bd" @onclick="() => _estColorId = null"></div>
@@ -1290,7 +1262,7 @@ else
                 </div>
                 <div class="tbcfg-sec">
                     <div class="tbcfg-h">USUARIOS DEL TABLERO (INVITAR)</div>
-                    <div class="tbcfg-help">Invita personas a trabajar en este tablero — también de tus otras copropiedades (solo usuarios del sistema). Los cambios se aplican al instante.</div>
+                    <div class="tbcfg-help">Invita personas a trabajar en este tablero - tambien de tus otras copropiedades (solo usuarios del sistema). Los cambios se aplican al instante.</div>
                     @if (_board.Tablero.Usuarios.Count > 0)
                     {
                         <div class="tb-chips" style="margin-bottom:10px;">
@@ -1480,15 +1452,15 @@ else
                                 @if (d.TieneHijos)
                                 {
                                     <div class="tbc-prog-ro">
-                                        <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
-                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                        <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")"></div></div>
+                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
                                     </div>
                                 }
                                 else
                                 {
                                     <div class="tbc-prog-edit">
-                                        <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" />
-                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "#1A8754" : "#516F90")">@d.Progreso%</span>
+                                        <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")" />
+                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
                                     </div>
                                 }
                             </div>
@@ -1502,7 +1474,7 @@ else
                             @foreach (var et in _etiquetasCat)
                             {
                                 var eid = et.Id; var on = d.EtiquetaIds.Contains(et.Id);
-                                <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:#fff" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
+                                <button class="tbc-tag @(on ? "on" : "")" style="@(on ? $"background:{et.Color ?? "#6D4FE3"};border-color:{et.Color ?? "#6D4FE3"};color:var(--propia-text-inverse)" : "")" @onclick="() => ToggleEtiquetaDraft(eid)">@et.Nombre</button>
                             }
                             @if (_etiquetasCat.Count == 0)
                             {
@@ -1584,7 +1556,7 @@ else
                                 {
                                     var kid = k;
                                     <div class="tbc-sub tbc-subtask" @onclick="() => AbrirCardDraft(kid, null)" title="Abrir subtarea">
-                                        <span class="tbc-sub-dot" style="background:@(k.EstadoColor ?? "#6D4FE3")"></span>
+                                        <span class="tbc-sub-dot" style="background:@(k.EstadoColor ?? "var(--propia-brand)")"></span>
                                         <span class="tbc-sub-t @(k.EstadoEsTerminal ? "done" : "")">@k.Titulo</span>
                                         <span class="tbc-sub-est">@k.EstadoNombre</span>
                                     </div>
@@ -1624,7 +1596,7 @@ else
                                 var idx = i; var st = d.Checklist[i];
                                 <div class="tbc-sub">
                                     <button class="tbc-chk @(st.Hecho ? "on" : "")" @onclick="() => CardToggleSub(idx)">
-                                        @if (st.Hecho) { <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg> }
+                                        @if (st.Hecho) { <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--propia-text-inverse)" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg> }
                                     </button>
                                     <span class="tbc-sub-t @(st.Hecho ? "done" : "")">@st.Titulo</span>
                                     <button class="tbc-sub-x" @onclick="() => CardRemoveSub(idx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -1834,7 +1806,8 @@ else
                                     <label class="tbc-chat-clip" title="Adjuntar archivo">
                                         @if (_subiendo) { <span class="tbc-chat-clip-load">...</span> }
                                         else { <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg> }
-                                        <InputFile OnChange="SeleccionarArchivo" style="display:none" />
+                                        @* T-09: accept = pista de cliente; la validacion REAL (tipo + magic bytes) es server-side. *@
+                                        <InputFile OnChange="SeleccionarArchivo" accept=".jpg,.jpeg,.png,.pdf,.docx,.xlsx,.txt,.csv" style="display:none" />
                                     </label>
                                     <textarea class="tbc-chat-input" rows="1" @bind="_nuevoComentario" @bind:event="oninput" @bind:after="DetectarMencion" placeholder="@(_pendingFileName is null ? "Escribe un comentario o @menciona..." : "Anade un comentario (opcional)...")"></textarea>
                                     <button class="tbc-chat-send" @onclick="EnviarMensaje" disabled="@(_busy || _subiendo || (_pendingFile is null && string.IsNullOrWhiteSpace(_nuevoComentario)))" title="Enviar">
@@ -1888,7 +1861,7 @@ else
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
                                 <span class="tbc-thumb-up-t">Subir archivo</span>
                             }
-                            <InputFile OnChange="SubirDesdeArchivos" style="display:none" />
+                            <InputFile OnChange="SubirDesdeArchivos" accept=".jpg,.jpeg,.png,.pdf,.docx,.xlsx,.txt,.csv" style="display:none" />
                         </label>
                     </div>
                     @* Columna derecha: visor grande de la imagen/archivo seleccionado *@
@@ -2378,6 +2351,13 @@ else
     // ---- Color por columna (tonos pastel), persistido por tablero ----
     private Dictionary<string, string> _colColor = new();
     private string? _colColorMenu;
+    // T-11: color por defecto de un estado sin color asignado (DATO-fallback, gris neutro). No hay token
+    // semantico para este gris; se centraliza en una constante (antes iba inline como "#94a3b8" en varios
+    // sitios) para documentar que es un valor de dato a proposito, no estilo por hex.
+    private const string EstadoColorDefault = "#94a3b8";
+
+    // T-11: estos hex son DATOS de paleta (los tonos que el usuario ELIGE para el fondo de columna), no
+    // estilo ad-hoc: no hay token semantico por tono, asi que se dejan como valores literales a proposito.
     private static readonly string[] PastelCols =
         { "#FDE2E4", "#FCE8D5", "#FFF3C4", "#E4F4D4", "#D4F0EC", "#D6E6FB", "#E7DFFB", "#FBE0F0", "#ECEFF3" };
     private string? ColBg(string key) => _colColor.TryGetValue(key, out var c) && !string.IsNullOrEmpty(c) ? c : null;
@@ -2449,6 +2429,7 @@ else
                     <button type="button" class="tb-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
                 }
                 <label class="tb-coloropt tb-coloropt-custom" title="Elegir color personalizado">
+                    @* T-11: <input type="color"> exige un HEX (#rrggbb); un var() no es valido como value, por eso queda literal. *@
                     <input type="color" value="@(ColBg(key) ?? "#6D4FE3")" @onchange="(e) => SetColColorInput(key, e)" />
                 </label>
                 <button type="button" class="tb-coloropt tb-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
@@ -2459,6 +2440,8 @@ else
 
     // Color de texto (blanco / oscuro) para una etiqueta segun la luminancia de su color de fondo,
     // para que el texto quede legible sobre el chip relleno.
+    // T-11: recibe y devuelve HEX concreto a proposito (parsea RGB para calcular luminancia); por eso los
+    // colores de etiqueta que se le pasan tampoco se pueden tokenizar (un var() no se puede parsear aqui).
     private static string TagTextColor(string hex)
     {
         var h = (hex ?? "").TrimStart('#');
@@ -2583,7 +2566,7 @@ else
         return $"En \"{t.EstadoNombre}\" {frase}";
     }
 
-    private bool _pinTitulo = true; private bool _colsMenu;  // columna Titulo SIEMPRE fija (sin boton)
+    private bool _pinTitulo = true;  // columna Titulo SIEMPRE fija (sin boton)
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
     private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true; private bool _colCodigo = true;
 
@@ -2593,40 +2576,41 @@ else
     private IEnumerable<TableroCampoDto> CamposDelTablero => _board?.Tablero.Campos ?? new List<TableroCampoDto>();
     private IEnumerable<TableroCampoDto> CamposVisibles => CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && CampoColVisible(c.Id));
     private bool CampoColVisible(Guid id) => !_colsCampoOcultos.Contains(id);
-    private async Task ToggleCampoCol(Guid id) { if (!_colsCampoOcultos.Remove(id)) _colsCampoOcultos.Add(id); await PersistColsAsync(); }
-    private async Task ToggleColFijo(string key)
-    {
-        switch (key)
-        {
-            case "resp": _colResp = !_colResp; break;
-            case "etiq": _colEtiq = !_colEtiq; break;
-            case "prio": _colPrio = !_colPrio; break;
-            case "due": _colDue = !_colDue; break;
-            case "desc": _colDesc = !_colDesc; break;
-            case "cod": _colCodigo = !_colCodigo; break;
-            case "valor": _colValor = !_colValor; break;
-            case "orig": _colOrigen = !_colOrigen; break;
-        }
-        await PersistColsAsync();
-    }
-    private async Task ColsTodos()
-    {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
-        _colsCampoOcultos.Clear();
-        await PersistColsAsync();
-    }
-    private async Task ColsNinguno()
-    {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = false;
-        _colsCampoOcultos = CamposDelTablero.Select(c => c.Id).ToHashSet();
-        await PersistColsAsync();
-    }
+    // ===== Config de columnas del tablero (per-tenant + per-tablero, servida por el gestor unificado) =====
+    // Antes el orden/visibilidad vivia en localStorage per-usuario; ahora lo administra el gestor compartido
+    // (boton "Campos") y se guarda en /api/tareas/tableros/{id}/columnas-config, COMPARTIDO por la copropiedad
+    // (como Unidades/Directorio). La tabla solo LEE de aqui alias (renombre), visibilidad y orden; el gestor
+    // ESCRIBE. Las claves son las del catalogo de sistema (titulo/desc/cod/est/resp/prog/etiq/prio/due/valor/
+    // orig) y "cd:{id}" para campos propios; en la tabla el orden usa el guid crudo, de ahi ConfigClaveDe.
+    private Dictionary<string, UnidadCampoConfigDto> _colCfg = new(StringComparer.Ordinal);
+    private static string ConfigClaveDe(string colKey) => Guid.TryParse(colKey, out _) ? "cd:" + colKey : colKey;
+    private bool CfgOculto(string clave) => _colCfg.TryGetValue(clave, out var c) && c.Oculto;
+    private int CfgOrden(string clave, int fallback) => _colCfg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    // Alias (renombre) de una columna para la cabecera; null/vacio = el label de fabrica que pasa el markup.
+    private string ColLabel(string clave, string porDefecto)
+        => _colCfg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias!.ToUpperInvariant() : porDefecto;
 
-    // Persistencia de la config de columnas POR TABLERO en localStorage. Cada tablero tiene sus
-    // propios campos dinamicos, asi que la config va llaveada por su Id (propia_tb_cols_<id>).
-    // Sobrevive recarga y cierre de sesion (el logout solo borra llaves puntuales).
-    private sealed record ColsCfg(bool Resp, bool Etiq, bool Prio, bool Due, bool Desc, bool Valor, bool Orig, bool Pin, List<Guid> Ocultos, List<string>? Orden = null, bool Cod = true);
-    private static string ColsKey(Guid tableroId) => $"propia_tb_cols_{tableroId}";
+    // Catalogo de columnas de SISTEMA del tablero, inyectado al gestor unificado (Catalogo). Mismas claves
+    // que usa la tabla. Tipo FIJO (TiposIntercambiables vacio) + SinFormato: en el gestor cada columna solo
+    // admite renombre (alias) + mostrar/ocultar + reordenar; el tipo real no se cambia aqui y no hay editor
+    // de formato. titulo/est/prog van Fija=true (no ocultables: coincide con el markup, que las fuerza
+    // visibles). Las opciones de estados/etiquetas/prioridad se administran en su sitio (Configurar), no aqui.
+    private static readonly TipoCampoTablero[] TipoFijo = Array.Empty<TipoCampoTablero>();
+    private static readonly List<CampoSistemaDef> ColumnasSistemaCatalogo = new()
+    {
+        new("titulo", "Titulo", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Identifica la tarjeta"),
+        new("desc", "Descripcion", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("cod", "Codigo", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Consecutivo de la tarea"),
+        new("est", "Etapa", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Columnas del tablero; se editan en Configurar"),
+        new("resp", "Asignado", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("prog", "Progreso", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Porcentaje calculado"),
+        new("etiq", "Etiquetas", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("prio", "Prioridad", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("due", "Vence", TipoCampoTablero.Fecha, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("valor", "Valor", TipoCampoTablero.Moneda, TiposIntercambiables: TipoFijo, SinFormato: true),
+        new("orig", "Relacionado con", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
+    };
+
     private void ColsReset()   // defaults: todo visible, titulo SIEMPRE fijo
     {
         _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
@@ -2634,26 +2618,33 @@ else
         _colsCampoOcultos = new();
         _colOrden = new();
     }
-    private async Task PersistColsAsync()
-    {
-        if (_board is null) return;
-        var cfg = new ColsCfg(_colResp, _colEtiq, _colPrio, _colDue, _colDesc, _colValor, _colOrigen, _pinTitulo, _colsCampoOcultos.ToList(), _colOrden.ToList(), _colCodigo);
-        try { await Js.InvokeVoidAsync("localStorage.setItem", ColsKey(_board.Tablero.Id), System.Text.Json.JsonSerializer.Serialize(cfg)); } catch { }
-    }
+
+    // Carga la config de columnas del tablero desde el servidor y la proyecta al estado de render de la tabla
+    // (booleans de visibilidad, ocultos de campos propios y orden). Sin config guardada -> defaults. Conserva
+    // el nombre historico RestaurarColsAsync para no tocar los puntos de llamada del ciclo de vida del board.
     private async Task RestaurarColsAsync()
     {
         if (_board is null) return;
+        ColsReset();
         try
         {
-            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey(_board.Tablero.Id));
-            var cfg = string.IsNullOrEmpty(raw) ? null : System.Text.Json.JsonSerializer.Deserialize<ColsCfg>(raw);
-            if (cfg is null) { ColsReset(); return; }   // sin config guardada: defaults del tablero
-            _colResp = cfg.Resp; _colEtiq = cfg.Etiq; _colPrio = cfg.Prio; _colDue = cfg.Due;
-            _colDesc = cfg.Desc; _colValor = cfg.Valor; _colOrigen = cfg.Orig; _pinTitulo = true; _colCodigo = cfg.Cod;
-            _colsCampoOcultos = cfg.Ocultos?.ToHashSet() ?? new();
-            _colOrden = cfg.Orden?.ToList() ?? new();
+            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>(
+                $"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config") ?? new();
+            _colCfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+
+            // est/prog no se pueden ocultar (se fuerzan visibles en el markup); titulo va siempre fijo.
+            _colDesc = !CfgOculto("desc"); _colCodigo = !CfgOculto("cod"); _colResp = !CfgOculto("resp");
+            _colEtiq = !CfgOculto("etiq"); _colPrio = !CfgOculto("prio"); _colDue = !CfgOculto("due");
+            _colValor = !CfgOculto("valor"); _colOrigen = !CfgOculto("orig");
+            _colsCampoOcultos = CamposDelTablero.Where(c => CfgOculto("cd:" + c.Id)).Select(c => c.Id).ToHashSet();
+
+            // Orden: ordena las claves reordenables por su Orden en config (fallback = posicion canonica).
+            var claves = ClavesReordenables();
+            _colOrden = claves
+                .Select((k, i) => (k, ord: CfgOrden(ConfigClaveDe(k), i)))
+                .OrderBy(x => x.ord).Select(x => x.k).ToList();
         }
-        catch { ColsReset(); }
+        catch { _colCfg = new(StringComparer.Ordinal); ColsReset(); }
     }
 
     // ---- Orden de columnas (vista Lista): reordenable via flechas; se aplica por CSS `order`, sin tocar el markup ----
@@ -2688,30 +2679,23 @@ else
         }
         _colOrden = res;
     }
-    private void MoverColumna(int idx, int dir)
+    // Selector de la CABECERA de una columna (.tb-lc-*), para reordenarla junto con sus celdas. ColSelectores
+    // solo apunta a las celdas de fila (.tb-row-*) y ademas lo comparte el coloreado de columnas; por eso el
+    // orden de la cabecera va por aparte (antes las cabeceras del medio quedaban en orden DOM y se desalineaban
+    // de los datos al reordenar). exp/titulo/acc ya se manejan explicitamente abajo.
+    private static string? ColHeaderSel(string key) => key switch
     {
-        int j = idx + dir;
-        if (idx < 0 || idx >= _colOrden.Count || j < 0 || j >= _colOrden.Count) return;
-        (_colOrden[idx], _colOrden[j]) = (_colOrden[j], _colOrden[idx]);
-        _ = PersistColsAsync();
-    }
-    private static bool ColKeyBloqueada(string key) => key is "est" or "prog";  // Etapa y Progreso no se pueden ocultar
-    private bool ColKeyVisible(string key) => key switch
-    {
-        "desc" => _colDesc, "cod" => _colCodigo, "est" => true, "resp" => _colResp, "prog" => true,
-        "etiq" => _colEtiq, "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen,
-        _ => Guid.TryParse(key, out var g) && CampoColVisible(g)
-    };
-    private async Task ToggleColKey(string key)
-    {
-        if (Guid.TryParse(key, out var g)) await ToggleCampoCol(g);
-        else await ToggleColFijo(key);
-    }
-    private string ColKeyLabel(string key) => key switch
-    {
-        "desc" => "Descripcion", "cod" => "Codigo", "est" => "Etapa", "resp" => "Asignado", "prog" => "Progreso",
-        "etiq" => "Etiquetas", "prio" => "Prioridad", "due" => "Vence", "valor" => "Valor", "orig" => "Relacionado con",
-        _ => (Guid.TryParse(key, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g)?.Label : null) ?? key
+        "desc" => ".tb-list .tb-lc-desc",
+        "cod" => ".tb-list .tb-lc-cod",
+        "est" => ".tb-list .tb-lc-est",
+        "resp" => ".tb-list .tb-lc-resp",
+        "prog" => ".tb-list .tb-lc-prog",
+        "etiq" => ".tb-list .tb-lc-etiq",
+        "prio" => ".tb-list .tb-lc-prio",
+        "due" => ".tb-list .tb-lc-due",
+        "valor" => ".tb-list .tb-lc-valor",
+        "orig" => ".tb-list .tb-lc-orig",
+        _ => Guid.TryParse(key, out _) ? $".tb-list .tb-lc-campo.tb-cc-{key}" : null
     };
     // <style> con el `order` de flexbox de cada columna (encabezado + filas + totales) segun _colOrden.
     private MarkupString ColumnOrderCss
@@ -2726,7 +2710,8 @@ else
             {
                 var sel = ColSelectores(key);
                 if (sel is null) continue;
-                sb.Append(sel).Append("{order:").Append(i).Append(" !important;}");
+                var hsel = ColHeaderSel(key);   // reordena tambien la cabecera, no solo la celda
+                sb.Append(hsel is null ? sel : $"{sel},{hsel}").Append("{order:").Append(i).Append(" !important;}");
                 i++;
             }
             sb.Append(".tb-list .tb-lc-acc,.tb-list .tb-row-acc{order:9999 !important;}");
@@ -2887,6 +2872,8 @@ else
     private List<SelectorOrigenReferencia.OpcionBusqueda> _busqZonas = new();
     private List<SelectorOrigenReferencia.OpcionBusqueda> _busqEquipos = new();
 
+    // T-11: paletas de tonos ELEGIBLES por el usuario (colores de tablero/etiqueta y de avatar). Son DATOS,
+    // no estilo ad-hoc: distintos matices sin token semantico -> hex literal a proposito.
     private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
     private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
 
@@ -3206,7 +3193,7 @@ else
         {
             <div class="tb-cosel">
                 <button class="tb-cosel-btn @(_tenants.Count > 1 ? "" : "tb-cosel-single")" @onclick="ToggleCoMenu" disabled="@(_tenants.Count <= 1)" title="@(_tenants.Count > 1 ? "Cambiar de copropiedad" : NombreCopropiedadActiva())">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="2"><path d="@IconEdificio"/></svg>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--propia-brand)" stroke-width="2"><path d="@IconEdificio"/></svg>
                     <span class="tb-cosel-nom">@NombreCopropiedadActiva()</span>
                     @if (_tenants.Count > 1)
                     {
@@ -3421,7 +3408,7 @@ else
     private void ToggleFiltros()
     {
         _filtrosMenu = !_filtrosMenu;
-        _cardGroupMenu = false; _colsMenu = false;
+        _cardGroupMenu = false;
         if (_filtrosMenu && _reglas.Count == 0) AgregarRegla();
     }
     private void AgregarRegla() { _reglas.Add(new FiltroRegla { Campo = "estado", Op = "es", Valor = "" }); }
@@ -3801,7 +3788,7 @@ else
     {
         var tarea = t;
         var esHija = depth > 0;
-        <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "#E1E8EE" : "transparent"))">
+        <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "var(--propia-border-card)" : "transparent"))">
             @* ---- EXPANSOR (primera columna, se ve al pasar el mouse): abre el modal ---- *@
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" title="Abrir la tarea" @onclick="() => AbrirCardDraft(tarea, null)">
@@ -3847,7 +3834,7 @@ else
                     }
                     else
                     {
-                        <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "—" : t.Descripcion)</div>
+                        <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "-" : t.Descripcion)</div>
                     }
                 </div>
             }
@@ -3862,7 +3849,7 @@ else
             <div class="tb-row-cell-est">
                 @if (!esHija)
                 {
-                    <select class="tb-est-sel" style="background:@(t.EstadoColor ?? "#6D4FE3")" value="@t.EstadoId" @onchange="(e) => CambiarEstadoFila(tarea.Id, e)">
+                    <select class="tb-est-sel" style="background:@(t.EstadoColor ?? "var(--propia-brand)")" value="@t.EstadoId" @onchange="(e) => CambiarEstadoFila(tarea.Id, e)">
                         @if (_board is not null) { @foreach (var e in _board.Estados) { <option value="@e.Id" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@e.Nombre</option> } }
                     </select>
                 }
@@ -3900,13 +3887,13 @@ else
             <div class="tb-row-prog">
                 @if (t.CantidadSubtareas == 0)
                 {
-                    <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
+                    <input type="range" min="0" max="100" step="5" value="@t.Progreso" style="accent-color:@(t.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")" @onchange="(e) => CambiarProgresoFila(tarea.Id, e)" />
                 }
                 else
                 {
-                    <div class="tb-prog-bar" title="Se calcula desde las subtareas"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "#1A8754" : "#6D4FE3")"></div></div>
+                    <div class="tb-prog-bar" title="Se calcula desde las subtareas"><div class="tb-prog-fill" style="width:@(t.Progreso)%;background:@(t.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")"></div></div>
                 }
-                <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "#1A8754" : "#516F90")">@t.Progreso%</span>
+                <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@t.Progreso%</span>
             </div>
             @* ---- ETIQUETAS (chips contenidos; texto editable inline + swatch de color al final) ---- *@
             @if (_colEtiq)
@@ -3962,7 +3949,7 @@ else
                     }
                     else
                     {
-                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "fechaVencimiento", tarea.FechaVencimiento?.ToString("yyyy-MM-dd"))'>@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "—")</div>
+                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "fechaVencimiento", tarea.FechaVencimiento?.ToString("yyyy-MM-dd"))'>@(t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : "-")</div>
                     }
                 </div>
             }
@@ -3977,7 +3964,7 @@ else
                     }
                     else
                     {
-                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "valor", tarea.Valor?.ToString(System.Globalization.CultureInfo.InvariantCulture))'>@(t.Valor.HasValue ? "$" + t.Valor.Value.ToString("N0") : "—")</div>
+                        <div class="tb-editable" @onclick='() => IniciarEd(tarea.Id, "valor", tarea.Valor?.ToString(System.Globalization.CultureInfo.InvariantCulture))'>@(t.Valor.HasValue ? "$" + t.Valor.Value.ToString("N0") : "-")</div>
                     }
                 </div>
             }
@@ -4032,7 +4019,7 @@ else
                     }
                     else
                     {
-                        <div class="tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "campo:" + campo.Id, CampoValor(tarea, campo.Id))'>@(string.IsNullOrWhiteSpace(CampoDisplay(t, campo)) ? "—" : CampoDisplay(t, campo))</div>
+                        <div class="tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "campo:" + campo.Id, CampoValor(tarea, campo.Id))'>@(string.IsNullOrWhiteSpace(CampoDisplay(t, campo)) ? "-" : CampoDisplay(t, campo))</div>
                     }
                 </div>
             }
@@ -4901,7 +4888,11 @@ else
     private void CerrarConfigBoard() { _cfgOpen = false; }
     // Selector de Campos (opcion A): abre/cierra el modal del gestor compartido de campos propios del tablero.
     private void AbrirGestorCampos() { _gestorCamposOpen = true; }
-    private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarBoard(); }
+    private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarTrasCambioCampos(); }
+    // Tras un cambio del gestor unificado (definicion de campo propio O config de columna): recarga el board
+    // Y re-lee la config de columnas, para que el alias/visibilidad/orden se reflejen en la tabla sin F5.
+    // RecargarBoard por si solo no re-lee columnas-config (para no pagar ese GET en cada edicion de tarea).
+    private async Task RecargarTrasCambioCampos() { await RecargarBoard(); await RestaurarColsAsync(); }
 
     // ---- Config de motivos de cierre (modulo tareas) ----
     private string _nuevoMotivoTareaNombre = "";
@@ -5610,6 +5601,8 @@ else
         dia = char.ToUpper(dia[0]) + dia.Substring(1);
         return dia + " " + d.Day + " " + d.ToString("MMM", Es);
     }
+    // T-11: paleta SEMANTICA de prioridad (texto/fondo por nivel). Son DATOS de color por prioridad; los
+    // matices no calzan 1:1 con tokens (no son brand/success/danger), asi que se dejan como hex a proposito.
     private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
     private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
 }

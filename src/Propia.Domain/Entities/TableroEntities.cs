@@ -71,6 +71,40 @@ public class TableroCampo : TenantEntity
     public bool Activo { get; set; } = true;
 }
 
+/// <summary>
+/// Configuracion de PRESENTACION de las columnas de un tablero por copropiedad: alias (renombre),
+/// visibilidad, orden y -donde aplica- override de tipo/formato/opciones. Cubre tanto las columnas
+/// del SISTEMA (titulo, etapa, asignado, vence...) identificadas por una clave estable, como los
+/// campos PROPIOS (clave "cd:{id}"). Es el analogo per-tablero de <c>UnidadCampoConfig</c>: por eso
+/// reusa el mismo contrato de DTOs. Es TenantEntity - aislada por tenant_id + RLS; se llavea por
+/// (tenant, tablero, campo_clave) para que la config sea POR TABLERO y compartida por la copropiedad.
+/// </summary>
+public class TableroCampoConfig : TenantEntity
+{
+    public Guid TableroId { get; set; }
+
+    /// <summary>Clave estable de la columna: del sistema (titulo/est/resp/...) o propia ("cd:{id}").</summary>
+    public string CampoClave { get; set; } = string.Empty;
+
+    /// <summary>Etiqueta personalizada de la columna; null = se usa la del sistema.</summary>
+    public string? Alias { get; set; }
+
+    /// <summary>Opciones (una por linea) para columnas de sistema tipo lista editables. Null si no aplica.</summary>
+    public string? Opciones { get; set; }
+
+    /// <summary>Override del tipo de dato; null = usa el tipo del sistema.</summary>
+    public TipoCampoTablero? Tipo { get; set; }
+
+    /// <summary>Formato de presentacion (JSON simple). Null = el formato por defecto del tipo.</summary>
+    public string? Formato { get; set; }
+
+    /// <summary>Oculta la columna en la vista del tablero (configuracion por copropiedad).</summary>
+    public bool Oculto { get; set; }
+
+    /// <summary>Posicion de la columna en la tabla; null = va al final.</summary>
+    public int? Orden { get; set; }
+}
+
 /// <summary>Valor de un campo personalizado del tablero para una tarea concreta.</summary>
 public class TareaCampoValor : TenantEntity
 {

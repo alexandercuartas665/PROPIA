@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
+using Propia.Application.MiCopropiedad;   // contrato de config de columnas reusado (Unidad*CampoConfig*)
 using Propia.Application.Tareas;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -223,6 +224,86 @@ public partial class TareasService
             .OrderBy(c => c.Orden)
             .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
             .ToListAsync(ct);
+
+    // ===================== Config de presentacion de COLUMNAS del tablero =====================
+    // Per-tenant + per-tablero (compartida por la copropiedad; RLS acota por tenant, el WHERE por tablero).
+    // Analogo a MiCopropiedadService.*CamposConfig* pero llaveado por tablero en vez de por 'entidad': el
+    // scope es el tableroId de la ruta, asi que la 'entidad' del DTO se ignora (se responde "tablero"). El
+    // gestor de campos compartido (Selector de Campos, opcion A) las consume via RutaConfig. La UI manda la
+    // fila COMPLETA (estado deseado), por eso se asigna tal cual; la clave del upsert es (tablero, campo_clave).
+    // 'campo_clave' es la columna de sistema (titulo/est/resp/...) o el campo propio ("cd:{id}").
+    public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListarColumnasConfigAsync(Guid tableroId, CancellationToken ct) =>
+        await _db.TableroCamposConfig.AsNoTracking()
+            .Where(c => c.TableroId == tableroId)
+            .Select(c => new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, "tablero"))
+            .ToListAsync(ct);
+
+    public async Task<UnidadCampoConfigDto> GuardarColumnaConfigAsync(Guid tableroId, GuardarUnidadCampoConfigRequest req, CancellationToken ct)
+    {
+        if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
+            throw new InvalidOperationException("Tablero no encontrado.");
+        var clave = (req.CampoClave ?? "").Trim();
+        if (clave.Length == 0) throw new InvalidOperationException("CampoClave obligatorio.");
+        var c = await _db.TableroCamposConfig.FirstOrDefaultAsync(x => x.TableroId == tableroId && x.CampoClave == clave, ct);
+        if (c is null)
+        {
+            c = new TableroCampoConfig { TableroId = tableroId, CampoClave = clave };
+            _db.TableroCamposConfig.Add(c);
+        }
+        AplicarColumnaConfig(c, req);
+        await _db.SaveChangesAsync(ct);
+        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, "tablero");
+    }
+
+    // Guarda VARIAS filas en una sola transaccion. Lo usa el reordenamiento por flechas/drag del gestor, que
+    // manda la fila completa de cada columna (no solo su posicion): de lo contrario las filas creadas al vuelo
+    // tomarian el default de 'oculto' y una columna oculta se haria visible sola al reordenar. Dedup por clave.
+    public async Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarColumnasConfigLoteAsync(
+        Guid tableroId, List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct)
+    {
+        if (!await _db.Tableros.AnyAsync(t => t.Id == tableroId, ct))
+            throw new InvalidOperationException("Tablero no encontrado.");
+        if (filas is null || filas.Count == 0) return await ListarColumnasConfigAsync(tableroId, ct);
+
+        var pedidos = new List<(string Clave, GuardarUnidadCampoConfigRequest Req)>();
+        foreach (var req in filas)
+        {
+            var clave = (req?.CampoClave ?? "").Trim();
+            if (clave.Length == 0) continue;
+            if (pedidos.Any(p => p.Clave == clave)) continue;   // gana la primera aparicion
+            pedidos.Add((clave, req!));
+        }
+        if (pedidos.Count == 0) return await ListarColumnasConfigAsync(tableroId, ct);
+
+        var claves = pedidos.Select(p => p.Clave).ToList();
+        var existentes = await _db.TableroCamposConfig
+            .Where(x => x.TableroId == tableroId && claves.Contains(x.CampoClave))
+            .ToListAsync(ct);
+        foreach (var (clave, req) in pedidos)
+        {
+            var c = existentes.FirstOrDefault(x => x.CampoClave == clave);
+            if (c is null)
+            {
+                c = new TableroCampoConfig { TableroId = tableroId, CampoClave = clave };
+                _db.TableroCamposConfig.Add(c);
+            }
+            AplicarColumnaConfig(c, req);
+        }
+        await _db.SaveChangesAsync(ct);
+        return await ListarColumnasConfigAsync(tableroId, ct);
+    }
+
+    private static void AplicarColumnaConfig(TableroCampoConfig c, GuardarUnidadCampoConfigRequest req)
+    {
+        c.Alias = string.IsNullOrWhiteSpace(req.Alias) ? null : req.Alias.Trim();
+        c.Opciones = string.IsNullOrWhiteSpace(req.Opciones)
+            ? null
+            : string.Join('\n', req.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        c.Tipo = req.Tipo;
+        c.Formato = string.IsNullOrWhiteSpace(req.Formato) ? null : req.Formato.Trim();
+        c.Oculto = req.Oculto;
+        c.Orden = req.Orden;
+    }
 
     /// <summary>Sube (direccion &lt; 0) o baja (direccion &gt;= 0) un campo, intercambiando el
     /// Orden con el campo vecino. Normaliza los ordenes a 0..n-1 para tolerar huecos/empates.</summary>

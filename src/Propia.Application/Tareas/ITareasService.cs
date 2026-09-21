@@ -1,4 +1,5 @@
 using Propia.Domain.Enums;
+using Propia.Application.MiCopropiedad;   // reusa el contrato de config de columnas (Unidad*CampoConfig*)
 
 namespace Propia.Application.Tareas;
 
@@ -96,4 +97,15 @@ public interface ITareasService
     /// <summary>Definiciones de campos PROPIOS ACTIVOS de un tablero, en orden canonico (para el gestor
     /// de campos compartido, que hace GET a la ruta base para listarlas).</summary>
     Task<IReadOnlyList<TableroCampoDto>> ListarCamposActivosAsync(Guid tableroId, CancellationToken ct);
+
+    // ---- Config de presentacion de COLUMNAS del tablero (alias/oculto/orden/tipo/formato) ----
+    // Per-tenant + per-tablero (compartida por la copropiedad). Reusa el contrato de DTOs de
+    // unidad_campos_config; el gestor de campos compartido las consume via RutaConfig. La clave
+    // 'entidad' del DTO se ignora: el scope es el tableroId de la ruta.
+    /// <summary>Config de columnas guardada para un tablero (vacia = todo por defecto).</summary>
+    Task<IReadOnlyList<UnidadCampoConfigDto>> ListarColumnasConfigAsync(Guid tableroId, CancellationToken ct);
+    /// <summary>Upsert de la config de UNA columna del tablero (la UI manda la fila completa).</summary>
+    Task<UnidadCampoConfigDto> GuardarColumnaConfigAsync(Guid tableroId, GuardarUnidadCampoConfigRequest req, CancellationToken ct);
+    /// <summary>Upsert de VARIAS columnas en una transaccion (reordenamiento: fila completa por columna).</summary>
+    Task<IReadOnlyList<UnidadCampoConfigDto>> GuardarColumnasConfigLoteAsync(Guid tableroId, List<GuardarUnidadCampoConfigRequest> filas, CancellationToken ct);
 }
