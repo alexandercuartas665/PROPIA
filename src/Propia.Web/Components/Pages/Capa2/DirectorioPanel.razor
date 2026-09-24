@@ -106,9 +106,9 @@
             @if (_view == "tabla")
             {
                 <div class="dir-menu-wrap">
-                    <button type="button" class="fd-btn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Campos y columnas de la tabla">
+                    <button type="button" class="fd-btn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Columnas fijas de la tabla: orden y visibilidad">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                        <span>Campos</span>
+                        <span>Columnas</span>
                     </button>
                     @if (_cfgColsAbierto)
                     {
@@ -140,6 +140,11 @@
                         </div>
                     }
                 </div>
+                @* Campos propios (dinamicos): gestor compartido con Residentes (crear/renombrar/reordenar/ocultar). *@
+                <button type="button" class="fd-btn @(_gestorCamposAbierto ? "on" : "")" @onclick="() => _gestorCamposAbierto = true" title="Campos propios de personas y empresas (compartidos con Residentes)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
             }
             @* Toggle Lista/Tabla dentro de la barra de filtros (como en los demas modulos),
                no en una fila propia. La vista la controla la pagina y se pasa a las vistas
@@ -168,6 +173,13 @@
         {
             <DirectorioPersonasVista Personas="PersonasParaVista()" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
                                      Etiquetas="_etiquetasTodas"
+                                     ColsWidth="_widthPersonas" SortKey="@_sortKeyPersonas" SortDir="_sortDirPersonas"
+                                     OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
+                                     Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
+                                     OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
+                                     OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
+                                     Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
+                                     OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
                                      Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
                                      OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
@@ -175,6 +187,13 @@
         else
         {
             <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
+                                     ColsWidth="_widthEmpresas" SortKey="@_sortKeyEmpresas" SortDir="_sortDirEmpresas"
+                                     OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
+                                     Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
+                                     OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
+                                     OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
+                                     Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
+                                     OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
                                      Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
                                      OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
@@ -743,6 +762,48 @@
     </div>
 }
 
+@* ===================== CAMPOS DINAMICOS (subsistema "personas", compartido con Residentes) ===================== *@
+@* "+" del header (crear) y engranaje de columna (editar/eliminar) abren este modal focalizado. *@
+@if (_crearCampoAbierto)
+{
+    <CrearCampoModal Prefijo="personas"
+                     TituloSingular="registro del directorio"
+                     Ejemplo="Ej. Fecha de ingreso, Parqueadero"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditar"
+                     TiposAvanzados="false"
+                     Guardado="RecargarCamposDir"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     AbrirGestorAvanzado="AbrirGestorCamposDir" />
+}
+
+@* Gestor avanzado (crear/renombrar/reordenar/ocultar/tipos): el mismo componente compartido que usa
+   Residentes; escribe sobre el subsistema de campos de personas (por vinculo unidad-persona). *@
+@if (_gestorCamposAbierto)
+{
+    <div class="dir-modal-backdrop" @onclick="() => _gestorCamposAbierto = false">
+        <div class="dir-cfg" @onclick:stopPropagation="true">
+            <div class="dir-cfg-head">
+                <div>
+                    <div class="dir-cfg-title">Campos del directorio</div>
+                    <div class="dir-cfg-sub">Campos propios de personas y empresas (compartidos con Residentes). Los valores viven por unidad.</div>
+                </div>
+                <button class="dir-x" @onclick="() => _gestorCamposAbierto = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="dir-cfg-body">
+                <ConfigCamposEntidad Prefijo="personas"
+                                     EntidadConfig="personas"
+                                     TiposAvanzados="true"
+                                     TituloSingular="registro"
+                                     TituloPlural="registros del directorio"
+                                     Ejemplo="Ej. Fecha de ingreso, Parqueadero"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarCamposDir" />
+            </div>
+        </div>
+    </div>
+}
+
 
 @code {
     // Embebido en el hub de Configuracion: oculta su page-head/PageTitle (conserva las acciones).
@@ -824,29 +885,51 @@
         return all.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
     }
 
-    private List<PersonaResumenDto>? PersonasFiltradas =>
-        _personas?.Where(p => _fd?.Pasa(campo => campo switch
+    private List<PersonaResumenDto>? PersonasFiltradas
+    {
+        get
         {
-            "nombre" => $"{p.Nombres} {p.Apellidos}",
-            "documento" => p.Documento,
-            "email" => p.Email ?? "",
-            "telefono" => p.Telefono ?? "",
-            "estado" => p.Estado.ToString(),
-            "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.EtiquetaId)),
-            _ => ""
-        }) ?? true).ToList();
+            var list = _personas?.Where(p => _fd?.Pasa(campo => campo switch
+            {
+                "nombre" => $"{p.Nombres} {p.Apellidos}",
+                "documento" => p.Documento,
+                "email" => p.Email ?? "",
+                "telefono" => p.Telefono ?? "",
+                "estado" => p.Estado.ToString(),
+                "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.EtiquetaId)),
+                _ => ""
+            }) ?? true).ToList();
+            if (list is not null && _sortKeyPersonas is not null)
+            {
+                var sk = _sortKeyPersonas; var dir = _sortDirPersonas;
+                list.Sort((a, b) => CmpValTabla(SortStrPersona(a, sk), SortStrPersona(b, sk)) * dir);
+            }
+            return list;
+        }
+    }
 
-    private List<EmpresaResumenDto>? EmpresasFiltradas =>
-        _empresas?.Where(em => _fd?.Pasa(campo => campo switch
+    private List<EmpresaResumenDto>? EmpresasFiltradas
+    {
+        get
         {
-            "nombre" => $"{em.RazonSocial} {em.NombreComercial}",
-            "documento" => em.Nit,
-            "email" => em.Email ?? "",
-            "telefono" => em.Telefono ?? "",
-            "estado" => em.Estado.ToString(),
-            "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.EtiquetaId)),
-            _ => ""
-        }) ?? true).ToList();
+            var list = _empresas?.Where(em => _fd?.Pasa(campo => campo switch
+            {
+                "nombre" => $"{em.RazonSocial} {em.NombreComercial}",
+                "documento" => em.Nit,
+                "email" => em.Email ?? "",
+                "telefono" => em.Telefono ?? "",
+                "estado" => em.Estado.ToString(),
+                "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.EtiquetaId)),
+                _ => ""
+            }) ?? true).ToList();
+            if (list is not null && _sortKeyEmpresas is not null)
+            {
+                var sk = _sortKeyEmpresas; var dir = _sortDirEmpresas;
+                list.Sort((a, b) => CmpValTabla(SortStrEmpresa(a, sk), SortStrEmpresa(b, sk)) * dir);
+            }
+            return list;
+        }
+    }
 
     // Agrupar por etiqueta: cuando esta activo, la tabla/lista se parte en secciones por etiqueta.
     // Un contacto con varias etiquetas aparece en cada seccion; los que no tienen etiqueta caen
@@ -912,6 +995,31 @@
     private Dictionary<string, DirectorioPersonasVista.ColPref> _colsEmpresas = new();
     private bool _cfgColsAbierto;
 
+    // Orden por columna (clic en header): por pestana, aplicado ANTES de paginar. Anchos manuales por
+    // columna en px (localStorage, mismo modelo local del Directorio; no unidades-config).
+    private string? _sortKeyPersonas; private int _sortDirPersonas = 1;
+    private string? _sortKeyEmpresas; private int _sortDirEmpresas = 1;
+    private Dictionary<string, int> _widthPersonas = new(StringComparer.Ordinal);
+    private Dictionary<string, int> _widthEmpresas = new(StringComparer.Ordinal);
+    private Dictionary<string, int> WidthActiva => _tab == "empresas" ? _widthEmpresas : _widthPersonas;
+    private string ColWidthKey => _tab == "empresas" ? "propia_colw_directorio_empresas" : "propia_colw_directorio_personas";
+
+    // Seleccion multiple (por Id de fila persona/empresa de la pestana activa). Se limpia al cambiar de
+    // pestana y tras cada accion. El borrado masivo = inactivar el vinculo (VinculoId) de cada seleccionado.
+    private readonly HashSet<Guid> _sel = new();
+
+    // ----- Campos dinamicos (subsistema "personas": PersonaCampoDefinicion/Valor por vinculo unidad-persona).
+    // Personas y Empresas comparten este almacen (una empresa miembro de una unidad es una UnidadPersona con
+    // EntidadTipo=Empresa). Los valores viven sobre RegistroCamposId (UnidadPersona activo principal). Los
+    // valores van al backend; la config de columnas fijas sigue en localStorage como el resto del Directorio. -----
+    private List<CampoDinDef> _defsCampos = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valoresCampos = new();  // registro(UnidadPersonaId) -> (defId -> valor)
+    private Dictionary<Guid, string> _usuarioNombre = new();                      // id -> nombre (campos Usuario/Directorio)
+    private bool _crearCampoAbierto;
+    private CampoDinDef? _campoAEditar;
+    private bool _gestorCamposAbierto;
+    private sealed record UsuarioOpc(Guid PersonaId, string NombreCompleto, string? Email);
+
     // Orden de columnas por pestana (persistido por usuario), como Zonas/Unidades.
     private List<string> _ordenPersonas = DirectorioPersonasVista.Columnas.Select(c => c.Key).ToList();
     private List<string> _ordenEmpresas = DirectorioEmpresasVista.Columnas.Select(c => c.Key).ToList();
@@ -947,6 +1055,20 @@
         _colsEmpresas = await LeerColsAsync("propia_cols_directorio_empresas");
         _ordenPersonas = await LeerOrdenAsync("propia_colorder_directorio_personas", _ordenPersonas);
         _ordenEmpresas = await LeerOrdenAsync("propia_colorder_directorio_empresas", _ordenEmpresas);
+        _widthPersonas = await LeerWidthAsync("propia_colw_directorio_personas");
+        _widthEmpresas = await LeerWidthAsync("propia_colw_directorio_empresas");
+    }
+
+    private async Task<Dictionary<string, int>> LeerWidthAsync(string key)
+    {
+        try
+        {
+            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", key);
+            if (!string.IsNullOrWhiteSpace(raw))
+                return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(raw) ?? new(StringComparer.Ordinal);
+        }
+        catch { }
+        return new(StringComparer.Ordinal);
     }
 
     private async Task<List<string>> LeerOrdenAsync(string key, List<string> def)
@@ -1003,6 +1125,7 @@
         {
             await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(ColsActivas));
             await Js.InvokeVoidAsync("localStorage.setItem", ColOrderKey, System.Text.Json.JsonSerializer.Serialize(OrdenActiva));
+            await Js.InvokeVoidAsync("localStorage.setItem", ColWidthKey, System.Text.Json.JsonSerializer.Serialize(WidthActiva));
         }
         catch { }
     }
@@ -1010,9 +1133,173 @@
     private async Task RestablecerCols()
     {
         ColsActivas.Clear();
+        WidthActiva.Clear();
         if (_tab == "empresas") _ordenEmpresas = DirectorioEmpresasVista.Columnas.Select(c => c.Key).ToList();
         else _ordenPersonas = DirectorioPersonasVista.Columnas.Select(c => c.Key).ToList();
         await GuardarColsAsync();
+    }
+
+    // ---- Ordenar (clic en header), reordenar (arrastre) y anchos (resize) de la vista Tabla ----
+    // El orden se aplica en PersonasFiltradas/EmpresasFiltradas (antes de paginar y de agrupar).
+    private void OrdenarDir(string clave)
+    {
+        if (_tab == "empresas")
+        {
+            if (_sortKeyEmpresas == clave) _sortDirEmpresas = -_sortDirEmpresas;
+            else { _sortKeyEmpresas = clave; _sortDirEmpresas = 1; }
+        }
+        else
+        {
+            if (_sortKeyPersonas == clave) _sortDirPersonas = -_sortDirPersonas;
+            else { _sortKeyPersonas = clave; _sortDirPersonas = 1; }
+        }
+        _pagina = 1;
+    }
+
+    private async Task ReordenarDir((string Src, string Dest) mov)
+    {
+        var ord = OrdenActiva;
+        var from = ord.IndexOf(mov.Src); var to = ord.IndexOf(mov.Dest);
+        if (from < 0 || to < 0 || from == to) return;
+        ord.RemoveAt(from); ord.Insert(to, mov.Src);
+        await GuardarColsAsync();
+    }
+
+    private async Task RedimensionarDir((string Clave, int Width) r)
+    {
+        var w = WidthActiva;
+        if (r.Width <= 0) w.Remove(r.Clave); else w[r.Clave] = Math.Max(60, r.Width);
+        await GuardarColsAsync();
+    }
+
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string SortStrPersona(PersonaResumenDto p, string k) => k switch
+    {
+        "nombres" => p.Nombres ?? "",
+        "apellidos" => p.Apellidos ?? "",
+        "tipo" => p.TipoDocumento.ToString(),
+        "doc" => p.Documento ?? "",
+        "email" => p.Email ?? "",
+        "telefono" => p.Telefono ?? "",
+        "estado" => p.Estado.ToString(),
+        "etiquetas" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Nombre)),
+        _ => ""
+    };
+
+    private static string SortStrEmpresa(EmpresaResumenDto e, string k) => k switch
+    {
+        "razon" => e.RazonSocial ?? "",
+        "comercial" => e.NombreComercial ?? "",
+        "nit" => e.Nit ?? "",
+        "email" => e.Email ?? "",
+        "telefono" => e.Telefono ?? "",
+        "estado" => e.Estado.ToString(),
+        _ => ""
+    };
+
+    // ---- Seleccion multiple + quitar del directorio (inactivar vinculo; no hay borrado real) ----
+    private void ToggleSelDir((Guid Id, bool On) x) { if (x.On) _sel.Add(x.Id); else _sel.Remove(x.Id); }
+    private void LimpiarSelDir() => _sel.Clear();
+    private void SeleccionarTodoDir(bool on)
+    {
+        _sel.Clear();
+        if (!on) return;
+        if (_tab == "empresas") { foreach (var em in EmpresasFiltradas ?? new()) _sel.Add(em.Id); }
+        else { foreach (var p in PersonasFiltradas ?? new()) _sel.Add(p.Id); }
+    }
+    private bool TodoSeleccionadoActivo
+    {
+        get
+        {
+            var ids = (_tab == "empresas" ? EmpresasFiltradas?.Select(e => e.Id) : PersonasFiltradas?.Select(p => p.Id))?.ToList();
+            return ids is { Count: > 0 } && ids.All(_sel.Contains);
+        }
+    }
+
+    private async Task QuitarSeleccionDir()
+    {
+        if (_sel.Count == 0) return;
+        var vinculos = _tab == "empresas"
+            ? (_empresas ?? new()).Where(e => _sel.Contains(e.Id)).Select(e => e.VinculoId)
+            : (_personas ?? new()).Where(p => _sel.Contains(p.Id)).Select(p => p.VinculoId);
+        foreach (var vid in vinculos.Where(v => v != Guid.Empty).Distinct().ToList())
+        {
+            try { await Auth().PutAsync($"/api/directorio/vinculos/{vid}/inactivar", null); } catch { }
+        }
+        _sel.Clear();
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task QuitarVinculoDir(Guid vinculoId)
+    {
+        if (vinculoId == Guid.Empty) return;
+        try { await Auth().PutAsync($"/api/directorio/vinculos/{vinculoId}/inactivar", null); } catch { }
+        _sel.Clear();
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    // ---- Campos dinamicos: catalogo + valores (subsistema personas, compartido con Residentes) ----
+    // Definiciones y valores son por copropiedad y por vinculo unidad-persona; se cargan una vez (personas
+    // y empresas comparten). Los valores se leen/escriben sobre el registro (UnidadPersona activo principal).
+    private async Task CargarCamposDirAsync(HttpClient http)
+    {
+        try
+        {
+            var defs = await http.GetFromJsonAsync<List<PersonaCampoDefinicionDto>>("/api/mi-copropiedad/personas-campos") ?? new();
+            _defsCampos = defs.OrderBy(d => d.Orden).ThenBy(d => d.Label)
+                .Select(d => new CampoDinDef(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToList();
+        }
+        catch { _defsCampos = new(); }
+        try
+        {
+            var vals = await http.GetFromJsonAsync<List<PersonaCampoValorFlatDto>>("/api/mi-copropiedad/personas-campos-valores") ?? new();
+            _valoresCampos = vals.GroupBy(v => v.UnidadPersonaId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _valoresCampos = new(); }
+        try
+        {
+            var vinc = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _usuarioNombre = new(); }
+    }
+
+    // Edicion inline de un campo propio: PUT sobre el registro (UnidadPersona activo principal). El sub-view
+    // solo emite (registro, definicion, valor) cuando la fila tiene registro (vinculo a unidad).
+    private async Task GuardarDinamicoDir((Guid Registro, Guid Def, string? Valor) x)
+    {
+        if (x.Registro == Guid.Empty) return;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{x.Registro}/{x.Def}", new SetCampoValorRequest(x.Valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_valoresCampos.TryGetValue(x.Registro, out var d)) _valoresCampos[x.Registro] = d = new();
+                d[x.Def] = x.Valor;
+            }
+        }
+        catch { }
+    }
+
+    private void AbrirCrearCampoDir() { _campoAEditar = null; _crearCampoAbierto = true; }
+    private void AbrirEditarCampoDir(CampoDinDef d) { _campoAEditar = d; _crearCampoAbierto = true; }
+    private void AbrirGestorCamposDir() { _crearCampoAbierto = false; _campoAEditar = null; _gestorCamposAbierto = true; }
+    private async Task RecargarCamposDir()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        await CargarCamposDirAsync(Auth());
+        StateHasChanged();
     }
 
     // Conteo de terceros por etiqueta, calculado sobre la vista activa (personas o empresas):
@@ -1147,7 +1434,7 @@
 
     // await (no fire-and-forget) para que Blazor re-renderice al terminar la carga;
     // antes quedaba en "loading" al cambiar de pestana porque _ = CargarAsync() no re-renderiza.
-    private async Task SetTab(string tab) { _tab = tab; _pagina = 1; await CargarAsync(); }
+    private async Task SetTab(string tab) { _tab = tab; _pagina = 1; _sel.Clear(); await CargarAsync(); }
 
     // La vista (Lista/Tabla) se recuerda por modulo en localStorage: sobrevive al cierre de
     // sesion (el logout solo borra llaves puntuales, no hace localStorage.clear()).
@@ -1191,6 +1478,7 @@
                 _personas = await resp.Content.ReadFromJsonAsync<List<PersonaResumenDto>>() ?? new();
             else
                 _empresas = await resp.Content.ReadFromJsonAsync<List<EmpresaResumenDto>>() ?? new();
+            await CargarCamposDirAsync(http);
         }
         catch (Exception ex) { _loadError = ex.Message; }
     }

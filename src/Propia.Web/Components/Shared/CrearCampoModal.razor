@@ -1,0 +1,325 @@
+@* ============================================================================================
+   Modal FOCALIZADO para crear / editar UN campo propio (columna dinamica). Replica milimetrica del
+   dialogo "Crear campo nuevo" de la maqueta (P.crearCampoNuevo): catalogo de tipos como TARJETAS
+   inline agrupadas por categoria (icono + nombre + descripcion), NO un desplegable. Se abre desde
+   el "+" del header (crear) y desde el engranaje de una columna dinamica (editar, con Eliminar).
+
+   Valores tomados 1:1 de assets/app.css de la maqueta (.pm-*, .cn-*, .fr-*), con tokens --propia-*.
+   Reusa OpcionesLista (opciones de una lista). La Formula (motor multi-paso) sigue en el gestor
+   avanzado para no duplicar su logica.
+   ============================================================================================ *@
+@inject IHttpClientFactory HttpFactory
+@using Propia.Domain.Enums
+
+<div class="ccm-back" @onclick="Cerrar">
+    <div class="ccm-shell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <div class="ccm-head">
+            <div class="ccm-head-ic"><i class="fi fi-rr-table-columns"></i></div>
+            <div class="ccm-head-tt">
+                <div class="ccm-head-h">@(EsEdicion ? "Editar campo" : "Crear campo nuevo")</div>
+                <div class="ccm-head-s">@(EsEdicion ? "Modifica el tipo y su configuracion. Columna de " + TituloSingular.ToLowerInvariant() + "." : "Elige el tipo y su configuracion. Nueva columna para " + TituloSingular.ToLowerInvariant() + ".")</div>
+            </div>
+            <button class="ccm-x" type="button" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+
+        <div class="ccm-body">
+            @if (EsEdicion && EsAvanzado(Editar!.Tipo))
+            {
+                <div class="ccm-note">Este campo es de tipo <b>@TipoLabel(Editar!.Tipo)</b> y se edita en el gestor avanzado de campos.</div>
+                <div class="ccm-adv"><button type="button" class="ccm-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Abrir gestor avanzado</button></div>
+            }
+            else
+            {
+                <div class="ccm-fld">
+                    <label>Nombre del campo</label>
+                    <input class="ccm-in" @bind="_label" @bind:event="oninput" placeholder="@(string.IsNullOrWhiteSpace(Ejemplo) ? "Ej. Responsable" : Ejemplo)" />
+                </div>
+
+                <div class="ccm-sect-lbl">Tipo de campo</div>
+                @foreach (var (categoria, tipos) in CategoriasVisibles())
+                {
+                    <div class="ccm-cat-lbl">@categoria</div>
+                    <div class="ccm-types">
+                        @foreach (var t in tipos)
+                        {
+                            var tt = t;
+                            <button type="button" class="ccm-type @(_tipo == tt ? "on" : "")" @onclick="() => ElegirTipo(tt)">
+                                <span class="ccm-type-ic"><i class="fi @TipoIcon(tt)"></i></span>
+                                <span class="ccm-type-tt"><b>@TipoLabel(tt)</b><span>@TipoDescripcion(tt)</span></span>
+                            </button>
+                        }
+                    </div>
+                }
+
+                <div class="ccm-sect-lbl">Configuracion del tipo</div>
+                <div class="ccm-cfg">
+                    @if (_tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <OpcionesLista Opciones="_opcs" OpcionesChanged="StateHasChanged" />
+                    }
+                    else if (_tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="ccm-note">La formula (operaciones y campos fuente) se arma en el gestor avanzado.</div>
+                        <div class="ccm-adv"><button type="button" class="ccm-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Configurar formula en el gestor</button></div>
+                    }
+                    else
+                    {
+                        <div class="ccm-hint">Sin configuracion adicional para este tipo.</div>
+                    }
+                </div>
+
+                <p class="ccm-note-txt">El campo se agrega como una columna al final de la tabla y queda disponible en la ficha de @TituloSingular.ToLowerInvariant(). Es exclusivo de esta copropiedad y se comporta como un campo fijo en filtros, agrupar, ordenar y reportes.</p>
+            }
+
+            @if (!string.IsNullOrEmpty(_msg)) { <div class="ccm-msg">@_msg</div> }
+        </div>
+
+        <div class="ccm-foot">
+            @if (EsEdicion && !EsAvanzado(Editar!.Tipo))
+            {
+                <button type="button" class="ccm-btn-ghost ccm-del" @onclick="EliminarAsync" disabled="@_busy"><i class="fi fi-rr-trash"></i> Eliminar campo</button>
+            }
+            <span class="ccm-spacer"></span>
+            <button type="button" class="ccm-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
+            @if (!(EsEdicion && EsAvanzado(Editar!.Tipo)))
+            {
+                @if (_tipo == TipoCampoTablero.Formula && !EsEdicion)
+                {
+                    <button type="button" class="ccm-btn-brand" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Abrir gestor</button>
+                }
+                else
+                {
+                    <button type="button" class="ccm-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_label))">
+                        <i class="fi @(EsEdicion ? "fi-rr-check" : "fi-rr-plus")"></i> @(_busy ? "Guardando..." : (EsEdicion ? "Guardar cambios" : "Crear campo"))
+                    </button>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Prefijo/entidad del catalogo de campos propios (p.ej. "unidades"). Endpoint = {Prefijo}-campos.</summary>
+    [Parameter, EditorRequired] public string Prefijo { get; set; } = "";
+    [Parameter] public string TituloSingular { get; set; } = "registro";
+    [Parameter] public string Ejemplo { get; set; } = "";
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Campo a editar; null = crear uno nuevo.</summary>
+    [Parameter] public CampoDinDef? Editar { get; set; }
+    /// <summary>true = ofrece los tipos avanzados (Formula/Usuario/Directorio) al CREAR.</summary>
+    [Parameter] public bool TiposAvanzados { get; set; } = true;
+    [Parameter] public EventCallback Guardado { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Abrir el gestor avanzado (para Formula u otros ajustes que no cubre este modal).</summary>
+    [Parameter] public EventCallback AbrirGestorAvanzado { get; set; }
+
+    private bool EsEdicion => Editar is not null;
+    private string _label = "";
+    private TipoCampoTablero _tipo = TipoCampoTablero.Texto;
+    private readonly List<OpcionCampo> _opcs = new();
+    private List<CampoDinDef> _defs = new();
+    private bool _busy;
+    private string? _msg;
+
+    private string CatUrl => $"/api/mi-copropiedad/{Prefijo}-campos";
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Editar is not null)
+        {
+            _label = Editar.Label;
+            _tipo = Editar.Tipo;
+            if (Editar.Tipo == TipoCampoTablero.Seleccion) { _opcs.Clear(); _opcs.AddRange(Editar.OpcionesDetalle()); }
+        }
+        try { _defs = await Auth().GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new(); } catch { _defs = new(); }
+    }
+
+    private void ElegirTipo(TipoCampoTablero t) { _tipo = t; _msg = null; }
+
+    // ===== Catalogo de tipos como TARJETAS agrupadas (mismo orden/agrupacion que la maqueta) =====
+    // Adaptado al enum real TipoCampoTablero (la maqueta tiene tipos-maqueta extra que no existen en BD).
+    private IEnumerable<(string Categoria, TipoCampoTablero[] Tipos)> CategoriasVisibles()
+    {
+        var av = TiposAvanzados && !EsEdicion;   // avanzados solo al crear
+        var cats = new List<(string, TipoCampoTablero[])>
+        {
+            ("Basicos", new[] { TipoCampoTablero.Texto, TipoCampoTablero.AreaTexto, TipoCampoTablero.Numero, TipoCampoTablero.Moneda, TipoCampoTablero.Porcentaje }),
+            ("Fecha y hora", new[] { TipoCampoTablero.Fecha, TipoCampoTablero.FechaHora }),
+            ("Seleccion", new[] { TipoCampoTablero.Seleccion, TipoCampoTablero.Booleano }),
+        };
+        if (av) cats.Add(("Relacion", new[] { TipoCampoTablero.Usuario, TipoCampoTablero.Directorio }));
+        cats.Add(("Otros", av
+            ? new[] { TipoCampoTablero.Email, TipoCampoTablero.Telefono, TipoCampoTablero.Url, TipoCampoTablero.Formula }
+            : new[] { TipoCampoTablero.Email, TipoCampoTablero.Telefono, TipoCampoTablero.Url }));
+        return cats;
+    }
+
+    private static bool EsAvanzado(TipoCampoTablero t)
+        => t is TipoCampoTablero.Formula or TipoCampoTablero.Usuario or TipoCampoTablero.Directorio;
+
+    private static string TipoLabel(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto de una sola linea",
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Numero",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Porcentaje => "Porcentaje",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.FechaHora => "Fecha y hora",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Seleccion => "Lista",
+        TipoCampoTablero.Booleano => "Si / No",
+        TipoCampoTablero.Telefono => "Telefono",
+        TipoCampoTablero.Email => "Email",
+        TipoCampoTablero.Url => "URL",
+        TipoCampoTablero.Formula => "Funcion / calculado",
+        TipoCampoTablero.Usuario => "Usuario",
+        TipoCampoTablero.Directorio => "Directorio",
+        _ => "Texto"
+    };
+    private static string TipoDescripcion(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto corto de una linea",
+        TipoCampoTablero.AreaTexto => "Texto largo de varias lineas",
+        TipoCampoTablero.Numero => "Cantidad numerica",
+        TipoCampoTablero.Moneda => "Valor con simbolo de moneda",
+        TipoCampoTablero.Porcentaje => "Valor porcentual (%)",
+        TipoCampoTablero.Fecha => "Fecha (dia/mes/ano)",
+        TipoCampoTablero.FechaHora => "Fecha con hora",
+        TipoCampoTablero.Hora => "Hora del dia",
+        TipoCampoTablero.Seleccion => "Lista de opciones a elegir",
+        TipoCampoTablero.Booleano => "Si o No",
+        TipoCampoTablero.Telefono => "Numero telefonico",
+        TipoCampoTablero.Email => "Direccion de correo",
+        TipoCampoTablero.Url => "Direccion web (enlace)",
+        TipoCampoTablero.Formula => "Se calcula desde otros campos",
+        TipoCampoTablero.Usuario => "Un usuario de la copropiedad",
+        TipoCampoTablero.Directorio => "Una persona del directorio",
+        _ => ""
+    };
+    private static string TipoIcon(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "fi-rr-text",
+        TipoCampoTablero.AreaTexto => "fi-rr-align-left",
+        TipoCampoTablero.Numero => "fi-rr-calculator",
+        TipoCampoTablero.Moneda => "fi-rr-usd-circle",
+        TipoCampoTablero.Porcentaje => "fi-rr-percentage",
+        TipoCampoTablero.Fecha => "fi-rr-calendar",
+        TipoCampoTablero.FechaHora => "fi-rr-clock",
+        TipoCampoTablero.Hora => "fi-rr-clock",
+        TipoCampoTablero.Seleccion => "fi-rr-list-check",
+        TipoCampoTablero.Booleano => "fi-rr-checkbox",
+        TipoCampoTablero.Telefono => "fi-rr-phone-call",
+        TipoCampoTablero.Email => "fi-rr-envelope",
+        TipoCampoTablero.Url => "fi-rr-link-alt",
+        TipoCampoTablero.Formula => "fi-rr-calculator-money",
+        TipoCampoTablero.Usuario => "fi-rr-user",
+        TipoCampoTablero.Directorio => "fi-rr-address-book",
+        _ => "fi-rr-text"
+    };
+
+    private async Task Cerrar() => await Cerrado.InvokeAsync();
+    private async Task AbrirGestor() => await AbrirGestorAvanzado.InvokeAsync();
+
+    private async Task GuardarAsync()
+    {
+        var label = (_label ?? "").Trim();
+        if (label.Length == 0) { _msg = "Escribe el nombre del campo."; return; }
+        if (_defs.Any(d => (Editar is null || d.Id != Editar.Id) && string.Equals(d.Label, label, StringComparison.OrdinalIgnoreCase)))
+        { _msg = $"Ya existe un campo \"{label}\"."; return; }
+
+        string? opciones = _tipo == TipoCampoTablero.Seleccion
+            ? (_opcs.Any(o => !string.IsNullOrWhiteSpace(o.K)) ? OpcionCampo.Serializar(_opcs.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList()) : null)
+            : null;
+
+        _busy = true; _msg = null;
+        try
+        {
+            HttpResponseMessage r;
+            if (EsEdicion)
+                r = await Auth().PutAsJsonAsync($"{CatUrl}/{Editar!.Id}", new ActualizarCampoDefinicionRequest(label, _tipo, opciones, Editar!.Orden));
+            else
+                r = await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones));
+
+            if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
+            else { _msg = EsEdicion ? "No se pudo guardar el campo." : "No se pudo crear el campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (Editar is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"{CatUrl}/{Editar.Id}");
+            if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
+            else { _msg = "No se pudo eliminar el campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+}
+
+@* Estilos milimetricos a la maqueta (assets/app.css: .pm-*, .cn-*, .fr-*). Clases ccm-* propias
+   para no colisionar; valores 1:1. *@
+<style>
+    .ccm-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3200; padding: 20px; }
+    .ccm-shell { width: 720px; max-width: 96vw; max-height: 94vh; background: var(--propia-bg-card); border-radius: var(--propia-radius-modal, 18px); box-shadow: var(--propia-shadow-modal); overflow: hidden; display: flex; flex-direction: column; font-family: var(--propia-font-base, inherit); }
+    /* Header (.pm-*) */
+    .ccm-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .ccm-head-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+    .ccm-head-tt { flex: 1; min-width: 0; }
+    .ccm-head-h { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .ccm-head-s { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .ccm-x { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .ccm-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+    /* Body / foot (.pm-*) */
+    .ccm-body { padding: 16px 20px; overflow: auto; }
+    .ccm-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .ccm-spacer { flex: 1; }
+    /* Campo nombre (.fr-*) */
+    .ccm-fld { display: flex; flex-direction: column; gap: 4px; }
+    .ccm-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
+    .ccm-in { width: 100%; box-sizing: border-box; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .ccm-in:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.14); }
+    /* Secciones y catalogo de tipos (.cn-*) */
+    .ccm-sect-lbl { font-size: 11px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); margin: 16px 0 8px; }
+    .ccm-cat-lbl { font-size: 11px; font-weight: 700; color: var(--propia-text-muted); margin: 10px 0 6px; }
+    .ccm-sect-lbl + .ccm-cat-lbl { margin-top: 0; }
+    .ccm-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+    .ccm-type { display: flex; align-items: center; gap: 10px; text-align: left; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 11px; padding: 9px 11px; cursor: pointer; font-family: inherit; transition: border-color .12s, box-shadow .12s; }
+    .ccm-type:hover { border-color: var(--propia-brand-border); }
+    .ccm-type.on { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.14); background: var(--propia-brand-soft-2); }
+    .ccm-type-ic { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 9px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 15px; }
+    .ccm-type-tt { display: flex; flex-direction: column; min-width: 0; }
+    .ccm-type-tt b { font-size: 12.5px; color: var(--propia-text-h1); font-weight: 700; }
+    .ccm-type-tt span { font-size: 11px; color: var(--propia-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Config por tipo (.cn-cfg / .cn-hint / .wz-note) */
+    .ccm-cfg { border: 1px solid var(--propia-border-divider); border-radius: 12px; padding: 14px; background: var(--propia-bg-card-soft); min-height: 60px; }
+    .ccm-hint { font-size: 11.5px; color: var(--propia-text-muted); }
+    .ccm-note-txt { font-size: 11.5px; color: var(--propia-text-muted); margin: 12px 0 0; line-height: 1.55; }
+    .ccm-note { font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
+    .ccm-adv { margin-top: 10px; }
+    .ccm-msg { margin-top: 12px; font-size: 12.5px; font-weight: 600; color: var(--propia-danger); }
+    /* Botones (.btn-brand / .btn-ghost) */
+    .ccm-btn-brand { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: 0; background: var(--propia-brand); color: #fff; box-shadow: var(--propia-glow-brand-sm); }
+    .ccm-btn-brand:hover:not(:disabled) { background: var(--propia-brand-hover); }
+    .ccm-btn-brand:disabled { opacity: .55; cursor: default; }
+    .ccm-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); }
+    .ccm-btn-ghost:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .ccm-btn-ghost:disabled { opacity: .55; cursor: default; }
+    .ccm-btn-ghost.ccm-del { color: var(--propia-danger); border-color: var(--propia-danger-soft); }
+    .ccm-btn-ghost.ccm-del:hover:not(:disabled) { background: var(--propia-danger-soft); border-color: var(--propia-danger); color: var(--propia-danger); }
+    .ccm-btn-brand .fi, .ccm-btn-ghost .fi { font-size: 14px; }
+</style>

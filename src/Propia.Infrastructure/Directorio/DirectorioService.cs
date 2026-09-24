@@ -154,10 +154,54 @@ public class DirectorioService : IDirectorioService
             .Take(200)
             .ToListAsync(ct);
         var chips = await CargarChipsPorEntidadAsync(EntidadDirectorio.Persona, rows.Select(r => r.Id).ToList(), ct);
+        var vinculoPorEntidad = await VinculoRepresentativoPorEntidadAsync(EntidadDirectorio.Persona, rows.Select(r => r.Id).ToList(), ct);
+        var registroPorEntidad = await RegistroCamposUnidadPersonaAsync(EntidadDirectorio.Persona, rows.Select(r => r.Id).ToList(), ct);
         return rows.Select(p => new PersonaResumenDto(
             p.Id, p.TipoDocumento, p.Documento, p.Nombres, p.Apellidos, p.Email, p.Telefono,
             _blob.ResolveUrl(p.FotoUrl), p.PerfilIncompleto, p.EstadoDirectorio,
+            vinculoPorEntidad.GetValueOrDefault(p.Id),
+            registroPorEntidad.TryGetValue(p.Id, out var rp) ? rp : (Guid?)null,
             chips.GetValueOrDefault(p.Id))).ToList();
+    }
+
+    /// <summary>Registro (UnidadPersona.Id) activo principal por entidad del Directorio, sobre el que viven
+    /// los valores de campos dinamicos (PersonaCampoValor, el mismo almacen de Residentes). "Principal" =
+    /// activo, y entre varios el mas antiguo (CreatedAt). Persona usa PersonaId; Empresa usa EmpresaId con
+    /// EntidadTipo=Empresa. Vacio para entidades sin vinculo unidad-persona. Filtrado al tenant por RLS.</summary>
+    private async Task<Dictionary<Guid, Guid>> RegistroCamposUnidadPersonaAsync(
+        EntidadDirectorio tipo, List<Guid> entidadIds, CancellationToken ct)
+    {
+        if (entidadIds.Count == 0) return new();
+        var rows = tipo == EntidadDirectorio.Empresa
+            ? await _db.UnidadPersonas
+                .Where(up => up.EntidadTipo == EntidadDirectorio.Empresa && up.EmpresaId != null && entidadIds.Contains(up.EmpresaId!.Value))
+                .Select(up => new { up.Id, EntidadId = up.EmpresaId!.Value, up.Activo, up.CreatedAt })
+                .ToListAsync(ct)
+            : await _db.UnidadPersonas
+                .Where(up => up.EntidadTipo == EntidadDirectorio.Persona && up.PersonaId != null && entidadIds.Contains(up.PersonaId!.Value))
+                .Select(up => new { up.Id, EntidadId = up.PersonaId!.Value, up.Activo, up.CreatedAt })
+                .ToListAsync(ct);
+        return rows.GroupBy(x => x.EntidadId).ToDictionary(
+            g => g.Key,
+            g => g.OrderByDescending(x => x.Activo).ThenBy(x => x.CreatedAt).First().Id);
+    }
+
+    /// <summary>Vinculo representativo (activo principal) por entidad para la copropiedad ACTUAL: el
+    /// activo mas reciente por FechaDesde; si ninguno esta activo, el mas reciente. Alimenta VinculoId
+    /// del resumen (lo que se inactiva al "quitar del directorio"). Filtrado al tenant por RLS.</summary>
+    private async Task<Dictionary<Guid, Guid>> VinculoRepresentativoPorEntidadAsync(
+        EntidadDirectorio tipo, List<Guid> entidadIds, CancellationToken ct)
+    {
+        if (entidadIds.Count == 0) return new();
+        var rows = await _db.DirectorioVinculos
+            .Where(v => v.EntidadTipo == tipo && entidadIds.Contains(v.EntidadId))
+            .Select(v => new { v.Id, v.EntidadId, v.Estado, v.FechaDesde })
+            .ToListAsync(ct);
+        return rows.GroupBy(v => v.EntidadId).ToDictionary(
+            g => g.Key,
+            g => g.OrderByDescending(v => v.Estado == EstadoVinculo.Activo)
+                  .ThenByDescending(v => v.FechaDesde)
+                  .First().Id);
     }
 
     /// <summary>Etiquetas asignadas (chips con icono/color) por entidad, para pintarlas en el listado y filtrar.</summary>
@@ -321,9 +365,13 @@ public class DirectorioService : IDirectorioService
             .Take(200)
             .ToListAsync(ct);
         var chips = await CargarChipsPorEntidadAsync(EntidadDirectorio.Empresa, rows.Select(r => r.Id).ToList(), ct);
+        var vinculoPorEntidad = await VinculoRepresentativoPorEntidadAsync(EntidadDirectorio.Empresa, rows.Select(r => r.Id).ToList(), ct);
+        var registroPorEntidad = await RegistroCamposUnidadPersonaAsync(EntidadDirectorio.Empresa, rows.Select(r => r.Id).ToList(), ct);
         return rows.Select(e => new EmpresaResumenDto(
             e.Id, e.Nit, e.DigitoVerificacion, e.RazonSocial, e.NombreComercial, e.Email, e.Telefono,
             _blob.ResolveUrl(e.LogoUrl), e.PerfilIncompleto, e.EstadoDirectorio,
+            vinculoPorEntidad.GetValueOrDefault(e.Id),
+            registroPorEntidad.TryGetValue(e.Id, out var rp) ? rp : (Guid?)null,
             chips.GetValueOrDefault(e.Id))).ToList();
     }
 

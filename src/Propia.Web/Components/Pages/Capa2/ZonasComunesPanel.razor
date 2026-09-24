@@ -7,6 +7,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 
 @* Zonas comunes: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
    Mismo contenido que tenia alli - resumen, tarjetas/lista y alta rapida - pero sin
@@ -89,16 +90,64 @@ else
                     </div>
                 }
             </div>
+            @* "Columnas" (inline, milimetrico a Unidades): orden, visibilidad y borrar campo dinamico.
+               Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
+            <div class="zc-menu-wrap">
+                <button type="button" class="zc-fbtn @(_showColMenuZ ? "on" : "")" @onclick="() => _showColMenuZ = !_showColMenuZ" title="Columnas: orden, visibilidad y campos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                    <span>Columnas</span>
+                </button>
+                @if (_showColMenuZ)
+                {
+                    <div class="zc-menu-bd" @onclick="() => _showColMenuZ = false"></div>
+                    <div class="zc-menu zc-colmenu">
+                        <div class="zc-col-search">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                            <input placeholder="Buscar campo..." value="@_colQZ" @oninput="@(e => _colQZ = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="zc-col-list">
+                            @{ var _colsZ = ClavesOrdenadas().ToList(); }
+                            @for (int _ci = 0; _ci < _colsZ.Count; _ci++)
+                            {
+                                var k = _colsZ[_ci];
+                                var idx = _ci;
+                                var label = ColLabel(k);
+                                if (!string.IsNullOrWhiteSpace(_colQZ) && !label.Contains(_colQZ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                var fija = idx == 0;
+                                var visible = VisibleCol(k);
+                                var custom = CampoCustom(k);
+                                <div class="zc-col-it">
+                                    <button class="zc-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaZAsync(k, -1)">&#9650;</button>
+                                    <button class="zc-col-mv" disabled="@(idx == 0 || idx == _colsZ.Count - 1)" @onclick="() => MoverColumnaZAsync(k, 1)">&#9660;</button>
+                                    <span class="zc-col-name">@label @if (custom is not null) { <span class="zc-col-dyn" title="Campo personalizado">din</span> }</span>
+                                    @if (fija) { <span class="zc-col-fija">fija</span> }
+                                    else
+                                    {
+                                        <button class="zc-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColZAsync(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                    }
+                                    @if (custom is not null) { <button class="zc-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarZ = custom"><i class="fi fi-rr-trash"></i></button> }
+                                </div>
+                            }
+                        </div>
+                        <div class="zc-col-massacts">
+                            <button type="button" class="zc-col-mass" @onclick="OcultarTodasColZAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                            <button type="button" class="zc-col-mass" @onclick="MostrarTodasColZAsync"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                            <button type="button" class="zc-col-reset" @onclick="RestablecerColZAsync">Restablecer</button>
+                        </div>
+                    </div>
+                }
+            </div>
         }
-        @* Campos: unica entrada a la configuracion del modulo, en la posicion canonica de Unidades
-           (barra de herramientas, junto a Agrupar y el toggle). No se limita a la vista tabla porque
-           configura CAMPOS, no solo columnas: en Tarjetas tambien hace falta. *@
-        <div class="zc-menu-wrap">
-            <button type="button" class="zc-fbtn @(_selAbierto ? "on" : "")" @onclick="() => _selAbierto = true" title="Campos de las zonas: orden, visibilidad, nombre y campos propios">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                <span>Campos</span>
-            </button>
-        </div>
+        else
+        {
+            @* En Tarjetas no hay columnas ni "+": aqui se mantiene la entrada a la config de campos. *@
+            <div class="zc-menu-wrap">
+                <button type="button" class="zc-fbtn @(_selAbierto ? "on" : "")" @onclick="() => _selAbierto = true" title="Campos de las zonas: orden, visibilidad, nombre y campos propios">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
+            </div>
+        }
         <div class="zc-viewtoggle">
             <button type="button" class="zc-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -185,15 +234,76 @@ else
     }
     else
     {
+        @if (_selZ.Count > 0)
+        {
+            <div class="zc-selbar">
+                <span class="zc-selbar-n">@_selZ.Count seleccionada@(_selZ.Count == 1 ? "" : "s")</span>
+                <button type="button" class="zc-selbar-del" @onclick="() => _confirmDelSelZ = true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                    Eliminar
+                </button>
+                <button type="button" class="zc-selbar-x" @onclick="LimpiarSelZ">Deseleccionar</button>
+            </div>
+        }
+        @if (_confirmDelSelZ)
+        {
+            <div class="zc-cfg-back" @onclick="() => { if (!_delBusyZ) _confirmDelSelZ = false; }">
+                <div class="zc-confirm" @onclick:stopPropagation="true">
+                    <div class="zc-confirm-t">Eliminar @_selZ.Count zona@(_selZ.Count == 1 ? "" : "s")</div>
+                    <div class="zc-confirm-s">Esta accion elimina las zonas seleccionadas de forma permanente y no se puede deshacer.</div>
+                    <div class="zc-confirm-acts">
+                        <button type="button" class="zc-fbtn" @onclick="() => _confirmDelSelZ = false" disabled="@_delBusyZ">Cancelar</button>
+                        <button type="button" class="zc-selbar-del" @onclick="EliminarSelZonasAsync" disabled="@_delBusyZ">@(_delBusyZ ? "Eliminando..." : "Si, eliminar")</button>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_campoAEliminarZ is not null)
+        {
+            <div class="zc-cfg-back" @onclick="() => { if (!_colBusyZ) _campoAEliminarZ = null; }">
+                <div class="zc-confirm" @onclick:stopPropagation="true">
+                    <div class="zc-confirm-t">Eliminar campo "@_campoAEliminarZ.Label"</div>
+                    <div class="zc-confirm-s">Se elimina la definicion del campo y todos sus valores en las zonas. No se puede deshacer.</div>
+                    <div class="zc-confirm-acts">
+                        <button type="button" class="zc-fbtn" @onclick="() => _campoAEliminarZ = null" disabled="@_colBusyZ">Cancelar</button>
+                        <button type="button" class="zc-selbar-del" @onclick="EliminarCampoDinZAsync" disabled="@_colBusyZ">@(_colBusyZ ? "Eliminando..." : "Si, eliminar campo")</button>
+                    </div>
+                </div>
+            </div>
+        }
         <div class="zc-list">
             @* El expansor tiene su PROPIA columna (la primera, siempre visible): abre la ficha
                del registro para editarlo; en la fila de alta crea la zona y abre su ficha. *@
             @* Columnas dirigidas por la config compartida (unidades-config, entidad 'zona'): sistema y
                propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
             <div class="zc-list-head zc-grid" style="@ZcGridStyle">
+                <div class="zc-sel-cell"><label class="zc-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSelZ" @onchange="@(e => ToggleSelAllZ((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
-                @foreach (var k in ColsVisibles()) { <div title="@(EsCustom(k) ? "Campo personalizado" : null)">@ColLabel(k).ToUpperInvariant()</div> }
+                @foreach (var k in ColsVisibles())
+                {
+                    var clave = k;
+                    if (CampoCustom(clave) is not null)
+                    {
+                        <div class="zc-th-dyn zc-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorderZ(e, clave)" @onclick="() => OrdenarPorColumnaZ(clave)">
+                            <span class="zc-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKeyZ == clave) { <span class="zc-th-arrow">@((MarkupString)(_sortDirZ > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <button type="button" class="zc-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoZ(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            <span class="zc-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeZ(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeZ(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="zc-th-dyn zc-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorderZ(e, clave)" @onclick="() => OrdenarPorColumnaZ(clave)">
+                            <span class="zc-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKeyZ == clave) { <span class="zc-th-arrow">@((MarkupString)(_sortDirZ > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <span class="zc-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeZ(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeZ(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                }
                 <div></div>
+                <div class="zc-addcol-h"><button type="button" class="zc-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoZ"><i class="fi fi-rr-plus"></i></button></div>
             </div>
             @foreach (var grupo in AgruparZonas(Filtradas()))
             {
@@ -204,7 +314,8 @@ else
                 @foreach (var z in grupo)
                 {
                     var zona = z;
-                    <div class="zc-list-row zc-grid" style="@ZcGridStyle">
+                    <div class="zc-list-row zc-grid @(_selZ.Contains(zona.Id) ? "zc-row-sel" : "")" style="@ZcGridStyle" @oncontextmenu="e => AbrirCtxZ(e, zona)" @oncontextmenu:preventDefault="true">
+                        <div class="zc-sel-cell"><label class="zc-chk"><input type="checkbox" checked="@_selZ.Contains(zona.Id)" @onchange="@(e => ToggleSelZ(zona.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
                         <div class="zc-col-exp">
                             <button type="button" class="zc-nf-exp zc-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaZonaAsync(zona)">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -286,18 +397,19 @@ else
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
                             </button>
                         </div>
+                        <div class="zc-addcol-cell"></div>
                     </div>
                 }
             }
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
-            <div class="zc-list-newrow zc-grid" style="@ZcGridStyle" @key="_nonce">
-                @* El expansor de la fila de alta crea la zona y abre la FICHA COMPLETA (imagen, horarios,
-                   mantenimiento, novedades) en edicion; el nombre se completa alli. *@
+            @if (_altaAbiertaZ)
+            {
+            <div class="zc-list-newrow zc-newrow--edit zc-grid" style="@ZcGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownZ">
+                <div class="zc-sel-cell"></div>
                 <div class="zc-col-exp">
-                    <button type="button" class="zc-nf-exp zc-exp-fijo" title="Crear y abrir la ficha completa"
-                            @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                    <span class="zc-nf-exp zc-exp-mut" title="Nueva zona comun">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    </button>
+                    </span>
                 </div>
                 @foreach (var k in ColsVisibles())
                 {
@@ -360,10 +472,30 @@ else
                             break;
                     }
                 }
-                <div class="zc-list-act">
-                    <button type="button" class="zc-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
+                <div class="zc-list-act zc-nf-actbtns">
+                    <button type="button" class="zc-nf-ok" title="Guardar (Enter)" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button type="button" class="zc-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaZ" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <div class="zc-addcol-cell"></div>
+            </div>
+            }
+            else
+            {
+            <div class="zc-list-newrow zc-newrow--cta zc-grid" style="@ZcGridStyle">
+                <div class="zc-sel-cell"></div>
+                <div class="zc-col-exp"></div>
+                <div class="zc-nf-ctacell" style="grid-column: 3 / -1;">
+                    <button type="button" class="zc-nf-cta" @onclick="AbrirAltaZ">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar registro
+                    </button>
                 </div>
             </div>
+            }
             @* Footer DENTRO del contenedor de la tabla (borde/radio/overflow), para que se integre
                como en Unidades y no se vea "pegado". *@
             @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0");
@@ -392,6 +524,24 @@ else
 @* Selector de Campos (Fase 1): el gestor propio (columnas en memoria + modal de campos dinamicos)
    se reemplaza por el componente compartido. Orden/visibilidad/alias viven en unidades-config
    (entidad 'zona'); los campos propios en zonas-campos. *@
+
+@* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
+@if (_crearCampoAbiertoZ)
+{
+    <CrearCampoModal Prefijo="zonas"
+                     TituloSingular="zona"
+                     Ejemplo="Ej. Aforo COVID, Piso"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditarZ"
+                     TiposAvanzados="false"
+                     Guardado="RecargarTrasCrearCampoZ"
+                     Cerrado="() => { _crearCampoAbiertoZ = false; _campoAEditarZ = null; }"
+                     AbrirGestorAvanzado="AbrirGestorDesdeCrearZ" />
+}
+
+@* Menu contextual (clic derecho sobre una fila). *@
+<TablaCtxMenu Abierto="_ctxOpenZ" X="_ctxXZ" Y="_ctxYZ" Items="_ctxItemsZ" Cerrado="() => _ctxOpenZ = false" />
+
 @if (_selAbierto)
 {
     <div class="zc-cfg-back" @onclick="() => _selAbierto = false">
@@ -492,7 +642,255 @@ else
         "descripcion" or "reglas" => "minmax(140px,1.4fr)",
         _ => "minmax(120px,150px)"   // campos propios
     };
-    private string ZcGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisibles().Select(ColWidth)) + " 60px";
+    private string ZcGridStyle => "grid-template-columns: 38px 34px " + string.Join(" ", ColsVisibles().Select(k => _colWZ.TryGetValue(k, out var w) ? w + "px" : ColWidth(k))) + " 60px 40px";
+
+    // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN). Crear campo = "+" del header; editar
+    // /eliminar = engranaje. Persistencia identica a Unidades: unidades-config con Entidad="zona". =====
+    private bool _showColMenuZ;
+    private string _colQZ = "";
+    private bool _colBusyZ;
+    private ZonaCampoDefinicionDto? _campoAEliminarZ;
+
+    private GuardarUnidadCampoConfigRequest FilaConfigZ(string clave)
+    {
+        _cfgZona.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: "zona");
+    }
+    private async Task GuardarCfgZAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task CargarCfgZAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=zona") ?? new();
+            _cfgZona = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosZ();
+        }
+        catch { }
+    }
+    private async Task ToggleVisibleColZAsync(string clave)
+    {
+        var visible = VisibleCol(clave);
+        await GuardarCfgZAsync(FilaConfigZ(clave) with { Oculto = visible });
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaZAsync(string clave, int dir)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna ('nombre') queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgZAsync(FilaConfigZ(keys[k]) with { Orden = k });
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColZAsync()
+    {
+        var keys = ClavesOrdenadas().ToList();
+        for (int k = 0; k < keys.Count; k++)
+        {
+            if (k == 0) continue; // 'nombre' no se oculta
+            await GuardarCfgZAsync(FilaConfigZ(keys[k]) with { Oculto = true });
+        }
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColZAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgZAsync(FilaConfigZ(k) with { Oculto = false });
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColZAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgZAsync(FilaConfigZ(k) with { Oculto = !VisibleColDefault(k), Orden = null });
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinZAsync()
+    {
+        if (_campoAEliminarZ is null) return;
+        _colBusyZ = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas-campos/{_campoAEliminarZ.Id}");
+            Msg(r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminarZ.Label}\" eliminado." : "No se pudo eliminar el campo.", r.IsSuccessStatusCode);
+            if (r.IsSuccessStatusCode) await CargarCamposYConfigAsync();
+        }
+        catch (Exception ex) { Msg("Error al eliminar el campo: " + ex.Message, false); }
+        _campoAEliminarZ = null; _colBusyZ = false; StateHasChanged();
+    }
+
+    // ===== Crear / editar UN campo (modal focalizado, replica de la maqueta) =====
+    private bool _crearCampoAbiertoZ;
+    private CampoDinDef? _campoAEditarZ;
+    private void AbrirCrearCampoZ() { _campoAEditarZ = null; _crearCampoAbiertoZ = true; }
+    private void AbrirEditarCampoZ(ZonaCampoDefinicionDto c)
+    {
+        _campoAEditarZ = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones);
+        _crearCampoAbiertoZ = true;
+    }
+    private async Task RecargarTrasCrearCampoZ()
+    {
+        _crearCampoAbiertoZ = false; _campoAEditarZ = null;
+        await CargarCamposYConfigAsync();
+        StateHasChanged();
+    }
+    private void AbrirGestorDesdeCrearZ()
+    {
+        _crearCampoAbiertoZ = false; _campoAEditarZ = null;
+        _selAbierto = true;
+    }
+
+    // ===== Interacciones de tabla (como la maqueta): ordenar, mover columna, menu contextual =====
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Ordenar (clic en header). El click post-arrastre lo traga el JS de reordenar.
+    private string? _sortKeyZ;
+    private int _sortDirZ = 1;
+    private void OrdenarPorColumnaZ(string k)
+    {
+        if (_sortKeyZ == k) _sortDirZ = -_sortDirZ; else { _sortKeyZ = k; _sortDirZ = 1; }
+        _paginaZ = 1;
+    }
+    private string SortStrZ(ZonaComunDto z, string k)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var cd = CampoCustom(k);
+        if (cd is not null) return ValorCampo(z.Id, cd.Id) ?? "";
+        return k switch
+        {
+            "nombre" => z.Nombre ?? "",
+            "categoria" => z.Categoria.ToString(),
+            "reservable" => z.EsReservable ? "Si" : "No",
+            "aforo" => z.CapacidadPersonas?.ToString(ci) ?? "",
+            "estado" => z.Estado.ToString(),
+            "tarifa" => z.TarifaReserva?.ToString(ci) ?? "",
+            "descripcion" => z.Descripcion ?? "",
+            "reglas" => z.ReglasUso ?? "",
+            _ => ""
+        };
+    }
+
+    // Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu Columnas)
+    private async Task IniciarReorderZ(MouseEventArgs e, string clave)
+    {
+        _selfZ ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _selfZ, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgZAsync(FilaConfigZ(keys[i]) with { Orden = i });
+        await CargarCfgZAsync(); StateHasChanged();
+    }
+
+    // Menu contextual (clic derecho)
+    private bool _ctxOpenZ;
+    private double _ctxXZ, _ctxYZ;
+    private List<TablaCtxMenu.Item> _ctxItemsZ = new();
+    private void AbrirCtxZ(MouseEventArgs e, ZonaComunDto z)
+    {
+        _ctxXZ = e.ClientX; _ctxYZ = e.ClientY;
+        _ctxItemsZ = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtxZ),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtxZ),            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirFichaZonaAsync(z)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceZ(z)),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => EliminarZonaAsync(z.Id, z.Nombre)),
+        };
+        _ctxOpenZ = true;
+    }
+    private Task StubCtxZ() { Msg("Accion aun no disponible en esta version.", false); StateHasChanged(); return Task.CompletedTask; }
+    private async Task CopiarEnlaceZ(ZonaComunDto z)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}configuracion-copropiedad#zona-{z.Id}"); Msg("Enlace del registro copiado.", true); }
+        catch { Msg("No se pudo copiar el enlace.", false); }
+        StateHasChanged();
+    }
+
+    // Redimensionar columnas; el ancho PERSISTE por copropiedad en el JSON de Formato (clave "w").
+    private readonly Dictionary<string, int> _colWZ = new(StringComparer.Ordinal);
+    private DotNetObjectReference<ZonasComunesPanel>? _selfZ;
+    private async Task IniciarResizeZ(MouseEventArgs e, string clave)
+    {
+        _selfZ ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfZ, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResizeZ(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colWZ.Remove(clave); else _colWZ[clave] = w.Value;
+        var fila = FilaConfigZ(clave);
+        await GuardarCfgZAsync(fila with { Formato = ConAnchoTabla(fila.Formato, w) });
+        await CargarCfgZAsync(); HidratarAnchosZ(); StateHasChanged();
+    }
+    private void HidratarAnchosZ()
+    {
+        _colWZ.Clear();
+        foreach (var kv in _cfgZona) { var w = AnchoDeFormatoTabla(kv.Value.Formato); if (w is > 0) _colWZ[kv.Key] = w.Value; }
+    }
+    internal static int? AnchoDeFormatoTabla(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o? ["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    internal static string? ConAnchoTabla(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    public void Dispose() { _selfZ?.Dispose(); }
+
+    // ===== Seleccion multiple + borrado masivo (estandar vista tabla, como Unidades) =====
+    private readonly HashSet<Guid> _selZ = new();
+    private bool _confirmDelSelZ;
+    private bool _delBusyZ;
+    private void ToggleSelZ(Guid id, bool on) { if (on) _selZ.Add(id); else _selZ.Remove(id); }
+    private void LimpiarSelZ() => _selZ.Clear();
+    private void ToggleSelAllZ(bool on) { _selZ.Clear(); if (on) foreach (var z in Filtradas()) _selZ.Add(z.Id); }
+    private bool TodasSelZ { get { var ids = Filtradas().Select(z => z.Id).ToList(); return ids.Count > 0 && ids.All(_selZ.Contains); } }
+    private async Task EliminarSelZonasAsync()
+    {
+        if (_selZ.Count == 0) return;
+        _delBusyZ = true; int ok = 0, fail = 0;
+        foreach (var id in _selZ.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{id}"); if (r.IsSuccessStatusCode) ok++; else fail++; }
+            catch { fail++; }
+        }
+        _selZ.Clear(); _confirmDelSelZ = false; _delBusyZ = false;
+        Msg(fail == 0 ? $"{ok} zona(s) eliminada(s)." : $"{ok} eliminada(s), {fail} con error.", fail == 0);
+        await CargarAsync(); StateHasChanged();
+    }
+
+    // ===== Alta inline "nace fila" (estandar, como Unidades) =====
+    private bool _altaAbiertaZ;
+    private void AbrirAltaZ() { _altaAbiertaZ = true; _draft.Reset(); _focusPending = true; }
+    private void CerrarAltaZ() { _altaAbiertaZ = false; }
+    private async Task OnAltaKeydownZ(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAltaZ();
+        else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+    }
 
     // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca todo.
     private async Task RecargarCamposYConfigAsync()
@@ -549,7 +947,7 @@ else
     private IEnumerable<ZonaComunDto> Filtradas()
     {
         var q = _q.Trim();
-        return _zonas
+        var baseSeq = _zonas
             .Where(z => q == "" || z.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
             .Where(z => _fd?.Pasa(campo => campo switch
             {
@@ -559,8 +957,15 @@ else
                 "reservable" => z.EsReservable ? "si" : "no",
                 "aforo" => z.CapacidadPersonas?.ToString() ?? "",
                 _ => ""
-            }) ?? true)
-            .OrderBy(z => z.Categoria).ThenBy(z => z.Nombre);
+            }) ?? true);
+        // Orden por columna (clic en header); sin sort, orden por defecto (categoria + nombre).
+        if (_sortKeyZ is not null)
+        {
+            var sk = _sortKeyZ;
+            var cmp = Comparer<ZonaComunDto>.Create((a, b) => CmpValTabla(SortStrZ(a, sk), SortStrZ(b, sk)) * _sortDirZ);
+            return baseSeq.OrderBy(z => z, cmp);
+        }
+        return baseSeq.OrderBy(z => z.Categoria).ThenBy(z => z.Nombre);
     }
 
     private sealed class ZonaDraft
@@ -662,6 +1067,7 @@ else
         {
             var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=zona") ?? new();
             _cfgZona = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosZ();
         }
         catch { _cfgZona = new(StringComparer.Ordinal); }
     }
@@ -834,7 +1240,7 @@ else
                     catch { }
                     _nuCampos.Clear();
                 }
-                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++; _focusPending = true;
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _altaAbiertaZ = false; _nonce++; _focusPending = true;
                 await CargarAsync();
                 Msg("Zona comun creada. Haz clic en ella para completar la ficha.", true);
             }
@@ -917,9 +1323,13 @@ else
     .zc-fsel:focus { border-color: var(--propia-brand, var(--propia-brand)); }
     .zc-fclear { border: 1px solid var(--propia-brand-border); border-radius: 9px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft); cursor: pointer; font-family: inherit; }
 
-    .zc-viewtoggle { display: flex; gap: 0; border: 1px solid var(--propia-border-card); border-radius: 9px; overflow: hidden; }
-    .zc-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 7px 12px; border: 0; background: var(--propia-bg-card); color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
-    .zc-vt.on { background: var(--propia-brand, var(--propia-brand)); color: var(--propia-text-inverse); }
+    /* Toggle segmentado tipo pildora (milimetrico a Unidades/maqueta). */
+    .zc-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; }
+    .zc-vt { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; padding: 8px 15px; border: 0; border-radius: 8px; background: transparent; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, color .14s, box-shadow .14s; }
+    .zc-vt svg { opacity: .9; }
+    .zc-vt:hover { color: var(--propia-text-body); background: var(--propia-bg-hover); }
+    .zc-vt.on { background: var(--propia-bg-card); color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+    .zc-vt.on svg { opacity: 1; }
 
     .zc-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
     .zc-card { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); cursor: pointer; text-align: left; font-family: inherit; }
@@ -978,19 +1388,46 @@ else
     .zc-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
     .zc-menu-it:hover { background: var(--propia-brand-soft); }
     .zc-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); }
-    .zc-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 260px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
-    .zc-colsmenu-h { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; padding: 4px 6px 8px; }
-    .zc-colsmenu-i { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
-    .zc-colsmenu-i:hover { background: var(--propia-bg-hover); }
-    .zc-colsmenu-i.off .zc-colsmenu-lbl { color: var(--propia-text-faint); }
-    .zc-colsmenu-mv { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); border-radius: 6px; width: 22px; height: 22px; font-size: 9px; line-height: 1; cursor: pointer; flex: 0 0 auto; }
-    .zc-colsmenu-mv:disabled { opacity: .35; cursor: default; }
-    .zc-colsmenu-lbl { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); }
-    .zc-colsmenu-sw { display: inline-flex; align-items: center; cursor: pointer; }
-    .zc-colsmenu-fija { font-size: 10px; color: var(--propia-text-faint); font-weight: 600; }
-    .zc-colsmenu-acts { display: flex; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
-    .zc-colsmenu-act { flex: 1; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
-    .zc-colsmenu-act:hover { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); }
+    /* Menu "Columnas" inline (milimetrico a .dst-col-* de Unidades): orden/visibilidad + borrar DIN. */
+    .zc-colmenu { min-width: 252px; }
+    .zc-col-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .zc-col-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .zc-col-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .zc-col-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .zc-col-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .zc-col-it:hover { background: var(--propia-brand-soft-2); }
+    .zc-col-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .zc-col-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .zc-col-mv:disabled { opacity: .35; cursor: default; }
+    .zc-col-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .zc-col-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .zc-col-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .zc-col-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .zc-col-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .zc-col-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .zc-col-del:hover { color: #D7263D; border-color: #F0C9C9; background: #FBEBEB; }
+    .zc-col-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .zc-col-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .zc-col-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .zc-col-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .zc-col-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    /* "+" de columna en el header (crea campo nuevo -> abre el gestor de campos). */
+    .zc-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .zc-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .zc-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    /* Engranaje en cabecera de columnas dinamicas: editar/eliminar el campo (aparece al hover del th). */
+    .zc-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .zc-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zc-th-edit { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .zc-list-head .zc-th-dyn:hover .zc-th-edit, .zc-th-edit:focus-visible { opacity: 1; }
+    .zc-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .zc-th-sortable { cursor: pointer; user-select: none; position: relative; }
+    .zc-th-sortable:hover .zc-th-lbl { color: var(--propia-brand); }
+    .zc-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .zc-th-over { box-shadow: inset 2px 0 0 var(--propia-brand); }
+    .zc-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .zc-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .zc-col-rz:hover::after { background: var(--propia-brand); }
     .zc-group { display: flex; align-items: center; gap: 8px; padding: 10px 6px 4px; font-size: 12px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand-hover); }
     .zc-group-n { background: var(--propia-brand-soft); color: var(--propia-brand-hover); font-size: 11px; font-weight: 800; border-radius: 20px; padding: 1px 8px; }
     .zc-col-exp { display: flex; align-items: center; justify-content: center; }
@@ -1003,8 +1440,26 @@ else
     .zc-nf-exp.zc-exp-fijo:disabled { opacity: 0; cursor: default; }
     .zc-list-newrow:hover .zc-exp-fijo:disabled,
     .zc-list-newrow:focus-within .zc-exp-fijo:disabled { opacity: .35; }
-    .zc-list-head { padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); border-bottom: 1px solid var(--propia-border-divider); }
-    .zc-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
+    .zc-list-head { padding: 14px 14px; background: var(--propia-bg-app); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-secondary); border-bottom: 1px solid var(--propia-border-card); }
+    /* Separadores verticales SUTILES solo en la cabecera (entre columnas de datos). */
+    .zc-list-head.zc-grid > div { border-right: 1px solid var(--propia-border-divider); }
+    .zc-list-head.zc-grid > div:first-child, .zc-list-head.zc-grid > div:nth-child(2), .zc-list-head.zc-grid > div:nth-last-child(2), .zc-list-head.zc-grid > div:last-child { border-right: 0; }
+    .zc-list-row { padding: 11px 14px; border-bottom: 1px solid #F3F7FA; }
+    /* Seleccion multiple + barra bulk (milimetrico maqueta). */
+    .zc-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .zc-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .zc-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .zc-row-sel { background: var(--propia-brand-soft) !important; }
+    .zc-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .zc-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand, var(--propia-brand)); }
+    .zc-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #F0C9C9; background: var(--propia-bg-card); color: #D7263D; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .zc-selbar-del:hover:not(:disabled) { background: #FBEBEB; }
+    .zc-selbar-del:disabled { opacity: .6; cursor: default; }
+    .zc-selbar-x { border: 0; background: transparent; color: var(--propia-brand, var(--propia-brand)); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    .zc-confirm { background: var(--propia-bg-card); border-radius: 14px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(20,30,50,.3); padding: 18px 20px 16px; }
+    .zc-confirm-t { font-size: 15px; font-weight: 800; color: var(--propia-text-h1); }
+    .zc-confirm-s { font-size: 12.5px; color: var(--propia-text-muted); margin: 6px 0 14px; }
+    .zc-confirm-acts { display: flex; justify-content: flex-end; gap: 10px; }
     .zc-list-row:hover { background: var(--propia-bg-card-soft); }
     /* Celdas editables inline: se leen como texto (borde invisible) y se marcan al hover/foco. */
     .zc-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: var(--propia-text-secondary); background: transparent; outline: none; font-family: inherit; }
@@ -1024,6 +1479,22 @@ else
     .zc-row-inp:focus { border-style: solid; border-color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .zc-row-add { font-size: 11.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .zc-row-add:disabled { opacity: .5; cursor: default; }
+    /* Alta "nace fila" (milimetrico maqueta): CTA morado + fila editable + foco redondeado + acciones ✓/×. */
+    .zc-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
+    .zc-nf-cta:hover { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    .zc-newrow--cta { cursor: default; }
+    .zc-nf-ctacell { display: flex; align-items: center; }
+    .zc-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; display: inline-flex; align-items: center; justify-content: center; }
+    .zc-newrow--edit { background: var(--propia-brand-soft-2); }
+    .zc-newrow--edit .zc-row-inp { border: 1px solid transparent; background: transparent; border-radius: 8px; box-shadow: none; }
+    .zc-newrow--edit .zc-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
+    .zc-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+    .zc-nf-ok, .zc-nf-cancel { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; cursor: pointer; }
+    .zc-nf-ok { border: 0; background: var(--propia-brand); color: #fff; }
+    .zc-nf-ok:hover:not(:disabled) { filter: brightness(.96); }
+    .zc-nf-cancel { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); }
+    .zc-nf-cancel:hover:not(:disabled) { color: #D7263D; border-color: #F0C9C9; background: #FBEBEB; }
+    .zc-nf-ok:disabled, .zc-nf-cancel:disabled { opacity: .6; cursor: default; }
 
     .zc-empty { font-size: 12.5px; color: var(--propia-text-faint); padding: 16px; border: 1px dashed var(--propia-border-input); border-radius: 10px; margin-top: 12px; }
     .zc-msg { margin-top: 12px; font-size: 12.5px; font-weight: 600; }

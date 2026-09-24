@@ -1,15 +1,19 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
+@using Microsoft.AspNetCore.Components.Web
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 @if (!Embedded) { <PageTitle>Mascotas - PROPIA</PageTitle> }
 
 @* Mascotas: vista agregada de TODAS las mascotas de las unidades. Hermano de /vehiculos y del
-   modulo de residentes: antes solo se llegaba a ellas abriendo la ficha de cada unidad y sus campos
-   se configuraban desde el panel de Unidades Privadas. Misma vista tabla estandar del sistema. *@
+   modulo de residentes. Vista tabla estandar del sistema, homogenea con Zonas/Equipos: columnas
+   dinamicas (sistema + propias) dirigidas por unidades-config (entidad 'mascotas'), seleccion
+   multiple + borrado masivo, alta "nace fila", menu Columnas, "+"/engranaje -> CrearCampoModal,
+   ordenar/mover/redimensionar columnas y menu contextual. *@
 
 @if (!Embedded)
 {
@@ -52,27 +56,128 @@ else
             }
         </div>
 
-        @* Campos: unica entrada a la configuracion de este modulo (igual que en Unidades). *@
-        <button type="button" class="mas-fbtn @(_configAbierto ? "on" : "")" @onclick="() => _configAbierto = true" title="Campos de la mascota: crear, renombrar, ordenar y ocultar">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-            <span>Campos</span>
-        </button>
+        @* "Columnas" (inline, milimetrico a Unidades/Zonas): orden, visibilidad y borrar campo dinamico.
+           Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
+        <div class="mas-menu-wrap">
+            <button type="button" class="mas-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showColMenu)
+            {
+                <div class="mas-menu-bd" @onclick="() => _showColMenu = false"></div>
+                <div class="mas-menu mas-colmenu">
+                    <div class="mas-col-search">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
+                    </div>
+                    <div class="mas-col-list">
+                        @{ var _cols = ClavesOrdenadas().ToList(); }
+                        @for (int _ci = 0; _ci < _cols.Count; _ci++)
+                        {
+                            var k = _cols[_ci];
+                            var idx = _ci;
+                            var label = ColLabel(k);
+                            if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            var fija = idx == 0;
+                            var visible = VisibleCol(k);
+                            var custom = CampoCustom(k);
+                            <div class="mas-col-it">
+                                <button class="mas-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaAsync(k, -1)">&#9650;</button>
+                                <button class="mas-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverColumnaAsync(k, 1)">&#9660;</button>
+                                <span class="mas-col-name">@label @if (custom is not null) { <span class="mas-col-dyn" title="Campo personalizado">din</span> }</span>
+                                @if (fija) { <span class="mas-col-fija">fija</span> }
+                                else
+                                {
+                                    <button class="mas-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColAsync(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                }
+                                @if (custom is not null) { <button class="mas-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminar = custom"><i class="fi fi-rr-trash"></i></button> }
+                            </div>
+                        }
+                    </div>
+                    <div class="mas-col-massacts">
+                        <button type="button" class="mas-col-mass" @onclick="OcultarTodasColAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                        <button type="button" class="mas-col-mass" @onclick="MostrarTodasColAsync"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                        <button type="button" class="mas-col-reset" @onclick="RestablecerColAsync">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="mas-msg @(_msgError ? "err" : "ok")">@_msg</div> }
 
+    @if (_sel.Count > 0)
+    {
+        <div class="mas-selbar">
+            <span class="mas-selbar-n">@_sel.Count seleccionada@(_sel.Count == 1 ? "" : "s")</span>
+            <button type="button" class="mas-selbar-del" @onclick="() => _confirmDelSel = true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Eliminar
+            </button>
+            <button type="button" class="mas-selbar-x" @onclick="LimpiarSel">Deseleccionar</button>
+        </div>
+    }
+    @if (_confirmDelSel)
+    {
+        <div class="mas-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+            <div class="mas-confirm" @onclick:stopPropagation="true">
+                <div class="mas-confirm-t">Eliminar @_sel.Count mascota@(_sel.Count == 1 ? "" : "s")</div>
+                <div class="mas-confirm-s">Esta accion quita las mascotas seleccionadas de sus unidades de forma permanente y no se puede deshacer.</div>
+                <div class="mas-confirm-acts">
+                    <button type="button" class="mas-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                    <button type="button" class="mas-selbar-del" @onclick="EliminarSelAsync" disabled="@_delBusy">@(_delBusy ? "Eliminando..." : "Si, eliminar")</button>
+                </div>
+            </div>
+        </div>
+    }
+    @if (_campoAEliminar is not null)
+    {
+        <div class="mas-cfg-back" @onclick="() => { if (!_colBusy) _campoAEliminar = null; }">
+            <div class="mas-confirm" @onclick:stopPropagation="true">
+                <div class="mas-confirm-t">Eliminar campo "@_campoAEliminar.Label"</div>
+                <div class="mas-confirm-s">Se elimina la definicion del campo y todos sus valores en las mascotas. No se puede deshacer.</div>
+                <div class="mas-confirm-acts">
+                    <button type="button" class="mas-fbtn" @onclick="() => _campoAEliminar = null" disabled="@_colBusy">Cancelar</button>
+                    <button type="button" class="mas-selbar-del" @onclick="EliminarCampoDinAsync" disabled="@_colBusy">@(_colBusy ? "Eliminando..." : "Si, eliminar campo")</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @* ===== Tabla ===== *@
     <div class="mas-table">
         <div class="mas-scroll">
-            <div class="mas-head mas-grid" style="grid-template-columns:@GridCols">
+            @* La clase zc-list-head la usa el JS de redimensionar (propiaTablaResize) para ubicar la
+               celda por data-clave; no aporta estilos en esta pagina (solo mas-head los define). *@
+            <div class="mas-head mas-grid zc-list-head" style="grid-template-columns:@GridCols">
+                <div class="mas-sel-cell"><label class="mas-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSel" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
-                <div>UNIDAD</div>
-                <div>NOMBRE</div>
-                <div>TIPO</div>
-                <div>RAZA</div>
-                <div>PROPIETARIO</div>
-                @foreach (var d in _defs) { <div>@d.Label.ToUpperInvariant()</div> }
+                @foreach (var k in ColsVisibles())
+                {
+                    var clave = k;
+                    if (CampoCustom(clave) is not null)
+                    {
+                        <div class="mas-th-dyn mas-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
+                            <span class="mas-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKey == clave) { <span class="mas-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <button type="button" class="mas-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampo(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            <span class="mas-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mas-th-dyn mas-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
+                            <span class="mas-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKey == clave) { <span class="mas-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <span class="mas-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                }
                 <div></div>
+                <div class="mas-addcol-h"><button type="button" class="mas-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></div>
             </div>
 
             @foreach (var item in FilasRender())
@@ -86,59 +191,83 @@ else
                     continue;
                 }
                 var v = item.Fila!;
-                <div class="mas-row mas-grid @(_recienCreados.Contains(v.MascotaId) ? "mas-row-nuevo" : "")" style="grid-template-columns:@GridCols">
-                    <div class="mas-exp-col">
-                        <button type="button" class="mas-exp" title="Abrir la unidad de esta mascota" @onclick="() => AbrirUnidad(v)">
+                <div class="mas-row mas-grid @(_recienCreados.Contains(v.MascotaId) ? "mas-row-nuevo" : "") @(_sel.Contains(v.MascotaId) ? "mas-row-sel" : "")" style="grid-template-columns:@GridCols"
+                     @oncontextmenu="e => AbrirCtx(e, v)" @oncontextmenu:preventDefault="true">
+                    <div class="mas-sel-cell"><label class="mas-chk"><input type="checkbox" checked="@_sel.Contains(v.MascotaId)" @onchange="@(e => ToggleSel(v.MascotaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+                    <div class="mas-col-exp">
+                        <button type="button" class="mas-exp-fijo" title="Abrir la unidad de esta mascota" @onclick="() => AbrirUnidad(v)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
-                    <div class="mas-cell"><span class="mas-cod">@v.UnidadCodigo</span></div>
-                    <input class="mas-editcell" value="@v.Nombre" placeholder="-" @onchange="e => GuardarNombreAsync(v, e.Value?.ToString())" />
-                    <select class="mas-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
-                        @foreach (var t in TiposMascota)
-                        {
-                            <option value="@t" selected="@(v.Tipo == t)">@TipoLabel(t)</option>
-                        }
-                    </select>
-                    <input class="mas-editcell" value="@v.Raza" placeholder="-" @onchange="e => GuardarRazaAsync(v, e.Value?.ToString())" />
-                    <div class="mas-cell mas-prop">@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "-" : v.PropietarioNombre)</div>
-                    @foreach (var d in _defs)
+                    @foreach (var k in ColsVisibles())
                     {
-                        var def = d;
-                        var val = ValorDe(v.MascotaId, def.Id);
-                        if (def.Tipo == TipoCampoTablero.Seleccion)
+                        if (CampoCustom(k) is CampoDinDef def)
                         {
-                            <div class="mas-selcell">
-                                @if (!string.IsNullOrWhiteSpace(val))
-                                {
-                                    var col = ColorOpcion(def, val);
-                                    <span class="mas-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
-                                }
-                                <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())">
+                            var d = def;
+                            var val = ValorDe(v.MascotaId, def.Id);
+                            if (def.Tipo == TipoCampoTablero.Seleccion)
+                            {
+                                <div class="mas-selcell">
+                                    @if (!string.IsNullOrWhiteSpace(val))
+                                    {
+                                        var col = ColorOpcion(def, val);
+                                        <span class="mas-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                    }
+                                    <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
+                                        <option value="">-</option>
+                                        @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                    </select>
+                                </div>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Formula)
+                            {
+                                <div class="mas-cell mas-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Usuario)
+                            {
+                                <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
                                     <option value="">-</option>
-                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
                                 </select>
-                            </div>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Directorio)
+                            {
+                                <div class="mas-cell">@(NombrePersona(val) ?? "-")</div>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                            {
+                                <input class="mas-editcell" type="number" step="any" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Fecha)
+                            {
+                                <input class="mas-editcell" type="date" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else
+                            {
+                                <input class="mas-editcell" value="@val" placeholder="-"
+                                       @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                            continue;
                         }
-                        else if (def.Tipo == TipoCampoTablero.Formula)
+                        switch (k)
                         {
-                            <div class="mas-cell mas-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
-                        }
-                        else if (def.Tipo == TipoCampoTablero.Usuario)
-                        {
-                            <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())">
-                                <option value="">-</option>
-                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
-                            </select>
-                        }
-                        else if (def.Tipo == TipoCampoTablero.Directorio)
-                        {
-                            <div class="mas-cell">@(NombrePersona(val) ?? "-")</div>
-                        }
-                        else
-                        {
-                            <input class="mas-editcell" value="@val" placeholder="-"
-                                   @onchange="e => GuardarDinamicoAsync(v.MascotaId, def.Id, e.Value?.ToString())" />
+                            case "unidad":
+                                <div class="mas-cell"><span class="mas-cod">@v.UnidadCodigo</span></div>
+                                break;
+                            case "nombre":
+                                <input class="mas-editcell" value="@v.Nombre" placeholder="-" @onchange="e => GuardarNombreAsync(v, e.Value?.ToString())" />
+                                break;
+                            case "tipo":
+                                <select class="mas-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
+                                    @foreach (var t in TiposMascota) { <option value="@t" selected="@(v.Tipo == t)">@TipoLabel(t)</option> }
+                                </select>
+                                break;
+                            case "raza":
+                                <input class="mas-editcell" value="@v.Raza" placeholder="-" @onchange="e => GuardarRazaAsync(v, e.Value?.ToString())" />
+                                break;
+                            case "propietario":
+                                <div class="mas-cell mas-prop">@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "-" : v.PropietarioNombre)</div>
+                                break;
                         }
                     }
                     <div class="mas-acts">
@@ -146,60 +275,115 @@ else
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
                         </button>
                     </div>
+                    <div class="mas-addcol-cell"></div>
                 </div>
             }
 
-            @* Alta inline al pie, alineada a las columnas. "+ Agregar" va al final y nunca deshabilitado:
-               si falta algo se avisa con un mensaje, no bloqueando el boton. *@
-            <div class="mas-newrow mas-grid" style="grid-template-columns:@GridCols">
-                <div class="mas-exp-col"></div>
-                <div class="mas-nf-unidad">
-                    <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_nuUnidadId" UnidadIdChanged="OnUnidadSel"
-                                          Class="mas-nf-inp" Placeholder="Unidad (ej. A1-101)" />
+            @* Alta "nace fila": CTA morado -> fila editable con foco redondeado + acciones checkmark/x.
+               Enter guarda, Esc cancela. La primera columna estructural (unidad) usa el selector. *@
+            @if (_altaAbierta)
+            {
+                <div class="mas-newrow mas-newrow--edit mas-grid" style="grid-template-columns:@GridCols" @key="_nonce" @onkeydown="OnAltaKeydown">
+                    <div class="mas-sel-cell"></div>
+                    <div class="mas-col-exp">
+                        <span class="mas-exp-mut" title="Nueva mascota">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                        </span>
+                    </div>
+                    @foreach (var k in ColsVisibles())
+                    {
+                        if (CampoCustom(k) is CampoDinDef def)
+                        {
+                            var d = def;
+                            var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
+                            if (def.Tipo == TipoCampoTablero.Seleccion)
+                            {
+                                <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                                    <option value="">@def.Label</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                                </select>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Formula)
+                            {
+                                <div class="mas-cell mas-auto">(se calcula)</div>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Usuario)
+                            {
+                                <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                                    <option value="">@def.Label</option>
+                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                                </select>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Directorio)
+                            {
+                                <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                                 SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                            {
+                                <input class="mas-row-inp" type="number" step="any" placeholder="@def.Label" value="@dv"
+                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Fecha)
+                            {
+                                <input class="mas-row-inp" type="date" value="@dv"
+                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                            }
+                            else
+                            {
+                                <input class="mas-row-inp" placeholder="@def.Label" value="@dv"
+                                       @oninput="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                            }
+                            continue;
+                        }
+                        switch (k)
+                        {
+                            case "unidad":
+                                <div class="mas-nf-unidad">
+                                    <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_nuUnidadId" UnidadIdChanged="OnUnidadSel"
+                                                          Class="mas-row-inp" Placeholder="Unidad (ej. A1-101)" />
+                                </div>
+                                break;
+                            case "nombre":
+                                <input class="mas-row-inp" @ref="_nombreRef" placeholder="Nombre" value="@_nuNombre" @oninput="OnNombreNuevo" />
+                                break;
+                            case "tipo":
+                                <select class="mas-row-inp" @bind="_nuTipo">
+                                    @foreach (var t in TiposMascota) { <option value="@t">@TipoLabel(t)</option> }
+                                </select>
+                                break;
+                            case "raza":
+                                <input class="mas-row-inp" placeholder="Raza" value="@_nuRaza" @oninput="OnRazaNueva" />
+                                break;
+                            case "propietario":
+                                <div class="mas-cell mas-auto">(segun la unidad)</div>
+                                break;
+                        }
+                    }
+                    <div class="mas-acts mas-nf-actbtns">
+                        <button type="button" class="mas-nf-ok" title="Guardar (Enter)" @onclick="AgregarAsync" disabled="@_busy">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                        </button>
+                        <button type="button" class="mas-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                        </button>
+                    </div>
+                    <div class="mas-addcol-cell"></div>
                 </div>
-                <input class="mas-nf-inp" placeholder="Nombre" value="@_nuNombre" @oninput="OnNombreNuevo" />
-                <select class="mas-nf-inp" @bind="_nuTipo">
-                    @foreach (var t in TiposMascota) { <option value="@t">@TipoLabel(t)</option> }
-                </select>
-                <input class="mas-nf-inp" placeholder="Raza" value="@_nuRaza" @oninput="OnRazaNueva" />
-                <div class="mas-cell mas-auto">(segun la unidad)</div>
-                @foreach (var d in _defs)
-                {
-                    var def = d;
-                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
-                    if (def.Tipo == TipoCampoTablero.Seleccion)
-                    {
-                        <select class="mas-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
-                            <option value="">@def.Label</option>
-                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
-                        </select>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Formula)
-                    {
-                        <div class="mas-cell mas-auto">(se calcula)</div>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Usuario)
-                    {
-                        <select class="mas-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
-                            <option value="">@def.Label</option>
-                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
-                        </select>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Directorio)
-                    {
-                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
-                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
-                    }
-                    else
-                    {
-                        <input class="mas-nf-inp" placeholder="@def.Label" value="@dv"
-                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
-                    }
-                }
-                <div class="mas-acts">
-                    <button type="button" class="mas-row-add" @onclick="AgregarAsync" disabled="@_busy">+ Agregar</button>
+            }
+            else
+            {
+                <div class="mas-newrow mas-newrow--cta mas-grid" style="grid-template-columns:@GridCols">
+                    <div class="mas-sel-cell"></div>
+                    <div class="mas-col-exp"></div>
+                    <div class="mas-nf-ctacell" style="grid-column: 3 / -1;">
+                        <button type="button" class="mas-nf-cta" @onclick="AbrirAlta">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                            Agregar registro
+                        </button>
+                    </div>
                 </div>
-            </div>
+            }
         </div>
 
         @if (Grupos() is null)
@@ -210,7 +394,24 @@ else
     </div>
 }
 
-@* Panel de campos del modulo (catalogo propio de la copropiedad). *@
+@* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
+@if (_crearCampoAbierto)
+{
+    <CrearCampoModal Prefijo="mascotas"
+                     TituloSingular="mascota"
+                     Ejemplo="Ej. Numero de chip, Vacunas al dia"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditar"
+                     TiposAvanzados="false"
+                     Guardado="RecargarTrasCrearCampo"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     AbrirGestorAvanzado="AbrirGestorDesdeCrear" />
+}
+
+@* Menu contextual (clic derecho sobre una fila). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
+@* Panel de campos del modulo (gestor avanzado; fallback para tipos avanzados y formato). *@
 @if (_configAbierto)
 {
     <div class="mas-cg-back" @onclick="CerrarConfig">
@@ -228,7 +429,7 @@ else
                                      Catalogo="@MascotaCatalogo"
                                      TituloSingular="mascota" TituloPlural="Mascotas"
                                      Ejemplo="Ej. Numero de chip, Vacunas al dia" Jwt="@_jwt"
-                                     Cambiado="RecargarCamposAsync" />
+                                     Cambiado="RecargarCamposYConfigAsync" />
             </div>
         </div>
     </div>
@@ -250,7 +451,11 @@ else
     private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();
     private readonly HashSet<Guid> _recienCreados = new();
 
-    // Alta inline.
+    // Alta inline "nace fila".
+    private bool _altaAbierta;
+    private bool _focusPending;
+    private ElementReference _nombreRef;
+    private int _nonce;
     private Guid? _nuUnidadId;
     private string _nuNombre = "";
     private string _nuRaza = "";
@@ -267,8 +472,54 @@ else
     private static readonly TipoMascota[] TiposMascota = Enum.GetValues<TipoMascota>();
     private static string TipoLabel(TipoMascota t) => t.ToString();
 
-    private string GridCols => "34px 150px minmax(140px,1fr) 120px minmax(120px,1fr) minmax(170px,1.2fr)"
-        + string.Concat(_defs.Select(_ => " minmax(140px,1fr)")) + " 60px";
+    // ===== Columnas dinamicas dirigidas por unidades-config (entidad 'mascotas') =====
+    // Estructurales (unidad, propietario) + de sistema (nombre, tipo, raza) + propias (cd:{id}).
+    private const string EntCfg = "mascotas";
+    private static readonly string[] ClavesEstructuralesInicio = { "unidad" };
+    private static readonly string[] ClavesEstructuralesFin = { "propietario" };
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+
+    private static bool EsCustom(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private CampoDinDef? CampoCustom(string clave)
+        => EsCustom(clave) && Guid.TryParse(clave[3..], out var g) ? _defs.FirstOrDefault(c => c.Id == g) : null;
+
+    private IEnumerable<string> ClavesCandidatas()
+        => ClavesEstructuralesInicio
+            .Concat(MascotaCamposSistema.Todos.Select(c => c.Clave))
+            .Concat(ClavesEstructuralesFin)
+            .Concat(_defs.OrderBy(d => d.Orden).Select(d => "cd:" + d.Id));
+
+    private bool VisibleColDefault(string clave)
+    {
+        if (EsCustom(clave)) return true;
+        if (ClavesEstructuralesInicio.Contains(clave) || ClavesEstructuralesFin.Contains(clave)) return true;
+        return MascotaCamposSistema.Por(clave)?.VisiblePorDefecto ?? true;
+    }
+    private bool VisibleCol(string clave)
+        => _cfg.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback)
+        => _cfg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+
+    private string ColLabel(string clave)
+    {
+        if (_cfg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        if (clave == "unidad") return "Unidad";
+        if (clave == "propietario") return "Propietario";
+        return CampoCustom(clave)?.Label ?? MascotaCamposSistema.Por(clave)?.Label ?? clave;
+    }
+    private static string ColWidth(string clave) => clave switch
+    {
+        "unidad" => "150px",
+        "nombre" => "minmax(140px,1fr)",
+        "tipo" => "120px",
+        "raza" => "minmax(120px,1fr)",
+        "propietario" => "minmax(170px,1.2fr)",
+        _ => "minmax(140px,150px)"   // campos propios
+    };
+    private string GridCols => "38px 34px " + string.Join(" ", ColsVisibles().Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k))) + " 60px 40px";
 
     private List<FiltroDinamico.CampoDef> CamposFiltro => new()
     {
@@ -285,7 +536,7 @@ else
         get
         {
             var q = (_q ?? "").Trim();
-            return _mascotas
+            var baseSeq = _mascotas
                 .Where(v => q == ""
                     || v.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (v.Raza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
@@ -299,8 +550,14 @@ else
                     "unidad" => v.UnidadCodigo,
                     "propietario" => v.PropietarioNombre ?? "",
                     _ => ""
-                }) ?? true)
-                .ToList();
+                }) ?? true);
+            if (_sortKey is not null)
+            {
+                var sk = _sortKey;
+                var cmp = Comparer<MascotaResumenDto>.Create((a, b) => CmpValTabla(SortStr(a, sk), SortStr(b, sk)) * _sortDir);
+                return baseSeq.OrderBy(v => v, cmp).ToList();
+            }
+            return baseSeq.ToList();
         }
     }
 
@@ -361,12 +618,20 @@ else
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
-        if (!first) return;
-        try { _jwt = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_jwt"); } catch { }
-        if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fmascotas", true); return; }
-        _authChecked = true;
-        await CargarAsync();
-        StateHasChanged();
+        if (first)
+        {
+            try { _jwt = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_jwt"); } catch { }
+            if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fmascotas", true); return; }
+            _authChecked = true;
+            await CargarAsync();
+            StateHasChanged();
+            return;
+        }
+        if (_focusPending)
+        {
+            _focusPending = false;
+            try { await _nombreRef.FocusAsync(); } catch { }
+        }
     }
 
     private HttpClient Auth()
@@ -389,9 +654,7 @@ else
         catch (Exception ex) { Mensaje("No se pudieron cargar las mascotas: " + ex.Message, true); }
     }
 
-    // Catalogo de campos del SISTEMA de la mascota para el gestor compartido (Fase 1): mapea
-    // MascotaCamposSistema.Todos a la forma neutra CampoSistemaDef. 'tipo' es enum TipoMascota
-    // (lista de solo lectura), asi que OpcionesEditables queda en false.
+    // Catalogo de campos del SISTEMA de la mascota para el gestor compartido (Fase 1).
     private static readonly IReadOnlyList<CampoSistemaDef> MascotaCatalogo =
         MascotaCamposSistema.Todos.Select(c => new CampoSistemaDef(
             Clave: c.Clave,
@@ -401,8 +664,13 @@ else
             Fija: c.Fija,
             OpcionesEditables: c.OpcionesEditables)).ToList();
 
-    // El gestor compartido cambio algo: refresca columnas + valores de la tabla.
+    // El gestor compartido cambio algo: refresca columnas + valores + config de la tabla.
     private async Task RecargarCamposAsync()
+    {
+        try { await CargarCamposAsync(Auth()); } catch { }
+        StateHasChanged();
+    }
+    private async Task RecargarCamposYConfigAsync()
     {
         try { await CargarCamposAsync(Auth()); } catch { }
         StateHasChanged();
@@ -412,7 +680,7 @@ else
     private static string? ColorOpcion(CampoDinDef d, string? val)
         => d.OpcionesDetalle().FirstOrDefault(o => string.Equals(o.K, val, StringComparison.Ordinal))?.Color;
 
-    // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
+    // Catalogo de campos del modulo + valores de todos los registros + config de columnas (tres/cuatro llamadas).
     private async Task CargarCamposAsync(HttpClient http)
     {
         var defs = await http.GetFromJsonAsync<List<MascotaCampoDefinicionDto>>("/api/mi-copropiedad/mascotas-campos") ?? new();
@@ -422,6 +690,14 @@ else
         var vals = await http.GetFromJsonAsync<List<MascotaCampoValorFlatDto>>("/api/mi-copropiedad/mascotas-campos-valores") ?? new();
         _valores = vals.GroupBy(v => v.UnidadMascotaId)
                        .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+
+        try
+        {
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchos();
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
 
         // Fase 2: usuarios del tenant (campo Usuario) + mapa id->nombre (Usuario y Directorio), tenant-scoped.
         try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }
@@ -448,6 +724,19 @@ else
         _usuarioNombre[c.PersonaId] = c.NombreCompleto;
     }
 
+    // ===== Alta "nace fila" =====
+    private void AbrirAlta()
+    {
+        _altaAbierta = true; _focusPending = true;
+        _nuUnidadId = null; _nuNombre = ""; _nuRaza = ""; _nuTipo = TipoMascota.Perro; _nuDinamicos.Clear();
+    }
+    private void CerrarAlta() { _altaAbierta = false; }
+    private async Task OnAltaKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAlta();
+        else if (e.Key == "Enter") await AgregarAsync();
+    }
+
     private async Task AgregarAsync()
     {
         if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad de la mascota.", true); return; }
@@ -469,7 +758,8 @@ else
                 _recienCreados.Add(creada.Id);
             }
 
-            _nuNombre = ""; _nuRaza = ""; _nuTipo = TipoMascota.Perro; _nuDinamicos.Clear();
+            _nuNombre = ""; _nuRaza = ""; _nuTipo = TipoMascota.Perro; _nuUnidadId = null; _nuDinamicos.Clear();
+            _altaAbierta = false; _nonce++;
             await CargarAsync();
             Mensaje("Mascota agregada.", false);
         }
@@ -537,8 +827,238 @@ else
         catch (Exception ex) { Mensaje("No se pudo eliminar: " + ex.Message, true); }
     }
 
-    // Al cerrar el panel de campos se recarga el catalogo: pudo cambiar el orden, el nombre o
-    // haberse creado un campo, y eso son columnas de esta tabla.
+    // ===== Seleccion multiple + borrado masivo =====
+    private readonly HashSet<Guid> _sel = new();
+    private bool _confirmDelSel;
+    private bool _delBusy;
+    private void ToggleSel(Guid id, bool on) { if (on) _sel.Add(id); else _sel.Remove(id); }
+    private void LimpiarSel() => _sel.Clear();
+    private void ToggleSelAll(bool on) { _sel.Clear(); if (on) foreach (var v in Filtradas) _sel.Add(v.MascotaId); }
+    private bool TodasSel { get { var ids = Filtradas.Select(v => v.MascotaId).ToList(); return ids.Count > 0 && ids.All(_sel.Contains); } }
+    private async Task EliminarSelAsync()
+    {
+        if (_sel.Count == 0) return;
+        _delBusy = true; int ok = 0, fail = 0;
+        foreach (var id in _sel.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-mascotas/{id}"); if (r.IsSuccessStatusCode) ok++; else fail++; }
+            catch { fail++; }
+        }
+        _sel.Clear(); _confirmDelSel = false; _delBusy = false;
+        Mensaje(fail == 0 ? $"{ok} mascota(s) eliminada(s)." : $"{ok} eliminada(s), {fail} con error.", fail != 0);
+        await CargarAsync(); StateHasChanged();
+    }
+
+    // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN) =====
+    private bool _showColMenu;
+    private string _colQ = "";
+    private bool _colBusy;
+    private CampoDinDef? _campoAEliminar;
+
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        _cfg.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg);
+    }
+    private async Task GuardarCfgAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task CargarCfgAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchos();
+        }
+        catch { }
+    }
+    private async Task ToggleVisibleColAsync(string clave)
+    {
+        var visible = VisibleCol(clave);
+        await GuardarCfgAsync(FilaConfig(clave) with { Oculto = visible });
+        await CargarCfgAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaAsync(string clave, int dir)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna ('unidad') queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgAsync(FilaConfig(keys[k]) with { Orden = k });
+        await CargarCfgAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColAsync()
+    {
+        var keys = ClavesOrdenadas().ToList();
+        for (int k = 0; k < keys.Count; k++)
+        {
+            if (k == 0) continue; // 'unidad' no se oculta
+            await GuardarCfgAsync(FilaConfig(keys[k]) with { Oculto = true });
+        }
+        await CargarCfgAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgAsync(FilaConfig(k) with { Oculto = false });
+        await CargarCfgAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgAsync(FilaConfig(k) with { Oculto = !VisibleColDefault(k), Orden = null });
+        await CargarCfgAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinAsync()
+    {
+        if (_campoAEliminar is null) return;
+        _colBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/mascotas-campos/{_campoAEliminar.Id}");
+            Mensaje(r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminar.Label}\" eliminado." : "No se pudo eliminar el campo.", !r.IsSuccessStatusCode);
+            if (r.IsSuccessStatusCode) await CargarCamposAsync(Auth());
+        }
+        catch (Exception ex) { Mensaje("Error al eliminar el campo: " + ex.Message, true); }
+        _campoAEliminar = null; _colBusy = false; StateHasChanged();
+    }
+
+    // ===== Crear / editar UN campo (modal focalizado) =====
+    private bool _crearCampoAbierto;
+    private CampoDinDef? _campoAEditar;
+    private void AbrirCrearCampo() { _campoAEditar = null; _crearCampoAbierto = true; }
+    private void AbrirEditarCampo(CampoDinDef c)
+    {
+        _campoAEditar = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones);
+        _crearCampoAbierto = true;
+    }
+    private async Task RecargarTrasCrearCampo()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        await CargarCamposAsync(Auth());
+        StateHasChanged();
+    }
+    private void AbrirGestorDesdeCrear()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        _configAbierto = true;
+    }
+
+    // ===== Ordenar (clic en header) =====
+    private string? _sortKey;
+    private int _sortDir = 1;
+    private void OrdenarPorColumna(string k)
+    {
+        if (_sortKey == k) _sortDir = -_sortDir; else { _sortKey = k; _sortDir = 1; }
+        _pagina = 1;
+    }
+    private string SortStr(MascotaResumenDto v, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return ValorDe(v.MascotaId, cd.Id) ?? "";
+        return k switch
+        {
+            "unidad" => v.UnidadCodigo ?? "",
+            "nombre" => v.Nombre ?? "",
+            "tipo" => v.Tipo.ToString(),
+            "raza" => v.Raza ?? "",
+            "propietario" => v.PropietarioNombre ?? "",
+            _ => ""
+        };
+    }
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ===== Mover columna por ARRASTRE (JS propiaTablaColReorder) =====
+    private DotNetObjectReference<MascotasPanel>? _self;
+    private async Task IniciarReorder(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgAsync(FilaConfig(keys[i]) with { Orden = i });
+        await CargarCfgAsync(); StateHasChanged();
+    }
+
+    // ===== Redimensionar columnas (persiste en Formato JSON, clave "w") =====
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private async Task IniciarResize(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResize(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        var fila = FilaConfig(clave);
+        await GuardarCfgAsync(fila with { Formato = ConAnchoTabla(fila.Formato, w) });
+        await CargarCfgAsync(); HidratarAnchos(); StateHasChanged();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfg) { var w = AnchoDeFormatoTabla(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormatoTabla(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o? ["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAnchoTabla(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    public void Dispose() { _self?.Dispose(); }
+
+    // ===== Menu contextual (clic derecho) =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtx(MouseEventArgs e, MascotaResumenDto v)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtx),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtx),            new("Abrir la unidad", "fi-rr-expand", OnClick: () => { AbrirUnidad(v); return Task.CompletedTask; }),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlace(v)),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => EliminarAsync(v)),
+        };
+        _ctxOpen = true;
+    }
+    private Task StubCtx() { Mensaje("Accion aun no disponible en esta version.", false); StateHasChanged(); return Task.CompletedTask; }
+    private async Task CopiarEnlace(MascotaResumenDto v)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}distribucion?unidad={v.UnidadId}"); Mensaje("Enlace del registro copiado.", false); }
+        catch { Mensaje("No se pudo copiar el enlace.", true); }
+        StateHasChanged();
+    }
+
+    // Al cerrar el panel de campos se recarga el catalogo + config.
     private async Task CerrarConfig()
     {
         _configAbierto = false;
@@ -585,9 +1105,48 @@ else
     .mas-menu-it:hover { background: var(--propia-bg-hover); }
     .mas-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand); font-weight: 700; }
 
+    /* Menu "Columnas" inline: orden/visibilidad + borrar DIN. */
+    .mas-colmenu { min-width: 252px; }
+    .mas-col-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .mas-col-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .mas-col-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .mas-col-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .mas-col-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .mas-col-it:hover { background: var(--propia-brand-soft-2); }
+    .mas-col-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .mas-col-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .mas-col-mv:disabled { opacity: .35; cursor: default; }
+    .mas-col-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mas-col-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .mas-col-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .mas-col-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .mas-col-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .mas-col-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .mas-col-del:hover { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .mas-col-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .mas-col-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .mas-col-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .mas-col-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .mas-col-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+
     .mas-msg { border-radius: 9px; padding: 9px 12px; font-size: 13px; margin-bottom: 10px; }
     .mas-msg.ok { background: var(--propia-ok-soft); color: var(--propia-ok); }
     .mas-msg.err { background: var(--propia-danger-soft); color: var(--propia-danger); }
+
+    /* Seleccion multiple + barra bulk. */
+    .mas-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .mas-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand); }
+    .mas-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-danger-soft); background: var(--propia-bg-card); color: var(--propia-danger); font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .mas-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
+    .mas-selbar-del:disabled { opacity: .6; cursor: default; }
+    .mas-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+
+    /* Dialogo de confirmacion. */
+    .mas-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .mas-confirm { background: var(--propia-bg-card); border-radius: 14px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(20,30,50,.3); padding: 18px 20px 16px; }
+    .mas-confirm-t { font-size: 15px; font-weight: 800; color: var(--propia-text-h1); }
+    .mas-confirm-s { font-size: 12.5px; color: var(--propia-text-muted); margin: 6px 0 14px; }
+    .mas-confirm-acts { display: flex; justify-content: flex-end; gap: 10px; }
 
     /* El footer va DENTRO de la caja de la tabla, como en Unidades. */
     .mas-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
@@ -597,42 +1156,76 @@ else
     .mas-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
     .mas-row:hover { background: var(--propia-bg-hover); }
     .mas-row-nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .mas-row-sel { background: var(--propia-brand-soft) !important; }
     .mas-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mas-cod { font-weight: 700; color: var(--propia-text-h1); }
     .mas-prop { color: var(--propia-text-muted); }
     .mas-auto { color: var(--propia-text-faint); font-style: italic; font-size: 12px; }
-    .mas-exp-col { width: 34px; flex: 0 0 34px; text-align: center; padding: 0 4px; }
-    .mas-exp { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 2px; border-radius: 6px; opacity: 0; }
-    .mas-row:hover .mas-exp { opacity: 1; }
-    .mas-exp:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+
+    /* Seleccion / expansor / addcol. */
+    .mas-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .mas-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .mas-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .mas-col-exp { display: flex; align-items: center; justify-content: center; }
+    .mas-exp-fijo { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 2px; border-radius: 6px; opacity: 0; display: inline-flex; align-items: center; justify-content: center; transition: opacity .12s, background .12s, color .12s; }
+    .mas-row:hover .mas-exp-fijo { opacity: 1; }
+    .mas-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .mas-exp-mut { opacity: 1; color: var(--propia-text-faint); cursor: default; display: inline-flex; align-items: center; justify-content: center; }
+    .mas-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .mas-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .mas-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+
     .mas-acts { display: flex; justify-content: flex-end; }
     .mas-del { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 3px; border-radius: 6px; opacity: 0; }
     .mas-row:hover .mas-del { opacity: 1; }
     .mas-del:hover { color: var(--propia-danger); background: var(--propia-danger-soft); }
 
+    /* Cabecera de columnas: ordenar / mover / engranaje / redimensionar. */
+    .mas-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; position: relative; }
+    .mas-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mas-th-sortable { cursor: pointer; user-select: none; }
+    .mas-th-sortable:hover .mas-th-lbl { color: var(--propia-brand); }
+    .mas-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .mas-th-edit { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .mas-head .mas-th-dyn:hover .mas-th-edit, .mas-th-edit:focus-visible { opacity: 1; }
+    .mas-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .mas-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .mas-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .mas-col-rz:hover::after { background: var(--propia-brand); }
+
     /* Edicion de celda existente: violeta = edicion activa (canon del sistema). */
     .mas-editcell { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
     .mas-editcell:hover { border-color: var(--propia-border-card); }
-    .mas-editcell:focus { outline: 0; border: 1px solid var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); background: var(--propia-bg-card); }
+    .mas-editcell:focus { outline: 0; border: 1px solid var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.14); background: var(--propia-bg-card); }
     /* Campo propio de tipo Lista: chip de color (valor) + dropdown en la misma celda. */
     .mas-selcell { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .mas-selcell .mas-editcell { width: auto; flex: 1 1 auto; min-width: 0; }
     .mas-chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Alta: input "fantasma" punteado en reposo, violeta al foco (canon del sistema). */
+    /* Alta "nace fila": CTA morado + fila editable con foco redondeado + acciones. */
     .mas-newrow { background: var(--propia-bg-table-head); border-top: 1px solid var(--propia-border-divider); }
-    .mas-nf-inp { border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); width: 100%; box-sizing: border-box; font-family: inherit; }
-    .mas-nf-inp:focus { outline: 0; border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-glow-brand); }
+    .mas-newrow--cta { cursor: default; }
+    .mas-newrow--edit { background: var(--propia-brand-soft-2); }
+    .mas-nf-ctacell { display: flex; align-items: center; }
+    .mas-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
+    .mas-nf-cta:hover { background: var(--propia-brand-soft-3); border-color: var(--propia-brand); }
     .mas-nf-unidad { position: relative; }
-    .mas-row-add { background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 7px; font-size: 11.5px; font-weight: 700; padding: 6px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-    .mas-row-add:hover { filter: brightness(.97); }
-    .mas-row-add:disabled { opacity: .5; cursor: default; }
+    .mas-row-inp { border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
+    .mas-newrow--edit .mas-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
+    .mas-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+    .mas-nf-ok, .mas-nf-cancel { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; cursor: pointer; }
+    .mas-nf-ok { border: 0; background: var(--propia-brand); color: var(--propia-text-inverse); }
+    .mas-nf-ok:hover:not(:disabled) { filter: brightness(.96); }
+    .mas-nf-cancel { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); }
+    .mas-nf-cancel:hover:not(:disabled) { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .mas-nf-ok:disabled, .mas-nf-cancel:disabled { opacity: .6; cursor: default; }
+    .mas-list-c { font-size: 12.5px; color: var(--propia-text-secondary); }
 
     .mas-group { display: flex; align-items: center; gap: 8px; padding: 8px 18px; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); }
     .mas-group-chip { font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
     .mas-group-n { font-size: 11px; color: var(--propia-text-faint); }
 
-    /* Panel de campos */
+    /* Panel de campos (gestor avanzado). */
     .mas-cg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 16px; }
     .mas-cg-modal { width: 980px; max-width: calc(100vw - 32px); max-height: 84vh; display: flex; flex-direction: column; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 16px; box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
     .mas-cg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }

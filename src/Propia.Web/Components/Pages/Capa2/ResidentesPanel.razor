@@ -3,17 +3,22 @@
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @using Propia.Web.Components.Shared.Modals
+@using Microsoft.AspNetCore.Components.Web
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IModalService Modals
 @inject IJSRuntime Js
+@implements IDisposable
 
 @if (!Embedded) { <PageTitle>Residentes - PROPIA</PageTitle> }
 
 @* Residentes: vista agregada de TODAS las personas de las unidades (propietarios, residentes,
-   arrendatarios, familiares, apoderados). Misma vista tabla estandar del sistema: barra de
-   filtros + agrupacion + columnas, expander por fila, alta inline al pie y footer con paginacion.
-   Toda alta reutiliza el endpoint de Unidades Privadas, que ya asegura el registro en Directorio. *@
+   arrendatarios, familiares, apoderados). Misma vista tabla estandar del sistema (paridad con
+   Zonas/Equipos): seleccion + borrado masivo, alta "nace fila", menu Columnas inline, "+" para
+   crear campo, engranaje para editar/eliminar campo, ordenar/mover/redimensionar columnas y menu
+   contextual. Toda alta reutiliza el endpoint de Unidades Privadas, que ya asegura el registro en
+   Directorio. Las columnas (orden/visibilidad/alias/ancho) viven en unidades-config (entidad
+   'personas'), como en Zonas/Equipos. *@
 
 @if (!Embedded)
 {
@@ -29,7 +34,7 @@
 }
 else
 {
-    @* ===== Barra estandar: Filtros + buscador + Agrupar + Columnas ===== *@
+    @* ===== Barra estandar: Filtros + buscador + Agrupar + Columnas/Campos + toggle ===== *@
     <div class="res-filtros">
         <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
         <div class="res-search">
@@ -39,7 +44,7 @@ else
         </div>
         <div class="res-filtros-spacer"></div>
 
-        @* Agrupar *@
+        @* Agrupar (menu) - disponible en ambas vistas. *@
         <div class="res-menu-wrap">
             <button type="button" class="res-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar residentes">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -58,49 +63,66 @@ else
             }
         </div>
 
-        @* Columnas *@
-        <div class="res-menu-wrap">
-            <button type="button" class="res-fbtn @(_showCols ? "on" : "")" @onclick="() => _showCols = !_showCols" title="Campos y columnas de la tabla">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                <span>Columnas</span>
-            </button>
-            @if (_showCols)
-            {
-                <div class="res-menu-bd" @onclick="() => _showCols = false"></div>
-                <div class="res-colsmenu">
-                    <div class="res-colsmenu-h">COLUMNAS (orden, visibilidad y nombre)</div>
-                    @for (int i = 0; i < _colOrder.Count; i++)
-                    {
-                        var idx = i;
-                        var col = Catalogo.First(c => c.Key == _colOrder[idx]);
-                        var pref = PrefDe(col.Key);
-                        var key = col.Key;
-                        <div class="res-colsmenu-i">
-                            <div class="res-colsmenu-ord">
-                                <button class="res-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
-                                <button class="res-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
-                            </div>
-                            <label class="res-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                                <input type="checkbox" checked="@pref.Visible" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
-                            </label>
-                            <input class="res-cfg-inp" value="@(string.IsNullOrWhiteSpace(pref.Label) ? col.DefLabel : pref.Label)" placeholder="@col.DefLabel" @onchange="@(e => SetColLabel(key, e.Value?.ToString()))" />
-                            @if (!col.Hideable) { <span class="res-cfg-req">fija</span> }
+        @if (_vista == "tabla")
+        {
+            @* "Columnas" inline (milimetrico a Zonas/Equipos): orden, visibilidad y borrar campo
+               dinamico. Crear campo nuevo = "+" del header; editar/eliminar = engranaje de la columna. *@
+            <div class="res-menu-wrap">
+                <button type="button" class="res-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                    <span>Columnas</span>
+                </button>
+                @if (_showColMenu)
+                {
+                    <div class="res-menu-bd" @onclick="() => _showColMenu = false"></div>
+                    <div class="res-menu res-colmenu">
+                        <div class="res-col-search">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                            <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
                         </div>
-                    }
-                    <div class="res-colsmenu-acts">
-                        <button type="button" class="res-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
+                        <div class="res-col-list">
+                            @{ var _cols = ClavesOrdenadas().ToList(); }
+                            @for (int _ci = 0; _ci < _cols.Count; _ci++)
+                            {
+                                var k = _cols[_ci];
+                                var idx = _ci;
+                                var label = ColLabel(k);
+                                if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                var fija = idx == 0;
+                                var visible = VisibleCol(k);
+                                var custom = CampoCustom(k);
+                                <div class="res-col-it">
+                                    <button class="res-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaR(k, -1)">&#9650;</button>
+                                    <button class="res-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverColumnaR(k, 1)">&#9660;</button>
+                                    <span class="res-col-name">@label @if (custom is not null) { <span class="res-col-dyn" title="Campo personalizado">din</span> }</span>
+                                    @if (fija) { <span class="res-col-fija">fija</span> }
+                                    else
+                                    {
+                                        <button class="res-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColR(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                    }
+                                    @if (custom is not null) { <button class="res-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminar = custom"><i class="fi fi-rr-trash"></i></button> }
+                                </div>
+                            }
+                        </div>
+                        <div class="res-col-massacts">
+                            <button type="button" class="res-col-mass" @onclick="OcultarTodasColR"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                            <button type="button" class="res-col-mass" @onclick="MostrarTodasColR"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                            <button type="button" class="res-col-reset" @onclick="RestablecerColR">Restablecer</button>
+                        </div>
                     </div>
-                </div>
-            }
-        </div>
-
-        @* Campos: gestor de campos PROPIOS del residente (persona), igual que en Unidades. Antes esta
-           pagina solo tenia el menu de COLUMNAS; el gestor real (crear/renombrar/ordenar/ocultar campos,
-           y los tipos Formula/Usuario/Directorio de Fase 2) faltaba. *@
-        <button type="button" class="res-fbtn @(_configCamposAbierto ? "on" : "")" @onclick="() => _configCamposAbierto = true" title="Campos del residente: crear, renombrar, ordenar y ocultar">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-            <span>Campos</span>
-        </button>
+                }
+            </div>
+        }
+        else
+        {
+            @* En Tarjetas no hay columnas ni "+": aqui se mantiene la entrada al gestor de campos. *@
+            <div class="res-menu-wrap">
+                <button type="button" class="res-fbtn @(_configCamposAbierto ? "on" : "")" @onclick="() => _configCamposAbierto = true" title="Campos del residente: crear, renombrar, ordenar y ocultar">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
+            </div>
+        }
 
         @* Toggle Tarjetas/Tabla, canon del sistema (Tarjetas primero). Se recuerda por modulo. *@
         <div class="res-viewtoggle">
@@ -115,7 +137,7 @@ else
         </div>
     </div>
 
-    @* Modal del gestor de campos del residente (persona), montado como en Unidades (Distribucion). *@
+    @* Modal del gestor de campos del residente (gestor AVANZADO, fallback). *@
     @if (_configCamposAbierto)
     {
         <div class="cg-back" @onclick="() => _configCamposAbierto = false">
@@ -186,13 +208,73 @@ else
     else
     {
     @* ===== Tabla ===== *@
+    @if (_selR.Count > 0)
+    {
+        <div class="res-selbar">
+            <span class="res-selbar-n">@_selR.Count seleccionado@(_selR.Count == 1 ? "" : "s")</span>
+            <button type="button" class="res-selbar-del" @onclick="() => _confirmDelSel = true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Eliminar
+            </button>
+            <button type="button" class="res-selbar-x" @onclick="LimpiarSelR">Deseleccionar</button>
+        </div>
+    }
+    @if (_confirmDelSel)
+    {
+        <div class="res-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+            <div class="res-confirm" @onclick:stopPropagation="true">
+                <div class="res-confirm-t">Eliminar @_selR.Count residente@(_selR.Count == 1 ? "" : "s")</div>
+                <div class="res-confirm-s">Esta accion desvincula los residentes seleccionados de sus unidades de forma permanente y no se puede deshacer.</div>
+                <div class="res-confirm-acts">
+                    <button type="button" class="res-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                    <button type="button" class="res-selbar-del" @onclick="EliminarSelResidentesAsync" disabled="@_delBusy">@(_delBusy ? "Eliminando..." : "Si, eliminar")</button>
+                </div>
+            </div>
+        </div>
+    }
+    @if (_campoAEliminar is not null)
+    {
+        <div class="res-cfg-back" @onclick="() => { if (!_colBusy) _campoAEliminar = null; }">
+            <div class="res-confirm" @onclick:stopPropagation="true">
+                <div class="res-confirm-t">Eliminar campo "@_campoAEliminar.Label"</div>
+                <div class="res-confirm-s">Se elimina la definicion del campo y todos sus valores en los residentes. No se puede deshacer.</div>
+                <div class="res-confirm-acts">
+                    <button type="button" class="res-fbtn" @onclick="() => _campoAEliminar = null" disabled="@_colBusy">Cancelar</button>
+                    <button type="button" class="res-selbar-del" @onclick="EliminarCampoDinR" disabled="@_colBusy">@(_colBusy ? "Eliminando..." : "Si, eliminar campo")</button>
+                </div>
+            </div>
+        </div>
+    }
     <div class="res-table">
         <div class="res-scroll">
-            <div class="res-head res-grid" style="grid-template-columns:@GridCols">
+            <div class="res-head res-listgrid zc-list-head" style="@PerGridStyle">
+                <div class="res-sel-cell"><label class="res-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSelR" @onchange="@(e => ToggleSelAllR((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
-                @foreach (var c in ColsVisibles) { <div class="@(c.Center ? "res-c" : "")">@Etiqueta(c)</div> }
-                @foreach (var d in _defs) { <div>@d.Label.ToUpperInvariant()</div> }
+                @foreach (var k in ColsVisibles())
+                {
+                    var clave = k;
+                    if (CampoCustom(clave) is not null)
+                    {
+                        <div class="res-th-dyn res-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorderR(e, clave)" @onclick="() => OrdenarPorColumnaR(clave)">
+                            <span class="res-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKey == clave) { <span class="res-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <button type="button" class="res-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoR(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            <span class="res-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeR(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeR(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="res-th-dyn res-th-sortable @(CenterCol(clave) ? "res-c" : "")" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="e => IniciarReorderR(e, clave)" @onclick="() => OrdenarPorColumnaR(clave)">
+                            <span class="res-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKey == clave) { <span class="res-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <span class="res-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeR(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeR(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                }
                 <div></div>
+                <div class="res-addcol-h"><button type="button" class="res-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoR"><i class="fi fi-rr-plus"></i></button></div>
             </div>
 
             @foreach (var item in FilasRender())
@@ -206,15 +288,55 @@ else
                     continue;
                 }
                 var r = item.Fila!;
-                <div class="res-row res-grid @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="grid-template-columns:@GridCols">
-                    <div class="res-exp-col">
-                        <button type="button" class="res-exp" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
+                <div class="res-listrow res-listgrid @(_selR.Contains(r.UnidadPersonaId) ? "res-row-sel" : "") @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="@PerGridStyle" @oncontextmenu="e => AbrirCtxR(e, r)" @oncontextmenu:preventDefault="true">
+                    <div class="res-sel-cell"><label class="res-chk"><input type="checkbox" checked="@_selR.Contains(r.UnidadPersonaId)" @onchange="@(e => ToggleSelR(r.UnidadPersonaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+                    <div class="res-col-exp">
+                        <button type="button" class="res-exp res-exp-fijo" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
-                    @foreach (var c in ColsVisibles)
+                    @foreach (var k in ColsVisibles())
                     {
-                        switch (c.Key)
+                        if (CampoCustom(k) is CampoDinDef def)
+                        {
+                            var d = def;
+                            var val = ValorDe(r.UnidadPersonaId, d.Id);
+                            if (d.Tipo == TipoCampoTablero.Seleccion)
+                            {
+                                <div class="res-selcell">
+                                    @if (!string.IsNullOrWhiteSpace(val))
+                                    {
+                                        var col = ColorOpcion(d, val);
+                                        <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                                    }
+                                    <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
+                                        <option value="">-</option>
+                                        @foreach (var op in d.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                    </select>
+                                </div>
+                            }
+                            else if (d.Tipo == TipoCampoTablero.Formula)
+                            {
+                                <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                            }
+                            else if (d.Tipo == TipoCampoTablero.Usuario)
+                            {
+                                <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                                </select>
+                            }
+                            else if (d.Tipo == TipoCampoTablero.Directorio)
+                            {
+                                <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
+                            }
+                            else
+                            {
+                                <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())" />
+                            }
+                            continue;
+                        }
+                        switch (k)
                         {
                             case "unidad": <div class="res-c-cell"><span class="res-cod">@r.UnidadCodigo</span></div>; break;
                             case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
@@ -225,64 +347,68 @@ else
                             case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
                         }
                     }
-                    @foreach (var d in _defs)
-                    {
-                        var def = d;
-                        var val = ValorDe(r.UnidadPersonaId, def.Id);
-                        if (def.Tipo == TipoCampoTablero.Seleccion)
-                        {
-                            <div class="res-selcell">
-                                @if (!string.IsNullOrWhiteSpace(val))
-                                {
-                                    var col = ColorOpcion(def, val);
-                                    <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
-                                }
-                                <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
-                                    <option value="">-</option>
-                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
-                                </select>
-                            </div>
-                        }
-                        else if (def.Tipo == TipoCampoTablero.Formula)
-                        {
-                            <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
-                        }
-                        else if (def.Tipo == TipoCampoTablero.Usuario)
-                        {
-                            <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())">
-                                <option value="">-</option>
-                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
-                            </select>
-                        }
-                        else if (def.Tipo == TipoCampoTablero.Directorio)
-                        {
-                            <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
-                        }
-                        else
-                        {
-                            <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, def.Id, e.Value?.ToString())" />
-                        }
-                    }
-                    <div></div>
+                    <div class="res-list-act">
+                        <button type="button" class="res-row-del" @onclick="() => EliminarResidenteAsync(r.UnidadPersonaId, r.Nombre)" title="Eliminar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                        </button>
+                    </div>
+                    <div class="res-addcol-cell"></div>
                 </div>
             }
 
-            @* Alta inline al pie, alineada a las columnas (misma logica que el modal de Unidades
-               Privadas: se escribe la persona y se hace buscar-o-crear por documento; asi tambien
-               queda en el Directorio). El expander crea y abre la ficha; "+ Agregar" solo crea. *@
-            <div class="res-newrow res-grid" style="grid-template-columns:@GridCols">
-                <div class="res-exp-col">
-                    <button type="button" class="res-exp res-exp-nf" tabindex="-1" title="Agregar y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@(_busy || !AltaValida)">
+            @* Alta inline "nace fila" (canon): CTA morado que abre una fila editable con foco
+               redondeado + acciones checkmark/x. La unidad por codigo (autocompletado) + la persona
+               por el control de terceros (SelectorPersona), que la busca/crea en el Directorio. *@
+            @if (_altaAbierta)
+            {
+            <div class="res-listnew res-newrow--edit res-listgrid" style="@PerGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownR">
+                <div class="res-sel-cell"></div>
+                <div class="res-col-exp">
+                    <span class="res-exp res-exp-mut" title="Nuevo residente">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    </button>
+                    </span>
                 </div>
-                @foreach (var c in ColsVisibles)
+                @foreach (var k in ColsVisibles())
                 {
-                    switch (c.Key)
+                    if (CampoCustom(k) is CampoDinDef def)
+                    {
+                        var d = def;
+                        var dv = _nuDinamicos.TryGetValue(d.Id, out var _dv) ? _dv : "";
+                        if (d.Tipo == TipoCampoTablero.Seleccion)
+                        {
+                            <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                                <option value="">@d.Label</option>
+                                @foreach (var op in d.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                            </select>
+                        }
+                        else if (d.Tipo == TipoCampoTablero.Formula)
+                        {
+                            <div class="res-c-cell res-auto">(se calcula)</div>
+                        }
+                        else if (d.Tipo == TipoCampoTablero.Usuario)
+                        {
+                            <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                                <option value="">@d.Label</option>
+                                @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                            </select>
+                        }
+                        else if (d.Tipo == TipoCampoTablero.Directorio)
+                        {
+                            <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@d.Label"
+                                             SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
+                        }
+                        else
+                        {
+                            <input class="res-nf-inp" placeholder="@d.Label" value="@dv"
+                                   @oninput="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                        }
+                        continue;
+                    }
+                    switch (k)
                     {
                         case "unidad":
                             <div class="res-nf-unidad">
-                                <input class="res-nf-inp" placeholder="Ej. A1-101" @bind="_unidadQuery" @bind:event="oninput" @onfocus="() => _unidadDrop = true" autocomplete="off" />
+                                <input class="res-nf-inp" @ref="_unidadRef" placeholder="Ej. A1-101" @bind="_unidadQuery" @bind:event="oninput" @onfocus="() => _unidadDrop = true" autocomplete="off" />
                                 @if (_unidadDrop && UnidadesFiltradas().Any())
                                 {
                                     <div class="res-drop">
@@ -298,9 +424,6 @@ else
                             </div>
                             break;
                         case "nombre":
-                            @* Control de terceros: busca en el Directorio y, si no existe, lo crea ahi
-                               mismo. Al elegirlo, la celda muestra SOLO el nombre (no deforma) y se
-                               llenan documento/telefono/email con la ultima info del tercero. *@
                             <div class="res-nf-persona">
                                 @if (_personaSel is null)
                                 {
@@ -316,14 +439,12 @@ else
                             </div>
                             break;
                         case "documento":
-                            @* Documento del tercero: campo con caja (fila homogenea) pero NO editable
-                               -> la identidad la resuelve el control de terceros, no se escribe aqui. *@
                             <input class="res-nf-inp res-nf-ro-inp" readonly tabindex="-1" placeholder="Documento"
                                    value="@(_personaSel is null ? "" : $"{_personaSel.TipoDocumento} {_personaSel.DocumentoEnmascarado}")" />
                             break;
                         case "rol":
                             <select class="res-nf-inp" @bind="_rolNuevo">
-                                @foreach (var r in Enum.GetValues<RolUnidadPersona>()) { <option value="@r">@RolLabel(r)</option> }
+                                @foreach (var rr in Enum.GetValues<RolUnidadPersona>()) { <option value="@rr">@RolLabel(rr)</option> }
                             </select>
                             break;
                         case "telefono":
@@ -337,43 +458,30 @@ else
                             break;
                     }
                 }
-                @foreach (var d in _defs)
-                {
-                    var def = d;
-                    var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
-                    if (def.Tipo == TipoCampoTablero.Seleccion)
-                    {
-                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
-                            <option value="">@def.Label</option>
-                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
-                        </select>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Formula)
-                    {
-                        <div class="res-c-cell res-auto">(se calcula)</div>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Usuario)
-                    {
-                        <select class="res-nf-inp" value="@dv" @onchange="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())">
-                            <option value="">@def.Label</option>
-                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
-                        </select>
-                    }
-                    else if (def.Tipo == TipoCampoTablero.Directorio)
-                    {
-                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
-                                         SeleccionadaChanged="c => OnDirectorioNuevo(def.Id, c)" />
-                    }
-                    else
-                    {
-                        <input class="res-nf-inp" placeholder="@def.Label" value="@dv"
-                               @oninput="e => SetDinamicoNuevo(def.Id, e.Value?.ToString())" />
-                    }
-                }
-                <div class="res-nf-act">
-                    <button type="button" class="res-nf-add" @onclick="() => AgregarAsync(false)" disabled="@_busy">@(_busy ? "Creando..." : "+ Agregar")</button>
+                <div class="res-list-act res-nf-actbtns">
+                    <button type="button" class="res-nf-ok" title="Guardar (Enter)" @onclick="() => AgregarAsync(false)" disabled="@(_busy || !AltaValida)">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button type="button" class="res-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaR" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <div class="res-addcol-cell"></div>
+            </div>
+            }
+            else
+            {
+            <div class="res-listnew res-newrow--cta res-listgrid" style="@PerGridStyle">
+                <div class="res-sel-cell"></div>
+                <div class="res-col-exp"></div>
+                <div class="res-nf-ctacell" style="grid-column: 3 / -1;">
+                    <button type="button" class="res-nf-cta" @onclick="AbrirAltaR">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar registro
+                    </button>
                 </div>
             </div>
+            }
 
             @if (_residentes.Count > 0 && Filtrados.Count == 0)
             {
@@ -381,7 +489,7 @@ else
             }
             else if (_residentes.Count == 0)
             {
-                <div class="res-empty">Aun no hay personas en las unidades. Agrega la primera en la fila de arriba.</div>
+                <div class="res-empty">Aun no hay personas en las unidades. Agrega la primera con "Agregar registro".</div>
             }
         </div>
 
@@ -395,6 +503,23 @@ else
     </div>
     }
 }
+
+@* Crear / editar UN campo (modal focalizado). "+" crea; engranaje edita. *@
+@if (_crearCampoAbierto)
+{
+    <CrearCampoModal Prefijo="personas"
+                     TituloSingular="residente"
+                     Ejemplo="Ej. Numero de parqueadero, Fecha de ingreso"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditar"
+                     TiposAvanzados="false"
+                     Guardado="RecargarTrasCrearCampoR"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     AbrirGestorAvanzado="AbrirGestorDesdeCrearR" />
+}
+
+@* Menu contextual (clic derecho sobre una fila). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
 @* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
 <ModalHost />
@@ -426,13 +551,10 @@ else
     private int _porPagina = 25;
     private int _pagina = 1;
 
-    // Columnas
-    private bool _showCols;
-    // Fase 2: gestor de campos propios del residente (persona).
+    // Gestor de campos AVANZADO (fallback del "+"/engranaje).
     private bool _configCamposAbierto;
     // El gestor compartido cambio algo (crear/renombrar/ocultar campo): refresca la vista.
     private async Task RecargarCamposAsync() { await CargarAsync(); StateHasChanged(); }
-    private const string ColsKey = "propia_residentes_cols";
 
     // Vista Tabla/Tarjetas (canon del sistema), recordada por modulo.
     private string _vista = "tabla";
@@ -443,7 +565,7 @@ else
         try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v == "tabla" || v == "tarjetas") _vista = v; } catch { }
     }
 
-    // ---------- Fase 2: campos propios del residente (persona) como columnas dinamicas ----------
+    // ---------- Campos propios del residente (persona) como columnas dinamicas ----------
     private List<CampoDinDef> _defs = new();
     private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();   // unidadPersonaId -> (defId -> valor)
     private readonly Dictionary<Guid, string> _nuDinamicos = new();         // captura en la fila de alta
@@ -467,7 +589,7 @@ else
         _usuarioNombre[c.PersonaId] = c.NombreCompleto;
     }
 
-    // Catalogo de campos del modulo + valores de todos los registros, en dos llamadas (no una por fila).
+    // Catalogo de campos del modulo + valores + config de columnas (unidades-config, entidad 'personas').
     private async Task CargarCamposAsync(HttpClient http)
     {
         var defs = await http.GetFromJsonAsync<List<PersonaCampoDefinicionDto>>("/api/mi-copropiedad/personas-campos") ?? new();
@@ -482,6 +604,14 @@ else
             _usuarioNombre = vinc.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
         }
         catch { _usuarioNombre = new(); }
+        // Config de columnas (orden/visibilidad/alias/ancho) por copropiedad.
+        try
+        {
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=personas") ?? new();
+            _cfgPer = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosR();
+        }
+        catch { _cfgPer = new(StringComparer.Ordinal); }
     }
 
     // Edicion inline de un campo propio de una fila existente (PUT MERGE al valor del registro).
@@ -497,125 +627,357 @@ else
         catch (Exception ex) { _msg = "No se pudo guardar el campo: " + ex.Message; _msgError = true; }
     }
 
-    // Alta: la unidad por codigo (autocompletado) + la persona por el control de terceros
-    // (SelectorPersona), que la busca/crea en el Directorio. El backend asegura el vinculo.
-    private string _unidadQuery = "";
-    private bool _unidadDrop;
-    private PersonaCandidatoDto? _personaSel;
-    private string _ptTel = "";       // se precarga con el telefono del tercero elegido (editable)
-    private string _ptEmail = "";      // idem correo
-    private string _ptTelOrig = "";    // valor original del tercero, para sincronizar solo si cambio
-    private string _ptEmailOrig = "";
-    private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
-    private bool _habitaNuevo = true;
-    private readonly HashSet<Guid> _resRecienCreados = new();   // V-09: ids de filas recien creadas (resaltado)
-
-    // La unidad se resuelve por el codigo escrito (o elegido del desplegable): el boton se activa
-    // aunque no se haya hecho clic en la sugerencia, siempre que el codigo exista.
-    private UnidadDto? UnidadElegida =>
-        _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
-
-    private bool AltaValida => UnidadElegida is not null && _personaSel is not null;
-    private bool _sinUnidades => _unidades.Count == 0;   // V-02: guia cuando el tenant no tiene unidades
-
-    // ---------- Catalogo de columnas ----------
-    private sealed record ColDef(string Key, string DefLabel, string Width, bool Hideable, bool Center = false);
-    private static readonly ColDef[] Catalogo =
+    // ---------- Catalogo de columnas de SISTEMA + config compartida (entidad 'personas') ----------
+    private sealed record SysColR(string Clave, string Label, TipoCampoTablero Tipo, bool VisibleDefault = true);
+    private static readonly SysColR[] SistemaR =
     {
-        new("unidad", "UNIDAD", "150px", false),
-        new("nombre", "NOMBRE", "2fr", false),
-        new("documento", "DOCUMENTO", "150px", false),
-        new("rol", "ROL", "128px", false, true),
-        new("telefono", "TELEFONO", "1.1fr", true),
-        new("email", "EMAIL", "1.5fr", true),
-        new("habita", "HABITA", "80px", true, true),
+        new("unidad", "Unidad", TipoCampoTablero.Texto),
+        new("nombre", "Nombre", TipoCampoTablero.Texto),
+        new("documento", "Documento", TipoCampoTablero.Texto),
+        new("rol", "Rol", TipoCampoTablero.Seleccion),
+        new("telefono", "Telefono", TipoCampoTablero.Telefono),
+        new("email", "Email", TipoCampoTablero.Email),
+        new("habita", "Habita", TipoCampoTablero.Booleano),
     };
-    private sealed class ColPref { public bool Visible { get; set; } = true; public string? Label { get; set; } }
-    private Dictionary<string, ColPref> _colPrefs = new();
-    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private static SysColR? SysR(string clave) => SistemaR.FirstOrDefault(c => c.Clave == clave);
+    private static bool CenterCol(string clave) => clave is "rol" or "habita";
 
-    private ColPref PrefDe(string key) => _colPrefs.TryGetValue(key, out var p) ? p : (_colPrefs[key] = new ColPref());
-    private bool EsVisible(ColDef c) => !c.Hideable || !_colPrefs.TryGetValue(c.Key, out var p) || p.Visible;
-    private string Etiqueta(ColDef c) => (_colPrefs.TryGetValue(c.Key, out var p) && !string.IsNullOrWhiteSpace(p.Label)) ? p.Label! : c.DefLabel;
-    private IEnumerable<ColDef> ColsVisibles
-    {
-        get
-        {
-            var byKey = Catalogo.ToDictionary(c => c.Key);
-            return _colOrder.Where(byKey.ContainsKey).Select(k => byKey[k]).Where(EsVisible);
-        }
-    }
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width))
-        + string.Concat(_defs.Select(_ => " minmax(140px,1fr)")) + " 116px";
+    private Dictionary<string, UnidadCampoConfigDto> _cfgPer = new(StringComparer.Ordinal);
 
-    private async Task SetColVisible(string key, bool vis) { PrefDe(key).Visible = vis; await GuardarColsAsync(); }
-    private async Task SetColLabel(string key, string? label) { PrefDe(key).Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(); await GuardarColsAsync(); }
-    private async Task MoverCol(int idx, int dir)
+    private static string ClaveCustom(CampoDinDef c) => "cd:" + c.Id;
+    private static bool EsCustom(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private CampoDinDef? CampoCustom(string clave)
+        => EsCustom(clave) && Guid.TryParse(clave[3..], out var g) ? _defs.FirstOrDefault(c => c.Id == g) : null;
+
+    private IEnumerable<string> ClavesCandidatas()
+        => SistemaR.Select(c => c.Clave).Concat(_defs.OrderBy(d => d.Orden).Select(ClaveCustom));
+    private bool VisibleColDefault(string clave)
+        => EsCustom(clave) || (SysR(clave)?.VisibleDefault ?? true);
+    private bool VisibleCol(string clave)
+        => _cfgPer.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback)
+        => _cfgPer.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+
+    private string ColLabel(string clave)
     {
-        var j = idx + dir;
-        if (j < 0 || j >= _colOrder.Count) return;
-        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
-        await GuardarColsAsync();
+        if (_cfgPer.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CampoCustom(clave)?.Label ?? SysR(clave)?.Label ?? clave;
     }
-    private async Task RestablecerCols()
+    private static string ColWidth(string clave) => clave switch
     {
-        _colPrefs = new();
-        _colOrder = Catalogo.Select(c => c.Key).ToList();
-        await GuardarColsAsync();
+        "unidad" => "150px",
+        "nombre" => "2fr",
+        "documento" => "150px",
+        "rol" => "128px",
+        "telefono" => "1.1fr",
+        "email" => "1.5fr",
+        "habita" => "80px",
+        _ => "minmax(140px,1fr)"   // campos propios
+    };
+    private string PerGridStyle => "grid-template-columns: 38px 34px "
+        + string.Join(" ", ColsVisibles().Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k)))
+        + " 60px 40px";
+
+    // ---------- Menu "Columnas" inline (orden/visibilidad + borrar DIN). Persistencia identica a
+    //            Zonas/Equipos: unidades-config con Entidad="personas". ----------
+    private bool _showColMenu;
+    private string _colQ = "";
+    private bool _colBusy;
+    private CampoDinDef? _campoAEliminar;
+
+    private GuardarUnidadCampoConfigRequest FilaConfigR(string clave)
+    {
+        _cfgPer.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: "personas");
     }
-    private async Task GuardarColsAsync()
+    private async Task GuardarCfgRAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task CargarCfgRAsync()
     {
         try
         {
-            var data = new { order = _colOrder, prefs = _colPrefs.ToDictionary(k => k.Key, v => new { v.Value.Visible, v.Value.Label }) };
-            await Js.InvokeVoidAsync("localStorage.setItem", ColsKey, System.Text.Json.JsonSerializer.Serialize(data));
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=personas") ?? new();
+            _cfgPer = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosR();
         }
         catch { }
     }
-    private async Task RestaurarColsAsync()
+    private async Task ToggleVisibleColR(string clave)
     {
+        var visible = VisibleCol(clave);
+        await GuardarCfgRAsync(FilaConfigR(clave) with { Oculto = visible });
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaR(string clave, int dir)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgRAsync(FilaConfigR(keys[k]) with { Orden = k });
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColR()
+    {
+        var keys = ClavesOrdenadas().ToList();
+        for (int k = 0; k < keys.Count; k++)
+        {
+            if (k == 0) continue; // la 1a no se oculta
+            await GuardarCfgRAsync(FilaConfigR(keys[k]) with { Oculto = true });
+        }
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColR()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgRAsync(FilaConfigR(k) with { Oculto = false });
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColR()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgRAsync(FilaConfigR(k) with { Oculto = !VisibleColDefault(k), Orden = null });
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinR()
+    {
+        if (_campoAEliminar is null) return;
+        _colBusy = true;
         try
         {
-            var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
-            if (string.IsNullOrWhiteSpace(raw)) return;
-            using var doc = System.Text.Json.JsonDocument.Parse(raw);
-            if (doc.RootElement.TryGetProperty("order", out var ord) && ord.ValueKind == System.Text.Json.JsonValueKind.Array)
-            {
-                var keys = ord.EnumerateArray().Select(e => e.GetString()).Where(s => s is not null).Cast<string>().ToList();
-                var valid = Catalogo.Select(c => c.Key).ToHashSet();
-                _colOrder = keys.Where(valid.Contains).Concat(Catalogo.Select(c => c.Key).Where(k => !keys.Contains(k))).ToList();
-            }
-            if (doc.RootElement.TryGetProperty("prefs", out var pr) && pr.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                foreach (var p in pr.EnumerateObject())
-                {
-                    var cp = new ColPref();
-                    if (p.Value.TryGetProperty("Visible", out var v)) cp.Visible = v.GetBoolean();
-                    if (p.Value.TryGetProperty("Label", out var l) && l.ValueKind == System.Text.Json.JsonValueKind.String) cp.Label = l.GetString();
-                    _colPrefs[p.Name] = cp;
-                }
-            }
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/personas-campos/{_campoAEliminar.Id}");
+            _msg = r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminar.Label}\" eliminado." : "No se pudo eliminar el campo.";
+            _msgError = !r.IsSuccessStatusCode;
+            if (r.IsSuccessStatusCode) await CargarAsync();
         }
-        catch { }
+        catch (Exception ex) { _msg = "Error al eliminar el campo: " + ex.Message; _msgError = true; }
+        _campoAEliminar = null; _colBusy = false; StateHasChanged();
     }
+
+    // ---------- Crear / editar UN campo (modal focalizado): "+" crea; engranaje edita ----------
+    private bool _crearCampoAbierto;
+    private CampoDinDef? _campoAEditar;
+    private void AbrirCrearCampoR() { _campoAEditar = null; _crearCampoAbierto = true; }
+    private void AbrirEditarCampoR(CampoDinDef c)
+    {
+        _campoAEditar = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones);
+        _crearCampoAbierto = true;
+    }
+    private async Task RecargarTrasCrearCampoR()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        await CargarAsync();
+        StateHasChanged();
+    }
+    private void AbrirGestorDesdeCrearR()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        _configCamposAbierto = true;
+    }
+
+    // ---------- Interacciones de tabla: ordenar, mover columna, redimensionar, menu contextual ----------
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string? _sortKey;
+    private int _sortDir = 1;
+    private void OrdenarPorColumnaR(string k)
+    {
+        if (_sortKey == k) _sortDir = -_sortDir; else { _sortKey = k; _sortDir = 1; }
+        _pagina = 1;
+    }
+    private string SortStrR(ResidenteResumenDto r, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null)
+        {
+            var v = ValorDe(r.UnidadPersonaId, cd.Id) ?? "";
+            return (cd.Tipo == TipoCampoTablero.Directorio || cd.Tipo == TipoCampoTablero.Usuario) ? (NombrePersona(v) ?? v) : v;
+        }
+        return k switch
+        {
+            "unidad" => r.UnidadCodigo ?? "",
+            "nombre" => r.Nombre ?? "",
+            "documento" => r.Documento ?? "",
+            "rol" => RolLabel(r.Rol),
+            "telefono" => r.Telefono ?? "",
+            "email" => r.Email ?? "",
+            "habita" => r.Habita ? "Si" : "No",
+            _ => ""
+        };
+    }
+
+    // Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu Columnas).
+    private async Task IniciarReorderR(MouseEventArgs e, string clave)
+    {
+        _selfR ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _selfR, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgRAsync(FilaConfigR(keys[i]) with { Orden = i });
+        await CargarCfgRAsync(); StateHasChanged();
+    }
+
+    // Menu contextual (clic derecho).
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxR(MouseEventArgs e, ResidenteResumenDto r)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtxR),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtxR),            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirFicha(r)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceR(r)),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => EliminarResidenteAsync(r.UnidadPersonaId, r.Nombre)),
+        };
+        _ctxOpen = true;
+    }
+    private Task StubCtxR() { _msg = "Accion aun no disponible en esta version."; _msgError = false; StateHasChanged(); return Task.CompletedTask; }
+    private async Task CopiarEnlaceR(ResidenteResumenDto r)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}residentes#residente-{r.UnidadPersonaId}"); _msg = "Enlace del registro copiado."; _msgError = false; }
+        catch { _msg = "No se pudo copiar el enlace."; _msgError = true; }
+        StateHasChanged();
+    }
+
+    // Redimensionar columnas; el ancho PERSISTE por copropiedad en el JSON de Formato (clave "w").
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private DotNetObjectReference<ResidentesPanel>? _selfR;
+    private async Task IniciarResizeR(MouseEventArgs e, string clave)
+    {
+        _selfR ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfR, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResizeR(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        var fila = FilaConfigR(clave);
+        await GuardarCfgRAsync(fila with { Formato = ConAnchoTabla(fila.Formato, w) });
+        await CargarCfgRAsync(); HidratarAnchosR(); StateHasChanged();
+    }
+    private void HidratarAnchosR()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfgPer) { var w = AnchoDeFormatoTabla(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormatoTabla(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o? ["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAnchoTabla(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    public void Dispose() { _selfR?.Dispose(); }
+
+    // ---------- Seleccion multiple + borrado masivo (estandar vista tabla) ----------
+    private readonly HashSet<Guid> _selR = new();
+    private bool _confirmDelSel;
+    private bool _delBusy;
+    private void ToggleSelR(Guid id, bool on) { if (on) _selR.Add(id); else _selR.Remove(id); }
+    private void LimpiarSelR() => _selR.Clear();
+    private void ToggleSelAllR(bool on) { _selR.Clear(); if (on) foreach (var r in Filtrados) _selR.Add(r.UnidadPersonaId); }
+    private bool TodasSelR { get { var ids = Filtrados.Select(r => r.UnidadPersonaId).ToList(); return ids.Count > 0 && ids.All(_selR.Contains); } }
+    private async Task EliminarSelResidentesAsync()
+    {
+        if (_selR.Count == 0) return;
+        _delBusy = true; int ok = 0, fail = 0;
+        foreach (var id in _selR.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas/{id}"); if (r.IsSuccessStatusCode) ok++; else fail++; }
+            catch { fail++; }
+        }
+        _selR.Clear(); _confirmDelSel = false; _delBusy = false;
+        _msg = fail == 0 ? $"{ok} residente(s) eliminado(s)." : $"{ok} eliminado(s), {fail} con error."; _msgError = fail != 0;
+        await CargarAsync(); StateHasChanged();
+    }
+
+    // Borrado de una fila (desvincular la persona de la unidad).
+    private async Task EliminarResidenteAsync(Guid unidadPersonaId, string nombre)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar a \"{nombre}\" de la unidad?")) return;
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas/{unidadPersonaId}");
+        if (resp.IsSuccessStatusCode) { _msg = "Residente eliminado."; _msgError = false; await CargarAsync(); }
+        else { _msg = "No se pudo eliminar el residente."; _msgError = true; }
+        StateHasChanged();
+    }
+
+    // ---------- Alta "nace fila" ----------
+    private bool _altaAbierta;
+    private int _nonce;
+    private bool _focusPending;
+    private ElementReference _unidadRef;
+    private void AbrirAltaR()
+    {
+        _altaAbierta = true;
+        LimpiarPersonaSel();
+        _unidadQuery = ""; _unidadDrop = false;
+        _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true;
+        _nuDinamicos.Clear();
+        _focusPending = true;
+    }
+    private void CerrarAltaR() { _altaAbierta = false; }
+    private async Task OnAltaKeydownR(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAltaR();
+        else if (e.Key == "Enter" && AltaValida) await AgregarAsync(false);
+    }
+
+    // ---------- Catalogo de columnas: catalogo/anchos hidratados en CargarCamposAsync ----------
 
     // ---------- Carga / auth ----------
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
-            _jwt = stored;
-            await RestaurarColsAsync();
-            await RestaurarVistaAsync();
-            try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
-            await CargarAsync();
-            StateHasChanged();
+            try
+            {
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
+                _jwt = stored;
+                await RestaurarVistaAsync();
+                try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
+                await CargarAsync();
+                StateHasChanged();
+            }
+            catch { /* prerender */ }
+            return;
         }
-        catch { /* prerender */ }
+        if (_focusPending)
+        {
+            _focusPending = false;
+            try { await _unidadRef.FocusAsync(); } catch { }
+        }
     }
 
     private HttpClient Auth()
@@ -685,6 +1047,12 @@ else
                     r.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || r.Documento.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || r.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase));
+            if (_sortKey is not null)
+            {
+                var sk = _sortKey;
+                var cmp = Comparer<ResidenteResumenDto>.Create((a, b) => CmpValTabla(SortStrR(a, sk), SortStrR(b, sk)) * _sortDir);
+                seq = seq.OrderBy(r => r, cmp);
+            }
             return seq.ToList();
         }
     }
@@ -741,6 +1109,24 @@ else
     }
     private void ElegirUnidad(UnidadDto u) { _unidadQuery = CodigoUnidad(u); _unidadDrop = false; }
 
+    // ---------- Alta: estado ----------
+    private string _unidadQuery = "";
+    private bool _unidadDrop;
+    private PersonaCandidatoDto? _personaSel;
+    private string _ptTel = "";       // se precarga con el telefono del tercero elegido (editable)
+    private string _ptEmail = "";      // idem correo
+    private string _ptTelOrig = "";    // valor original del tercero, para sincronizar solo si cambio
+    private string _ptEmailOrig = "";
+    private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
+    private bool _habitaNuevo = true;
+    private readonly HashSet<Guid> _resRecienCreados = new();   // ids de filas recien creadas (resaltado)
+
+    private UnidadDto? UnidadElegida =>
+        _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool AltaValida => UnidadElegida is not null && _personaSel is not null;
+    private bool _sinUnidades => _unidades.Count == 0;
+
     // ---------- Tercero (control del Directorio) ----------
     private async Task OnPersonaSel(PersonaCandidatoDto? p)
     {
@@ -748,8 +1134,6 @@ else
         _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
         if (p is not null)
         {
-            // El selector trae los contactos (filas de directorio). Si la persona no tiene filas
-            // (ej. datos semilla), se trae el detalle para el correo/telefono denormalizado (ultima info).
             var tel = TelDe(p); var email = EmailDe(p);
             if (tel is null || email is null)
             {
@@ -762,7 +1146,6 @@ else
                     if (resp.IsSuccessStatusCode)
                     {
                         using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-                        // El detalle 360 anida la entidad bajo "persona"/"empresa"; leemos de ahi o de la raiz.
                         var obj = doc.RootElement;
                         if (obj.TryGetProperty("persona", out var pe)) obj = pe;
                         else if (obj.TryGetProperty("empresa", out var ee)) obj = ee;
@@ -793,9 +1176,6 @@ else
             ?? p.Contactos.FirstOrDefault(c => c.Tipo == tipo)?.Valor;
     }
 
-    // Sincroniza un contacto (correo/telefono) en el Directorio SIN perder los demas: trae los
-    // actuales, reemplaza los de ese tipo y reenvia el set completo (reemplazar borra todos los
-    // tipos gestionados, por eso hay que reenviarlos).
     private async Task<bool> SincronizarContactoAsync(EntidadDirectorio tipo, Guid entidadId, TipoContacto cual, string? valor)
     {
         try
@@ -831,7 +1211,7 @@ else
     private async Task AgregarAsync(bool abrir)
     {
         if (_busy) return;
-        // V-02: validar minimos al clic con mensaje (canon regla 8), en vez de un retorno mudo.
+        // Validar minimos al clic con mensaje (canon regla 8), en vez de un retorno mudo.
         if (UnidadElegida is not { } unidad)
         {
             _msg = _sinUnidades
@@ -861,7 +1241,7 @@ else
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
             if (creada is not null)
             {
-                _resRecienCreados.Add(creada.Id);   // V-09: resalta la fila hasta el proximo refresco
+                _resRecienCreados.Add(creada.Id);   // resalta la fila hasta el proximo refresco
                 // Los campos propios se guardan despues del alta: necesitan el id del registro (UnidadPersona).
                 foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
                     await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{creada.Id}/{defId}", new SetCampoValorRequest(valor));
@@ -871,10 +1251,10 @@ else
             if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
             _msg = $"{sel.NombreCompleto} agregado a {_unidadQuery}."; _msgError = false;
             LimpiarPersonaSel(); _rolNuevo = RolUnidadPersona.Residente; _habitaNuevo = true; _unidadQuery = ""; _unidadDrop = false; _nuDinamicos.Clear();
+            _altaAbierta = false; _nonce++;
             await CargarAsync();
             if (abrir && creada is not null)
             {
-                // Empresa: sigue en el Directorio (aun no tiene ficha rapida). Persona: modal en sitio.
                 if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
                 else if (creada.PersonaId != Guid.Empty) await AbrirFichaPersonaAsync(creada.PersonaId, sel.NombreCompleto);
             }
@@ -940,7 +1320,7 @@ else
     .res-search-inp { border: 0; outline: none; font-size: 13.5px; color: var(--propia-text-h1); width: 100%; background: transparent; }
     .res-filtros-spacer { flex: 1; }
     .res-fbtn { display: inline-flex; align-items: center; gap: 7px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; white-space: nowrap; }
-    .res-fbtn:hover { border-color: #C9CFE8; }
+    .res-fbtn:hover { border-color: var(--propia-brand); }
     .res-fbtn.on { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); }
 
     .res-menu-wrap { position: relative; }
@@ -950,18 +1330,29 @@ else
     .res-menu-it:hover { background: var(--propia-brand-soft-2); }
     .res-menu-it.on { color: var(--propia-brand, var(--propia-brand)); font-weight: 700; background: var(--propia-brand-soft-2); }
 
-    .res-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 21; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; box-shadow: 0 12px 30px rgba(16,32,52,.14); padding: 10px; min-width: 320px; }
-    .res-colsmenu-h { font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; padding: 2px 4px 8px; }
-    .res-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 3px 2px; }
-    .res-colsmenu-ord { display: flex; flex-direction: column; gap: 1px; }
-    .res-colsmenu-mv { width: 18px; height: 14px; line-height: 1; border: 1px solid var(--propia-border-card); border-radius: 4px; background: var(--propia-bg-card); color: var(--propia-text-muted); font-size: 8px; cursor: pointer; padding: 0; }
-    .res-colsmenu-mv:disabled { opacity: .3; cursor: default; }
-    .res-cfg-vis { display: flex; align-items: center; margin: 0; }
-    .res-cfg-inp { flex: 1; border: 1px solid var(--propia-border-card); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); outline: none; }
-    .res-cfg-inp:focus { border-color: var(--propia-brand, var(--propia-brand)); }
-    .res-cfg-req { font-size: 10px; font-weight: 700; color: #B0BAC6; }
-    .res-colsmenu-acts { display: flex; justify-content: flex-end; padding-top: 8px; }
-    .res-colsmenu-act { background: none; border: 0; color: var(--propia-brand, var(--propia-brand)); font-size: 12px; font-weight: 700; cursor: pointer; }
+    /* ---- Menu "Columnas" inline (milimetrico a Zonas/Equipos) ---- */
+    .res-colmenu { min-width: 252px; }
+    .res-col-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .res-col-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .res-col-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .res-col-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .res-col-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .res-col-it:hover { background: var(--propia-brand-soft-2); }
+    .res-col-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .res-col-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .res-col-mv:disabled { opacity: .35; cursor: default; }
+    .res-col-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .res-col-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .res-col-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .res-col-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .res-col-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .res-col-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .res-col-del:hover { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .res-col-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .res-col-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .res-col-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .res-col-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .res-col-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
 
     .res-msg { margin-bottom: 12px; font-size: 13px; padding: 8px 12px; border-radius: 9px; }
     .res-msg.ok { background: var(--propia-ok-soft); color: #15703F; }
@@ -970,12 +1361,20 @@ else
     /* ---- Tabla ---- */
     .res-table { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
     .res-scroll { overflow: auto; max-height: calc(100vh - 320px); }
-    .res-grid { display: grid; align-items: center; gap: 8px; padding: 6px 14px; min-width: 900px; }
-    .res-head { position: sticky; top: 0; z-index: 6; background: var(--propia-bg-table-head); font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; border-bottom: 1px solid var(--propia-border-card); }
-    .res-head .res-c { text-align: center; }
-    .res-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13.5px; }
-    .res-row:hover { background: var(--propia-bg-hover); }
-    .res-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 #34C759; }   /* V-09: fila recien creada */
+    .res-listgrid { display: grid; align-items: center; gap: 10px; padding: 6px 14px; min-width: 1000px; }
+    /* .res-head lleva ademas la clase marcadora zc-list-head para que el JS de resize (compartido)
+       encuentre la celda por [data-clave]; se sobreescribe aqui (mayor especificidad) para no heredar
+       su estilo. */
+    .res-table .res-head { position: sticky; top: 0; z-index: 6; background: var(--propia-bg-table-head); font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; border-bottom: 1px solid var(--propia-border-card); text-transform: none; padding: 6px 14px; }
+    .res-table .res-head .res-c { justify-content: center; text-align: center; }
+    /* Separadores verticales SUTILES solo en la cabecera (entre columnas de datos). */
+    .res-table .res-head.res-listgrid > div { border-right: 1px solid var(--propia-border-divider); }
+    .res-table .res-head.res-listgrid > div:first-child, .res-table .res-head.res-listgrid > div:nth-child(2), .res-table .res-head.res-listgrid > div:nth-last-child(2), .res-table .res-head.res-listgrid > div:last-child { border-right: 0; }
+
+    .res-listrow { border-bottom: 1px solid var(--propia-border-divider); font-size: 13.5px; }
+    .res-listrow:hover { background: var(--propia-bg-hover); }
+    .res-row-sel { background: var(--propia-brand-soft) !important; }
+    .res-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 #34C759; }
     .res-c-cell { color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .res-c-cell.res-c { text-align: center; }
     .res-cod { font-weight: 700; color: var(--propia-brand-text); }
@@ -984,51 +1383,93 @@ else
     .res-tag { font-size: 10px; font-weight: 700; color: var(--propia-text-muted); background: var(--propia-border-divider); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
     .res-empty { text-align: center; color: var(--propia-text-muted); padding: 30px 0; }
 
-    .res-exp-col { display: flex; align-items: center; justify-content: center; }
+    /* Seleccion multiple + expansor. */
+    .res-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .res-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin: 0; }
+    .res-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .res-col-exp { display: flex; align-items: center; justify-content: center; }
     .res-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
-    .res-row:hover .res-exp { opacity: 1; }
+    .res-listrow:hover .res-exp-fijo { opacity: 1; }
     .res-exp:hover { background: var(--propia-brand-soft); }
+    .res-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; background: transparent; }
+    .res-listnew:hover .res-exp-mut, .res-listnew:focus-within .res-exp-mut { opacity: 1; }
 
-    /* Alta inline al pie: misma grilla que las filas, un input por columna (como el modal). */
-    .res-newrow { border-top: 1px solid var(--propia-border-card); background: var(--propia-bg-card-soft); }
-    .res-newrow .res-exp.res-exp-nf { opacity: .4; }
-    .res-newrow:focus-within .res-exp.res-exp-nf, .res-newrow:hover .res-exp.res-exp-nf { opacity: 1; }
-    .res-newrow .res-exp.res-exp-nf:disabled { opacity: .2; cursor: default; }
+    .res-list-act { display: flex; justify-content: flex-end; }
+    .res-row-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .res-row-del:hover { color: var(--propia-danger); border-color: var(--propia-danger-soft); }
+
+    /* Barra de seleccion (bulk). */
+    .res-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .res-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand, var(--propia-brand)); }
+    .res-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-danger-soft); background: var(--propia-bg-card); color: var(--propia-danger); font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .res-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
+    .res-selbar-del:disabled { opacity: .6; cursor: default; }
+    .res-selbar-x { border: 0; background: transparent; color: var(--propia-brand, var(--propia-brand)); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+
+    /* Confirmaciones (bulk delete / borrar campo). */
+    .res-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .res-confirm { background: var(--propia-bg-card); border-radius: 14px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(20,30,50,.3); padding: 18px 20px 16px; }
+    .res-confirm-t { font-size: 15px; font-weight: 800; color: var(--propia-text-h1); }
+    .res-confirm-s { font-size: 12.5px; color: var(--propia-text-muted); margin: 6px 0 14px; }
+    .res-confirm-acts { display: flex; justify-content: flex-end; gap: 10px; }
+
+    /* Cabecera de columnas: ordenar / engranaje / redimensionar / mover. */
+    .res-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .res-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-th-edit { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .res-head .res-th-dyn:hover .res-th-edit, .res-th-edit:focus-visible { opacity: 1; }
+    .res-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .res-th-sortable { cursor: pointer; user-select: none; position: relative; }
+    .res-th-sortable:hover .res-th-lbl { color: var(--propia-brand); }
+    .res-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .res-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .res-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .res-col-rz:hover::after { background: var(--propia-brand); }
+    /* "+" de columna en el header (crea campo nuevo). */
+    .res-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .res-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .res-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+
+    /* Alta "nace fila": CTA morado + fila editable + foco redondeado + acciones checkmark/x. */
+    .res-listnew { padding: 10px 14px; background: var(--propia-bg-app); border-top: 1px solid var(--propia-border-card); }
+    .res-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
+    .res-nf-cta:hover { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    .res-newrow--cta { cursor: default; }
+    .res-nf-ctacell { display: flex; align-items: center; }
+    .res-newrow--edit { background: var(--propia-brand-soft-2); }
+    .res-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+    .res-nf-ok, .res-nf-cancel { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; cursor: pointer; }
+    .res-nf-ok { border: 0; background: var(--propia-brand); color: #fff; }
+    .res-nf-ok:hover:not(:disabled) { filter: brightness(.96); }
+    .res-nf-cancel { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); }
+    .res-nf-cancel:hover:not(:disabled) { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .res-nf-ok:disabled, .res-nf-cancel:disabled { opacity: .6; cursor: default; }
     /* Canon (skill homogenizar-vista-tabla, 9-A): inputs de la fila de alta PUNTEADOS en reposo,
        solidos + glow violeta al focus. */
     .res-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .res-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .res-nf-unidad { position: relative; }
     .res-nf-persona { min-width: 0; }
-    /* El selector de terceros trae su propio input; que ocupe el ancho de la celda del nombre. */
     .res-nf-persona .sp, .res-nf-persona .sp-search, .res-nf-persona .sp-chip { width: 100%; min-width: 0; }
-    /* Buscador de terceros: misma altura y mismo borde punteado que los demas inputs de la fila. */
     .res-nf-persona .sp-search { border: 1px dashed var(--propia-border-input); border-radius: 7px; }
     .res-nf-persona .sp-search:focus-within { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .res-nf-persona .sp-search-inp { min-width: 0; padding: 5px 0; font-size: 12.5px; }
     .res-nf-ro { font-size: 12px; color: var(--propia-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Documento del tercero: misma caja que los demas inputs pero no editable (atenuado). */
     .res-nf-ro-inp { background: var(--propia-bg-card-soft); color: var(--propia-text-muted); cursor: default; }
-    .res-nf-ro-inp:focus { border-color: #D8E0E8; box-shadow: none; }
-    /* Tercero elegido: solo el nombre (no deforma la celda) + boton para cambiarlo. */
+    .res-nf-ro-inp:focus { border-color: var(--propia-border-input); box-shadow: none; }
     .res-nf-selname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--propia-text-h1); }
     .res-nf-selname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .res-nf-selx { flex: 0 0 auto; width: 18px; height: 18px; line-height: 1; border: 0; border-radius: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); font-size: 14px; cursor: pointer; }
     .res-nf-selx:hover { background: var(--propia-brand-soft); }
-    /* Celda editable en filas existentes (correo/telefono): se lee como texto y se marca al hover/foco. */
+    .res-nf-habchk { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; color: var(--propia-text-body); }
+
+    /* Celda editable en filas existentes (correo/telefono/campos): borde invisible, se marca al hover/foco. */
     .res-editcell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 13px; color: var(--propia-text-muted); background: transparent; outline: none; font-family: inherit; }
     .res-editcell:hover { border-color: var(--propia-border-card); background: var(--propia-bg-card-soft); }
     .res-editcell:focus { border-color: var(--propia-brand, var(--propia-brand)); background: var(--propia-bg-card); color: var(--propia-text-body); }
-    .res-nf-habchk { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; color: var(--propia-text-body); }
-    .res-nf-act { display: flex; justify-content: flex-end; }
-    /* Canon (skill 9-D): "+ Agregar" violeta SUAVE (no relleno solido). */
-    .res-nf-add { background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 7px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-    .res-nf-add:hover { background: var(--propia-brand-soft); }
-    .res-nf-add:disabled { opacity: .5; cursor: not-allowed; }
 
-    /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow, y un dropdown
-       hacia abajo quedaria recortado. Hacia arriba se muestra sobre las filas, sin recorte. */
-    .res-drop { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; z-index: 30; background: var(--propia-bg-card); border: 1px solid #D8E0E8; border-radius: 10px; box-shadow: 0 -8px 28px rgba(16,32,52,.16); overflow: hidden; max-height: 260px; overflow-y: auto; }
+    /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow. */
+    .res-drop { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; z-index: 30; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 -8px 28px rgba(16,32,52,.16); overflow: hidden; max-height: 260px; overflow-y: auto; }
     .res-drop-it { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; cursor: pointer; }
     .res-drop-it:hover { background: var(--propia-brand-soft-2); }
     .res-drop-cod { font-weight: 700; color: var(--propia-brand-text); font-size: 13px; }

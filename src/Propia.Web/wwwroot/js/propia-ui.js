@@ -421,6 +421,103 @@
     };
 
     // -------------------------------------------------------------------------
+    // Redimensionar columnas de la vista tabla (grids CSS por fila, como la maqueta).
+    // El handle del header llama a start(): mide el ancho actual de la celda (por data-clave),
+    // arrastra una guia vertical y, al soltar, devuelve el ancho final a .NET (OnColResize), que
+    // fija grid-template-columns de TODAS las filas. Doble clic = autoajustar (ancho 0 -> default).
+    // -------------------------------------------------------------------------
+    window.propiaTablaResize = {
+        start: function (dotnetRef, clave, clientX) {
+            var minW = 70;
+            // Busca la celda de cabecera por data-clave (agnostico al prefijo de cada tabla). Solo las
+            // celdas del header llevan data-clave; se toma la de mayor ancho por si hubiera colisiones.
+            var cell = [...document.querySelectorAll('[data-clave="' + CSS.escape(clave) + '"]')]
+                .sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0] || null;
+            var startWidth = cell ? cell.getBoundingClientRect().width : 160;
+            if (cell) cell.setAttribute('draggable', 'false');   // evita que arranque el drag de reordenar
+            var line = document.createElement('div');
+            line.style.cssText = 'position:fixed;top:0;bottom:0;width:2px;background:var(--propia-brand,#6D4FE3);z-index:6000;pointer-events:none;opacity:.8;';
+            line.style.left = clientX + 'px';
+            document.body.appendChild(line);
+            var prevCursor = document.body.style.cursor, prevSel = document.body.style.userSelect;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            var curW = startWidth;
+            function mv(e) {
+                var minX = clientX - (startWidth - minW);
+                var x = Math.max(e.clientX, minX);
+                curW = startWidth + (x - clientX);
+                line.style.left = x + 'px';
+            }
+            function up() {
+                document.removeEventListener('mousemove', mv);
+                document.removeEventListener('mouseup', up);
+                if (line.parentNode) line.parentNode.removeChild(line);
+                document.body.style.cursor = prevCursor;
+                document.body.style.userSelect = prevSel;
+                if (cell) setTimeout(function () { cell.setAttribute('draggable', 'true'); }, 0);
+                try { dotnetRef.invokeMethodAsync('OnColResize', clave, Math.round(curW)); } catch (e) { }
+            }
+            document.addEventListener('mousemove', mv);
+            document.addEventListener('mouseup', up);
+        },
+        // Doble clic en el handle: autoajustar (quita el ancho manual -> vuelve al default).
+        reset: function (dotnetRef, clave) {
+            try { dotnetRef.invokeMethodAsync('OnColResize', clave, 0); } catch (e) { }
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // Reordenar columnas por ARRASTRE de puntero (el HTML5 drag nativo es poco fiable
+    // en Blazor Server). El header llama a start() en mousedown; si el puntero se mueve
+    // > umbral entra en modo arrastre, resalta la columna destino bajo el cursor y, al
+    // soltar, devuelve (origen, destino) a .NET (OnColReorder). Un clic sin arrastre NO
+    // reordena (deja pasar el @onclick de ordenar); tras un arrastre se traga el click.
+    // -------------------------------------------------------------------------
+    window.propiaTablaColReorder = {
+        start: function (dotnetRef, srcClave, clientX, clientY) {
+            var startX = clientX, startY = clientY, dragging = false, lastCell = null;
+            function cellAt(x, y) {
+                var el = document.elementFromPoint(x, y);
+                return el ? el.closest('[data-clave]') : null;
+            }
+            function clearHi() { if (lastCell) { lastCell.style.boxShadow = ''; lastCell = null; } }
+            function mv(e) {
+                if (!dragging) {
+                    if (Math.abs(e.clientX - startX) < 5 && Math.abs(e.clientY - startY) < 5) return;
+                    dragging = true;
+                    document.body.style.cursor = 'grabbing';
+                    document.body.style.userSelect = 'none';
+                }
+                var cell = cellAt(e.clientX, e.clientY);
+                var dest = cell && cell.getAttribute('data-clave');
+                if (cell !== lastCell) {
+                    clearHi();
+                    if (cell && dest && dest !== srcClave) { cell.style.boxShadow = 'inset 2px 0 0 var(--propia-brand,#6D4FE3)'; lastCell = cell; }
+                }
+            }
+            function up(e) {
+                document.removeEventListener('mousemove', mv);
+                document.removeEventListener('mouseup', up);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                clearHi();
+                if (dragging) {
+                    // traga el click sintetico que sigue al arrastre (no ordenar).
+                    var supp = function (ev) { ev.stopPropagation(); ev.preventDefault(); document.removeEventListener('click', supp, true); };
+                    document.addEventListener('click', supp, true);
+                    setTimeout(function () { document.removeEventListener('click', supp, true); }, 350);
+                    var cell = cellAt(e.clientX, e.clientY);
+                    var dest = cell && cell.getAttribute('data-clave');
+                    if (dest && dest !== srcClave) { try { dotnetRef.invokeMethodAsync('OnColReorder', srcClave, dest); } catch (x) { } }
+                }
+            }
+            document.addEventListener('mousemove', mv);
+            document.addEventListener('mouseup', up);
+        }
+    };
+
+    // -------------------------------------------------------------------------
     // Scroll horizontal superior espejo (vista Lista de Tareas): una barra arriba
     // sincronizada con el scroll real de la tabla, para no tener que bajar hasta
     // el pie para desplazarse cuando hay muchas columnas.

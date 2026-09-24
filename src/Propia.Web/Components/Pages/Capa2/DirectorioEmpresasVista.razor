@@ -3,6 +3,10 @@
 @using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+@implements IDisposable
 
 @* El toggle Lista/Tabla vive en la pagina (barra de filtros), no aqui: la vista llega por
    parametro para que la seleccion se comparta entre pestanas y se pueda persistir. *@
@@ -61,11 +65,59 @@ else if (Vista == "lista")
 }
 else
 {
+    @if (Seleccion is not null && Seleccion.Count > 0)
+    {
+        <div class="dtab-selbar">
+            <span class="dtab-selbar-n">@Seleccion.Count seleccionado@(Seleccion.Count == 1 ? "" : "s")</span>
+            <button type="button" class="dtab-selbar-del" @onclick="() => _confirmDel = true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Quitar del directorio
+            </button>
+            <button type="button" class="dtab-selbar-x" @onclick="() => OnDeseleccionar.InvokeAsync()">Deseleccionar</button>
+        </div>
+    }
+    @if (_confirmDel)
+    {
+        <div class="dtab-cfg-back" @onclick="() => { if (!_bulkBusy) _confirmDel = false; }">
+            <div class="dtab-confirm" @onclick:stopPropagation="true">
+                <div class="dtab-confirm-t">Quitar @(Seleccion?.Count ?? 0) registro@(Seleccion?.Count == 1 ? "" : "s") del directorio</div>
+                <div class="dtab-confirm-s">Se inactiva su vinculo con esta copropiedad. La empresa sigue existiendo a nivel global y puede volver a vincularse luego.</div>
+                <div class="dtab-confirm-acts">
+                    <button type="button" class="dtab-cbtn" @onclick="() => _confirmDel = false" disabled="@_bulkBusy">Cancelar</button>
+                    <button type="button" class="dtab-selbar-del" @onclick="QuitarSeleccionAsync" disabled="@_bulkBusy">@(_bulkBusy ? "Quitando..." : "Si, quitar")</button>
+                </div>
+            </div>
+        </div>
+    }
     <div class="dtab-table">
         <div class="dtab-scroll">
             <div class="dtab-head dve-grid" style="grid-template-columns:@GridCols">
+                <div class="dtab-sel-cell"><label class="dtab-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodoSeleccionado" @onchange="ev => OnSeleccionarTodo.InvokeAsync((bool)(ev.Value ?? false))" /></label></div>
                 <div></div>
-                @foreach (var c in ColsVisibles) { <div>@Etiqueta(c)</div> }
+                @foreach (var c in ColsVisibles)
+                {
+                    var clave = c.Key;
+                    <div class="dtab-th dtab-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                         @onmousedown="ev => IniciarReorder(ev, clave)" @onclick="() => OnOrdenar.InvokeAsync(clave)">
+                        <span class="dtab-th-lbl">@Etiqueta(c)</span>
+                        @if (SortKey == clave) { <span class="dtab-th-arrow">@((MarkupString)(SortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                        <span class="dtab-col-rz" title="Arrastra para ajustar ancho | doble clic para autoajustar"
+                              @onmousedown="ev => IniciarResize(ev, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true"
+                              @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                    </div>
+                }
+                @if (Defs is not null)
+                {
+                    @foreach (var d in Defs)
+                    {
+                        var def = d;
+                        <div class="dtab-th dtab-th-dyn">
+                            <span class="dtab-th-lbl">@d.Label.ToUpperInvariant()</span>
+                            <button type="button" class="dtab-th-gear" title="Editar o eliminar campo" @onclick="() => OnEditarCampoDef.InvokeAsync(def)"><i class="fi fi-rr-settings"></i></button>
+                        </div>
+                    }
+                }
+                <div class="dtab-addcol-h"><button type="button" class="dtab-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => OnCrearCampo.InvokeAsync()"><i class="fi fi-rr-plus"></i></button></div>
                 <div></div>
             </div>
             @foreach (var item in FilasRender())
@@ -81,7 +133,8 @@ else
                 }
                 var e = item.Empresa!;
                 var eid = e.Id;
-                <div class="dtab-row dve-grid" style="grid-template-columns:@GridCols">
+                <div class="dtab-row dve-grid @(Seleccion is not null && Seleccion.Contains(eid) ? "dtab-row-sel" : "")" style="grid-template-columns:@GridCols" @oncontextmenu="ev => AbrirCtx(ev, e)" @oncontextmenu:preventDefault="true">
+                    <div class="dtab-sel-cell"><label class="dtab-chk"><input type="checkbox" checked="@(Seleccion is not null && Seleccion.Contains(eid))" @onchange="ev => OnSeleccionar.InvokeAsync((eid, (bool)(ev.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
                     <div class="dtab-exp-col">
                         <button type="button" class="dtab-exp" title="Abrir la ficha para editar" @onclick="() => OnAbrir.InvokeAsync(eid)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -111,6 +164,56 @@ else
                                 break;
                         }
                     }
+                    @if (Defs is not null)
+                    {
+                        @foreach (var d in Defs)
+                        {
+                            var def = d;
+                            if (e.RegistroCamposId is Guid reg)
+                            {
+                                var val = ValorDin(reg, def.Id);
+                                switch (def.Tipo)
+                                {
+                                    case TipoCampoTablero.Seleccion:
+                                        <select class="dtab-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())">
+                                            <option value="">-</option>
+                                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Numero:
+                                    case TipoCampoTablero.Moneda:
+                                    case TipoCampoTablero.Porcentaje:
+                                        <input class="dtab-cell" type="number" step="any" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Fecha:
+                                        <input class="dtab-cell" type="date" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Booleano:
+                                        <select class="dtab-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())">
+                                            <option value="">-</option>
+                                            <option value="Si" selected="@(val == "Si")">Si</option>
+                                            <option value="No" selected="@(val == "No")">No</option>
+                                        </select>
+                                        break;
+                                    case TipoCampoTablero.Formula:
+                                        <div class="dtab-c dtab-ro" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                                        break;
+                                    case TipoCampoTablero.Usuario:
+                                    case TipoCampoTablero.Directorio:
+                                        <div class="dtab-c dtab-ro" title="Se edita desde la ficha / Residentes">@(NombreRel(val) ?? "-")</div>
+                                        break;
+                                    default:
+                                        <input class="dtab-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                        break;
+                                }
+                            }
+                            else
+                            {
+                                <div class="dtab-c dtab-ro" title="Sin unidad vinculada: los campos propios se editan desde una unidad">-</div>
+                            }
+                        }
+                    }
+                    <div class="dtab-addcol-cell"></div>
                     <div></div>
                 </div>
             }
@@ -118,6 +221,7 @@ else
                (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server).
                Razon social y NIT son requeridos para el alta: no se pueden ocultar. *@
             <div class="dtab-newrow dve-grid" @key="_nonce" style="grid-template-columns:@GridCols">
+                <div class="dtab-sel-cell"></div>
                 <div class="dtab-exp-col">
                     <button type="button" class="dtab-exp" tabindex="-1" title="Crear y abrir ficha" @onclick="CrearEmpresaAbrirInline" disabled="@(_busy || !DraftValido)">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -147,6 +251,11 @@ else
                             break;
                     }
                 }
+                @if (Defs is not null)
+                {
+                    @foreach (var d in Defs) { <div class="dtab-c dtab-ro" title="Los campos propios se completan tras vincular a una unidad">-</div> }
+                }
+                <div class="dtab-addcol-cell"></div>
                 <div class="dtab-act dtab-act-nf">
                     <button type="button" class="dtab-add" title="Agregar (Enter)" @onclick="CrearEmpresaInline" disabled="@(_busy || !DraftValido)">+ Agregar</button>
                 </div>
@@ -161,6 +270,10 @@ else
         }
     </div>
 }
+
+@* Menu contextual (clic derecho) y toast breve: la vista tabla vive arriba, estos van al raiz. *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+@if (_toast is not null) { <div class="dtab-toast">@_toast</div> }
 
 @code {
     [Parameter] public List<EmpresaResumenDto>? Empresas { get; set; }
@@ -180,6 +293,48 @@ else
 
     /// <summary>Orden de columnas (claves) elegido por el usuario; si es null, se usa el orden del catalogo.</summary>
     [Parameter] public List<string>? ColsOrder { get; set; }
+
+    /// <summary>Ancho manual por columna (px), desde localStorage; clave = Key de la columna.</summary>
+    [Parameter] public Dictionary<string, int>? ColsWidth { get; set; }
+    /// <summary>Columna activa de orden y su sentido (1 asc / -1 desc); para pintar la flecha del header.</summary>
+    [Parameter] public string? SortKey { get; set; }
+    [Parameter] public int SortDir { get; set; } = 1;
+    /// <summary>Clic en un header: la pagina alterna el orden (se aplica ANTES de paginar).</summary>
+    [Parameter] public EventCallback<string> OnOrdenar { get; set; }
+    /// <summary>Arrastre de columna (origen, destino): la pagina reordena y persiste en localStorage.</summary>
+    [Parameter] public EventCallback<(string Src, string Dest)> OnReordenar { get; set; }
+    /// <summary>Ancho final de una columna (px; 0 = restablecer): la pagina persiste en localStorage.</summary>
+    [Parameter] public EventCallback<(string Clave, int Width)> OnRedimensionar { get; set; }
+
+    /// <summary>Ids (de fila) seleccionados; los mantiene la pagina. Null = sin seleccion.</summary>
+    [Parameter] public HashSet<Guid>? Seleccion { get; set; }
+    /// <summary>true cuando toda la lista filtrada esta seleccionada (para el check del header).</summary>
+    [Parameter] public bool TodoSeleccionado { get; set; }
+    /// <summary>Marcar/desmarcar una fila (Id de la fila, estado del check).</summary>
+    [Parameter] public EventCallback<(Guid Id, bool On)> OnSeleccionar { get; set; }
+    /// <summary>Marcar/desmarcar todo (select-all del header).</summary>
+    [Parameter] public EventCallback<bool> OnSeleccionarTodo { get; set; }
+    /// <summary>Limpiar la seleccion (Deseleccionar).</summary>
+    [Parameter] public EventCallback OnDeseleccionar { get; set; }
+    /// <summary>Quitar del directorio los seleccionados (la pagina inactiva sus vinculos y recarga).</summary>
+    [Parameter] public EventCallback OnQuitarSeleccion { get; set; }
+    /// <summary>Quitar del directorio una fila por su VinculoId (menu contextual).</summary>
+    [Parameter] public EventCallback<Guid> OnQuitarVinculo { get; set; }
+
+    // ---- Campos dinamicos (subsistema "personas", compartido: una empresa miembro de una unidad es una
+    // UnidadPersona con EntidadTipo=Empresa). Valores sobre el vinculo unidad-empresa activo principal. ----
+    /// <summary>Definiciones de campos propios (personas-campos), en orden.</summary>
+    [Parameter] public List<CampoDinDef>? Defs { get; set; }
+    /// <summary>Valores por registro (UnidadPersonaId) -> (defId -> valor).</summary>
+    [Parameter] public Dictionary<Guid, Dictionary<Guid, string?>>? Valores { get; set; }
+    /// <summary>Nombres para render de campos Usuario/Directorio (id -> nombre); solo lectura aqui.</summary>
+    [Parameter] public Dictionary<Guid, string>? UsuarioNombre { get; set; }
+    /// <summary>Guardar el valor de un campo propio (registro, definicion, valor).</summary>
+    [Parameter] public EventCallback<(Guid Registro, Guid Def, string? Valor)> OnGuardarDinamico { get; set; }
+    /// <summary>Abrir el modal de crear campo (boton "+").</summary>
+    [Parameter] public EventCallback OnCrearCampo { get; set; }
+    /// <summary>Abrir el modal de editar/eliminar un campo (engranaje de la columna).</summary>
+    [Parameter] public EventCallback<CampoDinDef> OnEditarCampoDef { get; set; }
 
     // Paginacion (footer canonico, dentro del contenedor .dtab-table). La pagina la controla el padre.
     [Parameter] public int Total { get; set; }
@@ -219,7 +374,16 @@ else
             return ordenado.Where(EsVisible);
         }
     }
-    private string GridCols => "34px " + string.Join(" ", ColsVisibles.Select(c => c.Width)) + " 44px";
+    private string GridCols => "34px 34px "
+        + string.Join(" ", ColsVisibles.Select(AnchoCol))
+        + (Defs is { Count: > 0 } ? " " + string.Join(" ", Defs.Select(_ => "minmax(140px,1fr)")) : "")
+        + " 40px 44px";
+    private string AnchoCol(ColDef c) => ColsWidth is not null && ColsWidth.TryGetValue(c.Key, out var w) && w > 0 ? w + "px" : c.Width;
+
+    // Campos dinamicos: lectura/escritura del valor sobre el registro (UnidadPersona activo principal).
+    private string? ValorDin(Guid reg, Guid defId) => Valores is not null && Valores.TryGetValue(reg, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+    private string? NombreRel(string? val) => !string.IsNullOrWhiteSpace(val) && Guid.TryParse(val, out var g) && UsuarioNombre is not null && UsuarioNombre.TryGetValue(g, out var n) ? n : val;
+    private Task GuardarDin(Guid reg, Guid defId, string? val) => OnGuardarDinamico.InvokeAsync((reg, defId, val));
 
     /// <summary>Un grupo de la vista agrupada: cabecera (etiqueta) + sus empresas.</summary>
     public sealed record Grupo(string Titulo, string? Color, string? Icono, List<EmpresaResumenDto> Items);
@@ -309,6 +473,93 @@ else
         string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
         string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim());
 
+    // ===== Interacciones de tabla: el orden lo aplica la pagina (antes de paginar); aqui reordenar
+    // por arrastre, redimensionar por puntero (JS compartido) y el menu contextual del clic derecho. =====
+    private DotNetObjectReference<DirectorioEmpresasVista>? _self;
+    private DotNetObjectReference<DirectorioEmpresasVista> Self => _self ??= DotNetObjectReference.Create(this);
+
+    private async Task IniciarReorder(MouseEventArgs e, string clave)
+    {
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", Self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        await OnReordenar.InvokeAsync((src, dest));
+    }
+    private async Task IniciarResize(MouseEventArgs e, string clave)
+    {
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", Self, clave, e.ClientX); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width) => await OnRedimensionar.InvokeAsync((clave, width));
+    private Task ResetResize(string clave) => OnRedimensionar.InvokeAsync((clave, 0));
+
+    // Menu contextual (clic derecho sobre una fila). Insertar/Duplicar son stubs; no hay borrado real
+    // (empresas es tabla global, sin endpoint de baja en el Directorio): "Quitar" remite a la ficha.
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private string? _toast;
+    private System.Threading.CancellationTokenSource? _toastCts;
+
+    // Barra de seleccion multiple (bulk): la confirmacion vive aqui; la accion real (inactivar los
+    // vinculos + recargar) la ejecuta la pagina via OnQuitarSeleccion.
+    private bool _confirmDel;
+    private bool _bulkBusy;
+    private async Task QuitarSeleccionAsync()
+    {
+        _bulkBusy = true;
+        try { await OnQuitarSeleccion.InvokeAsync(); }
+        finally { _bulkBusy = false; _confirmDel = false; }
+    }
+
+    private void AbrirCtx(MouseEventArgs ev, EmpresaResumenDto emp)
+    {
+        _ctxX = ev.ClientX; _ctxY = ev.ClientY;
+        var eid = emp.Id;
+        var vinc = emp.VinculoId;
+        _ctxItems = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => OnAbrir.InvokeAsync(eid)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlace(eid)),
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtx),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtx),
+            new(Sep: true),
+            new("Quitar del directorio", "fi-rr-trash", Danger: true, OnClick: () => QuitarUno(vinc)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlace(Guid id)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}directorio#empresa-{id}"); Toast("Enlace del registro copiado."); }
+        catch { Toast("No se pudo copiar el enlace."); }
+    }
+    private Task StubCtx() { Toast("Accion aun no disponible en esta version."); return Task.CompletedTask; }
+    // Quitar una empresa del directorio = inactivar su vinculo con la copropiedad (con confirmacion).
+    // No borra la empresa global; puede volver a vincularse luego.
+    private async Task QuitarUno(Guid vinculoId)
+    {
+        if (vinculoId == Guid.Empty) { Toast("Este registro no tiene un vinculo activo que quitar."); return; }
+        var ok = await Js.InvokeAsync<bool>("confirm", "Quitar este registro del directorio? Se inactiva su vinculo con la copropiedad.");
+        if (ok) await OnQuitarVinculo.InvokeAsync(vinculoId);
+    }
+    private void Toast(string m)
+    {
+        _toast = m;
+        _toastCts?.Cancel();
+        _toastCts = new System.Threading.CancellationTokenSource();
+        var tok = _toastCts.Token;
+        _ = InvokeAsync(async () =>
+        {
+            try { await Task.Delay(2600, tok); } catch { return; }
+            if (!tok.IsCancellationRequested) { _toast = null; StateHasChanged(); }
+        });
+    }
+
+    public void Dispose() { _self?.Dispose(); _toastCts?.Cancel(); }
+
     private static string ChipStyle(string? color)
         => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";
 
@@ -341,4 +592,41 @@ else
     .dtab-group--row { border-top: 1px solid var(--propia-border-divider); margin-top: 4px; }
     .dtab-group-chip { font-size: 12px; }
     .dtab-group-n { font-size: 11.5px; font-weight: 700; color: var(--propia-text-muted); background: var(--propia-bg-card-soft); border-radius: 10px; padding: 1px 9px; }
+    /* Header: ordenar (clic) + reordenar (arrastre) + redimensionar (handle). Espejo de Zonas .zc-th-*. */
+    .dtab-th-sortable { cursor: pointer; user-select: none; position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .dtab-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dtab-th-sortable:hover .dtab-th-lbl { color: var(--propia-brand); }
+    .dtab-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .dtab-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .dtab-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .dtab-col-rz:hover::after { background: var(--propia-brand); }
+    /* Toast breve para acciones del menu contextual (copiar enlace, stubs). */
+    .dtab-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 4300; background: var(--propia-brand); color: var(--propia-text-inverse); font-size: 12.5px; font-weight: 600; padding: 9px 16px; border-radius: 9px; box-shadow: 0 8px 24px rgba(20,30,50,.28); }
+    /* Seleccion multiple + barra bulk + confirmacion (espejo de Zonas .zc-sel*/.zc-selbar/.zc-confirm). */
+    .dtab-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .dtab-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .dtab-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .dtab-row-sel { background: var(--propia-brand-soft) !important; }
+    .dtab-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .dtab-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand); }
+    .dtab-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-danger-soft); background: var(--propia-bg-card); color: var(--propia-danger); font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .dtab-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
+    .dtab-selbar-del:disabled { opacity: .6; cursor: default; }
+    .dtab-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    .dtab-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+    .dtab-confirm { background: var(--propia-bg-card); border-radius: 14px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(20,30,50,.3); padding: 18px 20px 16px; }
+    .dtab-confirm-t { font-size: 15px; font-weight: 800; color: var(--propia-text-h1); }
+    .dtab-confirm-s { font-size: 12.5px; color: var(--propia-text-muted); margin: 6px 0 14px; }
+    .dtab-confirm-acts { display: flex; justify-content: flex-end; gap: 10px; }
+    .dtab-cbtn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .dtab-cbtn:disabled { opacity: .6; cursor: default; }
+    /* Columnas dinamicas: cabecera con engranaje (editar/eliminar) + "+" para crear (espejo de Zonas). */
+    .dtab-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .dtab-th-gear { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .dtab-th-dyn:hover .dtab-th-gear, .dtab-th-gear:focus-visible { opacity: 1; }
+    .dtab-th-gear:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .dtab-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .dtab-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-input); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .dtab-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    .dtab-addcol-cell { }
 </style>

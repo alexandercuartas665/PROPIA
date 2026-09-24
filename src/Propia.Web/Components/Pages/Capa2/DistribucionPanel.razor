@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 
 @if (!Embedded) { <PageTitle>Unidades Privadas - PROPIA</PageTitle> }
 
@@ -175,6 +176,25 @@
     </div>
 }
 
+@* Crear / editar UN campo (modal focalizado, replica de la maqueta). El "+" del header crea; el
+   engranaje de una columna dinamica edita (con Eliminar). La Formula y ajustes avanzados delegan
+   en el gestor completo (AbrirGestorAvanzado). *@
+@if (_crearCampoAbierto)
+{
+    <CrearCampoModal Prefijo="unidades"
+                     TituloSingular="unidad"
+                     Ejemplo="Ej. N de medidor, Color de fachada"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditar"
+                     TiposAvanzados="true"
+                     Guardado="RecargarTrasCrearCampo"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     AbrirGestorAvanzado="AbrirGestorDesdeCrear" />
+}
+
+@* Menu contextual (clic derecho sobre una fila de la tabla). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
 @if (_configCamposAbierto)
 {
     <div class="cg-back" @onclick="() => _configCamposAbierto = false">
@@ -341,11 +361,50 @@ else
                que solo hacia orden y visibilidad, y un boton "Configurar" en la cabecera con el
                panel completo). No se limita a la vista tabla porque configura CAMPOS, no solo
                columnas: en Tarjetas tambien hace falta. *@
+            @* "Columnas" (inline): orden, visibilidad y borrar campo dinamico. Crear campo nuevo = "+" del header. *@
             <div class="dst-menu-wrap">
-                <button type="button" class="dst-fbtn @(_configCamposAbierto ? "on" : "")" @onclick="AbrirConfigCampos" title="Campos de la unidad: orden, visibilidad, nombre, tipo y listas">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    <span>Campos</span>
+                <button type="button" class="dst-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                    <span>Columnas</span>
                 </button>
+                @if (_showColMenu)
+                {
+                    <div class="dst-menu-bd" @onclick="() => _showColMenu = false"></div>
+                    <div class="dst-menu dst-colmenu">
+                        <div class="dst-col-search">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                            <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="dst-col-list">
+                            @{ var _cols = ColumnasOrdenadas.ToList(); }
+                            @for (int _ci = 0; _ci < _cols.Count; _ci++)
+                            {
+                                var it = _cols[_ci];
+                                var idx = _ci;
+                                var label = it.EsCustom ? it.Campo!.Label : Etiqueta(it.Def!);
+                                if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                var fija = idx == 0;
+                                var visible = VisibleDe(it.Key);
+                                <div class="dst-col-it">
+                                    <button class="dst-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaAsync(it.Key, -1)">▲</button>
+                                    <button class="dst-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverColumnaAsync(it.Key, 1)">▼</button>
+                                    <span class="dst-col-name">@label @if (it.EsCustom) { <span class="dst-col-dyn" title="Campo personalizado">din</span> }</span>
+                                    @if (fija) { <span class="dst-col-fija">fija</span> }
+                                    else
+                                    {
+                                        <button class="dst-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColAsync(it.Key)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                    }
+                                    @if (it.EsCustom) { <button class="dst-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminar = it.Campo"><i class="fi fi-rr-trash"></i></button> }
+                                </div>
+                            }
+                        </div>
+                        <div class="dst-col-massacts">
+                            <button type="button" class="dst-col-mass" @onclick="OcultarTodasColAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                            <button type="button" class="dst-col-mass" @onclick="MostrarTodasColAsync"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                            <button type="button" class="dst-col-reset" @onclick="RestablecerColAsync">Restablecer</button>
+                        </div>
+                    </div>
+                }
             </div>
             @* Toggle Lista/Tabla, igual que en los demas modulos: la seleccion se recuerda por
                modulo (propia_view_unidades) y sobrevive al cierre de sesion. *@
@@ -361,6 +420,46 @@ else
                 </button>
             </div>
         </div>
+
+    @* Barra de seleccion multiple (estandar): aparece al haber filas marcadas. *@
+    @if (_sel.Count > 0 && (_vista == "tabla" || _unidades.Count == 0))
+    {
+        <div class="dst-selbar">
+            <span class="dst-selbar-n">@_sel.Count seleccionada@(_sel.Count == 1 ? "" : "s")</span>
+            <button type="button" class="dst-selbar-del" @onclick="() => _confirmDelSel = true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Eliminar
+            </button>
+            <button type="button" class="dst-selbar-x" @onclick="LimpiarSel">Deseleccionar</button>
+        </div>
+    }
+    @if (_confirmDelSel)
+    {
+        <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+            <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                <div class="dst-cfg-head"><strong>Eliminar @_sel.Count unidad@(_sel.Count == 1 ? "" : "es")</strong></div>
+                <div class="dst-cfg-sub">Esta accion elimina las unidades seleccionadas de forma permanente y no se puede deshacer. Los anexos y datos asociados tambien se veran afectados.</div>
+                <div class="dst-cfg-actions">
+                    <button type="button" class="dst-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                    <button type="button" class="dst-selbar-del" @onclick="EliminarSeleccionadasAsync" disabled="@_delBusy">@(_delBusy ? "Eliminando..." : "Si, eliminar")</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_campoAEliminar is not null)
+    {
+        <div class="dst-cfg-back" @onclick="() => { if (!_colBusy) _campoAEliminar = null; }">
+            <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                <div class="dst-cfg-head"><strong>Eliminar campo &quot;@_campoAEliminar.Label&quot;</strong></div>
+                <div class="dst-cfg-sub">Se elimina la definicion del campo y sus valores en TODAS las unidades. Esta accion no se puede deshacer.</div>
+                <div class="dst-cfg-actions">
+                    <button type="button" class="dst-fbtn" @onclick="() => _campoAEliminar = null" disabled="@_colBusy">Cancelar</button>
+                    <button type="button" class="dst-selbar-del" @onclick="EliminarCampoDinAsync" disabled="@_colBusy">@(_colBusy ? "Eliminando..." : "Si, eliminar campo")</button>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_unidades.Count > 0 && Filtradas.Count == 0)
     {
@@ -380,13 +479,34 @@ else
                    Columnas configurables (mostrar/ocultar/renombrar) y agrupables. *@
                 <div class="dst-scroll">
                     <div class="dst-head dst-grid2" style="grid-template-columns:@GridCols">
+                        <div class="dst-sel-cell"><label class="dst-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></div>
                         <div></div>
                         @foreach (var it in ColumnasVisibles)
                         {
-                            if (it.EsCustom) { <div title="Campo personalizado">@it.Campo!.Label</div> }
-                            else { <div>@Etiqueta(it.Def!)</div> }
+                            var itc = it;
+                            var clave = itc.Key;
+                            if (itc.EsCustom)
+                            {
+                                <div class="dst-th-dyn dst-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                     @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
+                                    <span class="dst-th-lbl">@itc.Campo!.Label</span>
+                                    @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                                    <button type="button" class="dst-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampo(itc.Campo!)"><i class="fi fi-rr-settings"></i></button>
+                                    <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="dst-th-dyn dst-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                     @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
+                                    <span class="dst-th-lbl">@Etiqueta(itc.Def!)</span>
+                                    @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                                    <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                                </div>
+                            }
                         }
                         <div></div>
+                        <div class="dst-addcol-h"><button type="button" class="dst-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></div>
                     </div>
                     @foreach (var item in FilasRender())
                     {
@@ -399,7 +519,8 @@ else
                         var uu = item.Unidad!;
                         var esAnexo = item.EsAnexo;
                         var nAnx = esAnexo ? 0 : Anexos(uu.Id).Count;
-                        <div class="dst-row dst-grid2 @(esAnexo ? "dst-row--anexo" : "") @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols">
+                        <div class="dst-row dst-grid2 @(esAnexo ? "dst-row--anexo" : "") @(_sel.Contains(uu.Id) ? "dst-row-sel" : "") @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols" @oncontextmenu="e => AbrirCtx(e, uu)" @oncontextmenu:preventDefault="true">
+                            <div class="dst-sel-cell"><label class="dst-chk"><input type="checkbox" checked="@_sel.Contains(uu.Id)" @onchange="@(e => ToggleSel(uu.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
                             <div class="dst-exp-col">
                                 <button type="button" class="dst-exp" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -538,6 +659,7 @@ else
                                     <button class="dst-anx-add" type="button" @onclick="() => AbrirAgregarAnexo(uu)" title="Agregar anexo (parqueadero / cuarto util / bodega)">+ anexo</button>
                                 }
                             </div>
+                            <div class="dst-addcol-cell"></div>
                         </div>
                         @if (!esAnexo && _anexoAddPara == uu.Id)
                         {
@@ -558,11 +680,14 @@ else
                     }
                     @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
-                    <div class="dst-row dst-newrow dst-grid2" style="grid-template-columns:@GridCols">
+                    @if (_altaAbierta)
+                    {
+                    <div class="dst-row dst-newrow dst-newrow--edit dst-grid2" style="grid-template-columns:@GridCols" @onkeydown="OnAltaKeydown">
+                        <div class="dst-sel-cell"></div>
                         <div class="dst-exp-col">
-                            <button type="button" class="dst-exp dst-exp-fijo" title="Abrir el modal de creacion" @onclick="OnExpandNuevaFila" disabled="@_creandoUnidad">
+                            <span class="dst-exp dst-exp-mut" title="Nuevo registro">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                            </button>
+                            </span>
                         </div>
                         @foreach (var it in ColumnasVisibles)
                         {
@@ -658,9 +783,29 @@ else
                             }
                         }
                         <div class="dst-act dst-act-nf">
-                            <button type="button" class="dst-row-add" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">@(_creandoUnidad ? "Creando..." : "+ Agregar")</button>
+                            <button type="button" class="dst-nf-ok" title="Guardar registro (Enter)" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                            </button>
+                            <button type="button" class="dst-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_creandoUnidad">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                            </button>
+                        </div>
+                        <div class="dst-addcol-cell"></div>
+                    </div>
+                    }
+                    else
+                    {
+                    <div class="dst-row dst-newrow dst-newrow--cta dst-grid2" style="grid-template-columns:@GridCols">
+                        <div class="dst-sel-cell"></div>
+                        <div class="dst-exp-col"></div>
+                        <div class="dst-nf-ctacell" style="grid-column: 3 / -1;">
+                            <button type="button" class="dst-nf-cta" @onclick="AbrirAlta">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                Agregar registro
+                            </button>
                         </div>
                     </div>
+                    }
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
@@ -841,6 +986,102 @@ else
     private string? _inlineMsgU;
     private readonly HashSet<Guid> _uniRecienCreados = new();
 
+    // ===== Seleccion multiple + borrado masivo (estandar vista tabla) =====
+    private readonly HashSet<Guid> _sel = new();
+    private bool _confirmDelSel;   // dialogo de confirmacion del borrado masivo
+    private bool _delBusy;
+    private void ToggleSel(Guid id, bool on) { if (on) _sel.Add(id); else _sel.Remove(id); }
+    private void LimpiarSel() => _sel.Clear();
+    private void ToggleSelAll(bool on)
+    {
+        _sel.Clear();
+        if (on) foreach (var it in FilasRender()) if (!it.EsGrupo && it.Unidad is not null) _sel.Add(it.Unidad.Id);
+    }
+    private bool TodasSeleccionadas
+    {
+        get { var ids = FilasRender().Where(x => !x.EsGrupo && x.Unidad is not null).Select(x => x.Unidad!.Id).ToList(); return ids.Count > 0 && ids.All(_sel.Contains); }
+    }
+    private async Task EliminarSeleccionadasAsync()
+    {
+        if (_sel.Count == 0) return;
+        _delBusy = true;
+        int ok = 0, fail = 0;
+        foreach (var id in _sel.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{id}"); if (r.IsSuccessStatusCode) ok++; else fail++; }
+            catch { fail++; }
+        }
+        _sel.Clear(); _confirmDelSel = false; _delBusy = false;
+        _inlineMsgU = fail == 0 ? $"{ok} unidad(es) eliminada(s)." : $"{ok} eliminada(s), {fail} con error.";
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    // ===== Alta inline "nace fila" (estandar): boton CTA -> fila nueva editable con Confirmar/Cancelar =====
+    private bool _altaAbierta;
+    private void AbrirAlta() => _altaAbierta = true;
+    private void CerrarAlta() => _altaAbierta = false;
+    private async Task OnAltaKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAlta();
+        else if (e.Key == "Enter") await CrearUnidadDesdeAltaAsync(false);
+    }
+
+    // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN). Crear campo = "+" del header (gestor completo). =====
+    private bool _showColMenu;
+    private string _colQ = "";
+    private bool _colBusy;
+    private UnidadCampoDefinicionDto? _campoAEliminar;
+    private async Task ToggleVisibleColAsync(string clave)
+    {
+        var visible = VisibleDe(clave);
+        await GuardarCampoConfigAsync(FilaConfig(clave) with { Oculto = visible });
+        await CargarCamposConfigAsync();
+        StateHasChanged();
+    }
+    private async Task MoverColumnaAsync(string clave, int dir)
+    {
+        var keys = ColumnasOrdenadas.Select(it => it.Key).ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna ('num') queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCampoConfigAsync(FilaConfig(keys[k]) with { Orden = k });
+        await CargarCamposConfigAsync();
+        StateHasChanged();
+    }
+    private async Task OcultarTodasColAsync()
+    {
+        foreach (var it in ColumnasOrdenadas)
+        {
+            if (!it.EsCustom && !it.Def!.Hideable) continue; // 'num' no se oculta
+            await GuardarCampoConfigAsync(FilaConfig(it.Key) with { Oculto = true });
+        }
+        await CargarCamposConfigAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColAsync()
+    {
+        foreach (var it in ColumnasOrdenadas) await GuardarCampoConfigAsync(FilaConfig(it.Key) with { Oculto = false });
+        await CargarCamposConfigAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColAsync()
+    {
+        foreach (var it in ColumnasOrdenadas) await GuardarCampoConfigAsync(FilaConfig(it.Key) with { Oculto = !VisiblePorDefecto(it.Key), Orden = null });
+        await CargarCamposConfigAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinAsync()
+    {
+        if (_campoAEliminar is null) return;
+        _colBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-campos/{_campoAEliminar.Id}");
+            _inlineMsgU = r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminar.Label}\" eliminado." : "No se pudo eliminar el campo.";
+            if (r.IsSuccessStatusCode) { await RecargarCamposDefAsync(); await CargarCamposConfigAsync(); }
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al eliminar el campo: " + ex.Message; }
+        _campoAEliminar = null; _colBusy = false; StateHasChanged();
+    }
+
     private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
     private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";
     private string LabelPisoSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelPiso) ? "Piso" : _resumen!.Identidad.LabelPiso!;
@@ -903,7 +1144,7 @@ else
         {
             var q = _q.Trim();
             var ci = System.Globalization.CultureInfo.InvariantCulture;
-            return _unidades
+            IEnumerable<UnidadDto> filtradas = _unidades
                 .Where(u => u.PrincipalId is null)   // los anexos (parqueaderos/cuartos) se anidan bajo su principal, no van al top-level
                 .Where(u => q == ""
                     || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
@@ -919,8 +1160,15 @@ else
                     "coef" => u.CoeficientePropiedad.ToString(ci),
                     "propietario" => u.PropietarioNombre ?? "",
                     _ => ""
-                }) ?? true)
-                .ToList();
+                }) ?? true);
+            // Orden por columna (clic en el header). OrderBy estable conserva el orden natural si no hay sort.
+            if (_sortKey is not null)
+            {
+                var sk = _sortKey;
+                var cmp = Comparer<UnidadDto>.Create((a, b) => CmpVal(SortStr(a, sk), SortStr(b, sk)) * _sortDir);
+                filtradas = filtradas.OrderBy(u => u, cmp);
+            }
+            return filtradas.ToList();
         }
     }
 
@@ -1166,9 +1414,9 @@ else
         }
     }
     private IEnumerable<ColItem> ColumnasVisibles => ColumnasOrdenadas.Where(EsVisibleItem);
-    private string GridCols => "34px "
-        + string.Join(" ", ColumnasVisibles.Select(it => it.EsCustom ? "170px" : it.Def!.Width))
-        + " 120px";
+    private string GridCols => "38px 34px "
+        + string.Join(" ", ColumnasVisibles.Select(it => _colW.TryGetValue(it.Key, out var w) ? w + "px" : (it.EsCustom ? "170px" : it.Def!.Width)))
+        + " 120px 40px";
 
     // Fila COMPLETA de config del campo con su estado actual. El PUT reemplaza la fila entera, asi que
     // siempre se manda todo y se muta con 'with' solo lo que cambia (no se pisa lo que no se toca).
@@ -1185,8 +1433,15 @@ else
         {
             var list = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config");
             _camposConfig = list?.ToDictionary(x => x.CampoClave, StringComparer.Ordinal) ?? new();
+            HidratarAnchos();
         }
         catch { }
+    }
+    // Hidrata los anchos persistidos (JSON de Formato, clave "w") en el cache _colW.
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _camposConfig) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
     }
 
     // El componente compartido de campos guarda contra los mismos endpoints (unidades-config /
@@ -1415,6 +1670,7 @@ else
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
                     _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
+                    _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
                 }
                 else { await CargarAsync(); }
@@ -1937,6 +2193,163 @@ else
         _configCamposAbierto = true;
     }
 
+    // ===== Crear / editar UN campo (modal focalizado, replica de la maqueta) =====
+    private bool _crearCampoAbierto;
+    private CampoDinDef? _campoAEditar;
+
+    // "+" del header de la tabla: crea un campo nuevo.
+    private void AbrirCrearCampo() { _campoAEditar = null; _crearCampoAbierto = true; }
+
+    // Engranaje de una columna dinamica: edita ese campo (con opcion Eliminar).
+    private void AbrirEditarCampo(UnidadCampoDefinicionDto c)
+    {
+        _campoAEditar = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones);
+        _crearCampoAbierto = true;
+    }
+
+    // Tras crear/editar/eliminar en el modal focalizado: refresca definiciones + config + tabla.
+    private async Task RecargarTrasCrearCampo()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        await RecargarCamposDefAsync();
+        await CargarCamposConfigAsync();
+        StateHasChanged();
+    }
+
+    // El modal delega en el gestor avanzado (Formula, etc.): cierra el focalizado y abre el completo.
+    private void AbrirGestorDesdeCrear()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        AbrirConfigCampos();
+    }
+
+    // ===== Interacciones de tabla como la maqueta: ordenar (clic header), mover columna (arrastre),
+    // menu contextual (clic derecho). El redimensionar de columnas usa un helper JS aparte. =====
+
+    // ---- Ordenar por columna (clic en el header; reclic invierte). Solo vista (cliente).
+    // El click que sigue a un arrastre lo traga el JS de reordenar, asi que aqui no hay guardas. ----
+    private string? _sortKey;
+    private int _sortDir = 1;
+    private void OrdenarPorColumna(string clave)
+    {
+        if (_sortKey == clave) _sortDir = -_sortDir; else { _sortKey = clave; _sortDir = 1; }
+        _pagina = 1;
+    }
+    private string SortStr(UnidadDto u, string k)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (k.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(k[3..], out var g))
+        { var cd = _camposDef.FirstOrDefault(c => c.Id == g); return cd is null ? "" : (MostrarCampoCelda(u.Id, cd) ?? ""); }
+        return k switch
+        {
+            "num" => u.Numero ?? "",
+            "torre" => _torres.FirstOrDefault(t => t.Id == u.TorreId)?.Nombre ?? "",
+            "piso" => u.Piso?.ToString(ci) ?? "",
+            "tipo" => EtiquetaU(u),
+            "estado" => u.Estado ?? "",
+            "area" => u.AreaM2?.ToString(ci) ?? "",
+            "coef" => u.CoeficientePropiedad.ToString(ci),
+            "matricula" => u.MatriculaInmobiliaria ?? "",
+            "refpago" => u.ReferenciaPago ?? "",
+            "prop" => u.PropietarioNombre ?? "",
+            "habitaciones" => u.Habitaciones?.ToString(ci) ?? "",
+            "banos" => u.Banos?.ToString(ci) ?? "",
+            "parqueaderos" => u.Parqueaderos?.ToString(ci) ?? "",
+            "cuota" => u.CuotaMensual?.ToString(ci) ?? "",
+            "observaciones" => u.Observaciones ?? "",
+            "agrupacion" => AgrupacionDe(u),
+            _ => ""
+        };
+    }
+    // Compara numerico si ambos son numeros; si no, texto (ordinal, ignora mayus/minus).
+    private static int CmpVal(string a, string b)
+    {
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1;   // numeros antes que texto
+        if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ---- Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu). ----
+    private async Task IniciarReorder(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ColumnasOrdenadas.Select(it => it.Key).ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCampoConfigAsync(FilaConfig(keys[i]) with { Orden = i });
+        await CargarCamposConfigAsync(); StateHasChanged();
+    }
+
+    // ---- Menu contextual (clic derecho sobre una fila). ----
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtx(MouseEventArgs e, UnidadDto uu)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtxAsync),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtxAsync),            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirFichaAsync(uu)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceAsync(uu)),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => { _sel.Clear(); _sel.Add(uu.Id); _confirmDelSel = true; StateHasChanged(); return Task.CompletedTask; }),
+        };
+        _ctxOpen = true;
+    }
+    private Task StubCtxAsync() { _inlineMsgU = "Accion aun no disponible en esta version."; StateHasChanged(); return Task.CompletedTask; }
+    private async Task CopiarEnlaceAsync(UnidadDto uu)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}mi-copropiedad#unidad-{uu.Id}"); _inlineMsgU = "Enlace del registro copiado."; }
+        catch { _inlineMsgU = "No se pudo copiar el enlace."; }
+        StateHasChanged();
+    }
+
+    // ---- Redimensionar columnas (arrastre del handle; doble clic autoajusta). El ancho PERSISTE por
+    // copropiedad dentro del JSON de Formato de la config del campo (clave "w"), sin migracion. ----
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private DotNetObjectReference<DistribucionPanel>? _self;
+    private async Task IniciarResize(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResize(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        var fila = FilaConfig(clave);
+        await GuardarCampoConfigAsync(fila with { Formato = ConAncho(fila.Formato, w) });
+        await CargarCamposConfigAsync(); StateHasChanged();
+    }
+    // Ancho persistido dentro del Formato JSON de cada columna, sin pisar el resto (Dec/Miles/Moneda...).
+    private static int? AnchoDeFormato(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o? ["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    public void Dispose() => _self?.Dispose();
+
     private async Task RecargarCamposDefAsync()
     {
         try { _camposDef = await Auth().GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); }
@@ -2005,6 +2418,7 @@ else
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave, StringComparer.Ordinal); } catch { _camposConfig = new(); }
+            HidratarAnchos();   // anchos de columna persistidos (Formato "w") -> cache _colW
             AplicarOrdenTiposCustom();   // el orden de los tipos propios sale de la config del campo 'tipo'
             try { _estadosUso = await http.GetFromJsonAsync<List<UnidadEstadoUsoDto>>("/api/mi-copropiedad/unidades/estados-uso") ?? new(); } catch { _estadosUso = new(); }
             try
@@ -2346,9 +2760,13 @@ else
     .dst-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); }
 
     /* Toggle Lista/Tabla (mismo look que Directorio/Usuarios) y vista Lista de unidades. */
-    .dst-viewtoggle { display: inline-flex; gap: 2px; background: var(--propia-border-divider); border-radius: 9px; padding: 3px; margin-left: auto; }
-    .dst-vt { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--propia-text-muted); font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+    /* Toggle Tarjetas/Tabla: control SEGMENTADO tipo pildora, milimetrico a la maqueta (.dst-viewtoggle/.dst-vt). */
+    .dst-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; margin-left: auto; }
+    .dst-vt { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--propia-text-secondary); font-size: 13px; font-weight: 600; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, color .14s, box-shadow .14s; }
+    .dst-vt svg { opacity: .9; }
+    .dst-vt:hover { color: var(--propia-text-body); background: var(--propia-bg-hover); }
     .dst-vt.on { background: var(--propia-bg-card); color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 1px 3px rgba(27,42,58,.12); }
+    .dst-vt.on svg { opacity: 1; }
     .dst-lista { display: flex; flex-direction: column; }
     .dst-lrow { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--propia-bg-card-soft); cursor: pointer; }
     .dst-lrow:last-child { border-bottom: 0; }
@@ -2379,7 +2797,7 @@ else
        header (position:sticky) quede fijo mientras se recorren las unidades. */
     .dst-scroll { overflow: auto; max-height: calc(100vh - 300px); }
     .dst-grid { display: grid; grid-template-columns: 120px 1fr .7fr 1.1fr .9fr 1fr 1.5fr 34px; align-items: center; gap: 8px; padding: 9px 16px; min-width: 940px; }
-    .dst-head { background: var(--propia-bg-table-head); font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); letter-spacing: .4px; border-bottom: 1px solid var(--propia-border-card); position: sticky; top: 0; z-index: 6; }
+    .dst-head { background: var(--propia-bg-table-head); font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); letter-spacing: .4px; text-transform: uppercase; border-bottom: 1px solid var(--propia-border-card); position: sticky; top: 0; z-index: 6; }
     .dst-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); cursor: pointer; }
     .dst-row:hover { background: var(--propia-brand-soft-2); }
     .dst-c { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2402,6 +2820,65 @@ else
 
     /* ===== Ola 4: tabla data-driven (expander + inline + grupos + configurar columnas) ===== */
     .dst-grid2 { display: grid; align-items: center; gap: 8px; padding: 6px 16px; min-width: max-content; }
+    /* Milimetrico maqueta: densidad header 14/16 y fila 11/16. */
+    .dst-head.dst-grid2 { padding-top: 14px; padding-bottom: 14px; }
+    .dst-row.dst-grid2 { padding-top: 11px; padding-bottom: 11px; }
+    /* Separadores verticales SUTILES SOLO en la cabecera (entre columnas de datos); nada en seleccion/expander/trailing ni en el cuerpo. */
+    .dst-head.dst-grid2 > div { border-right: 1px solid var(--propia-border-divider); }
+    .dst-head.dst-grid2 > div:first-child, .dst-head.dst-grid2 > div:nth-child(2), .dst-head.dst-grid2 > div:nth-last-child(2), .dst-head.dst-grid2 > div:last-child { border-right: 0; }
+    /* Seleccion multiple (1a columna) + barra bulk (milimetrico a .tbl-sel/.tbl-selbar de la maqueta). */
+    .dst-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .dst-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .dst-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .dst-row-sel { background: var(--propia-brand-soft) !important; }
+    .dst-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .dst-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand); }
+    .dst-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-danger-soft); background: var(--propia-bg-card); color: var(--propia-danger); font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .dst-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
+    .dst-selbar-del:disabled { opacity: .6; cursor: default; }
+    .dst-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    /* Menu "Columnas" inline (milimetrico a .dst-col-* de la maqueta): orden/visibilidad + borrar DIN. */
+    .dst-colmenu { min-width: 252px; }
+    .dst-col-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .dst-col-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .dst-col-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .dst-col-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .dst-col-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .dst-col-it:hover { background: var(--propia-brand-soft-2); }
+    .dst-col-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .dst-col-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .dst-col-mv:disabled { opacity: .35; cursor: default; }
+    .dst-col-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dst-col-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .dst-col-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .dst-col-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .dst-col-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .dst-col-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .dst-col-del:hover { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .dst-col-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .dst-col-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .dst-col-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .dst-col-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .dst-col-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    /* "+" de columna en el header (crea campo nuevo -> abre el gestor de campos). */
+    .dst-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .dst-addcol-cell { }  /* celda vacia de la columna "+" en filas de datos/alta (alinea el grid) */
+    /* Engranaje en cabecera de columnas dinamicas: editar/eliminar el campo (aparece al hover del th). */
+    .dst-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .dst-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dst-th-edit { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .dst-head .dst-th-dyn:hover .dst-th-edit, .dst-th-edit:focus-visible { opacity: 1; }
+    .dst-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    /* Header interactivo: clic ordena, arrastre mueve la columna, handle derecho redimensiona. */
+    .dst-th-sortable { cursor: pointer; user-select: none; position: relative; }
+    .dst-th-sortable:hover .dst-th-lbl { color: var(--propia-brand); }
+    .dst-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .dst-th-over { box-shadow: inset 2px 0 0 var(--propia-brand); }
+    .dst-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .dst-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .dst-col-rz:hover::after { background: var(--propia-brand); }
+    .dst-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .dst-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
     .dst-agrupar.on { border-color: var(--propia-brand, var(--propia-brand)); color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); font-weight: 700; }
     .dst-cols { display: inline-flex; align-items: center; gap: 6px; }
     /* Expander: se ve al pasar el mouse por la fila. */
@@ -2451,6 +2928,22 @@ else
     .dst-row-add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--propia-brand-border); background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .dst-row-add:hover:not(:disabled) { background: var(--propia-brand-soft); }
     .dst-row-add:disabled { opacity: .5; cursor: default; }
+    /* Alta "nace fila" (milimetrico maqueta): CTA compacto morado + fila editable + foco de celda redondeado + acciones ✓/×. */
+    .dst-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
+    .dst-nf-cta:hover { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    .dst-newrow--cta { cursor: default; }
+    .dst-nf-ctacell { display: flex; align-items: center; }
+    .dst-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; background: transparent !important; cursor: default; }
+    .dst-newrow--edit { background: var(--propia-brand-soft-2); }
+    /* Input de la fila nueva en edicion: renuncia a su borde; el foco dibuja borde brand 1.5px + glow radio 8 (sin doble borde). */
+    .dst-newrow--edit .dst-nf-inp { border: 1px solid transparent; border-radius: 8px; background: transparent; box-shadow: none; transition: border-color .12s, box-shadow .12s; }
+    .dst-newrow--edit .dst-nf-inp:focus, .dst-newrow--edit .dst-nf-inp:focus-visible { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
+    .dst-nf-ok, .dst-nf-cancel { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; cursor: pointer; }
+    .dst-nf-ok { border: 0; background: var(--propia-brand); color: #fff; }
+    .dst-nf-ok:hover:not(:disabled) { filter: brightness(.96); }
+    .dst-nf-cancel { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); }
+    .dst-nf-cancel:hover:not(:disabled) { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .dst-nf-ok:disabled, .dst-nf-cancel:disabled { opacity: .6; cursor: default; }
     .dst-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 #34C759; }
     .dst-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: #15703F; color: var(--propia-text-inverse); font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
     .dst-ro { color: var(--propia-text-secondary); padding: 5px 2px; }

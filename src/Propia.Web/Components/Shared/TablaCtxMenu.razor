@@ -1,0 +1,62 @@
+@* ============================================================================================
+   Menu contextual (clic derecho) para la vista tabla. Replica de U.ctxMenu de la maqueta:
+   backdrop transparente que cierra al clic/clic-derecho, y una lista de acciones posicionada en
+   el cursor (clamp al viewport con CSS min()). El padre controla Abierto/X/Y e Items.
+
+   Uso: el padre guarda _ctxX/_ctxY/_ctxItems/_ctxOpen y renderiza
+   <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen=false" />
+   Cada item = TablaCtxMenu.Item(Label, Icon, Danger, Sep, OnClick). Estilos ctx-* globales.
+   ============================================================================================ *@
+
+@if (Abierto && Items is not null)
+{
+    <div class="ctx-bd" @onclick="CerrarAsync" @oncontextmenu="CerrarAsync" @oncontextmenu:preventDefault="true"></div>
+    <div class="ctx-menu" role="menu" style="left: min(@(X)px, calc(100vw - 244px)); top: min(@(Y)px, calc(100vh - 340px));">
+        @foreach (var it in Items)
+        {
+            if (it.Sep)
+            {
+                <div class="ctx-sep"></div>
+            }
+            else
+            {
+                var item = it;
+                <button type="button" class="ctx-it @(item.Danger ? "ctx-it--danger" : "")" role="menuitem" @onclick="() => EjecutarAsync(item)">
+                    @if (!string.IsNullOrEmpty(item.Icon)) { <i class="fi @item.Icon"></i> }
+                    <span>@item.Label</span>
+                </button>
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Una accion del menu. Sep=true dibuja un separador (ignora el resto).</summary>
+    public sealed record Item(string? Label = null, string Icon = "", bool Danger = false, bool Sep = false, Func<Task>? OnClick = null);
+
+    [Parameter] public bool Abierto { get; set; }
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public List<Item>? Items { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+
+    private async Task CerrarAsync() => await Cerrado.InvokeAsync();
+
+    private async Task EjecutarAsync(Item it)
+    {
+        await Cerrado.InvokeAsync();
+        if (it.OnClick is not null) await it.OnClick();
+    }
+}
+
+<style>
+    .ctx-bd { position: fixed; inset: 0; z-index: 4200; background: transparent; }
+    .ctx-menu { position: fixed; z-index: 4201; min-width: 224px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 34px rgba(30,40,60,.22); padding: 6px; }
+    .ctx-it { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
+    .ctx-it .fi { font-size: 14px; color: var(--propia-text-muted); width: 16px; text-align: center; }
+    .ctx-it:hover { background: var(--propia-brand-soft-2); }
+    .ctx-it--danger { color: var(--propia-danger); }
+    .ctx-it--danger .fi { color: var(--propia-danger); }
+    .ctx-it--danger:hover { background: var(--propia-danger-soft); }
+    .ctx-sep { height: 1px; background: var(--propia-border-divider); margin: 5px 4px; }
+</style>

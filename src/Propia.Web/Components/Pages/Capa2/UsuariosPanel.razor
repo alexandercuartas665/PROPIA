@@ -79,17 +79,67 @@
         </div>
         @if (_tab != EstadoUsuarioTenant.Pendiente)
         {
-            @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
-               (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
-            <div class="usr-viewtoggle" style="margin-left:auto;">
-                <button class="usr-vbtn @(_vista == "lista" ? "on" : "")" @onclick='() => SetVista("lista")'>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                    Tarjetas
-                </button>
-                <button class="usr-vbtn @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")'>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
-                    Tabla
-                </button>
+            <div class="usr-bar-right">
+                @* "Columnas" (solo en vista Tabla): orden, visibilidad. Usuarios NO tiene campos
+                   propios, asi que no hay "+", ni engranaje, ni borrar-campo (solo configurar las fijas). *@
+                @if (_vista == "tabla")
+                {
+                    <div class="usr-menu-wrap">
+                        <button type="button" class="usr-fbtn @(_showColMenuU ? "on" : "")" @onclick="() => _showColMenuU = !_showColMenuU" title="Columnas: orden y visibilidad">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                            <span>Columnas</span>
+                        </button>
+                        @if (_showColMenuU)
+                        {
+                            <div class="usr-menu-bd" @onclick="() => _showColMenuU = false"></div>
+                            <div class="usr-menu usr-colmenu">
+                                <div class="usr-col-search">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                                    <input placeholder="Buscar columna..." value="@_colQU" @oninput="@(e => _colQU = e.Value?.ToString() ?? string.Empty)" />
+                                </div>
+                                <div class="usr-col-list">
+                                    @{ var _colsU = ClavesOrdenadasU().ToList(); }
+                                    @for (int _ci = 0; _ci < _colsU.Count; _ci++)
+                                    {
+                                        var k = _colsU[_ci];
+                                        var idx = _ci;
+                                        var label = ColLabelU(k);
+                                        if (!string.IsNullOrWhiteSpace(_colQU) && !label.Contains(_colQU, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                        var fija = idx == 0;
+                                        var visible = VisibleColU(k);
+                                        <div class="usr-col-it">
+                                            <button class="usr-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaUAsync(k, -1)">&#9650;</button>
+                                            <button class="usr-col-mv" disabled="@(idx == 0 || idx == _colsU.Count - 1)" @onclick="() => MoverColumnaUAsync(k, 1)">&#9660;</button>
+                                            <span class="usr-col-name">@label</span>
+                                            @if (fija) { <span class="usr-col-fija">fija</span> }
+                                            else
+                                            {
+                                                <button class="usr-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColUAsync(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="usr-col-massacts">
+                                    <button type="button" class="usr-col-mass" @onclick="OcultarTodasColUAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                                    <button type="button" class="usr-col-mass" @onclick="MostrarTodasColUAsync"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                                    <button type="button" class="usr-col-reset" @onclick="RestablecerColUAsync">Restablecer</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
+                   (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
+                <div class="usr-viewtoggle">
+                    <button class="usr-vbtn @(_vista == "lista" ? "on" : "")" @onclick='() => SetVista("lista")'>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                        Tarjetas
+                    </button>
+                    <button class="usr-vbtn @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")'>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                        Tabla
+                    </button>
+                </div>
             </div>
         }
     </div>
@@ -156,17 +206,15 @@
         }
         else
         {
-            var lista = _usuarios.Where(u => u.Estado == _tab)
-                .Where(u => _fd?.Pasa(campo => campo switch
-                {
-                    "nombre" => u.NombreCompleto,
-                    "documento" => u.Documento,
-                    "email" => u.Email ?? "",
-                    "rol" => u.RolId?.ToString() ?? "",
-                    "etiqueta" => string.Join(",", u.Etiquetas.Select(e => e.Id)),
-                    _ => ""
-                }) ?? true)
-                .ToList();
+            var lista = UsuariosFiltrados().ToList();
+            @* Orden por columna (clic en cabecera de la vista Tabla), antes de paginar. *@
+            @if (_sortKeyU is not null)
+            {
+                var sk = _sortKeyU;
+                lista = lista
+                    .OrderBy(u => u, Comparer<UsuarioListaDto>.Create((a, b) => CmpValTabla(SortStrU(a, sk), SortStrU(b, sk)) * _sortDirU))
+                    .ToList();
+            }
             @if (lista.Count == 0 && _vista == "lista")
             {
                 <div class="usr-empty">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
@@ -182,10 +230,40 @@
                 var totalPagU = lista.Count == 0 ? 1 : (int)Math.Ceiling(lista.Count / (double)_porPagina);
                 var pagU = Math.Clamp(_pagina, 1, totalPagU);
                 var pageU = lista.Skip((pagU - 1) * _porPagina).Take(_porPagina).ToList();
+                @* Barra de seleccion multiple: revocar acceso en lote (solo usuarios activos). *@
+                @if (_selU.Count > 0)
+                {
+                    <div class="usr-selbar">
+                        <span class="usr-selbar-n">@_selU.Count seleccionado@(_selU.Count == 1 ? "" : "s")</span>
+                        <button type="button" class="usr-selbar-del" @onclick="() => _confirmRevocarU = true">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            Revocar acceso
+                        </button>
+                        <button type="button" class="usr-selbar-x" @onclick="LimpiarSelU">Deseleccionar</button>
+                    </div>
+                }
+                @if (_confirmRevocarU)
+                {
+                    <div class="usr-cfg-back" @onclick="() => { if (!_revocandoU) _confirmRevocarU = false; }">
+                        <div class="usr-confirm" @onclick:stopPropagation="true">
+                            <div class="usr-confirm-t">Revocar @_selU.Count acceso@(_selU.Count == 1 ? "" : "s")</div>
+                            <div class="usr-confirm-s">Invalida la sesion y bloquea el ingreso de los usuarios seleccionados a la copropiedad. Se puede reactivar luego.</div>
+                            <div class="usr-confirm-acts">
+                                <button type="button" class="usr-btn-ghost" @onclick="() => _confirmRevocarU = false" disabled="@_revocandoU">Cancelar</button>
+                                <button type="button" class="usr-selbar-del" @onclick="RevocarSelUAsync" disabled="@_revocandoU">@(_revocandoU ? "Revocando..." : "Si, revocar")</button>
+                            </div>
+                        </div>
+                    </div>
+                }
                 <UsuariosTablaVista Usuarios="pageU" Roles="_roles"
                                     Total="lista.Count" Pagina="_pagina" PorPagina="_porPagina"
                                     PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
-                                    OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla" />
+                                    OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
+                                    SortKey="@_sortKeyU" SortDir="_sortDirU" OnOrdenar="OrdenarPorColumnaU"
+                                    OnRevocar="RevocarAccesoAsync" OnMensaje="MostrarMensajeInfo"
+                                    Columnas="ColsVisiblesU().ToList()" ColLabels="LabelsU()" GridStyle="@UtbGridStyleU"
+                                    Seleccion="_selU" TodasSel="TodasSelU" OnToggleSel="ToggleSelU" OnToggleSelAll="ToggleSelAllU"
+                                    OnReordenarCol="ReordenarColUAsync" OnRedimensionarCol="RedimensionarColUAsync" />
             }
         }
     }
@@ -853,6 +931,224 @@
     };
     private int _pagina = 1;
     private int _porPagina = 25;
+
+    // Orden por columna en la vista Tabla (clic en cabecera; reclic invierte). Se aplica sobre
+    // la lista filtrada ANTES de paginar (la paginacion la hace esta pagina, no la sub-vista).
+    private string? _sortKeyU;
+    private int _sortDirU = 1;
+    private void OrdenarPorColumnaU(string clave)
+    {
+        if (_sortKeyU == clave) _sortDirU = -_sortDirU; else { _sortKeyU = clave; _sortDirU = 1; }
+        _pagina = 1;
+    }
+    private static string SortStrU(UsuarioListaDto u, string clave)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return clave switch
+        {
+            "documento" => u.Documento ?? "",
+            "usuario" => u.NombreCompleto ?? "",
+            "email" => u.Email ?? "",
+            "telefono" => u.Telefono ?? "",
+            "rol" => u.RolNombre ?? "",
+            "ultimoacceso" => u.UltimoAcceso?.ToString("yyyy-MM-dd HH:mm", ci) ?? "",
+            "estado" => u.Estado.ToString(),
+            _ => ""
+        };
+    }
+    // Comparacion numerica-aware (copia del patron de Zonas): numeros como numeros, resto texto.
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+    // Mensaje breve emitido por la sub-vista (p.ej. "Enlace copiado").
+    private void MostrarMensajeInfo(string m) { _msg = m; _msgClass = "alert-info"; StateHasChanged(); }
+
+    // Lista filtrada (tab + reglas dinamicas), sin ordenar; se reusa en la vista y para saber
+    // que ids son seleccionables. El orden por columna se aplica aparte, en la rama Tabla.
+    private IEnumerable<UsuarioListaDto> UsuariosFiltrados()
+    {
+        if (_usuarios is null) return Enumerable.Empty<UsuarioListaDto>();
+        return _usuarios.Where(u => u.Estado == _tab)
+            .Where(u => _fd?.Pasa(campo => campo switch
+            {
+                "nombre" => u.NombreCompleto,
+                "documento" => u.Documento,
+                "email" => u.Email ?? "",
+                "rol" => u.RolId?.ToString() ?? "",
+                "etiqueta" => string.Join(",", u.Etiquetas.Select(e => e.Id)),
+                _ => ""
+            }) ?? true);
+    }
+
+    // ===================== Seleccion multiple + revocar masivo =====================
+    // El HashSet vive aqui (la pagina pagina): el hijo pinta los checkboxes y sube eventos.
+    private readonly HashSet<Guid> _selU = new();
+    private bool _confirmRevocarU;
+    private bool _revocandoU;
+    // Solo son seleccionables los usuarios ACTIVOS del listado filtrado (los inactivos no se revocan).
+    private IEnumerable<Guid> IdsSeleccionablesU()
+        => UsuariosFiltrados().Where(u => u.Estado == EstadoUsuarioTenant.Activo).Select(u => u.UsuarioTenantId);
+    private bool TodasSelU { get { var ids = IdsSeleccionablesU().ToList(); return ids.Count > 0 && ids.All(_selU.Contains); } }
+    private void ToggleSelU((Guid id, bool on) a) { if (a.on) _selU.Add(a.id); else _selU.Remove(a.id); }
+    private void ToggleSelAllU(bool on) { _selU.Clear(); if (on) foreach (var id in IdsSeleccionablesU()) _selU.Add(id); }
+    private void LimpiarSelU() => _selU.Clear();
+    private async Task RevocarSelUAsync()
+    {
+        if (_selU.Count == 0) return;
+        _revocandoU = true;
+        int ok = 0, fail = 0;
+        foreach (var id in _selU.ToList())
+        {
+            try
+            {
+                var r = await Auth().PostAsJsonAsync($"/api/usuarios/{id}/revocar", new RevocarAccesoRequest(null));
+                if (r.IsSuccessStatusCode) ok++; else fail++;
+            }
+            catch { fail++; }
+        }
+        _selU.Clear(); _confirmRevocarU = false; _revocandoU = false;
+        _msg = fail == 0 ? $"{ok} acceso(s) revocado(s)." : $"{ok} revocado(s), {fail} con error.";
+        _msgClass = fail == 0 ? "alert-success" : "alert-danger";
+        await CargarAsync();
+    }
+
+    // ===================== Columnas configurables (config server-side, entidad 'usuario') =====================
+    // Catalogo FIJO de columnas (Usuarios no tiene campos propios): clave + label + ancho por defecto.
+    private sealed record ColUsr(string Clave, string Label, string Width);
+    private static readonly ColUsr[] UsuarioColumnas =
+    {
+        new("documento", "Documento", "186px"),
+        new("usuario", "Usuario", "1.3fr"),
+        new("email", "Email", "1.5fr"),
+        new("telefono", "Telefono", ".9fr"),
+        new("rol", "Rol", "118px"),
+        new("ultimoacceso", "Ultimo acceso", "132px"),
+        new("estado", "Estado", "88px"),
+    };
+    private static ColUsr? CatColU(string clave) => Array.Find(UsuarioColumnas, c => c.Clave == clave);
+
+    private Dictionary<string, UnidadCampoConfigDto> _cfgUsr = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _colWU = new(StringComparer.Ordinal);
+    private bool _showColMenuU;
+    private string _colQU = "";
+
+    private IEnumerable<string> ClavesCandidatasU() => UsuarioColumnas.Select(c => c.Clave);
+    private bool VisibleColU(string clave) => _cfgUsr.TryGetValue(clave, out var c) ? !c.Oculto : true;
+    private int OrdenColU(string clave, int fallback) => _cfgUsr.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadasU()
+        => ClavesCandidatasU().Select((k, i) => (k, ord: OrdenColU(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisiblesU() => ClavesOrdenadasU().Where(VisibleColU);
+    private string ColLabelU(string clave)
+    {
+        if (_cfgUsr.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CatColU(clave)?.Label ?? clave;
+    }
+    private static string ColWidthU(string clave) => CatColU(clave)?.Width ?? "minmax(120px,150px)";
+    // grid = [seleccion 38px] [columnas visibles] [accion 34px]
+    private string UtbGridStyleU => "grid-template-columns: 38px " +
+        string.Join(" ", ColsVisiblesU().Select(k => _colWU.TryGetValue(k, out var w) ? w + "px" : ColWidthU(k))) + " 34px";
+    private Dictionary<string, string> LabelsU() => ClavesCandidatasU().ToDictionary(k => k, ColLabelU);
+
+    private GuardarUnidadCampoConfigRequest FilaConfigU(string clave)
+    {
+        _cfgUsr.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "usuario");
+    }
+    private async Task GuardarCfgUAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task CargarCfgUAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=usuario") ?? new();
+            _cfgUsr = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosU();
+        }
+        catch { }
+    }
+    private void HidratarAnchosU()
+    {
+        _colWU.Clear();
+        foreach (var kv in _cfgUsr) { var w = AnchoDeFormatoTabla(kv.Value.Formato); if (w is > 0) _colWU[kv.Key] = w.Value; }
+    }
+    private async Task ToggleVisibleColUAsync(string clave)
+    {
+        var visible = VisibleColU(clave);
+        await GuardarCfgUAsync(FilaConfigU(clave) with { Oculto = visible });
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaUAsync(string clave, int dir)
+    {
+        var keys = ClavesOrdenadasU().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgUAsync(FilaConfigU(keys[k]) with { Orden = k });
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColUAsync()
+    {
+        var keys = ClavesOrdenadasU().ToList();
+        for (int k = 0; k < keys.Count; k++)
+        {
+            if (k == 0) continue; // la 1a columna no se oculta
+            await GuardarCfgUAsync(FilaConfigU(keys[k]) with { Oculto = true });
+        }
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColUAsync()
+    {
+        foreach (var k in ClavesOrdenadasU()) await GuardarCfgUAsync(FilaConfigU(k) with { Oculto = false });
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColUAsync()
+    {
+        foreach (var k in ClavesOrdenadasU()) await GuardarCfgUAsync(FilaConfigU(k) with { Oculto = false, Orden = null });
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    // Reordenar / redimensionar disparados por la sub-vista (que posee las celdas de header + el JS).
+    private async Task ReordenarColUAsync((string src, string dest) a)
+    {
+        if (a.src == a.dest) return;
+        var keys = ClavesOrdenadasU().ToList();
+        var from = keys.IndexOf(a.src); var to = keys.IndexOf(a.dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, a.src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgUAsync(FilaConfigU(keys[i]) with { Orden = i });
+        await CargarCfgUAsync(); StateHasChanged();
+    }
+    private async Task RedimensionarColUAsync((string clave, int width) a)
+    {
+        int? w = a.width <= 0 ? null : Math.Max(70, a.width);
+        if (w is null) _colWU.Remove(a.clave); else _colWU[a.clave] = w.Value;
+        var fila = FilaConfigU(a.clave);
+        await GuardarCfgUAsync(fila with { Formato = ConAnchoTabla(fila.Formato, w) });
+        await CargarCfgUAsync(); HidratarAnchosU(); StateHasChanged();
+    }
+    // Ancho manual persistido en el JSON de Formato bajo la clave "w" (copiado de Zonas).
+    private static int? AnchoDeFormatoTabla(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAnchoTabla(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+
     private string _vista = "lista";  // "lista" | "tabla" (las mismas dos vistas del Directorio)
     private const string VistaKey = "propia_view_usuarios";
     private string? _msg; private string _msgClass = "alert-info";
@@ -954,13 +1250,14 @@
                 await RestaurarVistaAsync();
                 await CargarRolesAsync();
                 await CargarAsync();
+                await CargarCfgUAsync();
                 StateHasChanged();
             }
         }
         catch { /* prerender */ }
     }
 
-    private void SetTab(EstadoUsuarioTenant tab) { _tab = tab; _ = CargarAsync(); }
+    private void SetTab(EstadoUsuarioTenant tab) { _tab = tab; _selU.Clear(); _ = CargarAsync(); }
 
     private async Task CargarAsync()
     {

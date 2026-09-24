@@ -10,6 +10,14 @@ public record PersonaResumenDto(
     Guid Id, TipoDocumento TipoDocumento, string Documento,
     string Nombres, string Apellidos, string? Email, string? Telefono,
     string? FotoUrl, bool PerfilIncompleto, EstadoDirectorio Estado,
+    // Vinculo representativo (activo principal) de la persona con la copropiedad ACTUAL. Es lo que
+    // se inactiva para "quitar del directorio" (no hay borrado de la persona global). Default vacio
+    // cuando el DTO se arma fuera del contexto de vinculos (ej. sugeridos del tablero).
+    Guid VinculoId = default,
+    // Id del VINCULO UNIDAD-PERSONA activo principal (UnidadPersona.Id). Es el "registro" sobre el que
+    // viven los valores de campos dinamicos (PersonaCampoValor, el mismo almacen que usa Residentes).
+    // null cuando la persona no esta vinculada a ninguna unidad (solo tiene vinculo con la copropiedad).
+    Guid? RegistroCamposId = default,
     IReadOnlyList<EtiquetaChipDto>? Etiquetas = null);
 
 public record PersonaDetalleDto(
@@ -41,6 +49,13 @@ public record EmpresaResumenDto(
     string RazonSocial, string? NombreComercial,
     string? Email, string? Telefono, string? LogoUrl,
     bool PerfilIncompleto, EstadoDirectorio Estado,
+    // Vinculo representativo (activo principal) de la empresa con la copropiedad ACTUAL. Es lo que
+    // se inactiva para "quitar del directorio" (no hay borrado de la empresa global).
+    Guid VinculoId = default,
+    // Id del VINCULO UNIDAD-EMPRESA activo principal (UnidadPersona.Id con EntidadTipo=Empresa). Es el
+    // "registro" de los valores de campos dinamicos (PersonaCampoValor: empresas y personas comparten
+    // almacen cuando son miembros de una unidad). null si la empresa no es miembro de ninguna unidad.
+    Guid? RegistroCamposId = default,
     IReadOnlyList<EtiquetaChipDto>? Etiquetas = null);
 
 public record EmpresaDetalleDto(

@@ -7,6 +7,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 
 @* Equipos y activos: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
    Mismo contenido que tenia alli - resumen, tarjetas/lista y alta rapida - sin acordeon y
@@ -68,15 +69,67 @@ else
             <input class="mod-search-inp" placeholder="Buscar equipo o activo..."
                    @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
         </div>
-        @* Campos: unica entrada a la configuracion del modulo, en la posicion canonica de Unidades
-           (barra de herramientas, junto al toggle). No se limita a la vista tabla porque configura
-           CAMPOS, no solo columnas: en Tarjetas tambien hace falta. *@
-        <div class="ea-menu-wrap" style="margin-left:auto;">
-            <button type="button" class="ea-fbtn @(_selAbierto ? "on" : "")" @onclick="() => _selAbierto = true" title="Campos de los equipos: orden, visibilidad, nombre y campos propios">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                <span>Campos</span>
-            </button>
-        </div>
+        <div class="ea-bar-spacer"></div>
+        @if (_view == "list")
+        {
+            @* "Columnas" (inline, milimetrico a Unidades): orden, visibilidad y borrar campo dinamico.
+               Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
+            <div class="ea-menu-wrap">
+                <button type="button" class="ea-fbtn @(_showColMenuE ? "on" : "")" @onclick="() => _showColMenuE = !_showColMenuE" title="Columnas: orden, visibilidad y campos">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                    <span>Columnas</span>
+                </button>
+                @if (_showColMenuE)
+                {
+                    <div class="ea-menu-bd" @onclick="() => _showColMenuE = false"></div>
+                    <div class="ea-menu ea-colmenu">
+                        <div class="ea-col-search">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                            <input placeholder="Buscar campo..." value="@_colQE" @oninput="@(e => _colQE = e.Value?.ToString() ?? string.Empty)" />
+                        </div>
+                        <div class="ea-col-list">
+                            @{ var _colsE = ClavesOrdenadas().ToList(); }
+                            @for (int _ci = 0; _ci < _colsE.Count; _ci++)
+                            {
+                                var k = _colsE[_ci];
+                                var idx = _ci;
+                                var label = ColLabel(k);
+                                if (!string.IsNullOrWhiteSpace(_colQE) && !label.Contains(_colQE, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                var fija = idx == 0;
+                                var visible = VisibleCol(k);
+                                var custom = CampoCustom(k);
+                                <div class="ea-col-it">
+                                    <button class="ea-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverColumnaEAsync(k, -1)">&#9650;</button>
+                                    <button class="ea-col-mv" disabled="@(idx == 0 || idx == _colsE.Count - 1)" @onclick="() => MoverColumnaEAsync(k, 1)">&#9660;</button>
+                                    <span class="ea-col-name">@label @if (custom is not null) { <span class="ea-col-dyn" title="Campo personalizado">din</span> }</span>
+                                    @if (fija) { <span class="ea-col-fija">fija</span> }
+                                    else
+                                    {
+                                        <button class="ea-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColEAsync(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                    }
+                                    @if (custom is not null) { <button class="ea-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarE = custom"><i class="fi fi-rr-trash"></i></button> }
+                                </div>
+                            }
+                        </div>
+                        <div class="ea-col-massacts">
+                            <button type="button" class="ea-col-mass" @onclick="OcultarTodasColEAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                            <button type="button" class="ea-col-mass" @onclick="MostrarTodasColEAsync"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                            <button type="button" class="ea-col-reset" @onclick="RestablecerColEAsync">Restablecer</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            @* En Tarjetas no hay columnas ni "+": aqui se mantiene la entrada a la config de campos. *@
+            <div class="ea-menu-wrap">
+                <button type="button" class="ea-fbtn @(_selAbierto ? "on" : "")" @onclick="() => _selAbierto = true" title="Campos de los equipos: orden, visibilidad, nombre y campos propios">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <span>Campos</span>
+                </button>
+            </div>
+        }
         <div class="ea-viewtoggle">
             <button type="button" class="ea-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -181,19 +234,81 @@ else
         var totalPagE = listaE.Count == 0 ? 1 : (int)Math.Ceiling(listaE.Count / (double)_porPagina);
         var pagE = Math.Clamp(_pagina, 1, totalPagE);
         var pageE = listaE.Skip((pagE - 1) * _porPagina).Take(_porPagina);
+        @if (_selE.Count > 0)
+        {
+            <div class="ea-selbar">
+                <span class="ea-selbar-n">@_selE.Count seleccionado@(_selE.Count == 1 ? "" : "s")</span>
+                <button type="button" class="ea-selbar-del" @onclick="() => _confirmDelSelE = true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                    Eliminar
+                </button>
+                <button type="button" class="ea-selbar-x" @onclick="LimpiarSelE">Deseleccionar</button>
+            </div>
+        }
+        @if (_confirmDelSelE)
+        {
+            <div class="ea-cfg-back" @onclick="() => { if (!_delBusyE) _confirmDelSelE = false; }">
+                <div class="ea-confirm" @onclick:stopPropagation="true">
+                    <div class="ea-confirm-t">Eliminar @_selE.Count equipo@(_selE.Count == 1 ? "" : "s")</div>
+                    <div class="ea-confirm-s">Esta accion elimina los equipos/activos seleccionados de forma permanente y no se puede deshacer.</div>
+                    <div class="ea-confirm-acts">
+                        <button type="button" class="ea-fbtn" @onclick="() => _confirmDelSelE = false" disabled="@_delBusyE">Cancelar</button>
+                        <button type="button" class="ea-selbar-del" @onclick="EliminarSelEquiposAsync" disabled="@_delBusyE">@(_delBusyE ? "Eliminando..." : "Si, eliminar")</button>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_campoAEliminarE is not null)
+        {
+            <div class="ea-cfg-back" @onclick="() => { if (!_colBusyE) _campoAEliminarE = null; }">
+                <div class="ea-confirm" @onclick:stopPropagation="true">
+                    <div class="ea-confirm-t">Eliminar campo "@_campoAEliminarE.Label"</div>
+                    <div class="ea-confirm-s">Se elimina la definicion del campo y todos sus valores en los equipos. No se puede deshacer.</div>
+                    <div class="ea-confirm-acts">
+                        <button type="button" class="ea-fbtn" @onclick="() => _campoAEliminarE = null" disabled="@_colBusyE">Cancelar</button>
+                        <button type="button" class="ea-selbar-del" @onclick="EliminarCampoDinEAsync" disabled="@_colBusyE">@(_colBusyE ? "Eliminando..." : "Si, eliminar campo")</button>
+                    </div>
+                </div>
+            </div>
+        }
         <div class="ea-list">
             @* Columnas dirigidas por la config compartida (unidades-config, entidad 'equipo'): sistema y
                propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
             <div class="ea-list-head ea-listgrid" style="@EaGridStyle">
+                <div class="ea-sel-cell"><label class="ea-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSelE" @onchange="@(e => ToggleSelAllE((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
-                @foreach (var k in ColsVisibles()) { <div title="@(EsCustom(k) ? "Campo personalizado" : null)">@ColLabel(k).ToUpperInvariant()</div> }
+                @foreach (var k in ColsVisibles())
+                {
+                    var clave = k;
+                    if (CampoCustom(clave) is not null)
+                    {
+                        <div class="ea-th-dyn ea-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="ev => IniciarReorderE(ev, clave)" @onclick="() => OrdenarPorColumnaE(clave)">
+                            <span class="ea-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKeyE == clave) { <span class="ea-th-arrow">@((MarkupString)(_sortDirE > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <button type="button" class="ea-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoE(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            <span class="ea-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="ev => IniciarResizeE(ev, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeE(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="ea-th-dyn ea-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                             @onmousedown="ev => IniciarReorderE(ev, clave)" @onclick="() => OrdenarPorColumnaE(clave)">
+                            <span class="ea-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
+                            @if (_sortKeyE == clave) { <span class="ea-th-arrow">@((MarkupString)(_sortDirE > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            <span class="ea-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="ev => IniciarResizeE(ev, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeE(clave)" @ondblclick:stopPropagation="true"></span>
+                        </div>
+                    }
+                }
                 <div></div>
+                <div class="ea-addcol-h"><button type="button" class="ea-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoE"><i class="fi fi-rr-plus"></i></button></div>
             </div>
             @foreach (var e in pageE)
             {
                 var eq = e;
                 @* Datos editables inline; el expansor (primera columna, se ve al hover) abre la ficha. *@
-                <div class="ea-list-row ea-listgrid" style="@EaGridStyle">
+                <div class="ea-list-row ea-listgrid @(_selE.Contains(eq.Id) ? "ea-row-sel" : "")" style="@EaGridStyle" @oncontextmenu="ev => AbrirCtxE(ev, eq)" @oncontextmenu:preventDefault="true">
+                    <div class="ea-sel-cell"><label class="ea-chk"><input type="checkbox" checked="@_selE.Contains(eq.Id)" @onchange="@(ev => ToggleSelE(eq.Id, (bool)(ev.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
                     <div class="ea-col-exp">
                         <button type="button" class="ea-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaEquipoAsync(eq)">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -309,15 +424,18 @@ else
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
                         </button>
                     </div>
+                    <div class="ea-addcol-cell"></div>
                 </div>
             }
-            @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
-            <div class="ea-list-newrow ea-listgrid" style="@EaGridStyle" @key="_nonce">
+            @* Alta "nace fila": CTA morado -> fila editable con foco redondeado + ✓/×. *@
+            @if (_altaAbiertaE)
+            {
+            <div class="ea-list-newrow ea-newrow--edit ea-listgrid" style="@EaGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownE">
+                <div class="ea-sel-cell"></div>
                 <div class="ea-col-exp">
-                    <button type="button" class="ea-exp-fijo" tabindex="-1" title="Crear y abrir la ficha completa"
-                            @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
+                    <span class="ea-exp-mut" title="Nuevo equipo o activo">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    </button>
+                    </span>
                 </div>
                 @foreach (var k in ColsVisibles())
                 {
@@ -386,10 +504,30 @@ else
                             break;
                     }
                 }
-                <div class="ea-list-act">
-                    <button type="button" class="ea-row-add" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">+ Agregar</button>
+                <div class="ea-list-act ea-nf-actbtns">
+                    <button type="button" class="ea-nf-ok" title="Guardar (Enter)" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button type="button" class="ea-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaE" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                    </button>
+                </div>
+                <div class="ea-addcol-cell"></div>
+            </div>
+            }
+            else
+            {
+            <div class="ea-list-newrow ea-newrow--cta ea-listgrid" style="@EaGridStyle">
+                <div class="ea-sel-cell"></div>
+                <div class="ea-col-exp"></div>
+                <div class="ea-nf-ctacell" style="grid-column: 3 / -1;">
+                    <button type="button" class="ea-nf-cta" @onclick="AbrirAltaE">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar registro
+                    </button>
                 </div>
             </div>
+            }
             @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0"). *@
             <TablaPager Total="listaE.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="equipos"
                         PaginaChanged="p => _pagina = p"
@@ -412,6 +550,24 @@ else
 @* Selector de Campos (Fase 1): el gestor propio de campos dinamicos se reemplaza por el componente
    compartido. Orden/visibilidad/alias viven en unidades-config (entidad 'equipo'); los campos
    propios en equipos-campos. *@
+
+@* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
+@if (_crearCampoAbiertoE)
+{
+    <CrearCampoModal Prefijo="equipos"
+                     TituloSingular="equipo"
+                     Ejemplo="Ej. Aseguradora, Responsable"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditarE"
+                     TiposAvanzados="false"
+                     Guardado="RecargarTrasCrearCampoE"
+                     Cerrado="() => { _crearCampoAbiertoE = false; _campoAEditarE = null; }"
+                     AbrirGestorAvanzado="AbrirGestorDesdeCrearE" />
+}
+
+@* Menu contextual (clic derecho sobre una fila). *@
+<TablaCtxMenu Abierto="_ctxOpenE" X="_ctxXE" Y="_ctxYE" Items="_ctxItemsE" Cerrado="() => _ctxOpenE = false" />
+
 @if (_selAbierto)
 {
     <div class="ea-cfg-back" @onclick="() => _selAbierto = false">
@@ -489,7 +645,7 @@ else
     private IEnumerable<EquipoActivoDto> Filtrados()
     {
         var q = _q.Trim();
-        return _equipos
+        var baseSeq = _equipos
             .Where(e => q == "" || e.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
             .Where(e => _fd?.Pasa(campo => campo switch
             {
@@ -503,6 +659,14 @@ else
                 "cantidad" => e.Cantidad.ToString(),
                 _ => ""
             }) ?? true);
+        // Orden por columna (clic en header); sin sort mantiene el orden natural del backend.
+        if (_sortKeyE is not null)
+        {
+            var sk = _sortKeyE;
+            var cmp = Comparer<EquipoActivoDto>.Create((a, b) => CmpValTabla(SortStrE(a, sk), SortStrE(b, sk)) * _sortDirE);
+            return baseSeq.OrderBy(e => e, cmp);
+        }
+        return baseSeq;
     }
 
     private sealed class EquipoDraft
@@ -603,6 +767,7 @@ else
         {
             var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=equipo") ?? new();
             _cfgEquipo = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosE();
         }
         catch { _cfgEquipo = new(StringComparer.Ordinal); }
     }
@@ -679,7 +844,264 @@ else
         _ when !EsCustom(clave) => "minmax(110px,1fr)",   // modelo, serie, ubicacion, proveedor, ...
         _ => "minmax(120px,150px)"                        // campos propios
     };
-    private string EaGridStyle => "grid-template-columns: 34px " + string.Join(" ", ColsVisibles().Select(ColWidth)) + " 60px";
+    private string EaGridStyle => "grid-template-columns: 38px 34px " + string.Join(" ", ColsVisibles().Select(k => _colWE.TryGetValue(k, out var w) ? w + "px" : ColWidth(k))) + " 60px 40px";
+
+    // ===== Seleccion multiple + borrado masivo (estandar vista tabla, como Unidades/Zonas) =====
+    private readonly HashSet<Guid> _selE = new();
+    private bool _confirmDelSelE;
+    private bool _delBusyE;
+    private void ToggleSelE(Guid id, bool on) { if (on) _selE.Add(id); else _selE.Remove(id); }
+    private void LimpiarSelE() => _selE.Clear();
+    private void ToggleSelAllE(bool on) { _selE.Clear(); if (on) foreach (var e in Filtrados()) _selE.Add(e.Id); }
+    private bool TodasSelE { get { var ids = Filtrados().Select(e => e.Id).ToList(); return ids.Count > 0 && ids.All(_selE.Contains); } }
+    private async Task EliminarSelEquiposAsync()
+    {
+        if (_selE.Count == 0) return;
+        _delBusyE = true; int ok = 0, fail = 0;
+        foreach (var id in _selE.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{id}"); if (r.IsSuccessStatusCode) ok++; else fail++; }
+            catch { fail++; }
+        }
+        _selE.Clear(); _confirmDelSelE = false; _delBusyE = false;
+        Msg(fail == 0 ? $"{ok} equipo(s) eliminado(s)." : $"{ok} eliminado(s), {fail} con error.", fail == 0);
+        await CargarAsync(); StateHasChanged();
+    }
+
+    // ===== Alta inline "nace fila" (estandar, como Unidades/Zonas) =====
+    private bool _altaAbiertaE;
+    private void AbrirAltaE() { _altaAbiertaE = true; _draft.Reset(); _reveal = 0; _focusPending = true; }
+    private void CerrarAltaE() { _altaAbiertaE = false; }
+    private async Task OnAltaKeydownE(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAltaE();
+        else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+    }
+
+    // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN). Crear campo = "+" del header; editar
+    // /eliminar = engranaje. Persistencia identica a Unidades: unidades-config con Entidad="equipo". =====
+    private bool _showColMenuE;
+    private string _colQE = "";
+    private bool _colBusyE;
+    private EquipoCampoDefinicionDto? _campoAEliminarE;
+
+    private GuardarUnidadCampoConfigRequest FilaConfigE(string clave)
+    {
+        _cfgEquipo.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: "equipo");
+    }
+    private async Task GuardarCfgEAsync(GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task CargarCfgEAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=equipo") ?? new();
+            _cfgEquipo = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosE();
+        }
+        catch { }
+    }
+    private async Task ToggleVisibleColEAsync(string clave)
+    {
+        var visible = VisibleCol(clave);
+        await GuardarCfgEAsync(FilaConfigE(clave) with { Oculto = visible });
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaEAsync(string clave, int dir)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= keys.Count) return; // la 1a columna ('nombre') queda fija
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgEAsync(FilaConfigE(keys[k]) with { Orden = k });
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColEAsync()
+    {
+        var keys = ClavesOrdenadas().ToList();
+        for (int k = 0; k < keys.Count; k++)
+        {
+            if (k == 0) continue; // 'nombre' no se oculta
+            await GuardarCfgEAsync(FilaConfigE(keys[k]) with { Oculto = true });
+        }
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColEAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgEAsync(FilaConfigE(k) with { Oculto = false });
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColEAsync()
+    {
+        foreach (var k in ClavesOrdenadas()) await GuardarCfgEAsync(FilaConfigE(k) with { Oculto = !VisibleColDefault(k), Orden = null });
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinEAsync()
+    {
+        if (_campoAEliminarE is null) return;
+        _colBusyE = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos-campos/{_campoAEliminarE.Id}");
+            Msg(r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminarE.Label}\" eliminado." : "No se pudo eliminar el campo.", r.IsSuccessStatusCode);
+            if (r.IsSuccessStatusCode) await CargarCamposYConfigAsync();
+        }
+        catch (Exception ex) { Msg("Error al eliminar el campo: " + ex.Message, false); }
+        _campoAEliminarE = null; _colBusyE = false; StateHasChanged();
+    }
+
+    // ===== Crear / editar UN campo (modal focalizado, replica de la maqueta) =====
+    private bool _crearCampoAbiertoE;
+    private CampoDinDef? _campoAEditarE;
+    private void AbrirCrearCampoE() { _campoAEditarE = null; _crearCampoAbiertoE = true; }
+    private void AbrirEditarCampoE(EquipoCampoDefinicionDto c)
+    {
+        _campoAEditarE = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones);
+        _crearCampoAbiertoE = true;
+    }
+    private async Task RecargarTrasCrearCampoE()
+    {
+        _crearCampoAbiertoE = false; _campoAEditarE = null;
+        await CargarCamposYConfigAsync();
+        StateHasChanged();
+    }
+    private void AbrirGestorDesdeCrearE()
+    {
+        _crearCampoAbiertoE = false; _campoAEditarE = null;
+        _selAbierto = true;
+    }
+
+    // ===== Interacciones de tabla (como la maqueta): ordenar, mover columna, menu contextual =====
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string? _sortKeyE;
+    private int _sortDirE = 1;
+    private void OrdenarPorColumnaE(string k)
+    {
+        if (_sortKeyE == k) _sortDirE = -_sortDirE; else { _sortKeyE = k; _sortDirE = 1; }
+        _pagina = 1;
+    }
+    private string SortStrE(EquipoActivoDto e, string k)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var cd = CampoCustom(k);
+        if (cd is not null) return ValorCampo(e.Id, cd.Id) ?? "";
+        return k switch
+        {
+            "nombre" => e.Nombre ?? "",
+            "categoria" => e.Categoria.ToString(),
+            "tipo" => e.Tipo.ToString(),
+            "cantidad" => e.Cantidad.ToString(ci),
+            "estado" => e.Estado.ToString(),
+            "reservable" => e.EsReservable ? "Si" : "No",
+            "modelo" => e.Modelo ?? "",
+            "serie" => e.NumeroSerie ?? "",
+            "ubicacion" => e.Ubicacion ?? "",
+            "observaciones" => e.Observaciones ?? "",
+            "vidautil" => e.VidaUtilAnios?.ToString(ci) ?? "",
+            "valoradq" => e.ValorAdquisicion?.ToString(ci) ?? "",
+            "proveedor" => e.Proveedor ?? "",
+            "numfactura" => e.NumeroFactura ?? "",
+            "marca" => e.Marca ?? "",
+            "codigobarra" => e.CodigoBarra ?? "",
+            "fechainstalacion" => e.FechaInstalacion?.ToString("yyyy-MM-dd") ?? "",
+            "garantiahasta" => e.GarantiaHasta?.ToString("yyyy-MM-dd") ?? "",
+            "fechaadquisicion" => e.FechaAdquisicion?.ToString("yyyy-MM-dd") ?? "",
+            _ => ""
+        };
+    }
+
+    // Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu Columnas)
+    private async Task IniciarReorderE(MouseEventArgs ev, string clave)
+    {
+        _selfE ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _selfE, clave, ev.ClientX, ev.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgEAsync(FilaConfigE(keys[i]) with { Orden = i });
+        await CargarCfgEAsync(); StateHasChanged();
+    }
+
+    private bool _ctxOpenE;
+    private double _ctxXE, _ctxYE;
+    private List<TablaCtxMenu.Item> _ctxItemsE = new();
+    private void AbrirCtxE(MouseEventArgs ev, EquipoActivoDto eq)
+    {
+        _ctxXE = ev.ClientX; _ctxYE = ev.ClientY;
+        _ctxItemsE = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: StubCtxE),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: StubCtxE),            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirFichaEquipoAsync(eq)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceE(eq)),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => EliminarEquipoAsync(eq.Id, eq.Nombre)),
+        };
+        _ctxOpenE = true;
+    }
+    private Task StubCtxE() { Msg("Accion aun no disponible en esta version.", false); StateHasChanged(); return Task.CompletedTask; }
+    private async Task CopiarEnlaceE(EquipoActivoDto eq)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}configuracion-copropiedad#equipo-{eq.Id}"); Msg("Enlace del registro copiado.", true); }
+        catch { Msg("No se pudo copiar el enlace.", false); }
+        StateHasChanged();
+    }
+
+    // Redimensionar columnas; el ancho PERSISTE por copropiedad en el JSON de Formato (clave "w").
+    private readonly Dictionary<string, int> _colWE = new(StringComparer.Ordinal);
+    private DotNetObjectReference<EquiposActivosPanel>? _selfE;
+    private async Task IniciarResizeE(MouseEventArgs e, string clave)
+    {
+        _selfE ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfE, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResizeE(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colWE.Remove(clave); else _colWE[clave] = w.Value;
+        var fila = FilaConfigE(clave);
+        await GuardarCfgEAsync(fila with { Formato = ConAnchoTablaE(fila.Formato, w) });
+        await CargarCfgEAsync(); HidratarAnchosE(); StateHasChanged();
+    }
+    private void HidratarAnchosE()
+    {
+        _colWE.Clear();
+        foreach (var kv in _cfgEquipo) { var w = AnchoDeFormatoTablaE(kv.Value.Formato); if (w is > 0) _colWE[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormatoTablaE(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o? ["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAnchoTablaE(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    public void Dispose() => _selfE?.Dispose();
 
     private static string[] OpcionesDe(EquipoCampoDefinicionDto d) => string.IsNullOrWhiteSpace(d.Opciones)
         ? System.Array.Empty<string>() : d.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -845,7 +1267,7 @@ else
                     catch { }
                     _nuCampos.Clear();
                 }
-                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++; _focusPending = true;
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _altaAbiertaE = false; _nonce++; _focusPending = true;
                 await CargarAsync();
                 Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
             }
@@ -947,11 +1369,89 @@ else
     .ea-fsel:focus { border-color: var(--propia-brand, var(--propia-brand)); }
     .ea-fclear { border: 1px solid var(--propia-brand-border); border-radius: 9px; padding: 8px 12px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft); cursor: pointer; font-family: inherit; }
 
-    .ea-viewtoggle { display: flex; gap: 0; border: 1px solid var(--propia-border-card); border-radius: 9px; overflow: hidden; }
+    .ea-bar-spacer { flex: 1 1 auto; }
     .ea-menu-wrap { position: relative; }
     .ea-fbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--propia-text-secondary); background: var(--propia-bg-card); cursor: pointer; font-family: inherit; }
-    .ea-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 7px 12px; border: 0; background: var(--propia-bg-card); color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
-    .ea-vt.on { background: var(--propia-brand, var(--propia-brand)); color: var(--propia-text-inverse); }
+    .ea-fbtn.on { border-color: var(--propia-brand); color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    /* Toggle Tarjetas/Tabla: control SEGMENTADO tipo pildora, milimetrico a la maqueta. */
+    .ea-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; }
+    .ea-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
+    .ea-vt.on { background: var(--propia-bg-card); color: var(--propia-brand); box-shadow: 0 1px 2px rgba(20,30,50,.08); }
+    /* Menus (backdrop + popover) para Columnas. */
+    .ea-menu-bd { position: fixed; inset: 0; z-index: 40; }
+    .ea-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 190px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    /* Menu "Columnas" inline (milimetrico a .dst-col-* de Unidades): orden/visibilidad + borrar DIN. */
+    .ea-colmenu { min-width: 252px; padding: 8px; }
+    .ea-col-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .ea-col-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .ea-col-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .ea-col-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .ea-col-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .ea-col-it:hover { background: var(--propia-brand-soft-2); }
+    .ea-col-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .ea-col-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .ea-col-mv:disabled { opacity: .35; cursor: default; }
+    .ea-col-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ea-col-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .ea-col-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .ea-col-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .ea-col-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .ea-col-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ea-col-del:hover { color: #D7263D; border-color: #F0C9C9; background: #FBEBEB; }
+    .ea-col-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .ea-col-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .ea-col-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .ea-col-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .ea-col-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    /* "+" de columna en el header (crea campo nuevo -> abre el gestor de campos). */
+    .ea-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .ea-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .ea-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    /* Engranaje en cabecera de columnas dinamicas: editar/eliminar el campo (aparece al hover del th). */
+    .ea-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .ea-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ea-th-edit { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .ea-list-head .ea-th-dyn:hover .ea-th-edit, .ea-th-edit:focus-visible { opacity: 1; }
+    .ea-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .ea-th-sortable { cursor: pointer; user-select: none; position: relative; }
+    .ea-th-sortable:hover .ea-th-lbl { color: var(--propia-brand); }
+    .ea-th-arrow { flex: 0 0 auto; font-size: 8px; color: var(--propia-brand); line-height: 1; }
+    .ea-th-over { box-shadow: inset 2px 0 0 var(--propia-brand); }
+    .ea-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .ea-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .ea-col-rz:hover::after { background: var(--propia-brand); }
+    /* Seleccion multiple: columna de checkbox + fila resaltada + barra de acciones. */
+    .ea-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .ea-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .ea-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .ea-row-sel { background: var(--propia-brand-soft) !important; }
+    .ea-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; margin-bottom: 10px; }
+    .ea-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand); }
+    .ea-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #F0C9C9; background: var(--propia-bg-card); color: #D7263D; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .ea-selbar-del:hover:not(:disabled) { background: #FBEBEB; }
+    .ea-selbar-del:disabled { opacity: .6; cursor: default; }
+    .ea-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    /* Dialogo de confirmacion (borrado masivo / borrar campo). */
+    .ea-confirm { background: var(--propia-bg-card); border-radius: 14px; padding: 20px 22px; width: 420px; max-width: calc(100vw - 32px); box-shadow: 0 20px 60px rgba(20,30,50,.3); }
+    .ea-confirm-t { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); margin-bottom: 8px; }
+    .ea-confirm-s { font-size: 12.5px; line-height: 1.55; color: var(--propia-text-secondary); margin-bottom: 16px; }
+    .ea-confirm-acts { display: flex; justify-content: flex-end; gap: 8px; }
+    /* Alta "nace fila": CTA morado + fila editable + foco redondeado + acciones ✓/×. */
+    .ea-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
+    .ea-nf-cta:hover { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    .ea-newrow--cta { cursor: default; }
+    .ea-nf-ctacell { display: flex; align-items: center; }
+    .ea-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; display: inline-flex; align-items: center; justify-content: center; }
+    .ea-newrow--edit { background: var(--propia-brand-soft-2); }
+    .ea-newrow--edit .ea-row-inp { border: 1px solid transparent; background: transparent; border-radius: 8px; box-shadow: none; }
+    .ea-newrow--edit .ea-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
+    .ea-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+    .ea-nf-ok, .ea-nf-cancel { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; cursor: pointer; }
+    .ea-nf-ok { border: 0; background: var(--propia-brand); color: #fff; }
+    .ea-nf-ok:hover:not(:disabled) { filter: brightness(.96); }
+    .ea-nf-cancel { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); }
+    .ea-nf-cancel:hover:not(:disabled) { color: #D7263D; border-color: #F0C9C9; background: #FBEBEB; }
+    .ea-nf-ok:disabled, .ea-nf-cancel:disabled { opacity: .6; cursor: default; }
 
     .ea-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; }
     .ea-card { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); cursor: pointer; }
@@ -1012,7 +1512,10 @@ else
     .ea-cell:focus { border-color: var(--propia-brand, var(--propia-brand)); background: var(--propia-bg-card); color: var(--propia-text-body); }
     .ea-cell-nom { font-weight: 700; color: var(--propia-text-body); }
     select.ea-cell { cursor: pointer; }
-    .ea-list-head { padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); border-bottom: 1px solid var(--propia-border-divider); }
+    .ea-list-head { padding: 12px 14px; background: var(--propia-bg-app); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-secondary); border-bottom: 1px solid var(--propia-border-card); }
+    /* Separadores verticales sutiles SOLO en la cabecera, entre columnas de datos. */
+    .ea-list-head.ea-listgrid > div { border-right: 1px solid var(--propia-border-divider); }
+    .ea-list-head.ea-listgrid > div:first-child, .ea-list-head.ea-listgrid > div:nth-child(2), .ea-list-head.ea-listgrid > div:nth-last-child(2), .ea-list-head.ea-listgrid > div:last-child { border-right: 0; }
     .ea-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
     .ea-list-row:hover { background: var(--propia-bg-card-soft); }
     .ea-list-link { font-size: 13px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
@@ -1035,7 +1538,7 @@ else
     /* Movil: la vista Lista (grid de 6 columnas fijas) hace scroll horizontal en vez de recortarse. */
     @@media (max-width: 640px) {
         .ea-list { overflow-x: auto; }
-        .ea-listgrid { min-width: 640px; }
+        .ea-listgrid { min-width: 720px; }
     }
 
     /* Campos dinamicos: celda de valor + modal Configurar */

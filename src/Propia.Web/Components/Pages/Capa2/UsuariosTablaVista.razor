@@ -4,27 +4,66 @@
    DOM mientras se renderiza, y la otra vista los necesitaria igual). *@
 @using Propia.Application.UsuariosAccesos
 @using Propia.Domain.Enums
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
 
 <div class="usr-table">
     <div class="utb-scroll">
-        <div class="utb-head utb-grid">
-            <div>DOCUMENTO</div><div>USUARIO</div><div>EMAIL</div><div>TELEFONO</div>
-            <div>ROL</div><div>ULTIMO ACCESO</div><div>ESTADO</div><div></div>
+        @* Cabecera: seleccion (todo) + columnas configurables (orden/visibilidad/ancho por config,
+           entidad 'usuario'). Cada th ordena al clic, se reordena por arrastre y se redimensiona por
+           el handle. El grid-template-columns lo fija el padre (GridStyle) segun columnas visibles. *@
+        <div class="utb-head utb-grid" style="@GridStyle">
+            <div class="utb-sel-cell"><label class="utb-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSel" @onchange="@(e => OnToggleSelAll.InvokeAsync((bool)(e.Value ?? false)))" /></label></div>
+            @foreach (var k in Columnas)
+            {
+                var clave = k;
+                <div class="utb-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                     @onmousedown="e => IniciarReorderU(e, clave)" @onclick="() => OnOrdenar.InvokeAsync(clave)">
+                    <span class="utb-th-lbl">@LabelUp(clave)</span>
+                    @if (SortKey == clave) { <span class="utb-th-arrow">@((MarkupString)(SortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                    <span class="utb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar"
+                          @onmousedown="e => IniciarResizeU(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true"
+                          @onclick:stopPropagation="true" @ondblclick="() => ResetResizeU(clave)" @ondblclick:stopPropagation="true"></span>
+                </div>
+            }
+            <div></div>
         </div>
         @foreach (var u in Usuarios)
         {
             var uu = u;
-            <div class="utb-row utb-grid">
-                <div class="utb-c">@(string.IsNullOrWhiteSpace(u.Documento) ? "-" : u.Documento)</div>
-                <button type="button" class="utb-link" title="Abrir usuario" @onclick="() => OnEditar.InvokeAsync(uu)">@u.NombreCompleto</button>
-                <div class="utb-c">@(u.Email ?? "-")</div>
-                <div class="utb-c">@(u.Telefono ?? "-")</div>
-                <div class="utb-c"><span class="usr-rol">@u.RolNombre</span></div>
-                <div class="utb-c">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</div>
-                <div class="utb-c">
-                    @if (u.Estado == EstadoUsuarioTenant.Activo) { <span class="utb-badge utb-badge--ok">Activo</span> }
-                    else { <span class="utb-badge">@u.Estado</span> }
-                </div>
+            <div class="utb-row utb-grid @(Seleccion.Contains(uu.UsuarioTenantId) ? "utb-row-sel" : "")" style="@GridStyle" @oncontextmenu="e => AbrirCtxU(e, uu)" @oncontextmenu:preventDefault="true">
+                <div class="utb-sel-cell"><label class="utb-chk"><input type="checkbox" checked="@Seleccion.Contains(uu.UsuarioTenantId)" disabled="@(uu.Estado != EstadoUsuarioTenant.Activo)" @onclick:stopPropagation="true" @onchange="@(e => OnToggleSel.InvokeAsync((uu.UsuarioTenantId, (bool)(e.Value ?? false))))" /></label></div>
+                @foreach (var k in Columnas)
+                {
+                    switch (k)
+                    {
+                        case "documento":
+                            <div class="utb-c">@(string.IsNullOrWhiteSpace(u.Documento) ? "-" : u.Documento)</div>
+                            break;
+                        case "usuario":
+                            <button type="button" class="utb-link" title="Abrir usuario" @onclick="() => OnEditar.InvokeAsync(uu)">@u.NombreCompleto</button>
+                            break;
+                        case "email":
+                            <div class="utb-c">@(u.Email ?? "-")</div>
+                            break;
+                        case "telefono":
+                            <div class="utb-c">@(u.Telefono ?? "-")</div>
+                            break;
+                        case "rol":
+                            <div class="utb-c"><span class="usr-rol">@u.RolNombre</span></div>
+                            break;
+                        case "ultimoacceso":
+                            <div class="utb-c">@(u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro")</div>
+                            break;
+                        case "estado":
+                            <div class="utb-c">
+                                @if (u.Estado == EstadoUsuarioTenant.Activo) { <span class="utb-badge utb-badge--ok">Activo</span> }
+                                else { <span class="utb-badge">@u.Estado</span> }
+                            </div>
+                            break;
+                    }
+                }
                 <div class="utb-act">
                     @if (u.Estado == EstadoUsuarioTenant.Activo)
                     {
@@ -42,35 +81,54 @@
             </div>
         }
         @* Fila de alta: crea/encuentra la persona en el Directorio y le envia la invitacion.
-           El "+" del inicio y el placeholder "Nuevo usuario..." son los que la anuncian. *@
+           El "+" del inicio y el placeholder "Nuevo usuario..." son los que la anuncian.
+           Se pinta por las mismas columnas visibles para no desalinearse al reordenar/ocultar. *@
         @* @@key limpia la fila al invitar; @@oninput SIN value= evita perder pulsaciones
            (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server). *@
-        <div class="utb-newrow utb-grid" @key="_nonce">
-            <div class="utb-nf-first">
-                <span class="utb-nf-plus">+</span>
-                <select class="utb-inp utb-inp-tipo" @bind="_d.TipoDocumento">
-                    <option value="@TipoDocumento.CC">CC</option>
-                    <option value="@TipoDocumento.CE">CE</option>
-                    <option value="@TipoDocumento.PA">PA</option>
-                    <option value="@TipoDocumento.TI">TI</option>
-                </select>
-                <input class="utb-inp" @ref="_firstRef" placeholder="Documento" @oninput="@(e => _d.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
-            </div>
-            <div class="utb-nf-nombre">
-                <input class="utb-inp" placeholder="Nuevo usuario..." @oninput="@(e => _d.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
-                <input class="utb-inp" placeholder="Apellidos" @oninput="@(e => _d.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
-            </div>
-            <div class="utb-nf-mut">Al aceptar</div>
-            <div class="utb-nf-mut">&mdash;</div>
-            <select class="utb-inp" @bind="_d.RolId">
-                <option value="@Guid.Empty">Rol...</option>
-                @foreach (var r in Roles.Where(r => r.Activo))
+        <div class="utb-newrow utb-grid" style="@GridStyle" @key="_nonce">
+            <div class="utb-sel-cell"></div>
+            @foreach (var k in Columnas)
+            {
+                switch (k)
                 {
-                    <option value="@r.Id">@r.Nombre</option>
+                    case "documento":
+                        <div class="utb-nf-first">
+                            <span class="utb-nf-plus">+</span>
+                            <select class="utb-inp utb-inp-tipo" @bind="_d.TipoDocumento">
+                                <option value="@TipoDocumento.CC">CC</option>
+                                <option value="@TipoDocumento.CE">CE</option>
+                                <option value="@TipoDocumento.PA">PA</option>
+                                <option value="@TipoDocumento.TI">TI</option>
+                            </select>
+                            <input class="utb-inp" @ref="_firstRef" placeholder="Documento" @oninput="@(e => _d.Documento = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
+                        </div>
+                        break;
+                    case "usuario":
+                        <div class="utb-nf-nombre">
+                            <input class="utb-inp" placeholder="Nuevo usuario..." @oninput="@(e => _d.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
+                            <input class="utb-inp" placeholder="Apellidos" @oninput="@(e => _d.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
+                        </div>
+                        break;
+                    case "rol":
+                        <select class="utb-inp" @bind="_d.RolId">
+                            <option value="@Guid.Empty">Rol...</option>
+                            @foreach (var r in Roles.Where(r => r.Activo))
+                            {
+                                <option value="@r.Id">@r.Nombre</option>
+                            }
+                        </select>
+                        break;
+                    case "email":
+                        <div class="utb-nf-mut">Al aceptar</div>
+                        break;
+                    case "estado":
+                        <div class="utb-nf-mut">Pendiente</div>
+                        break;
+                    default:
+                        <div class="utb-nf-mut">&mdash;</div>
+                        break;
                 }
-            </select>
-            <div class="utb-nf-mut">&mdash;</div>
-            <div class="utb-nf-mut">Pendiente</div>
+            }
             <div class="utb-act">
                 <button type="button" class="utb-add" title="Invitar (Enter)" @onclick="Invitar" disabled="@(_busy || !Valido)">+</button>
             </div>
@@ -81,12 +139,60 @@
                 PaginaChanged="PaginaChanged" PorPaginaChanged="PorPaginaChanged" />
 </div>
 
+@* Menu contextual (clic derecho sobre una fila). *@
+<TablaCtxMenu Abierto="_ctxOpenU" X="_ctxXU" Y="_ctxYU" Items="_ctxItemsU" Cerrado="() => _ctxOpenU = false" />
+
 @code {
     [Parameter] public List<UsuarioListaDto> Usuarios { get; set; } = new();
     [Parameter] public List<RolDto> Roles { get; set; } = new();
     [Parameter] public EventCallback<UsuarioListaDto> OnEditar { get; set; }
     [Parameter] public EventCallback<Guid> OnReactivar { get; set; }
     [Parameter] public EventCallback<NuevoUsuarioInvitar> OnInvitar { get; set; }
+    // Revocar acceso desde el menu contextual (accion destructiva real de Usuarios).
+    [Parameter] public EventCallback<Guid> OnRevocar { get; set; }
+    // Mensaje breve al padre (p.ej. "Enlace copiado"), se muestra en su barra de alertas.
+    [Parameter] public EventCallback<string> OnMensaje { get; set; }
+
+    // Orden por columna: el padre ordena ANTES de paginar; aqui solo se pinta la flecha y se avisa.
+    [Parameter] public string? SortKey { get; set; }
+    [Parameter] public int SortDir { get; set; } = 1;
+    [Parameter] public EventCallback<string> OnOrdenar { get; set; }
+
+    // Columnas configurables: el padre pasa las visibles (en orden), sus etiquetas y el grid-template.
+    [Parameter] public List<string> Columnas { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ColLabels { get; set; } = new();
+    [Parameter] public string GridStyle { get; set; } = "";
+
+    // Seleccion multiple (revocar masivo): el HashSet vive en el padre; aqui solo se pintan checkboxes.
+    [Parameter] public HashSet<Guid> Seleccion { get; set; } = new();
+    [Parameter] public bool TodasSel { get; set; }
+    [Parameter] public EventCallback<(Guid id, bool on)> OnToggleSel { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleSelAll { get; set; }
+
+    // Reordenar / redimensionar columnas: el JS compartido devuelve aqui (OnColReorder/OnColResize)
+    // y se reenvia al padre, que posee la config y persiste.
+    [Parameter] public EventCallback<(string src, string dest)> OnReordenarCol { get; set; }
+    [Parameter] public EventCallback<(string clave, int width)> OnRedimensionarCol { get; set; }
+
+    // Etiqueta de cabecera (en mayuscula) para una clave visible.
+    private string LabelUp(string clave) => (ColLabels.TryGetValue(clave, out var l) ? l : clave).ToUpperInvariant();
+
+    // ===== Reordenar / redimensionar por arrastre (JS compartido; este componente posee las celdas) =====
+    private DotNetObjectReference<UsuariosTablaVista>? _self;
+    private async Task IniciarReorderU(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    private async Task IniciarResizeU(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResizeU(string clave) => OnColResize(clave, 0);
+    [JSInvokable] public async Task OnColReorder(string src, string dest) => await OnReordenarCol.InvokeAsync((src, dest));
+    [JSInvokable] public async Task OnColResize(string clave, int width) => await OnRedimensionarCol.InvokeAsync((clave, width));
+    public void Dispose() => _self?.Dispose();
 
     // Paginacion (footer canonico, dentro del contenedor .usr-table). La pagina la controla el padre.
     [Parameter] public int Total { get; set; }
@@ -94,6 +200,34 @@
     [Parameter] public int PorPagina { get; set; } = 25;
     [Parameter] public EventCallback<int> PaginaChanged { get; set; }
     [Parameter] public EventCallback<int> PorPaginaChanged { get; set; }
+
+    // ===== Menu contextual (clic derecho) =====
+    private bool _ctxOpenU;
+    private double _ctxXU, _ctxYU;
+    private List<TablaCtxMenu.Item> _ctxItemsU = new();
+    private void AbrirCtxU(MouseEventArgs e, UsuarioListaDto u)
+    {
+        _ctxXU = e.ClientX; _ctxYU = e.ClientY;
+        _ctxItemsU = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => OnEditar.InvokeAsync(u)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceU(u)),
+            new(Sep: true),
+            u.Estado == EstadoUsuarioTenant.Activo
+                ? new("Revocar acceso", "fi-rr-lock", Danger: true, OnClick: () => OnRevocar.InvokeAsync(u.UsuarioTenantId))
+                : new("Reactivar acceso", "fi-rr-refresh", OnClick: () => OnReactivar.InvokeAsync(u.UsuarioTenantId)),
+        };
+        _ctxOpenU = true;
+    }
+    private async Task CopiarEnlaceU(UsuarioListaDto u)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}usuarios#usuario-{u.UsuarioTenantId}");
+            await OnMensaje.InvokeAsync("Enlace del registro copiado.");
+        }
+        catch { await OnMensaje.InvokeAsync("No se pudo copiar el enlace."); }
+    }
 
     private bool _busy;
     private readonly Draft _d = new();
