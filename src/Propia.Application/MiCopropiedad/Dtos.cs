@@ -168,6 +168,10 @@ public record EquipoCampoValorFlatDto(Guid EquipoActivoId, Guid DefinicionId, st
 public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoValorFlatDto(Guid ZonaComunId, Guid DefinicionId, string? Valor);
+// Campos dinamicos propios de los USUARIOS del tenant (mismo patron que zonas/equipos; el registro
+// del valor es el UsuarioTenant.Id).
+public record UsuarioCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record UsuarioCampoValorFlatDto(Guid UsuarioTenantId, Guid DefinicionId, string? Valor);
 
 // --- Campos dinamicos tipados de las entidades vinculadas a una unidad (personas, vehiculos,
 //     mascotas, terceros). Mismo patron que equipos/zonas: la DEFINICION es por copropiedad y

@@ -182,6 +182,20 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.DefinicionId, x.ZonaComunId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        modelBuilder.Entity<UsuarioCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<UsuarioCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.UsuarioTenantId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
 
         // Campos dinamicos tipados (catalogo + valor) de las entidades vinculadas a una unidad:
         // personas, vehiculos (placas), mascotas y terceros (empleadas). Calcado de equipos/zonas.

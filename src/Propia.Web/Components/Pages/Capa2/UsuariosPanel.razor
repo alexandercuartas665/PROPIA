@@ -4,6 +4,7 @@
 @using Propia.Application.Tareas
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
+@using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -127,6 +128,12 @@
                             </div>
                         }
                     </div>
+                    @* Campos propios (dinamicos): gestor exclusivo de los campos propios de usuarios
+                       (SinConfigSistema). Las columnas fijas siguen en el menu "Columnas" de al lado. *@
+                    <button type="button" class="usr-fbtn @(_gestorCamposAbierto ? "on" : "")" @onclick="() => _gestorCamposAbierto = true" title="Campos propios de usuarios">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                        <span>Campos</span>
+                    </button>
                 }
                 @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
                    (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
@@ -263,7 +270,9 @@
                                     OnRevocar="RevocarAccesoAsync" OnMensaje="MostrarMensajeInfo"
                                     Columnas="ColsVisiblesU().ToList()" ColLabels="LabelsU()" GridStyle="@UtbGridStyleU"
                                     Seleccion="_selU" TodasSel="TodasSelU" OnToggleSel="ToggleSelU" OnToggleSelAll="ToggleSelAllU"
-                                    OnReordenarCol="ReordenarColUAsync" OnRedimensionarCol="RedimensionarColUAsync" />
+                                    OnReordenarCol="ReordenarColUAsync" OnRedimensionarCol="RedimensionarColUAsync"
+                                    Defs="_defsCampos" Valores="_valoresCampos"
+                                    OnGuardarDinamico="GuardarDinamicoU" OnCrearCampo="AbrirCrearCampoU" OnEditarCampoDef="AbrirEditarCampoU" />
             }
         }
     }
@@ -903,6 +912,57 @@
     </div>
 }
 
+@* ============================================================ *@
+@* CAMPOS DINAMICOS (subsistema "usuarios")                     *@
+@* ============================================================ *@
+@* "+" del header de la tabla (crear) y engranaje de columna (editar/eliminar) abren este modal focalizado. *@
+@if (_crearCampoAbierto)
+{
+    <CrearCampoModal Prefijo="usuarios"
+                     TituloSingular="usuario"
+                     Ejemplo="Ej. Extension, Fecha de ingreso"
+                     Jwt="@_jwt"
+                     Editar="_campoAEditar"
+                     TiposAvanzados="true"
+                     Guardado="RecargarCamposU"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     AbrirGestorAvanzado="AbrirGestorCamposU" />
+}
+
+@* Gestor de campos propios de usuarios. SinConfigSistema=true: SOLO gestiona las definiciones propias
+   (crear/renombrar/editar tipo/eliminar) y NO toca unidades-config; las columnas FIJAS se configuran en
+   el menu "Columnas" (bespoke de Usuarios). Asi ambos no escriben la misma config de columnas. *@
+@if (_gestorCamposAbierto)
+{
+    <div class="usr-modal-bg" @onclick="() => _gestorCamposAbierto = false">
+        <div class="usr-modal usr-modal-wide" @onclick:stopPropagation="true">
+            <div class="usr-modal-head">
+                <div class="usr-modal-ico">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"></path></svg>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="usr-modal-title">Campos de usuarios</div>
+                    <div class="usr-modal-subtitle">Campos propios de la copropiedad para la ficha de usuario.</div>
+                </div>
+                <button class="usr-modal-x" @onclick="() => _gestorCamposAbierto = false">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="usr-modal-body">
+                <ConfigCamposEntidad Prefijo="usuarios"
+                                     EntidadConfig="usuario"
+                                     TituloSingular="usuario"
+                                     TituloPlural="Usuarios"
+                                     TiposAvanzados="true"
+                                     SinConfigSistema="true"
+                                     Ejemplo="Ej. Extension, Fecha de ingreso"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarCamposU" />
+            </div>
+        </div>
+    </div>
+}
+
 
 @code {
     // Embebido en el hub de Configuracion: oculta su page-head/PageTitle (conserva las acciones).
@@ -914,6 +974,13 @@
     private string _query = "";
     private bool _busy;
     private bool _sinPermiso;
+
+    // ---- Campos dinamicos (subsistema "usuarios"): catalogo + valores por usuario ----
+    private List<CampoDinDef> _defsCampos = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valoresCampos = new();  // registro(UsuarioTenantId) -> (defId -> valor)
+    private bool _crearCampoAbierto;
+    private CampoDinDef? _campoAEditar;
+    private bool _gestorCamposAbierto;
 
     // Filtros y vista (2.5.C)
     // Filtro dinamico unico (componente compartido): rol y etiqueta como reglas.
@@ -1050,9 +1117,12 @@
         return CatColU(clave)?.Label ?? clave;
     }
     private static string ColWidthU(string clave) => CatColU(clave)?.Width ?? "minmax(120px,150px)";
-    // grid = [seleccion 38px] [columnas visibles] [accion 34px]
+    // grid = [seleccion 38px] [columnas fijas visibles] [columnas dinamicas] [+ addcol 40px] [accion 34px].
+    // Debe casar 1:1 con las celdas que pinta UsuariosTablaVista: una pista por campo propio + la del "+".
     private string UtbGridStyleU => "grid-template-columns: 38px " +
-        string.Join(" ", ColsVisiblesU().Select(k => _colWU.TryGetValue(k, out var w) ? w + "px" : ColWidthU(k))) + " 34px";
+        string.Join(" ", ColsVisiblesU().Select(k => _colWU.TryGetValue(k, out var w) ? w + "px" : ColWidthU(k))) +
+        (_defsCampos.Count > 0 ? " " + string.Join(" ", _defsCampos.Select(_ => "minmax(140px,1fr)")) : "") +
+        " 40px 34px";
     private Dictionary<string, string> LabelsU() => ClavesCandidatasU().ToDictionary(k => k, ColLabelU);
 
     private GuardarUnidadCampoConfigRequest FilaConfigU(string clave)
@@ -1271,8 +1341,56 @@
             _usuarios = await resp.Content.ReadFromJsonAsync<List<UsuarioListaDto>>() ?? new();
             _pendientes = await http.GetFromJsonAsync<List<InvitacionDto>>("/api/usuarios/invitaciones") ?? new();
             _etiquetas = await http.GetFromJsonAsync<List<EtiquetaUsuarioDto>>("/api/usuarios/etiquetas") ?? new();
+            await CargarCamposU(http);
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    // ---- Campos dinamicos: catalogo (usuarios-campos) + valores por usuario (usuarios-campos-valores) ----
+    // La definicion es por copropiedad; el valor es por UsuarioTenantId (el mismo id que la fila usa como clave).
+    private async Task CargarCamposU(HttpClient http)
+    {
+        try
+        {
+            var defs = await http.GetFromJsonAsync<List<CampoDinDef>>("/api/mi-copropiedad/usuarios-campos") ?? new();
+            _defsCampos = defs.OrderBy(d => d.Orden).ThenBy(d => d.Label).ToList();
+        }
+        catch { _defsCampos = new(); }
+        try
+        {
+            var vals = await http.GetFromJsonAsync<List<UsuarioCampoValorFlat>>("/api/mi-copropiedad/usuarios-campos-valores") ?? new();
+            _valoresCampos = vals.GroupBy(v => v.UsuarioTenantId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _valoresCampos = new(); }
+    }
+
+    // Forma plana del valor de un campo propio de usuario (usuarios-campos-valores). El backend ya la emite.
+    private sealed record UsuarioCampoValorFlat(Guid UsuarioTenantId, Guid DefinicionId, string? Valor);
+
+    // Edicion inline de un campo propio: PUT sobre el registro (UsuarioTenantId). El hijo solo emite (reg, def, valor).
+    private async Task GuardarDinamicoU((Guid Registro, Guid Def, string? Valor) x)
+    {
+        if (x.Registro == Guid.Empty) return;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/usuarios-campos-valores/{x.Registro}/{x.Def}", new Propia.Application.MiCopropiedad.SetCampoValorRequest(x.Valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_valoresCampos.TryGetValue(x.Registro, out var d)) _valoresCampos[x.Registro] = d = new();
+                d[x.Def] = x.Valor;
+            }
+        }
+        catch { }
+    }
+
+    private void AbrirCrearCampoU() { _campoAEditar = null; _crearCampoAbierto = true; }
+    private void AbrirEditarCampoU(CampoDinDef d) { _campoAEditar = d; _crearCampoAbierto = true; }
+    private void AbrirGestorCamposU() { _crearCampoAbierto = false; _campoAEditar = null; _gestorCamposAbierto = true; }
+    private async Task RecargarCamposU()
+    {
+        _crearCampoAbierto = false; _campoAEditar = null;
+        await CargarCamposU(Auth());
+        StateHasChanged();
     }
 
     // ---------------- Etiquetas de usuario (2.5) ----------------

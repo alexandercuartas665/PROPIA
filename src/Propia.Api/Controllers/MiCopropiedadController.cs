@@ -399,6 +399,34 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> SetCampoValorZona(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
     { try { await _svc.SetCampoValorZonaDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
 
+    // ---------- Campos dinamicos tipados de los USUARIOS del tenant ----------
+    // El registro del valor es el UsuarioTenant.Id. Rutas planas usuarios-campos / usuarios-campos-valores.
+    [HttpGet("usuarios-campos")]
+    public async Task<IActionResult> ListCamposDefUsuario(CancellationToken ct) => Ok(await _svc.ListCamposDefUsuarioAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("usuarios-campos")]
+    public async Task<IActionResult> CrearCampoDefUsuario([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    { try { return Created("", await _svc.CrearCampoDefUsuarioAsync(req, ct)); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("usuarios-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefUsuario(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    { try { return await _svc.ActualizarCampoDefUsuarioAsync(definicionId, req, ct) ? NoContent() : NotFound(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("usuarios-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefUsuario(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefUsuarioAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("usuarios-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresUsuario(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresUsuarioAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("usuarios-campos-valores/{registroId:guid}/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValorUsuario(Guid registroId, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    { try { await _svc.SetCampoValorUsuarioDefAsync(registroId, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
     // ---------- Campos dinamicos tipados de las PERSONAS de una unidad ----------
     // Rutas planas {t}-campos / {t}-campos-valores para no chocar con el endpoint legacy
     // unidades-personas/{id}/campos (campo suelto Label/Valor, que se conserva tal cual).

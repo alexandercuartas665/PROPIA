@@ -238,6 +238,15 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct);
     Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct);
 
+    // Campos dinamicos tipados (catalogo + valor) de los USUARIOS del tenant. El registro del valor
+    // es el UsuarioTenant.Id (membresia del usuario en la copropiedad).
+    Task<IReadOnlyList<UsuarioCampoDefinicionDto>> ListCamposDefUsuarioAsync(CancellationToken ct);
+    Task<UsuarioCampoDefinicionDto> CrearCampoDefUsuarioAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefUsuarioAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefUsuarioAsync(Guid definicionId, CancellationToken ct);
+    Task SetCampoValorUsuarioDefAsync(Guid usuarioTenantId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+    Task<IReadOnlyList<UsuarioCampoValorFlatDto>> ListTodosCamposValoresUsuarioAsync(CancellationToken ct);
+
     // Campos dinamicos tipados (catalogo) de las PERSONAS de una unidad (analogo a Equipos/Zonas).
     Task<IReadOnlyList<PersonaCampoDefinicionDto>> ListCamposDefPersonaAsync(CancellationToken ct);
     Task<PersonaCampoDefinicionDto> CrearCampoDefPersonaAsync(CrearCampoDefinicionRequest req, CancellationToken ct);

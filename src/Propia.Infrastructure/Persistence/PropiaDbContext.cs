@@ -366,6 +366,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
     public DbSet<ZonaCampoDefinicion> ZonaCamposDefiniciones => Set<ZonaCampoDefinicion>();
     public DbSet<ZonaCampoValor> ZonaCamposValores => Set<ZonaCampoValor>();
+    public DbSet<UsuarioCampoDefinicion> UsuarioCamposDefiniciones => Set<UsuarioCampoDefinicion>();
+    public DbSet<UsuarioCampoValor> UsuarioCamposValores => Set<UsuarioCampoValor>();
 
     // Campos dinamicos tipados (catalogo + valor) de las entidades vinculadas a una unidad:
     // personas, vehiculos (placas), mascotas y terceros (empleadas). Mismo patron que equipos/zonas.

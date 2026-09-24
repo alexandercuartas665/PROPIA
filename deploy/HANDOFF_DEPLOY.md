@@ -1,11 +1,87 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado **2026-09-15 (post-integracion B)**. Version a desplegar: **0.0.95** (`origin/main` @ `40ab5da`).
-> Prod actual (segun ultimo registro): **0.0.67** - CONFIRMAR contra el footer de prod antes de aplicar (nota: hubo un bump 0.0.93->0.0.94 "para deploy"; confirmar que llego a prod).
+> Generado 2026-09-10, actualizado **2026-09-24 (post vista-tabla + campos Usuarios)**. Version a desplegar: **0.0.96** (`main` HEAD; csproj ya bumpeado).
+> Prod actual (segun sesion de deploy 2026-09-24): **0.0.95** (`origin/main` @ `025676b`, uptime estable). El lote a subir son **18 commits** por encima de ese punto (fast-forward) + esta tanda de Usuarios.
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-09-24 (VISTA TABLA + CAMPOS EN USUARIOS - LEER PRIMERO)
+
+Esta tanda cierra la homogeneizacion de la **vista tabla** en los modulos de administracion y agrega
+**campos dinamicos a Usuarios**. Las secciones 0-7 de abajo siguen vigentes TAL CUAL. **Casi todo es
+migration-free y ya esta en `main`; lo unico con migracion es Usuarios (1 migracion aditiva).**
+
+### YA EN `main` (migration-free, reusa columnas/config existentes)
+Commits `0ba2cc0` (paquete vista tabla) y `63aa46e` (correcciones de auditoria):
+- **Vista tabla estandar completa** en Residentes, Mascotas, Vehiculos, Usuarios y Directorio
+  (Personas/Empresas): seleccion + accion masiva, alta inline, menu **Columnas**, ordenar, **arrastrar/
+  mover columnas** (pointer-drag JS, no DnD nativo), **ancho + autoajuste**, menu **clic-derecho** (sin
+  "Duplicar"), footer `TablaPager`. Componentes compartidos nuevos: `CrearCampoModal`, `TablaCtxMenu`.
+- **Directorio - columnas dinamicas**: reusa el subsistema `personas` (compartido con Residentes); el
+  valor vive sobre el **vinculo activo principal** de la persona/empresa (coincide con Residentes). Borrado
+  masivo = **inactivar vinculo** (se expuso `VinculoId` en los DTOs). Personas y Empresas comparten el
+  mismo set de campos.
+- **Formula/tipos avanzados habilitados en Zonas y Equipos** (antes inalcanzables): su `ConfigCamposEntidad`
+  ahora pasa `TiposAvanzados="true"`. Reusa el EAV existente (`zona_campos_*` / `equipo_campos_*`). **Sin
+  migracion.**
+- **Usuarios - acciones de la vista tabla**: revocar masivo + **columnas configurables server-side**. Esto
+  reusa `unidad_campos_config` con `entidad='usuario'`: se **amplio la whitelist** `EntidadesCampoConfig`
+  en codigo (aditivo, **sin migracion**; la tabla ya es generica Entidad+CampoClave).
+- **Limpieza CSS**: se eliminaron assets muertos y ausentes en la maqueta (`wwwroot/lib/` bootstrap por
+  defecto, `assets/libs/fontawesome`, `assets/libs/lucide`, `assets/css/styles-rtl.css`). **Cache-busting:
+  el deploy debe servir `usuarios.css?v=3` y `propia-ui.js?v=14`** (ya bumpeados en `Components/App.razor`).
+- **Correcciones de auditoria vs maqueta**: valor CSS malformado en Distribucion (`.cg-summary.warn`),
+  backdrop del modal y menu contextual 1:1 con la maqueta, inputs de alta punteados en Mascotas/Vehiculos.
+- Verificado en runtime (5105) sobre la copropiedad demo; datos de prueba borrados. Build 0 errores.
+
+### CON MIGRACION - Usuarios campos dinamicos (NUEVO, 1 migracion aditiva)
+> **Estado:** codigo completo y compilando (0 errores), **commiteado y en el lote de este deploy (0.0.96)**.
+> AVISO IMPORTANTE: la migracion **no se pudo aplicar en dev** (el modo automatico bloqueo la BD compartida),
+> asi que **el deploy es la primera vez que corre `AddUsuarioCampos` y la primera vez que se ejercita el EAV
+> de Usuarios en runtime**. Por eso la verificacion de humo de Usuarios (crear campo + editar valor + F5)
+> es **paso #1 obligatorio post-deploy**; si algo falla, el `Down()` de la migracion dropea solo esas 2
+> tablas y no afecta nada mas (ver seccion Rollback).
+
+- **Que agrega**: paridad total de la vista tabla en Usuarios: crear campo ("+"/modal), gestor de campos,
+  **Formula/tipos avanzados**, y **celda editable por tipo**. Unico ausente (como en todos): "Duplicar".
+- **Migracion `20260924143830_AddUsuarioCampos`** (aditiva): 2 tablas nuevas
+  `usuario_campos_definiciones` y `usuario_campos_valores`, **cada una con ENABLE + FORCE ROW LEVEL
+  SECURITY + policy `tenant_isolation` + GRANT a `propia_app`** (patron identico a Equipo/Zona). No toca
+  ninguna tabla existente. El registro del valor es el **`usuarios_tenant.id`** (membresia del usuario en
+  la copropiedad), no el usuario global.
+- **Endpoints nuevos** (en `MiCopropiedadController`, gateados con `MI_COPROPIEDAD`): `usuarios-campos`
+  (GET/POST/PUT/DELETE) y `usuarios-campos-valores` (GET, PUT `/{registroId}/{definicionId}`).
+- **Sin pasos manuales de datos**: los campos nacen vacios; cada copropiedad crea los suyos (igual que en
+  los demas modulos). El gestor de Usuarios usa `SinConfigSistema` para NO chocar con el menu Columnas.
+
+### Migraciones de esta tanda (2 nuevas vs origin/main 025676b)
+El `ef database update` de la seccion 2 aplica solo lo que falte (compara `__EFMigrationsHistory`). Vs el
+punto de prod (`025676b` = 0.0.95) quedan **2 aditivas**:
+1. `20260915135206_EquipoAtlas_AddTableroCamposConfig` - viene con la integracion de atlas-tareas (estaba
+   en rama en el handoff del 09-15, ahora integrada a main). Tabla `tablero_campos_config`.
+2. `20260924143830_AddUsuarioCampos` - las 2 tablas de campos de Usuarios (ver arriba), con RLS.
+- Verificacion rapida de que quedaron aplicadas:
+```sql
+select relname, relrowsecurity, relforcerowsecurity
+from pg_class where relname in ('usuario_campos_definiciones','usuario_campos_valores','tablero_campos_config');
+-- las 3 deben existir; las de usuario_* con relrowsecurity=t y relforcerowsecurity=t
+```
+- `RlsCoverageTests`: las 2 tablas nuevas ya llevan RLS con el patron estandar, asi que **no** deben sumar
+  a las 8 tablas sin RLS conocidas (seccion 6). Correr la suite de integracion para reconfirmar.
+
+### Verificacion post-deploy especifica de esta tanda
+- [ ] **Usuarios (tras aplicar la migracion):** en `/usuarios` (vista Tabla) el boton **Campos** abre el
+      gestor; el "+" crea una columna; crear un campo de cada tipo + una **Formula** y editar un valor sobre
+      un usuario; **F5 persiste** (valor guardado sobre `usuarios_tenant.id`). Sin la migracion, "Configurar
+      campos" dara 500 `column/table does not exist`.
+- [ ] **Zonas y Equipos:** el selector de tipo del gestor ya lista **Formula/Usuario/Directorio**.
+- [ ] **Directorio:** columnas dinamicas visibles en Personas y Empresas; el valor coincide con Residentes
+      para la unidad principal; "Quitar del directorio" (masivo) inactiva el vinculo sin borrar la persona.
+- [ ] **CSS:** con `?v=3`/`?v=14` servidos, iconos (flaticon) intactos tras quitar fontawesome/lucide.
 
 ---
 

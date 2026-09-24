@@ -4,6 +4,7 @@
    DOM mientras se renderiza, y la otra vista los necesitaria igual). *@
 @using Propia.Application.UsuariosAccesos
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
@@ -27,6 +28,20 @@
                           @onclick:stopPropagation="true" @ondblclick="() => ResetResizeU(clave)" @ondblclick:stopPropagation="true"></span>
                 </div>
             }
+            @* Columnas dinamicas (campos propios de usuarios): cabecera con engranaje (editar/eliminar). *@
+            @if (Defs is not null)
+            {
+                @foreach (var d in Defs)
+                {
+                    var def = d;
+                    <div class="utb-th-dyn">
+                        <span class="utb-th-lbl">@d.Label.ToUpperInvariant()</span>
+                        <button type="button" class="utb-th-gear" title="Editar o eliminar campo" @onclick="() => OnEditarCampoDef.InvokeAsync(def)"><i class="fi fi-rr-settings"></i></button>
+                    </div>
+                }
+            }
+            @* "+" para crear un campo nuevo (columna). Siempre presente para casar el grid. *@
+            <div class="utb-addcol-h"><button type="button" class="utb-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => OnCrearCampo.InvokeAsync()"><i class="fi fi-rr-plus"></i></button></div>
             <div></div>
         </div>
         @foreach (var u in Usuarios)
@@ -64,6 +79,51 @@
                             break;
                     }
                 }
+                @* Celdas de los campos propios: el registro es el UsuarioTenantId de la fila. *@
+                @if (Defs is not null)
+                {
+                    @foreach (var d in Defs)
+                    {
+                        var def = d;
+                        var reg = uu.UsuarioTenantId;
+                        var val = ValorDin(reg, def.Id);
+                        switch (def.Tipo)
+                        {
+                            case TipoCampoTablero.Seleccion:
+                                <select class="utb-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                                break;
+                            case TipoCampoTablero.Numero:
+                            case TipoCampoTablero.Moneda:
+                            case TipoCampoTablero.Porcentaje:
+                                <input class="utb-cell" type="number" step="any" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                break;
+                            case TipoCampoTablero.Fecha:
+                                <input class="utb-cell" type="date" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                break;
+                            case TipoCampoTablero.Booleano:
+                                <select class="utb-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())">
+                                    <option value="">-</option>
+                                    <option value="Si" selected="@(val == "Si")">Si</option>
+                                    <option value="No" selected="@(val == "No")">No</option>
+                                </select>
+                                break;
+                            case TipoCampoTablero.Formula:
+                                <div class="utb-c utb-ro" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                                break;
+                            case TipoCampoTablero.Usuario:
+                            case TipoCampoTablero.Directorio:
+                                <div class="utb-c utb-ro" title="Se edita desde la ficha">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                                break;
+                            default:
+                                <input class="utb-cell" value="@val" @onchange="ev => GuardarDin(reg, def.Id, ev.Value?.ToString())" />
+                                break;
+                        }
+                    }
+                }
+                <div class="utb-addcol-cell"></div>
                 <div class="utb-act">
                     @if (u.Estado == EstadoUsuarioTenant.Activo)
                     {
@@ -129,6 +189,12 @@
                         break;
                 }
             }
+            @* Campos propios en el alta: se completan tras crear el usuario (celdas vacias). *@
+            @if (Defs is not null)
+            {
+                @foreach (var d in Defs) { <div class="utb-nf-mut">&mdash;</div> }
+            }
+            <div class="utb-addcol-cell"></div>
             <div class="utb-act">
                 <button type="button" class="utb-add" title="Invitar (Enter)" @onclick="Invitar" disabled="@(_busy || !Valido)">+</button>
             </div>
@@ -173,6 +239,23 @@
     // y se reenvia al padre, que posee la config y persiste.
     [Parameter] public EventCallback<(string src, string dest)> OnReordenarCol { get; set; }
     [Parameter] public EventCallback<(string clave, int width)> OnRedimensionarCol { get; set; }
+
+    // ---- Campos dinamicos (subsistema "usuarios"): columnas propias tras las fijas. El registro de un
+    // valor es el UsuarioTenantId de la fila; la definicion vive en usuarios-campos. Config la maneja el padre. ----
+    /// <summary>Definiciones de campos propios (usuarios-campos), en orden.</summary>
+    [Parameter] public List<CampoDinDef>? Defs { get; set; }
+    /// <summary>Valores por registro (UsuarioTenantId) -> (defId -> valor).</summary>
+    [Parameter] public Dictionary<Guid, Dictionary<Guid, string?>>? Valores { get; set; }
+    /// <summary>Guardar el valor de un campo propio (registro, definicion, valor).</summary>
+    [Parameter] public EventCallback<(Guid Registro, Guid Def, string? Valor)> OnGuardarDinamico { get; set; }
+    /// <summary>Abrir el modal de crear campo (boton "+").</summary>
+    [Parameter] public EventCallback OnCrearCampo { get; set; }
+    /// <summary>Abrir el modal de editar/eliminar un campo (engranaje de la columna).</summary>
+    [Parameter] public EventCallback<CampoDinDef> OnEditarCampoDef { get; set; }
+
+    // Campos dinamicos: lectura/escritura del valor sobre el registro (UsuarioTenantId de la fila).
+    private string? ValorDin(Guid reg, Guid defId) => Valores is not null && Valores.TryGetValue(reg, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+    private Task GuardarDin(Guid reg, Guid defId, string? val) => OnGuardarDinamico.InvokeAsync((reg, defId, val));
 
     // Etiqueta de cabecera (en mayuscula) para una clave visible.
     private string LabelUp(string clave) => (ColLabels.TryGetValue(clave, out var l) ? l : clave).ToUpperInvariant();
@@ -275,3 +358,23 @@
         finally { _busy = false; }
     }
 }
+
+@* Estilos EXCLUSIVOS de la vista Tabla (columnas dinamicas): celda editable inline, cabecera con
+   engranaje y "+" para crear columna. Espejo de los .dtab-* de la tabla del Directorio, con clases
+   utb-* y tokens --propia-*. Solo se necesitan cuando esta vista esta en el DOM. *@
+<style>
+    /* Celda editable inline de un campo propio: se lee como texto y se marca al hover/foco. */
+    .utb-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-secondary); background: transparent; outline: none; font-family: inherit; }
+    .utb-cell:hover { border-color: var(--propia-border-card); background: var(--propia-bg-card-soft); }
+    .utb-cell:focus { border-color: var(--propia-brand); background: var(--propia-bg-card); color: var(--propia-text-body); }
+    .utb-ro { color: var(--propia-text-muted); }
+    /* Cabecera dinamica con engranaje (editar/eliminar) + "+" para crear (espejo de las columnas del Directorio). */
+    .utb-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .utb-th-gear { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
+    .utb-th-dyn:hover .utb-th-gear, .utb-th-gear:focus-visible { opacity: 1; }
+    .utb-th-gear:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .utb-addcol-h { display: flex; align-items: center; justify-content: center; }
+    .utb-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-input); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+    .utb-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    .utb-addcol-cell { }
+</style>
