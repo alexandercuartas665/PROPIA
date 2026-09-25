@@ -158,6 +158,12 @@
 
             <div class="pk-filters-spacer"></div>
 
+            @if (VistaEfectiva == "tabla")
+            {
+                @* Orden multi-criterio: solo aplica a la vista Tabla. *@
+                <TablaOrdenarMenu Columnas="ColsOrdenablesPqr()" Sorts="_sortsPqr" SortsChanged="OnSortsPqrChanged" />
+            }
+
             <div class="pk-menu-wrap">
                 <button class="pk-input-btn @(_group != "ninguno" ? "pk-input-btn--on" : "")" @onclick='() => TogglePop("group")'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -317,7 +323,7 @@
                             @foreach (var col in ColumnasVisibles)
                             {
                                 var ck = col.Key;
-                                var sk = col.EsCustom ? col.CampoId.ToString() : ck;
+                                var sk = ck; // clave de orden = col.Key ("cd:{id}" para las dinamicas)
                                 var cls = col.EsCustom ? $"pk-col-c{col.CampoId}" : $"pk-col-{ck}";
                                 <th class="pk-th-sort @cls @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(sk)">
                                     <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>
@@ -1013,28 +1019,74 @@
         return ordenado.Skip((pag - 1) * _porPagina).Take(_porPagina).GroupBy(_ => "");
     }
 
-    // ===================== Ordenamiento por columna (vista Tabla): clic en el encabezado ordena; reclic invierte =====================
-    private string _sortCol = ""; private bool _sortAsc = true;
-    private void SortByPqr(string col) { if (_sortCol == col) _sortAsc = !_sortAsc; else { _sortCol = col; _sortAsc = true; } }
-    private MarkupString SortIndPqr(string col) => _sortCol == col ? (MarkupString)(_sortAsc ? " ▲" : " ▼") : (MarkupString)"";
+    // ===================== Ordenamiento (vista Tabla) =====================
+    // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en la
+    // cabecera es el caso de un solo criterio, sincronizado con esta misma lista (reclic invierte).
+    private List<TablaOrdenarMenu.Sort> _sortsPqr = new();
+    private string _sortColPqr => _sortsPqr.Count > 0 ? _sortsPqr[0].Key : "";
+    private bool _sortAscPqr => _sortsPqr.Count == 0 || _sortsPqr[0].Dir == 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles de la vista Tabla (fijas + dinamicas "cd:{id}").
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesPqr()
+        => ColumnasVisibles.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
+    private void OnSortsPqrChanged() { _pagina = 1; StateHasChanged(); }
+    // Clic en cabecera: un solo criterio; si ya es el unico, invierte direccion; si no, lo reemplaza.
+    private void SortByPqr(string clave)
+    {
+        var ex = _sortsPqr.FirstOrDefault(s => s.Key == clave);
+        if (_sortsPqr.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
+        _pagina = 1;
+    }
+    // Indicador de la cabecera: se deriva del PRIMER criterio del orden multi-criterio.
+    private MarkupString SortIndPqr(string clave)
+        => _sortColPqr == clave ? (MarkupString)(_sortAscPqr ? " ▲" : " ▼") : (MarkupString)"";
+    // Valor de orden por clave: fija por columna, o dinamica "cd:{id}" via el valor del campo propio.
+    // estado/semaforo/vence devuelven su valor numerico como texto para que CmpValTabla los ordene como numero.
+    private string ValorOrdenPqr(PqrsdBandejaItemDto x, string key)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var cid))
+            return x.Campos?.FirstOrDefault(v => v.CampoId == cid)?.Valor ?? "";
+        return key switch
+        {
+            "radicado" => x.NumeroRadicado ?? "",
+            "asunto" => x.DescripcionResumen ?? "",
+            "tipo" => TipoLabel(x.Tipo),
+            "categoria" => x.CategoriaNombre ?? "",
+            "estado" => (_estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Orden ?? 0).ToString(ci),
+            "semaforo" => ((int)x.Semaforo).ToString(ci),
+            "radicador" => x.RadicadorNombre ?? "",
+            "unidad" => x.UnidadNumero ?? "",
+            "vence" => x.DiasHastaVencimiento.ToString(ci),
+            _ => ""
+        };
+    }
+    // Comparacion numerica-aware (mismo patron que Usuarios/Zonas): numeros como numeros, resto texto.
+    private static int CmpValTabla(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
     private IEnumerable<PqrsdBandejaItemDto> AplicarSortPqr(IEnumerable<PqrsdBandejaItemDto> items)
     {
         IEnumerable<PqrsdBandejaItemDto> seq = items;
-        if (!string.IsNullOrEmpty(_sortCol))
+        if (_sortsPqr.Count > 0)
         {
-            Func<PqrsdBandejaItemDto, IComparable> key = _sortCol switch
+            var lista = items.ToList();
+            lista.Sort((a, b) =>
             {
-                "radicado" => x => x.NumeroRadicado,
-                "tipo" => x => TipoLabel(x.Tipo),
-                "categoria" => x => x.CategoriaNombre ?? "",
-                "estado" => x => _estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Orden ?? 0,
-                "semaforo" => x => (int)x.Semaforo,
-                "radicador" => x => x.RadicadorNombre ?? "",
-                "unidad" => x => x.UnidadNumero ?? "",
-                "vence" => x => x.DiasHastaVencimiento,
-                _ => x => Guid.TryParse(_sortCol, out var cid) ? (x.Campos?.FirstOrDefault(v => v.CampoId == cid)?.Valor ?? "") : ""
-            };
-            seq = _sortAsc ? items.OrderBy(key) : items.OrderByDescending(key);
+                foreach (var s in _sortsPqr)
+                {
+                    var c = CmpValTabla(ValorOrdenPqr(a, s.Key), ValorOrdenPqr(b, s.Key)) * s.Dir;
+                    if (c != 0) return c;
+                }
+                return 0;
+            });
+            seq = lista;
         }
         // Los recien creados en esta pantalla se mantienen SIEMPRE al final (OrderBy es estable), para
         // que el usuario los vea recien agregados; se reordenan al orden natural al refrescar la pagina.

@@ -339,6 +339,8 @@ else
                        @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
             </div>
             <div class="dst-filtros-spacer"></div>
+            @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
             @* Agrupador como boton + menu (pregunta por cual campo). Patron Tableros. *@
             <div class="dst-menu-wrap">
                 <button type="button" class="dst-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar unidades">
@@ -1161,11 +1163,18 @@ else
                     "propietario" => u.PropietarioNombre ?? "",
                     _ => ""
                 }) ?? true);
-            // Orden por columna (clic en el header). OrderBy estable conserva el orden natural si no hay sort.
-            if (_sortKey is not null)
+            // Orden multi-criterio (boton "Ordenar" y clic en header). OrderBy estable conserva el orden natural si no hay sort.
+            if (_sorts.Count > 0)
             {
-                var sk = _sortKey;
-                var cmp = Comparer<UnidadDto>.Create((a, b) => CmpVal(SortStr(a, sk), SortStr(b, sk)) * _sortDir);
+                var cmp = Comparer<UnidadDto>.Create((a, b) =>
+                {
+                    foreach (var s in _sorts)
+                    {
+                        var c = CmpVal(SortStr(a, s.Key), SortStr(b, s.Key)) * s.Dir;
+                        if (c != 0) return c;
+                    }
+                    return 0;
+                });
                 filtradas = filtradas.OrderBy(u => u, cmp);
             }
             return filtradas.ToList();
@@ -2228,11 +2237,19 @@ else
 
     // ---- Ordenar por columna (clic en el header; reclic invierte). Solo vista (cliente).
     // El click que sigue a un arrastre lo traga el JS de reordenar, asi que aqui no hay guardas. ----
-    private string? _sortKey;
-    private int _sortDir = 1;
+    // Orden multi-criterio apilable (boton "Ordenar"); el clic en cabecera es 1 criterio sincronizado.
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private string? _sortKey => _sorts.Count > 0 ? _sorts[0].Key : null;   // flecha del header = primer criterio
+    private int _sortDir => _sorts.Count > 0 ? _sorts[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles (fijas + dinamicas "cd:{id}"), con su etiqueta.
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColumnasVisibles.Select(it => new TablaOrdenarMenu.Col(it.Key, it.EsCustom ? it.Campo!.Label : Etiqueta(it.Def!))).ToList();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
     private void OrdenarPorColumna(string clave)
     {
-        if (_sortKey == clave) _sortDir = -_sortDir; else { _sortKey = clave; _sortDir = 1; }
+        var ex = _sorts.FirstOrDefault(s => s.Key == clave);
+        if (_sorts.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sorts = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
         _pagina = 1;
     }
     private string SortStr(UnidadDto u, string k)

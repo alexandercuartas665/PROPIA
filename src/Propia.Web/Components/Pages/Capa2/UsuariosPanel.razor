@@ -85,8 +85,10 @@
                    propios, asi que no hay "+", ni engranaje, ni borrar-campo (solo configurar las fijas). *@
                 @if (_vista == "tabla")
                 {
+                    @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+                    <TablaOrdenarMenu Columnas="ColsOrdenablesU()" Sorts="_sortsU" SortsChanged="OnSortsUChanged" />
                     <div class="usr-menu-wrap">
-                        <button type="button" class="usr-fbtn @(_showColMenuU ? "on" : "")" @onclick="() => _showColMenuU = !_showColMenuU" title="Columnas: orden y visibilidad">
+                        <button type="button" class="usr-fbtn @(_showColMenuU ? "on" : "")" @onclick="() => _showColMenuU = !_showColMenuU" title="Campos y columnas de la tabla">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
                             <span>Columnas</span>
                         </button>
@@ -119,6 +121,18 @@
                                             }
                                         </div>
                                     }
+                                    @* Campos propios (dinamicos): en la misma lista, con badge "din" y borrar
+                                       (crear = "+" del header; editar = engranaje de la columna). *@
+                                    @foreach (var d in _defsCampos)
+                                    {
+                                        var dd = d;
+                                        if (!string.IsNullOrWhiteSpace(_colQU) && !d.Label.Contains(_colQU, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                        <div class="usr-col-it">
+                                            <span class="usr-col-name">@d.Label <span class="usr-col-dyn" title="Campo personalizado">din</span></span>
+                                            <button class="usr-col-eye on" title="Editar campo" @onclick="() => AbrirEditarCampoU(dd)"><i class="fi fi-rr-settings-sliders"></i></button>
+                                            <button class="usr-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => EliminarCampoUAsync(dd)"><i class="fi fi-rr-trash"></i></button>
+                                        </div>
+                                    }
                                 </div>
                                 <div class="usr-col-massacts">
                                     <button type="button" class="usr-col-mass" @onclick="OcultarTodasColUAsync"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
@@ -128,12 +142,6 @@
                             </div>
                         }
                     </div>
-                    @* Campos propios (dinamicos): gestor exclusivo de los campos propios de usuarios
-                       (SinConfigSistema). Las columnas fijas siguen en el menu "Columnas" de al lado. *@
-                    <button type="button" class="usr-fbtn @(_gestorCamposAbierto ? "on" : "")" @onclick="() => _gestorCamposAbierto = true" title="Campos propios de usuarios">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                        <span>Campos</span>
-                    </button>
                 }
                 @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
                    (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
@@ -215,11 +223,18 @@
         {
             var lista = UsuariosFiltrados().ToList();
             @* Orden por columna (clic en cabecera de la vista Tabla), antes de paginar. *@
-            @if (_sortKeyU is not null)
+            @if (_sortsU.Count > 0)
             {
-                var sk = _sortKeyU;
                 lista = lista
-                    .OrderBy(u => u, Comparer<UsuarioListaDto>.Create((a, b) => CmpValTabla(SortStrU(a, sk), SortStrU(b, sk)) * _sortDirU))
+                    .OrderBy(u => u, Comparer<UsuarioListaDto>.Create((a, b) =>
+                    {
+                        foreach (var s in _sortsU)
+                        {
+                            var c = CmpValTabla(ValorOrdenU(a, s.Key), ValorOrdenU(b, s.Key)) * s.Dir;
+                            if (c != 0) return c;
+                        }
+                        return 0;
+                    }))
                     .ToList();
             }
             @if (lista.Count == 0 && _vista == "lista")
@@ -1001,12 +1016,30 @@
 
     // Orden por columna en la vista Tabla (clic en cabecera; reclic invierte). Se aplica sobre
     // la lista filtrada ANTES de paginar (la paginacion la hace esta pagina, no la sub-vista).
-    private string? _sortKeyU;
-    private int _sortDirU = 1;
+    // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en
+    // cabecera es un caso de un solo criterio, sincronizado con esta misma lista.
+    private List<TablaOrdenarMenu.Sort> _sortsU = new();
+    private string? _sortKeyU => _sortsU.Count > 0 ? _sortsU[0].Key : null;
+    private int _sortDirU => _sortsU.Count > 0 ? _sortsU[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles fijas + las dinamicas (clave "cd:{id}").
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesU()
+        => ColsVisiblesU().Select(k => new TablaOrdenarMenu.Col(k, ColLabelU(k)))
+            .Concat(_defsCampos.Select(d => new TablaOrdenarMenu.Col("cd:" + d.Id, d.Label)))
+            .ToList();
+    private void OnSortsUChanged() { _pagina = 1; StateHasChanged(); }
     private void OrdenarPorColumnaU(string clave)
     {
-        if (_sortKeyU == clave) _sortDirU = -_sortDirU; else { _sortKeyU = clave; _sortDirU = 1; }
+        var ex = _sortsU.FirstOrDefault(s => s.Key == clave);
+        if (_sortsU.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sortsU = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
         _pagina = 1;
+    }
+    // Valor de orden para una clave (fija via SortStrU; dinamica "cd:{id}" via el valor del campo propio).
+    private string ValorOrdenU(UsuarioListaDto u, string key)
+    {
+        if (key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var defId))
+            return _valoresCampos.TryGetValue(u.UsuarioTenantId, out var m) && m.TryGetValue(defId, out var v) ? (v ?? "") : "";
+        return SortStrU(u, key);
     }
     private static string SortStrU(UsuarioListaDto u, string clave)
     {
@@ -1385,6 +1418,21 @@
 
     private void AbrirCrearCampoU() { _campoAEditar = null; _crearCampoAbierto = true; }
     private void AbrirEditarCampoU(CampoDinDef d) { _campoAEditar = d; _crearCampoAbierto = true; }
+    // Borrar un campo propio desde el menu "Columnas" (definicion + valores). Confirma antes.
+    private async Task EliminarCampoUAsync(CampoDinDef d)
+    {
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"Eliminar el campo \"{d.Label}\"? Se borran su definicion y todos sus valores."); }
+        catch { ok = true; }
+        if (!ok) return;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/usuarios-campos/{d.Id}");
+            if (r.IsSuccessStatusCode) { await CargarCamposU(Auth()); StateHasChanged(); }
+            else MostrarMensajeInfo("No se pudo eliminar el campo.");
+        }
+        catch { MostrarMensajeInfo("No se pudo eliminar el campo."); }
+    }
     private void AbrirGestorCamposU() { _crearCampoAbierto = false; _campoAEditar = null; _gestorCamposAbierto = true; }
     private async Task RecargarCamposU()
     {

@@ -72,6 +72,8 @@ else
         <div class="ea-bar-spacer"></div>
         @if (_view == "list")
         {
+            @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sortsE" SortsChanged="OnSortsChanged" />
             @* "Columnas" (inline, milimetrico a Unidades): orden, visibilidad y borrar campo dinamico.
                Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
             <div class="ea-menu-wrap">
@@ -660,11 +662,19 @@ else
                 "cantidad" => e.Cantidad.ToString(),
                 _ => ""
             }) ?? true);
-        // Orden por columna (clic en header); sin sort mantiene el orden natural del backend.
-        if (_sortKeyE is not null)
+        // Orden multi-criterio (menu "Ordenar" / clic en header); sin sort mantiene el orden natural del backend.
+        if (_sortsE.Count > 0)
         {
-            var sk = _sortKeyE;
-            var cmp = Comparer<EquipoActivoDto>.Create((a, b) => CmpValTabla(SortStrE(a, sk), SortStrE(b, sk)) * _sortDirE);
+            var sorts = _sortsE;
+            var cmp = Comparer<EquipoActivoDto>.Create((a, b) =>
+            {
+                foreach (var s in sorts)
+                {
+                    var c = CmpValTabla(SortStrE(a, s.Key), SortStrE(b, s.Key)) * s.Dir;
+                    if (c != 0) return c;
+                }
+                return 0;
+            });
             return baseSeq.OrderBy(e => e, cmp);
         }
         return baseSeq;
@@ -987,11 +997,21 @@ else
         return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
-    private string? _sortKeyE;
-    private int _sortDirE = 1;
-    private void OrdenarPorColumnaE(string k)
+    // Ordenar multi-criterio apilable (boton "Ordenar", canonico). El clic en cabecera es el caso de
+    // un solo criterio, sincronizado con esta misma lista. El indicador de cabecera deriva del primero.
+    private List<TablaOrdenarMenu.Sort> _sortsE = new();
+    private string? _sortKeyE => _sortsE.Count > 0 ? _sortsE[0].Key : null;
+    private int _sortDirE => _sortsE.Count > 0 ? _sortsE[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles (fijas + dinamicas "cd:{id}"), con su etiqueta.
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
+    // Clic en cabecera: opera _sortsE como un unico criterio (reclic invierte, otra columna reemplaza).
+    private void OrdenarPorColumnaE(string clave)
     {
-        if (_sortKeyE == k) _sortDirE = -_sortDirE; else { _sortKeyE = k; _sortDirE = 1; }
+        var ex = _sortsE.FirstOrDefault(s => s.Key == clave);
+        if (_sortsE.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sortsE = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
         _pagina = 1;
     }
     private string SortStrE(EquipoActivoDto e, string k)

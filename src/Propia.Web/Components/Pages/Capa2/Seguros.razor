@@ -120,6 +120,8 @@
                 <input class="seg-search-inp" placeholder="Buscar por numero, aseguradora, corredor..." @oninput="OnBuscar" />
             </div>
             <div class="mod-filtros-spacer"></div>
+            @* Ordenar (multi-criterio apilable): fuente unica compartida, JUSTO antes de Agrupar. *@
+            <TablaOrdenarMenu Columnas="ColsOrdenablesS()" Sorts="_sortsS" SortsChanged="OnSortsSChanged" />
             <div class="seg-menu-wrap">
                 <button type="button" class="seg-fsel @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar polizas">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")
@@ -684,6 +686,42 @@
         if (_cfgPoliza.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
         return CampoCustom(clave)?.Label ?? PolizaCamposSistema.Por(clave)?.Label ?? clave;
     }
+
+    // ===================== Orden multi-criterio (boton "Ordenar") =====================
+    // El modulo mantiene la lista de criterios y ordena su propia lista filtrada; el componente
+    // compartido TablaOrdenarMenu solo pinta el boton/menu. Columnas ofrecidas = las VISIBLES
+    // (fijas de sistema + dinamicas "cd:{id}"), reusando ColsVisibles()/ColLabel().
+    private List<TablaOrdenarMenu.Sort> _sortsS = new();
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesS()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsSChanged() { _pagina = 1; StateHasChanged(); }
+    // Valor de orden por clave: fechas/numeros en forma cruda ordenable; el resto (texto fijo,
+    // vencimiento y campos propios "cd:{id}") reusa la funcion de valor de celda CeldaTextoP.
+    private string ValorOrdenS(PolizaDto p, string clave)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        switch (clave)
+        {
+            case "fechainicio": return p.FechaInicio?.ToString("yyyy-MM-dd", ci) ?? "";
+            case "fechafin": return p.FechaFin?.ToString("yyyy-MM-dd", ci) ?? "";
+            case "valorpoliza": return p.ValorPoliza?.ToString(ci) ?? "";
+            case "reclamaciones": return p.ReclamacionesCount > 0 ? p.ReclamacionesCount.ToString(ci) : "";
+            case "formapagocuotas": return p.FormaPagoCuotas?.ToString(ci) ?? "";
+            default:
+                var t = CeldaTextoP(p, clave);
+                return t == "-" ? "" : t;
+        }
+    }
+    // Comparacion numerica-aware (mismo patron que UsuariosPanel.CmpValTabla / Zonas).
+    private static int CmpOrdS(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
     private static string ColCeldaClass(string clave) => clave switch
     {
         "numeropoliza" => "seg-c seg-c--num",
@@ -970,7 +1008,7 @@
         {
             var q = _q.Trim();
             var activas = _reglasS.Where(ReglaActivaS).ToList();
-            return _polizas.Where(p =>
+            var lista = _polizas.Where(p =>
             {
                 if (q != ""
                     && !(p.NumeroPoliza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
@@ -980,6 +1018,22 @@
                 if (activas.Count == 0) return true;
                 return _logicaS == "or" ? activas.Any(r => EvalReglaS(p, r)) : activas.All(r => EvalReglaS(p, r));
             }).ToList();
+            // Orden multi-criterio (boton "Ordenar"), sobre la lista filtrada ANTES de paginar/agrupar.
+            if (_sortsS.Count > 0)
+            {
+                lista = lista
+                    .OrderBy(p => p, Comparer<PolizaDto>.Create((a, b) =>
+                    {
+                        foreach (var s in _sortsS)
+                        {
+                            var cmp = CmpOrdS(ValorOrdenS(a, s.Key), ValorOrdenS(b, s.Key)) * s.Dir;
+                            if (cmp != 0) return cmp;
+                        }
+                        return 0;
+                    }))
+                    .ToList();
+            }
+            return lista;
         }
     }
 

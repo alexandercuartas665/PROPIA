@@ -194,6 +194,8 @@ else
             @if (_vistaC != "tarjetas")
             {
                 <div class="ctr-filtros-r">
+                    @* Ordenar (multi-criterio apilable): fuente unica compartida, JUSTO antes de Agrupar. *@
+                    <TablaOrdenarMenu Columnas="ColsOrdenablesC()" Sorts="_sortsC" SortsChanged="OnSortsCChanged" />
                     <div class="ctr-cols-wrap">
                         <button class="ctr-fbtn @(_cAgrupar != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar contratos">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -249,6 +251,21 @@ else
         else
         {
             var filtrados = ContratosFiltrados().ToList();
+            @* Orden multi-criterio (boton "Ordenar"), sobre la lista filtrada ANTES de agrupar/paginar. *@
+            if (_sortsC.Count > 0)
+            {
+                filtrados = filtrados
+                    .OrderBy(c => c, Comparer<ContratoServicioDto>.Create((a, b) =>
+                    {
+                        foreach (var s in _sortsC)
+                        {
+                            var cmp = CmpOrdC(ValorOrdenC(a, s.Key), ValorOrdenC(b, s.Key)) * s.Dir;
+                            if (cmp != 0) return cmp;
+                        }
+                        return 0;
+                    }))
+                    .ToList();
+            }
             if (_vistaC == "tarjetas")
             {
                 <div class="ctr-kanban">
@@ -1937,6 +1954,54 @@ else
     private string ColDesc(string k) => _cCampos.FirstOrDefault(c => c.Id.ToString() == k)?.Descripcion ?? "";
     private string ColThClass(string k) => (k == "valor" || k == "dias") ? "ctr-r" : "";
     private string ColTdClass(string k) => k == "tercero" ? "ctr-ct" : ((k == "valor" || k == "dias") ? "ctr-r" : "");
+
+    // ===================== Orden multi-criterio (boton "Ordenar") =====================
+    // El modulo mantiene la lista de criterios y ordena su propia lista filtrada; el componente
+    // compartido TablaOrdenarMenu solo pinta el boton/menu. Columnas ofrecidas = las VISIBLES
+    // (fijas de sistema + dinamicas "guid"), reusando ColsVisibles()/ColLabel().
+    private List<TablaOrdenarMenu.Sort> _sortsC = new();
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesC()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsCChanged() { _cPage = 0; StateHasChanged(); }
+    // Valor de orden por clave de columna: dinamica (guid) via ValorCampo; fijas via el mismo
+    // vocabulario que pinta el switch de la tabla.
+    private string ValorOrdenC(ContratoServicioDto c, string key)
+    {
+        if (Guid.TryParse(key, out var gid)) return ValorCampo(c, gid) ?? "";
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return key switch
+        {
+            "tercero" => c.Proveedor ?? "",
+            "tipocontrato" => c.TipoContrato is { } tc ? TipoContratoLabel(tc) : "",
+            "numero" => c.NumeroContrato ?? "",
+            "categoria" => c.Categoria is { } ca ? CategoriaContratoLabel(ca) : "",
+            "asociado" => c.AsociadoNombre ?? "",
+            "inicio" => c.FechaInicio.ToString("yyyy-MM-dd", ci),
+            "fin" => c.FechaFin?.ToString("yyyy-MM-dd", ci) ?? "",
+            "estado" => EstadoTextoContrato(c),
+            "valortotal" => c.ValorTotal?.ToString(ci) ?? "",
+            "formapago" => c.FormaPagoCuotas?.ToString(ci) ?? "",
+            "pagomensual" => c.PagoMensual ? "Si" : "No",
+            "obs" => c.Observaciones ?? "",
+            "tipo" => TipoLabel(c.Tipo),
+            "valor" => c.ValorMensual?.ToString(ci) ?? "",
+            "etapa" => EtapaNombreDe(c.EtapaId),
+            "contacto" => c.Contacto ?? "",
+            "renov" => c.RenovacionAutomatica ? "Si" : "No",
+            "dias" => c.DiasAnticipacionAlerta.ToString(ci),
+            _ => ""
+        };
+    }
+    // Comparacion numerica-aware (mismo patron que UsuariosPanel.CmpValTabla / Zonas).
+    private static int CmpOrdC(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task CargarConfigContratoAsync()
     {

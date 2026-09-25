@@ -1,0 +1,118 @@
+@* Boton "Ordenar" + menu de orden multi-criterio apilable. Fuente UNICA del diseno de la
+   vista tabla (calca la tabla de ejemplo de la maqueta: motor U.tabla, boton "Ordenar" en
+   assets/ui.js). El modulo mantiene la lista de criterios (_sorts) y ordena su propia lista;
+   este componente solo pinta el boton/menu y avisa los cambios via SortsChanged.
+   Uso:
+     <TablaOrdenarMenu Columnas="ColsOrdenables" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+   donde ColsOrdenables = List<TablaOrdenarMenu.Col> (Key + Label) y _sorts = List<TablaOrdenarMenu.Sort>. *@
+
+<div class="tord-wrap">
+    <button type="button" class="tord-btn @(Sorts.Count > 0 ? "on" : "")" title="Ordenar" @onclick="() => _open = !_open">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11M3 12h7M3 18h4M18 5v14M18 19l3-3M18 19l-3-3" /></svg>
+        <span>Ordenar@(Sorts.Count > 0 ? $" ({Sorts.Count})" : "")</span>
+    </button>
+    @if (_open)
+    {
+        <div class="tord-bd" @onclick="() => _open = false"></div>
+        <div class="tord-menu">
+            <div class="tord-lbl">Ordenar por</div>
+            @if (Sorts.Count == 0)
+            {
+                <div class="tord-empty">Sin orden aplicado.</div>
+            }
+            @for (int i = 0; i < Sorts.Count; i++)
+            {
+                var idx = i;
+                var s = Sorts[idx];
+                <div class="tord-row">
+                    <select class="tord-sel" value="@s.Key" @onchange="e => CambiarCampo(idx, e.Value?.ToString())">
+                        @foreach (var c in Columnas)
+                        {
+                            <option value="@c.Key" selected="@(c.Key == s.Key)">@c.Label</option>
+                        }
+                    </select>
+                    <button type="button" class="tord-dir" title="Cambiar direccion" @onclick="() => CambiarDir(idx)">@(s.Dir > 0 ? "A -> Z" : "Z -> A")</button>
+                    <button type="button" class="tord-del" title="Quitar" @onclick="() => Quitar(idx)">&times;</button>
+                </div>
+            }
+            @if (Sorts.Count < Columnas.Count)
+            {
+                <button type="button" class="tord-add" @onclick="Agregar"><i class="fi fi-rr-plus"></i> Agregar orden</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Un criterio de orden: campo (Key de columna) + direccion (1 asc, -1 desc).</summary>
+    public sealed class Sort
+    {
+        public string Key { get; set; } = "";
+        public int Dir { get; set; } = 1;
+    }
+
+    /// <summary>Columna ordenable ofrecida en el selector (clave estable + etiqueta visible).</summary>
+    public sealed record Col(string Key, string Label);
+
+    /// <summary>Columnas ordenables (normalmente las visibles de la tabla, fijas + dinamicas).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Col> Columnas { get; set; } = Array.Empty<Col>();
+    /// <summary>Lista de criterios apilados que mantiene y aplica el modulo.</summary>
+    [Parameter, EditorRequired] public List<Sort> Sorts { get; set; } = new();
+    /// <summary>Se dispara al agregar/quitar/cambiar un criterio (el modulo reordena y persiste).</summary>
+    [Parameter] public EventCallback SortsChanged { get; set; }
+
+    private bool _open;
+
+    private async Task CambiarCampo(int idx, string? key)
+    {
+        if (idx < 0 || idx >= Sorts.Count || string.IsNullOrEmpty(key)) return;
+        Sorts[idx].Key = key;
+        await SortsChanged.InvokeAsync();
+    }
+
+    private async Task CambiarDir(int idx)
+    {
+        if (idx < 0 || idx >= Sorts.Count) return;
+        Sorts[idx].Dir = -Sorts[idx].Dir;
+        await SortsChanged.InvokeAsync();
+    }
+
+    private async Task Quitar(int idx)
+    {
+        if (idx < 0 || idx >= Sorts.Count) return;
+        Sorts.RemoveAt(idx);
+        await SortsChanged.InvokeAsync();
+    }
+
+    private async Task Agregar()
+    {
+        var used = Sorts.Select(s => s.Key).ToHashSet();
+        var next = Columnas.FirstOrDefault(c => !used.Contains(c.Key)) ?? Columnas.FirstOrDefault();
+        if (next is not null)
+        {
+            Sorts.Add(new Sort { Key = next.Key, Dir = 1 });
+            await SortsChanged.InvokeAsync();
+        }
+    }
+}
+
+<style>
+    /* Boton de la barra (identico a la vista tabla canonica .dst-fbtn de la maqueta). */
+    .tord-wrap { position: relative; }
+    .tord-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); font-size: 12.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .tord-btn:hover { border-color: var(--propia-brand); }
+    .tord-btn.on { border-color: var(--propia-brand); background: var(--propia-brand-soft); color: var(--propia-brand); }
+    /* Menu (identico a .dst-menu). */
+    .tord-bd { position: fixed; inset: 0; z-index: 40; }
+    .tord-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 280px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30, 40, 60, .18); padding: 6px; }
+    .tord-lbl { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); padding: 8px 8px 4px; }
+    .tord-empty { font-size: 12px; color: var(--propia-text-muted); padding: 4px 6px 8px; }
+    .tord-row { display: flex; align-items: center; gap: 6px; padding: 4px 4px; }
+    .tord-sel { flex: 1; min-width: 0; border: 1px solid var(--propia-border-input); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-input); font-family: inherit; outline: none; }
+    .tord-sel:focus { border-color: var(--propia-brand); }
+    .tord-dir { border: 1px solid var(--propia-border-input); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 7px; font-size: 11px; font-weight: 700; padding: 6px 8px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .tord-dir:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .tord-del { border: 0; background: transparent; color: var(--propia-text-faint); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px; }
+    .tord-del:hover { color: var(--propia-danger); }
+    .tord-add { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; padding: 8px 6px 4px; }
+</style>

@@ -72,6 +72,8 @@ else
         <div class="zc-bar-spacer"></div>
         @if (_view == "list")
         {
+            @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sortsZ" SortsChanged="OnSortsChanged" />
             @* Agrupar (menu) + Campos (menu), a la derecha, patron estandar. *@
             <div class="zc-menu-wrap">
                 <button type="button" class="zc-fbtn @(_agruparZ != "" ? "on" : "")" @onclick="() => _showAgruparZ = !_showAgruparZ" title="Agrupar zonas">
@@ -753,12 +755,21 @@ else
         return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
-    // Ordenar (clic en header). El click post-arrastre lo traga el JS de reordenar.
-    private string? _sortKeyZ;
-    private int _sortDirZ = 1;
-    private void OrdenarPorColumnaZ(string k)
+    // Ordenar multi-criterio apilable (boton "Ordenar", canonico). El clic en cabecera es el caso de
+    // un solo criterio, sincronizado con esta misma lista. El indicador de cabecera deriva del primero.
+    private List<TablaOrdenarMenu.Sort> _sortsZ = new();
+    private string? _sortKeyZ => _sortsZ.Count > 0 ? _sortsZ[0].Key : null;
+    private int _sortDirZ => _sortsZ.Count > 0 ? _sortsZ[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles (fijas + dinamicas "cd:{id}"), con su etiqueta.
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsChanged() { _paginaZ = 1; StateHasChanged(); }
+    // Clic en cabecera: opera _sortsZ como un unico criterio (reclic invierte, otra columna reemplaza).
+    private void OrdenarPorColumnaZ(string clave)
     {
-        if (_sortKeyZ == k) _sortDirZ = -_sortDirZ; else { _sortKeyZ = k; _sortDirZ = 1; }
+        var ex = _sortsZ.FirstOrDefault(s => s.Key == clave);
+        if (_sortsZ.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sortsZ = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
         _paginaZ = 1;
     }
     private string SortStrZ(ZonaComunDto z, string k)
@@ -959,11 +970,19 @@ else
                 "aforo" => z.CapacidadPersonas?.ToString() ?? "",
                 _ => ""
             }) ?? true);
-        // Orden por columna (clic en header); sin sort, orden por defecto (categoria + nombre).
-        if (_sortKeyZ is not null)
+        // Orden multi-criterio (menu "Ordenar" / clic en header); sin sort, orden por defecto (categoria + nombre).
+        if (_sortsZ.Count > 0)
         {
-            var sk = _sortKeyZ;
-            var cmp = Comparer<ZonaComunDto>.Create((a, b) => CmpValTabla(SortStrZ(a, sk), SortStrZ(b, sk)) * _sortDirZ);
+            var sorts = _sortsZ;
+            var cmp = Comparer<ZonaComunDto>.Create((a, b) =>
+            {
+                foreach (var s in sorts)
+                {
+                    var c = CmpValTabla(SortStrZ(a, s.Key), SortStrZ(b, s.Key)) * s.Dir;
+                    if (c != 0) return c;
+                }
+                return 0;
+            });
             return baseSeq.OrderBy(z => z, cmp);
         }
         return baseSeq.OrderBy(z => z.Categoria).ThenBy(z => z.Nombre);

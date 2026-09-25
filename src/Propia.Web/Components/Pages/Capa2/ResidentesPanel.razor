@@ -44,6 +44,9 @@ else
         </div>
         <div class="res-filtros-spacer"></div>
 
+        @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+        <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+
         @* Agrupar (menu) - disponible en ambas vistas. *@
         <div class="res-menu-wrap">
             <button type="button" class="res-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar residentes">
@@ -790,11 +793,19 @@ else
         return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
-    private string? _sortKey;
-    private int _sortDir = 1;
+    // Orden multi-criterio apilable (boton "Ordenar"); el clic en cabecera es 1 criterio sincronizado.
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private string? _sortKey => _sorts.Count > 0 ? _sorts[0].Key : null;   // flecha del header = primer criterio
+    private int _sortDir => _sorts.Count > 0 ? _sorts[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles (fijas + dinamicas "cd:{id}"), con su etiqueta.
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
     private void OrdenarPorColumnaR(string k)
     {
-        if (_sortKey == k) _sortDir = -_sortDir; else { _sortKey = k; _sortDir = 1; }
+        var ex = _sorts.FirstOrDefault(s => s.Key == k);
+        if (_sorts.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = 1 } };
         _pagina = 1;
     }
     private string SortStrR(ResidenteResumenDto r, string k)
@@ -1047,10 +1058,17 @@ else
                     r.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || r.Documento.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || r.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase));
-            if (_sortKey is not null)
+            if (_sorts.Count > 0)
             {
-                var sk = _sortKey;
-                var cmp = Comparer<ResidenteResumenDto>.Create((a, b) => CmpValTabla(SortStrR(a, sk), SortStrR(b, sk)) * _sortDir);
+                var cmp = Comparer<ResidenteResumenDto>.Create((a, b) =>
+                {
+                    foreach (var s in _sorts)
+                    {
+                        var c = CmpValTabla(SortStrR(a, s.Key), SortStrR(b, s.Key)) * s.Dir;
+                        if (c != 0) return c;
+                    }
+                    return 0;
+                });
                 seq = seq.OrderBy(r => r, cmp);
             }
             return seq.ToList();

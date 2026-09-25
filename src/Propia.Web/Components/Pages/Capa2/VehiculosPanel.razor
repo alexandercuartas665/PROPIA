@@ -40,6 +40,9 @@ else
         </div>
         <div class="veh-spacer"></div>
 
+        @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
+        <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+
         @* Agrupar *@
         <div class="veh-menu-wrap">
             <button type="button" class="veh-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar filas">
@@ -550,10 +553,17 @@ else
                     "propietario" => v.PropietarioNombre ?? "",
                     _ => ""
                 }) ?? true);
-            if (_sortKey is not null)
+            if (_sorts.Count > 0)
             {
-                var sk = _sortKey;
-                var cmp = Comparer<VehiculoResumenDto>.Create((a, b) => CmpValTabla(SortStr(a, sk), SortStr(b, sk)) * _sortDir);
+                var cmp = Comparer<VehiculoResumenDto>.Create((a, b) =>
+                {
+                    foreach (var s in _sorts)
+                    {
+                        var c = CmpValTabla(SortStr(a, s.Key), SortStr(b, s.Key)) * s.Dir;
+                        if (c != 0) return c;
+                    }
+                    return 0;
+                });
                 return baseSeq.OrderBy(v => v, cmp).ToList();
             }
             return baseSeq.ToList();
@@ -935,12 +945,19 @@ else
         _configAbierto = true;
     }
 
-    // ===== Ordenar (clic en header) =====
-    private string? _sortKey;
-    private int _sortDir = 1;
+    // ===== Ordenar multi-criterio (boton "Ordenar" apilable + clic en header como 1 criterio) =====
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private string? _sortKey => _sorts.Count > 0 ? _sorts[0].Key : null;   // flecha del header = primer criterio
+    private int _sortDir => _sorts.Count > 0 ? _sorts[0].Dir : 1;
+    // Columnas ofrecidas en el menu Ordenar: las visibles (fijas + dinamicas "cd:{id}"), con su etiqueta.
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
     private void OrdenarPorColumna(string k)
     {
-        if (_sortKey == k) _sortDir = -_sortDir; else { _sortKey = k; _sortDir = 1; }
+        var ex = _sorts.FirstOrDefault(s => s.Key == k);
+        if (_sorts.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = 1 } };
         _pagina = 1;
     }
     private string SortStr(VehiculoResumenDto v, string k)

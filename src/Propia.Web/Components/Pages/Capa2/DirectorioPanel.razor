@@ -6,6 +6,7 @@
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 @if (!Embedded) { <PageTitle>Directorio - PROPIA</PageTitle> }
 
@@ -87,6 +88,9 @@
                 <input class="mod-search-inp" style="width:280px;" value="@_query" @oninput="OnQueryInput" placeholder="Buscar por nombre, documento, email, etiqueta..." />
             </div>
             <div class="mod-filtros-spacer"></div>
+            @* Ordenar (multi-criterio apilable): fuente unica compartida. Se aplica sobre la lista
+               filtrada de la pestana activa (antes de paginar), en Tabla y en Tarjetas. *@
+            <TablaOrdenarMenu Columnas="ColsOrdenablesDir()" Sorts="_sortsDir" SortsChanged="OnSortsDirChanged" />
             @* Agrupar por campo: menu que pregunta por cual campo agrupar (patron Tableros). *@
             <div class="dir-menu-wrap">
                 <button type="button" class="fd-btn @(_agrupar ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar">
@@ -106,8 +110,8 @@
             @if (_view == "tabla")
             {
                 <div class="dir-menu-wrap">
-                    <button type="button" class="fd-btn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Columnas fijas de la tabla: orden y visibilidad">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                    <button type="button" class="fd-btn @(_cfgColsAbierto ? "on" : "")" @onclick="() => _cfgColsAbierto = !_cfgColsAbierto" title="Campos y columnas de la tabla">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
                         <span>Columnas</span>
                     </button>
                     @if (_cfgColsAbierto)
@@ -134,17 +138,24 @@
                                     @if (!col.Hideable) { <span class="dir-cfgcols-req">fija</span> }
                                 </div>
                             }
+                            @* Campos propios (dinamicos): misma lista, con badge "din" + editar (engranaje)
+                               y borrar (trash). Crear = "+" del header de la tabla (CrearCampoModal); el
+                               gestor avanzado sigue accesible desde ese "+". Espejo de Usuarios/Residentes. *@
+                            @foreach (var d in _defsCampos)
+                            {
+                                var dd = d;
+                                <div class="dir-colsmenu-i">
+                                    <span class="dir-col-name">@d.Label <span class="dir-col-dyn" title="Campo personalizado">din</span></span>
+                                    <button type="button" class="dir-col-gear" title="Editar campo" @onclick="() => AbrirEditarCampoDir(dd)"><i class="fi fi-rr-settings-sliders"></i></button>
+                                    <button type="button" class="dir-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => EliminarCampoDir(dd)"><i class="fi fi-rr-trash"></i></button>
+                                </div>
+                            }
                             <div class="dir-colsmenu-acts">
                                 <button type="button" class="dir-colsmenu-act" @onclick="RestablecerCols">Restablecer</button>
                             </div>
                         </div>
                     }
                 </div>
-                @* Campos propios (dinamicos): gestor compartido con Residentes (crear/renombrar/reordenar/ocultar). *@
-                <button type="button" class="fd-btn @(_gestorCamposAbierto ? "on" : "")" @onclick="() => _gestorCamposAbierto = true" title="Campos propios de personas y empresas (compartidos con Residentes)">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    <span>Campos</span>
-                </button>
             }
             @* Toggle Lista/Tabla dentro de la barra de filtros (como en los demas modulos),
                no en una fila propia. La vista la controla la pagina y se pasa a las vistas
@@ -173,7 +184,7 @@
         {
             <DirectorioPersonasVista Personas="PersonasParaVista()" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
                                      Etiquetas="_etiquetasTodas"
-                                     ColsWidth="_widthPersonas" SortKey="@_sortKeyPersonas" SortDir="_sortDirPersonas"
+                                     ColsWidth="_widthPersonas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
                                      OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
@@ -187,7 +198,7 @@
         else
         {
             <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
-                                     ColsWidth="_widthEmpresas" SortKey="@_sortKeyEmpresas" SortDir="_sortDirEmpresas"
+                                     ColsWidth="_widthEmpresas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
                                      OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
@@ -201,6 +212,8 @@
     }
 </div>
 
+@* Toast breve a nivel de pagina (p.ej. resultado/error al eliminar un campo desde el menu Columnas). *@
+@if (_dirToast is not null) { <div class="dir-toast">@_dirToast</div> }
 
 @* ===================== MODAL 360 (Persona / Empresa) ===================== *@
 @if (_detalleAbierto)
@@ -899,10 +912,17 @@
                 "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.EtiquetaId)),
                 _ => ""
             }) ?? true).ToList();
-            if (list is not null && _sortKeyPersonas is not null)
+            if (list is not null && _sortsDir.Count > 0)
             {
-                var sk = _sortKeyPersonas; var dir = _sortDirPersonas;
-                list.Sort((a, b) => CmpValTabla(SortStrPersona(a, sk), SortStrPersona(b, sk)) * dir);
+                list.Sort((a, b) =>
+                {
+                    foreach (var s in _sortsDir)
+                    {
+                        var c = CmpValTabla(ValorOrdenPersona(a, s.Key), ValorOrdenPersona(b, s.Key)) * s.Dir;
+                        if (c != 0) return c;
+                    }
+                    return 0;
+                });
             }
             return list;
         }
@@ -922,10 +942,17 @@
                 "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.EtiquetaId)),
                 _ => ""
             }) ?? true).ToList();
-            if (list is not null && _sortKeyEmpresas is not null)
+            if (list is not null && _sortsDir.Count > 0)
             {
-                var sk = _sortKeyEmpresas; var dir = _sortDirEmpresas;
-                list.Sort((a, b) => CmpValTabla(SortStrEmpresa(a, sk), SortStrEmpresa(b, sk)) * dir);
+                list.Sort((a, b) =>
+                {
+                    foreach (var s in _sortsDir)
+                    {
+                        var c = CmpValTabla(ValorOrdenEmpresa(a, s.Key), ValorOrdenEmpresa(b, s.Key)) * s.Dir;
+                        if (c != 0) return c;
+                    }
+                    return 0;
+                });
             }
             return list;
         }
@@ -995,10 +1022,13 @@
     private Dictionary<string, DirectorioPersonasVista.ColPref> _colsEmpresas = new();
     private bool _cfgColsAbierto;
 
-    // Orden por columna (clic en header): por pestana, aplicado ANTES de paginar. Anchos manuales por
-    // columna en px (localStorage, mismo modelo local del Directorio; no unidades-config).
-    private string? _sortKeyPersonas; private int _sortDirPersonas = 1;
-    private string? _sortKeyEmpresas; private int _sortDirEmpresas = 1;
+    // Orden multi-criterio apilable (boton "Ordenar", fuente unica compartida), aplicado ANTES de paginar.
+    // El clic en cabecera es el caso de un solo criterio, sincronizado con esta misma lista. Se limpia al
+    // cambiar de pestana (personas/empresas tienen columnas distintas). Anchos manuales por columna en px
+    // (localStorage, mismo modelo local del Directorio; no unidades-config).
+    private List<TablaOrdenarMenu.Sort> _sortsDir = new();
+    private string? _sortKeyDir => _sortsDir.Count > 0 ? _sortsDir[0].Key : null;
+    private int _sortDirDir => _sortsDir.Count > 0 ? _sortsDir[0].Dir : 1;
     private Dictionary<string, int> _widthPersonas = new(StringComparer.Ordinal);
     private Dictionary<string, int> _widthEmpresas = new(StringComparer.Ordinal);
     private Dictionary<string, int> WidthActiva => _tab == "empresas" ? _widthEmpresas : _widthPersonas;
@@ -1139,21 +1169,51 @@
         await GuardarColsAsync();
     }
 
-    // ---- Ordenar (clic en header), reordenar (arrastre) y anchos (resize) de la vista Tabla ----
-    // El orden se aplica en PersonasFiltradas/EmpresasFiltradas (antes de paginar y de agrupar).
+    // ---- Ordenar (boton "Ordenar" multi-criterio + clic en header), reordenar (arrastre) y anchos
+    // (resize) de la vista Tabla. El orden se aplica en PersonasFiltradas/EmpresasFiltradas (antes de
+    // paginar y de agrupar). El clic en cabecera es UN solo criterio (togglea direccion). ----
     private void OrdenarDir(string clave)
     {
-        if (_tab == "empresas")
-        {
-            if (_sortKeyEmpresas == clave) _sortDirEmpresas = -_sortDirEmpresas;
-            else { _sortKeyEmpresas = clave; _sortDirEmpresas = 1; }
-        }
-        else
-        {
-            if (_sortKeyPersonas == clave) _sortDirPersonas = -_sortDirPersonas;
-            else { _sortKeyPersonas = clave; _sortDirPersonas = 1; }
-        }
+        var ex = _sortsDir.FirstOrDefault(s => s.Key == clave);
+        if (_sortsDir.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sortsDir = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
         _pagina = 1;
+    }
+    private void OnSortsDirChanged() { _pagina = 1; StateHasChanged(); }
+
+    // Columnas ofrecidas en el menu Ordenar: las visibles de la pestana activa (fijas) + las dinamicas
+    // (clave "cd:{id}"). Reusa el catalogo/orden/visibilidad ya calculados para el menu Columnas.
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesDir()
+    {
+        var cols = new List<TablaOrdenarMenu.Col>();
+        foreach (var c in CatalogoActivoOrdenado)
+            if (ColVisibleDir(c.Key, c.Hideable))
+                cols.Add(new TablaOrdenarMenu.Col(c.Key, ColLabelDir(c.Key, c.DefLabel)));
+        foreach (var d in _defsCampos)
+            cols.Add(new TablaOrdenarMenu.Col("cd:" + d.Id, d.Label));
+        return cols;
+    }
+    // Lectura de visibilidad/etiqueta de una columna fija (sin crear entradas, a diferencia de PrefDe).
+    private bool ColVisibleDir(string key, bool hideable)
+        => !hideable || !ColsActivas.TryGetValue(key, out var p) || p.Visible;
+    private string ColLabelDir(string key, string defLabel)
+        => ColsActivas.TryGetValue(key, out var p) && !string.IsNullOrWhiteSpace(p.Label) ? p.Label! : defLabel;
+
+    // Valor de orden para una clave: fija via SortStr*; dinamica "cd:{id}" via el valor del campo propio
+    // sobre el registro (UnidadPersona activo principal); Usuario/Directorio se ordenan por nombre.
+    private string ValorOrdenPersona(PersonaResumenDto p, string key)
+        => key.StartsWith("cd:", StringComparison.Ordinal) ? ValorCampoDir(p.RegistroCamposId, key) : SortStrPersona(p, key);
+    private string ValorOrdenEmpresa(EmpresaResumenDto e, string key)
+        => key.StartsWith("cd:", StringComparison.Ordinal) ? ValorCampoDir(e.RegistroCamposId, key) : SortStrEmpresa(e, key);
+    private string ValorCampoDir(Guid? registro, string key)
+    {
+        if (registro is not Guid reg || !Guid.TryParse(key.AsSpan(3), out var defId)) return "";
+        var v = _valoresCampos.TryGetValue(reg, out var m) && m.TryGetValue(defId, out var raw) ? raw : null;
+        var def = _defsCampos.FirstOrDefault(d => d.Id == defId);
+        if (def is not null && (def.Tipo == TipoCampoTablero.Directorio || def.Tipo == TipoCampoTablero.Usuario)
+            && !string.IsNullOrWhiteSpace(v) && Guid.TryParse(v, out var g) && _usuarioNombre.TryGetValue(g, out var n))
+            return n;
+        return v ?? "";
     }
 
     private async Task ReordenarDir((string Src, string Dest) mov)
@@ -1295,6 +1355,40 @@
     private void AbrirCrearCampoDir() { _campoAEditar = null; _crearCampoAbierto = true; }
     private void AbrirEditarCampoDir(CampoDinDef d) { _campoAEditar = d; _crearCampoAbierto = true; }
     private void AbrirGestorCamposDir() { _crearCampoAbierto = false; _campoAEditar = null; _gestorCamposAbierto = true; }
+
+    // Borrar un campo propio desde el menu "Columnas" (definicion + valores). Confirma antes; recarga
+    // el catalogo de campos. Prefijo del Directorio = "personas" (mismo endpoint que Residentes).
+    private async Task EliminarCampoDir(CampoDinDef d)
+    {
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"Eliminar el campo \"{d.Label}\"? Se borran su definicion y todos sus valores."); }
+        catch { ok = true; }
+        if (!ok) return;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/personas-campos/{d.Id}");
+            if (r.IsSuccessStatusCode) { await CargarCamposDirAsync(Auth()); StateHasChanged(); }
+            else DirToast("No se pudo eliminar el campo.");
+        }
+        catch { DirToast("No se pudo eliminar el campo."); }
+    }
+
+    // Toast breve a nivel de pagina (auto-oculta a los 2.6 s). Se cancela si se dispara otro antes.
+    private string? _dirToast;
+    private System.Threading.CancellationTokenSource? _dirToastCts;
+    private void DirToast(string m)
+    {
+        _dirToast = m;
+        _dirToastCts?.Cancel();
+        _dirToastCts = new System.Threading.CancellationTokenSource();
+        var tok = _dirToastCts.Token;
+        _ = InvokeAsync(async () =>
+        {
+            try { await Task.Delay(2600, tok); } catch { return; }
+            if (!tok.IsCancellationRequested) { _dirToast = null; StateHasChanged(); }
+        });
+    }
+    public void Dispose() { _dirToastCts?.Cancel(); }
     private async Task RecargarCamposDir()
     {
         _crearCampoAbierto = false; _campoAEditar = null;
@@ -1434,7 +1528,7 @@
 
     // await (no fire-and-forget) para que Blazor re-renderice al terminar la carga;
     // antes quedaba en "loading" al cambiar de pestana porque _ = CargarAsync() no re-renderiza.
-    private async Task SetTab(string tab) { _tab = tab; _pagina = 1; _sel.Clear(); await CargarAsync(); }
+    private async Task SetTab(string tab) { _tab = tab; _pagina = 1; _sel.Clear(); _sortsDir.Clear(); await CargarAsync(); }
 
     // La vista (Lista/Tabla) se recuerda por modulo en localStorage: sobrevive al cierre de
     // sesion (el logout solo borra llaves puntuales, no hace localStorage.clear()).

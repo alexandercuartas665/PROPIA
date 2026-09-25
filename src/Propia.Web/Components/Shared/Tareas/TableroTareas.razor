@@ -166,12 +166,17 @@ else
                     </div>
                     @* Selector de copropiedad (context-switcher) al inicio del cluster: no rompe la secuencia. *@
                     @if (!Compacto) { @SelectorCopropiedad }
+                    @* Ordenar (multi-criterio, componente compartido): antes de Agrupar, igual que la tabla de ejemplo. *@
+                    @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
+                    {
+                        <TablaOrdenarMenu Columnas="ColsOrdenablesT()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+                    }
                     @* Agrupar: solo aplica en Tablero/Lista; en Calendario/Gantt no se muestra (agrupar no tiene
                        sentido ahi). Comparte estado (_cardGroup) con las vistas; el menu es el mismo. *@
                     @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
                     {
                         <div class="tb-menuwrap">
-                            <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; _cardSortMenu = false; }" title="Agrupar">
+                            <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; }" title="Agrupar">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
                             </button>
                             @if (_cardGroupMenu)
@@ -321,24 +326,8 @@ else
                 @BloqueFiltros
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por titulo o numero..." />
                 <div class="tb-flex"></div>
-                <div class="tb-menuwrap">
-                    <button class="tb-filter-btn @(!string.IsNullOrEmpty(_sortCol) ? "on" : "")" @onclick="() => { _cardSortMenu = !_cardSortMenu; _cardGroupMenu = false; }" title="Ordenar tarjetas">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h13M3 12h9M3 18h5M18 8V4m0 0l-3 3m3-3l3 3"/></svg>@(string.IsNullOrEmpty(_sortCol) ? "Ordenar" : "Ordenar: " + OrdenLabel(_sortCol))
-                    </button>
-                    @if (_cardSortMenu)
-                    {
-                        <div class="tb-menu">
-                            <button class="tb-menu-it @(string.IsNullOrEmpty(_sortCol) ? "on" : "")" @onclick='() => SetCardSort("")'>Sin orden</button>
-                            @foreach (var o in OpcionesOrden())
-                            {
-                                var k = o.Key;
-                                <button class="tb-menu-it @(_sortCol == k ? "on" : "")" @onclick="() => SetCardSort(k)"><span>@o.Label</span>@SortInd(k)</button>
-                            }
-                        </div>
-                    }
-                </div>
-                @* "Agrupar" se movio a la barra superior (orden homogeneo Agrupar.Campos.Tarjetas.Tabla). Aqui
-                   queda solo "Ordenar", que es propio de la vista Tablero. *@
+                @* "Agrupar" y "Ordenar" se movieron a la barra superior (orden homogeneo
+                   Ordenar.Agrupar.Campos.Tarjetas.Tabla); "Ordenar" usa el componente compartido. *@
             </div>
 
             @if (string.IsNullOrEmpty(_cardGroup) || _cardGroup == "none")
@@ -2205,33 +2194,54 @@ else
     private readonly List<FiltroRegla> _reglas = new();
     private string _filtroLogica = "and"; // "and" = todas las reglas, "or" = cualquiera
     private bool _filtrosMenu;
-    // Ordenamiento por columna (vista Lista): clic en el encabezado ordena; reclic invierte.
-    private string _sortCol = ""; private bool _sortAsc = true;
-    private void SortBy(string col) { if (_sortCol == col) _sortAsc = !_sortAsc; else { _sortCol = col; _sortAsc = true; } }
-    private MarkupString SortInd(string col) => _sortCol == col ? (MarkupString)(_sortAsc ? " &#9650;" : " &#9660;") : (MarkupString)"";
+    // Ordenamiento multi-criterio apilable (boton "Ordenar" compartido). El clic en el encabezado
+    // (vista Lista) es el caso de un solo criterio, sincronizado con esta misma lista.
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
+    // Columnas ofrecidas en el menu Ordenar: las mismas opciones que ya existian (fijas + dinamicas).
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesT()
+        => OpcionesOrden().Select(o => new TablaOrdenarMenu.Col(o.Key, o.Label)).ToList();
+    private void SortBy(string col)
+    {
+        var ex = _sorts.FirstOrDefault(s => s.Key == col);
+        if (_sorts.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
+        else _sorts = new() { new TablaOrdenarMenu.Sort { Key = col, Dir = 1 } };
+    }
+    private MarkupString SortInd(string col)
+    {
+        var s = _sorts.FirstOrDefault(x => x.Key == col);
+        return s is null ? (MarkupString)"" : (MarkupString)(s.Dir > 0 ? " &#9650;" : " &#9660;");
+    }
+    private Func<TareaListaDto, object?> ClaveOrdenT(string col) => col switch
+    {
+        "titulo" => t => t.Titulo,
+        "numero" => t => t.NumeroTarea ?? "",
+        "asignado" => t => t.AsignadoNombre ?? "",
+        "progreso" => t => t.Progreso,
+        "prioridad" => t => (int)t.Prioridad,
+        "vence" => t => t.FechaVencimiento ?? DateOnly.MaxValue,
+        "valor" => t => t.Valor ?? 0m,
+        "origen" => t => t.OrigenReferencia ?? "",
+        _ => t => Guid.TryParse(col, out var cid) ? CampoDeTarea(t, cid) : ""
+    };
     private IEnumerable<TareaListaDto> AplicarSort(List<TareaListaDto> g)
     {
-        if (string.IsNullOrEmpty(_sortCol)) return g;
-        Func<TareaListaDto, object?> key = _sortCol switch
+        if (_sorts.Count == 0) return g;
+        IOrderedEnumerable<TareaListaDto>? ordered = null;
+        foreach (var s in _sorts)
         {
-            "titulo" => t => t.Titulo,
-            "numero" => t => t.NumeroTarea ?? "",
-            "asignado" => t => t.AsignadoNombre ?? "",
-            "progreso" => t => t.Progreso,
-            "prioridad" => t => (int)t.Prioridad,
-            "vence" => t => t.FechaVencimiento ?? DateOnly.MaxValue,
-            "valor" => t => t.Valor ?? 0m,
-            "origen" => t => t.OrigenReferencia ?? "",
-            _ => t => Guid.TryParse(_sortCol, out var cid) ? CampoDeTarea(t, cid) : ""
-        };
-        return _sortAsc ? g.OrderBy(key) : g.OrderByDescending(key);
+            var key = ClaveOrdenT(s.Key);
+            ordered = ordered is null
+                ? (s.Dir > 0 ? g.OrderBy(key) : g.OrderByDescending(key))
+                : (s.Dir > 0 ? ordered.ThenBy(key) : ordered.ThenByDescending(key));
+        }
+        return ordered ?? (IEnumerable<TareaListaDto>)g;
     }
 
     // ---- Vista Tablero (tarjetas): ordenar + agrupar por dimension (incluye ubicacion) ----
-    private bool _cardSortMenu; private bool _cardGroupMenu; private string _cardGroup = "";
+    private bool _cardGroupMenu; private string _cardGroup = "";
     private int _pagina = 1;
     private int _porPagina = 25;
-    private void SetCardSort(string k) { if (string.IsNullOrEmpty(k)) _sortCol = ""; else SortBy(k); _cardSortMenu = false; }
     private async Task SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; _pagina = 1; await PersistGroupAsync(); }
     private async Task ClearCardGroup() { _cardGroup = ""; _cardGroupMenu = false; await PersistGroupAsync(); }
     private IEnumerable<(string Key, string Label)> OpcionesOrden()
