@@ -84,7 +84,7 @@ public class BienvenidaController : ControllerBase
     [HttpGet("plantilla-carga")]
     public async Task<IActionResult> PlantillaCarga(CancellationToken ct)
     {
-        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(ct);
+        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(Propia.Application.MiCopropiedad.PlantillaCargaScope.Todas, ct);
         return File(bytes, XlsxMime, nombre);
     }
 

@@ -1,0 +1,284 @@
+@* Carga masiva UNIFICADA por hub: un solo par Descargar/Cargar que cubre TODOS los contenidos del
+   hub en un unico Excel multi-hoja. Reutiliza el endpoint multi-hoja del backend con ?scope=... para
+   emitir solo las hojas del hub, y el importador combinado (que procesa las hojas presentes).
+   El chrome del modal usa las clases GLOBALES cg-* (css/modules/config-campos.css).
+   Uso:
+     <HubCargaMasiva Scope="config" />       (Unidades + Zonas + Equipos)
+     <HubCargaMasiva Scope="residentes" />   (Residentes + Mascotas + Vehiculos) *@
+
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<div class="hcm-bar">
+    <div class="hcm-txt">
+        <div class="hcm-title">Carga masiva por plantilla</div>
+        <div class="hcm-sub">@SubTexto</div>
+    </div>
+    <div class="hcm-actions">
+        <button class="hcm-btn-soft" type="button" @onclick="DescargarAsync" disabled="@_plantillaBusy" title="Plantilla Excel multi-hoja del hub, con datos de referencia y listas">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" /></svg>
+            @(_plantillaBusy ? "Generando..." : "Descargar plantilla (Excel)")
+        </button>
+        <button class="hcm-btn-brand" type="button" @onclick="AbrirModal" title="Cargar la plantilla Excel: se procesa cada hoja y se muestra el detalle">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16" /></svg>
+            Cargar plantilla (Excel)
+        </button>
+    </div>
+</div>
+
+@if (_showModal)
+{
+    <div class="cg-back" @onclick="CerrarModal">
+        <div class="cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="cg-head">
+                <div>
+                    <div class="cg-title">Cargar plantilla (Excel)</div>
+                    <div class="cg-sub">Se procesa cada hoja y se muestra el detalle de creados y errores.</div>
+                </div>
+                <button class="cg-x" type="button" @onclick="CerrarModal" aria-label="Cerrar">&times;</button>
+            </div>
+
+            <div class="cg-body">
+                @if (_result is null && !_confirm)
+                {
+                    <label class="cg-drop">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16" /></svg>
+                        <span class="cg-drop-t">@(_fileName ?? "Selecciona el archivo .xlsx")</span>
+                        <span class="cg-drop-h">Usa la plantilla descargada. Formato .xlsx</span>
+                        <InputFile OnChange="OnFileSelected" accept=".xlsx" style="display:none" disabled="@_busy" />
+                    </label>
+                    <div class="cg-note">@NotaReemplazo</div>
+                    <div class="cg-actions">
+                        <button class="cg-btn-ghost" type="button" @onclick="CerrarModal" disabled="@_busy">Cancelar</button>
+                        <button class="cg-btn-brand" type="button" @onclick="PedirConfirmacion" disabled="@(_busy || _bytes is null)">Continuar</button>
+                    </div>
+                }
+                else if (_result is null && _confirm)
+                {
+                    <div class="cg-confirm">
+                        <div class="cg-confirm-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                        </div>
+                        <div class="cg-confirm-title">Confirmar carga con reemplazo</div>
+                        <div class="cg-confirm-sub">Vas a procesar <b>@_fileName</b>. @NotaReemplazo Esta accion <b>no se puede deshacer</b>.</div>
+                        <label class="cg-confirm-chk">
+                            <input type="checkbox" checked="@_confirmChecked" @onchange="@(e => _confirmChecked = (bool)(e.Value ?? false))" disabled="@_busy" />
+                            <span>Entiendo que se reemplazaran esas categorias y confirmo la carga.</span>
+                        </label>
+                        @if (_busy)
+                        {
+                            <div class="cg-progress" role="progressbar" aria-label="Procesando la plantilla"><div class="cg-progress-bar"></div></div>
+                            <div class="cg-progress-txt">Procesando la plantilla, no cierres esta ventana...</div>
+                        }
+                        <div class="cg-actions">
+                            <button class="cg-btn-ghost" type="button" @onclick="() => { _confirm = false; _confirmChecked = false; }" disabled="@_busy">Volver</button>
+                            <button class="cg-btn-danger" type="button" @onclick="EjecutarAsync" disabled="@(_busy || !_confirmChecked)">@(_busy ? "Procesando..." : "Reemplazar y cargar")</button>
+                        </div>
+                    </div>
+                }
+                else if (_result is not null)
+                {
+                    var okTotal = _result.Errores.Count == 0;
+                    <div class="cg-summary @(okTotal ? "ok" : "warn")">
+                        @if (okTotal) { <strong>Carga completa sin errores.</strong> }
+                        else { <strong>Carga con @_result.Errores.Count advertencia(s).</strong> }
+                        <span>@_result.Copropiedades copropiedad(es) procesada(s).</span>
+                    </div>
+                    <table class="cg-tbl">
+                        <thead><tr><th>Hoja</th><th>Creados</th><th>Actualizados</th><th>Errores</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in ResumenHojas())
+                            {
+                                <tr class="@(f.Errores > 0 ? "cg-row-warn" : "")">
+                                    <td>@f.Hoja</td>
+                                    <td>@f.Creados</td>
+                                    <td>@(f.Actualizados > 0 ? f.Actualizados.ToString() : "-")</td>
+                                    <td>@(f.Errores > 0 ? f.Errores.ToString() : "-")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (_result.Errores.Count > 0)
+                    {
+                        <div class="cg-log-title">Detalle de errores</div>
+                        <div class="cg-log">
+                            @foreach (var er in _result.Errores)
+                            {
+                                <div class="cg-log-item">
+                                    <span class="cg-log-hoja">@er.Hoja</span>
+                                    @if (er.Fila > 0) { <span class="cg-log-fila">fila @er.Fila</span> }
+                                    <span class="cg-log-msg">@er.Motivo</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="cg-actions">
+                        <button class="cg-btn-ghost" type="button" @onclick="Reiniciar">Cargar otro</button>
+                        <button class="cg-btn-brand" type="button" @onclick="CerrarModal">Cerrar</button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Alcance del hub: "config" (Unidades+Zonas+Equipos) o "residentes" (Residentes+Mascotas+Vehiculos).</summary>
+    [Parameter, EditorRequired] public string Scope { get; set; } = "config";
+
+    private string? _jwt;
+    private bool _plantillaBusy;
+    private bool _busy;
+    private bool _showModal;
+    private string? _fileName;
+    private byte[]? _bytes;
+    private bool _confirm;
+    private bool _confirmChecked;
+    private Propia.Application.MiCopropiedad.ResultadoCargaUnidades? _result;
+
+    private bool EsConfig => string.Equals(Scope, "config", StringComparison.OrdinalIgnoreCase);
+
+    private string SubTexto => EsConfig
+        ? "Un solo archivo con las hojas de Unidades privadas, Zonas comunes y Equipos."
+        : "Un solo archivo con las hojas de Residentes, Mascotas y Vehiculos.";
+
+    private string NotaReemplazo => EsConfig
+        ? "Las unidades existentes se actualizan; las zonas comunes y equipos que traiga el archivo reemplazan a los actuales de esta copropiedad."
+        : "Los residentes, vehiculos y mascotas que traiga el archivo reemplazan a los actuales de esta copropiedad (los vehiculos con historial de porteria se conservan como inactivos).";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (!string.IsNullOrWhiteSpace(stored)) _jwt = stored;
+        }
+        catch { }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+    private HttpClient AuthLarga() { var h = Auth(); h.Timeout = TimeSpan.FromMinutes(10); return h; }
+
+    private void AbrirModal()
+    {
+        _fileName = null; _bytes = null; _result = null; _confirm = false; _confirmChecked = false; _showModal = true;
+    }
+    private void CerrarModal() { if (!_busy) _showModal = false; }
+    private void Reiniciar() { _result = null; _fileName = null; _bytes = null; _confirm = false; _confirmChecked = false; }
+    private void PedirConfirmacion() { if (_bytes is not null) { _confirmChecked = false; _confirm = true; } }
+
+    private async Task DescargarAsync()
+    {
+        _plantillaBusy = true;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/mi-copropiedad/distribucion/plantilla-carga?scope={Uri.EscapeDataString(Scope)}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var bytes = await resp.Content.ReadAsByteArrayAsync();
+                var b64 = Convert.ToBase64String(bytes);
+                var nombre = EsConfig ? "Plantilla carga configuracion copropiedad.xlsx" : "Plantilla carga residentes.xlsx";
+                await Js.InvokeVoidAsync("propiaUI.downloadBase64", nombre,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
+            }
+        }
+        catch { }
+        finally { _plantillaBusy = false; }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _fileName = e.File?.Name; _bytes = null;
+        if (e.File is not null)
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(15_000_000).CopyToAsync(ms);
+            _bytes = ms.ToArray();
+        }
+    }
+
+    private async Task EjecutarAsync()
+    {
+        if (_bytes is null) return;
+        _busy = true; _result = null;
+        try
+        {
+            MultipartFormDataContent Contenido()
+            {
+                var c = new MultipartFormDataContent();
+                var sc = new ByteArrayContent(_bytes!);
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                c.Add(sc, "file", _fileName ?? "carga.xlsx");
+                return c;
+            }
+            const string url = "/api/mi-copropiedad/distribucion/importar-carga?reemplazar=true";
+            var resp = await AuthLarga().PostAsync(url, Contenido());
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (!string.IsNullOrEmpty(nuevoJwt)) { _jwt = nuevoJwt; resp = await AuthLarga().PostAsync(url, Contenido()); }
+            }
+            if (resp.IsSuccessStatusCode)
+            {
+                _result = await resp.Content.ReadFromJsonAsync<Propia.Application.MiCopropiedad.ResultadoCargaUnidades>();
+                _confirm = false;
+            }
+            else
+            {
+                var motivo = resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "Tu sesion expiro. Vuelve a iniciar sesion y reintenta la carga."
+                    : $"Error {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}";
+                _result = new Propia.Application.MiCopropiedad.ResultadoCargaUnidades(0, 0, 0, 0, 0, 0, 0, 0,
+                    new List<Propia.Application.MiCopropiedad.CargaUnidadesError> { new("GENERAL", 0, motivo) });
+            }
+        }
+        catch (Exception ex)
+        {
+            _result = new Propia.Application.MiCopropiedad.ResultadoCargaUnidades(0, 0, 0, 0, 0, 0, 0, 0,
+                new List<Propia.Application.MiCopropiedad.CargaUnidadesError> { new("GENERAL", 0, ex.Message) });
+        }
+        finally { _busy = false; }
+    }
+
+    private readonly record struct ResumenHoja(string Hoja, int Creados, int Actualizados, int Errores);
+    private IEnumerable<ResumenHoja> ResumenHojas()
+    {
+        if (_result is null) yield break;
+        int Err(string h) => _result.Errores.Count(e => string.Equals(e.Hoja, h, StringComparison.OrdinalIgnoreCase));
+        if (EsConfig)
+        {
+            yield return new("UNIDADES PRIVADAS", _result.Unidades + _result.Anexos, _result.UnidadesActualizadas, Err("UNIDADES PRIVADAS"));
+            yield return new("ZONAS COMUNES", _result.Zonas, 0, Err("ZONAS COMUNES"));
+            yield return new("EQUIPOS", _result.Equipos, 0, Err("EQUIPOS"));
+        }
+        else
+        {
+            yield return new("RESIDENTES", _result.Personas, 0, Err("PERSONAS"));
+            yield return new("MASCOTAS", _result.Mascotas, 0, Err("MASCOTAS"));
+            yield return new("VEHICULOS", _result.Vehiculos, 0, Err("VEHICULOS"));
+        }
+        var gen = Err("GENERAL");
+        if (gen > 0) yield return new("GENERAL", 0, 0, gen);
+    }
+}
+
+<style>
+    .hcm-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+    .hcm-title { font-size: 14px; font-weight: 700; color: var(--propia-text-h1); }
+    .hcm-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .hcm-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .hcm-btn-soft { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .hcm-btn-soft:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .hcm-btn-soft:disabled { opacity: .6; cursor: default; }
+    .hcm-btn-brand { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--propia-brand); background: var(--propia-brand); color: var(--propia-text-inverse); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .hcm-btn-brand:hover { filter: brightness(1.06); }
+</style>

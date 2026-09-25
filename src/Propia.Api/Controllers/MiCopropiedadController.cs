@@ -110,9 +110,15 @@ public class MiCopropiedadController : ControllerBase
     /// <summary>Descarga la plantilla NUEVA multi-hoja (Unidades/Personas/Vehiculos/Mascotas/Terceros) con
     /// datos de referencia (IDs de las copropiedades del cliente) y listas desplegables validadas.</summary>
     [HttpGet("distribucion/plantilla-carga")]
-    public async Task<IActionResult> DescargarPlantillaCarga(CancellationToken ct)
+    public async Task<IActionResult> DescargarPlantillaCarga(CancellationToken ct, [FromQuery] string? scope = null)
     {
-        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(ct);
+        var alcance = scope?.ToLowerInvariant() switch
+        {
+            "config" => PlantillaCargaScope.Config,
+            "residentes" => PlantillaCargaScope.Residentes,
+            _ => PlantillaCargaScope.Todas,
+        };
+        var (bytes, nombre) = await _plantillaCarga.GenerarPlantillaCargaAsync(alcance, ct);
         return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nombre);
     }
 

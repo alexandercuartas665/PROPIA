@@ -40,8 +40,16 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         _http = http;
     }
 
-    public async Task<(byte[] Contenido, string NombreArchivo)> GenerarPlantillaCargaAsync(CancellationToken ct)
+    public async Task<(byte[] Contenido, string NombreArchivo)> GenerarPlantillaCargaAsync(PlantillaCargaScope scope, CancellationToken ct)
     {
+        // Que hojas de datos incluye el libro segun el hub. Un archivo por hub (no un unico libro con todo).
+        bool incUnidades = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Config;
+        bool incZonas = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Config;
+        bool incEquipos = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Config;
+        bool incPersonas = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Residentes;
+        bool incVehiculos = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Residentes;
+        bool incMascotas = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Residentes;
+        bool incTerceros = scope is PlantillaCargaScope.Todas;
         var copros = await CopropiedadesDelClienteAsync(ct);
         // Catalogos de campos dinamicos (definiciones POR COPROPIEDAD) de cada entidad: se emiten
         // como columnas [Label] al final de su hoja y el importador los lee y guarda.
@@ -90,22 +98,28 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var coproTercerosList = listas.Definir("COPROPIEDAD_TERCEROS",
             new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
 
-        // ---- Hojas de datos ----
-        HojaUnidades(wb, listas, coproList, camposUnidad, cfgUnidad, tiposPropios);
-        HojaPersonas(wb, listas, coproList, camposPersona, cfgPersona);
-        HojaVehiculos(wb, listas, coproList, camposVehiculo, cfgVehiculo);
-        HojaMascotas(wb, listas, coproList, camposMascota, cfgMascota);
-        HojaTerceros(wb, listas, coproTercerosList);
-        HojaZonasComunes(wb, listas, coproList, camposZona);
-        HojaEquipos(wb, listas, coproList, camposEquipo);
+        // ---- Hojas de datos (solo las del alcance pedido; el importador procesa las hojas presentes) ----
+        if (incUnidades) HojaUnidades(wb, listas, coproList, camposUnidad, cfgUnidad, tiposPropios);
+        if (incPersonas) HojaPersonas(wb, listas, coproList, camposPersona, cfgPersona);
+        if (incVehiculos) HojaVehiculos(wb, listas, coproList, camposVehiculo, cfgVehiculo);
+        if (incMascotas) HojaMascotas(wb, listas, coproList, camposMascota, cfgMascota);
+        if (incTerceros) HojaTerceros(wb, listas, coproTercerosList);
+        if (incZonas) HojaZonasComunes(wb, listas, coproList, camposZona);
+        if (incEquipos) HojaEquipos(wb, listas, coproList, camposEquipo);
         listas.Cerrar();
 
+        var (titulo, archivo) = scope switch
+        {
+            PlantillaCargaScope.Config => ("Plantilla de carga - Configuracion copropiedad", "Plantilla carga configuracion copropiedad.xlsx"),
+            PlantillaCargaScope.Residentes => ("Plantilla de carga - Residentes", "Plantilla carga residentes.xlsx"),
+            _ => ("Plantilla de carga - Unidades privadas", "Plantilla carga unidades privadas.xlsx"),
+        };
         wb.Properties.Author = "PROPIA";
         wb.Properties.Company = "A&D GROUP S.A.S";
-        wb.Properties.Title = "Plantilla de carga - Unidades privadas";
+        wb.Properties.Title = titulo;
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
-        return (ms.ToArray(), "Plantilla carga unidades privadas.xlsx");
+        return (ms.ToArray(), archivo);
     }
 
     /// <summary>
