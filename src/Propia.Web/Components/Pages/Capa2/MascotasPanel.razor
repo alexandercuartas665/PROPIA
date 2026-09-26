@@ -413,7 +413,7 @@ else
                      Editar="_campoAEditar"
                      TiposAvanzados="false"
                      Guardado="RecargarTrasCrearCampo"
-                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; }"
+                     Cerrado="() => { _crearCampoAbierto = false; _campoAEditar = null; _insertTargetKey = null; }"
                      AbrirGestorAvanzado="AbrirGestorDesdeCrear" />
 }
 
@@ -975,6 +975,32 @@ else
     {
         _crearCampoAbierto = false; _campoAEditar = null;
         await CargarCamposAsync(Auth());
+        if (_insertTargetKey is not null) await ReposicionarNuevoAsync();
+        StateHasChanged();
+    }
+
+    // "Insertar a la izquierda/derecha": tras crear el campo (que nace al final), lo coloca junto a la
+    // columna elegida reescribiendo el orden de todas las columnas (config, entidad del modulo).
+    private string? _insertTargetKey;
+    private int _insertSide;
+    private HashSet<Guid> _defsAntesInsert = new();
+    private async Task ReposicionarNuevoAsync()
+    {
+        var target = _insertTargetKey; _insertTargetKey = null;
+        if (target is null) return;
+        var nuevo = _defs.FirstOrDefault(d => !_defsAntesInsert.Contains(d.Id));
+        if (nuevo is null) return;
+        var nuevoKey = "cd:" + nuevo.Id;
+        var keys = ClavesOrdenadas().ToList();
+        keys.Remove(nuevoKey);
+        var ti = keys.IndexOf(target);
+        if (ti < 0) return; // columna objetivo no visible: el campo queda al final
+        var pos = _insertSide < 0 ? ti : ti + 1;
+        if (pos < 1) pos = 1; // nunca antes de la 1a columna (fija)
+        if (pos > keys.Count) pos = keys.Count;
+        keys.Insert(pos, nuevoKey);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgAsync(FilaConfig(keys[k]) with { Orden = k });
+        await CargarCfgAsync();
         StateHasChanged();
     }
     private void AbrirGestorDesdeCrear()
@@ -1017,6 +1043,9 @@ else
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:
+                _insertTargetKey = col.Key;
+                _insertSide = accion == TablaColMenu.Accion.InsertarIzq ? -1 : 1;
+                _defsAntesInsert = _defs.Select(d => d.Id).ToHashSet();
                 AbrirCrearCampo();
                 break;
             case TablaColMenu.Accion.Ocultar:
