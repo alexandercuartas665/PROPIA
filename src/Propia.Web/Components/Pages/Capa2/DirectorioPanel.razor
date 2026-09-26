@@ -1450,10 +1450,29 @@
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
-                DirToast("Usa el boton Filtros para filtrar por este campo.");
+                if (_fd is not null && CamposFiltroDir.Any(c => c.Key == col.Key))
+                    await _fd.AgregarReglaCampo(col.Key);
+                else DirToast("Filtrar por este campo aun no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.TituloIa:
-                DirToast("Sugerir titulo con IA: proximamente.");
+                if (campo is not null)
+                {
+                    DirToast("Sugiriendo un titulo con IA...");
+                    var _t = await Propia.Web.Components.Shared.IaCampoTitulo.SugerirAsync(Auth(), "personas del directorio", campo.Label);
+                    if (_t.Ok && !string.IsNullOrWhiteSpace(_t.Titulo))
+                    {
+                        try
+                        {
+                            var _rr = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos/{campo.Id}",
+                                new ActualizarCampoDefinicionRequest(_t.Titulo!, campo.Tipo, campo.Opciones, campo.Orden, campo.Descripcion));
+                            if (_rr.IsSuccessStatusCode) { await CargarCamposDirAsync(Auth()); DirToast($"Titulo IA aplicado: {_t.Titulo}"); }
+                            else DirToast("No se pudo aplicar el titulo sugerido.");
+                        }
+                        catch { DirToast("No se pudo aplicar el titulo sugerido."); }
+                    }
+                    else DirToast("La IA no pudo sugerir un titulo ahora.");
+                }
+                else DirToast("Sugerir titulo con IA solo aplica a campos propios.");
                 break;
             default:
                 DirToast("En construccion: " + accion + ".");

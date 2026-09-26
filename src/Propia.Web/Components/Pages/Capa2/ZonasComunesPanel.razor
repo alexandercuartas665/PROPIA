@@ -807,10 +807,32 @@ else
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
-                ColToastZ("Usa el boton Filtros para filtrar por este campo.");
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key))
+                    await _fd.AgregarReglaCampo(col.Key);
+                else ColToastZ("Filtrar por este campo aun no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.TituloIa:
-                ColToastZ("Sugerir titulo con IA: proximamente.");
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null)
+                    {
+                        ColToastZ("Sugiriendo un titulo con IA...");
+                        var _t = await Propia.Web.Components.Shared.IaCampoTitulo.SugerirAsync(Auth(), "zonas comunes", campo.Label);
+                        if (_t.Ok && !string.IsNullOrWhiteSpace(_t.Titulo))
+                        {
+                            try
+                            {
+                                var _rr = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas-campos/{campo.Id}",
+                                    new ActualizarCampoDefinicionRequest(_t.Titulo!, campo.Tipo, campo.Opciones, campo.Orden, campo.Descripcion));
+                                if (_rr.IsSuccessStatusCode) { await CargarCamposYConfigAsync(); ColToastZ($"Titulo IA aplicado: {_t.Titulo}"); }
+                                else ColToastZ("No se pudo aplicar el titulo sugerido.");
+                            }
+                            catch { ColToastZ("No se pudo aplicar el titulo sugerido."); }
+                        }
+                        else ColToastZ("La IA no pudo sugerir un titulo ahora.");
+                    }
+                    else ColToastZ("Sugerir titulo con IA solo aplica a campos propios.");
+                }
                 break;
             default:
                 ColToastZ("En construccion: " + accion + ".");

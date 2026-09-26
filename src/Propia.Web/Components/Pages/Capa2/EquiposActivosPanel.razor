@@ -1045,10 +1045,32 @@ else
                 ColToastE("Agrupar por este campo aun no esta disponible.");
                 break;
             case TablaColMenu.Accion.Filtrar:
-                ColToastE("Usa el boton Filtros para filtrar por este campo.");
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key))
+                    await _fd.AgregarReglaCampo(col.Key);
+                else ColToastE("Filtrar por este campo aun no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.TituloIa:
-                ColToastE("Sugerir titulo con IA: proximamente.");
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null)
+                    {
+                        ColToastE("Sugiriendo un titulo con IA...");
+                        var _t = await Propia.Web.Components.Shared.IaCampoTitulo.SugerirAsync(Auth(), "equipos y activos", campo.Label);
+                        if (_t.Ok && !string.IsNullOrWhiteSpace(_t.Titulo))
+                        {
+                            try
+                            {
+                                var _rr = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos-campos/{campo.Id}",
+                                    new ActualizarCampoDefinicionRequest(_t.Titulo!, campo.Tipo, campo.Opciones, campo.Orden, campo.Descripcion));
+                                if (_rr.IsSuccessStatusCode) { await CargarCamposYConfigAsync(); ColToastE($"Titulo IA aplicado: {_t.Titulo}"); }
+                                else ColToastE("No se pudo aplicar el titulo sugerido.");
+                            }
+                            catch { ColToastE("No se pudo aplicar el titulo sugerido."); }
+                        }
+                        else ColToastE("La IA no pudo sugerir un titulo ahora.");
+                    }
+                    else ColToastE("Sugerir titulo con IA solo aplica a campos propios.");
+                }
                 break;
             default:
                 ColToastE("En construccion: " + accion + ".");

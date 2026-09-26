@@ -1514,10 +1514,29 @@
                 ColToast("Agrupar por este campo aun no esta disponible en Usuarios.");
                 break;
             case TablaColMenu.Accion.Filtrar:
-                ColToast("Usa el boton Filtros para filtrar por este campo.");
+                if (_fd is not null && CamposFiltroUsr.Any(c => c.Key == col.Key))
+                    await _fd.AgregarReglaCampo(col.Key);
+                else ColToast("Filtrar por este campo aun no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.TituloIa:
-                ColToast("Sugerir titulo con IA: proximamente.");
+                if (campo is not null)
+                {
+                    ColToast("Sugiriendo un titulo con IA...");
+                    var _t = await Propia.Web.Components.Shared.IaCampoTitulo.SugerirAsync(Auth(), "usuarios", campo.Label);
+                    if (_t.Ok && !string.IsNullOrWhiteSpace(_t.Titulo))
+                    {
+                        try
+                        {
+                            var _rr = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/usuarios-campos/{campo.Id}",
+                                new ActualizarCampoDefinicionRequest(_t.Titulo!, campo.Tipo, campo.Opciones, campo.Orden, campo.Descripcion));
+                            if (_rr.IsSuccessStatusCode) { await CargarCamposU(Auth()); ColToast($"Titulo IA aplicado: {_t.Titulo}"); }
+                            else ColToast("No se pudo aplicar el titulo sugerido.");
+                        }
+                        catch { ColToast("No se pudo aplicar el titulo sugerido."); }
+                    }
+                    else ColToast("La IA no pudo sugerir un titulo ahora.");
+                }
+                else ColToast("Sugerir titulo con IA solo aplica a campos propios.");
                 break;
             default:
                 ColToast("En construccion: " + accion + ".");
