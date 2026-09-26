@@ -312,6 +312,14 @@
         else
         {
             @* ===================== VISTA TABLA ===================== *@
+            @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
+               Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
+               eliminar/ocultar abren ese gestor con un aviso; orden, copiar URL y agrupar actuan directo. *@
+            <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+            @if (_colToast is not null)
+            {
+                <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
+            }
             @* Doble scroll horizontal: barra superior espejo, sincronizada por JS con la tabla (igual que Tareas). *@
             <div class="pk-topscroll" id="pkTopScroll"><div id="pkTopScrollInner"></div></div>
             <div class="pk-tablebox">
@@ -326,7 +334,7 @@
                                 var sk = ck; // clave de orden = col.Key ("cd:{id}" para las dinamicas)
                                 var cls = col.EsCustom ? $"pk-col-c{col.CampoId}" : $"pk-col-{ck}";
                                 <th class="pk-th-sort @cls @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(sk)">
-                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>
+                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>@ChevCol(ck, col.Label, col.EsCustom)
                                 </th>
                             }
                             <th class="pk-th-actions"></th>
@@ -1029,6 +1037,61 @@
     private List<TablaOrdenarMenu.Col> ColsOrdenablesPqr()
         => ColumnasVisibles.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
     private void OnSortsPqrChanged() { _pagina = 1; StateHasChanged(); }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a lo
+    // REAL del modulo. PQRSD gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto con
+    // _cfgCamposOpen), no por columna: editar/duplicar/eliminar/ocultar/insertar abren ese gestor con un
+    // aviso; orden, copiar URL y agrupar actuan directo. La flecha lleva stopPropagation para no disparar el
+    // ordenamiento por clic en la cabecera. =====
+    private TablaColMenu? _colMenu;
+    private string? _colToast;
+    private void ColToast(string m) { _colToast = m; }
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}pqrs#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
+                catch { ColToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = col.Key switch { "estado" => "estado", "tipo" => "tipo", "categoria" => "categoria", "unidad" => "unidad", _ => (string?)null };
+                    if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
+                    await SetGroup(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToast("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToast("Sugerir titulo con IA: proximamente.");
+                break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+            case TablaColMenu.Accion.Duplicar:
+            case TablaColMenu.Accion.Eliminar:
+            case TablaColMenu.Accion.Ocultar:
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _cfgCamposOpen = true;   // abre el gestor "Campos" (ConfigCamposEntidad)
+                ColToast("Gestiona el campo en el panel de Campos.");
+                break;
+            default:
+                ColToast("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="pk-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
     // Clic en cabecera: un solo criterio; si ya es el unico, invierte direccion; si no, lo reemplaza.
     private void SortByPqr(string clave)
     {

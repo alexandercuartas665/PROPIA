@@ -164,6 +164,15 @@
             </div>
         </div>
 
+        @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
+           Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
+           eliminar/ocultar abren ese gestor con un aviso; orden, copiar URL y agrupar actuan directo. *@
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        @if (_colToast is not null)
+        {
+            <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
+        }
+
         @if (_loadError is not null) { <div class="alert alert-danger">@_loadError</div> }
 
         @* Vacio-como-tabla (canon): el cartel seg-empty solo aplica a la vista Tarjetas; en vista
@@ -178,7 +187,7 @@
                 <div class="seg-scroll">
                     <div class="seg-head seg-grid" style="@GridStyle()">
                         <div></div>
-                        @foreach (var clave in ColsVisibles()) { <div>@ColLabel(clave).ToUpperInvariant()</div> }
+                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th">@ColLabel(ck).ToUpperInvariant()@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))</div> }
                     </div>
                     @foreach (var item in FilasRender())
                     {
@@ -466,6 +475,11 @@
     .seg-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
     .seg-menu-it:hover { background: var(--propia-brand-soft-2); }
     .seg-menu-it.on { background: var(--propia-brand-soft-2); color: var(--propia-brand, var(--propia-brand)); }
+    /* Flecha "opciones de columna" (menu estilo Airtable): oculta salvo hover de la celda del header. */
+    .seg-head .seg-th { display: inline-flex; align-items: center; gap: 3px; }
+    .seg-th-edit { opacity: 0; width: 18px; height: 18px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: opacity .12s, color .12s, background .12s; }
+    .seg-head .seg-th:hover .seg-th-edit, .seg-th-edit:focus-visible { opacity: 1; }
+    .seg-th-edit:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     /* Boton "Filtros" + popover constructor de reglas (mismo diseno que Contratos/PQRS). */
     .seg-filtro-wrap { position: relative; }
     .seg-fbadge { background: var(--propia-brand, var(--propia-brand)); color: var(--propia-text-inverse); font-size: 10.5px; font-weight: 800; border-radius: 20px; padding: 0 6px; min-width: 17px; height: 17px; margin-left: 5px; display: inline-flex; align-items: center; justify-content: center; }
@@ -695,6 +709,60 @@
     private List<TablaOrdenarMenu.Col> ColsOrdenablesS()
         => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
     private void OnSortsSChanged() { _pagina = 1; StateHasChanged(); }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a lo
+    // REAL del modulo. Seguros gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto con
+    // _showCampos), no por columna: editar/duplicar/eliminar/ocultar/insertar abren ese gestor con un aviso;
+    // orden, copiar URL y agrupar actuan directo. =====
+    private TablaColMenu? _colMenu;
+    private string? _colToast;
+    private void ColToast(string m) { _colToast = m; }
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}seguros#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
+                catch { ColToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = col.Key switch { "aseguradora" => "aseguradora", "vencimiento" => "estado", "estado" => "estado", _ => (string?)null };
+                    if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
+                    await SetAgruparVal(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToast("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToast("Sugerir titulo con IA: proximamente.");
+                break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+            case TablaColMenu.Accion.Duplicar:
+            case TablaColMenu.Accion.Eliminar:
+            case TablaColMenu.Accion.Ocultar:
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _showCampos = true;   // abre el gestor "Campos" (ConfigCamposEntidad)
+                ColToast("Gestiona el campo en el panel de Campos.");
+                break;
+            default:
+                ColToast("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="seg-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
     // Valor de orden por clave: fechas/numeros en forma cruda ordenable; el resto (texto fijo,
     // vencimiento y campos propios "cd:{id}") reusa la funcion de valor de celda CeldaTextoP.
     private string ValorOrdenS(PolizaDto p, string clave)

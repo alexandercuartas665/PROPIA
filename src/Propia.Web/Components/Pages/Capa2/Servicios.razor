@@ -242,6 +242,15 @@ else
             }
         </div>
 
+        @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
+           Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
+           eliminar/ocultar abren ese gestor y el resto (orden/URL/agrupar) actua directo. *@
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        @if (_colToast is not null)
+        {
+            <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
+        }
+
         @* Vista tabla (canon): la tabla se renderiza SIEMPRE (cabecera + fila vacia + footer
            "Mostrando 0 de 0"); el cartel de vacio solo aplica a la vista Tarjetas/Kanban. *@
         @if (_contratos.Count == 0 && _vistaC == "tarjetas")
@@ -315,7 +324,7 @@ else
                         <thead>
                             <tr>
                                 <th class="ctr-exp-col"></th>
-                                @foreach (var k in ColsVisibles()) { <th class="@ColThClass(k)" title="@ColDesc(k)">@ColLabel(k)</th> }
+                                @foreach (var k in ColsVisibles()) { var kDin = Guid.TryParse(k, out _); <th class="@ColThClass(k)" title="@ColDesc(k)">@ColLabel(k)@ChevCol(k, ColLabel(k), kDin)</th> }
                                 <th class="ctr-w2"></th>
                             </tr>
                         </thead>
@@ -1908,6 +1917,60 @@ else
     private bool _showAgruparMenu;
     private static string AgruparLabelC(string v) => v switch { "etapa" => "Etapa", "tipo" => "Tipo", "tercero" => "Tercero", "estado" => "Estado", _ => "" };
     private void SetCAgrupar(string v) { _cAgrupar = v; _showAgruparMenu = false; _cPage = 0; }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a
+    // lo REAL del modulo. Contratos gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto
+    // con _showColsMenu), no por columna: editar/duplicar/eliminar/ocultar/insertar abren ese gestor con un
+    // aviso; orden, copiar URL y agrupar actuan directo. =====
+    private TablaColMenu? _colMenu;
+    private string? _colToast;
+    private void ColToast(string m) { _colToast = m; }
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _cPage = 0; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _cPage = 0; break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}{(EsContratos ? "contratos" : "servicios")}#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
+                catch { ColToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = col.Key switch { "etapa" => "etapa", "tipo" => "tipo", "tercero" => "tercero", "estado" => "estado", _ => (string?)null };
+                    if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
+                    SetCAgrupar(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToast("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToast("Sugerir titulo con IA: proximamente.");
+                break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+            case TablaColMenu.Accion.Duplicar:
+            case TablaColMenu.Accion.Eliminar:
+            case TablaColMenu.Accion.Ocultar:
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _showColsMenu = true;   // abre el gestor "Campos" (ConfigCamposEntidad)
+                ColToast("Gestiona el campo en el panel de Campos.");
+                break;
+            default:
+                ColToast("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="ctr-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     // Catalogo de campos de SISTEMA del contrato para el componente (forma neutra). La tabla los pinta por
     // clave con formato fijo, asi que van sin cambio de tipo ni formato (TiposIntercambiables vacio + SinFormato).
