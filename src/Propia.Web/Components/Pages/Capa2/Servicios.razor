@@ -210,6 +210,11 @@ else
                                     var gk = g.Item1;
                                     <button class="ctr-menu-it @(_cAgrupar == gk ? "on" : "")" @onclick="() => SetCAgrupar(gk)">@g.Item2</button>
                                 }
+                                @foreach (var cpo in CamposActivos)
+                                {
+                                    var gk = "cd:" + cpo.Id;
+                                    <button class="ctr-menu-it @(_cAgrupar == gk ? "on" : "")" @onclick="@(() => SetCAgrupar(gk))">@cpo.Label</button>
+                                }
                             </div>
                         }
                     </div>
@@ -1590,8 +1595,17 @@ else
     private IEnumerable<ContratoServicioDto> ContratosFiltrados()
         => _contratos.Where(PasaFiltrosC).OrderBy(c => c.Tipo).ThenBy(c => c.FechaFin);
 
-    private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst) =>
-        _cAgrupar switch
+    private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst)
+    {
+        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada contrato.
+        if (_cAgrupar.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoDinC(_cAgrupar[3..]) is not { } gcd) return lst.GroupBy(_ => "");
+            return lst.GroupBy(c => { var val = ValorCampo(c, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
+                      .OrderBy(g => g.Key == "Sin dato" ? 1 : 0)
+                      .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
+        }
+        return _cAgrupar switch
         {
             "etapa"   => lst.GroupBy(c => EtapaNombreDe(c.EtapaId)).OrderBy(g => EtapaOrdenDe(g.Key)),
             "tipo"    => lst.GroupBy(c => TipoLabel(c.Tipo)).OrderBy(g => g.Key),
@@ -1599,6 +1613,7 @@ else
             "estado"  => lst.GroupBy(c => EstadoTextoContrato(c)).OrderBy(g => g.Key),
             _ => lst.GroupBy(_ => "")
         };
+    }
 
     private string EtapaNombreDe(Guid? id) => _etapas.FirstOrDefault(e => e.Id == id)?.Nombre ?? "(sin etapa)";
     private int EtapaOrdenDe(string nombre) => _etapas.FirstOrDefault(e => e.Nombre == nombre)?.Orden ?? 999;
@@ -1915,7 +1930,11 @@ else
     private Dictionary<string, UnidadCampoConfigDto> _cfgContrato = new(StringComparer.Ordinal);
     private bool _showColsMenu;
     private bool _showAgruparMenu;
-    private static string AgruparLabelC(string v) => v switch { "etapa" => "Etapa", "tipo" => "Tipo", "tercero" => "Tercero", "estado" => "Estado", _ => "" };
+    private string AgruparLabelC(string v)
+    {
+        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoDinC(v[3..])?.Label ?? "Campo";
+        return v switch { "etapa" => "Etapa", "tipo" => "Tipo", "tercero" => "Tercero", "estado" => "Estado", _ => "" };
+    }
     private void SetCAgrupar(string v) { _cAgrupar = v; _showAgruparMenu = false; _cPage = 0; }
 
     // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a
@@ -1942,6 +1961,13 @@ else
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
+                    if (col.EsDinamico)
+                    {
+                        // En Contratos la clave de columna dinamica es el guid pelado; el grupo usa "cd:{guid}".
+                        var gk = col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key;
+                        SetCAgrupar(gk);
+                        break;
+                    }
                     var g = col.Key switch { "etapa" => "etapa", "tipo" => "tipo", "tercero" => "tercero", "estado" => "estado", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
                     SetCAgrupar(g);

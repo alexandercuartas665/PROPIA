@@ -62,6 +62,11 @@ else
                         var gk = g.Item1;
                         <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
                     }
+                    @foreach (var d in _defs)
+                    {
+                        var gk = "cd:" + d.Id;
+                        <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgrupar(gk))">@d.Label</button>
+                    }
                 </div>
             }
         </div>
@@ -877,10 +882,14 @@ else
         else ColToast("No se pudo duplicar el campo.");
     }
     // Traduce la clave de columna a la dimension de agrupacion soportada (SetAgrupar). null = no soportado.
-    private static string? GrupoDeClave(string clave) => clave switch
+    private string? GrupoDeClave(string clave)
     {
-        "rol" => "rol", "unidad" => "unidad", _ => null
-    };
+        if (clave.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(clave) is not null ? clave : null;
+        return clave switch
+        {
+            "rol" => "rol", "unidad" => "unidad", _ => null
+        };
+    }
 
     // ---------- Interacciones de tabla: ordenar, mover columna, redimensionar, menu contextual ----------
     private static int CmpValTabla(string a, string b)
@@ -1184,7 +1193,11 @@ else
         _agruparPor = v; _pagina = 1; _showAgrupar = false;
         try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, v); } catch { }
     }
-    private string AgruparLabel(string k) => k switch { "rol" => "Rol", "unidad" => "Unidad", "torre" => "Torre", _ => "" };
+    private string AgruparLabel(string k)
+    {
+        if (k.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(k)?.Label ?? "Campo";
+        return k switch { "rol" => "Rol", "unidad" => "Unidad", "torre" => "Torre", _ => "" };
+    }
 
     private readonly record struct FilaR(bool EsGrupo, string? GrupoTitulo, int GrupoCount, ResidenteResumenDto? Fila);
 
@@ -1193,6 +1206,22 @@ else
         if (_agruparPor == "")
         {
             foreach (var r in Pagina) yield return new FilaR(false, null, 0, r);
+            yield break;
+        }
+        // Agrupacion por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
+        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoCustom(_agruparPor) is CampoDinDef gcd)
+            {
+                foreach (var g in Filtrados
+                    .GroupBy(r => { var val = ValorDe(r.UnidadPersonaId, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
+                    .OrderBy(g => g.Key.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                    .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    yield return new FilaR(true, g.Key, g.Count(), null);
+                    foreach (var r in g) yield return new FilaR(false, null, 0, r);
+                }
+            }
             yield break;
         }
         // Agrupacion sobre la lista filtrada completa (sin paginar).

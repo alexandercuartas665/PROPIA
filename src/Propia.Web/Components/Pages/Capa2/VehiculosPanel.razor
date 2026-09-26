@@ -58,6 +58,11 @@ else
                         var gk = g.Item1;
                         <button class="veh-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
                     }
+                    @foreach (var d in _defs)
+                    {
+                        var gk = "cd:" + d.Id;
+                        <button class="veh-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgrupar(gk))">@d.Label</button>
+                    }
                 </div>
             }
         </div>
@@ -584,6 +589,16 @@ else
     {
         if (_agruparPor == "") return null;
         var items = Filtradas;
+        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
+        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoCustom(_agruparPor) is not CampoDinDef gcd) return null;
+            return items.GroupBy(v => { var val = ValorDe(v.PlacaId, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
+                        .Select(g => new GrupoVeh(g.Key, g.ToList()))
+                        .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                        .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
+                        .ToList();
+        }
         var gs = _agruparPor switch
         {
             "tipo" => items.GroupBy(v => TipoLabel(v.TipoVehiculo)),
@@ -617,10 +632,14 @@ else
         foreach (var v in Filtradas.Skip(desde).Take(_porPagina)) yield return new FilaRender(false, v);
     }
 
-    private string AgruparLabel(string v) => v switch
+    private string AgruparLabel(string v)
     {
-        "tipo" => "Tipo de vehiculo", "unidad" => "Unidad", "propietario" => "Propietario", _ => ""
-    };
+        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(v)?.Label ?? "Campo";
+        return v switch
+        {
+            "tipo" => "Tipo de vehiculo", "unidad" => "Unidad", "propietario" => "Propietario", _ => ""
+        };
+    }
 
     private void SetAgrupar(string v) { _agruparPor = v; _pagina = 1; _showAgrupar = false; }
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
@@ -1040,10 +1059,14 @@ else
         else ColToast("No se pudo duplicar el campo.");
     }
     // Traduce la clave de columna a la dimension de agrupacion soportada (SetAgrupar). null = no soportado.
-    private static string? GrupoDeClave(string clave) => clave switch
+    private string? GrupoDeClave(string clave)
     {
-        "tipovehiculo" => "tipo", "unidad" => "unidad", "propietario" => "propietario", _ => null
-    };
+        if (clave.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(clave) is not null ? clave : null;
+        return clave switch
+        {
+            "tipovehiculo" => "tipo", "unidad" => "unidad", "propietario" => "propietario", _ => null
+        };
+    }
 
     // ===== Ordenar multi-criterio (boton "Ordenar" apilable + clic en header como 1 criterio) =====
     private List<TablaOrdenarMenu.Sort> _sorts = new();

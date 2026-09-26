@@ -364,6 +364,11 @@ else
                             var gk = g.Item1;
                             <button class="dst-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgruparVal(gk)">@g.Item2</button>
                         }
+                        @foreach (var d in _camposDef)
+                        {
+                            var gk = "cd:" + d.Id;
+                            <button class="dst-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgruparVal(gk))">@d.Label</button>
+                        }
                     </div>
                 }
             </div>
@@ -1158,6 +1163,8 @@ else
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
+                    if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && CampoDeClave(col.Key) is not null)
+                    { await SetAgruparVal(col.Key); break; }
                     var g = col.Key switch { "torre" => "torre", "prop" => "propietario", "estado" => "estado", "tipo" => "tipo", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
                     await SetAgruparVal(g);
@@ -1322,7 +1329,11 @@ else
     }
 
     private bool _showAgruparMenu;
-    private string AgruparLabelU(string v) => v switch { "torre" => LabelAgrupacionSingular, "propietario" => "Propietario", "estado" => "Estado", "tipo" => "Tipo", _ => "" };
+    private string AgruparLabelU(string v)
+    {
+        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoDeClave(v)?.Label ?? "Campo";
+        return v switch { "torre" => LabelAgrupacionSingular, "propietario" => "Propietario", "estado" => "Estado", "tipo" => "Tipo", _ => "" };
+    }
     private async Task SetAgruparVal(string v)
     {
         _agruparPor = v; _pagina = 1; _showAgruparMenu = false;
@@ -1336,6 +1347,16 @@ else
     {
         if (_agruparPor == "") return null;
         var items = Filtradas;
+        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
+        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoDeClave(_agruparPor) is not UnidadCampoDefinicionDto gcd) return null;
+            return items.GroupBy(u => { var val = ValorCampo(u.Id, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
+                        .Select(g => new GrupoUni(g.Key, g.ToList()))
+                        .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                        .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
+                        .ToList();
+        }
         var gs = _agruparPor switch
         {
             "torre" => items.GroupBy(u => u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"),

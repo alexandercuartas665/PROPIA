@@ -2312,7 +2312,10 @@ else
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
-                    var g = col.EsDinamico ? null : GrupoKeyFija(col.Key);
+                    // En Tareas la clave de columna dinamica es el guid pelado; el grupo usa "cd:{guid}".
+                    var g = col.EsDinamico
+                        ? (col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key)
+                        : GrupoKeyFija(col.Key);
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
                     await SetCardGroup(g);
                 }
@@ -2400,6 +2403,9 @@ else
         yield return ("unidad", "Unidad privada");
         yield return ("relacionado", "Relacionado con");
         if (EsBoardCompartido) yield return ("copropiedad", "Copropiedad");
+        // Agrupar por campo propio (dinamico) del tablero: clave "cd:{id}".
+        foreach (var c in CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && c.Tipo != TipoCampoTablero.Total))
+            yield return ("cd:" + c.Id, c.Label);
     }
     private string GrupoLabel(string k) => OpcionesGrupo().FirstOrDefault(o => o.Key == k).Label ?? k;
 
@@ -2661,16 +2667,22 @@ else
         return string.IsNullOrWhiteSpace(pre) ? "Sin torre" : pre;
     }
     // Funcion de clave de agrupacion segun _cardGroup (compartida por Tablero y Lista).
-    private Func<TareaListaDto, string> ClaveGrupo() => _cardGroup switch
+    private Func<TareaListaDto, string> ClaveGrupo()
     {
-        "prioridad" => t => t.Prioridad.ToString(),
-        "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
-        "torre" => t => TorreDeTarea(t),
-        "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
-        "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
-        "copropiedad" => t => string.IsNullOrWhiteSpace(t.TenantNombre) ? "Sin copropiedad" : t.TenantNombre!,
-        _ => t => t.EstadoNombre
-    };
+        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada tarea.
+        if (_cardGroup.StartsWith("cd:", StringComparison.Ordinal) && CampoDinamico(_cardGroup[3..]) is { } gdef)
+            return t => { var v = CampoValor(t, gdef.Id); return string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!; };
+        return _cardGroup switch
+        {
+            "prioridad" => t => t.Prioridad.ToString(),
+            "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
+            "torre" => t => TorreDeTarea(t),
+            "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
+            "relacionado" => t => string.IsNullOrWhiteSpace(t.OrigenReferencia) ? "Sin relacion" : t.OrigenReferencia!,
+            "copropiedad" => t => string.IsNullOrWhiteSpace(t.TenantNombre) ? "Sin copropiedad" : t.TenantNombre!,
+            _ => t => t.EstadoNombre
+        };
+    }
     // Tablero (tarjetas): agrupa las raices aplicando los mismos filtros que la vista Lista.
     private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
         => _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupo())

@@ -94,6 +94,11 @@ else
                             var gk = g.Item1;
                             <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="() => SetAgruparZ(gk)">@g.Item2</button>
                         }
+                        @foreach (var d in _camposDef)
+                        {
+                            var gk = "cd:" + d.Id;
+                            <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="@(() => SetAgruparZ(gk))">@d.Label</button>
+                        }
                     </div>
                 }
             </div>
@@ -801,6 +806,8 @@ else
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
+                    if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && CampoCustom(col.Key) is not null)
+                    { SetAgruparZ(col.Key); break; }
                     var g = col.Key switch { "categoria" => "categoria", "estado" => "estado", "reservable" => "reserva", _ => (string?)null };
                     if (g is null) { ColToastZ("Agrupar por este campo aun no esta disponible."); break; }
                     SetAgruparZ(g);
@@ -1038,15 +1045,30 @@ else
     // ===== Agrupar (boton "Agrupar"): agrupa la lista por un campo. =====
     private string _agruparZ = "";
     private bool _showAgruparZ;
-    private static string AgruparLabelZ(string k) => k switch { "categoria" => "Categoria", "reserva" => "Reserva", "estado" => "Estado", _ => "" };
-    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; _paginaZ = 1; }
-    private IEnumerable<IGrouping<string, ZonaComunDto>> AgruparZonas(IEnumerable<ZonaComunDto> zonas) => _agruparZ switch
+    private string AgruparLabelZ(string k)
     {
-        "categoria" => zonas.GroupBy(z => z.Categoria.ToString()),
-        "reserva" => zonas.GroupBy(z => z.EsReservable ? "Reservable" : "No reservable"),
-        "estado" => zonas.GroupBy(z => z.Estado.ToString()),
-        _ => PaginarSinGrupoZ(zonas)   // sin agrupar: se pagina (footer canonico)
-    };
+        if (k.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(k)?.Label ?? "Campo";
+        return k switch { "categoria" => "Categoria", "reserva" => "Reserva", "estado" => "Estado", _ => "" };
+    }
+    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; _paginaZ = 1; }
+    private IEnumerable<IGrouping<string, ZonaComunDto>> AgruparZonas(IEnumerable<ZonaComunDto> zonas)
+    {
+        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
+        if (_agruparZ.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoCustom(_agruparZ) is not ZonaCampoDefinicionDto gcd) return PaginarSinGrupoZ(zonas);
+            return zonas.GroupBy(z => { var val = ValorCampo(z.Id, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
+                        .OrderBy(g => g.Key.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                        .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
+        }
+        return _agruparZ switch
+        {
+            "categoria" => zonas.GroupBy(z => z.Categoria.ToString()),
+            "reserva" => zonas.GroupBy(z => z.EsReservable ? "Reservable" : "No reservable"),
+            "estado" => zonas.GroupBy(z => z.Estado.ToString()),
+            _ => PaginarSinGrupoZ(zonas)   // sin agrupar: se pagina (footer canonico)
+        };
+    }
     // Envuelve la pagina actual en un unico "grupo" sin titulo (el header de grupo se oculta cuando
     // _agruparZ == ""). Asi la vista tabla reusa el mismo render pero paginado.
     private IEnumerable<IGrouping<string, ZonaComunDto>> PaginarSinGrupoZ(IEnumerable<ZonaComunDto> zonas)

@@ -135,6 +135,11 @@
                             var gk = g.Item1;
                             <button class="seg-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgruparVal(gk)">@g.Item2</button>
                         }
+                        @foreach (var cpo in CamposActivos)
+                        {
+                            var gk = ClaveCustom(cpo);
+                            <button class="seg-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgruparVal(gk))">@cpo.Label</button>
+                        }
                     </div>
                 }
             </div>
@@ -734,6 +739,13 @@
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
+                    if (col.EsDinamico)
+                    {
+                        // En Seguros la clave de columna dinamica ya es "cd:{guid}".
+                        var gk = col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key;
+                        await SetAgruparVal(gk);
+                        break;
+                    }
                     var g = col.Key switch { "aseguradora" => "aseguradora", "vencimiento" => "estado", "estado" => "estado", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
                     await SetAgruparVal(g);
@@ -1167,9 +1179,25 @@
     }
 
     private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza);
+    // Clave de grupo por poliza: campo propio "cd:{id}" (por su valor), o dimensiones fijas.
+    private string GrupoClaveS(PolizaDto p)
+    {
+        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoCustom(_agruparPor) is not { } def) return "Sin dato";
+            var val = ValorCampoTexto(p, def);
+            return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val;
+        }
+        return _agruparPor == "aseguradora"
+            ? (string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora)
+            : SemaforoTexto(p.Semaforo);
+    }
+
     private IEnumerable<Fila> FilasRender()
     {
-        if (_agruparPor == "")
+        // Agrupar por un campo propio inexistente (borrado) => se trata como sin agrupar.
+        var agr = _agruparPor.StartsWith("cd:", StringComparison.Ordinal) && CampoCustom(_agruparPor) is null ? "" : _agruparPor;
+        if (agr == "")
         {
             // Sin agrupar: en modo tabla se pagina; en tarjetas se muestran todas. (Con agrupacion
             // se muestran los grupos completos, sin paginar.)
@@ -1187,11 +1215,12 @@
             }
             yield break;
         }
-        var grupos = Filtradas
-            .GroupBy(p => _agruparPor == "aseguradora"
-                ? (string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora)
-                : SemaforoTexto(p.Semaforo))
-            .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
+        var grupos = _agruparPor.StartsWith("cd:", StringComparison.Ordinal)
+            ? Filtradas.GroupBy(GrupoClaveS)
+                       .OrderBy(g => g.Key == "Sin dato" ? 1 : 0)
+                       .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
+            : Filtradas.GroupBy(GrupoClaveS)
+                       .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
         foreach (var g in grupos)
         {
             yield return new Fila(true, g.Key, g.Count(), null);
@@ -1333,7 +1362,11 @@
     private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
     private async Task SetAgrupar(ChangeEventArgs e) { _agruparPor = e.Value?.ToString() ?? ""; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
     private async Task SetAgruparVal(string v) { _agruparPor = v; _showAgruparMenu = false; _pagina = 1; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
-    private static string AgruparLabel(string v) => v switch { "aseguradora" => "Aseguradora", "estado" => "Vencimiento", _ => "" };
+    private string AgruparLabel(string v)
+    {
+        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(v)?.Label ?? "Campo";
+        return v switch { "aseguradora" => "Aseguradora", "estado" => "Vencimiento", _ => "" };
+    }
 
     private async Task AbrirModal(Guid? id)
     {
