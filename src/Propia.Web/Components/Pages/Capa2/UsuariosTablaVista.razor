@@ -23,6 +23,12 @@
                      @onmousedown="e => IniciarReorderU(e, clave)" @onclick="() => OnOrdenar.InvokeAsync(clave)">
                     <span class="utb-th-lbl">@LabelUp(clave)</span>
                     @if (SortKey == clave) { <span class="utb-th-arrow">@((MarkupString)(SortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                    @{ var lblFija = ColLabels.TryGetValue(clave, out var lv) ? lv : clave; }
+                    <button type="button" class="utb-th-gear" title="Opciones de columna"
+                            @onclick:stopPropagation="true" @onmousedown:stopPropagation="true"
+                            @onclick="mev => OnAbrirColMenu.InvokeAsync((clave, lblFija, false, mev.ClientX, mev.ClientY))">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
                     <span class="utb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar"
                           @onmousedown="e => IniciarResizeU(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true"
                           @onclick:stopPropagation="true" @ondblclick="() => ResetResizeU(clave)" @ondblclick:stopPropagation="true"></span>
@@ -36,7 +42,9 @@
                     var def = d;
                     <div class="utb-th-dyn">
                         <span class="utb-th-lbl">@d.Label.ToUpperInvariant()</span>
-                        <button type="button" class="utb-th-gear" title="Editar o eliminar campo" @onclick="() => OnEditarCampoDef.InvokeAsync(def)"><i class="fi fi-rr-settings"></i></button>
+                        <button type="button" class="utb-th-gear" title="Opciones de columna" @onclick='mev => OnAbrirColMenu.InvokeAsync(("cd:" + def.Id, def.Label, true, mev.ClientX, mev.ClientY))'>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg>
+                        </button>
                     </div>
                 }
             }
@@ -251,6 +259,8 @@
     [Parameter] public EventCallback OnCrearCampo { get; set; }
     /// <summary>Abrir el modal de editar/eliminar un campo (engranaje de la columna).</summary>
     [Parameter] public EventCallback<CampoDinDef> OnEditarCampoDef { get; set; }
+    /// <summary>Abrir el menu de columna (chevron del header): clave, etiqueta, si es dinamica y coordenadas del cursor.</summary>
+    [Parameter] public EventCallback<(string Clave, string Label, bool Dyn, double X, double Y)> OnAbrirColMenu { get; set; }
 
     // Campos dinamicos: lectura/escritura del valor sobre el registro (UsuarioTenantId de la fila).
     private string? ValorDin(Guid reg, Guid defId) => Valores is not null && Valores.TryGetValue(reg, out var m) && m.TryGetValue(defId, out var v) ? v : null;
@@ -375,7 +385,7 @@
     /* Cabecera dinamica con engranaje (editar/eliminar) + "+" para crear (espejo de las columnas del Directorio). */
     .utb-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .utb-th-gear { opacity: 0; flex: 0 0 auto; width: 20px; height: 20px; border: 0; background: transparent; color: var(--propia-text-muted); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; transition: opacity .12s, color .12s, background .12s; }
-    .utb-th-dyn:hover .utb-th-gear, .utb-th-gear:focus-visible { opacity: 1; }
+    .utb-th-dyn:hover .utb-th-gear, .utb-th-sortable:hover .utb-th-gear, .utb-th-gear:focus-visible { opacity: 1; }
     .utb-th-gear:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .utb-addcol-h { display: flex; align-items: center; justify-content: center; }
     .utb-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-input); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }

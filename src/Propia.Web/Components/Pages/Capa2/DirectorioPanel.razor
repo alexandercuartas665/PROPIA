@@ -191,6 +191,7 @@
                                      OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
                                      Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
                                      OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
+                                     OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
                                      OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
@@ -205,12 +206,17 @@
                                      OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
                                      Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
                                      OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
+                                     OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
                                      OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
+
+@* Menu de columna (chevron del header de cada bandeja, estilo Airtable): se pinta una sola vez y lo
+   abren las vistas hijas via OnAbrirColMenu. Reutiliza el toast de pagina (_dirToast) para los avisos. *@
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
 
 @* Toast breve a nivel de pagina (p.ej. resultado/error al eliminar un campo desde el menu Columnas). *@
 @if (_dirToast is not null) { <div class="dir-toast">@_dirToast</div> }
@@ -1371,6 +1377,89 @@
             else DirToast("No se pudo eliminar el campo.");
         }
         catch { DirToast("No se pudo eliminar el campo."); }
+    }
+
+    // ===== Menu de columna (chevron del header, estilo Airtable). El componente TablaColMenu se pinta una
+    // vez a nivel de pagina; las vistas hijas (Personas/Empresas) emiten OnAbrirColMenu con la clave, la
+    // etiqueta, si es dinamica y el cursor. Aqui se mapea cada accion a los metodos reales del modulo.
+    // Clave de columna: fija = "nombres"/"email"/... ; dinamica = "cd:{guid}" (misma que usa el orden). =====
+    private TablaColMenu? _colMenu;
+    private double _colMenuX, _colMenuY;
+    private void AbrirColMenuDir((string Clave, string Label, bool Dyn, double X, double Y) a)
+    {
+        _colMenuX = a.X; _colMenuY = a.Y;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(a.Clave, a.Label, a.Dyn), a.X, a.Y);
+    }
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        // Resuelve la definicion del campo propio cuando la columna es dinamica (clave "cd:{guid}").
+        CampoDinDef? campo = null;
+        if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(col.Key.AsSpan(3), out var defId))
+            campo = _defsCampos.FirstOrDefault(d => d.Id == defId);
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsDir = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsDir = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                if (campo is not null) AbrirEditarCampoDir(campo);
+                else DirToast("Los campos del sistema no editan aqui.");
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                if (campo is not null) await EliminarCampoDir(campo);
+                else DirToast("Los campos del sistema no se eliminan aqui.");
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                if (campo is not null)
+                {
+                    try
+                    {
+                        var req = new CrearCampoDefinicionRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion);
+                        var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/personas-campos", req);
+                        if (r.IsSuccessStatusCode) { await CargarCamposDirAsync(Auth()); DirToast("Campo duplicado."); }
+                        else DirToast("No se pudo duplicar el campo.");
+                    }
+                    catch { DirToast("No se pudo duplicar el campo."); }
+                }
+                else DirToast("Solo se pueden duplicar campos propios.");
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                AbrirCrearCampoDir();
+                break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}directorio#campo-{col.Key}"); DirToast("Enlace del campo copiado."); }
+                catch { DirToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                // Directorio solo agrupa por Etiqueta (la columna fija "etiquetas" en personas).
+                if (!col.EsDinamico && col.Key == "etiquetas") await SetAgruparDir(true);
+                else DirToast("Agrupar por este campo aun no esta disponible.");
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                if (col.EsDinamico) { DirToast("Los campos propios se quitan con Eliminar, no se ocultan."); }
+                else
+                {
+                    var cat = CatalogoActivo.FirstOrDefault(c => c.Key == col.Key);
+                    if (cat.Key is null) DirToast("Esta columna no se puede ocultar.");
+                    else if (!cat.Hideable) DirToast("Esta columna es fija y no se puede ocultar.");
+                    else { await SetColVisible(col.Key, false); DirToast("Columna oculta. Usa Columnas para restaurarla."); }
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                DirToast("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                DirToast("Sugerir titulo con IA: proximamente.");
+                break;
+            default:
+                DirToast("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
     }
 
     // Toast breve a nivel de pagina (auto-oculta a los 2.6 s). Se cancela si se dispara otro antes.

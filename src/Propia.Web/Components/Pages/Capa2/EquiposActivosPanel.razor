@@ -293,7 +293,7 @@ else
                              @onmousedown="ev => IniciarReorderE(ev, clave)" @onclick="() => OrdenarPorColumnaE(clave)">
                             <span class="ea-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKeyE == clave) { <span class="ea-th-arrow">@((MarkupString)(_sortDirE > 0 ? "&#9650;" : "&#9660;"))</span> }
-                            <button type="button" class="ea-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoE(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            @ChevColE(clave, ColLabel(clave), true)
                             <span class="ea-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="ev => IniciarResizeE(ev, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeE(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -303,6 +303,7 @@ else
                              @onmousedown="ev => IniciarReorderE(ev, clave)" @onclick="() => OrdenarPorColumnaE(clave)">
                             <span class="ea-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKeyE == clave) { <span class="ea-th-arrow">@((MarkupString)(_sortDirE > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            @ChevColE(clave, ColLabel(clave), false)
                             <span class="ea-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="ev => IniciarResizeE(ev, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeE(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -574,6 +575,13 @@ else
 
 @* Menu contextual (clic derecho sobre una fila). *@
 <TablaCtxMenu Abierto="_ctxOpenE" X="_ctxXE" Y="_ctxYE" Items="_ctxItemsE" Cerrado="() => _ctxOpenE = false" />
+
+@* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
+<TablaColMenu @ref="_colMenuE" OnAccion="OnColAccionE" />
+@if (_colToastE is not null)
+{
+    <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToastE = null">@_colToastE</div>
+}
 
 @if (_selAbierto)
 {
@@ -973,6 +981,83 @@ else
         catch (Exception ex) { Msg("Error al eliminar el campo: " + ex.Message, false); }
         _campoAEliminarE = null; _colBusyE = false; StateHasChanged();
     }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se
+    // mapea cada accion a los metodos reales del modulo. Fijas: las que no aplican avisan por toast. =====
+    private TablaColMenu? _colMenuE;
+    private double _colMenuXE, _colMenuYE;
+    private string? _colToastE;
+    private void ColToastE(string m) { _colToastE = m; }
+    private void AbrirColMenuE(MouseEventArgs e, string clave, string label, bool dyn)
+    {
+        _colMenuXE = e.ClientX; _colMenuYE = e.ClientY;
+        _colMenuE?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
+    private async Task OnColAccionE((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsE = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsE = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null) AbrirEditarCampoE(campo);
+                    else ColToastE("Los campos del sistema no editan su configuracion aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}equipos-activos#campo-{col.Key}"); ColToastE("Enlace del campo copiado."); }
+                catch { ColToastE("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null) _campoAEliminarE = campo;   // abre el modal de confirmacion existente
+                    else ColToastE("Los campos del sistema no se eliminan aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null)
+                    {
+                        var req = new CrearCampoDefinicionRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion);
+                        var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos-campos", req);
+                        if (r.IsSuccessStatusCode) { await CargarCamposYConfigAsync(); ColToastE("Campo duplicado."); }
+                        else ColToastE("No se pudo duplicar el campo.");
+                    }
+                    else ColToastE("Solo se pueden duplicar campos propios.");
+                }
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                AbrirCrearCampoE();
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                await ToggleVisibleColEAsync(col.Key);   // el header solo pinta columnas visibles, asi que aqui oculta
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                ColToastE("Agrupar por este campo aun no esta disponible.");
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToastE("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToastE("Sugerir titulo con IA: proximamente.");
+                break;
+            default:
+                ColToastE("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevColE(string clave, string label, bool dyn) =>@<button type="button" class="ea-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenuE(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     // ===== Crear / editar UN campo (modal focalizado, replica de la maqueta) =====
     private bool _crearCampoAbiertoE;

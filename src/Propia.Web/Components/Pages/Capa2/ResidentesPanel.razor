@@ -262,7 +262,7 @@ else
                              @onmousedown="e => IniciarReorderR(e, clave)" @onclick="() => OrdenarPorColumnaR(clave)">
                             <span class="res-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKey == clave) { <span class="res-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
-                            <button type="button" class="res-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoR(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            @ChevCol(clave, ColLabel(clave), true)
                             <span class="res-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeR(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeR(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -272,6 +272,7 @@ else
                              @onmousedown="e => IniciarReorderR(e, clave)" @onclick="() => OrdenarPorColumnaR(clave)">
                             <span class="res-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKey == clave) { <span class="res-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            @ChevCol(clave, ColLabel(clave), false)
                             <span class="res-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeR(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeR(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -523,6 +524,13 @@ else
 
 @* Menu contextual (clic derecho sobre una fila). *@
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
+@* Menu de columna estilo Airtable (flecha del header) + toast, replica de Tareas. *@
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+@if (_colToast is not null)
+{
+    <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
+}
 
 @* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
 <ModalHost />
@@ -781,6 +789,79 @@ else
         _crearCampoAbierto = false; _campoAEditar = null;
         _configCamposAbierto = true;
     }
+
+    // ===== Menu de columna estilo Airtable (la flecha del header abre TablaColMenu) =====
+    // Cablea las acciones reales del modulo; lo que depende de backend nuevo se avisa por toast.
+    private TablaColMenu? _colMenu;
+    private string? _colToast;
+    private void ColToast(string m) { _colToast = m; StateHasChanged(); }
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    // Flecha del header (reutiliza la clase del engranaje, sin CSS nuevo). Se inserta en cada columna.
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="res-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        var campo = col.EsDinamico ? CampoCustom(col.Key) : null;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                if (campo is not null) AbrirEditarCampoR(campo);
+                else ColToast("Los campos del sistema no editan su configuracion aqui.");
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                if (campo is not null) _campoAEliminar = campo;
+                else ColToast("Los campos del sistema no se eliminan aqui.");
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                if (campo is not null) await DuplicarCampoAsync(campo);
+                else ColToast("Solo se pueden duplicar campos propios.");
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                AbrirCrearCampoR();
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                await ToggleVisibleColR(col.Key);
+                break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}residentes#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
+                catch { ColToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = GrupoDeClave(col.Key);
+                    if (g is null) { ColToast("Agrupar por este campo no esta disponible."); break; }
+                    await SetAgrupar(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToast("Usa Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToast("Sugerir titulo con IA: proximamente.");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Duplica un campo propio (definicion) reutilizando el subsistema personas, y recarga.
+    private async Task DuplicarCampoAsync(CampoDinDef campo)
+    {
+        var req = new CrearCampoDefinicionRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion);
+        var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/personas-campos", req);
+        if (r.IsSuccessStatusCode) { await CargarAsync(); ColToast("Campo duplicado."); }
+        else ColToast("No se pudo duplicar el campo.");
+    }
+    // Traduce la clave de columna a la dimension de agrupacion soportada (SetAgrupar). null = no soportado.
+    private static string? GrupoDeClave(string clave) => clave switch
+    {
+        "rol" => "rol", "unidad" => "unidad", _ => null
+    };
 
     // ---------- Interacciones de tabla: ordenar, mover columna, redimensionar, menu contextual ----------
     private static int CmpValTabla(string a, string b)

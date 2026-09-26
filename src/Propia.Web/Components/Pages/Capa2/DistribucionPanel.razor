@@ -196,6 +196,13 @@
 @* Menu contextual (clic derecho sobre una fila de la tabla). *@
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
+@* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+@if (_colToast is not null)
+{
+    <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
+}
+
 @if (_configCamposAbierto)
 {
     <div class="cg-back" @onclick="() => _configCamposAbierto = false">
@@ -494,7 +501,7 @@ else
                                      @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
                                     <span class="dst-th-lbl">@itc.Campo!.Label</span>
                                     @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
-                                    <button type="button" class="dst-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampo(itc.Campo!)"><i class="fi fi-rr-settings"></i></button>
+                                    @ChevCol(clave, itc.Campo!.Label, true)
                                     <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
                                 </div>
                             }
@@ -504,6 +511,7 @@ else
                                      @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
                                     <span class="dst-th-lbl">@Etiqueta(itc.Def!)</span>
                                     @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                                    @ChevCol(clave, Etiqueta(itc.Def!), false)
                                     <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
                                 </div>
                             }
@@ -1084,6 +1092,91 @@ else
         catch (Exception ex) { _inlineMsgU = "Error al eliminar el campo: " + ex.Message; }
         _campoAEliminar = null; _colBusy = false; StateHasChanged();
     }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se
+    // mapea cada accion a los metodos reales del modulo. Fijas: las que no aplican avisan por toast. =====
+    private TablaColMenu? _colMenu;
+    private double _colMenuX, _colMenuY;
+    private string? _colToast;
+    private void ColToast(string m) { _colToast = m; }
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+    {
+        _colMenuX = e.ClientX; _colMenuY = e.ClientY;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
+    // La clave de una columna dinamica es "cd:{guid}"; resuelve su definicion o null si es fija.
+    private UnidadCampoDefinicionDto? CampoDeClave(string clave)
+        => clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g)
+            ? _camposDef.FirstOrDefault(c => c.Id == g) : null;
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                {
+                    var campo = CampoDeClave(col.Key);
+                    if (campo is not null) AbrirEditarCampo(campo);
+                    else ColToast("Los campos del sistema no editan su configuracion aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}distribucion#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
+                catch { ColToast("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                {
+                    var campo = CampoDeClave(col.Key);
+                    if (campo is not null) _campoAEliminar = campo;   // abre el modal de confirmacion existente
+                    else ColToast("Los campos del sistema no se eliminan aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                {
+                    var campo = CampoDeClave(col.Key);
+                    if (campo is not null)
+                    {
+                        var req = new CrearCampoDefinicionRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion);
+                        var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades-campos", req);
+                        if (r.IsSuccessStatusCode) { await RecargarCamposDefAsync(); await CargarCamposConfigAsync(); ColToast("Campo duplicado."); }
+                        else ColToast("No se pudo duplicar el campo.");
+                    }
+                    else ColToast("Solo se pueden duplicar campos propios.");
+                }
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                AbrirCrearCampo();
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                await ToggleVisibleColAsync(col.Key);   // el header solo pinta columnas visibles, asi que aqui oculta
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = col.Key switch { "torre" => "torre", "prop" => "propietario", "estado" => "estado", "tipo" => "tipo", _ => (string?)null };
+                    if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
+                    await SetAgruparVal(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToast("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToast("Sugerir titulo con IA: proximamente.");
+                break;
+            default:
+                ColToast("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="dst-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
     private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";

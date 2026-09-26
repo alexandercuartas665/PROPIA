@@ -295,7 +295,7 @@ else
                              @onmousedown="e => IniciarReorderZ(e, clave)" @onclick="() => OrdenarPorColumnaZ(clave)">
                             <span class="zc-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKeyZ == clave) { <span class="zc-th-arrow">@((MarkupString)(_sortDirZ > 0 ? "&#9650;" : "&#9660;"))</span> }
-                            <button type="button" class="zc-th-edit" title="Editar o eliminar campo" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="() => AbrirEditarCampoZ(CampoCustom(clave)!)"><i class="fi fi-rr-settings"></i></button>
+                            @ChevColZ(clave, ColLabel(clave), true)
                             <span class="zc-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeZ(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeZ(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -305,6 +305,7 @@ else
                              @onmousedown="e => IniciarReorderZ(e, clave)" @onclick="() => OrdenarPorColumnaZ(clave)">
                             <span class="zc-th-lbl">@ColLabel(clave).ToUpperInvariant()</span>
                             @if (_sortKeyZ == clave) { <span class="zc-th-arrow">@((MarkupString)(_sortDirZ > 0 ? "&#9650;" : "&#9660;"))</span> }
+                            @ChevColZ(clave, ColLabel(clave), false)
                             <span class="zc-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeZ(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeZ(clave)" @ondblclick:stopPropagation="true"></span>
                         </div>
                     }
@@ -549,6 +550,13 @@ else
 @* Menu contextual (clic derecho sobre una fila). *@
 <TablaCtxMenu Abierto="_ctxOpenZ" X="_ctxXZ" Y="_ctxYZ" Items="_ctxItemsZ" Cerrado="() => _ctxOpenZ = false" />
 
+@* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
+<TablaColMenu @ref="_colMenuZ" OnAccion="OnColAccionZ" />
+@if (_colToastZ is not null)
+{
+    <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToastZ = null">@_colToastZ</div>
+}
+
 @if (_selAbierto)
 {
     <div class="zc-cfg-back" @onclick="() => _selAbierto = false">
@@ -731,6 +739,87 @@ else
         catch (Exception ex) { Msg("Error al eliminar el campo: " + ex.Message, false); }
         _campoAEliminarZ = null; _colBusyZ = false; StateHasChanged();
     }
+
+    // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se
+    // mapea cada accion a los metodos reales del modulo. Fijas: las que no aplican avisan por toast. =====
+    private TablaColMenu? _colMenuZ;
+    private double _colMenuXZ, _colMenuYZ;
+    private string? _colToastZ;
+    private void ColToastZ(string m) { _colToastZ = m; }
+    private void AbrirColMenuZ(MouseEventArgs e, string clave, string label, bool dyn)
+    {
+        _colMenuXZ = e.ClientX; _colMenuYZ = e.ClientY;
+        _colMenuZ?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
+    private async Task OnColAccionZ((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sortsZ = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _paginaZ = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sortsZ = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _paginaZ = 1; break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null) AbrirEditarCampoZ(campo);
+                    else ColToastZ("Los campos del sistema no editan su configuracion aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.CopiarUrl:
+                try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}zonas-comunes#campo-{col.Key}"); ColToastZ("Enlace del campo copiado."); }
+                catch { ColToastZ("No se pudo copiar el enlace."); }
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null) _campoAEliminarZ = campo;   // abre el modal de confirmacion existente
+                    else ColToastZ("Los campos del sistema no se eliminan aqui.");
+                }
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                {
+                    var campo = CampoCustom(col.Key);
+                    if (campo is not null)
+                    {
+                        var req = new CrearCampoDefinicionRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion);
+                        var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas-campos", req);
+                        if (r.IsSuccessStatusCode) { await CargarCamposYConfigAsync(); ColToastZ("Campo duplicado."); }
+                        else ColToastZ("No se pudo duplicar el campo.");
+                    }
+                    else ColToastZ("Solo se pueden duplicar campos propios.");
+                }
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                AbrirCrearCampoZ();
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                await ToggleVisibleColZAsync(col.Key);   // el header solo pinta columnas visibles, asi que aqui oculta
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                {
+                    var g = col.Key switch { "categoria" => "categoria", "estado" => "estado", "reservable" => "reserva", _ => (string?)null };
+                    if (g is null) { ColToastZ("Agrupar por este campo aun no esta disponible."); break; }
+                    SetAgruparZ(g);
+                }
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                ColToastZ("Usa el boton Filtros para filtrar por este campo.");
+                break;
+            case TablaColMenu.Accion.TituloIa:
+                ColToastZ("Sugerir titulo con IA: proximamente.");
+                break;
+            default:
+                ColToastZ("En construccion: " + accion + ".");
+                break;
+        }
+        StateHasChanged();
+    }
+    // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
+    private RenderFragment ChevColZ(string clave, string label, bool dyn) =>@<button type="button" class="zc-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenuZ(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     // ===== Crear / editar UN campo (modal focalizado, replica de la maqueta) =====
     private bool _crearCampoAbiertoZ;
