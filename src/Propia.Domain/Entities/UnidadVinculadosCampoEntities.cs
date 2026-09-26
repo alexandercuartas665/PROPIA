@@ -18,6 +18,8 @@ public class PersonaCampoDefinicion : TenantEntity
     public int Orden { get; set; }
     public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
     public string? Opciones { get; set; }
+    /// <summary>Nota/ayuda del campo, editable desde el menu de columna (opcional).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>Valor de un campo dinamico (catalogo) para una persona de unidad concreta.</summary>
@@ -39,6 +41,8 @@ public class VehiculoCampoDefinicion : TenantEntity
     public int Orden { get; set; }
     public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
     public string? Opciones { get; set; }
+    /// <summary>Nota/ayuda del campo, editable desde el menu de columna (opcional).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>Valor de un campo dinamico (catalogo) para una placa de unidad concreta.</summary>
@@ -60,6 +64,8 @@ public class MascotaCampoDefinicion : TenantEntity
     public int Orden { get; set; }
     public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
     public string? Opciones { get; set; }
+    /// <summary>Nota/ayuda del campo, editable desde el menu de columna (opcional).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>Valor de un campo dinamico (catalogo) para una mascota de unidad concreta.</summary>
@@ -81,6 +87,8 @@ public class TerceroCampoDefinicion : TenantEntity
     public int Orden { get; set; }
     public TipoCampoTablero Tipo { get; set; } = TipoCampoTablero.Texto;
     public string? Opciones { get; set; }
+    /// <summary>Nota/ayuda del campo, editable desde el menu de columna (opcional).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>Valor de un campo dinamico (catalogo) para un tercero (empleada) de unidad concreto.</summary>

@@ -144,6 +144,9 @@ public class UnidadCampoDefinicion : TenantEntity
 
     /// <summary>Opciones para el tipo Seleccion (una por linea). Null para los demas tipos.</summary>
     public string? Opciones { get; set; }
+
+    /// <summary>Nota/ayuda del campo, editable desde el menu de columna (opcional).</summary>
+    public string? Descripcion { get; set; }
 }
 
 /// <summary>

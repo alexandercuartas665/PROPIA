@@ -714,7 +714,7 @@ public partial class MiCopropiedadService
     public async Task<IReadOnlyList<UnidadCampoDefinicionDto>> ListCamposDefinicionAsync(CancellationToken ct)
         => await _db.UnidadCamposDefiniciones.AsNoTracking()
             .OrderBy(d => d.Orden).ThenBy(d => d.Label)
-            .Select(d => new UnidadCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones))
+            .Select(d => new UnidadCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones, d.Descripcion))
             .ToListAsync(ct);
 
     public async Task<UnidadCampoDefinicionDto> CrearCampoDefinicionAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
@@ -727,15 +727,15 @@ public partial class MiCopropiedadService
 
         var existente = await _db.UnidadCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
         if (existente is not null)
-            return new UnidadCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
+            return new UnidadCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones, existente.Descripcion);
 
         var maxOrden = await _db.UnidadCamposDefiniciones.AnyAsync(ct)
             ? await _db.UnidadCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new UnidadCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = opciones };
+        var def = new UnidadCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = opciones, Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim() };
         _db.UnidadCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Campo personalizado '{label}' agregado a todas las unidades.", ct);
-        return new UnidadCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+        return new UnidadCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones, def.Descripcion);
     }
 
     public async Task<bool> ActualizarCampoDefinicionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
@@ -749,6 +749,7 @@ public partial class MiCopropiedadService
         def.Tipo = req.Tipo;
         def.Opciones = await PrepararOpcionesAsync(req.Tipo, req.Opciones, def.Id, ct);
         def.Orden = req.Orden;
+        def.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         await _db.SaveChangesAsync(ct);
         return true;
     }

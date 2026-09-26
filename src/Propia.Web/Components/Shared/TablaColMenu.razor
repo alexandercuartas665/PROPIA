@@ -1,0 +1,63 @@
+@* Menu de columna de la vista tabla (CALCA de openColMenu de la maqueta, assets/ui.js:219).
+   Fuente UNICA del diseno, ITEMS y ORDEN; lo abre la flecha del header de cada columna. Se pinta con
+   TablaCtxMenu (posicionado en el cursor). El modulo pasa OnAccion y reacciona segun el Tipo, asi el
+   menu queda identico en todas las bandejas.
+   Uso:
+     <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+     ... en el header: <button class="..." @onclick="e => _colMenu.Abrir(new(clave, label, esDin), e.ClientX, e.ClientY)">chevron</button>
+   Contrato: "Editar campo" solo si EsDinamico; los campos fijos del sistema no editan tipo ni se
+   eliminan (el modulo debe avisar por toast). "Eliminar" se muestra siempre (rojo). *@
+
+<TablaCtxMenu Abierto="_abierto" X="_x" Y="_y" Items="_items" Cerrado="() => _abierto = false" />
+
+@code {
+    /// <summary>Accion elegida en el menu de columna.</summary>
+    public enum Accion
+    {
+        Editar, Duplicar, InsertarIzq, InsertarDer, TituloIa, CopiarUrl, Descripcion,
+        OrdenarAsc, OrdenarDesc, Filtrar, Agrupar, Ocultar, Eliminar
+    }
+
+    /// <summary>Columna sobre la que se abrio el menu (clave estable + etiqueta + si es dinamica/propia).</summary>
+    public sealed record Ctx(string Key, string Label, bool EsDinamico);
+
+    /// <summary>El modulo reacciona a la accion elegida sobre la columna.</summary>
+    [Parameter] public EventCallback<(Accion Accion, Ctx Col)> OnAccion { get; set; }
+
+    private bool _abierto;
+    private double _x, _y;
+    private List<TablaCtxMenu.Item>? _items;
+
+    /// <summary>Abre el menu de la columna en (x, y). Llamar desde el @onclick de la flecha del header.</summary>
+    public void Abrir(Ctx col, double x, double y)
+    {
+        _x = x; _y = y;
+        Task Emit(Accion a) => OnAccion.InvokeAsync((a, col));
+        var items = new List<TablaCtxMenu.Item>();
+        if (col.EsDinamico)
+        {
+            items.Add(new("Editar campo", "fi-rr-pencil", OnClick: () => Emit(Accion.Editar)));
+            items.Add(new(Sep: true));
+        }
+        items.Add(new("Duplicar campo", "fi-rr-copy-alt", OnClick: () => Emit(Accion.Duplicar)));
+        items.Add(new("Insertar a la izquierda", "fi-rr-arrow-small-left", OnClick: () => Emit(Accion.InsertarIzq)));
+        items.Add(new("Insertar a la derecha", "fi-rr-arrow-small-right", OnClick: () => Emit(Accion.InsertarDer)));
+        items.Add(new(Sep: true));
+        items.Add(new("Escribir un titulo para el campo", "fi-rr-comment-alt", OnClick: () => Emit(Accion.TituloIa)));
+        items.Add(new(Sep: true));
+        items.Add(new("Copiar URL del campo", "fi-rr-link", OnClick: () => Emit(Accion.CopiarUrl)));
+        items.Add(new("Editar la descripcion del campo", "fi-rr-info", OnClick: () => Emit(Accion.Descripcion)));
+        items.Add(new(Sep: true));
+        items.Add(new("Ordenar  A -> Z", "fi-rr-sort-alpha-down", OnClick: () => Emit(Accion.OrdenarAsc)));
+        items.Add(new("Ordenar  Z -> A", "fi-rr-sort-alpha-up", OnClick: () => Emit(Accion.OrdenarDesc)));
+        items.Add(new(Sep: true));
+        items.Add(new("Filtrar por este campo", "fi-rr-filter", OnClick: () => Emit(Accion.Filtrar)));
+        items.Add(new("Agrupar por este campo", "fi-rr-apps", OnClick: () => Emit(Accion.Agrupar)));
+        items.Add(new(Sep: true));
+        items.Add(new("Ocultar el campo", "fi-rr-eye-crossed", OnClick: () => Emit(Accion.Ocultar)));
+        items.Add(new("Eliminar campo", "fi-rr-trash", Danger: true, OnClick: () => Emit(Accion.Eliminar)));
+        _items = items;
+        _abierto = true;
+        StateHasChanged();
+    }
+}

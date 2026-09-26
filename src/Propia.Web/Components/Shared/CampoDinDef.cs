@@ -11,7 +11,7 @@ namespace Propia.Web.Components.Shared;
 /// propiedad coinciden con los de los DTOs, asi que la deserializacion JSON funciona igual para
 /// los cuatro endpoints ({prefijo}-campos).
 /// </summary>
-public record CampoDinDef(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones)
+public record CampoDinDef(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null)
 {
     /// <summary>Opciones VISIBLES de una lista de seleccion (texto). Tolera el formato legado
     /// (una por linea) y el nuevo (JSON con color/oculta). Vacio si el tipo no es lista.</summary>

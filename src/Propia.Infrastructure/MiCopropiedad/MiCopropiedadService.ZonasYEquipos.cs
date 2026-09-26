@@ -409,7 +409,7 @@ public partial class MiCopropiedadService
 
     public async Task<IReadOnlyList<EquipoCampoDefinicionDto>> ListCamposDefEquipoAsync(CancellationToken ct)
         => await _db.EquipoCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label)
-            .Select(d => new EquipoCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToListAsync(ct);
+            .Select(d => new EquipoCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones, d.Descripcion)).ToListAsync(ct);
 
     public async Task<EquipoCampoDefinicionDto> CrearCampoDefEquipoAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
     {
@@ -418,12 +418,12 @@ public partial class MiCopropiedadService
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
         var existente = await _db.EquipoCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
-        if (existente is not null) return new EquipoCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
+        if (existente is not null) return new EquipoCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones, existente.Descripcion);
         var maxOrden = await _db.EquipoCamposDefiniciones.AnyAsync(ct) ? await _db.EquipoCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new EquipoCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        var def = new EquipoCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones), Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim() };
         _db.EquipoCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
-        return new EquipoCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+        return new EquipoCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones, def.Descripcion);
     }
 
     public async Task<bool> ActualizarCampoDefEquipoAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
@@ -433,7 +433,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden; def.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -472,7 +472,7 @@ public partial class MiCopropiedadService
     // ===================== Campos dinamicos tipados (catalogo) - ZONAS =====================
     public async Task<IReadOnlyList<ZonaCampoDefinicionDto>> ListCamposDefZonaAsync(CancellationToken ct)
         => await _db.ZonaCamposDefiniciones.AsNoTracking().OrderBy(d => d.Orden).ThenBy(d => d.Label)
-            .Select(d => new ZonaCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones)).ToListAsync(ct);
+            .Select(d => new ZonaCampoDefinicionDto(d.Id, d.Label, d.Orden, d.Tipo, d.Opciones, d.Descripcion)).ToListAsync(ct);
 
     public async Task<ZonaCampoDefinicionDto> CrearCampoDefZonaAsync(CrearCampoDefinicionRequest req, CancellationToken ct)
     {
@@ -481,12 +481,12 @@ public partial class MiCopropiedadService
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
         var existente = await _db.ZonaCamposDefiniciones.FirstOrDefaultAsync(d => d.Label.ToLower() == label.ToLower(), ct);
-        if (existente is not null) return new ZonaCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones);
+        if (existente is not null) return new ZonaCampoDefinicionDto(existente.Id, existente.Label, existente.Orden, existente.Tipo, existente.Opciones, existente.Descripcion);
         var maxOrden = await _db.ZonaCamposDefiniciones.AnyAsync(ct) ? await _db.ZonaCamposDefiniciones.MaxAsync(d => d.Orden, ct) : 0;
-        var def = new ZonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones) };
+        var def = new ZonaCampoDefinicion { TenantId = tid, Label = label, Orden = maxOrden + 1, Tipo = req.Tipo, Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones), Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim() };
         _db.ZonaCamposDefiniciones.Add(def);
         await _db.SaveChangesAsync(ct);
-        return new ZonaCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones);
+        return new ZonaCampoDefinicionDto(def.Id, def.Label, def.Orden, def.Tipo, def.Opciones, def.Descripcion);
     }
 
     public async Task<bool> ActualizarCampoDefZonaAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct)
@@ -496,7 +496,7 @@ public partial class MiCopropiedadService
         var label = (req.Label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(label)) throw new InvalidOperationException("El nombre del campo es obligatorio.");
         if (label.Length > 80) label = label[..80];
-        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden;
+        def.Label = label; def.Tipo = req.Tipo; def.Opciones = NormalizarOpcionesCampo(req.Tipo, req.Opciones); def.Orden = req.Orden; def.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         await _db.SaveChangesAsync(ct);
         return true;
     }

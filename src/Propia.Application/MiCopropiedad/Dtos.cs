@@ -127,9 +127,9 @@ public record AgregarPersonaUnidadRequest(
 
 // ----- Campos personalizados de unidad: la DEFINICION es por copropiedad (catalogo compartido,
 //       aplica a todas las unidades) y el VALOR es por unidad. -----
-public record UnidadCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
-public record CrearCampoDefinicionRequest(string Label, TipoCampoTablero Tipo = TipoCampoTablero.Texto, string? Opciones = null);
-public record ActualizarCampoDefinicionRequest(string Label, TipoCampoTablero Tipo, string? Opciones, int Orden);
+public record UnidadCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
+public record CrearCampoDefinicionRequest(string Label, TipoCampoTablero Tipo = TipoCampoTablero.Texto, string? Opciones = null, string? Descripcion = null);
+public record ActualizarCampoDefinicionRequest(string Label, TipoCampoTablero Tipo, string? Opciones, int Orden, string? Descripcion = null);
 public record UnidadCampoDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record SetCampoValorRequest(string? Valor);
 // Valor plano (unidad+definicion) para pintar los campos dinamicos como columnas de la tabla sin N+1.
@@ -162,28 +162,28 @@ public record RenombrarEstadoRequest(string Anterior, string Nuevo);
 public record RenombrarTipoUnidadRequest(string Nombre);
 
 // --- Campos dinamicos tipados de Equipos y Zonas (mismo patron que Unidad; requests genericos reutilizados) ---
-public record EquipoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record EquipoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record EquipoCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record EquipoCampoValorFlatDto(Guid EquipoActivoId, Guid DefinicionId, string? Valor);
-public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record ZonaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoValorFlatDto(Guid ZonaComunId, Guid DefinicionId, string? Valor);
 // Campos dinamicos propios de los USUARIOS del tenant (mismo patron que zonas/equipos; el registro
 // del valor es el UsuarioTenant.Id).
-public record UsuarioCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record UsuarioCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record UsuarioCampoValorFlatDto(Guid UsuarioTenantId, Guid DefinicionId, string? Valor);
 
 // --- Campos dinamicos tipados de las entidades vinculadas a una unidad (personas, vehiculos,
 //     mascotas, terceros). Mismo patron que equipos/zonas: la DEFINICION es por copropiedad y
 //     el VALOR es por registro. Reusan CrearCampoDefinicionRequest/ActualizarCampoDefinicionRequest/
 //     SetCampoValorRequest. ---
-public record PersonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record PersonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record PersonaCampoValorFlatDto(Guid UnidadPersonaId, Guid DefinicionId, string? Valor);
-public record VehiculoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record VehiculoCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record VehiculoCampoValorFlatDto(Guid UnidadPlacaId, Guid DefinicionId, string? Valor);
-public record MascotaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record MascotaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record MascotaCampoValorFlatDto(Guid UnidadMascotaId, Guid DefinicionId, string? Valor);
-public record TerceroCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones);
+public record TerceroCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record TerceroCampoValorFlatDto(Guid UnidadEmpleadaId, Guid DefinicionId, string? Valor);
 
 // ----- Documentos / anexos de una unidad (archivo en blob + nombre) -----

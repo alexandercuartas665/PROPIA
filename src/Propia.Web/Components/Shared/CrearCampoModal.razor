@@ -68,6 +68,11 @@
                     }
                 </div>
 
+                <div class="ccm-fld">
+                    <label>Descripcion (opcional)</label>
+                    <textarea class="ccm-in" style="min-height:54px;resize:vertical;" @bind="_descripcion" @bind:event="oninput" placeholder="Nota o ayuda del campo; se muestra en el menu de la columna"></textarea>
+                </div>
+
                 <p class="ccm-note-txt">El campo se agrega como una columna al final de la tabla y queda disponible en la ficha de @TituloSingular.ToLowerInvariant(). Es exclusivo de esta copropiedad y se comporta como un campo fijo en filtros, agrupar, ordenar y reportes.</p>
             }
 
@@ -115,6 +120,7 @@
 
     private bool EsEdicion => Editar is not null;
     private string _label = "";
+    private string _descripcion = "";
     private TipoCampoTablero _tipo = TipoCampoTablero.Texto;
     private readonly List<OpcionCampo> _opcs = new();
     private List<CampoDinDef> _defs = new();
@@ -136,6 +142,7 @@
         if (Editar is not null)
         {
             _label = Editar.Label;
+            _descripcion = Editar.Descripcion ?? "";
             _tipo = Editar.Tipo;
             if (Editar.Tipo == TipoCampoTablero.Seleccion) { _opcs.Clear(); _opcs.AddRange(Editar.OpcionesDetalle()); }
         }
@@ -243,11 +250,12 @@
         _busy = true; _msg = null;
         try
         {
+            var descripcion = string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim();
             HttpResponseMessage r;
             if (EsEdicion)
-                r = await Auth().PutAsJsonAsync($"{CatUrl}/{Editar!.Id}", new ActualizarCampoDefinicionRequest(label, _tipo, opciones, Editar!.Orden));
+                r = await Auth().PutAsJsonAsync($"{CatUrl}/{Editar!.Id}", new ActualizarCampoDefinicionRequest(label, _tipo, opciones, Editar!.Orden, descripcion));
             else
-                r = await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones));
+                r = await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones, descripcion));
 
             if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
             else { _msg = EsEdicion ? "No se pudo guardar el campo." : "No se pudo crear el campo."; }
