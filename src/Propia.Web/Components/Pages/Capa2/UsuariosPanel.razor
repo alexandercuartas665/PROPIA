@@ -126,8 +126,11 @@
                                     @foreach (var d in _defsCampos)
                                     {
                                         var dd = d;
+                                        var dkey = "cd:" + dd.Id;
                                         if (!string.IsNullOrWhiteSpace(_colQU) && !d.Label.Contains(_colQU, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                        var dvis = VisibleColU(dkey);
                                         <div class="usr-col-it">
+                                            <button class="usr-col-eye @(dvis ? "on" : "")" title="@(dvis ? "Ocultar" : "Mostrar")" @onclick="@(() => ToggleVisibleColUAsync(dkey))"><i class="fi @(dvis ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
                                             <span class="usr-col-name">@d.Label <span class="usr-col-dyn" title="Campo personalizado">din</span></span>
                                             <button class="usr-col-eye on" title="Editar campo" @onclick="() => AbrirEditarCampoU(dd)"><i class="fi fi-rr-settings-sliders"></i></button>
                                             <button class="usr-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => EliminarCampoUAsync(dd)"><i class="fi fi-rr-trash"></i></button>
@@ -286,7 +289,7 @@
                                     Columnas="ColsVisiblesU().ToList()" ColLabels="LabelsU()" GridStyle="@UtbGridStyleU"
                                     Seleccion="_selU" TodasSel="TodasSelU" OnToggleSel="ToggleSelU" OnToggleSelAll="ToggleSelAllU"
                                     OnReordenarCol="ReordenarColUAsync" OnRedimensionarCol="RedimensionarColUAsync"
-                                    Defs="_defsCampos" Valores="_valoresCampos"
+                                    Defs="DefsVisiblesU()" Valores="_valoresCampos"
                                     OnGuardarDinamico="GuardarDinamicoU" OnCrearCampo="AbrirCrearCampoU" OnEditarCampoDef="AbrirEditarCampoU"
                                     OnAbrirColMenu="AbrirColMenuU" />
             }
@@ -1161,10 +1164,20 @@
     private static string ColWidthU(string clave) => CatColU(clave)?.Width ?? "minmax(120px,150px)";
     // grid = [seleccion 38px] [columnas fijas visibles] [columnas dinamicas] [+ addcol 40px] [accion 34px].
     // Debe casar 1:1 con las celdas que pinta UsuariosTablaVista: una pista por campo propio + la del "+".
-    private string UtbGridStyleU => "grid-template-columns: 38px " +
-        string.Join(" ", ColsVisiblesU().Select(k => _colWU.TryGetValue(k, out var w) ? w + "px" : ColWidthU(k))) +
-        (_defsCampos.Count > 0 ? " " + string.Join(" ", _defsCampos.Select(_ => "minmax(140px,1fr)")) : "") +
-        " 40px 34px";
+    private string UtbGridStyleU
+    {
+        get
+        {
+            var defsVis = DefsVisiblesU();
+            return "grid-template-columns: 38px " +
+                string.Join(" ", ColsVisiblesU().Select(k => _colWU.TryGetValue(k, out var w) ? w + "px" : ColWidthU(k))) +
+                (defsVis.Count > 0 ? " " + string.Join(" ", defsVis.Select(_ => "minmax(140px,1fr)")) : "") +
+                " 40px 34px";
+        }
+    }
+    // Campos propios (dinamicos) visibles: por defecto visibles; se ocultan por columna (clave "cd:{id}"
+    // en unidades-config, entidad='usuario'). Alimenta Defs de la subvista y el grid template (deben casar).
+    private List<CampoDinDef> DefsVisiblesU() => _defsCampos.Where(d => VisibleColU("cd:" + d.Id)).ToList();
     private Dictionary<string, string> LabelsU() => ClavesCandidatasU().ToDictionary(k => k, ColLabelU);
 
     private GuardarUnidadCampoConfigRequest FilaConfigU(string clave)
@@ -1506,7 +1519,7 @@
                 catch { ColToast("No se pudo copiar el enlace."); }
                 break;
             case TablaColMenu.Accion.Ocultar:
-                if (col.EsDinamico) { ColToast("Los campos propios se quitan con Eliminar, no se ocultan."); }
+                if (col.EsDinamico) { await ToggleVisibleColUAsync(col.Key); ColToast("Columna oculta. Usa Columnas para restaurarla."); }
                 else if (CatColU(col.Key) is null) { ColToast("Esta columna no se puede ocultar."); }
                 else { await ToggleVisibleColUAsync(col.Key); ColToast("Columna oculta. Usa Columnas para restaurarla."); }
                 break;

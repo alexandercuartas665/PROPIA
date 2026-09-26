@@ -144,7 +144,11 @@
                             @foreach (var d in _defsCampos)
                             {
                                 var dd = d;
+                                var dkey = "cd:" + dd.Id;
                                 <div class="dir-colsmenu-i">
+                                    <label class="dir-cfgcols-vis" title="Mostrar u ocultar">
+                                        <input type="checkbox" checked="@ColVisibleDir(dkey, true)" @onchange="@(e => SetColVisible(dkey, (bool)(e.Value ?? false)))" />
+                                    </label>
                                     <span class="dir-col-name">@d.Label <span class="dir-col-dyn" title="Campo personalizado">din</span></span>
                                     <button type="button" class="dir-col-gear" title="Editar campo" @onclick="() => AbrirEditarCampoDir(dd)"><i class="fi fi-rr-settings-sliders"></i></button>
                                     <button type="button" class="dir-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => EliminarCampoDir(dd)"><i class="fi fi-rr-trash"></i></button>
@@ -189,7 +193,7 @@
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
                                      OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
                                      OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
-                                     Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
+                                     Defs="DefsVisibles()" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
                                      OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
@@ -204,7 +208,7 @@
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
                                      OnSeleccionar="ToggleSelDir" OnSeleccionarTodo="SeleccionarTodoDir"
                                      OnDeseleccionar="LimpiarSelDir" OnQuitarSeleccion="QuitarSeleccionDir" OnQuitarVinculo="QuitarVinculoDir"
-                                     Defs="_defsCampos" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
+                                     Defs="DefsVisibles()" Valores="_valoresCampos" UsuarioNombre="_usuarioNombre"
                                      OnGuardarDinamico="GuardarDinamicoDir" OnCrearCampo="AbrirCrearCampoDir" OnEditarCampoDef="AbrirEditarCampoDir"
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
@@ -1202,6 +1206,11 @@
     // Lectura de visibilidad/etiqueta de una columna fija (sin crear entradas, a diferencia de PrefDe).
     private bool ColVisibleDir(string key, bool hideable)
         => !hideable || !ColsActivas.TryGetValue(key, out var p) || p.Visible;
+
+    // Campos propios (dinamicos) visibles: por defecto visibles; se ocultan por columna (clave "cd:{id}",
+    // misma visibilidad en localStorage que las fijas). Alimenta el Defs de la subvista (header + filas).
+    private List<CampoDinDef> DefsVisibles()
+        => _defsCampos.Where(d => ColVisibleDir("cd:" + d.Id, true)).ToList();
     private string ColLabelDir(string key, string defLabel)
         => ColsActivas.TryGetValue(key, out var p) && !string.IsNullOrWhiteSpace(p.Label) ? p.Label! : defLabel;
 
@@ -1440,7 +1449,7 @@
                 else DirToast("Agrupar por este campo aun no esta disponible.");
                 break;
             case TablaColMenu.Accion.Ocultar:
-                if (col.EsDinamico) { DirToast("Los campos propios se quitan con Eliminar, no se ocultan."); }
+                if (col.EsDinamico) { await SetColVisible(col.Key, false); DirToast("Columna oculta. Usa Columnas para restaurarla."); }
                 else
                 {
                     var cat = CatalogoActivo.FirstOrDefault(c => c.Key == col.Key);

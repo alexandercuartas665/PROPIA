@@ -1131,8 +1131,14 @@
                 ColToast("Edita el campo en el panel de Campos.");
                 break;
             case TablaColMenu.Accion.Ocultar:
-                _cfgCamposOpen = true;   // PQRSD no persiste columnas-config por columna aqui (se hace en el gestor)
-                ColToast("Oculta la columna desde el panel de Campos.");
+                try
+                {
+                    await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config",
+                        new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(col.Key, null, null, Oculto: true, Entidad: "pqrsd"));
+                    await RecargarConfigPqrsdAsync();
+                    ColToast("Columna oculta. Usa Campos para restaurarla.");
+                }
+                catch { ColToast("No se pudo ocultar la columna."); }
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:
@@ -1787,6 +1793,17 @@
     // ===== Tab Campos dinamicos (CRUD reusando /api/pqrsd/campos) =====
     private async Task RecargarCamposAsync()
         => _campos = (await Auth().GetFromJsonAsync<List<PqrsdCampoDto>>("/api/pqrsd/campos")) ?? _campos;
+
+    // Recarga SOLO la config de columnas (alias/visibilidad/orden, entidad='pqrsd') tras ocultar por columna.
+    private async Task RecargarConfigPqrsdAsync()
+    {
+        try
+        {
+            _camposConfig = ((await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=pqrsd")) ?? new())
+                .ToDictionary(x => x.CampoClave, StringComparer.Ordinal);
+        }
+        catch { }
+    }
 
     private async Task AgregarCampoCfg()
     {
