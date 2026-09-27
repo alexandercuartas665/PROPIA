@@ -782,14 +782,9 @@
                   }
                   @if (_cfgTab == "tareas")
                   {
-                    <div class="pk-cfg-sec-hint">Elige el tablero del modulo Tareas donde caen las tareas creadas desde un PQR.</div>
-                    <label class="pk-cfg-formlbl">Tablero destino</label>
-                    <select class="pk-cfg-name" style="width:100%;" value="@(_cfgTableroTareas?.ToString() ?? "")" @onchange="GuardarTableroTareasCfg">
-                        <option value="">Tablero "PQRSD" (por defecto)</option>
-                        @foreach (var tb in _cfgTableros) { <option value="@tb.Id">@tb.Nombre</option> }
-                    </select>
-                    <div class="pk-cfg-sec-hint" style="margin-top:10px;">Las tareas ya creadas no se mueven; el cambio aplica a las nuevas.</div>
-                    @if (_cfgTareasGuardado) { <div class="pk-cfg-msg">Cambios guardados.</div> }
+                    @* Ya no se elige tablero: las tareas creadas desde un PQR caen SIEMPRE en el tablero
+                       "General" del modulo Tareas, marcadas con Origen = PQRSD (inmutable). *@
+                    <div class="pk-cfg-sec-hint">Las tareas creadas desde un PQR caen automaticamente en el tablero <b>General</b> del modulo Tareas, con la columna <b>Origen = PQRSD</b>. No hay que elegir tablero.</div>
                   }
 
                   @if (_cfgTab == "plantillas")
@@ -1866,11 +1861,8 @@
     }
 
     // ===== Tab Formulario publico (toggles de campos opcionales) =====
-    // ----- Config: tablero destino de las tareas creadas desde PQRSD -----
-    private Guid? _cfgTableroTareas;
-    private List<Propia.Application.Tareas.TableroDto> _cfgTableros = new();
-    private bool _cfgTareasGuardado;
-    private sealed record TableroTareasCfgDto(Guid? TableroId);
+    // Nota: la seleccion de "tablero destino" desde PQRSD se elimino; las tareas creadas desde un PQR
+    // caen siempre en el tablero General con Origen = PQRSD.
 
     // Tab Plantillas de la configuracion PQRSD: se ven como mini tarjetas y se gestionan aqui
     // (antes la gestion vivia en el modal de respuesta).
@@ -1969,24 +1961,7 @@
         finally { _correoBusy = false; }
     }
 
-    private async Task CambiarATabTareasCfg()
-    {
-        _cfgTab = "tareas"; _cfgTareasGuardado = false;
-        try
-        {
-            _cfgTableros = await Auth().GetFromJsonAsync<List<Propia.Application.Tareas.TableroDto>>("/api/tareas/tableros") ?? new();
-            var cfg = await Auth().GetFromJsonAsync<TableroTareasCfgDto>("/api/pqrsd/config/tablero-tareas");
-            _cfgTableroTareas = cfg?.TableroId;
-        }
-        catch { }
-    }
-
-    private async Task GuardarTableroTareasCfg(ChangeEventArgs e)
-    {
-        _cfgTableroTareas = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null;
-        var resp = await Auth().PutAsJsonAsync("/api/pqrsd/config/tablero-tareas", new { tableroId = _cfgTableroTareas });
-        _cfgTareasGuardado = resp.IsSuccessStatusCode;
-    }
+    private void CambiarATabTareasCfg() => _cfgTab = "tareas";
 
     // ----- Config: consecutivos de radicado (expediente y respuesta) -----
     private sealed class ConsModel
