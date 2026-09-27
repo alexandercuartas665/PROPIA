@@ -163,7 +163,7 @@ public class MantenimientoFlowTests : IAsyncLifetime
         var tarea = await db.Tareas.AsNoTracking().FirstOrDefaultAsync(t => t.Id == det.TareaId);
         Assert.NotNull(tarea);
         Assert.Equal(OrigenTarea.ModuloExterno, tarea!.Origen);
-        Assert.Equal("2.11", tarea.ModuloOrigenCodigo);
+        Assert.Equal(OrigenModulo.Mantenimiento, tarea.ModuloOrigenCodigo);
         Assert.Equal(det.Id, tarea.ModuloOrigenEntidadId);
         Assert.Contains("[CORRECTIVO]", tarea.Titulo);
         Assert.Equal(PrioridadTarea.Alta, tarea.Prioridad);
