@@ -231,7 +231,7 @@ public class PersonasVehiculosMascotasPlantillaTests
     {
         var (db, ctx) = BuildDb(tenantId);
         var svc = new UnidadesPlantillaService(db, ctx, new HttpContextAccessor());
-        var (bytes, _) = await svc.GenerarPlantillaCargaAsync(CancellationToken.None);
+        var (bytes, _) = await svc.GenerarPlantillaCargaAsync(Propia.Application.MiCopropiedad.PlantillaCargaScope.Todas, CancellationToken.None);
         return new XLWorkbook(new MemoryStream(bytes));
     }
 

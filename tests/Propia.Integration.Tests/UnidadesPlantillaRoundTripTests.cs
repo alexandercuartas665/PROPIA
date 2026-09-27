@@ -338,7 +338,7 @@ public class UnidadesPlantillaRoundTripTests
     {
         var (db, tenantCtx) = BuildDb(tenantId);
         var svc = new UnidadesPlantillaService(db, tenantCtx, new HttpContextAccessor());
-        var (bytes, _) = await svc.GenerarPlantillaCargaAsync(CancellationToken.None);
+        var (bytes, _) = await svc.GenerarPlantillaCargaAsync(Propia.Application.MiCopropiedad.PlantillaCargaScope.Todas, CancellationToken.None);
         // El workbook se queda abierto a proposito: el test escribe sobre el y lo vuelve a guardar.
         var wb = new XLWorkbook(new MemoryStream(bytes));
         return wb.Worksheet("UNIDADES PRIVADAS");
