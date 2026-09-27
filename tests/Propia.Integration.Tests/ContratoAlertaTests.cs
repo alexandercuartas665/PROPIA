@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Propia.Application.MiCopropiedad;
@@ -7,6 +8,7 @@ using Propia.Infrastructure.Jobs;
 using Propia.Infrastructure.MiCopropiedad;
 using Propia.Infrastructure.Persistence;
 using Propia.Infrastructure.Storage;
+using Propia.Infrastructure.Tareas;
 using Xunit;
 
 namespace Propia.Integration.Tests;
@@ -126,6 +128,46 @@ public class ContratoAlertaTests
         await CleanupTenantAsync(tenantId);
     }
 
+    [Fact]
+    public async Task El_job_emite_una_tarea_al_general_para_un_contrato_por_vencer()
+    {
+        // Contratos -> Tareas: un contrato por vencer genera UNA tarea de seguimiento en el tablero General,
+        // con Origen = CONTRATOS (inmutable) y vinculada al contrato. Idempotente: correr el job dos veces
+        // no duplica la tarea.
+        var tenantId = await SeedTenantAsync("[SELLO] CP tarea contrato");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var c = await BuildService(tenantId).CrearContratoAsync(Contrato(hoy.AddDays(-85), hoy.AddDays(15)), CancellationToken.None);
+
+        await RunJobAsync();
+        await RunJobAsync();
+
+        Assert.Equal(1, await CountTareasOrigenAsync(tenantId, OrigenModulo.Contrato));
+        var tarea = await GetTareaOrigenAsync(tenantId, OrigenModulo.Contrato);
+        Assert.NotNull(tarea);
+        Assert.Equal(c.Id, tarea!.ModuloOrigenEntidadId);
+        Assert.True(await EsTableroGeneralAsync(tarea.TableroId), "la tarea debe caer en el tablero General");
+        await CleanupTenantAsync(tenantId);
+    }
+
+    [Fact]
+    public async Task El_job_emite_una_tarea_al_general_para_una_poliza_por_vencer()
+    {
+        // Seguros -> Tareas: una poliza por vencer genera UNA tarea en el General con Origen = SEGUROS.
+        var tenantId = await SeedTenantAsync("[SELLO] CP tarea poliza");
+        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+        var polizaId = await SeedPolizaAsync(tenantId, hoy.AddDays(-85), hoy.AddDays(15));
+
+        await RunJobAsync();
+        await RunJobAsync();
+
+        Assert.Equal(1, await CountTareasOrigenAsync(tenantId, OrigenModulo.Seguro));
+        var tarea = await GetTareaOrigenAsync(tenantId, OrigenModulo.Seguro);
+        Assert.NotNull(tarea);
+        Assert.Equal(polizaId, tarea!.ModuloOrigenEntidadId);
+        Assert.True(await EsTableroGeneralAsync(tarea.TableroId), "la tarea debe caer en el tablero General");
+        await CleanupTenantAsync(tenantId);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     private IMiCopropiedadService BuildService(Guid tenantId)
@@ -171,7 +213,10 @@ public class ContratoAlertaTests
             .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
             .Options;
         await using var db = new PropiaDbContext(options, tenantCtx);
-        var job = new ContratosVencimientoJob(db, tenantCtx, NullLogger<ContratosVencimientoJob>.Instance);
+        // El job emite tareas de seguimiento al tablero General via ITareasService; se le pasa uno real
+        // sobre el mismo contexto/tenant (sin HttpContext -> creador vacio; dispatcher de notificaciones falso).
+        var tareas = new TareasService(db, tenantCtx, new HttpContextAccessor(), new FakeNotificacionDispatcher());
+        var job = new ContratosVencimientoJob(db, tenantCtx, tareas, NullLogger<ContratosVencimientoJob>.Instance);
         await job.EjecutarAsync(CancellationToken.None);
     }
 
@@ -204,6 +249,38 @@ public class ContratoAlertaTests
             .CountAsync(a => a.TenantId == tenantId && a.Tipo == tipo);
     }
 
+    private async Task<int> CountTareasOrigenAsync(Guid tenantId, string origenCodigo)
+    {
+        await using var ctx = OwnerDb();
+        return await ctx.Tareas.IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(t => t.TenantId == tenantId && t.ModuloOrigenCodigo == origenCodigo && !t.Eliminada);
+    }
+
+    private async Task<Tarea?> GetTareaOrigenAsync(Guid tenantId, string origenCodigo)
+    {
+        await using var ctx = OwnerDb();
+        return await ctx.Tareas.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.ModuloOrigenCodigo == origenCodigo && !t.Eliminada);
+    }
+
+    private async Task<bool> EsTableroGeneralAsync(Guid? tableroId)
+    {
+        if (tableroId is null) return false;
+        await using var ctx = OwnerDb();
+        return await ctx.Tableros.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(t => t.Id == tableroId.Value && t.EsGeneral);
+    }
+
+    private async Task<Guid> SeedPolizaAsync(Guid tenantId, DateOnly inicio, DateOnly fin)
+    {
+        // Se inserta con el contexto scoped al tenant (interceptor fija tenant_id y RLS lo permite).
+        await using var db = AppDb(tenantId);
+        var p = new Poliza { Aseguradora = "[SELLO] Aseguradora alerta", FechaInicio = inicio, FechaFin = fin };
+        db.Polizas.Add(p);
+        await db.SaveChangesAsync();
+        return p.Id;
+    }
+
     private async Task<Guid> SeedTenantAsync(string nombre)
     {
         await using var ctx = OwnerDb();
@@ -216,10 +293,21 @@ public class ContratoAlertaTests
     private async Task CleanupTenantAsync(Guid tenantId)
     {
         await using var ctx = OwnerDb();
+        // Las tareas del General (y su historial append-only) exigen desactivar triggers/FK: replica.
+        // SET LOCAL solo vive dentro de la transaccion, que ademas mantiene una unica conexion para que
+        // el ajuste aplique a todos los DELETE (fuera de transaccion EF abre una conexion por comando).
+        await using var tx = await ctx.Database.BeginTransactionAsync();
+        await ctx.Database.ExecuteSqlRawAsync("SET LOCAL session_replication_role = 'replica'");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_historial th USING tareas t WHERE th.tarea_id = t.id AND t.tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tareas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tarea_estados WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM tableros WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM polizas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM alertas_copropiedad WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM bitacora_mi_copropiedad WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM contratos_servicio WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
+        await tx.CommitAsync();
     }
 
     private sealed class NoopBlobStorage : IBlobStorage
