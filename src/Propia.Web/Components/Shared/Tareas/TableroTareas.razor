@@ -75,7 +75,8 @@ else
         else
         {
             <div class="tb-grid">
-                @foreach (var b in _tableros)
+                @* El tablero General vive solo en el modulo "Tareas": se excluye de la galeria de proyectos. *@
+                @foreach (var b in _tableros.Where(t => !t.EsGeneral))
                 {
                     var board = b;
                     <div class="tb-card">
@@ -145,7 +146,7 @@ else
     else
     {
         <div class="tb-board-head">
-            @if (!Compacto)
+            @if (!Compacto && !SoloGeneral)
             {
                 <button class="tb-icon-btn" title="Volver" @onclick="CerrarBoard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
             }
@@ -534,7 +535,7 @@ else
                     @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" @onclick='() => SortBy("prioridad")'><span>@ColLabel("prio", "PRIORIDAD")</span>@SortInd("prioridad")@ChevCol("prioridad", "PRIORIDAD", false)@ColorDot("prio")</div> }
                     @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" @onclick='() => SortBy("vence")'><span>@ColLabel("due", "VENCE")</span>@SortInd("vence")@ChevCol("vence", "VENCE", false)@ColorDot("due")</div> }
                     @if (_colValor) { <div class="tb-lc tb-lc-valor tb-lc-sort tb-num" @onclick='() => SortBy("valor")'><span>@ColLabel("valor", "VALOR")</span>@SortInd("valor")@ChevCol("valor", "VALOR", false)@ColorDot("valor")</div> }
-                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "RELACIONADO CON")</span>@SortInd("origen")@ChevCol("origen", "RELACIONADO CON", false)@ColorDot("orig")</div> }
+                    @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "ORIGEN")</span>@SortInd("origen")@ChevCol("origen", "ORIGEN", false)@ColorDot("orig")</div> }
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)@ChevCol(cid, campo.Label, true)@ColorDot(cid)</div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
@@ -2093,6 +2094,11 @@ else
     /// <summary>El host refresca (ej. barra de avance del PQRSD) cuando cambia algo.</summary>
     [Parameter] public EventCallback OnCambio { get; set; }
 
+    // Modulo "Tareas": abre SIEMPRE el tablero General (singleton), sin galeria ni switcher.
+    [Parameter] public bool SoloGeneral { get; set; }
+    // Modulo "Tableros": galeria/gestion de los tableros de PROYECTO (excluye el General).
+    [Parameter] public bool SoloProyectos { get; set; }
+
     // ===== Hospedaje embebido (modo Compacto): init una sola vez + filtro/origen por modulo =====
     private bool _embInit;
     // Sufijo de query para filtrar el board por vinculo de modulo (solo cuando el host lo pasa).
@@ -2152,14 +2158,22 @@ else
         }
         catch { return "tablero"; }
     }
+    // Modulo Tareas: abre el tablero General (singleton). Si aun no esta marcado, el backend lo garantiza.
+    private async Task AbrirTableroGeneralAsync()
+    {
+        var gen = _tableros?.FirstOrDefault(t => t.EsGeneral) ?? _tableros?.FirstOrDefault();
+        if (gen is not null) await AbrirBoardAsync(gen.Id);
+    }
+
     private async Task AbrirUltimoTableroAsync()
     {
         try
         {
             var raw = await Js.InvokeAsync<string?>("localStorage.getItem", TbLastKey);
-            if (Guid.TryParse(raw, out var id) && _tableros.Any(t => t.Id == id))
+            // El tablero General vive en el modulo "Tareas": nunca se reabre desde "Tableros" (galeria de
+            // proyectos); si el ultimo abierto era el General (o ya no existe), se queda en la galeria.
+            if (Guid.TryParse(raw, out var id) && _tableros.FirstOrDefault(t => t.Id == id) is { EsGeneral: false })
                 await AbrirBoardAsync(id);
-            // El tablero espejo se retiro: si el ultimo abierto era ese, se queda en la lista de tableros.
         }
         catch { }
     }
@@ -3191,7 +3205,9 @@ else
                 await CargarAsync();
                 // ?abrir={tareaId}: llega desde otros modulos (ej. tab Tareas de un PQR) para
                 // abrir directamente el modal completo de esa tarea (en su tablero).
-                if (!await AbrirTareaDesdeQueryAsync())
+                if (SoloGeneral)
+                    await AbrirTableroGeneralAsync();   // modulo Tareas: abre directo el tablero General
+                else if (!await AbrirTareaDesdeQueryAsync())
                     await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
                 StateHasChanged();
             }
@@ -4129,6 +4145,11 @@ else
             @if (_colOrigen)
             {
                 <div class="tb-row-orig">
+                    @* Origen del modulo emisor (inmutable): PQRSD/Mantenimiento/etc. o "Propia" si se creo a mano. *@
+                    <span class="tb-orig-mod" title="Origen: modulo que emitio la tarea (no editable)"
+                          style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--propia-brand-soft);color:var(--propia-brand-text);white-space:nowrap;">
+                        @OrigenModulo.Etiqueta(t.ModuloOrigenCodigo)
+                    </span>
                     <select class="tb-orig-tsel" value="@(t.OrigenTipo ?? "")" @onchange="(e) => CambiarOrigenTipoFila(tarea.Id, e)">
                         <option value="">Sin relacion</option>
                         <option value="inmueble">Inmueble</option>

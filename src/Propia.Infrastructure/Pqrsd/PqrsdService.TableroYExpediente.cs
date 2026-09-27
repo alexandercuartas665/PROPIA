@@ -371,7 +371,12 @@ public partial class PqrsdService
             FechaInicio: null,
             FechaVencimiento: x.FechaVencimiento,
             PadreId: null,
-            EtiquetaIds: null), ct);
+            EtiquetaIds: null,
+            // Cae en el tablero GENERAL (default) marcada con Origen = PQRSD (inmutable): asi el modulo
+            // Tareas la muestra con su origen. Ya no se selecciona tablero desde PQRSD.
+            ModuloOrigenCodigo: OrigenModulo.Pqrsd,
+            ModuloOrigenEntidadId: x.Id,
+            OrigenReferencia: x.NumeroRadicado), ct);
 
         x.TareaId = tarea.Id;
         x.UpdatedAt = DateTimeOffset.UtcNow;

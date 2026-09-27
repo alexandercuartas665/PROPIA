@@ -780,9 +780,14 @@ public class MantenimientoService : IMantenimientoService
             _ => PrioridadTarea.Normal
         };
 
+        // Tablero destino: el GENERAL (donde caen las tareas de todos los modulos). Antes quedaba sin
+        // tablero (TableroId null) y la tarea no aparecia en ningun board.
+        var tableroGeneralId = await _db.Tableros.Where(t => t.EsGeneral).OrderBy(t => t.Orden).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct)
+            ?? await _db.Tableros.OrderBy(t => t.Orden).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
         var tarea = new Tarea
         {
             NumeroTarea = numero,
+            TableroId = tableroGeneralId,
             Titulo = $"[{i.Tipo.ToString().ToUpperInvariant()}] {nombreActivo ?? "Activo"} - {i.Titulo}",
             Descripcion = i.Descripcion,
             EstadoId = estadoPendienteId,
@@ -790,7 +795,7 @@ public class MantenimientoService : IMantenimientoService
             AsignadoPersonaId = i.ProveedorId ?? i.ResponsableInternoId,
             FechaVencimiento = i.FechaProgramada,
             Origen = OrigenTarea.ModuloExterno,
-            ModuloOrigenCodigo = "2.11",
+            ModuloOrigenCodigo = OrigenModulo.Mantenimiento,
             ModuloOrigenEntidadId = i.Id,
             CreadoPorUsuarioId = GetUsuarioActualId()
         };

@@ -67,10 +67,11 @@ public static class MenuCatalog
         new MenuItemDef("gob-pqrs", "tabGobierno", "PQRSD y convivencia", "/pqrs", "fi-rr-comments-question", 2),
 
         // Operacion
-        new MenuItemDef("op-tareas", "tabOperacion", "Tareas y proyectos", "/tareas", "fi-rr-list-check", 1),
-        new MenuItemDef("op-mantenimiento", "tabOperacion", "Mantenimiento y activos", "/mantenimiento", "fi-rr-screwdriver", 2),
-        new MenuItemDef("op-porteria", "tabOperacion", "Porteria y accesos", "/porteria", "fi-rr-shield-check", 3),
-        new MenuItemDef("op-reservas", "tabOperacion", "Reservas zonas comunes", "/reservas", "fi-rr-calendar-check", 4),
+        new MenuItemDef("op-tareas", "tabOperacion", "Tareas", "/tareas", "fi-rr-list-check", 1),
+        new MenuItemDef("op-tableros", "tabOperacion", "Tableros", "/tableros", "fi-rr-layout-fluid", 2),
+        new MenuItemDef("op-mantenimiento", "tabOperacion", "Mantenimiento y activos", "/mantenimiento", "fi-rr-screwdriver", 3),
+        new MenuItemDef("op-porteria", "tabOperacion", "Porteria y accesos", "/porteria", "fi-rr-shield-check", 4),
+        new MenuItemDef("op-reservas", "tabOperacion", "Reservas zonas comunes", "/reservas", "fi-rr-calendar-check", 5),
 
         // Comunicacion y documentos
         new MenuItemDef("com-comunicaciones", "tabComunicacion", "Comunicaciones", "/comunicaciones", "fi-rr-megaphone", 1),

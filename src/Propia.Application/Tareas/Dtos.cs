@@ -41,7 +41,10 @@ public record TareaListaDto(
     DateTimeOffset? CerradaAt = null,
     // ----- Tablero compartido: copropiedad duena de la tarea (solo el board virtual los llena) -----
     Guid? TenantId = null,
-    string? TenantNombre = null);
+    string? TenantNombre = null,
+    // ----- Origen: modulo que emitio la tarea (PQRSD/Contratos/Seguros/Mantenimiento) o null = Propia.
+    // Inmutable; alimenta la columna "Origen" del tablero General. -----
+    string? ModuloOrigenCodigo = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);
@@ -262,7 +265,8 @@ public record TareaCampoValorDto(Guid CampoId, string? Valor);
 public record TableroDto(
     Guid Id, string Nombre, string? Descripcion, string Color, int Orden,
     int NCards, IReadOnlyList<TableroUsuarioDto> Usuarios,
-    IReadOnlyList<TableroCampoDto>? Campos = null);
+    IReadOnlyList<TableroCampoDto>? Campos = null,
+    bool EsGeneral = false);
 public record GuardarTableroRequest(
     string Nombre, string? Descripcion, string Color, IReadOnlyList<Guid> UsuarioPersonaIds);
 public record GuardarCampoRequest(

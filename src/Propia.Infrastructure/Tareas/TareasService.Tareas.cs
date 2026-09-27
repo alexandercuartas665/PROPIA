@@ -68,6 +68,7 @@ public partial class TareasService
                 t.Descripcion,
                 t.OrigenTipo,
                 t.OrigenReferencia,
+                t.ModuloOrigenCodigo,
                 t.EstadoDesde,
                 t.MotivoCancelacion,
                 t.CerradaAt
@@ -119,7 +120,8 @@ public partial class TareasService
                 r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
                 camposMap.GetValueOrDefault(r.Id),
                 resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia, r.EstadoDesde,
-                r.MotivoCancelacion, r.CerradaAt);
+                r.MotivoCancelacion, r.CerradaAt,
+                ModuloOrigenCodigo: r.ModuloOrigenCodigo);
         }).ToList();
     }
 
@@ -235,7 +237,7 @@ public partial class TareasService
                 c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
                 new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
                 null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt,
-                null, null)
+                null, null, c.ModuloOrigenCodigo)
         ).ToListAsync(ct);
 
         var asigNombre = t.AsignadoPersona is null ? null
@@ -335,7 +337,7 @@ public partial class TareasService
             if (padre is null) throw new InvalidOperationException("Tarea padre no encontrada.");
             tableroId ??= padre.TableroId;
         }
-        tableroId ??= await AsegurarTableroDefaultAsync(ct);
+        tableroId ??= await AsegurarTableroGeneralAsync(ct);
 
         Guid estadoId;
         if (req.EstadoId.HasValue)

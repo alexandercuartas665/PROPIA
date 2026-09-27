@@ -15,6 +15,13 @@ public class Tablero : TenantEntity
     public int Orden { get; set; }
     public bool Activo { get; set; } = true;
 
+    /// <summary>
+    /// Tablero GENERAL (singleton por copropiedad): siempre existe, no se borra, y es donde caen
+    /// las tareas emitidas por otros modulos (PQRSD, Mantenimiento, etc.) marcadas con su Origen.
+    /// El modulo "Tareas" abre este tablero; el modulo "Tableros" gestiona los demas (proyectos).
+    /// </summary>
+    public bool EsGeneral { get; set; }
+
     public ICollection<TableroUsuario> Usuarios { get; set; } = new List<TableroUsuario>();
     public ICollection<TableroCampo> Campos { get; set; } = new List<TableroCampo>();
 }

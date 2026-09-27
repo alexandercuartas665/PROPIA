@@ -59,7 +59,7 @@ public partial class TareasService
         var existing = await _db.Tableros.OrderBy(t => t.Orden).Select(t => t.Id).FirstOrDefaultAsync(ct);
         if (existing != Guid.Empty) return existing;
 
-        var t = new Tablero { Nombre = "General", Descripcion = "Tablero principal de tareas.", Color = "#6D4FE3", Orden = 0, Activo = true };
+        var t = new Tablero { Nombre = "General", Descripcion = "Tablero principal de tareas.", Color = "#6D4FE3", Orden = 0, Activo = true, EsGeneral = true };
         _db.Tableros.Add(t);
         await _db.SaveChangesAsync(ct);
 
@@ -69,6 +69,22 @@ public partial class TareasService
         await _db.Tareas.Where(x => x.TableroId == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.TableroId, t.Id), ct);
         return t.Id;
+    }
+
+    /// <summary>
+    /// Id del tablero GENERAL (singleton por copropiedad). Get-or-create + migracion perezosa: si aun
+    /// no hay ninguno marcado EsGeneral, marca el tablero por defecto existente (o lo crea). Es el
+    /// tablero que abre el modulo "Tareas" y donde caen las tareas de otros modulos (con su Origen).
+    /// </summary>
+    public async Task<Guid> AsegurarTableroGeneralAsync(CancellationToken ct)
+    {
+        var general = await _db.Tableros.Where(t => t.EsGeneral).OrderBy(t => t.Orden).Select(t => t.Id).FirstOrDefaultAsync(ct);
+        if (general != Guid.Empty) return general;
+        // Migracion: el tablero por defecto existente pasa a ser el general (marca EsGeneral).
+        var defId = await AsegurarTableroDefaultAsync(ct);
+        await _db.Tableros.Where(t => t.Id == defId)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.EsGeneral, true), ct);
+        return defId;
     }
 
     private async Task<TableroDto> MapTableroAsync(Tablero t, CancellationToken ct)
@@ -83,7 +99,7 @@ public partial class TareasService
             .OrderBy(c => c.Orden)
             .Select(c => new TableroCampoDto(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna, c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo))
             .ToListAsync(ct);
-        return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos);
+        return new TableroDto(t.Id, t.Nombre, t.Descripcion, t.Color, t.Orden, nCards, usuarios, campos, t.EsGeneral);
     }
 
     private static int ClampColumna(int c) => c < 1 ? 1 : (c > 2 ? 2 : c);
@@ -325,7 +341,7 @@ public partial class TareasService
     public async Task<IReadOnlyList<TableroDto>> ListarTablerosAsync(CancellationToken ct)
     {
         await AsegurarEstadosBaseAsync(ct);
-        await AsegurarTableroDefaultAsync(ct);
+        await AsegurarTableroGeneralAsync(ct);
         var tableros = await _db.Tableros.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Orden).ToListAsync(ct);
         var result = new List<TableroDto>(tableros.Count);
         foreach (var t in tableros) result.Add(await MapTableroAsync(t, ct));
