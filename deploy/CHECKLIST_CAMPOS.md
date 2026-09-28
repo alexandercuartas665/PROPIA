@@ -1,6 +1,6 @@
-# Lista de chequeo - Campos y modulos de unidad (0.0.93, refrescado 2026-09-15)
+# Lista de chequeo - Campos y modulos de unidad (0.0.98, refrescado 2026-09-28)
 
-> Que revisar en prod despues del deploy 0.0.93, especifico del trabajo de CAMPOS y de los modulos
+> Que revisar en prod despues del deploy 0.0.98, especifico del trabajo de CAMPOS y de los modulos
 > Unidades / Residentes / Vehiculos / Mascotas. El detalle de migraciones, variables y menu esta en
 > `HANDOFF_DEPLOY.md`. Marca cada punto en prod (copropiedad real, con un usuario Administrador).
 >
