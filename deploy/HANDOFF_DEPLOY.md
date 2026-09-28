@@ -25,13 +25,16 @@ Airtable en las bandejas, cierre de la reorg de hubs, **descripcion de campo** (
 Olas A-F**. Las secciones 0-7 de mas abajo siguen vigentes TAL CUAL. **Solo 2 migraciones, ambas aditivas
 y sin RLS nueva; el resto es migration-free.**
 
-### CON MIGRACION (2 nuevas vs el handoff 09-24, ambas ADITIVAS, sin RLS nueva)
+### CON MIGRACION (3 nuevas vs el handoff 09-24, TODAS ADITIVAS, sin RLS nueva)
 El `ef database update` (seccion 2) aplica solo lo que falte. Vs `20260924143830_AddUsuarioCampos`:
 1. **`20260926023023_AddDescripcionCamposDefinicion`** - agrega `descripcion text NULL` a las 7 tablas
    `*_campos_definiciones` (unidad/persona/vehiculo/mascota/tercero/zona/usuario). Solo columnas; no toca
    RLS (esas tablas ya la tienen). `Down()` dropea las columnas.
 2. **`20260927131731_AddTableroEsGeneral`** - agrega `es_general boolean NOT NULL default false` a
    `tableros`. Marca el tablero "General" unico del nuevo modulo Tareas. Aditiva; `Down()` dropea la columna.
+3. **`20260928161525_AddDescripcionCampoConfig`** - agrega `descripcion text NULL` a `unidad_campos_config`
+   (config de campos de SISTEMA por copropiedad; la usa el nuevo editor focalizado "Editar campo" para
+   guardar la descripcion de un campo fijo). Aditiva; `Down()` dropea la columna.
 
 Ninguna crea tablas -> **no suma a las 8 tablas sin RLS conocidas** (seccion 6); `RlsCoverageTests` sigue
 igual. Comprobacion:
@@ -40,7 +43,16 @@ select count(*) from information_schema.columns
  where table_name like '%_campos_definiciones' and column_name='descripcion';   -- debe dar 7
 select column_name from information_schema.columns
  where table_name='tableros' and column_name='es_general';                      -- debe existir
+select column_name from information_schema.columns
+ where table_name='unidad_campos_config' and column_name='descripcion';         -- debe existir
 ```
+
+### "Editar campo" en columnas de sistema = editor focalizado (UI, migration 3 arriba)
+Antes, "Editar campo" del menu de columna solo salia en campos propios; sobre un campo fijo no hacia nada
+util. Ahora sale siempre: en campo propio abre el editor del campo; en campo de SISTEMA abre un editor
+focalizado (alias/descripcion/visibilidad; el tipo es fijo). Aplica a Distribucion, Residentes, Mascotas,
+Vehiculos, Zonas, Equipos y Directorio. Tambien se homogenizo el boton "+ Agregar registro" en Directorio
+y Usuarios. Todo migration-free salvo la columna `descripcion` (migracion 3).
 
 ### SPLIT DEL MODULO TAREAS (cambio de comportamiento - leer)
 - **`/tareas`** ahora es el **tablero General unico**: siempre abre listo para recibir actividades y trae la
