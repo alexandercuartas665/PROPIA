@@ -251,6 +251,13 @@ else
            Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
            eliminar/ocultar abren ese gestor y el resto (orden/URL/agrupar) actua directo. *@
         <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+
+        @if (_editSisClave is not null)
+        {
+            <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+                                     EntidadConfig="contrato" TituloSingular="servicio" Jwt="@_jwt"
+                                     Guardado="RecargarCamposYConfigContratoAsync" Cerrado="() => _editSisClave = null" />
+        }
         @if (_colToast is not null)
         {
             <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -1946,6 +1953,20 @@ else
     private void ColToast(string m) { _colToast = m; }
     private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
         => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+
+    // "Editar campo" sobre una columna del SISTEMA: editor focalizado (alias/descripcion/visibilidad).
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private TipoCampoTablero? _editSisTipo;
+    private bool _editSisReq;
+    private void AbrirEditarCampoSistema(string clave)
+    {
+        var s = ContratoCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisLabel = s?.Label ?? clave;
+        _editSisTipo = s?.Tipo;
+        _editSisReq = s?.Fija ?? false;
+        _editSisClave = clave;
+    }
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
         var (accion, col) = a;
@@ -2032,8 +2053,8 @@ else
                 break;
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
-                _showColsMenu = true;   // abre el gestor "Campos" (ConfigCamposEntidad)
-                ColToast("Edita el campo en el panel de Campos.");
+                if (col.EsDinamico) { _showColsMenu = true; ColToast("Edita el campo en el panel de Campos."); }
+                else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Ocultar:
                 try

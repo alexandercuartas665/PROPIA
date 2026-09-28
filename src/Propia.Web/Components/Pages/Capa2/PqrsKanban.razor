@@ -466,6 +466,13 @@
         </div>
     }
 
+    @if (_editSisClave is not null)
+    {
+        <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+                                 EntidadConfig="pqrsd" TituloSingular="campo" Jwt="@_jwt"
+                                 Guardado="CargarAsync" Cerrado="() => _editSisClave = null" />
+    }
+
     @* ===================== COMPARTIR FORMULARIO PUBLICO ===================== *@
     @if (_shareOpen)
     {
@@ -1056,6 +1063,20 @@
     private void ColToast(string m) { _colToast = m; }
     private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
         => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+
+    // "Editar campo" sobre una columna del SISTEMA: editor focalizado (alias/descripcion/visibilidad).
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private TipoCampoTablero? _editSisTipo;
+    private bool _editSisReq;
+    private void AbrirEditarCampoSistema(string clave)
+    {
+        var s = PqrsdCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisLabel = s?.Label ?? clave;
+        _editSisTipo = s?.Tipo;
+        _editSisReq = s?.Fija ?? false;
+        _editSisClave = clave;
+    }
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
         var (accion, col) = a;
@@ -1136,8 +1157,8 @@
                 break;
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
-                _cfgCamposOpen = true;   // abre el gestor "Campos" (ConfigCamposEntidad)
-                ColToast("Edita el campo en el panel de Campos.");
+                if (col.EsDinamico) { _cfgCamposOpen = true; ColToast("Edita el campo en el panel de Campos."); }
+                else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Ocultar:
                 try
