@@ -15,17 +15,8 @@
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 
-@* ====== HEADER ====== *@
-<div class="gum-header">
-    <div class="gum-header-text">
-        @* Sin numeral: Distribucion dejo de ser la seccion 2 del acordeon y es su propio modulo. *@
-        <div class="gum-title">Gestionar unidades</div>
-        <div class="gum-subtitle">@AgrupacionLabelSingular@("s"), @PisoLabelSingular.ToLower()s y unidades</div>
-    </div>
-    <button class="gum-close" @onclick="Cerrar" type="button" aria-label="Cerrar">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-    </button>
-</div>
+@* La cabecera del modal es la propia ficha (.cpe-head): identidad de la unidad + acciones + cerrar.
+   La maqueta editor-ficha no lleva una barra "Gestionar unidades" separada encima. *@
 
 @* ====== FICHA (panel unico) ======
    La creacion y la edicion usan la MISMA ficha: al crear, se abre en modo "nueva unidad"
@@ -36,52 +27,56 @@
     <div class="gum-panel-right">
         @if (_nuevaUnidad)
         {
-            @* --- Modo NUEVA UNIDAD: misma ficha, vacia, con el codigo editable --- *@
-            <div class="gum-fhead">
-                <div class="gum-fhead-main">
-                    <div class="gum-unit-avatar">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+            @* --- Modo NUEVA UNIDAD: ficha .cpe-* vacia, con el codigo editable como titulo --- *@
+            <div class="cpe-card">
+                <div class="cpe-head">
+                    <span class="cpe-ic">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+                    </span>
+                    <div class="cpe-idwrap">
+                        <input class="cpe-title" @bind="_edit.Codigo" @bind:event="oninput" placeholder="Ej. A1-202" />
+                        <div class="cpe-sub">Nueva unidad - la @(AgrupacionLabelSingular.ToLower()) sale del codigo y el @(PisoLabelSingular.ToLower()) se infiere del numero</div>
                     </div>
-                    <div class="gum-unit-id">
-                        <div class="gum-unit-title">Nueva unidad</div>
-                        <div class="gum-unit-meta">Escribe el código <b>@AgrupacionLabelSingular.ToUpperInvariant()-APARTAMENTO</b> (ej. A1-202) y completa la ficha. La @(AgrupacionLabelSingular.ToLower()) sale del codigo y el @(PisoLabelSingular.ToLower()) se infiere del numero.</div>
-                    </div>
-                    <div class="gum-fhead-actions">
-                        <button class="gum-unit-save" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="Crear unidad">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-                            @(_busy ? "Creando..." : "Crear")
+                    <div class="cpe-head-acts">
+                        <button class="cpe-hact" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="@(_busy ? "Creando..." : "Crear unidad")">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
                         </button>
-                        <button class="gum-unit-cancel" type="button" @onclick="CancelarEdicion">Cancelar</button>
+                        <button class="cpe-hact" type="button" @onclick="CancelarEdicion" title="Cancelar">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 5 5v2"/></svg>
+                        </button>
+                        <button class="cpe-hact" type="button" @onclick="Cerrar" title="Cerrar">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
                     </div>
                 </div>
-                <div class="gum-fmeta">
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("num", "ID UNIDAD")</div>
-                        <input class="gum-fmeta-inp gum-code" @bind="_edit.Codigo" @bind:event="oninput" placeholder="A1-202" />
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("tipo", "TIPO")</div>
-                        <select class="gum-fmeta-inp" @bind="_edit.TipoKey">
+                <div class="cpe-body">
+                    <div class="cpe-field">
+                        <label class="cpe-flabel"><i class="fi fi-rr-apps"></i> @AliasCampo("tipo", "TIPO")</label>
+                        <select class="cpe-fin" @bind="_edit.TipoKey">
                             @foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }
                             @if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }
                         </select>
                     </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("coef", "COEFICIENTE")</div>
-                        <input type="number" step="0.0001" class="gum-fmeta-inp" @bind="_edit.CoeficientePropiedad" />
+                    <div class="cpe-field">
+                        <label class="cpe-flabel"><i class="fi fi-rr-calculator"></i> @AliasCampo("coef", "COEFICIENTE")</label>
+                        <input type="number" step="0.0001" class="cpe-fin" @bind="_edit.CoeficientePropiedad" />
                     </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("area", "AREA")</div>
-                        <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" />
+                    <div class="cpe-field">
+                        <label class="cpe-flabel"><i class="fi fi-rr-ruler-combined"></i> @AliasCampo("area", "AREA")</label>
+                        <input type="number" step="0.01" class="cpe-fin" @bind="_edit.AreaM2" />
                     </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("estado", "ESTADO")</div>
-                        <select class="gum-fmeta-inp" @bind="_edit.Estado">
+                    <div class="cpe-field">
+                        <label class="cpe-flabel"><i class="fi fi-rr-flag"></i> @AliasCampo("estado", "ESTADO")</label>
+                        <select class="cpe-fin" @bind="_edit.Estado">
                             <option value="">- Sin definir -</option>
                             @foreach (var eo in EstadosConVigente(_edit.Estado)) { <option value="@eo">@eo</option> }
                         </select>
                     </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("matricula", "MATRICULA")</div>
-                        <input class="gum-fmeta-inp" @bind="_edit.MatriculaInmobiliaria" />
+                    <div class="cpe-field">
+                        <label class="cpe-flabel"><i class="fi fi-rr-document"></i> @AliasCampo("matricula", "MATRICULA")</label>
+                        <input class="cpe-fin" @bind="_edit.MatriculaInmobiliaria" />
                     </div>
-                </div>
-                <div class="gum-fcustom">
-                    <div class="gum-fcustom-empty">Guarda la unidad para agregar personas, vehículos, mascotas y documentos.</div>
+                    <div class="gum-fcustom-empty" style="margin-top:14px;">Guarda la unidad para agregar documentos y campos adicionales.</div>
                     @if (!string.IsNullOrEmpty(_msg))
                     {
                         <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")" style="margin-top:12px;">@_msg</div>
@@ -103,293 +98,135 @@
         }
         else
         {
-            @* Header estilo ficha: identidad + franja de metadatos + tabs (referencia del cliente). *@
-            <div class="gum-fhead">
-                <div class="gum-fhead-main">
-                    <div class="gum-unit-avatar">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
-                    </div>
-                    <div class="gum-unit-id">
-                        <div class="gum-unit-title">@LabelU(_selected) @_selected.Numero</div>
-                        <div class="gum-unit-meta">
-                            @(_selected.TorreNombre ?? "Sin torre")
-                            @(_selected.Piso.HasValue ? $" · {PisoLabelSingular} {_selected.Piso}" : "")
-                            · @LabelU(_selected)
-                            @(_selected.AreaM2.HasValue ? $" · {_selected.AreaM2.Value:0.##} m2" : "")
+            @* Ficha estilo "editor-ficha" (.cpe-*): cabecera identidad + 4 pestanas + cuerpo con scroll interno. *@
+            <div class="cpe-card">
+                <div class="cpe-head">
+                    <span class="cpe-ic">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
+                    </span>
+                    <div class="cpe-idwrap">
+                        @* El codigo (TORRE-NUMERO) de una unidad existente no se edita desde la ficha: se muestra como titulo. *@
+                        <input class="cpe-title" value="@IdUnidad" disabled title="@($"{LabelU(_selected)} {_selected.Numero}")" />
+                        <div class="cpe-sub">
+                            @(_selected.TorreNombre ?? "Sin torre")@(_selected.Piso.HasValue ? $" - {PisoLabelSingular} {_selected.Piso}" : "") - @LabelU(_selected)@(_selected.AreaM2.HasValue ? $" - {_selected.AreaM2.Value:0.##} m2" : "")
                         </div>
                     </div>
-                    <div class="gum-fhead-actions">
+                    <div class="cpe-head-acts">
                         @if (!_editMode)
                         {
-                            <button class="gum-unit-edit" type="button" @onclick="EntrarEdicion" title="Editar ficha">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                Editar ficha
+                            <button class="cpe-hact" type="button" @onclick="EntrarEdicion" title="Editar ficha">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                         }
                         else
                         {
-                            <button class="gum-unit-del" type="button" @onclick="AbrirConfirmEliminar" disabled="@_busy" title="Eliminar unidad">
+                            <button class="cpe-hact" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="@(_busy ? "Guardando..." : "Guardar")">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+                            </button>
+                            <button class="cpe-hact" type="button" @onclick="AbrirConfirmEliminar" disabled="@_busy" title="Eliminar unidad">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
-                                Eliminar
                             </button>
-                            <button class="gum-unit-save" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="Guardar">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
-                                @(_busy ? "Guardando..." : "Guardar")
+                            <button class="cpe-hact" type="button" @onclick="CancelarEdicion" title="Cancelar edicion">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 5 5v2"/></svg>
                             </button>
-                            <button class="gum-unit-cancel" type="button" @onclick="CancelarEdicion">Cancelar</button>
                         }
-                    </div>
-                </div>
-                @* Franja de datos de la unidad: informativa; se vuelve editable en el sitio con "Editar ficha". *@
-                <div class="gum-fmeta">
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("num", "ID UNIDAD")</div><div class="gum-fmeta-val">@IdUnidad</div></div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("tipo", "TIPO")</div>
-                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.TipoKey">@foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }@if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }</select> } else { <div class="gum-fmeta-val">@LabelU(_selected)</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("coef", "COEFICIENTE")</div>
-                        @if (_editMode) { <input type="number" step="0.0001" class="gum-fmeta-inp" @bind="_edit.CoeficientePropiedad" /> } else { <div class="gum-fmeta-val">@_selected.CoeficientePropiedad.ToString("0.####")%</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("area", "AREA")</div>
-                        @if (_editMode) { <input type="number" step="0.01" class="gum-fmeta-inp" @bind="_edit.AreaM2" /> } else { <div class="gum-fmeta-val">@(_selected.AreaM2.HasValue ? $"{_selected.AreaM2.Value:0.##} m2" : "-")</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("estado", "ESTADO")</div>
-                        @if (_editMode) { <select class="gum-fmeta-inp" @bind="_edit.Estado">
-                            <option value="">- Sin definir -</option>
-                            @foreach (var eo in EstadosConVigente(_edit.Estado)) { <option value="@eo">@eo</option> }
-                        </select> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.Estado) ? "-" : _selected.Estado)</div> }
-                    </div>
-                    <div class="gum-fmeta-f"><div class="gum-fmeta-lbl">@AliasCampo("matricula", "MATRICULA")</div>
-                        @if (_editMode) { <input class="gum-fmeta-inp" @bind="_edit.MatriculaInmobiliaria" /> } else { <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(_selected.MatriculaInmobiliaria) ? "-" : _selected.MatriculaInmobiliaria)</div> }
+                        <button class="cpe-hact" type="button" @onclick="Cerrar" title="Cerrar">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
                     </div>
                 </div>
 
-                @* Campos personalizados (ficha tecnica) debajo de la franja: informativos, editables con "Editar ficha". *@
-                <div class="gum-fcustom">
-                    <div class="gum-fmeta-lbl" style="margin-bottom:8px;">CAMPOS PERSONALIZADOS</div>
-                    @if (_campos.Count == 0)
-                    {
-                        <div class="gum-fcustom-empty">
-                            Sin campos personalizados todavia.
-                            @if (_editMode)
-                            {
-                                <button class="gum-cf-mini" type="button" @onclick="() => _cfOpen = !_cfOpen">+ Agregar campo</button>
-                            }
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="gum-fcustom-grid">
-                            @foreach (var c in _campos)
-                            {
-                                var cc = c;
-                                <div class="gum-fmeta-f">
-                                    <div class="gum-fmeta-lbl">@c.Label</div>
-                                    @if (_editMode)
-                                    {
-                                        @switch (c.Tipo)
-                                        {
-                                            case TipoCampoTablero.Seleccion:
-                                                <select class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
-                                                    <option value="">- elegir -</option>
-                                                    @foreach (var op in c.OpcionesLista) { <option value="@op">@op</option> }
-                                                </select>
-                                                break;
-                                            case TipoCampoTablero.Numero:
-                                            case TipoCampoTablero.Moneda:
-                                                <input class="gum-fmeta-inp" type="number" step="any" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
-                                                break;
-                                            case TipoCampoTablero.Fecha:
-                                                <input class="gum-fmeta-inp" type="date" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" />
-                                                break;
-                                            case TipoCampoTablero.AreaTexto:
-                                                <textarea class="gum-fmeta-inp" rows="2" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato">@c.Valor</textarea>
-                                                break;
-                                            case TipoCampoTablero.Booleano:
-                                                <select class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
-                                                    <option value="">- elegir -</option>
-                                                    <option value="Si">Si</option>
-                                                    <option value="No">No</option>
-                                                </select>
-                                                break;
-                                            default:
-                                                <input class="gum-fmeta-inp" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
-                                                break;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <div class="gum-fmeta-val">@(string.IsNullOrWhiteSpace(c.Valor) ? "-" : c.Valor)</div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_editMode && _cfOpen)
-                    {
-                        <div class="gum-cf-form" style="margin-top:10px;">
-                            <input class="gum-input" @bind="_cfLabel" @bind:event="oninput" placeholder="Nombre del campo (ej. N de medidor)" />
-                            <input class="gum-input" @bind="_cfValor" @bind:event="oninput" placeholder="Valor (opcional)" />
-                            <button class="gum-btn-brand" type="button" @onclick="AgregarCampoPersonalizado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfLabel))">Crear campo</button>
-                        </div>
-                    }
-                    @if (_editMode && _campos.Count > 0 && !_cfOpen)
-                    {
-                        <button class="gum-cf-mini" type="button" style="margin-top:10px;" @onclick="() => _cfOpen = true">+ Agregar campo</button>
-                    }
+                <div class="cpe-tabs">
+                    <button type="button" class="cpe-tab @(_fichaTab == "detalle" ? "on" : "")" @onclick='() => _fichaTab = "detalle"'>Detalle</button>
+                    <button type="button" class="cpe-tab @(_fichaTab == "historial" ? "on" : "")" @onclick='() => _fichaTab = "historial"'>Historial relacionado</button>
+                    <button type="button" class="cpe-tab @(_fichaTab == "cuenta" ? "on" : "")" @onclick='() => _fichaTab = "cuenta"'>Estado de cuenta</button>
+                    <button type="button" class="cpe-tab @(_fichaTab == "documentos" ? "on" : "")" @onclick='() => _fichaTab = "documentos"'>Documentos</button>
                 </div>
-            </div>
 
-            <div class="gum-ftabs">
-                <button type="button" class="gum-ftab @(_fichaTab == "personas" ? "on" : "")" @onclick='() => _fichaTab = "personas"'>Personas</button>
-                <button type="button" class="gum-ftab @(_fichaTab == "vehiculos" ? "on" : "")" @onclick='() => _fichaTab = "vehiculos"'>Vehículos</button>
-                <button type="button" class="gum-ftab @(_fichaTab == "mascotas" ? "on" : "")" @onclick='() => _fichaTab = "mascotas"'>Mascotas</button>
-                <button type="button" class="gum-ftab @(_fichaTab == "terceros" ? "on" : "")" @onclick='() => _fichaTab = "terceros"'>Terceros</button>
-                <button type="button" class="gum-ftab @(_fichaTab == "historial" ? "on" : "")" @onclick='() => _fichaTab = "historial"'>Historial relacionado</button>
-                <button type="button" class="gum-ftab @(_fichaTab == "cuenta" ? "on" : "")" @onclick='() => _fichaTab = "cuenta"'>Estado de cuenta</button>
-            </div>
-
-            <div class="gum-unit-cards">
-                @* === Personas vinculadas: tabla inline (referencia del cliente) === *@
-                @if (_fichaTab == "personas")
-                {
-                <div class="gum-unit-card">
-                    <div class="gum-people-head">
-                        <div class="gum-unit-eyebrow gum-unit-eyebrow--lg">PERSONAS VINCULADAS (@_personas.Count)</div>
-                        <div class="gum-people-sub">Propietarios, residentes, arrendatarios y contactos. Si el documento ya existe en el directorio del tenant, se vincula esa persona.</div>
-                    </div>
-                    <div class="gum-ptbl">
-                        <div class="gum-ptbl-head">
-                            @* Los encabezados usan el alias configurado en "Configurar" > Personas. *@
-                            <span>@AliasEnt("personas", "nombre", "Nombre")</span><span>@AliasEnt("personas", "documento", "Identificacion")</span><span>@AliasEnt("personas", "telefono", "Telefono")</span><span>@AliasEnt("personas", "email", "Email")</span><span>@AliasEnt("personas", "rol", "Rol")</span><span>@AliasEnt("personas", "habita", "Habita")</span><span></span>
+                <div class="cpe-body">
+                    @* ===== DETALLE: campos de la unidad, edicion inline (misma tabla Unidades Privadas) ===== *@
+                    @if (_fichaTab == "detalle")
+                    {
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-home"></i> @AliasCampo("num", "ID UNIDAD")</label>
+                            <input class="cpe-fin" value="@IdUnidad" disabled />
                         </div>
-                        @foreach (var p in _personas)
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-apps"></i> @AliasCampo("tipo", "TIPO")</label>
+                            @if (_editMode) { <select class="cpe-fin" @bind="_edit.TipoKey">@foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }@if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }</select> } else { <input class="cpe-fin" value="@LabelU(_selected)" disabled /> }
+                        </div>
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-calculator"></i> @AliasCampo("coef", "COEFICIENTE")</label>
+                            @if (_editMode) { <input type="number" step="0.0001" class="cpe-fin" @bind="_edit.CoeficientePropiedad" /> } else { <input class="cpe-fin" value="@($"{_selected.CoeficientePropiedad.ToString("0.####")}%")" disabled /> }
+                        </div>
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-ruler-combined"></i> @AliasCampo("area", "AREA")</label>
+                            @if (_editMode) { <input type="number" step="0.01" class="cpe-fin" @bind="_edit.AreaM2" /> } else { <input class="cpe-fin" value="@(_selected.AreaM2.HasValue ? $"{_selected.AreaM2.Value:0.##} m2" : "-")" disabled /> }
+                        </div>
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-flag"></i> @AliasCampo("estado", "ESTADO")</label>
+                            @if (_editMode) { <select class="cpe-fin" @bind="_edit.Estado"><option value="">- Sin definir -</option>@foreach (var eo in EstadosConVigente(_edit.Estado)) { <option value="@eo">@eo</option> }</select> } else { <input class="cpe-fin" value="@(string.IsNullOrWhiteSpace(_selected.Estado) ? "-" : _selected.Estado)" disabled /> }
+                        </div>
+                        <div class="cpe-field">
+                            <label class="cpe-flabel"><i class="fi fi-rr-document"></i> @AliasCampo("matricula", "MATRICULA")</label>
+                            @if (_editMode) { <input class="cpe-fin" @bind="_edit.MatriculaInmobiliaria" /> } else { <input class="cpe-fin" value="@(string.IsNullOrWhiteSpace(_selected.MatriculaInmobiliaria) ? "-" : _selected.MatriculaInmobiliaria)" disabled /> }
+                        </div>
+                        @foreach (var c in _campos)
                         {
-                            var pp = p;
-                            <div class="gum-ptbl-row @(p.Activo ? "" : "gum-ptbl-row--off")">
-                                <div class="gum-ptbl-nom">
-                                    <span class="gum-ptbl-ava">@Ini(p.PersonaNombre)</span>
-                                    <div class="gum-ptbl-nom-t"><span class="gum-ptbl-nom-n">@p.PersonaNombre</span><span class="gum-ptbl-nom-r">@RolLabel(p.Rol)</span></div>
-                                </div>
-                                <div class="gum-ptbl-c">@(string.IsNullOrWhiteSpace(p.PersonaDocumento) ? "-" : p.PersonaDocumento)</div>
-                                <div class="gum-ptbl-c">@(string.IsNullOrWhiteSpace(p.PersonaTelefono) ? "-" : p.PersonaTelefono)</div>
-                                <div class="gum-ptbl-c gum-ptbl-c--email">@(string.IsNullOrWhiteSpace(p.PersonaEmail) ? "-" : p.PersonaEmail)</div>
-                                <div class="gum-ptbl-c">
-                                    <select class="gum-ptbl-sel" value="@p.Rol" @onchange="(e) => CambiarRolPersonaAsync(pp, e)">
-                                        @foreach (var r in Enum.GetValues<RolUnidadPersona>()) { <option value="@r">@RolLabel(r)</option> }
-                                    </select>
-                                </div>
-                                <div class="gum-ptbl-c">
-                                    <select class="gum-ptbl-sel" value="@(p.Habita ? "1" : "0")" @onchange="(e) => CambiarHabitaPersonaAsync(pp, e)">
-                                        <option value="1">Si</option>
-                                        <option value="0">No</option>
-                                    </select>
-                                </div>
-                                <div class="gum-ptbl-c gum-ptbl-c--act">
-                                    <button class="gum-ptbl-del" type="button" title="Quitar de la unidad" @onclick="() => EliminarPersona(pp.Id)">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                                    </button>
-                                </div>
-                            </div>
-                            @* Campos propios de la copropiedad para esta persona (fila aparte: la de
-                               arriba es una grilla de columnas fijas). *@
-                            @if (_defsPersonas.Count > 0)
-                            {
-                                <div class="gum-ptbl-din">
-                                    <CamposDinamicosRegistro Prefijo="personas" RegistroId="@pp.Id" Defs="_defsPersonas"
-                                                             Valores="@ValoresDe(_valPersonas, pp.Id)" Jwt="@Jwt" />
-                                </div>
-                            }
-                        }
-                        @* Fila de trabajo (alta inline) *@
-                        <div class="gum-ptbl-row gum-ptbl-row--new">
-                            <div class="gum-ptbl-nom">
-                                @if (_ptPersonaSel is null)
+                            var cc = c;
+                            <div class="cpe-field">
+                                <label class="cpe-flabel"><i class="fi fi-rr-settings-sliders"></i> @c.Label</label>
+                                @if (_editMode)
                                 {
-                                    <SelectorPersona Seleccionada="_ptPersonaSel" SeleccionadaChanged="OnPtPersonaSel" Jwt="@Jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." />
+                                    @switch (c.Tipo)
+                                    {
+                                        case TipoCampoTablero.Seleccion:
+                                            <select class="cpe-fin" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
+                                                <option value="">- elegir -</option>
+                                                @foreach (var op in c.OpcionesLista) { <option value="@op">@op</option> }
+                                            </select>
+                                            break;
+                                        case TipoCampoTablero.Numero:
+                                        case TipoCampoTablero.Moneda:
+                                            <input class="cpe-fin" type="number" step="any" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                            break;
+                                        case TipoCampoTablero.Fecha:
+                                            <input class="cpe-fin" type="date" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" />
+                                            break;
+                                        case TipoCampoTablero.AreaTexto:
+                                            <textarea class="cpe-fin" rows="2" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato">@c.Valor</textarea>
+                                            break;
+                                        case TipoCampoTablero.Booleano:
+                                            <select class="cpe-fin" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())">
+                                                <option value="">- elegir -</option>
+                                                <option value="Si">Si</option>
+                                                <option value="No">No</option>
+                                            </select>
+                                            break;
+                                        default:
+                                            <input class="cpe-fin" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                            break;
+                                    }
                                 }
                                 else
                                 {
-                                    <div class="gum-ptbl-selname" title="@_ptPersonaSel.NombreCompleto"><span>@_ptPersonaSel.NombreCompleto</span><button type="button" class="gum-ptbl-selx" title="Cambiar tercero" @onclick="LimpiarPtPersona">&times;</button></div>
+                                    <input class="cpe-fin" value="@(string.IsNullOrWhiteSpace(c.Valor) ? "-" : c.Valor)" disabled />
                                 }
                             </div>
-                            <div class="gum-ptbl-c"><input class="gum-ptbl-inp gum-ptbl-ro" readonly tabindex="-1" placeholder="Identificación" value="@(_ptPersonaSel is null ? "" : $"{_ptPersonaSel.TipoDocumento} {_ptPersonaSel.DocumentoEnmascarado}")" /></div>
-                            <div class="gum-ptbl-c"><input class="gum-ptbl-inp" placeholder="Teléfono" @bind="_ptTel" @bind:event="oninput" /></div>
-                            <div class="gum-ptbl-c"><input class="gum-ptbl-inp" placeholder="Email" @bind="_ptEmail" @bind:event="oninput" /></div>
-                            <div class="gum-ptbl-c">
-                                <select class="gum-ptbl-inp" @bind="_ptRol">
-                                    @foreach (var r in Enum.GetValues<RolUnidadPersona>()) { <option value="@r">@RolLabel(r)</option> }
-                                </select>
+                        }
+                        @if (_editMode && _cfOpen)
+                        {
+                            <div class="gum-cf-form" style="margin-top:12px;">
+                                <input class="gum-input" @bind="_cfLabel" @bind:event="oninput" placeholder="Nombre del campo (ej. N de medidor)" />
+                                <input class="gum-input" @bind="_cfValor" @bind:event="oninput" placeholder="Valor (opcional)" />
+                                <button class="gum-btn-brand" type="button" @onclick="AgregarCampoPersonalizado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfLabel))">Crear campo</button>
                             </div>
-                            <div class="gum-ptbl-c">
-                                <select class="gum-ptbl-inp" value="@(_ptHabita ? "1" : "0")" @onchange="OnPtHabitaChange">
-                                    <option value="1">Si</option>
-                                    <option value="0">No</option>
-                                </select>
-                            </div>
-                            <div class="gum-ptbl-c gum-ptbl-c--act">
-                                <button class="gum-ptbl-add" type="button" @onclick="AgregarPersonaTablaAsync" disabled="@(_agregandoPersona || _ptPersonaSel is null)">@(_agregandoPersona ? "..." : "+ Agregar")</button>
-                            </div>
-                        </div>
-                    </div>
-                    @if (!string.IsNullOrEmpty(_msg))
-                    {
-                        <div class="gum-msg @(_msgError ? "gum-msg--err" : "gum-msg--ok")" style="margin-top:10px;">@_msg</div>
+                        }
+                        else if (_editMode)
+                        {
+                            <button class="cpe-addfield" type="button" @onclick="() => _cfOpen = true"><i class="fi fi-rr-plus"></i> Agregar campo</button>
+                        }
                     }
-                </div>
-                }
-
-
-                @* === Card PLACAS HABILITADAS PARA INGRESO (proto v3) === *@
-                @if (_fichaTab == "vehiculos") {
-                <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">PLACAS HABILITADAS PARA INGRESO</div>
-                    @if (_placas.Count == 0)
-                    {
-                        <div class="gum-people-empty">Sin placas registradas para esta unidad.</div>
-                    }
-                    else
-                    {
-                        <div class="gum-inm-list">
-                            @foreach (var p in _placas)
-                            {
-                                var pp = p;
-                                <div class="gum-inm-block">
-                                    <div class="gum-inm">
-                                        <div class="gum-inm-icon">
-                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l2-5h14l2 5M5 13h14v4H5zM7 17v1M17 17v1"/></svg>
-                                        </div>
-                                        <div class="gum-inm-text">
-                                            <div class="gum-inm-name" style="font-family:ui-monospace,monospace;letter-spacing:.5px">@pp.Placa</div>
-                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@PlacaTipoLabel(pp.TipoVehiculo)</div>
-                                        </div>
-                                        @if (_editMode)
-                                        {
-                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarPlaca(pp.Id)" title="Quitar">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                            </button>
-                                        }
-                                    </div>
-                                    <CamposDinamicosRegistro Prefijo="vehiculos" RegistroId="@pp.Id" Defs="_defsVehiculos"
-                                                             Valores="@ValoresDe(_valVehiculos, pp.Id)" Jwt="@Jwt" />
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_editMode)
-                    {
-                        <div class="gum-inm-add">
-                            <select class="gum-inm-input" @bind="_nuevaPlacaTipo">
-                                <option value="@TipoVehiculo.Automovil">Carro</option>
-                                <option value="@TipoVehiculo.Moto">Moto</option>
-                            </select>
-                            <input class="gum-inm-input" style="flex:1;min-width:0;text-transform:uppercase" @bind="_nuevaPlaca" @bind:event="oninput" placeholder="ABC123" />
-                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarPlaca" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaPlaca))">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        </div>
-                    }
-                </div>
-                }
 
                 @* === Card ARRIENDOS Y COBROS MENSUALES (proto v3) === *@
                 @if (_fichaTab == "cuenta") {
@@ -443,116 +280,6 @@
                     }
                 </div>
                 }
-
-
-                @* === Card MASCOTAS (proto v3) === *@
-                @if (_fichaTab == "mascotas") {
-                <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">MASCOTAS</div>
-                    @if (_mascotas.Count == 0)
-                    {
-                        <div class="gum-people-empty">Sin mascotas registradas.</div>
-                    }
-                    else
-                    {
-                        <div class="gum-inm-list">
-                            @foreach (var m in _mascotas)
-                            {
-                                var mm = m;
-                                <div class="gum-inm-block">
-                                    <div class="gum-inm">
-                                        <div class="gum-inm-icon" style="background:#FEF3DC;color:#B45309">
-                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="9" r="2"/><circle cx="8" cy="14" r="2"/><path d="M9 18c-2 0-3 1.5-3 3 1.5 0 2.5.5 4 .5s2.5-.5 4-.5c0-1.5-1-3-3-3z"/></svg>
-                                        </div>
-                                        <div class="gum-inm-text">
-                                            <div class="gum-inm-name">@mm.Nombre</div>
-                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">@mm.Tipo@(string.IsNullOrEmpty(mm.Raza) ? "" : $" - {mm.Raza}")</div>
-                                        </div>
-                                        @if (_editMode)
-                                        {
-                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarMascota(mm.Id)" title="Quitar">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                            </button>
-                                        }
-                                    </div>
-                                    <CamposDinamicosRegistro Prefijo="mascotas" RegistroId="@mm.Id" Defs="_defsMascotas"
-                                                             Valores="@ValoresDe(_valMascotas, mm.Id)" Jwt="@Jwt" />
-                                </div>
-                            }
-
-                        </div>
-                    }
-                    @if (_editMode)
-                    {
-                        <div class="gum-inm-add">
-                            <input class="gum-inm-input" style="flex:1;min-width:0" @bind="_nuevaMascNombre" @bind:event="oninput" placeholder="Nombre" />
-                            <select class="gum-inm-input" @bind="_nuevaMascTipo">
-                                @foreach (var t in Enum.GetValues<TipoMascota>()) { <option value="@t">@t</option> }
-                            </select>
-                            <input class="gum-inm-input" style="width:74px" @bind="_nuevaMascRaza" @bind:event="oninput" placeholder="Raza" />
-                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarMascota" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaMascNombre))">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        </div>
-                    }
-                </div>
-                }
-
-                @* Terceros (empleadas de servicio y demas personal autorizado de la unidad). El backend
-                   ya existia (unidades/{id}/empleadas) pero no tenia seccion en la ficha. *@
-                @if (_fichaTab == "terceros") {
-                <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">TERCEROS AUTORIZADOS</div>
-                    @if (_empleadas.Count == 0)
-                    {
-                        <div class="gum-people-empty">Sin terceros registrados para esta unidad.</div>
-                    }
-                    else
-                    {
-                        <div class="gum-inm-list">
-                            @foreach (var t in _empleadas)
-                            {
-                                var tt = t;
-                                <div class="gum-inm-block">
-                                    <div class="gum-inm">
-                                        <div class="gum-inm-icon" style="background:#E7F0FF;color:#2563EB">
-                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.2"/><path d="M5 21c0-3.5 3.1-6 7-6s7 2.5 7 6"/></svg>
-                                        </div>
-                                        <div class="gum-inm-text">
-                                            <div class="gum-inm-name">@tt.Nombre</div>
-                                            <div class="gum-inm-fact" style="color:var(--propia-text-muted)">
-                                                @(string.IsNullOrWhiteSpace(tt.Documento) ? "Sin documento" : tt.Documento)@(string.IsNullOrWhiteSpace(tt.Horario) ? "" : $" - {tt.Horario}")
-                                            </div>
-                                        </div>
-                                        @if (_editMode)
-                                        {
-                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarEmpleada(tt.Id)" title="Quitar">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                            </button>
-                                        }
-                                    </div>
-                                    <CamposDinamicosRegistro Prefijo="terceros" RegistroId="@tt.Id" Defs="_defsTerceros"
-                                                             Valores="@ValoresDe(_valTerceros, tt.Id)" Jwt="@Jwt" />
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_editMode)
-                    {
-                        <div class="gum-inm-add">
-                            <input class="gum-inm-input" style="flex:1;min-width:0" @bind="_nuevaEmpNombre" @bind:event="oninput" placeholder="@AliasEnt("terceros", "nombre", "Nombre")" />
-                            <input class="gum-inm-input" style="width:96px" @bind="_nuevaEmpDoc" @bind:event="oninput" placeholder="@AliasEnt("terceros", "documento", "Documento")" />
-                            <input class="gum-inm-input" style="width:90px" @bind="_nuevaEmpCel" @bind:event="oninput" placeholder="@AliasEnt("terceros", "celular", "Celular")" />
-                            <input class="gum-inm-input" style="width:96px" @bind="_nuevaEmpHorario" @bind:event="oninput" placeholder="@AliasEnt("terceros", "horario", "Horario")" />
-                            <button class="gum-inm-add-btn" type="button" @onclick="AgregarEmpleada" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEmpNombre))">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        </div>
-                    }
-                </div>
-                }
-
-
 
                 @* === ESTADISTICA: deuda + estado de cuenta (2.7) + PQRSD (Ola 6) === *@
                 @if (_fichaTab == "cuenta") {
@@ -617,8 +344,8 @@
                 </div>
                 }
 
-                @* === DOCUMENTOS (proto L.785-792) === *@
-                @if (_fichaTab == "historial") {
+                @* === DOCUMENTOS: pestana propia (movido desde Historial) === *@
+                @if (_fichaTab == "documentos") {
                 <div class="gum-unit-card">
                     <div class="gum-unit-eyebrow">DOCUMENTOS</div>
                     @if (_documentos.Count > 0)
@@ -711,6 +438,7 @@
                 </div>
                 }
             </div>
+            </div>
         }
     </div>
 </div>
@@ -729,7 +457,7 @@
             <div class="gum-cdel-sub">
                 Vas a eliminar <b>@LabelU(_selected) @_selected.Numero</b>@(string.IsNullOrWhiteSpace(_selected.TorreNombre) ? "" : $" ({_selected.TorreNombre})").
                 Esta accion es <b>permanente y no se puede deshacer</b>. Se perderan sus datos de ficha,
-                personas vinculadas, vehiculos, mascotas y documentos de esta unidad.
+                registros y documentos de esta unidad.
             </div>
             <div class="gum-cdel-warn">
                 Si la unidad tiene movimientos de cartera, PQRSD o reservas, el sistema NO la eliminara
@@ -795,112 +523,11 @@
     private bool _subiendoDoc;
 
     // Prototipo v3 - bloques nuevos de la ficha de inmueble
-    private List<UnidadPlacaDto> _placas = new();
-    private string _nuevaPlaca = "";
-    private TipoVehiculo _nuevaPlacaTipo = TipoVehiculo.Automovil;
-
     private List<UnidadArriendoDto> _arriendos = new();
     private string _nuevoArrConcepto = "";
     private decimal? _nuevoArrValor;
     private string _nuevoArrRef = "";
 
-    private List<UnidadMascotaDto> _mascotas = new();
-    private string _nuevaMascNombre = "";
-    private TipoMascota _nuevaMascTipo = TipoMascota.Perro;
-    private string _nuevaMascRaza = "";
-
-    private List<UnidadEmpleadaDto> _empleadas = new();
-
-    // ===== Campos dinamicos de las entidades vinculadas (catalogo por copropiedad, configurado en
-    // "Configurar" > pestanas Personas/Vehiculos/Mascotas/Terceros). Se cargan UNA vez por unidad
-    // (definiciones + todos los valores) y cada fila pinta solo su porcion, sin consultas por fila. =====
-    private List<CampoDinDef> _defsPersonas = new(), _defsVehiculos = new(), _defsMascotas = new(), _defsTerceros = new();
-    private Dictionary<Guid, Dictionary<Guid, string?>> _valPersonas = new(), _valVehiculos = new(), _valMascotas = new(), _valTerceros = new();
-
-    /// <summary>Valores de un registro; crea el diccionario si es la primera vez (el componente lo muta).</summary>
-    private static Dictionary<Guid, string?> ValoresDe(Dictionary<Guid, Dictionary<Guid, string?>> mapa, Guid registroId)
-    {
-        if (!mapa.TryGetValue(registroId, out var d)) { d = new(); mapa[registroId] = d; }
-        return d;
-    }
-
-    // Config por entidad (alias / visibilidad / orden de los campos de esa ficha), definida en
-    // "Configurar" > pestanas Personas/Vehiculos/Mascotas/Terceros.
-    private Dictionary<string, Dictionary<string, UnidadCampoConfigDto>> _cfgEnt = new(StringComparer.Ordinal);
-
-    /// <summary>Alias del campo de sistema de una ficha vinculada; el label por defecto si no hay.</summary>
-    private string AliasEnt(string entidad, string clave, string def)
-        => _cfgEnt.TryGetValue(entidad, out var m) && m.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
-            ? c.Alias! : def;
-
-    /// <summary>Si el campo de sistema de una ficha vinculada esta visible (por defecto, si).</summary>
-    private bool VisibleEnt(string entidad, string clave)
-        => !(_cfgEnt.TryGetValue(entidad, out var m) && m.TryGetValue(clave, out var c) && c.Oculto);
-
-    // Aplica a los campos propios el orden y la visibilidad configurados (se guardan en la config
-    // con la clave "cd:{id}"), para que la ficha muestre lo mismo que el panel de configuracion.
-    private List<CampoDinDef> AplicarCfg(string entidad, List<CampoDinDef> defs)
-    {
-        if (!_cfgEnt.TryGetValue(entidad, out var m)) return defs;
-        return defs
-            .Where(d => !(m.TryGetValue("cd:" + d.Id, out var c) && c.Oculto))
-            .Select((d, i) => (d, ord: m.TryGetValue("cd:" + d.Id, out var c) && c.Orden is { } o ? o : 1000 + i))
-            .OrderBy(x => x.ord).Select(x => x.d).ToList();
-    }
-
-    private async Task CargarCamposVinculadosAsync()
-    {
-        var http = Auth();
-        foreach (var ent in new[] { "personas", "vehiculos", "mascotas", "terceros" })
-        {
-            try
-            {
-                var l = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={ent}") ?? new();
-                _cfgEnt[ent] = l.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
-            }
-            catch { _cfgEnt[ent] = new(StringComparer.Ordinal); }
-        }
-        _defsPersonas = AplicarCfg("personas", await DefsAsync(http, "personas"));
-        _defsVehiculos = AplicarCfg("vehiculos", await DefsAsync(http, "vehiculos"));
-        _defsMascotas = AplicarCfg("mascotas", await DefsAsync(http, "mascotas"));
-        _defsTerceros = AplicarCfg("terceros", await DefsAsync(http, "terceros"));
-        _valPersonas = await ValoresAsync<PersonaCampoValorFlatDto>(http, "personas", v => v.UnidadPersonaId, v => v.DefinicionId, v => v.Valor);
-        _valVehiculos = await ValoresAsync<VehiculoCampoValorFlatDto>(http, "vehiculos", v => v.UnidadPlacaId, v => v.DefinicionId, v => v.Valor);
-        _valMascotas = await ValoresAsync<MascotaCampoValorFlatDto>(http, "mascotas", v => v.UnidadMascotaId, v => v.DefinicionId, v => v.Valor);
-        _valTerceros = await ValoresAsync<TerceroCampoValorFlatDto>(http, "terceros", v => v.UnidadEmpleadaId, v => v.DefinicionId, v => v.Valor);
-    }
-
-    // Las definiciones de los 4 catalogos son identicas en forma, asi que se leen con CampoDinDef.
-    private static async Task<List<CampoDinDef>> DefsAsync(HttpClient http, string prefijo)
-    {
-        try
-        {
-            var l = await http.GetFromJsonAsync<List<CampoDinDef>>($"/api/mi-copropiedad/{prefijo}-campos");
-            return (l ?? new()).OrderBy(d => d.Orden).ToList();
-        }
-        catch { return new(); }
-    }
-
-    // Los 4 DTOs planos solo difieren en el nombre de su FK, asi que se pasan los tres accesores.
-    private static async Task<Dictionary<Guid, Dictionary<Guid, string?>>> ValoresAsync<T>(
-        HttpClient http, string prefijo,
-        Func<T, Guid> registroId, Func<T, Guid> definicionId, Func<T, string?> valor)
-    {
-        try
-        {
-            var l = await http.GetFromJsonAsync<List<T>>($"/api/mi-copropiedad/{prefijo}-campos-valores") ?? new();
-            return l.GroupBy(registroId).ToDictionary(g => g.Key, g => g.ToDictionary(definicionId, valor));
-        }
-        catch { return new(); }
-    }
-    // Terceros elegidos del Directorio. Opcionales: el alta por nombre sigue valiendo.
-    private Propia.Application.Directorio.PersonaCandidatoDto? _empSel;
-    private Propia.Application.Directorio.PersonaCandidatoDto? _titSel;
-
-    private string _nuevaEmpNombre = "";
-    private string _nuevaEmpDoc = "";
-    private string _nuevaEmpCel = "";
-    private string _nuevaEmpHorario = "";
 
     private class CampoVM
     {
@@ -916,234 +543,14 @@
 
     // Los estados posibles vienen de la config del tenant (EstadosConfig, semilla Habitada/Desocupada/Arrendada).
 
-    // Personas vinculadas a la unidad
-    private List<UnidadPersonaDto> _personas = new();
-    private RolUnidadPersona? _formRol;
-
-    // ===== Ficha por tabs + tabla de personas (rediseno referencia cliente) =====
-    private string _fichaTab = "personas";
+    // ===== Ficha por tabs =====
+    private string _fichaTab = "detalle";
     private string IdUnidad => _selected is null ? "" :
         ((_selected.TorreNombre is { Length: > 0 } tn ? tn.Split(' ').Last() + "-" : "") + _selected.Numero);
 
-    // Fila de trabajo (alta inline) de la tabla de personas.
-    private string _ptTel = "", _ptEmail = "", _ptTelOrig = "", _ptEmailOrig = "";
-    private PersonaCandidatoDto? _ptPersonaSel;
-    private RolUnidadPersona _ptRol = RolUnidadPersona.Propietario;
-    private bool _ptHabita = true;
-    private bool _agregandoPersona;
-
-    // Ingreso del tercero (igual que el modulo Residentes): el nombre se busca/crea en el Directorio
-    // y al elegirlo se llenan documento/telefono/email con la ultima info del tercero.
-    private async Task OnPtPersonaSel(PersonaCandidatoDto? p)
-    {
-        _ptPersonaSel = p;
-        _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = "";
-        if (p is not null)
-        {
-            string? tel = ContactoPtDe(p, TipoContacto.Telefono);
-            string? email = ContactoPtDe(p, TipoContacto.Email);
-            if (tel is null || email is null)
-            {
-                try
-                {
-                    var url = p.EntidadTipo == EntidadDirectorio.Empresa
-                        ? $"/api/directorio/empresas/{p.PersonaId}"
-                        : $"/api/directorio/personas/{p.PersonaId}";
-                    var resp = await Auth().GetAsync(url);
-                    if (resp.IsSuccessStatusCode)
-                    {
-                        using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-                        var obj = doc.RootElement;
-                        if (obj.TryGetProperty("persona", out var pe)) obj = pe;
-                        else if (obj.TryGetProperty("empresa", out var ee)) obj = ee;
-                        if (tel is null && obj.TryGetProperty("telefono", out var te) && te.ValueKind == System.Text.Json.JsonValueKind.String) tel = te.GetString();
-                        if (email is null && obj.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String) email = em.GetString();
-                    }
-                }
-                catch { }
-            }
-            _ptTel = _ptTelOrig = tel ?? "";
-            _ptEmail = _ptEmailOrig = email ?? "";
-        }
-        StateHasChanged();
-    }
-
-    private void LimpiarPtPersona() { _ptPersonaSel = null; _ptTel = _ptEmail = _ptTelOrig = _ptEmailOrig = ""; }
-
-    private void OnPtHabitaChange(ChangeEventArgs e) => _ptHabita = e.Value?.ToString() == "1";
-
-    private static string? ContactoPtDe(PersonaCandidatoDto? p, TipoContacto tipo)
-    {
-        if (p?.Contactos is null) return null;
-        return p.Contactos.FirstOrDefault(c => c.Tipo == tipo && c.Principal)?.Valor
-            ?? p.Contactos.FirstOrDefault(c => c.Tipo == tipo)?.Valor;
-    }
-
-    // Sincroniza correo/telefono en el Directorio sin perder los demas contactos.
-    private async Task SincronizarContactoPtAsync(EntidadDirectorio tipo, Guid entidadId, TipoContacto cual, string? valor)
-    {
-        try
-        {
-            var http = Auth();
-            var actuales = await http.GetFromJsonAsync<List<ContactoRapidoDto>>(
-                $"/api/directorio/contactos-rapidos?tipo={tipo}&id={entidadId}") ?? new();
-            var nuevos = actuales.Where(c => c.Tipo != cual).ToList();
-            if (!string.IsNullOrWhiteSpace(valor))
-                nuevos.Add(new ContactoRapidoDto(cual, valor.Trim(), "Principal", null, true));
-            await http.PutAsJsonAsync("/api/directorio/contactos-rapidos", new ReemplazarContactosRequest(tipo, entidadId, nuevos));
-        }
-        catch { }
-    }
-
-    private static string Ini(string? nombre)
-    {
-        if (string.IsNullOrWhiteSpace(nombre)) return "?";
-        var parts = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return (parts.Length >= 2 ? $"{parts[0][0]}{parts[^1][0]}" : parts[0][..Math.Min(2, parts[0].Length)]).ToUpperInvariant();
-    }
-
-    private static string RolLabel(RolUnidadPersona r) => r switch
-    {
-        RolUnidadPersona.Propietario => "Propietario",
-        RolUnidadPersona.Residente => "Residente",
-        RolUnidadPersona.Arrendatario => "Arrendatario",
-        RolUnidadPersona.Familiar => "Familiar",
-        RolUnidadPersona.Apoderado => "Apoderado",
-        _ => r.ToString()
-    };
-
-    private async Task RecargarPersonasAsync()
-    {
-        if (_selected is null) return;
-        try { _personas = await Auth().GetFromJsonAsync<List<UnidadPersonaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/personas") ?? new(); }
-        catch { }
-        StateHasChanged();
-    }
-
-    private async Task AgregarPersonaTablaAsync()
-    {
-        if (_selected is null || _agregandoPersona || _ptPersonaSel is not { } sel) return;
-        _agregandoPersona = true;
-        try
-        {
-            var esEmpresa = sel.EntidadTipo == EntidadDirectorio.Empresa;
-            var req = new AgregarPersonaUnidadRequest(
-                "", "", "", null, null, _ptRol, Habita: _ptHabita,
-                PersonaId: esEmpresa ? null : sel.PersonaId,
-                EntidadTipo: sel.EntidadTipo,
-                EmpresaId: esEmpresa ? sel.PersonaId : null);
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
-            if (resp.IsSuccessStatusCode)
-            {
-                // Sincroniza correo/telefono al Directorio si el usuario los ajusto.
-                if (_ptTel.Trim() != _ptTelOrig.Trim()) await SincronizarContactoPtAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Telefono, _ptTel);
-                if (_ptEmail.Trim() != _ptEmailOrig.Trim()) await SincronizarContactoPtAsync(sel.EntidadTipo, sel.PersonaId, TipoContacto.Email, _ptEmail);
-                LimpiarPtPersona(); _ptRol = RolUnidadPersona.Propietario; _ptHabita = true;
-                _huboCambios = true;
-                await RecargarPersonasAsync();
-                ShowMsg("Persona vinculada.", false);
-            }
-            else { ShowMsg("No se pudo agregar: " + await resp.Content.ReadAsStringAsync(), true); }
-        }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-        finally { _agregandoPersona = false; }
-    }
-
-    private async Task CambiarRolPersonaAsync(UnidadPersonaDto p, ChangeEventArgs e)
-    {
-        if (!Enum.TryParse<RolUnidadPersona>(e.Value?.ToString(), out var rol) || rol == p.Rol) return;
-        await EditarVinculoPersonaAsync(p, rol, p.Activo);
-    }
-
-    private async Task CambiarHabitaPersonaAsync(UnidadPersonaDto p, ChangeEventArgs e)
-    {
-        var habita = e.Value?.ToString() == "1";
-        if (habita == p.Habita) return;
-        await EditarVinculoPersonaAsync(p, p.Rol, p.Activo, habita);
-    }
-
-    private async Task EditarVinculoPersonaAsync(UnidadPersonaDto p, RolUnidadPersona rol, bool activo, bool? habita = null)
-    {
-        try
-        {
-            var req = new AgregarPersonaUnidadRequest(
-                p.PersonaDocumento, p.PersonaNombres, p.PersonaApellidos, p.PersonaEmail, p.PersonaTelefono,
-                rol, Habita: habita ?? p.Habita, Parentesco: p.Parentesco,
-                PersonaId: p.EntidadTipo == EntidadDirectorio.Persona ? p.PersonaId : null,
-                EntidadTipo: p.EntidadTipo, EmpresaId: p.EmpresaId, Activo: activo);
-            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{p.Id}", req);
-            if (resp.IsSuccessStatusCode) { _huboCambios = true; await RecargarPersonasAsync(); }
-            else ShowMsg("No se pudo actualizar: " + await resp.Content.ReadAsStringAsync(), true);
-        }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-    }
-
-    // Oleada 2 - historico de propietarios + campos dinamicos por persona
-    private string _contactTab = "actuales"; // actuales | historico
-    private List<UnidadTitularidadDto> _titularidad = new();
     private List<BitacoraEntradaDto> _bitacora = new();
     private CarteraUnidadDetalleDto? _cartera;        // estado de cuenta real (2.7), null si la unidad no tiene cartera
     private HistorialRelacionadoDto? _histResumen;    // solo para el contador de PQRSD en la estadistica
-    private string _titNombre = "";
-    private string _titRol = "Propietario";
-    private DateOnly? _titDesde;
-    private DateOnly? _titHasta;
-    private Dictionary<Guid, List<UnidadPersonaCampoDto>> _personaCampos = new();
-    private Guid? _campoPersonaTarget; // persona con el form de "agregar campo" abierto
-    private string _npcLabel = "";
-    private string _npcValor = "";
-    private PersonaForm _personaForm = new();
-    private Guid? _editPersonaId;  // null = agregar; con valor = editando esa persona
-
-    private class PersonaForm
-    {
-        public string Documento { get; set; } = "";
-        public string Nombres { get; set; } = "";
-        public string Apellidos { get; set; } = "";
-        public List<string> Emails { get; set; } = new() { "" };
-        public List<string> Telefonos { get; set; } = new() { "" };
-        public List<string> Codigos { get; set; } = new() { "+57" };
-        public List<string> Direcciones { get; set; } = new() { "" };
-        public string Parentesco { get; set; } = "";
-
-        public string? PrimerEmail => Emails.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e))?.Trim();
-        public string? PrimerTelefono
-        {
-            get
-            {
-                for (int i = 0; i < Telefonos.Count; i++)
-                {
-                    var t = Telefonos[i]?.Trim();
-                    if (string.IsNullOrWhiteSpace(t)) continue;
-                    var cod = i < Codigos.Count ? Codigos[i] : "";
-                    return string.IsNullOrWhiteSpace(cod) ? t : $"{cod} {t}";
-                }
-                return null;
-            }
-        }
-    }
-
-    private readonly string[] _codigosPais = { "+57", "+1", "+34", "+52", "+54", "+55", "+56", "+58", "+593", "+503", "+507", "+591" };
-
-    private void AddTel() { _personaForm.Telefonos.Add(""); _personaForm.Codigos.Add("+57"); }
-    private void RemoveTel(int idx)
-    {
-        if (idx >= 0 && idx < _personaForm.Telefonos.Count) _personaForm.Telefonos.RemoveAt(idx);
-        if (idx >= 0 && idx < _personaForm.Codigos.Count) _personaForm.Codigos.RemoveAt(idx);
-    }
-
-    /// <summary>Persona elegida con el SelectorPersona al agregar (null en modo edicion).</summary>
-    private Propia.Application.Directorio.PersonaCandidatoDto? _personaSel;
-
-    private bool PersonaFormValido =>
-        _editPersonaId is not null
-            // Editando: se corrigen los datos de la persona ya vinculada.
-            ? !string.IsNullOrWhiteSpace(_personaForm.Documento) &&
-              !string.IsNullOrWhiteSpace(_personaForm.Nombres) &&
-              !string.IsNullOrWhiteSpace(_personaForm.Apellidos)
-            // Agregando: basta con haber elegido a alguien en el selector.
-            : _personaSel is not null;
-
     private class EditUnidadForm
     {
         public string Codigo { get; set; } = "";   // solo en modo "nueva unidad": mascara TORRE-APARTAMENTO (A1-202)
@@ -1298,24 +705,14 @@
         _nuevaUnidad = false;
         _editMode = false;
         _vinculos.Clear();
-        _personas.Clear();
         _cuota = null;
         _campos.Clear();
         _documentos.Clear();
         _subiendoDoc = false;
-        _placas.Clear(); _arriendos.Clear(); _mascotas.Clear(); _empleadas.Clear();
-        _titularidad.Clear(); _personaCampos.Clear();
-        _contactTab = "actuales"; _campoPersonaTarget = null; _npcLabel = ""; _npcValor = "";
-        _titNombre = ""; _titRol = "Propietario"; _titDesde = null; _titHasta = null;
-        _nuevaPlaca = ""; _nuevaPlacaTipo = TipoVehiculo.Automovil;
+        _arriendos.Clear();
         _nuevoArrConcepto = ""; _nuevoArrValor = null; _nuevoArrRef = "";
-        _nuevaMascNombre = ""; _nuevaMascTipo = TipoMascota.Perro; _nuevaMascRaza = "";
-        _nuevaEmpNombre = ""; _nuevaEmpDoc = ""; _nuevaEmpCel = ""; _nuevaEmpHorario = "";
         _cfLabel = ""; _cfValor = "";
         _cfOpen = false;
-        _formRol = null;
-        _editPersonaId = null;
-        _personaForm = new PersonaForm();
         _nuevoVinculoUnidadId = Guid.Empty;
         _nuevoVinculoFactura = false;
         try
@@ -1323,11 +720,6 @@
             _vinculos = await Auth().GetFromJsonAsync<List<UnidadVinculoDto>>($"/api/mi-copropiedad/unidades/{u.Id}/vinculos") ?? new();
         }
         catch { /* sin vinculos */ }
-        try
-        {
-            _personas = await Auth().GetFromJsonAsync<List<UnidadPersonaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/personas") ?? new();
-        }
-        catch { /* sin personas */ }
         try
         {
             _cuota = await Auth().GetFromJsonAsync<CuotaConsolidadaDto>($"/api/mi-copropiedad/unidades/{u.Id}/cuota-consolidada");
@@ -1339,17 +731,8 @@
             _documentos = await Auth().GetFromJsonAsync<List<UnidadDocumentoDto>>($"/api/mi-copropiedad/unidades/{u.Id}/documentos") ?? new();
         }
         catch { _documentos = new(); }
-        try { _placas = await Auth().GetFromJsonAsync<List<UnidadPlacaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/placas") ?? new(); }
-        catch { _placas = new(); }
         try { _arriendos = await Auth().GetFromJsonAsync<List<UnidadArriendoDto>>($"/api/mi-copropiedad/unidades/{u.Id}/arriendos") ?? new(); }
         catch { _arriendos = new(); }
-        try { _mascotas = await Auth().GetFromJsonAsync<List<UnidadMascotaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/mascotas") ?? new(); }
-        catch { _mascotas = new(); }
-        try { _empleadas = await Auth().GetFromJsonAsync<List<UnidadEmpleadaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/empleadas") ?? new(); }
-        catch { _empleadas = new(); }
-        await CargarCamposVinculadosAsync();
-        try { _titularidad = await Auth().GetFromJsonAsync<List<UnidadTitularidadDto>>($"/api/mi-copropiedad/unidades/{u.Id}/titularidad") ?? new(); }
-        catch { _titularidad = new(); }
         try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/bitacora") ?? new(); }
         catch { _bitacora = new(); }
         // Estado de cuenta real (2.7). 404 si la unidad aun no tiene cartera -> queda null.
@@ -1362,7 +745,6 @@
         // Contador de PQRSD (reusa el motor de Historial de Ola 2).
         try { _histResumen = await Auth().GetFromJsonAsync<HistorialRelacionadoDto>($"/api/historial/1/{u.Id}"); }
         catch { _histResumen = null; }
-        await CargarCamposPersonasAsync();
     }
 
     // Recarga solo la bitacora (tras un cambio inline/edicion) para reflejar el nuevo evento.
@@ -1371,16 +753,6 @@
         if (_selected is null) return;
         try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/bitacora") ?? new(); }
         catch { }
-    }
-
-    private async Task CargarCamposPersonasAsync()
-    {
-        _personaCampos = new();
-        foreach (var p in _personas)
-        {
-            try { _personaCampos[p.Id] = await Auth().GetFromJsonAsync<List<UnidadPersonaCampoDto>>($"/api/mi-copropiedad/unidades-personas/{p.Id}/campos") ?? new(); }
-            catch { _personaCampos[p.Id] = new(); }
-        }
     }
 
     private async Task CargarCamposAsync()
@@ -1394,224 +766,7 @@
         catch { _campos = new(); }
     }
 
-    private void AbrirFormPersona(RolUnidadPersona rol)
-    {
-        _editPersonaId = null;
-        if (_formRol == rol) { _formRol = null; return; }
-        _formRol = rol;
-        _personaForm = new PersonaForm();
-    }
-
-    // Entidad (persona o empresa) cuyos contactos edita el formulario, para poder recargarlos y
-    // guardarlos globales. En alta sale del selector; en edicion, de la fila que se abre.
-    private EntidadDirectorio _formEntidadTipo = EntidadDirectorio.Persona;
-    private Guid _formEntidadId;
-
-    /// <summary>El selector eligio persona/empresa: se guarda y se precargan sus contactos globales.</summary>
-    private void OnPersonaSel(PersonaCandidatoDto? c)
-    {
-        _personaSel = c;
-        _formEntidadTipo = c?.EntidadTipo ?? EntidadDirectorio.Persona;
-        _formEntidadId = c?.PersonaId ?? Guid.Empty;
-        if (c?.Contactos is { Count: > 0 })
-            AplicarContactosAlForm(c.Contactos);
-    }
-
-    /// <summary>Vuelca los correos/telefonos/direcciones del contacto en las listas del formulario.</summary>
-    private void AplicarContactosAlForm(IReadOnlyList<ContactoRapidoDto> contactos)
-    {
-        var correos = contactos.Where(x => x.Tipo == TipoContacto.Email && !string.IsNullOrWhiteSpace(x.Valor))
-            .Select(x => x.Valor.Trim()).ToList();
-        var tels = contactos.Where(x => x.Tipo == TipoContacto.Telefono && !string.IsNullOrWhiteSpace(x.Valor)).ToList();
-        var dirs = contactos.Where(x => x.Tipo == TipoContacto.Direccion && !string.IsNullOrWhiteSpace(x.Valor))
-            .Select(x => x.Valor.Trim()).ToList();
-
-        _personaForm.Emails = correos.Count > 0 ? correos : new List<string> { "" };
-
-        var numeros = new List<string>();
-        var codigos = new List<string>();
-        foreach (var t in tels)
-        {
-            var (cod, num) = PartirTelefono(t.Valor);
-            codigos.Add(cod); numeros.Add(num);
-        }
-        _personaForm.Telefonos = numeros.Count > 0 ? numeros : new List<string> { "" };
-        _personaForm.Codigos = codigos.Count > 0 ? codigos : new List<string> { "+57" };
-
-        _personaForm.Direcciones = dirs.Count > 0 ? dirs : new List<string> { "" };
-    }
-
-    private static (string Codigo, string Numero) PartirTelefono(string valor)
-    {
-        var t = (valor ?? "").Trim();
-        if (t.StartsWith("+") && t.Contains(' ')) { var sp = t.Split(' ', 2); return (sp[0], sp[1]); }
-        return ("+57", t);
-    }
-
-    private async Task EditarPersona(UnidadPersonaDto p)
-    {
-        _formRol = p.Rol;
-        _editPersonaId = p.Id;
-        _formEntidadTipo = p.EntidadTipo;
-        _formEntidadId = p.EntidadTipo == EntidadDirectorio.Empresa ? (p.EmpresaId ?? Guid.Empty) : p.PersonaId;
-
-        _personaForm = new PersonaForm
-        {
-            Documento = p.PersonaDocumento,
-            Nombres = p.PersonaNombres,
-            Apellidos = p.PersonaApellidos,
-            Parentesco = p.Parentesco ?? "",
-        };
-
-        // Carga la lista COMPLETA de contactos globales (no solo el principal denormalizado).
-        try
-        {
-            var url = $"/api/directorio/contactos-rapidos?tipo={(int)_formEntidadTipo}&id={_formEntidadId}";
-            var contactos = await Auth().GetFromJsonAsync<List<ContactoRapidoDto>>(url);
-            if (contactos is { Count: > 0 }) AplicarContactosAlForm(contactos);
-            else PrecargarContactoUnico(p);
-        }
-        catch { PrecargarContactoUnico(p); }
-    }
-
-    // Respaldo si no se pudieron traer los contactos globales: usa el principal del propio DTO.
-    private void PrecargarContactoUnico(UnidadPersonaDto p)
-    {
-        var (cod, num) = PartirTelefono(p.PersonaTelefono ?? "");
-        _personaForm.Emails = new List<string> { string.IsNullOrWhiteSpace(p.PersonaEmail) ? "" : p.PersonaEmail! };
-        _personaForm.Telefonos = new List<string> { num };
-        _personaForm.Codigos = new List<string> { cod };
-        _personaForm.Direcciones = new List<string> { "" };
-    }
-
-    private void CancelarFormPersona() { _formRol = null; _editPersonaId = null; _personaSel = null; }
-
-    /// <summary>
-    /// Guarda las listas de correos/telefonos/direcciones del formulario como contactos globales
-    /// del contacto (persona o empresa), reemplazando los previos. Es lo que hace que al volver a
-    /// abrir la ficha -aqui o en otra copropiedad- los datos vuelvan a aparecer. Best-effort: un
-    /// fallo aqui no revierte el vinculo ya creado.
-    /// </summary>
-    private async Task GuardarContactosGlobalesAsync(UnidadPersonaDto dto)
-    {
-        var tipo = dto.EntidadTipo;
-        var entId = tipo == EntidadDirectorio.Empresa ? (dto.EmpresaId ?? Guid.Empty) : dto.PersonaId;
-        if (entId == Guid.Empty) return;
-
-        var contactos = new List<ContactoRapidoDto>();
-        var correos = _personaForm.Emails.Select(e => e?.Trim()).Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
-        for (int i = 0; i < correos.Count; i++)
-            contactos.Add(new ContactoRapidoDto(TipoContacto.Email, correos[i]!, Principal: i == 0));
-
-        var telIdx = 0;
-        for (int i = 0; i < _personaForm.Telefonos.Count; i++)
-        {
-            var num = _personaForm.Telefonos[i]?.Trim();
-            if (string.IsNullOrWhiteSpace(num)) continue;
-            var cod = i < _personaForm.Codigos.Count ? _personaForm.Codigos[i] : "+57";
-            contactos.Add(new ContactoRapidoDto(TipoContacto.Telefono, $"{cod} {num}".Trim(), Principal: telIdx == 0));
-            telIdx++;
-        }
-
-        var dirs = _personaForm.Direcciones.Select(d => d?.Trim()).Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
-        for (int i = 0; i < dirs.Count; i++)
-            contactos.Add(new ContactoRapidoDto(TipoContacto.Direccion, dirs[i]!, Principal: i == 0));
-
-        try
-        {
-            var req = new ReemplazarContactosRequest(tipo, entId, contactos);
-            await Auth().PutAsJsonAsync("/api/directorio/contactos-rapidos", req);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async Task GuardarPersona()
-    {
-        if (_selected is null || _formRol is null || !PersonaFormValido) return;
-        _busy = true;
-        // Al agregar, la identidad viaja como PersonaId (el selector ya la resolvio y vinculo);
-        // los campos de texto van vacios porque el selector solo expone el documento
-        // enmascarado. Al editar se manda todo como siempre.
-        // En alta, la empresa (si aplica) viaja por EntidadTipo/EmpresaId; el resto de identidad
-        // la resuelve el selector. En edicion el backend usa la entidad ya guardada.
-        var esEmpresaAlta = _editPersonaId is null && _personaSel?.EntidadTipo == EntidadDirectorio.Empresa;
-        var req = new AgregarPersonaUnidadRequest(
-            _editPersonaId is null ? "" : _personaForm.Documento.Trim(),
-            _editPersonaId is null ? "" : _personaForm.Nombres.Trim(),
-            _editPersonaId is null ? "" : _personaForm.Apellidos.Trim(),
-            _personaForm.PrimerEmail,
-            _personaForm.PrimerTelefono,
-            _formRol.Value,
-            true,
-            string.IsNullOrWhiteSpace(_personaForm.Parentesco) ? null : _personaForm.Parentesco.Trim(),
-            _editPersonaId is null && !esEmpresaAlta ? _personaSel?.PersonaId : null,
-            esEmpresaAlta ? EntidadDirectorio.Empresa : EntidadDirectorio.Persona,
-            esEmpresaAlta ? _personaSel?.PersonaId : null);
-        HttpResponseMessage resp;
-        if (_editPersonaId is not null)
-            resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{_editPersonaId}", req);
-        else
-            resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/personas", req);
-
-        if (resp.IsSuccessStatusCode)
-        {
-            var dto = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
-            if (dto is not null)
-            {
-                var idx = _personas.FindIndex(x => x.Id == dto.Id);
-                if (idx >= 0) _personas[idx] = dto; else _personas.Add(dto);
-                // Persiste correos/telefonos/direcciones como contactos GLOBALES del contacto.
-                await GuardarContactosGlobalesAsync(dto);
-            }
-            ShowMsg(_editPersonaId is not null ? "Persona actualizada." : "Persona vinculada.", false);
-            _formRol = null;
-            _editPersonaId = null;
-            _personaForm = new PersonaForm();
-            _personaSel = null;
-            _huboCambios = true;
-        }
-        else
-        {
-            ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true);
-        }
-        _busy = false;
-    }
-
-    private async Task EliminarPersona(Guid unidadPersonaId)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas/{unidadPersonaId}");
-        if (resp.IsSuccessStatusCode)
-        {
-            _personas.RemoveAll(p => p.Id == unidadPersonaId);
-            _huboCambios = true;
-        }
-    }
-
     // ===== Prototipo v3: handlers de los bloques nuevos de la ficha de inmueble =====
-
-    private async Task AgregarPlaca()
-    {
-        if (_selected is null || string.IsNullOrWhiteSpace(_nuevaPlaca)) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/placas",
-                new CrearUnidadPlacaRequest(_nuevaPlaca.Trim().ToUpperInvariant(), _nuevaPlacaTipo));
-            if (resp.IsSuccessStatusCode)
-            {
-                _placas = await Auth().GetFromJsonAsync<List<UnidadPlacaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/placas") ?? _placas;
-                _nuevaPlaca = ""; _nuevaPlacaTipo = TipoVehiculo.Automovil;
-            }
-            else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarPlaca(Guid id)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-placas/{id}");
-        if (resp.IsSuccessStatusCode) _placas.RemoveAll(p => p.Id == id);
-    }
 
     private async Task AgregarArriendo()
     {
@@ -1635,124 +790,6 @@
     {
         var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-arriendos/{id}");
         if (resp.IsSuccessStatusCode) _arriendos.RemoveAll(a => a.Id == id);
-    }
-
-    private async Task AgregarMascota()
-    {
-        if (_selected is null || string.IsNullOrWhiteSpace(_nuevaMascNombre)) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/mascotas",
-                new CrearUnidadMascotaRequest(_nuevaMascNombre.Trim(), _nuevaMascTipo, string.IsNullOrWhiteSpace(_nuevaMascRaza) ? null : _nuevaMascRaza.Trim()));
-            if (resp.IsSuccessStatusCode)
-            {
-                _mascotas = await Auth().GetFromJsonAsync<List<UnidadMascotaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/mascotas") ?? _mascotas;
-                _nuevaMascNombre = ""; _nuevaMascTipo = TipoMascota.Perro; _nuevaMascRaza = "";
-            }
-            else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarMascota(Guid id)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-mascotas/{id}");
-        if (resp.IsSuccessStatusCode) _mascotas.RemoveAll(m => m.Id == id);
-    }
-
-    private async Task AgregarEmpleada()
-    {
-        if (_selected is null || (_empSel is null && string.IsNullOrWhiteSpace(_nuevaEmpNombre))) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/empleadas",
-                // Si se eligio del Directorio, el nombre viene de ahi (snapshot).
-                new CrearUnidadEmpleadaRequest(
-                    _empSel?.NombreCompleto ?? _nuevaEmpNombre.Trim(),
-                    string.IsNullOrWhiteSpace(_nuevaEmpDoc) ? null : _nuevaEmpDoc.Trim(),
-                    string.IsNullOrWhiteSpace(_nuevaEmpCel) ? null : _nuevaEmpCel.Trim(),
-                    string.IsNullOrWhiteSpace(_nuevaEmpHorario) ? null : _nuevaEmpHorario.Trim(),
-                    _empSel?.PersonaId));
-            if (resp.IsSuccessStatusCode)
-            {
-                _empleadas = await Auth().GetFromJsonAsync<List<UnidadEmpleadaDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/empleadas") ?? _empleadas;
-                _nuevaEmpNombre = ""; _nuevaEmpDoc = ""; _nuevaEmpCel = ""; _nuevaEmpHorario = ""; _empSel = null;
-            }
-            else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarEmpleada(Guid id)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-empleadas/{id}");
-        if (resp.IsSuccessStatusCode) _empleadas.RemoveAll(e => e.Id == id);
-    }
-
-    private static string PlacaTipoLabel(TipoVehiculo t) => t == TipoVehiculo.Moto ? "Moto" : "Carro";
-
-    // ===== Oleada 2: historico de propietarios =====
-    private async Task AgregarTitularidad()
-    {
-        if (_selected is null || (_titSel is null && string.IsNullOrWhiteSpace(_titNombre)) || _titDesde is not DateOnly desde) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/titularidad",
-                new CrearUnidadTitularidadRequest(
-                    _titSel?.NombreCompleto ?? _titNombre.Trim(),
-                    string.IsNullOrWhiteSpace(_titRol) ? null : _titRol.Trim(), desde, _titHasta,
-                    _titSel?.PersonaId));
-            if (resp.IsSuccessStatusCode)
-            {
-                _titularidad = await Auth().GetFromJsonAsync<List<UnidadTitularidadDto>>($"/api/mi-copropiedad/unidades/{_selected.Id}/titularidad") ?? _titularidad;
-                _titNombre = ""; _titRol = "Propietario"; _titDesde = null; _titHasta = null; _titSel = null;
-            }
-            else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarTitularidad(Guid id)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-titularidad/{id}");
-        if (resp.IsSuccessStatusCode) _titularidad.RemoveAll(t => t.Id == id);
-    }
-
-    // ===== Oleada 2: campos dinamicos por persona =====
-    private List<UnidadPersonaCampoDto> CamposDe(Guid personaId)
-        => _personaCampos.TryGetValue(personaId, out var l) ? l : new();
-
-    private void AbrirCampoPersona(Guid personaId)
-    {
-        _campoPersonaTarget = _campoPersonaTarget == personaId ? null : personaId;
-        _npcLabel = ""; _npcValor = "";
-    }
-
-    private async Task AgregarCampoPersona(Guid personaId)
-    {
-        if (string.IsNullOrWhiteSpace(_npcLabel)) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades-personas/{personaId}/campos",
-                new CrearUnidadPersonaCampoRequest(_npcLabel.Trim(), string.IsNullOrWhiteSpace(_npcValor) ? null : _npcValor.Trim()));
-            if (resp.IsSuccessStatusCode)
-            {
-                _personaCampos[personaId] = await Auth().GetFromJsonAsync<List<UnidadPersonaCampoDto>>($"/api/mi-copropiedad/unidades-personas/{personaId}/campos") ?? new();
-                _npcLabel = ""; _npcValor = ""; _campoPersonaTarget = null;
-            }
-            else { ShowMsg(await resp.Content.ReadAsStringAsync(), true); }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarCampoPersona(Guid personaId, Guid campoId)
-    {
-        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas-campos/{campoId}");
-        if (resp.IsSuccessStatusCode && _personaCampos.TryGetValue(personaId, out var l)) l.RemoveAll(c => c.Id == campoId);
     }
 
     private void EntrarEdicion()
@@ -1784,8 +821,6 @@
         // En modo alta, Cancelar cierra el modal (no hay ficha previa a la que volver).
         if (_nuevaUnidad) { Close(_huboCambios); return; }
         _editMode = false;
-        _formRol = null;
-        _editPersonaId = null;
         _cfOpen = false;
     }
 
