@@ -38,6 +38,10 @@ public class ExpedientesService : IExpedientesService
         {
             await SeedTrdAsync(tenantId, ct);
         }
+        else
+        {
+            await BackfillTildesTrdAsync(ct);
+        }
 
         var series = await _db.SeriesDocumentales.AsNoTracking().OrderBy(s => s.Orden).ThenBy(s => s.Nombre).ToListAsync(ct);
         var subseries = await _db.SubseriesDocumentales.AsNoTracking().OrderBy(s => s.Orden).ThenBy(s => s.Nombre).ToListAsync(ct);
@@ -556,6 +560,28 @@ public class ExpedientesService : IExpedientesService
     }
 
     // TRD base (igual al prototipo): 4 series, 8 subseries, campos por defecto.
+    // Backfill de tildes en la TRD base sembrada antes con ASCII (convencion nueva). Idempotente y
+    // tenant-scoped: solo renombra las filas que conservan el nombre viejo; tras el rename es UPDATE de
+    // 0 filas. Los nombres de la TRD son display (la estructura se referencia por Id), no claves.
+    private async Task BackfillTildesTrdAsync(CancellationToken ct)
+    {
+        await _db.SeriesDocumentales.Where(s => s.Nombre == "Legal y constitucion")
+            .ExecuteUpdateAsync(u => u.SetProperty(s => s.Nombre, "Legal y constitución"), ct);
+        var subs = new[] { ("Polizas y seguros", "Pólizas y seguros"), ("Constitucion", "Constitución") };
+        foreach (var (viejo, nuevo) in subs)
+            await _db.SubseriesDocumentales.Where(s => s.Nombre == viejo)
+                .ExecuteUpdateAsync(u => u.SetProperty(s => s.Nombre, nuevo), ct);
+        var tips = new[]
+        {
+            ("Citacion", "Citación"), ("Polizas", "Pólizas"), ("Camara de comercio", "Cámara de comercio"),
+            ("Afiliacion seguridad social", "Afiliación seguridad social"), ("Ejecucion", "Ejecución"),
+            ("Poliza areas comunes", "Póliza áreas comunes"), ("Poliza de manejo", "Póliza de manejo"),
+        };
+        foreach (var (viejo, nuevo) in tips)
+            await _db.SubserieTipologias.Where(t => t.Nombre == viejo)
+                .ExecuteUpdateAsync(u => u.SetProperty(t => t.Nombre, nuevo), ct);
+    }
+
     private async Task SeedTrdAsync(Guid tenantId, CancellationToken ct)
     {
         var data = new (string serie, (string sub, string[] tips)[] subs)[]
@@ -563,22 +589,22 @@ public class ExpedientesService : IExpedientesService
             ("Actas y gobierno", new[]
             {
                 ("Actas de Asamblea", new[] { "Convocatoria", "Acta firmada", "Listado de asistencia", "Poderes" }),
-                ("Actas de Consejo", new[] { "Citacion", "Acta de consejo", "Anexos" })
+                ("Actas de Consejo", new[] { "Citación", "Acta de consejo", "Anexos" })
             }),
             ("Contratos", new[]
             {
-                ("Contratos de servicios", new[] { "Contrato firmado", "Polizas", "Camara de comercio", "RUT" }),
-                ("Contratos laborales", new[] { "Contrato laboral", "Afiliacion seguridad social", "Hoja de vida" })
+                ("Contratos de servicios", new[] { "Contrato firmado", "Pólizas", "Cámara de comercio", "RUT" }),
+                ("Contratos laborales", new[] { "Contrato laboral", "Afiliación seguridad social", "Hoja de vida" })
             }),
             ("Financieros", new[]
             {
                 ("Estados financieros", new[] { "Balance general", "Estado de resultados", "Notas contables", "Dictamen revisor" }),
-                ("Presupuestos", new[] { "Proyecto de presupuesto", "Presupuesto aprobado", "Ejecucion" })
+                ("Presupuestos", new[] { "Proyecto de presupuesto", "Presupuesto aprobado", "Ejecución" })
             }),
-            ("Legal y constitucion", new[]
+            ("Legal y constitución", new[]
             {
-                ("Polizas y seguros", new[] { "Poliza areas comunes", "Poliza de manejo", "Certificado" }),
-                ("Constitucion", new[] { "Escritura", "Reglamento de PH", "Certificado de existencia" })
+                ("Pólizas y seguros", new[] { "Póliza áreas comunes", "Póliza de manejo", "Certificado" }),
+                ("Constitución", new[] { "Escritura", "Reglamento de PH", "Certificado de existencia" })
             })
         };
 

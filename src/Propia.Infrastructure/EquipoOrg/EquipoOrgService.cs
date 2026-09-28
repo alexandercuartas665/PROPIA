@@ -221,6 +221,12 @@ public class EquipoOrgService : IEquipoOrgService
     /// <summary>Si la organizacion no tiene cargos sembrados, crea los 6 por defecto + plantilla.</summary>
     private async Task AsegurarCargosDefaultAsync(Guid orgId, CancellationToken ct)
     {
+        // Backfill de tildes en el cargo base sembrado antes con ASCII. Idempotente y org-scoped; solo
+        // toca la fila que conserva el nombre viejo. El nombre se usa consistentemente con la constante
+        // (que ya lleva tilde) al sembrar permisos, asi que queda coherente tras el rename.
+        await _db.OrgCargos.Where(c => c.OrganizacionId == orgId && c.Nombre == "Asistente de Facturacion")
+            .ExecuteUpdateAsync(u => u.SetProperty(c => c.Nombre, CargoCatalogoBase.AsistenteFacturacion), ct);
+
         var hay = await _db.OrgCargos.AnyAsync(c => c.OrganizacionId == orgId, ct);
         if (hay) return;
         foreach (var (nombre, permisos) in CargoCatalogoBase.PermisosPorDefecto)

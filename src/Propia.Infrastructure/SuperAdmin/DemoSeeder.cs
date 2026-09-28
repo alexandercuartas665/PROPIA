@@ -45,8 +45,8 @@ public static class DemoSeeder
         // ---- 4 planes (escalera comercial) ----
         var planes = new[]
         {
-            NuevoPlan("Basico", "Para copropiedades pequenas", 80000m, 0m, 50, 10, 1, 100, 30, now),
-            NuevoPlan("Estandar", "El plan mas popular", 150000m, 10m, 150, 30, 3, 500, 30, now),
+            NuevoPlan("Básico", "Para copropiedades pequeñas", 80000m, 0m, 50, 10, 1, 100, 30, now),
+            NuevoPlan("Estándar", "El plan más popular", 150000m, 10m, 150, 30, 3, 500, 30, now),
             NuevoPlan("Profesional", "Para administradoras de varias PH", 280000m, 15m, 400, 80, 10, 2000, 15, now),
             NuevoPlan("Enterprise", "Sin limites + soporte prioritario", 500000m, 20m, null, null, null, null, 0, now),
         };
@@ -55,7 +55,7 @@ public static class DemoSeeder
         // ---- 10 organizaciones administradoras ----
         var nombresOrg = new[]
         {
-            "Helena Inmobiliaria SAS", "Administraciones del Valle SAS", "Gestion PH Andina SAS",
+            "Helena Inmobiliaria SAS", "Administraciones del Valle SAS", "Gestión PH Andina SAS",
             "Cubot Administradora SAS", "Vivienda Activa SAS", "Propiedad Horizontal Pacifico SAS",
             "AdminColombia SAS", "Conjuntos del Norte SAS", "Servicios PH Centro SAS",
             "Habitat Administradora SAS",

@@ -64,7 +64,7 @@ public static class CargoCatalogoBase
     public const string Recorredor = "Recorredor";
     public const string AsistenteAdministrativo = "Asistente Administrativo";
     public const string AsistenteCartera = "Asistente de Cartera";
-    public const string AsistenteFacturacion = "Asistente de Facturacion";
+    public const string AsistenteFacturacion = "Asistente de Facturación";
 
     /// <summary>
     /// Plantilla de permisos por defecto por cargo (spec 1.3 v1.0 tabla 4.3).
