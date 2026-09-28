@@ -41,8 +41,8 @@ public class PlantillasService : IPlantillasService
     // =====================================================================================
     private static readonly string[] ZonasFijas =
     {
-        "Nombre *", "Categoria", "Reservable (Si/No)", "Aforo (personas)", "Estado",
-        "Descripcion", "Tarifa reserva", "Reglas de uso",
+        "Nombre *", "Categoría", "Reservable (Si/No)", "Aforo (personas)", "Estado",
+        "Descripción", "Tarifa reserva", "Reglas de uso",
     };
 
     public async Task<byte[]> GenerarPlantillaZonasAsync(CancellationToken ct)
@@ -60,15 +60,15 @@ public class PlantillasService : IPlantillasService
             "REGLAS:",
             "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posicion.",
             "- 'Nombre *' es obligatorio. 'Reservable' escribe Si o No.",
-            "- 'Categoria' y 'Estado' deben ser un valor valido (ver hoja 'Catalogos').",
-            "- Numeros: acepta coma o punto (ej. 50000 o 50.000). No uses separador de miles con coma.",
-            "- Las ultimas columnas son tus CAMPOS DINAMICOS (personalizados) de zonas: su valor se guarda por zona.",
-            "  Puedes agregar mas columnas de campos dinamicos al final; el encabezado es el nombre del campo.",
+            "- 'Categoría' y 'Estado' deben ser un valor válido (ver hoja 'Catalogos').",
+            "- Números: acepta coma o punto (ej. 50000 o 50.000). No uses separador de miles con coma.",
+            "- Las últimas columnas son tus CAMPOS DINÁMICOS (personalizados) de zonas: su valor se guarda por zona.",
+            "  Puedes agregar más columnas de campos dinámicos al final; el encabezado es el nombre del campo.",
         });
         var ws = wb.AddWorksheet("Zonas");
         EscribirEncabezado(ws, headers);
         // Fila de ejemplo.
-        object[] ej = { "Salon Social", "Social", "Si", 80, "Activa", "Salon para eventos", 50000, "Reservar con 3 dias" };
+        object[] ej = { "Salón Social", "Social", "Si", 80, "Activa", "Salón para eventos", 50000, "Reservar con 3 días" };
         for (int i = 0; i < ej.Length; i++) ws.Cell(2, i + 1).Value = XLCellValue.FromObject(ej[i]);
         AnchosYFreeze(ws, headers.Length);
         Catalogos(wb, ("Categoria (zonas)", Enum.GetNames<CategoriaZonaComun>()), ("Estado (zonas)", Enum.GetNames<EstadoZonaComunMantenimiento>()), ("Reservable", new[] { "Si", "No" }));
@@ -156,9 +156,9 @@ public class PlantillasService : IPlantillasService
     // =====================================================================================
     private static readonly string[] EquiposFijas =
     {
-        "Nombre *", "Categoria", "Tipo (Equipo/Activo)", "Cantidad", "Reservable (Si/No)",
-        "Modelo", "Numero de serie", "Ubicacion", "Estado", "Observaciones",
-        "Vida util (anios)", "Valor adquisicion", "Proveedor", "Numero factura",
+        "Nombre *", "Categoría", "Tipo (Equipo/Activo)", "Cantidad", "Reservable (Si/No)",
+        "Modelo", "Número de serie", "Ubicación", "Estado", "Observaciones",
+        "Vida útil (años)", "Valor adquisición", "Proveedor", "Número factura",
     };
 
     public async Task<byte[]> GenerarPlantillaEquiposAsync(CancellationToken ct)
@@ -174,15 +174,15 @@ public class PlantillasService : IPlantillasService
             "Cada fila es un equipo/activo. Si ya existe uno con el mismo Nombre, se ACTUALIZA; si no, se crea (upsert).",
             "",
             "REGLAS:",
-            "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posicion.",
+            "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posición.",
             "- 'Nombre *' es obligatorio. 'Tipo' = Equipo o Activo. 'Reservable' = Si o No.",
-            "- 'Categoria' y 'Estado' deben ser un valor valido (ver hoja 'Catalogos').",
+            "- 'Categoría' y 'Estado' deben ser un valor válido (ver hoja 'Catalogos').",
             "- 'Cantidad' aplica solo a Activo (para Equipo se fuerza a 1).",
-            "- Las ultimas columnas son tus CAMPOS DINAMICOS (personalizados) de equipos.",
+            "- Las últimas columnas son tus CAMPOS DINÁMICOS (personalizados) de equipos.",
         });
         var ws = wb.AddWorksheet("Equipos");
         EscribirEncabezado(ws, headers);
-        object[] ej = { "Bomba de agua principal", "Bombeo", "Equipo", 1, "No", "BX-200", "SER-123", "Cuarto de bombas", "Operativo", "Revision mensual", 10, 5000000, "HidroServicios", "FAC-001" };
+        object[] ej = { "Bomba de agua principal", "Bombeo", "Equipo", 1, "No", "BX-200", "SER-123", "Cuarto de bombas", "Operativo", "Revisión mensual", 10, 5000000, "HidroServicios", "FAC-001" };
         for (int i = 0; i < ej.Length; i++) ws.Cell(2, i + 1).Value = XLCellValue.FromObject(ej[i]);
         AnchosYFreeze(ws, headers.Length);
         Catalogos(wb, ("Categoria (equipos)", Enum.GetNames<CategoriaEquipo>()), ("Tipo", Enum.GetNames<TipoElemento>()), ("Estado (equipos)", Enum.GetNames<EstadoEquipoActivo>()), ("Reservable", new[] { "Si", "No" }));
@@ -270,7 +270,7 @@ public class PlantillasService : IPlantillasService
     // =====================================================================================
     private static readonly string[] DirectorioFijas =
     {
-        "Tipo documento *", "Documento *", "Nombres *", "Apellidos *", "Email", "Telefono", "Genero",
+        "Tipo documento *", "Documento *", "Nombres *", "Apellidos *", "Email", "Teléfono", "Género",
     };
 
     public Task<byte[]> GenerarPlantillaDirectorioAsync(CancellationToken ct)
@@ -282,10 +282,10 @@ public class PlantillasService : IPlantillasService
             "Cada fila es una persona. La llave es Tipo documento + Documento: si ya existe, se ACTUALIZA; si no, se crea (upsert).",
             "",
             "REGLAS:",
-            "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posicion.",
+            "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posición.",
             "- Obligatorios: Tipo documento, Documento, Nombres, Apellidos.",
-            "- 'Tipo documento' y 'Genero' deben ser un valor valido (ver hoja 'Catalogos').",
-            "- Las empresas (personas juridicas) se cargan aparte desde el Directorio.",
+            "- 'Tipo documento' y 'Género' deben ser un valor válido (ver hoja 'Catalogos').",
+            "- Las empresas (personas jurídicas) se cargan aparte desde el Directorio.",
         });
         var ws = wb.AddWorksheet("Personas");
         EscribirEncabezado(ws, DirectorioFijas);

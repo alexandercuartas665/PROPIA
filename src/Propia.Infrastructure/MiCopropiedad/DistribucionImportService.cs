@@ -19,24 +19,24 @@ public class DistribucionImportService : IDistribucionImportService
     // son la unidad (igual que antes, para no romper el import existente); de la 15 en adelante
     // van las personas y los inmuebles vinculados, todo en la misma fila = 1 unidad con su gente.
     private static readonly string[] UnidadesHeaders = BuildUnidadesHeaders();
-    private static readonly string[] TorresHeaders = { "Nombre *", "Cantidad de pisos", "Descripcion" };
+    private static readonly string[] TorresHeaders = { "Nombre *", "Cantidad de pisos", "Descripción" };
 
     private static string[] BuildUnidadesHeaders()
     {
         var h = new List<string>
         {
-            "Numero *", "Tipo *", "Torre", "Piso", "Coeficiente (%)", "Area (m2)",
-            "Habitaciones", "Banos", "Parqueaderos", "Estado", "Matricula inmobiliaria",
-            "Paga administracion (Si/No)", "Cuota mensual", "Observaciones",
+            "Número *", "Tipo *", "Torre", "Piso", "Coeficiente (%)", "Área (m2)",
+            "Habitaciones", "Baños", "Parqueaderos", "Estado", "Matrícula inmobiliaria",
+            "Paga administración (Si/No)", "Cuota mensual", "Observaciones",
         };
         // Personas 1:1 con la unidad: 2 propietarios, 1 residente, 1 arrendatario.
         foreach (var p in new[] { "Prop.1", "Prop.2", "Residente", "Arrendatario" })
-            h.AddRange(new[] { $"{p} Cedula", $"{p} Nombres", $"{p} Apellidos", $"{p} Email", $"{p} Telefono" });
+            h.AddRange(new[] { $"{p} Cédula", $"{p} Nombres", $"{p} Apellidos", $"{p} Email", $"{p} Teléfono" });
         // Grupo familiar: hasta 5, cada uno con su parentesco.
         for (int i = 1; i <= 5; i++)
-            h.AddRange(new[] { $"Familiar {i} Cedula", $"Familiar {i} Nombres", $"Familiar {i} Apellidos", $"Familiar {i} Parentesco" });
+            h.AddRange(new[] { $"Familiar {i} Cédula", $"Familiar {i} Nombres", $"Familiar {i} Apellidos", $"Familiar {i} Parentesco" });
         // Inmuebles vinculados: numero de la unidad asociada (parqueadero, deposito, etc.).
-        h.AddRange(new[] { "Inmueble vinc.1 (numero)", "Inmueble vinc.2 (numero)", "Inmueble vinc.3 (numero)" });
+        h.AddRange(new[] { "Inmueble vinc.1 (número)", "Inmueble vinc.2 (número)", "Inmueble vinc.3 (número)" });
         return h.ToArray();
     }
 
@@ -69,7 +69,7 @@ public class DistribucionImportService : IDistribucionImportService
         ws.Column(1).Width = 118;
         var lineas = new (string txt, bool bold, bool title)[]
         {
-            ("PLANTILLA DE DISTRIBUCION - PROPIA", true, true),
+            ("PLANTILLA DE DISTRIBUCIÓN - PROPIA", true, true),
             ("", false, false),
             ("Con esta plantilla cargas de una sola vez las TORRES y las UNIDADES privadas de la copropiedad.", false, false),
             ("El archivo ya trae un ejemplo completo (2 torres + 8 unidades con sus propietarios, residentes, arrendatarios, familiares e inmuebles vinculados). Reemplaza esas filas por tus datos reales.", false, false),
@@ -78,28 +78,28 @@ public class DistribucionImportService : IDistribucionImportService
             ("PASOS:", true, false),
             ("1. Llena primero la hoja 'Torres' (tabla de apoyo). Cada torre se identifica por su Nombre.", false, false),
             ("2. Llena la hoja 'Unidades'. La columna 'Torre' debe coincidir con un Nombre de la hoja 'Torres'", false, false),
-            ("   (si escribes una torre que no existe, se crea automaticamente). Dejala vacia si la unidad no tiene torre.", false, false),
-            ("3. Guarda el archivo y subelo en Mi Copropiedad > Distribucion > Importar.", false, false),
+            ("   (si escribes una torre que no existe, se crea automáticamente). Déjala vacía si la unidad no tiene torre.", false, false),
+            ("3. Guarda el archivo y súbelo en Mi Copropiedad > Distribución > Importar.", false, false),
             ("", false, false),
             ("REGLAS:", true, false),
-            ("- No cambies el ORDEN ni borres las columnas de encabezado; el importador las lee por posicion.", false, false),
-            ("- Los campos marcados con * son obligatorios (Numero y Tipo en Unidades; Nombre en Torres).", false, false),
-            ("- 'Tipo' debe ser uno de los valores validos (ver hoja 'Catalogos'): Apartamento, Local, Casa, Oficina, Bodega, Parqueadero, UtilCuarto.", false, false),
-            ("- 'Coeficiente (%)' es el porcentaje de participacion de la unidad. La suma de todas deberia dar 100.", false, false),
-            ("- Parqueaderos y Cuartos utiles TAMBIEN pueden tener coeficiente. Si 'Paga administracion' = Si, su coeficiente cuenta dentro del 100% (como en el ejemplo P-01 y CU-01).", false, false),
-            ("- Numeros decimales: acepta coma o punto (ej. 18,5 o 18.5). No uses separador de miles.", false, false),
-            ("- 'Paga administracion': escribe Si o No (por defecto Si).", false, false),
-            ("- El 'Numero' de la unidad debe ser unico en la copropiedad (ej. A101, B102, L-01).", false, false),
+            ("- No cambies el ORDEN ni borres las columnas de encabezado; el importador las lee por posición.", false, false),
+            ("- Los campos marcados con * son obligatorios (Número y Tipo en Unidades; Nombre en Torres).", false, false),
+            ("- 'Tipo' debe ser uno de los valores válidos (ver hoja 'Catalogos'): Apartamento, Local, Casa, Oficina, Bodega, Parqueadero, UtilCuarto.", false, false),
+            ("- 'Coeficiente (%)' es el porcentaje de participación de la unidad. La suma de todas debería dar 100.", false, false),
+            ("- Parqueaderos y Cuartos útiles TAMBIÉN pueden tener coeficiente. Si 'Paga administración' = Si, su coeficiente cuenta dentro del 100% (como en el ejemplo P-01 y CU-01).", false, false),
+            ("- Números decimales: acepta coma o punto (ej. 18,5 o 18.5). No uses separador de miles.", false, false),
+            ("- 'Paga administración': escribe Si o No (por defecto Si).", false, false),
+            ("- El 'Número' de la unidad debe ser único en la copropiedad (ej. A101, B102, L-01).", false, false),
             ("", false, false),
-            ("PERSONAS (se crean en el Directorio automaticamente):", true, false),
+            ("PERSONAS (se crean en el Directorio automáticamente):", true, false),
             ("- En la misma fila de cada unidad puedes cargar: Propietario 1, Propietario 2, Residente, Arrendatario y hasta 5 Familiares.", false, false),
-            ("- De cada persona basta Cedula + Nombres + Apellidos; Email y Telefono son opcionales. Si la cedula ya existe, se reutiliza (no se duplica).", false, false),
-            ("- 'Residente' es quien habita sin ser dueno; 'Arrendatario' es el inquilino; cada 'Familiar' lleva su Parentesco (ver hoja Catalogos).", false, false),
-            ("- Si un dueno o residente es una EMPRESA, deja la persona en blanco aqui y vinculala luego desde el Directorio (persona juridica).", false, false),
+            ("- De cada persona basta Cédula + Nombres + Apellidos; Email y Teléfono son opcionales. Si la cédula ya existe, se reutiliza (no se duplica).", false, false),
+            ("- 'Residente' es quien habita sin ser dueño; 'Arrendatario' es el inquilino; cada 'Familiar' lleva su Parentesco (ver hoja Catalogos).", false, false),
+            ("- Si un dueño o residente es una EMPRESA, deja la persona en blanco aquí y vincúlala luego desde el Directorio (persona jurídica).", false, false),
             ("", false, false),
             ("INMUEBLES VINCULADOS:", true, false),
-            ("- En 'Inmueble vinc.1/2/3' escribe el NUMERO de otra unidad ya listada (ej. el parqueadero P-01 o el cuarto util CU-01) para asociarla a esta.", false, false),
-            ("- La unidad asociada debe existir en la hoja (se vincula al final, cuando todas las unidades ya estan creadas).", false, false),
+            ("- En 'Inmueble vinc.1/2/3' escribe el NÚMERO de otra unidad ya listada (ej. el parqueadero P-01 o el cuarto útil CU-01) para asociarla a esta.", false, false),
+            ("- La unidad asociada debe existir en la hoja (se vincula al final, cuando todas las unidades ya están creadas).", false, false),
             ("", false, false),
             ("Si una fila tiene un error, esa fila se reporta y se omite, pero el resto SI se importa. Un error en una persona no tumba la unidad.", false, false),
         };
@@ -211,7 +211,7 @@ public class DistribucionImportService : IDistribucionImportService
         int r = 2;
         foreach (var n in Enum.GetNames<TipoUnidad>()) ws.Cell(r++, 1).Value = n;
 
-        ws.Cell(1, 3).Value = "Paga administracion";
+        ws.Cell(1, 3).Value = "Paga administración";
         ws.Cell(1, 3).Style.Font.Bold = true;
         ws.Cell(2, 3).Value = "Si";
         ws.Cell(3, 3).Value = "No";
@@ -305,11 +305,11 @@ public class DistribucionImportService : IDistribucionImportService
                 if (numero is null && tipoStr is null) continue; // fila vacia
                 int fila = row.RowNumber();
 
-                if (numero is null) { errores.Add(new("Unidades", fila, "Falta el Numero de la unidad.")); continue; }
+                if (numero is null) { errores.Add(new("Unidades", fila, "Falta el Número de la unidad.")); continue; }
                 var tipo = ParseTipo(tipoStr);
                 if (tipo is null)
                 {
-                    errores.Add(new("Unidades", fila, $"Tipo invalido: '{tipoStr}'. Validos: {string.Join(", ", Enum.GetNames<TipoUnidad>())}."));
+                    errores.Add(new("Unidades", fila, $"Tipo inválido: '{tipoStr}'. Válidos: {string.Join(", ", Enum.GetNames<TipoUnidad>())}."));
                     continue;
                 }
 
