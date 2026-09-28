@@ -148,11 +148,11 @@ public record PersonaVinculadaDto(Guid PersonaId, string NombreCompleto);
 public record UnidadCampoConfigDto(
     string CampoClave, string? Alias, string? Opciones,
     TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null,
-    string Entidad = "unidad");
+    string Entidad = "unidad", string? Descripcion = null);
 public record GuardarUnidadCampoConfigRequest(
     string CampoClave, string? Alias, string? Opciones,
     TipoCampoTablero? Tipo = null, string? Formato = null, bool Oculto = false, int? Orden = null,
-    string Entidad = "unidad");
+    string Entidad = "unidad", string? Descripcion = null);
 // Orden de las columnas de la tabla de unidades: la lista llega completa y en orden.
 // Conteo de unidades por valor de Estado (para advertir al quitar una opcion en uso).
 public record UnidadEstadoUsoDto(string Estado, int Unidades);

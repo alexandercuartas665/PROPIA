@@ -251,7 +251,7 @@ public partial class TareasService
     public async Task<IReadOnlyList<UnidadCampoConfigDto>> ListarColumnasConfigAsync(Guid tableroId, CancellationToken ct) =>
         await _db.TableroCamposConfig.AsNoTracking()
             .Where(c => c.TableroId == tableroId)
-            .Select(c => new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, "tablero"))
+            .Select(c => new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, "tablero", null))
             .ToListAsync(ct);
 
     public async Task<UnidadCampoConfigDto> GuardarColumnaConfigAsync(Guid tableroId, GuardarUnidadCampoConfigRequest req, CancellationToken ct)

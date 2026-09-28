@@ -948,7 +948,7 @@ public partial class MiCopropiedadService
             .Where(c => c.Entidad == ent)
             .Select(c => new UnidadCampoConfigDto(
                 c.CampoClave, c.Alias, c.Opciones,
-                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad))
+                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad, c.Descripcion))
             .ToListAsync(ct);
     }
 
@@ -973,7 +973,7 @@ public partial class MiCopropiedadService
         }
         Aplicar(c, alias, opciones, formato, req);
         await _db.SaveChangesAsync(ct);
-        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad);
+        return new UnidadCampoConfigDto(c.CampoClave, c.Alias, c.Opciones, c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad, c.Descripcion);
     }
 
     // Guarda VARIAS filas de configuracion en una sola transaccion. Lo usa el reordenamiento por
@@ -1027,7 +1027,7 @@ public partial class MiCopropiedadService
             .Where(c => entidades.Contains(c.Entidad))
             .Select(c => new UnidadCampoConfigDto(
                 c.CampoClave, c.Alias, c.Opciones,
-                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad))
+                c.Tipo, c.Formato, c.Oculto, c.Orden, c.Entidad, c.Descripcion))
             .ToListAsync(ct);
     }
 
@@ -1040,6 +1040,7 @@ public partial class MiCopropiedadService
         c.Formato = formato;
         c.Oculto = req.Oculto;
         c.Orden = req.Orden;
+        c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
     }
 
     public async Task<IReadOnlyList<UnidadEstadoUsoDto>> ContarUnidadesPorEstadoAsync(CancellationToken ct)

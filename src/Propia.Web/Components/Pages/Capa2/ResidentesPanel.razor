@@ -527,6 +527,13 @@ else
                      AbrirGestorAvanzado="AbrirGestorDesdeCrearR" />
 }
 
+@if (_editSisClave is not null)
+{
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Requerido="_editSisReq"
+                             EntidadConfig="personas" TituloSingular="residente" Jwt="@_jwt"
+                             Guardado="RecargarCamposAsync" Cerrado="() => _editSisClave = null" />
+}
+
 @* Menu contextual (clic derecho sobre una fila). *@
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
@@ -783,6 +790,19 @@ else
         _campoAEditar = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.Descripcion);
         _crearCampoAbierto = true;
     }
+
+    // "Editar campo" sobre una columna del SISTEMA (personas): editor focalizado. El catalogo de
+    // personas vive dentro del gestor, asi que aqui basta la clave/etiqueta; nombre e identificacion
+    // son estructurales (no se ocultan).
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private bool _editSisReq;
+    private void AbrirEditarCampoSistema(string clave, string label)
+    {
+        _editSisLabel = label;
+        _editSisReq = clave is "nombre" or "identificacion";
+        _editSisClave = clave;
+    }
     private async Task RecargarTrasCrearCampoR()
     {
         _crearCampoAbierto = false; _campoAEditar = null;
@@ -843,7 +863,7 @@ else
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
                 if (campo is not null) AbrirEditarCampoR(campo);
-                else _configCamposAbierto = true;   // sistema: se edita en el gestor (alias/descripcion/visibilidad)
+                else AbrirEditarCampoSistema(col.Key, col.Label);   // sistema: editor focalizado
                 break;
             case TablaColMenu.Accion.Eliminar:
                 if (campo is not null) _campoAEliminar = campo;

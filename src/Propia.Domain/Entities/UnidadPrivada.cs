@@ -189,6 +189,9 @@ public class UnidadCampoConfig : TenantEntity
     public TipoCampoTablero? Tipo { get; set; }
     /// <summary>Formato de presentacion (JSON simple). Null = el formato por defecto del tipo.</summary>
     public string? Formato { get; set; }
+    /// <summary>Descripcion/ayuda del campo de SISTEMA por copropiedad (la que ve el usuario en el menu
+    /// de la columna). Null = sin descripcion. Para campos PROPIOS la descripcion vive en su definicion.</summary>
+    public string? Descripcion { get; set; }
     /// <summary>Oculta la columna en la tabla de unidades (configuracion por copropiedad).</summary>
     public bool Oculto { get; set; }
     /// <summary>Posicion de la columna en la tabla; null = va al final.</summary>

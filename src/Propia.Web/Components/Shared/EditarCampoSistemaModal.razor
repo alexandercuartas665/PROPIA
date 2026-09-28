@@ -1,0 +1,196 @@
+@* ============================================================================================
+   Editor FOCALIZADO de UN campo de SISTEMA (columna fija) de la vista tabla. Lo abre "Editar campo"
+   del menu de columna cuando la columna NO es propia. A diferencia de CrearCampoModal (campos propios),
+   aqui el TIPO es fijo (solo lectura) y no hay "Eliminar": un campo de sistema no cambia de tipo ni se
+   borra. Edita, por copropiedad: alias (nombre visible), descripcion y visibilidad. Persisten en la
+   config del tenant ({RutaConfig}, discriminada por 'entidad'); el PUT reemplaza la fila entera, asi
+   que se cargan y reenvian los demas campos (opciones/tipo-override/formato/orden) sin tocarlos.
+   ============================================================================================ *@
+@inject IHttpClientFactory HttpFactory
+@using Propia.Domain.Enums
+@using Propia.Application.MiCopropiedad
+
+<div class="ecs-back" @onclick="Cerrar">
+    <div class="ecs-shell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <div class="ecs-head">
+            <div class="ecs-head-ic"><i class="fi fi-rr-table-columns"></i></div>
+            <div class="ecs-head-tt">
+                <div class="ecs-head-h">Editar campo</div>
+                <div class="ecs-head-s">Campo del sistema de @TituloSingular.ToLowerInvariant()</div>
+            </div>
+            <button class="ecs-x" type="button" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+
+        <div class="ecs-body">
+            <div class="ecs-fld">
+                <label>Nombre visible</label>
+                <input class="ecs-in" @bind="_alias" @bind:event="oninput" placeholder="@DefLabel" />
+                <span class="ecs-hint">Como se muestra la columna en esta copropiedad. Vacio = "@DefLabel".</span>
+            </div>
+
+            <div class="ecs-fld">
+                <label>Tipo de campo</label>
+                <div class="ecs-tipo" title="Los campos del sistema tienen un tipo fijo">
+                    <i class="fi fi-rr-lock"></i>
+                    <span>@(Tipo is { } t ? TipoLabel(t) : "Campo del sistema")</span>
+                    <span class="ecs-tipo-lock">El tipo es fijo</span>
+                </div>
+            </div>
+
+            <div class="ecs-fld">
+                <label>Descripción (opcional)</label>
+                <textarea class="ecs-in" style="min-height:54px;resize:vertical;" @bind="_descripcion" @bind:event="oninput"
+                          placeholder="Nota o ayuda del campo; se muestra en el menu de la columna"></textarea>
+            </div>
+
+            <div class="ecs-fld">
+                <label>Visibilidad</label>
+                <label class="ecs-tog @(Requerido ? "off" : "")" title="@(Requerido ? "Campo obligatorio: no se puede ocultar" : "Mostrar u ocultar la columna en la tabla")">
+                    <input type="checkbox" checked="@(!_oculto)" disabled="@Requerido"
+                           @onchange="e => _oculto = !(bool)(e.Value ?? false)" />
+                    <span>@(_oculto ? "Oculto en la tabla" : "Visible en la tabla")</span>
+                    @if (Requerido) { <span class="ecs-req">obligatorio</span> }
+                </label>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_msg)) { <div class="ecs-msg">@_msg</div> }
+        </div>
+
+        <div class="ecs-foot">
+            <span class="ecs-spacer"></span>
+            <button type="button" class="ecs-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
+            <button type="button" class="ecs-btn-brand" @onclick="GuardarAsync" disabled="@_busy">
+                <i class="fi fi-rr-check"></i> @(_busy ? "Guardando..." : "Guardar cambios")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Clave estable del campo de sistema (ej. "matricula", "telefono").</summary>
+    [Parameter, EditorRequired] public string Clave { get; set; } = "";
+    /// <summary>Etiqueta por defecto del sistema (placeholder del alias).</summary>
+    [Parameter] public string DefLabel { get; set; } = "";
+    /// <summary>Tipo del campo (solo lectura). Null = no se conoce; se muestra generico.</summary>
+    [Parameter] public TipoCampoTablero? Tipo { get; set; }
+    /// <summary>true = campo obligatorio: no se puede ocultar.</summary>
+    [Parameter] public bool Requerido { get; set; }
+    /// <summary>Ruta base de la config (por defecto "unidades-config"; absoluta si empieza con /api/).</summary>
+    [Parameter] public string RutaConfig { get; set; } = "unidades-config";
+    /// <summary>Discriminador 'entidad' de la config (ej. "unidad", "personas", "poliza").</summary>
+    [Parameter, EditorRequired] public string EntidadConfig { get; set; } = "";
+    [Parameter] public string TituloSingular { get; set; } = "registro";
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public EventCallback Guardado { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+
+    private string _alias = "";
+    private string _descripcion = "";
+    private bool _oculto;
+    private UnidadCampoConfigDto? _actual;   // fila actual (para preservar opciones/tipo/formato/orden)
+    private bool _busy;
+    private string? _msg;
+
+    private string CfgUrl => RutaConfig.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+        ? RutaConfig : $"/api/mi-copropiedad/{RutaConfig}";
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var filas = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"{CfgUrl}?entidad={EntidadConfig}") ?? new();
+            _actual = filas.FirstOrDefault(f => string.Equals(f.CampoClave, Clave, StringComparison.OrdinalIgnoreCase));
+        }
+        catch { _actual = null; }
+        _alias = _actual?.Alias ?? "";
+        _descripcion = _actual?.Descripcion ?? "";
+        _oculto = _actual?.Oculto ?? false;
+    }
+
+    private async Task Cerrar() => await Cerrado.InvokeAsync();
+
+    private async Task GuardarAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new GuardarUnidadCampoConfigRequest(
+                CampoClave: Clave,
+                Alias: string.IsNullOrWhiteSpace(_alias) ? null : _alias.Trim(),
+                Opciones: _actual?.Opciones,
+                Tipo: _actual?.Tipo,
+                Formato: _actual?.Formato,
+                Oculto: _oculto,
+                Orden: _actual?.Orden,
+                Entidad: EntidadConfig,
+                Descripcion: string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim());
+            var r = await Auth().PutAsJsonAsync(CfgUrl, req);
+            if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
+            else { _msg = "No se pudo guardar el campo."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static string TipoLabel(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto de una sola linea",
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Numero",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Porcentaje => "Porcentaje",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.FechaHora => "Fecha y hora",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Seleccion => "Lista",
+        TipoCampoTablero.Booleano => "Si / No",
+        TipoCampoTablero.Telefono => "Telefono",
+        TipoCampoTablero.Email => "Email",
+        TipoCampoTablero.Url => "URL",
+        TipoCampoTablero.Formula => "Funcion / calculado",
+        TipoCampoTablero.Usuario => "Usuario",
+        TipoCampoTablero.Directorio => "Directorio",
+        _ => "Texto"
+    };
+}
+
+<style>
+    .ecs-back { position: fixed; inset: 0; background: rgba(20,28,45,.72); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 3300; padding: 24px; }
+    .ecs-shell { width: 520px; max-width: 96vw; max-height: 94vh; background: var(--propia-bg-card); border-radius: var(--propia-radius-modal, 18px); box-shadow: var(--propia-shadow-modal); overflow: hidden; display: flex; flex-direction: column; font-family: var(--propia-font-base, inherit); }
+    .ecs-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .ecs-head-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+    .ecs-head-tt { flex: 1; min-width: 0; }
+    .ecs-head-h { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .ecs-head-s { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .ecs-x { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .ecs-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+    .ecs-body { padding: 16px 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+    .ecs-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .ecs-spacer { flex: 1; }
+    .ecs-fld { display: flex; flex-direction: column; gap: 4px; }
+    .ecs-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
+    .ecs-in { width: 100%; box-sizing: border-box; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
+    .ecs-in:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.14); }
+    .ecs-hint { font-size: 11px; color: var(--propia-text-muted); }
+    .ecs-tipo { display: flex; align-items: center; gap: 8px; border: 1px dashed var(--propia-border-card); border-radius: 9px; padding: 9px 11px; background: var(--propia-bg-card-soft); color: var(--propia-text-secondary); font-size: 12.5px; }
+    .ecs-tipo .fi { color: var(--propia-text-muted); }
+    .ecs-tipo-lock { margin-left: auto; font-size: 11px; color: var(--propia-text-faint); }
+    .ecs-tog { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--propia-text-body); font-weight: 600; cursor: pointer; }
+    .ecs-tog.off { opacity: .7; cursor: default; }
+    .ecs-tog input { width: 16px; height: 16px; accent-color: var(--propia-brand); }
+    .ecs-req { font-size: 10.5px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 1px 6px; }
+    .ecs-msg { font-size: 12.5px; font-weight: 600; color: var(--propia-danger); }
+    .ecs-btn-brand { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: 0; background: var(--propia-brand); color: #fff; box-shadow: var(--propia-glow-brand-sm); }
+    .ecs-btn-brand:hover:not(:disabled) { background: var(--propia-brand-hover); }
+    .ecs-btn-brand:disabled { opacity: .55; cursor: default; }
+    .ecs-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); }
+    .ecs-btn-ghost:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+</style>
