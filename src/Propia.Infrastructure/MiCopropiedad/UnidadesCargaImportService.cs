@@ -867,9 +867,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                 if (v.Length > 0) any = true;
             }
             if (!any) continue;
-            // Ignora la fila de ejemplo de la plantilla (COPROPIEDAD = "EJEMPLO (borrar fila)").
-            var cop = dict.TryGetValue("COPROPIEDAD", out var cc) ? cc.TrimStart() : "";
-            if (cop.StartsWith("EJEMPLO", StringComparison.OrdinalIgnoreCase)) continue;
+            // Ignora la fila de ejemplo de la plantilla. El sentinel "EJEMPLO (borrar fila)" puede venir
+            // en distintas columnas segun la hoja (UNIDAD PRIVADA / NOMBRE / PLACA en plantillas nuevas,
+            // COPROPIEDAD en plantillas viejas): se detecta en CUALQUIER celda para servir a ambos formatos.
+            if (dict.Values.Any(v => v.TrimStart().StartsWith("EJEMPLO", StringComparison.OrdinalIgnoreCase)))
+                continue;
             res.Add((dict, r));
         }
         return res;

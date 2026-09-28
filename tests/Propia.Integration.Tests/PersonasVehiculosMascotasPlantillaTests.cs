@@ -226,7 +226,65 @@ public class PersonasVehiculosMascotasPlantillaTests
         finally { await CleanupAsync(tenantId, null, null); }
     }
 
+    [Fact]
+    public async Task Residentes_ofrece_las_unidades_en_UNIDAD_PRIVADA_y_ninguna_hoja_pide_COPROPIEDAD()
+    {
+        var tenantId = await SeedTenantAsync("CP Dropdown Unidades");
+        try
+        {
+            // Dos unidades ya cargadas en el sistema (la copropiedad activa).
+            await SeedUnidadAsync(tenantId, "101");
+            await SeedUnidadAsync(tenantId, "202");
+
+            var wb = await GenerarAsync(tenantId);
+
+            // 1) Ninguna hoja pide ya COPROPIEDAD: cada archivo carga en la copropiedad activa.
+            foreach (var hoja in new[] { "UNIDADES PRIVADAS", "PERSONAS", "VEHICULOS", "MASCOTAS", "TERCEROS", "ZONAS COMUNES", "EQUIPOS" })
+                Assert.DoesNotContain("COPROPIEDAD", Encabezados(wb.Worksheet(hoja)));
+
+            // 2) PERSONAS/VEHICULOS/MASCOTAS ofrecen las unidades cargadas en el desplegable de UNIDAD PRIVADA.
+            foreach (var hoja in new[] { "PERSONAS", "VEHICULOS", "MASCOTAS" })
+            {
+                var ops = OpcionesDe(wb.Worksheet(hoja), "UNIDAD PRIVADA");
+                Assert.Contains("101", ops);
+                Assert.Contains("202", ops);
+            }
+        }
+        finally { await CleanupAsync(tenantId, null, null); }
+    }
+
     // ===================== helpers =====================
+    private async Task SeedUnidadAsync(Guid tenantId, string numero)
+    {
+        await using var ctx = OwnerCtx();
+        ctx.UnidadesPrivadas.Add(new UnidadPrivada { TenantId = tenantId, Numero = numero });
+        await ctx.SaveChangesAsync();
+    }
+
+    // Formula de la lista desplegable de una columna: un nombre definido ("=LISTA_UNIDADES") que apunta
+    // a la hoja oculta de listas.
+    private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
+    {
+        var col = ColumnaDe(ws, encabezado);
+        foreach (var dv in ws.DataValidations)
+            foreach (var r in dv.Ranges)
+                if (r.RangeAddress.FirstAddress.ColumnNumber == col)
+                    return dv.Value ?? "";
+        return "";
+    }
+
+    /// <summary>Valores que ofrece el desplegable de una columna, resolviendo el nombre definido.</summary>
+    private static List<string> OpcionesDe(IXLWorksheet ws, string encabezado)
+    {
+        var formula = ListaDeValidacion(ws, encabezado);
+        if (string.IsNullOrWhiteSpace(formula)) return new List<string>();
+        var nombre = formula.TrimStart('=').Trim();
+        var rango = ws.Workbook.DefinedNames.FirstOrDefault(n =>
+            string.Equals(n.Name, nombre, StringComparison.OrdinalIgnoreCase));
+        Assert.True(rango is not null, $"La validacion de '{encabezado}' apunta a '{nombre}', que no existe.");
+        return rango!.Ranges.Cells().Select(c => c.GetString().Trim()).Where(v => v.Length > 0).ToList();
+    }
+
     private async Task<XLWorkbook> GenerarAsync(Guid tenantId)
     {
         var (db, ctx) = BuildDb(tenantId);
@@ -293,9 +351,11 @@ public class PersonasVehiculosMascotasPlantillaTests
         throw new Xunit.Sdk.XunitException($"La hoja no tiene la columna '{encabezado}'.");
     }
 
+    // La plantilla ya no lleva columna COPROPIEDAD (cada archivo carga en la copropiedad activa): el
+    // parametro 'copropiedad' se conserva por compatibilidad con las llamadas, pero ya no se escribe.
     private static void LlenarFila(IXLWorksheet ws, int fila, string copropiedad, Dictionary<string, string> valores)
     {
-        ws.Cell(fila, ColumnaDe(ws, "COPROPIEDAD")).Value = copropiedad;
+        _ = copropiedad;
         var porNorm = valores.ToDictionary(kv => NormH(kv.Key), kv => kv.Value);
         foreach (var c in ws.Row(2).CellsUsed())
         {

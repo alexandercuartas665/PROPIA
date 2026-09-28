@@ -18,9 +18,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     private const int DataStart = 4;      // fila 1 = banner, fila 2 = encabezado, fila 3 = ayuda, datos desde la 4
     private const int MaxRows = 1000;     // hasta donde se aplican los dropdowns
 
-    /// <summary>Opcion especial de la columna COPROPIEDAD en la hoja TERCEROS: el tercero queda visible
-    /// en TODAS las copropiedades del cliente. La reusa el importador para saber que debe crear el
-    /// vinculo en cada copropiedad.</summary>
+    /// <summary>Valor especial que aceptaban las plantillas VIEJAS en la columna COPROPIEDAD de TERCEROS
+    /// (el tercero quedaba visible en TODAS las copropiedades del cliente). La plantilla nueva ya no emite
+    /// la columna COPROPIEDAD (cada archivo carga en la copropiedad activa), pero el importador conserva el
+    /// reconocimiento de este valor para seguir procesando archivos viejos.</summary>
     public const string TodasLasCopropiedades = "Todas las copropiedades";
 
     // Paleta PROPIA (para que la plantilla se vea como salida del sistema).
@@ -50,7 +51,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         bool incVehiculos = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Residentes;
         bool incMascotas = scope is PlantillaCargaScope.Todas or PlantillaCargaScope.Residentes;
         bool incTerceros = scope is PlantillaCargaScope.Todas;
-        var copros = await CopropiedadesDelClienteAsync(ct);
+        // Codigos de las unidades YA cargadas de la copropiedad activa (TORRE-NUMERO o Numero suelto):
+        // alimentan el desplegable de UNIDAD PRIVADA de Residentes (personas/vehiculos/mascotas) para
+        // que el usuario elija la unidad de una lista en vez de teclear el codigo. Vacio en onboarding
+        // (aun no hay unidades) -> la columna queda libre y se referencia por texto contra la hoja UNIDADES.
+        var unidadesCodigos = await UnidadesCodigosAsync(ct);
         // Catalogos de campos dinamicos (definiciones POR COPROPIEDAD) de cada entidad: se emiten
         // como columnas [Label] al final de su hoja y el importador los lee y guarda.
         // TERCEROS no lleva columnas dinamicas a proposito: su catalogo (TerceroCamposDefiniciones)
@@ -93,19 +98,19 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // Todas las listas de los desplegables viven en una hoja OCULTA y se referencian por nombre
         // definido: asi no hay tope de longitud ni problema con valores que traigan comas.
         var listas = new HojaListas(wb);
-        var coproList = listas.Definir("COPROPIEDAD", copros.Select(c => c.Nombre));
-        // Terceros: la lista arranca con "Todas las copropiedades" (visible en todas) + las del cliente.
-        var coproTercerosList = listas.Definir("COPROPIEDAD_TERCEROS",
-            new[] { TodasLasCopropiedades }.Concat(copros.Select(c => c.Nombre)));
+        // Desplegable de UNIDAD PRIVADA para Residentes: los codigos de las unidades ya cargadas.
+        var unidadesList = listas.Definir("UNIDADES", unidadesCodigos);
 
         // ---- Hojas de datos (solo las del alcance pedido; el importador procesa las hojas presentes) ----
-        if (incUnidades) HojaUnidades(wb, listas, coproList, camposUnidad, cfgUnidad, tiposPropios);
-        if (incPersonas) HojaPersonas(wb, listas, coproList, camposPersona, cfgPersona);
-        if (incVehiculos) HojaVehiculos(wb, listas, coproList, camposVehiculo, cfgVehiculo);
-        if (incMascotas) HojaMascotas(wb, listas, coproList, camposMascota, cfgMascota);
-        if (incTerceros) HojaTerceros(wb, listas, coproTercerosList);
-        if (incZonas) HojaZonasComunes(wb, listas, coproList, camposZona);
-        if (incEquipos) HojaEquipos(wb, listas, coproList, camposEquipo);
+        // Ya no se pide COPROPIEDAD: cada archivo carga en UNA sola copropiedad (la activa). El importador
+        // enruta las filas sin COPROPIEDAD a la copropiedad activa (upsert), asi que la columna sobra.
+        if (incUnidades) HojaUnidades(wb, listas, camposUnidad, cfgUnidad, tiposPropios);
+        if (incPersonas) HojaPersonas(wb, listas, unidadesList, camposPersona, cfgPersona);
+        if (incVehiculos) HojaVehiculos(wb, listas, unidadesList, camposVehiculo, cfgVehiculo);
+        if (incMascotas) HojaMascotas(wb, listas, unidadesList, camposMascota, cfgMascota);
+        if (incTerceros) HojaTerceros(wb, listas);
+        if (incZonas) HojaZonasComunes(wb, listas, camposZona);
+        if (incEquipos) HojaEquipos(wb, listas, camposEquipo);
         listas.Cerrar();
 
         var (titulo, archivo) = scope switch
@@ -202,17 +207,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // ===================== Hojas de datos =====================
     // La hoja de unidades solo trae las columnas de los campos ACTIVOS de la copropiedad. Cada
     // columna declara su clave en unidad_campos_config (entidad 'unidad'); Clave = null marca las
-    // columnas ESTRUCTURALES, que nunca se filtran: COPROPIEDAD y UNIDAD PRIVADA son obligatorias
-    // para el importador y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas
-    // la plantilla quedaria inservible, asi que no dependen de la configuracion.
-    private static void HojaUnidades(XLWorkbook wb, HojaListas listas, string? coproRange,
+    // columnas ESTRUCTURALES, que nunca se filtran: UNIDAD PRIVADA es obligatoria para el importador
+    // y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas la plantilla quedaria
+    // inservible, asi que no dependen de la configuracion.
+    private static void HojaUnidades(XLWorkbook wb, HojaListas listas,
         List<string> camposUnidad, ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
     {
         // Las columnas salen del catalogo UNICO de campos de sistema (UnidadCamposSistema), el mismo
         // que alimenta la tabla de unidades. Antes esta lista estaba duplicada aqui y se quedo corta:
         // area, estado, piso, habitaciones, banos, parqueaderos, paga admin, cuota y observaciones se
         // podian activar en la copropiedad pero NO salian en la plantilla ni se podian importar.
-        var cols = new List<(string H, string Ayuda)> { ("COPROPIEDAD", "Elige de la lista") };
+        var cols = new List<(string H, string Ayuda)>();
         foreach (var campo in UnidadCamposSistema.Todos)
         {
             if (campo.SiempreEnPlantilla || cfg.Visible(campo.Clave))
@@ -227,7 +232,6 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
         // Dropdowns y ejemplo POR ENCABEZADO (no por posicion): al filtrar columnas los indices se
         // mueven, y una columna ausente simplemente no recibe nada.
-        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
         // TIPO: los tipos que ofrece ESTA copropiedad (del sistema que no oculto + los propios), con
         // la misma etiqueta que muestra la app. Antes se volcaba el enum crudo: los tipos propios no
         // aparecian y, si el usuario los escribia a mano, se guardaban como Apartamento en silencio.
@@ -236,8 +240,11 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         // ESTADO: las opciones que tenga configuradas la copropiedad (las ocultas no se ofrecen).
         Dropdown(ws, Indice(cols, "ESTADO"), listas.Definir("ESTADO_UNIDAD", cfg.OpcionesEstado()));
         Dropdown(ws, Indice(cols, "PAGA ADMIN"), listas.Definir("SI_NO", SiNo));
+        // La fila de ejemplo marca UNIDAD PRIVADA con el sentinel "EJEMPLO (borrar fila)": el
+        // importador ignora toda fila que lo lleve (ver LeerHoja). El formato real del codigo lo
+        // explica la ayuda de la columna.
         Ejemplo(ws, cols,
-            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"),
+            ("UNIDAD PRIVADA", EjemploMarca),
             ("TIPO", "Apartamento"), ("AGRUPACION", "2"), ("COEFICIENTE", "1.25"));
         Ajustar(ws, cols.Count);
     }
@@ -258,14 +265,14 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // PERSONAS: config-driven como UNIDADES. Columnas del catalogo unico (PersonaCamposSistema), con el
     // encabezado CANONICO en la fila 2 y el alias del tenant en la ayuda. PROFESION y ROLL EXCLUIDOS a
     // proposito (Persona no tiene columna Profesion; el rol/RBAC no se setea por carga de Excel = seguridad).
-    // COPROPIEDAD y UNIDAD PRIVADA son estructurales (el importador las necesita), no dependen de config.
-    private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? coproRange,
+    // UNIDAD PRIVADA es estructural (el importador la necesita) y trae un desplegable con las unidades ya
+    // cargadas de la copropiedad; no depende de config.
+    private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? unidadesRange,
         List<string> camposPersona, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad (debe existir en la hoja UNIDADES)"),
+            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in PersonaCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
@@ -273,24 +280,23 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         AgregarColumnasDinamicas(cols, camposPersona);
 
         var ws = Encabezado(wb, "PERSONAS", cols);
-        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
         Dropdown(ws, Indice(cols, "TIPO RESIDENTE"), listas.Definir("TIPO_RESIDENTE", PersonaCamposSistema.TiposResidenteSemilla));
         Dropdown(ws, Indice(cols, "TIPO ID"), listas.Definir("TIPO_ID", TiposId));
         Dropdown(ws, Indice(cols, "SEXO"), listas.Definir("SEXO", new[] { "M", "F" }));
         Ejemplo(ws, cols,
-            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("TIPO RESIDENTE", "Propietario"),
-            ("TIPO ID", "CC"), ("NOMBRE", "Juan Perez"), ("IDENTIFICACION", "123456789"),
+            ("TIPO RESIDENTE", "Propietario"),
+            ("TIPO ID", "CC"), ("NOMBRE", EjemploMarca), ("IDENTIFICACION", "123456789"),
             ("EMAIL", "juan@correo.com"), ("TELEFONO", "3001234567"), ("SEXO", "M"), ("FECHA NACIMIENTO", "1985-04-12"));
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? coproRange,
+    private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? unidadesRange,
         List<string> camposVehiculo, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad"),
+            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in VehiculoCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
@@ -298,21 +304,20 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         AgregarColumnasDinamicas(cols, camposVehiculo);
 
         var ws = Encabezado(wb, "VEHICULOS", cols);
-        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
         Dropdown(ws, Indice(cols, "TIPO DE VEHICULO"), listas.Definir("TIPO_VEHICULO", EnumNombres<Domain.Enums.TipoVehiculo>()));
         Ejemplo(ws, cols,
-            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("PLACA", "ABC123"),
+            ("PLACA", EjemploMarca),
             ("TIPO DE VEHICULO", "Automovil"), ("MARCA", "Mazda"), ("MODELO", "2022"), ("COLOR", "Gris"));
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? coproRange,
+    private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? unidadesRange,
         List<string> camposMascota, ConfigCamposUnidad cfg)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
-            ("UNIDAD PRIVADA", "Codigo de la unidad"),
+            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in MascotaCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
@@ -320,41 +325,39 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         AgregarColumnasDinamicas(cols, camposMascota);
 
         var ws = Encabezado(wb, "MASCOTAS", cols);
-        Dropdown(ws, Indice(cols, "COPROPIEDAD"), coproRange);
+        Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
         Dropdown(ws, Indice(cols, "TIPO MASCOTA"), listas.Definir("TIPO_MASCOTA", EnumNombres<Domain.Enums.TipoMascota>()));
         Ejemplo(ws, cols,
-            ("COPROPIEDAD", EjemploCopro), ("UNIDAD PRIVADA", "A1-203"), ("NOMBRE", "Rocky"),
+            ("NOMBRE", EjemploMarca),
             ("TIPO MASCOTA", "Perro"), ("RAZA", "Labrador"));
         Ajustar(ws, cols.Count);
     }
 
-    // Un tercero NO se relaciona con una unidad; solo con la copropiedad. Con "Todas las copropiedades"
-    // el tercero queda visible en TODAS las copropiedades del cliente (se crea global + un vinculo en cada
-    // una). Por eso no hay columnas ALCANCE ni UNIDAD PRIVADA.
-    private static void HojaTerceros(XLWorkbook wb, HojaListas listas, string? coproTercerosRange)
+    // Un tercero NO se relaciona con una unidad; solo con la copropiedad activa (se crea global + un
+    // vinculo en la copropiedad). Por eso no hay columnas ALCANCE ni UNIDAD PRIVADA.
+    private static void HojaTerceros(XLWorkbook wb, HojaListas listas)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista. 'Todas las copropiedades' = visible en todas."),
             ("TIPO ID", "Elige de la lista"),
             ("NOMBRE", "Nombre completo / razon social"),
             ("IDENTIFICACION", "Documento/NIT"),
             ("EMAIL", ""), ("TELEFONO", ""),
         };
         var ws = Encabezado(wb, "TERCEROS", cols);
-        Dropdown(ws, 1, coproTercerosRange);
-        Dropdown(ws, 2, listas.Definir("TIPO_ID", TiposId));
-        // El ejemplo usa EjemploCopro para que el importador lo omita; la ayuda ya explica "Todas...".
-        Ejemplo(ws, EjemploCopro, "CC", "Maria Lopez", "987654321", "maria@correo.com", "3009876543");
+        Dropdown(ws, Indice(cols, "TIPO ID"), listas.Definir("TIPO_ID", TiposId));
+        // NOMBRE lleva el sentinel "EJEMPLO (borrar fila)": el importador ignora la fila que lo trae.
+        Ejemplo(ws, cols,
+            ("TIPO ID", "CC"), ("NOMBRE", EjemploMarca), ("IDENTIFICACION", "987654321"),
+            ("EMAIL", "maria@correo.com"), ("TELEFONO", "3009876543"));
         Ajustar(ws, cols.Count);
     }
 
     // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
-    private static void HojaZonasComunes(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposZona)
+    private static void HojaZonasComunes(XLWorkbook wb, HojaListas listas, List<string> camposZona)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
             ("NOMBRE", "Nombre de la zona (obligatorio)"),
             ("CATEGORIA", "Elige de la lista"),
             ("RESERVABLE", "Si / No"),
@@ -367,19 +370,21 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         AgregarColumnasDinamicas(cols, camposZona);
 
         var ws = Encabezado(wb, "ZONAS COMUNES", cols);
-        Dropdown(ws, 1, coproRange);
-        Dropdown(ws, 3, listas.Definir("CATEGORIA_ZONA", EnumNombres<CategoriaZonaComun>()));
-        Dropdown(ws, 4, listas.Definir("SI_NO", SiNo));
-        Dropdown(ws, 6, listas.Definir("ESTADO_ZONA", EnumNombres<EstadoZonaComunMantenimiento>()));
-        Ejemplo(ws, EjemploCopro, "Salon Social", "Social", "Si", "80", "Activa", "Salon para eventos", "50000", "Reservar con 3 dias");
+        Dropdown(ws, Indice(cols, "CATEGORIA"), listas.Definir("CATEGORIA_ZONA", EnumNombres<CategoriaZonaComun>()));
+        Dropdown(ws, Indice(cols, "RESERVABLE"), listas.Definir("SI_NO", SiNo));
+        Dropdown(ws, Indice(cols, "ESTADO"), listas.Definir("ESTADO_ZONA", EnumNombres<EstadoZonaComunMantenimiento>()));
+        // NOMBRE lleva el sentinel "EJEMPLO (borrar fila)": el importador ignora la fila que lo trae.
+        Ejemplo(ws, cols,
+            ("NOMBRE", EjemploMarca), ("CATEGORIA", "Social"), ("RESERVABLE", "Si"), ("AFORO", "80"),
+            ("ESTADO", "Activa"), ("DESCRIPCION", "Salon para eventos"), ("TARIFA RESERVA", "50000"),
+            ("REGLAS DE USO", "Reservar con 3 dias"));
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaEquipos(XLWorkbook wb, HojaListas listas, string? coproRange, List<string> camposEquipo)
+    private static void HojaEquipos(XLWorkbook wb, HojaListas listas, List<string> camposEquipo)
     {
         var cols = new List<(string H, string Ayuda)>
         {
-            ("COPROPIEDAD", "Elige de la lista"),
             ("NOMBRE", "Nombre del equipo/activo (obligatorio)"),
             ("CATEGORIA", "Elige de la lista"),
             ("TIPO", "Equipo / Activo"),
@@ -398,13 +403,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         AgregarColumnasDinamicas(cols, camposEquipo);
 
         var ws = Encabezado(wb, "EQUIPOS", cols);
-        Dropdown(ws, 1, coproRange);
-        Dropdown(ws, 3, listas.Definir("CATEGORIA_EQUIPO", EnumNombres<CategoriaEquipo>()));
-        Dropdown(ws, 4, listas.Definir("TIPO_ELEMENTO", EnumNombres<TipoElemento>()));
-        Dropdown(ws, 6, listas.Definir("SI_NO", SiNo));
-        Dropdown(ws, 10, listas.Definir("ESTADO_EQUIPO", EnumNombres<EstadoEquipoActivo>()));
-        Ejemplo(ws, EjemploCopro, "Bomba de agua principal", "Bombeo", "Equipo", "1", "No", "BX-200", "SER-123",
-            "Cuarto de bombas", "Operativo", "Revision mensual", "10", "5000000", "HidroServicios", "FAC-001");
+        Dropdown(ws, Indice(cols, "CATEGORIA"), listas.Definir("CATEGORIA_EQUIPO", EnumNombres<CategoriaEquipo>()));
+        Dropdown(ws, Indice(cols, "TIPO"), listas.Definir("TIPO_ELEMENTO", EnumNombres<TipoElemento>()));
+        Dropdown(ws, Indice(cols, "RESERVABLE"), listas.Definir("SI_NO", SiNo));
+        Dropdown(ws, Indice(cols, "ESTADO"), listas.Definir("ESTADO_EQUIPO", EnumNombres<EstadoEquipoActivo>()));
+        // NOMBRE lleva el sentinel "EJEMPLO (borrar fila)": el importador ignora la fila que lo trae.
+        Ejemplo(ws, cols,
+            ("NOMBRE", EjemploMarca), ("CATEGORIA", "Bombeo"), ("TIPO", "Equipo"), ("CANTIDAD", "1"),
+            ("RESERVABLE", "No"), ("MODELO", "BX-200"), ("NUMERO DE SERIE", "SER-123"),
+            ("UBICACION", "Cuarto de bombas"), ("ESTADO", "Operativo"), ("OBSERVACIONES", "Revision mensual"),
+            ("VIDA UTIL", "10"), ("VALOR ADQUISICION", "5000000"), ("PROVEEDOR", "HidroServicios"),
+            ("NUMERO FACTURA", "FAC-001"));
         Ajustar(ws, cols.Count);
     }
 
@@ -500,22 +509,12 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         for (var i = 1; i <= nCols; i++) ws.Column(i).Width = 18;
     }
 
-    // Sentinel de la columna COPROPIEDAD en la fila de ejemplo: el importador ignora toda fila
-    // cuya COPROPIEDAD empiece por "EJEMPLO". Asi la fila 4 sirve de guia y no se carga.
-    private const string EjemploCopro = "EJEMPLO (borrar fila)";
+    // Sentinel de la fila de ejemplo: el importador ignora toda fila que lo lleve en cualquier celda
+    // (ver LeerHoja). Se escribe en una columna de texto libre de cada hoja (UNIDAD PRIVADA / NOMBRE /
+    // PLACA). Asi la fila 4 sirve de guia y no se carga.
+    public const string EjemploMarca = "EJEMPLO (borrar fila)";
 
-    // Escribe la fila de ejemplo (fila 4) en gris/italica para que se lea como muestra.
-    private static void Ejemplo(IXLWorksheet ws, params string[] valores)
-    {
-        var muted = XLColor.FromHtml("#9AA7B4");
-        for (var i = 0; i < valores.Length; i++)
-        {
-            if (string.IsNullOrEmpty(valores[i])) continue;
-            EjemploCelda(ws, i + 1, valores[i], muted);
-        }
-    }
-
-    // Igual que la anterior pero direccionando POR ENCABEZADO: la usan las hojas cuyas columnas se
+    // Escribe la fila de ejemplo (fila 4) direccionando POR ENCABEZADO: la usan las hojas cuyas columnas se
     // filtran por visibilidad, donde la posicion de cada columna no es fija. Un valor de un
     // encabezado que no se emitio simplemente se descarta (no desplaza al resto).
     private static void Ejemplo(IXLWorksheet ws, List<(string H, string Ayuda)> cols,
@@ -663,35 +662,25 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         return new ConfigCamposUnidad(map);
     }
 
-    // ===================== Referencia: copropiedades del cliente =====================
-    private async Task<List<(Guid Id, string Nombre, string? Codigo)>> CopropiedadesDelClienteAsync(CancellationToken ct)
+    // ===================== Referencia: unidades ya cargadas (para el desplegable) =====================
+    // Codigos de las unidades de la copropiedad ACTIVA (RLS ya acota por app.tenant_id): TORRE-NUMERO
+    // cuando la unidad tiene torre, o el Numero suelto si no. Mismo calculo que usa Residentes/Distribucion
+    // y que el importador resuelve en ResolverUnidad (por Numero y por TORRE-NUMERO), asi lo que el usuario
+    // elige del desplegable siempre encuentra su unidad al reimportar.
+    private async Task<List<string>> UnidadesCodigosAsync(CancellationToken ct)
     {
-        // Las copropiedades que administra la persona actual dentro de su organizacion
-        // (via get_tenants_for_persona, SECURITY DEFINER). Nunca de otros tenants-cliente.
-        var personaId = Guid.TryParse(_http.HttpContext?.User?.FindFirst("persona_id")?.Value, out var pid) ? pid : (Guid?)null;
-        var ids = new List<Guid>();
-        if (personaId is not null)
-        {
-            var conn = _db.Database.GetDbConnection();
-            var abiertaAqui = conn.State != System.Data.ConnectionState.Open;
-            if (abiertaAqui) await conn.OpenAsync(ct);
-            try
-            {
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT tenant_id FROM get_tenants_for_persona(@p)";
-                var p = cmd.CreateParameter(); p.ParameterName = "@p"; p.Value = personaId.Value; cmd.Parameters.Add(p);
-                await using var reader = await cmd.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct)) ids.Add(reader.GetGuid(0));
-            }
-            finally { if (abiertaAqui) await conn.CloseAsync(); }
-        }
-        if (ids.Count == 0 && _tenant.CurrentTenantId is { } curr) ids.Add(curr);
-
-        var lista = await _db.Tenants.IgnoreQueryFilters().AsNoTracking()
-            .Where(t => ids.Contains(t.Id))
-            .OrderBy(t => t.Nombre)
-            .Select(t => new { t.Id, t.Nombre, t.CodigoCorto })
+        var unis = await _db.UnidadesPrivadas.AsNoTracking()
+            .Select(u => new { u.Numero, Torre = u.Torre != null ? u.Torre.Nombre : null })
             .ToListAsync(ct);
-        return lista.Select(x => (x.Id, x.Nombre, (string?)x.CodigoCorto)).ToList();
+        var codigos = new List<string>();
+        foreach (var u in unis)
+        {
+            var n = (u.Numero ?? "").Trim();
+            if (n.Length == 0) continue;
+            var torreShort = string.IsNullOrWhiteSpace(u.Torre) ? "" : u.Torre!.Split(' ').Last();
+            codigos.Add(torreShort.Length == 0 ? n : $"{torreShort}-{n}");
+        }
+        return codigos.Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
     }
 }

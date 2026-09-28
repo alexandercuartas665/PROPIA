@@ -377,9 +377,11 @@ public class UnidadesPlantillaRoundTripTests
         throw new Xunit.Sdk.XunitException($"La plantilla no tiene la columna '{encabezado}'.");
     }
 
+    // La plantilla ya no lleva columna COPROPIEDAD (cada archivo carga en la copropiedad activa): el
+    // parametro 'copropiedad' se conserva por compatibilidad con las llamadas, pero ya no se escribe.
     private static void LlenarFila(IXLWorksheet ws, int fila, string copropiedad, Dictionary<string, string> valores)
     {
-        ws.Cell(fila, ColumnaDe(ws, "COPROPIEDAD")).Value = copropiedad;
+        _ = copropiedad;
         // Los encabezados de la plantilla pueden llevar tilde; las claves de 'valores' se dan en ASCII.
         // Se empareja por nombre normalizado (MAYUS sin acentos), igual que el importador real.
         var porNorm = valores.ToDictionary(kv => NormH(kv.Key), kv => kv.Value);

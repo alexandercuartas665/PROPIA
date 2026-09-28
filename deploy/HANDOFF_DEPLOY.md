@@ -101,6 +101,9 @@ Se corrigieron tildes en UI, catalogos y plantillas. Lo relevante para deploy:
   (TELEFONO->con tilde, AREA, MATRICULA, etc.), pero el importador (`UnidadesCargaImportService`) compara
   insensible a acentos, asi que **un archivo viejo con encabezados en ASCII sigue importando igual**. No
   rompe plantillas guardadas por los clientes.
+- **Carga masiva ahora es single-tenant (0.0.98):** la plantilla ya no pide COPROPIEDAD; todo carga en la
+  copropiedad activa. Los archivos viejos con COPROPIEDAD se siguen procesando (ver 0.2). Residentes gana
+  desplegable de UNIDAD PRIVADA con las unidades ya cargadas.
 - El resto (labels/placeholders/`.razor`, mensajes de toast, `<option>`) es texto visible, migration-free.
 
 ### Verificacion post-deploy especifica de esta tanda
@@ -112,8 +115,10 @@ Se corrigieron tildes en UI, catalogos y plantillas. Lo relevante para deploy:
       resuelto).
 - [ ] **Ortografia:** kanban PQRSD muestra la columna **"En gestion" con tilde**; Cartera/Presupuesto/TRD de
       Documentos con tildes; formularios y menus con tildes, sin caracteres rotos (mojibake).
-- [ ] **Carga masiva (compat):** descargar la plantilla (encabezados con tilde) e importar OK; y **volver a
-      importar un archivo viejo con encabezados en ASCII** -> tambien importa sin errores.
+- [ ] **Carga masiva (single-tenant + compat):** descargar la plantilla -> **NINGUNA hoja pide COPROPIEDAD**;
+      en Residentes la columna UNIDAD PRIVADA trae desplegable con las unidades cargadas. Importar OK (cae en
+      la copropiedad activa). **Compat:** reimportar un archivo VIEJO con COPROPIEDAD (y/o encabezados ASCII)
+      -> tambien importa sin errores.
 - [ ] **Menu:** reimportar `menu-propia.json` si se quiere Tareas/Tableros en su ubicacion afinada (ver 0.7).
 
 ---
@@ -279,7 +284,19 @@ La hoja UNIDADES ahora emite **solo las columnas de los campos VISIBLES**. Si un
 campo en "Configurar", ese campo **deja de salir en la plantilla**. Es lo pedido, pero si alguien reporta
 que "desaparecio una columna de la plantilla", la causa es esa.
 
-`COPROPIEDAD`, `UNIDAD PRIVADA` y `PRINCIPAL` estan blindadas y salen siempre.
+`UNIDAD PRIVADA` y `PRINCIPAL` estan blindadas y salen siempre.
+
+**Cambio 0.0.98: la plantilla ya NO trae la columna `COPROPIEDAD`** (en ninguna de las 7 hojas). Cada
+archivo carga en **UNA sola copropiedad: la activa**. El importador enruta las filas (sin COPROPIEDAD) a la
+copropiedad activa con **UPSERT** (grupo interno "SoloVacias"); la logica de grupos multi-copropiedad no se
+toco, solo se retiro la columna del generador. **Compat: los archivos VIEJOS que aun traigan COPROPIEDAD se
+siguen procesando** (el importador reconoce la columna y el valor "Todas las copropiedades"). La fila de
+ejemplo se marca con el sentinel `EJEMPLO (borrar fila)` en una celda de texto (UNIDAD PRIVADA / NOMBRE /
+PLACA) y el importador la ignora en cualquier hoja.
+
+**Plantilla de Residentes: la columna `UNIDAD PRIVADA` de PERSONAS/VEHICULOS/MASCOTAS trae un desplegable**
+con los codigos de las unidades ya cargadas (TORRE-NUMERO, o Numero suelto). En onboarding (aun sin unidades)
+la columna queda como texto libre y se referencia contra la hoja UNIDADES del mismo archivo.
 
 ### 0.3 NO hay que crear ni confirmar ningun campo en prod
 
