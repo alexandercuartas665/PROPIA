@@ -1,0 +1,101 @@
+@* Boton "Agrupar" + menu de agrupacion multi-nivel apilable. Gemelo de TablaOrdenarMenu: es la
+   fuente UNICA del diseno de la agrupacion de la vista tabla (calca la maqueta, boton "Agrupar" en
+   assets/ui.js -> svgAgrupar + grupos apilables). El modulo mantiene la lista de campos (_grupos)
+   y agrupa su propia lista/tabla; este componente solo pinta el boton/menu y avisa via GruposChanged.
+   Uso:
+     <TablaAgruparMenu Columnas="ColsAgrupables" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+   donde ColsAgrupables = List<TablaAgruparMenu.Col> (Key + Label) y _grupos = List<string> (claves,
+   en orden: 1er nivel, 2do nivel, ...). *@
+
+<div class="tagr-wrap">
+    <button type="button" class="tagr-btn @(Grupos.Count > 0 ? "on" : "")" title="Agrupar" @onclick="() => _open = !_open">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+        <span>Agrupar@(Grupos.Count > 0 ? $" ({Grupos.Count})" : "")</span>
+    </button>
+    @if (_open)
+    {
+        <div class="tagr-bd" @onclick="() => _open = false"></div>
+        <div class="tagr-menu">
+            <div class="tagr-lbl">Agrupar por</div>
+            @if (Grupos.Count == 0)
+            {
+                <div class="tagr-empty">Sin agrupacion aplicada.</div>
+            }
+            @for (int i = 0; i < Grupos.Count; i++)
+            {
+                var idx = i;
+                <div class="tagr-row">
+                    <select class="tagr-sel" value="@Grupos[idx]" @onchange="e => CambiarCampo(idx, e.Value?.ToString())">
+                        @foreach (var c in Columnas)
+                        {
+                            <option value="@c.Key" selected="@(c.Key == Grupos[idx])">@c.Label</option>
+                        }
+                    </select>
+                    <button type="button" class="tagr-del" title="Quitar" @onclick="() => Quitar(idx)">&times;</button>
+                </div>
+            }
+            @if (Grupos.Count < Columnas.Count)
+            {
+                <button type="button" class="tagr-add" @onclick="Agregar"><i class="fi fi-rr-plus"></i> Agregar agrupacion</button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Columna por la que se puede agrupar (clave estable + etiqueta visible).</summary>
+    public sealed record Col(string Key, string Label);
+
+    /// <summary>Columnas agrupables ofrecidas en el selector (normalmente las de tipo seleccion/lista).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Col> Columnas { get; set; } = Array.Empty<Col>();
+    /// <summary>Niveles de agrupacion apilados (orden = jerarquia) que mantiene y aplica el modulo.</summary>
+    [Parameter, EditorRequired] public List<string> Grupos { get; set; } = new();
+    /// <summary>Se dispara al agregar/quitar/cambiar un nivel (el modulo reagrupa y persiste).</summary>
+    [Parameter] public EventCallback GruposChanged { get; set; }
+
+    private bool _open;
+
+    private async Task CambiarCampo(int idx, string? key)
+    {
+        if (idx < 0 || idx >= Grupos.Count || string.IsNullOrEmpty(key)) return;
+        Grupos[idx] = key;
+        await GruposChanged.InvokeAsync();
+    }
+
+    private async Task Quitar(int idx)
+    {
+        if (idx < 0 || idx >= Grupos.Count) return;
+        Grupos.RemoveAt(idx);
+        await GruposChanged.InvokeAsync();
+    }
+
+    private async Task Agregar()
+    {
+        var used = Grupos.ToHashSet();
+        var next = Columnas.FirstOrDefault(c => !used.Contains(c.Key)) ?? Columnas.FirstOrDefault();
+        if (next is not null)
+        {
+            Grupos.Add(next.Key);
+            await GruposChanged.InvokeAsync();
+        }
+    }
+}
+
+<style>
+    /* Boton de la barra (identico a .dst-fbtn de la maqueta y a .tord-btn de Ordenar). */
+    .tagr-wrap { position: relative; }
+    .tagr-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); font-size: 12.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .tagr-btn:hover { border-color: var(--propia-brand); }
+    .tagr-btn.on { border-color: var(--propia-brand); background: var(--propia-brand-soft); color: var(--propia-brand); }
+    /* Menu (identico a .dst-menu / .tord-menu). */
+    .tagr-bd { position: fixed; inset: 0; z-index: 40; }
+    .tagr-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 260px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30, 40, 60, .18); padding: 6px; }
+    .tagr-lbl { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); padding: 8px 8px 4px; }
+    .tagr-empty { font-size: 12px; color: var(--propia-text-muted); padding: 4px 6px 8px; }
+    .tagr-row { display: flex; align-items: center; gap: 6px; padding: 4px 4px; }
+    .tagr-sel { flex: 1; min-width: 0; border: 1px solid var(--propia-border-input); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-input); font-family: inherit; outline: none; }
+    .tagr-sel:focus { border-color: var(--propia-brand); }
+    .tagr-del { border: 0; background: transparent; color: var(--propia-text-faint); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px; }
+    .tagr-del:hover { color: var(--propia-danger); }
+    .tagr-add { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; padding: 8px 6px 4px; }
+</style>

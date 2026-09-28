@@ -92,21 +92,8 @@
             @* Ordenar (multi-criterio apilable): fuente unica compartida. Se aplica sobre la lista
                filtrada de la pestana activa (antes de paginar), en Tabla y en Tarjetas. *@
             <TablaOrdenarMenu Columnas="ColsOrdenablesDir()" Sorts="_sortsDir" SortsChanged="OnSortsDirChanged" />
-            @* Agrupar por campo: menu que pregunta por cual campo agrupar (patron Tableros). *@
-            <div class="dir-menu-wrap">
-                <button type="button" class="fd-btn @(_agrupar ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                    <span>Agrupar@(_agrupar ? ": Etiqueta" : "")</span>
-                </button>
-                @if (_showAgruparMenu)
-                {
-                    <div class="dir-menu-bd" @onclick="() => _showAgruparMenu = false"></div>
-                    <div class="dir-menu">
-                        <button class="dir-menu-it @(!_agrupar ? "on" : "")" @onclick="() => SetAgruparDir(false)">Sin agrupar</button>
-                        <button class="dir-menu-it @(_agrupar ? "on" : "")" @onclick="() => SetAgruparDir(true)">Etiqueta</button>
-                    </div>
-                }
-            </div>
+            @* Agrupar: componente compartido (gemelo de Ordenar). Directorio solo ofrece Etiqueta. *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesDir()" Grupos="_gruposDir" GruposChanged="OnGruposDirChanged" />
             @* Configurar columnas visibles, su orden y nombres (solo en vista Tabla). *@
             @if (_view == "tabla")
             {
@@ -981,7 +968,10 @@
     // Agrupar por etiqueta: cuando esta activo, la tabla/lista se parte en secciones por etiqueta.
     // Un contacto con varias etiquetas aparece en cada seccion; los que no tienen etiqueta caen
     // en "Sin etiqueta", que va siempre al final. Las secciones se ordenan por nombre de etiqueta.
-    private bool _agrupar;
+    // Agrupacion via el componente compartido TablaAgruparMenu (gemelo de Ordenar). Directorio solo
+    // ofrece la Etiqueta como campo agrupable, asi que _gruposDir tiene 0 o 1 nivel ("etiquetas").
+    private List<string> _gruposDir = new();
+    private bool _agrupar => _gruposDir.Count > 0;
     private const string AgruparKey = "propia_agrupar_directorio";
 
     private List<DirectorioPersonasVista.Grupo>? GruposPersonas()
@@ -1024,17 +1014,30 @@
         return grupos;
     }
 
+    /// <summary>Campos por los que Directorio puede agrupar (hoy solo la Etiqueta, tag-based).</summary>
+    private List<TablaAgruparMenu.Col> ColsAgrupablesDir()
+        => new() { new TablaAgruparMenu.Col("etiquetas", "Etiqueta") };
+
+    private async Task OnGruposDirChanged()
+    {
+        _pagina = 1;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agrupar ? "1" : "0"); } catch { }
+        StateHasChanged();
+    }
+
     private async Task ToggleAgrupar()
     {
-        _agrupar = !_agrupar;
+        _gruposDir = _agrupar ? new() : new() { "etiquetas" };
+        _pagina = 1;
         try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agrupar ? "1" : "0"); } catch { }
     }
 
-    private bool _showAgruparMenu;
+    // Se sigue llamando desde el menu de columna (clic derecho "Agrupar" sobre la Etiqueta).
     private async Task SetAgruparDir(bool on)
     {
-        _agrupar = on; _showAgruparMenu = false; _pagina = 1;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agrupar ? "1" : "0"); } catch { }
+        _gruposDir = on ? new() { "etiquetas" } : new();
+        _pagina = 1;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, on ? "1" : "0"); } catch { }
     }
 
     // ----- Configurar columnas (por usuario, en localStorage; una config por pestana) -----
@@ -1683,7 +1686,7 @@
             var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (v == "lista" || v == "tabla") _view = v;
             var ag = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey);
-            _agrupar = ag == "1";
+            _gruposDir = ag == "1" ? new() { "etiquetas" } : new();
         }
         catch { }
     }
