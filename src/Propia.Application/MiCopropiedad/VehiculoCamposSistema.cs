@@ -59,8 +59,8 @@ public static class VehiculoCamposSistema
         new VehiculoCampoSistema("placa", "Placa", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true,
             Encabezado: "PLACA", Ayuda: "", SiempreEnPlantilla: true),
         // Tipo de vehiculo: enum TipoVehiculo (Automovil/Moto/Bicicleta/Camioneta/Otro), lista de solo lectura.
-        new VehiculoCampoSistema("tipovehiculo", "Tipo de vehiculo", TipoCampoTablero.Seleccion, VisiblePorDefecto: true,
-            Encabezado: "TIPO DE VEHICULO", Ayuda: "Elige de la lista"),
+        new VehiculoCampoSistema("tipovehiculo", "Tipo de vehículo", TipoCampoTablero.Seleccion, VisiblePorDefecto: true,
+            Encabezado: "TIPO DE VEHÍCULO", Ayuda: "Elige de la lista"),
         new VehiculoCampoSistema("marca", "Marca", TipoCampoTablero.Texto, VisiblePorDefecto: true,
             Encabezado: "MARCA"),
         new VehiculoCampoSistema("modelo", "Modelo", TipoCampoTablero.Texto, VisiblePorDefecto: true,

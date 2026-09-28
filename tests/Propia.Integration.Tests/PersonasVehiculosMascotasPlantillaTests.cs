@@ -266,17 +266,29 @@ public class PersonasVehiculosMascotasPlantillaTests
         await ctx.SaveChangesAsync();
     }
 
+    // Los encabezados de la plantilla ahora llevan tilde; las aserciones y llaves se dan en ASCII. Se
+    // comparan normalizados (MAYUS sin acentos), igual que el importador real, para no depender del acento.
+    private static string NormH(string s)
+    {
+        var t = (s ?? "").Trim().ToUpperInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(t.Length);
+        foreach (var ch in t)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
+    }
+
     private static HashSet<string> Encabezados(IXLWorksheet ws)
     {
         var res = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in ws.Row(2).CellsUsed()) res.Add(c.GetString().Trim());
+        foreach (var c in ws.Row(2).CellsUsed()) res.Add(NormH(c.GetString()));
         return res;
     }
 
     private static int ColumnaDe(IXLWorksheet ws, string encabezado)
     {
         foreach (var c in ws.Row(2).CellsUsed())
-            if (string.Equals(c.GetString().Trim(), encabezado, StringComparison.OrdinalIgnoreCase))
+            if (NormH(c.GetString()) == NormH(encabezado))
                 return c.Address.ColumnNumber;
         throw new Xunit.Sdk.XunitException($"La hoja no tiene la columna '{encabezado}'.");
     }
@@ -284,10 +296,11 @@ public class PersonasVehiculosMascotasPlantillaTests
     private static void LlenarFila(IXLWorksheet ws, int fila, string copropiedad, Dictionary<string, string> valores)
     {
         ws.Cell(fila, ColumnaDe(ws, "COPROPIEDAD")).Value = copropiedad;
+        var porNorm = valores.ToDictionary(kv => NormH(kv.Key), kv => kv.Value);
         foreach (var c in ws.Row(2).CellsUsed())
         {
             var h = c.GetString().Trim();
-            if (valores.TryGetValue(h, out var v))
+            if (valores.TryGetValue(h, out var v) || porNorm.TryGetValue(NormH(h), out v))
                 ws.Cell(fila, c.Address.ColumnNumber).Value = v;
         }
     }

@@ -48,17 +48,17 @@ public static class PersonaCamposSistema
         new PersonaCampoSistema("tiporesidente", "Tipo de residente", "TIPO RESIDENTE", "Elige de la lista",
             VisiblePorDefecto: true, EsLista: true),
         // TIPO ID: tipo de documento. Lista.
-        new PersonaCampoSistema("tipoid", "Tipo de identificacion", "TIPO ID", "Elige de la lista",
+        new PersonaCampoSistema("tipoid", "Tipo de identificación", "TIPO ID", "Elige de la lista",
             VisiblePorDefecto: true, EsLista: true),
         // NOMBRE: identidad de la fila -> estructural (no se puede ocultar).
-        new PersonaCampoSistema("nombre", "Nombre", "NOMBRE", "Nombre completo (o razon social si NIT)",
+        new PersonaCampoSistema("nombre", "Nombre", "NOMBRE", "Nombre completo (o razón social si NIT)",
             VisiblePorDefecto: true, SiempreEnPlantilla: true),
         // IDENTIFICACION (documento): clave -> estructural.
-        new PersonaCampoSistema("identificacion", "Identificacion", "IDENTIFICACION", "Documento/NIT",
+        new PersonaCampoSistema("identificacion", "Identificación", "IDENTIFICACIÓN", "Documento/NIT",
             VisiblePorDefecto: true, SiempreEnPlantilla: true),
         new PersonaCampoSistema("email", "Email", "EMAIL", "",
             VisiblePorDefecto: true),
-        new PersonaCampoSistema("telefono", "Telefono", "TELEFONO", "",
+        new PersonaCampoSistema("telefono", "Teléfono", "TELÉFONO", "",
             VisiblePorDefecto: true),
         // SEXO -> Persona.Genero (existe). Lista M/F. Visible por defecto: la plantilla historica siempre
         // emitia esta columna y aun no hay panel de config de Personas para reactivarla si se ocultara.

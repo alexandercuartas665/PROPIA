@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using ClosedXML.Excel;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -844,7 +845,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     private static List<(Dictionary<string, string> Row, int Fila)> LeerHoja(XLWorkbook wb, string nombre)
     {
         var res = new List<(Dictionary<string, string>, int)>();
-        if (!wb.TryGetWorksheet(nombre, out var ws)) return res;
+        if (!wb.TryGetWorksheet(nombre, out var ws))
+        {
+            // Fallback insensible a acentos en el NOMBRE de la hoja (p.ej. "VEHICULOS" con tilde en
+            // plantillas nuevas vs sin tilde en archivos viejos).
+            ws = wb.Worksheets.FirstOrDefault(w => Norm(w.Name) == Norm(nombre));
+            if (ws is null) return res;
+        }
         var headers = new Dictionary<int, string>();
         foreach (var cell in ws.Row(2).CellsUsed())   // fila 1 = banner, fila 2 = encabezados
             headers[cell.Address.ColumnNumber] = cell.GetString().Trim().ToUpperInvariant();
@@ -869,7 +876,29 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     }
 
     private static string Val(Dictionary<string, string> row, string header)
-        => row.TryGetValue(header, out var v) ? v : "";
+    {
+        if (row.TryGetValue(header, out var v)) return v;
+        // Fallback insensible a acentos: ahora la plantilla puede traer encabezados con tilde
+        // ("TELEFONO" paso a "TELEFONO" con acento) y un archivo viejo escrito sin tilde debe seguir
+        // resolviendo. Solo se activa si el match exacto (ya insensible a mayus) fallo, asi que nunca
+        // cambia una coincidencia existente. Las columnas dinamicas [Label] no pasan por aca con clave
+        // canonica ASCII, asi que su emparejamiento no se ve afectado.
+        var nh = Norm(header);
+        foreach (var kv in row)
+            if (Norm(kv.Key) == nh) return kv.Value;
+        return "";
+    }
+
+    /// <summary>Normaliza un encabezado a MAYUSCULAS sin acentos, para comparar de forma tolerante.</summary>
+    private static string Norm(string? s)
+    {
+        var t = (s ?? "").Trim().ToUpperInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(t.Length);
+        foreach (var ch in t)
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString().Normalize(NormalizationForm.FormC);
+    }
 
     private static bool Eq(string a, string b) => string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
 

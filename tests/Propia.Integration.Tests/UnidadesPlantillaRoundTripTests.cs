@@ -71,10 +71,12 @@ public class UnidadesPlantillaRoundTripTests
             // 3. Cada campo del catalogo tiene su columna. Sin esto el dato no se puede ni escribir.
             foreach (var campo in UnidadCamposSistema.Todos)
             {
-                Assert.True(encabezados.Contains(campo.Encabezado),
+                // Comparacion insensible a acentos: los encabezados de la plantilla llevan tilde y aqui se
+                // contrastan con el catalogo (tambien acentuado) y con las llaves ASCII de 'Valores'.
+                Assert.True(encabezados.Contains(NormH(campo.Encabezado)),
                     $"El campo '{campo.Clave}' esta visible pero la plantilla no emite su columna "
                     + $"'{campo.Encabezado}'. Columnas emitidas: {string.Join(", ", encabezados)}");
-                Assert.True(Valores.ContainsKey(campo.Encabezado),
+                Assert.True(Valores.Keys.Any(k => NormH(k) == NormH(campo.Encabezado)),
                     $"Campo de sistema nuevo '{campo.Clave}': agregale un valor de prueba a este test.");
             }
 
@@ -363,14 +365,14 @@ public class UnidadesPlantillaRoundTripTests
     private static HashSet<string> Encabezados(IXLWorksheet ws)
     {
         var res = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in ws.Row(2).CellsUsed()) res.Add(c.GetString().Trim());
+        foreach (var c in ws.Row(2).CellsUsed()) res.Add(NormH(c.GetString()));
         return res;
     }
 
     private static int ColumnaDe(IXLWorksheet ws, string encabezado)
     {
         foreach (var c in ws.Row(2).CellsUsed())
-            if (string.Equals(c.GetString().Trim(), encabezado, StringComparison.OrdinalIgnoreCase))
+            if (NormH(c.GetString()) == NormH(encabezado))
                 return c.Address.ColumnNumber;
         throw new Xunit.Sdk.XunitException($"La plantilla no tiene la columna '{encabezado}'.");
     }
@@ -378,12 +380,25 @@ public class UnidadesPlantillaRoundTripTests
     private static void LlenarFila(IXLWorksheet ws, int fila, string copropiedad, Dictionary<string, string> valores)
     {
         ws.Cell(fila, ColumnaDe(ws, "COPROPIEDAD")).Value = copropiedad;
+        // Los encabezados de la plantilla pueden llevar tilde; las claves de 'valores' se dan en ASCII.
+        // Se empareja por nombre normalizado (MAYUS sin acentos), igual que el importador real.
+        var porNorm = valores.ToDictionary(kv => NormH(kv.Key), kv => kv.Value);
         foreach (var c in ws.Row(2).CellsUsed())
         {
             var h = c.GetString().Trim();
-            if (valores.TryGetValue(h, out var v))
+            if (valores.TryGetValue(h, out var v) || porNorm.TryGetValue(NormH(h), out v))
                 ws.Cell(fila, c.Address.ColumnNumber).Value = v;
         }
+    }
+
+    private static string NormH(string s)
+    {
+        var t = (s ?? "").Trim().ToUpperInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(t.Length);
+        foreach (var ch in t)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
     }
 
     // Deja los campos indicados VISIBLES en unidad_campos_config, como haria el panel de Configurar.
