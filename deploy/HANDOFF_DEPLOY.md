@@ -1,11 +1,97 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado **2026-09-24 (post vista-tabla + campos Usuarios)**. Version a desplegar: **0.0.96** (`main` HEAD; csproj ya bumpeado).
-> Prod actual (segun sesion de deploy 2026-09-24): **0.0.95** (`origin/main` @ `025676b`, uptime estable). El lote a subir son **18 commits** por encima de ese punto (fast-forward) + esta tanda de Usuarios.
+> Generado 2026-09-10, actualizado **2026-09-28 (post split Tareas + ortografia A-F)**. HEAD `main` @ `fbfea4c`.
+> **OJO CON LA VERSION:** el csproj sigue en **0.0.96** (no se bumpeo desde el 2026-09-24), pero desde ese
+> handoff entraron **~24 commits mas** (menu de columna Airtable, split de Tareas, Contratos/Seguros->tarea,
+> ortografia A-F). Es decir, "0.0.96" hoy contiene MUCHO mas que el lote de Usuarios del 09-24. **Antes de
+> desplegar, bumpear a `0.0.97`** (o el numero que decida Alex) para no confundir prod. El footer y el
+> checklist post-deploy asumen ese bump.
+> Prod (ultimo dato conocido, deploy 2026-09-24): **0.0.95** (`025676b`). Si el lote 0.0.96 del 09-24 NO se
+> desplego, este deploy sube TODO (aquel lote + esta tanda). Si SI se desplego, aplica solo lo de la seccion
+> **ESTADO 2026-09-28**.
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-09-28 (SPLIT TAREAS + ORTOGRAFIA A-F - LEER PRIMERO)
+
+Tanda posterior al handoff del 09-24. Todo esta en `main` (HEAD `fbfea4c`). Trae: menu de columna estilo
+Airtable en las bandejas, cierre de la reorg de hubs, **descripcion de campo** (1 migracion aditiva),
+**confirmacion in-app** (adios `confirm()` nativo), **split del modulo Tareas** (1 migracion aditiva),
+**Contratos/Seguros -> tarea al tablero General al vencer**, y la **auditoria ortografica completa (tildes),
+Olas A-F**. Las secciones 0-7 de mas abajo siguen vigentes TAL CUAL. **Solo 2 migraciones, ambas aditivas
+y sin RLS nueva; el resto es migration-free.**
+
+### CON MIGRACION (2 nuevas vs el handoff 09-24, ambas ADITIVAS, sin RLS nueva)
+El `ef database update` (seccion 2) aplica solo lo que falte. Vs `20260924143830_AddUsuarioCampos`:
+1. **`20260926023023_AddDescripcionCamposDefinicion`** - agrega `descripcion text NULL` a las 7 tablas
+   `*_campos_definiciones` (unidad/persona/vehiculo/mascota/tercero/zona/usuario). Solo columnas; no toca
+   RLS (esas tablas ya la tienen). `Down()` dropea las columnas.
+2. **`20260927131731_AddTableroEsGeneral`** - agrega `es_general boolean NOT NULL default false` a
+   `tableros`. Marca el tablero "General" unico del nuevo modulo Tareas. Aditiva; `Down()` dropea la columna.
+
+Ninguna crea tablas -> **no suma a las 8 tablas sin RLS conocidas** (seccion 6); `RlsCoverageTests` sigue
+igual. Comprobacion:
+```sql
+select count(*) from information_schema.columns
+ where table_name like '%_campos_definiciones' and column_name='descripcion';   -- debe dar 7
+select column_name from information_schema.columns
+ where table_name='tableros' and column_name='es_general';                      -- debe existir
+```
+
+### SPLIT DEL MODULO TAREAS (cambio de comportamiento - leer)
+- **`/tareas`** ahora es el **tablero General unico**: siempre abre listo para recibir actividades y trae la
+  columna **ORIGEN** (que modulo emitio la tarea: PQRSD, Contratos, Seguros, Mantenimiento, o "Propia" si es
+  manual). El **selector de tablero destino de PQRSD desaparecio**: toda tarea de modulo cae en el General
+  marcada con su Origen (inmutable, lo fija el modulo emisor).
+- **`/tableros`** es el **modulo nuevo de proyectos** (los tableros multi-columna de antes), EXCLUYE el
+  General.
+- **Migracion de datos (lazy, sin script):** al abrir Tareas por primera vez tras el deploy, el tablero
+  default existente se marca `es_general=true` (get-or-create idempotente en `AsegurarTableroGeneralAsync`).
+  Las tareas historicas se quedan donde estan (Origen = Propia); solo las nuevas de modulos caen al General.
+- **MENU (ver 0.7): es DATA.** El codigo agrega al catalogo los items **"Tareas"** (`/tareas`) y **"Tableros"**
+  (`/tableros`) bajo Operacion; pero la ORGANIZACION del menu vive en `menu_overrides`. Reimportar
+  `menu-propia.json` en Super Admin si se quiere la organizacion afinada (sin el import, ambos son
+  alcanzables por su ruta desde el catalogo del codigo).
+
+### CONTRATOS/SEGUROS -> TAREA AL GENERAL (migration-free)
+- El job `ContratosVencimientoJob` (2 corridas/dia), ademas de la alerta de vencimiento, ahora **emite UNA
+  tarea de seguimiento al tablero General** cuando un contrato/poliza entra en "por vencer": Origen =
+  **CONTRATOS** / **SEGUROS**. Idempotente (no duplica si ya hay una tarea no eliminada para esa entidad).
+- **DE PASO SE ARREGLO** el bug preexistente que estaba en la seccion 6 de este handoff: el job hacia
+  `if (contratos.Count == 0) continue;` y **nunca alertaba polizas** en copropiedades sin contratos con
+  fecha fin. Ahora recorre ambos. (El `catch` por tenant ya logueaba desde antes.)
+
+### ORTOGRAFIA (tildes) - Olas A-F, con BACKFILLS SELF-HEALING (sin paso manual)
+Se corrigieron tildes en UI, catalogos y plantillas. Lo relevante para deploy:
+- **Backfills idempotentes por tenant (NO son migracion, NO hay script manual):** los catalogos que ya
+  estaban sembrados en ASCII se renombran solos la primera vez que cada tenant abre el modulo
+  (`ExecuteUpdateAsync` con `WHERE nombre_viejo`, tenant-scoped; tras el rename es UPDATE de 0 filas).
+  Cubre: estado PQRSD "En gestion"->"En gestion" con tilde; estados de Cartera (Notificacion/Pre-juridico/
+  Juridico); rubros de Presupuesto; TRD de Documentos (series/subseries/tipologias); cargo EquipoOrg
+  "Asistente de Facturacion". **Respetan ediciones del usuario** (solo tocan la fila que conserva el ASCII
+  por defecto). No hay nada que ejecutar a mano.
+- **Carga masiva ahora TOLERA acentos:** los encabezados de la plantilla pasaron a llevar tilde
+  (TELEFONO->con tilde, AREA, MATRICULA, etc.), pero el importador (`UnidadesCargaImportService`) compara
+  insensible a acentos, asi que **un archivo viejo con encabezados en ASCII sigue importando igual**. No
+  rompe plantillas guardadas por los clientes.
+- El resto (labels/placeholders/`.razor`, mensajes de toast, `<option>`) es texto visible, migration-free.
+
+### Verificacion post-deploy especifica de esta tanda
+- [ ] **Migraciones:** correr los 2 `select` de arriba (descripcion x7, es_general en tableros).
+- [ ] **Tareas:** `/tareas` abre el General con columna **ORIGEN**; generar un PQRSD nuevo -> aparece una
+      tarea en el General con Origen **PQRSD**. `/tableros` lista proyectos SIN el General.
+- [ ] **Contratos/Seguros:** (si hay datos por vencer) tras la corrida del job, el General muestra tareas con
+      Origen Contratos/Seguros. Una copropiedad SIN contratos ya recibe alertas de **polizas** (bug 09-24
+      resuelto).
+- [ ] **Ortografia:** kanban PQRSD muestra la columna **"En gestion" con tilde**; Cartera/Presupuesto/TRD de
+      Documentos con tildes; formularios y menus con tildes, sin caracteres rotos (mojibake).
+- [ ] **Carga masiva (compat):** descargar la plantilla (encabezados con tilde) e importar OK; y **volver a
+      importar un archivo viejo con encabezados en ASCII** -> tambien importa sin errores.
+- [ ] **Menu:** reimportar `menu-propia.json` si se quiere Tareas/Tableros en su ubicacion afinada (ver 0.7).
 
 ---
 
