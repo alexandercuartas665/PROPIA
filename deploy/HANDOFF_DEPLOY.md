@@ -1,13 +1,10 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado **2026-09-28 (post split Tareas + ortografia A-F)**. HEAD `main` @ `fbfea4c`.
-> **OJO CON LA VERSION:** el csproj sigue en **0.0.96** (no se bumpeo desde el 2026-09-24), pero desde ese
-> handoff entraron **~24 commits mas** (menu de columna Airtable, split de Tareas, Contratos/Seguros->tarea,
-> ortografia A-F). Es decir, "0.0.96" hoy contiene MUCHO mas que el lote de Usuarios del 09-24. **Antes de
-> desplegar, bumpear a `0.0.97`** (o el numero que decida Alex) para no confundir prod. El footer y el
-> checklist post-deploy asumen ese bump.
-> Prod (ultimo dato conocido, deploy 2026-09-24): **0.0.95** (`025676b`). Si el lote 0.0.96 del 09-24 NO se
-> desplego, este deploy sube TODO (aquel lote + esta tanda). Si SI se desplego, aplica solo lo de la seccion
+> Generado 2026-09-10, actualizado **2026-09-28 (split Tareas + ortografia A-F + editor de campo + switcher)**.
+> Version a desplegar: **0.0.98** (csproj bumpeado). HEAD `main` incluye el editor focalizado de campo de
+> sistema y el nuevo CopropiedadSwitcher (integrado por FF de `equipo/atlas-copropiedad-switcher`).
+> Prod (ultimo dato conocido, deploy 2026-09-24): **0.0.95** (`025676b`). Este deploy sube TODO lo acumulado
+> desde ahi (la tanda 0.0.96 de Usuarios + esta tanda 0.0.98). Lo nuevo de esta tanda esta en la seccion
 > **ESTADO 2026-09-28**.
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
@@ -51,8 +48,16 @@ select column_name from information_schema.columns
 Antes, "Editar campo" del menu de columna solo salia en campos propios; sobre un campo fijo no hacia nada
 util. Ahora sale siempre: en campo propio abre el editor del campo; en campo de SISTEMA abre un editor
 focalizado (alias/descripcion/visibilidad; el tipo es fijo). Aplica a Distribucion, Residentes, Mascotas,
-Vehiculos, Zonas, Equipos y Directorio. Tambien se homogenizo el boton "+ Agregar registro" en Directorio
-y Usuarios. Todo migration-free salvo la columna `descripcion` (migracion 3).
+Vehiculos, Zonas, Equipos y Directorio, y tambien a PQRSD, Seguros y Servicios. Tambien se homogenizo el
+boton "+ Agregar registro" en Directorio y Usuarios. Todo migration-free salvo la columna `descripcion`
+(migracion 3).
+
+### CopropiedadSwitcher milimetrico (UI, migration-free)
+Integrado por fast-forward de `equipo/atlas-copropiedad-switcher` (rama de ATLAS, re-revisada por VIGIA):
+el selector de copropiedad (modal galeria/tabla + creacion en formulario unico) calca la maqueta
+`modal-copropiedad.html` con tokens claro/oscuro. **1 solo archivo** (`CopropiedadSwitcher.razor`), SIN
+backend, SIN migracion. Decision de producto: se muestran las imagenes reales del logo (sin fallback de
+avatar). Verificado en runtime lado a lado con la maqueta.
 
 ### SPLIT DEL MODULO TAREAS (cambio de comportamiento - leer)
 - **`/tareas`** ahora es el **tablero General unico**: siempre abre listo para recibir actividades y trae la
