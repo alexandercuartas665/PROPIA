@@ -131,6 +131,17 @@ public class CarteraService : ICarteraService
             }
             await _db.SaveChangesAsync(ct);
         }
+
+        // Backfill de tildes en los estados BASE sembrados antes con ASCII (convencion nueva: el texto
+        // de cara al usuario lleva acentos). Idempotente y tenant-scoped: tras el rename el WHERE deja
+        // de matchear. El KPI juridico compara contra EstadoCarteraBase.Juridico (ya acentuado) y lee
+        // el nombre por join en vivo, asi que queda consistente tras el rename.
+        await _db.EstadosCarteraConfig.Where(e => e.Nombre == "Notificacion")
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Nombre, EstadoCarteraBase.Notificacion), ct);
+        await _db.EstadosCarteraConfig.Where(e => e.Nombre == "Pre-juridico")
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Nombre, EstadoCarteraBase.PreJuridico), ct);
+        await _db.EstadosCarteraConfig.Where(e => e.Nombre == "Juridico")
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Nombre, EstadoCarteraBase.Juridico), ct);
     }
 
     // ===================== Sincronizacion 2.6 -> 2.7 =====================

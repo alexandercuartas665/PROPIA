@@ -20,7 +20,7 @@ public partial class PqrsdService
     private static readonly (string Nombre, string Color, int Orden, bool Terminal, EstadoPqrsd Semantica)[] EstadosBase = new[]
     {
         ("Recibida", "#94A3B8", 1, false, EstadoPqrsd.Recibida),
-        ("En gestion", "#6D4FE3", 2, false, EstadoPqrsd.EnGestion),
+        ("En gestión", "#6D4FE3", 2, false, EstadoPqrsd.EnGestion),
         ("Respondida", "#0EA5E9", 3, false, EstadoPqrsd.Respondida),
         ("Cerrada", "#16A34A", 4, true, EstadoPqrsd.Cerrada),
         ("Via interna agotada", "#DC2626", 5, true, EstadoPqrsd.ViaInternaAgotada),
@@ -141,6 +141,10 @@ public partial class PqrsdService
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.Nombre, "Petición"), ct);
         await _db.PqrsdTipos.Where(t => t.EsBase && t.Nombre == "Felicitacion")
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.Nombre, "Felicitación"), ct);
+        // Estado base "En gestion" -> "En gestión" (se identifica por su semantica legal, no por el
+        // nombre, asi que solo renombra la columna base que sigue con el nombre ASCII por defecto).
+        await _db.PqrsdEstados.Where(e => e.EsBase && e.SemanticaLegal == EstadoPqrsd.EnGestion && e.Nombre == "En gestion")
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.Nombre, "En gestión"), ct);
     }
 
     private static string TipoNombreBase(TipoPqrsd t) => t switch

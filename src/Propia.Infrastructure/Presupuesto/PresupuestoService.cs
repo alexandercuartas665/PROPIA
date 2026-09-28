@@ -33,6 +33,7 @@ public class PresupuestoService : IPresupuestoService
 
     public async Task<IReadOnlyList<PresupuestoDto>> ListarPresupuestosAsync(CancellationToken ct)
     {
+        await BackfillNombresRubroBaseAsync(ct);
         var lista = await _db.Presupuestos
             .AsNoTracking()
             .OrderByDescending(p => p.VigenciaInicio)
@@ -129,6 +130,22 @@ public class PresupuestoService : IPresupuestoService
         return new PresupuestoDto(p.Id, p.Nombre, p.VigenciaInicio, p.VigenciaFin,
             p.Estado, 0, null, null,
             req.IncluirCatalogoBase ? RubroCatalogo.Base.Length : 0, 0);
+    }
+
+    // Backfill de tildes en los nombres BASE de rubros sembrados antes con ASCII (convencion nueva: el
+    // texto de cara al usuario lleva acentos). Idempotente y tenant-scoped; empareja por Codigo + nombre
+    // viejo, asi que respeta cualquier rubro que el usuario haya renombrado y tras el rename no vuelve a
+    // tocar filas. El Codigo (clave estable) no cambia.
+    private async Task BackfillNombresRubroBaseAsync(CancellationToken ct)
+    {
+        await _db.PresupuestoRubros.Where(r => r.Codigo == RubroCatalogo.AdministracionGeneral && r.Nombre == "Administracion general")
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Nombre, "Administración general"), ct);
+        await _db.PresupuestoRubros.Where(r => r.Codigo == RubroCatalogo.PersonalNomina && r.Nombre == "Personal y nomina")
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Nombre, "Personal y nómina"), ct);
+        await _db.PresupuestoRubros.Where(r => r.Codigo == RubroCatalogo.ServiciosPublicosComunes && r.Nombre == "Servicios publicos comunes")
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Nombre, "Servicios públicos comunes"), ct);
+        await _db.PresupuestoRubros.Where(r => r.Codigo == RubroCatalogo.AseoJardineria && r.Nombre == "Aseo y jardineria")
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Nombre, "Aseo y jardinería"), ct);
     }
 
     public async Task<bool> ActualizarRubroAsync(Guid rubroId, ActualizarRubroRequest req, CancellationToken ct)

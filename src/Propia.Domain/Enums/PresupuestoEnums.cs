@@ -117,13 +117,13 @@ public static class RubroCatalogo
 
     public static readonly (string Codigo, string Nombre, bool Obligatorio)[] Base = new[]
     {
-        (AdministracionGeneral,      "Administracion general",       false),
-        (PersonalNomina,             "Personal y nomina",            false),
+        (AdministracionGeneral,      "Administración general",       false),
+        (PersonalNomina,             "Personal y nómina",            false),
         (SeguridadVigilancia,        "Seguridad y vigilancia",       false),
         (MantenimientoZonasComunes,  "Mantenimiento de zonas comunes", false),
-        (ServiciosPublicosComunes,   "Servicios publicos comunes",   false),
+        (ServiciosPublicosComunes,   "Servicios públicos comunes",   false),
         (Seguros,                    "Seguros",                       false),
-        (AseoJardineria,             "Aseo y jardineria",            false),
+        (AseoJardineria,             "Aseo y jardinería",            false),
         (GastosAdministrativos,      "Gastos administrativos",        false),
         (FondoImprevistos,           "Fondo de imprevistos",          true),  // RN-02
         (OtrosGastos,                "Otros gastos",                  false),

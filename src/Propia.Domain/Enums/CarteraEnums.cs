@@ -96,9 +96,9 @@ public enum TipoEventoCartera
 public static class EstadoCarteraBase
 {
     public const string EnMora = "En mora";
-    public const string Notificacion = "Notificacion";
-    public const string PreJuridico = "Pre-juridico";
-    public const string Juridico = "Juridico";
+    public const string Notificacion = "Notificación";
+    public const string PreJuridico = "Pre-jurídico";
+    public const string Juridico = "Jurídico";
 
     /// <summary>Catalogo base: (Nombre, Orden, DiasAlerta, Color, EsInicial).</summary>
     public static readonly (string Nombre, int Orden, int DiasAlerta, string Color, bool EsInicial)[] Base = new[]
