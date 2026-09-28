@@ -261,7 +261,7 @@ public class UnidadesPlantillaRoundTripTests
             Assert.True(string.Join(",", opciones).Length > 255,
                 "el caso de prueba deberia superar el limite de una lista inline");
             foreach (var e in esperados) Assert.Contains(e, opciones);
-            Assert.Contains("Cuarto util", opciones);   // los del sistema siguen ahi
+            Assert.Contains("Cuarto útil", opciones);   // los del sistema siguen ahi (ahora con tilde)
 
             // La hoja de listas existe, esta OCULTA y no estorba al usuario.
             var listas = ws.Workbook.Worksheet("PROPIA_LISTAS");

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Propia.Domain.Enums;
 
 namespace Propia.Application.MiCopropiedad;
@@ -17,9 +18,9 @@ public static class TiposUnidadCatalogo
     /// <summary>Etiqueta legible de un tipo del sistema.</summary>
     public static string Etiqueta(TipoUnidad t) => t switch
     {
-        TipoUnidad.UtilCuarto => "Cuarto util",
-        TipoUnidad.ZonaComun => "Zona comun",
-        TipoUnidad.ParqueaderoDeposito => "Parqueadero + deposito",
+        TipoUnidad.UtilCuarto => "Cuarto útil",
+        TipoUnidad.ZonaComun => "Zona común",
+        TipoUnidad.ParqueaderoDeposito => "Parqueadero + depósito",
         // Valor guardado que no corresponde a ningun tipo del enum (dato viejo o importado mal).
         // Se muestra asi, y NO como el primer tipo de la lista: si se disfrazara, cualquier edicion
         // de la fila guardaria un tipo que nadie eligio.
@@ -49,7 +50,11 @@ public static class TiposUnidadCatalogo
         }
         foreach (var v in Enum.GetValues<TipoUnidad>())
         {
-            if (string.Equals(Etiqueta(v), t, StringComparison.OrdinalIgnoreCase))
+            // Comparacion insensible a mayusculas Y a acentos (IgnoreNonSpace): ahora que las etiquetas
+            // llevan tilde ("Zona comun" paso a "Zona comun" con acento), un archivo viejo escrito sin
+            // tilde debe seguir resolviendo. Nunca produce un match falso: ninguna etiqueta difiere de
+            // otra solo por acentos.
+            if (IgualIgnorandoAcentos(Etiqueta(v), t))
             {
                 tipo = v;
                 return true;
@@ -57,4 +62,9 @@ public static class TiposUnidadCatalogo
         }
         return false;
     }
+
+    /// <summary>Igualdad de texto insensible a mayusculas y acentos (para resolver etiquetas escritas a mano).</summary>
+    private static bool IgualIgnorandoAcentos(string a, string b)
+        => CultureInfo.InvariantCulture.CompareInfo.Compare(a, b,
+               CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) == 0;
 }
