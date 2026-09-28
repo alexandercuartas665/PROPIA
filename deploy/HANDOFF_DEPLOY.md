@@ -52,6 +52,12 @@ Vehiculos, Zonas, Equipos y Directorio, y tambien a PQRSD, Seguros y Servicios. 
 boton "+ Agregar registro" en Directorio y Usuarios. Todo migration-free salvo la columna `descripcion`
 (migracion 3).
 
+### Fix ancho de tabla en Directorio y Usuarios (UI, migration-free)
+Esas 2 tablas quedaban mas angostas que las demas por un contenedor de pagina con padding horizontal
+extra (`.dir-page` 34px, `.usr-wrap` 28px) que Distribucion/Mascotas no tienen. Se quito ese padding para
+que usen el ancho total. **Cache-busting:** el deploy debe servir `directorio.css?v=4` y `usuarios.css?v=6`
+(ya bumpeados en `Components/App.razor`).
+
 ### CopropiedadSwitcher milimetrico (UI, migration-free)
 Integrado por fast-forward de `equipo/atlas-copropiedad-switcher` (rama de ATLAS, re-revisada por VIGIA):
 el selector de copropiedad (modal galeria/tabla + creacion en formulario unico) calca la maqueta
