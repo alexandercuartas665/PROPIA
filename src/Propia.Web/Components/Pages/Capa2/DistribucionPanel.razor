@@ -785,16 +785,25 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></td>
                                     break;
                                 case "agrupacion":
-                                    @* Un solo select (misma altura que las demas celdas): Individual, o Anexo de una
-                                       unidad principal. Al elegir un principal, la unidad nueva se vincula como su anexo. *@
+                                    @* Coherente con las filas existentes: primero Individual/Anexo; al elegir Anexo el
+                                       MISMO select pasa a pedir la unidad principal (una sola linea, no deforma la fila). *@
                                     <td class="nf-cell">
-                                        <select class="nf-in" @bind="_nuAgrupSel" title="Individual, o Anexo de una unidad principal (parqueadero / cuarto util / bodega)">
-                                            <option value="individual">Individual</option>
-                                            <optgroup label="Anexo de...">
+                                        @if (_nuAgrup == "anexo")
+                                        {
+                                            <select class="nf-in" @onchange="OnAltaPrincipalChange" title="Unidad principal del anexo (o volver a Individual)">
+                                                <option value="__ind__">&larr; Individual</option>
+                                                <option value="" disabled selected="@string.IsNullOrEmpty(_nuPrincipalId)">Elige principal...</option>
                                                 @foreach (var p in _unidades.Where(x => x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase))
-                                                { <option value="@p.Id">@p.Numero</option> }
-                                            </optgroup>
-                                        </select>
+                                                { <option value="@p.Id" selected="@(_nuPrincipalId == p.Id.ToString())">@p.Numero</option> }
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            <select class="nf-in" @onchange="OnAltaAgrupChange" title="Individual, o Anexo de una unidad principal">
+                                                <option value="individual" selected>Individual</option>
+                                                <option value="anexo">Anexo</option>
+                                            </select>
+                                        }
                                     </td>
                                     break;
                                 case "matricula":
@@ -971,7 +980,22 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
-    private string _nuAgrupSel = "individual";   // alta inline: "individual" o el Guid del principal (=> anexo de ese)
+    private string _nuAgrup = "individual";   // alta inline: "individual" | "anexo"
+    private string? _nuPrincipalId;           // alta inline: Guid del principal cuando _nuAgrup == "anexo"
+
+    // Alta: cambio Individual/Anexo. Al pasar a Individual se limpia el principal.
+    private void OnAltaAgrupChange(ChangeEventArgs e)
+    {
+        _nuAgrup = e.Value?.ToString() == "anexo" ? "anexo" : "individual";
+        if (_nuAgrup == "individual") _nuPrincipalId = null;
+    }
+    // Alta: eleccion del principal (o "volver a Individual").
+    private void OnAltaPrincipalChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (v == "__ind__") { _nuAgrup = "individual"; _nuPrincipalId = null; }
+        else if (!string.IsNullOrEmpty(v)) _nuPrincipalId = v;
+    }
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
@@ -1435,6 +1459,10 @@ else
                 });
                 filtradas = filtradas.OrderBy(u => u, cmp);
             }
+            // Las unidades recien creadas quedan SIEMPRE al final (verde) hasta el proximo refresco,
+            // aunque haya orden/sort activo. OrderBy es estable: el resto conserva su posicion.
+            if (_uniRecienCreados.Count > 0)
+                filtradas = filtradas.OrderBy(u => _uniRecienCreados.Contains(u.Id) ? 1 : 0);
             return filtradas.ToList();
         }
     }
@@ -1920,6 +1948,7 @@ else
     {
         if (_creandoUnidad) return;
         if (string.IsNullOrWhiteSpace(_nuNum)) { _inlineMsgU = "El numero de la unidad es obligatorio."; return; }
+        if (_nuAgrup == "anexo" && !Guid.TryParse(_nuPrincipalId, out _)) { _inlineMsgU = "Elige la unidad principal del anexo."; return; }
         _creandoUnidad = true;
         try
         {
@@ -1968,7 +1997,7 @@ else
                     if (valsNuevos.Count > 0) _camposValores[creada.Id] = valsNuevos;  // que las columnas muestren el valor sin recargar
                     // Si el alta marca la unidad como Anexo, vincularla a su principal (RN-09).
                     Guid padreNuevo = default;
-                    bool esAnexoNuevo = Guid.TryParse(_nuAgrupSel, out padreNuevo);
+                    bool esAnexoNuevo = _nuAgrup == "anexo" && Guid.TryParse(_nuPrincipalId, out padreNuevo);
                     bool anexoOk = false;
                     if (esAnexoNuevo)
                     {
@@ -1987,7 +2016,7 @@ else
                     }
                     if (!esAnexoNuevo) _inlineMsgU = $"Unidad {creada.Numero} creada.";
                     else if (anexoOk) _inlineMsgU = $"Anexo {creada.Numero} vinculado.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrupSel = "individual"; _nuCampos.Clear();
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrup = "individual"; _nuPrincipalId = null; _nuCampos.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
                     if (esAnexoNuevo) await CargarAsync();  // refrescar el arbol para que el anexo salga bajo su principal
@@ -2813,6 +2842,7 @@ else
 
             _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+            _uniRecienCreados.Clear();   // tras un refresco real, las recien creadas vuelven a su orden natural (sin verde)
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave, StringComparer.Ordinal); } catch { _camposConfig = new(); }
