@@ -676,7 +676,13 @@ window.propiaUI.dstInfinite = function (dotnetRef, scrollSel) {
         evalNow();   // estado inicial (FAB + posible primer lote)
     } catch (e) { /* no-op */ }
 };
-// Lleva el scroll de la tabla al final (donde esta la fila "+ Agregar registro" en linea).
+// Lleva el scroll de la tabla al final (donde esta la fila de alta). Doble intento (inmediato + tras el
+// reflujo) por si el contenido aun esta creciendo al pintar todas las filas.
 window.propiaUI.dstScrollToCta = function (scrollSel) {
-    try { var s = document.querySelector(scrollSel); if (s) s.scrollTo({ top: s.scrollHeight, behavior: 'smooth' }); } catch (e) { }
+    try {
+        var s = document.querySelector(scrollSel); if (!s) return;
+        s.scrollTop = s.scrollHeight;
+        setTimeout(function () { try { s.scrollTop = s.scrollHeight; } catch (e) { } }, 120);
+        setTimeout(function () { try { s.scrollTop = s.scrollHeight; } catch (e) { } }, 320);
+    } catch (e) { }
 };

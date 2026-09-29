@@ -353,29 +353,8 @@ else
             <div class="dst-filtros-spacer"></div>
             @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
             <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
-            @* Agrupador como boton + menu (pregunta por cual campo). Patron Tableros. *@
-            <div class="dst-menu-wrap">
-                <button type="button" class="dst-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar unidades">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                    <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabelU(_agruparPor) : "")</span>
-                </button>
-                @if (_showAgruparMenu)
-                {
-                    <div class="dst-menu-bd" @onclick="() => _showAgruparMenu = false"></div>
-                    <div class="dst-menu">
-                        @foreach (var g in new[] { ("", "Sin agrupar"), ("torre", LabelAgrupacionSingular), ("propietario", "Propietario"), ("estado", "Estado"), ("tipo", "Tipo") })
-                        {
-                            var gk = g.Item1;
-                            <button class="dst-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgruparVal(gk)">@g.Item2</button>
-                        }
-                        @foreach (var d in _camposDef)
-                        {
-                            var gk = "cd:" + d.Id;
-                            <button class="dst-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgruparVal(gk))">@d.Label</button>
-                        }
-                    </div>
-                }
-            </div>
+            @* Agrupar multi-nivel: menu compartido (mismo componente que el resto de modulos del epico). *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesU()" Grupos="_gruposU" GruposChanged="OnGruposUChanged" />
             @* Campos: unica entrada a la configuracion. Antes habia dos que se pisaban (este menu,
                que solo hacia orden y visibilidad, y un boton "Configurar" en la cabecera con el
                panel completo). No se limita a la vista tabla porque configura CAMPOS, no solo
@@ -530,8 +509,7 @@ else
                     {
                         if (item.EsGrupo)
                         {
-                            var g = item.Grupo!;
-                            <tr class="tbl-grp"><td colspan="@ColSpanTotal"><span class="tbl-grp-lbl">@g.Titulo</span><span class="n">@g.Items.Count</span></td></tr>
+                            <tr class="tgrt-hd tgrt-l@(item.Nivel > 2 ? 2 : item.Nivel)"><td colspan="@ColSpanTotal"><span class="tgrt-lead" style="padding-left:@(14 + item.Nivel * 16)px;"><span class="tgrt-tit">@item.GrupoTitulo</span> <span class="tgrt-cnt">@item.GrupoConteo</span></span></td></tr>
                             continue;
                         }
                         var uu = item.Unidad!;
@@ -848,7 +826,7 @@ else
                 </table>
                 @* Centinela de scroll infinito (div, NO <tr>): dispara CargarMas y controla el FAB. *@
                 <div id="dst-inf-bottom" class="tbl-inf-sentinel">
-                    @if (_agruparPor == "" && _shown < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
+                    @if (_gruposU.Count == 0 && _shown < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
                 </div>
                 </div>
                 <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregarAsync" title="Agregar registro">
@@ -868,8 +846,7 @@ else
                     {
                         if (item.EsGrupo)
                         {
-                            var g = item.Grupo!;
-                            <div class="dst-group"><span class="dst-group-t">@g.Titulo</span><span class="dst-group-n">@g.Items.Count</span></div>
+                            <div class="dst-group" style="padding-left:@(16 + item.Nivel * 16)px;"><span class="dst-group-t">@item.GrupoTitulo</span><span class="dst-group-n">@item.GrupoConteo</span></div>
                             continue;
                         }
                         var uu = item.Unidad!;
@@ -911,7 +888,7 @@ else
 
             @* Paginacion: SOLO en la vista Lista. La vista Tabla usa scroll infinito (piloto Unidades)
                con su propio footer "N registros - mostrando M". Con agrupacion no se pagina. *@
-            @if (_vista != "tabla" && _agruparPor == "")
+            @if (_vista != "tabla" && _gruposU.Count == 0)
             {
             <div class="dst-pager">
                 <div class="dst-pager-info">
@@ -1140,12 +1117,16 @@ else
     private void AbrirAlta() => _altaAbierta = true;
     private void CerrarAlta() => _altaAbierta = false;
 
-    // FAB "+ Agregar registro": abre la fila de alta y lleva el scroll al final (donde aparece).
-    private async Task FabAgregarAsync()
+    // FAB "+ Agregar registro": carga TODO el listado (para que el final sea alcanzable con el scroll
+    // infinito), abre la fila de alta y marca que hay que bajar al fondo tras el render (OnAfterRenderAsync).
+    // Sin cargar todo, el scroll infinito aleja el fondo y no se llega nunca a la fila de alta.
+    private bool _scrollBottomPending;
+    private void FabAgregarAsync()
     {
+        _shown = Filtradas.Count;   // muestra todas: el fondo deja de alejarse
         _altaAbierta = true;
+        _scrollBottomPending = true;   // el scroll real se hace en OnAfterRenderAsync (post-render)
         StateHasChanged();
-        try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".dst-scroll.tblscroll"); } catch { }
     }
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
@@ -1277,10 +1258,10 @@ else
             case TablaColMenu.Accion.Agrupar:
                 {
                     if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && CampoDeClave(col.Key) is not null)
-                    { await SetAgruparVal(col.Key); break; }
+                    { await SetGrupoU(col.Key); break; }
                     var g = col.Key switch { "torre" => "torre", "prop" => "propietario", "estado" => "estado", "tipo" => "tipo", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
-                    await SetAgruparVal(g);
+                    await SetGrupoU(g);
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
@@ -1339,7 +1320,7 @@ else
     [JSInvokable]
     public Task CargarMas()
     {
-        if (_agruparPor == "" && _shown < Filtradas.Count) { _shown += InfBatch; StateHasChanged(); }
+        if (_gruposU.Count == 0 && _shown < Filtradas.Count) { _shown += InfBatch; StateHasChanged(); }
         return Task.CompletedTask;
     }
 
@@ -1450,89 +1431,98 @@ else
         _pagina = 1;   // el offset viejo puede no existir con el tamano nuevo
     }
 
-    // ===== Agrupador (Torre / Propietario / Estado / Tipo) =====
-    private string _agruparPor = "";   // "", "torre", "propietario", "estado", "tipo"
-    private const string AgruparKey = "propia_agrupar_unidades";
+    // ===== Agrupador MULTI-NIVEL (motor compartido TablaAgrupador + menu compartido TablaAgruparMenu),
+    //       igual que el resto de modulos del epico. _gruposU: dimensiones apiladas (1er nivel, 2do, ...). =====
+    private List<string> _gruposU = new();
+    private const string GruposKey = "propia_agrupar_unidades";
 
-    private async Task SetAgrupar(ChangeEventArgs e)
+    // Columnas por las que se puede agrupar: fijas relevantes + campos propios (dinamicos).
+    private List<TablaAgruparMenu.Col> ColsAgrupablesU()
     {
-        _agruparPor = e.Value?.ToString() ?? "";
-        _pagina = 1;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { }
-    }
-
-    private bool _showAgruparMenu;
-    private string AgruparLabelU(string v)
-    {
-        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoDeClave(v)?.Label ?? "Campo";
-        return v switch { "torre" => LabelAgrupacionSingular, "propietario" => "Propietario", "estado" => "Estado", "tipo" => "Tipo", _ => "" };
-    }
-    private async Task SetAgruparVal(string v)
-    {
-        _agruparPor = v; _pagina = 1; _showAgruparMenu = false;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { }
-    }
-
-    private sealed record GrupoUni(string Titulo, List<UnidadDto> Items);
-
-    // Grupos sobre la lista filtrada COMPLETA (sin paginar): agrupar y paginar juntos confunde.
-    private List<GrupoUni>? Grupos()
-    {
-        if (_agruparPor == "") return null;
-        var items = Filtradas;
-        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
-        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            if (CampoDeClave(_agruparPor) is not UnidadCampoDefinicionDto gcd) return null;
-            return items.GroupBy(u => { var val = ValorCampo(u.Id, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                        .Select(g => new GrupoUni(g.Key, g.ToList()))
-                        .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                        .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
-                        .ToList();
-        }
-        var gs = _agruparPor switch
-        {
-            "torre" => items.GroupBy(u => u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"),
-            "estado" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!),
-            "tipo" => items.GroupBy(u => EtiquetaU(u)),
-            "propietario" => items.GroupBy(u => string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!),
-            _ => null
+            new("torre", LabelAgrupacionSingular),
+            new("estado", "Estado"),
+            new("tipo", "Tipo"),
+            new("propietario", "Propietario"),
         };
-        if (gs is null) return null;
-        return gs.Select(g => new GrupoUni(g.Key, g.ToList()))
-                 .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                 .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
-                 .ToList();
+        foreach (var d in _camposDef) cols.Add(new(CampoKey(d), d.Label));
+        return cols;
     }
 
-    // Una entrada a pintar: cabecera de grupo o unidad. Sin agrupar va paginado; agrupado va
-    // completo (todos los grupos). Sirve para la vista Tabla y la vista Tarjetas por igual.
-    private readonly record struct FilaUni(bool EsGrupo, GrupoUni? Grupo, UnidadDto? Unidad, bool EsAnexo = false);
+    // Valor de agrupacion de una unidad para una dimension (item+clave -> ValorGrupo), para el motor compartido.
+    private IEnumerable<ValorGrupo> ValorGrupoU(UnidadDto u, string clave)
+    {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoDeClave(clave) is UnidadCampoDefinicionDto gcd)
+            {
+                var val = ValorCampo(u.Id, gcd.Id);
+                var t = string.IsNullOrWhiteSpace(val) ? "(Sin dato)" : val!;
+                yield return new ValorGrupo(t, t);
+            }
+            yield break;
+        }
+        switch (clave)
+        {
+            case "torre": var tn = u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"; yield return new ValorGrupo(tn, tn); break;
+            case "estado": var es = string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!; yield return new ValorGrupo(es, es); break;
+            case "tipo": var tp = EtiquetaU(u); yield return new ValorGrupo(tp, tp); break;
+            case "propietario": var pr = string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!; yield return new ValorGrupo(pr, pr); break;
+        }
+    }
+
+    private async Task OnGruposUChanged()
+    {
+        _pagina = 1; _shown = InfBatch;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", GruposKey, string.Join(",", _gruposU)); } catch { }
+        StateHasChanged();
+    }
+    private async Task SetGrupoU(string clave) { _gruposU = new() { clave }; await OnGruposUChanged(); }
+
+    // Arbol de grupos anidados (motor compartido). Filtradas ya excluye anexos (van bajo su principal).
+    private IReadOnlyList<NodoGrupo<UnidadDto>> ArbolGrupos()
+        => TablaAgrupador.Agrupar(Filtradas, _gruposU, ValorGrupoU);
+
+    // Unidades planas mostradas (para seleccionar todo): agrupado = todas; si no, el lote/pagina visible.
+    private IEnumerable<UnidadDto> UnidadesMostradas()
+        => _gruposU.Count > 0 ? Filtradas : (_vista == "tabla" ? Filtradas.Take(_shown) : UnidadesPagina);
+
+    // Entrada a pintar (vista Lista + sel-all): cabecera de grupo (nivel/conteo) o unidad. La vista Tabla
+    // usa el render compartido para los grupos; esta secuencia aplana el mismo arbol para Lista.
+    private readonly record struct FilaUni(bool EsGrupo, string? GrupoTitulo, int GrupoConteo, int Nivel, UnidadDto? Unidad, bool EsAnexo = false);
     private IEnumerable<FilaUni> FilasRender()
     {
-        var gs = Grupos();
-        if (gs is null)
+        if (_gruposU.Count == 0)
         {
-            // Vista Tabla: scroll infinito (lote _shown). Vista Lista: mantiene la paginacion (UnidadesPagina).
             var fuente = _vista == "tabla" ? Filtradas.Take(_shown) : UnidadesPagina;
             foreach (var u in fuente)
             {
-                yield return new FilaUni(false, null, u);
+                yield return new FilaUni(false, null, 0, 0, u);
                 if (_anexosExpandidos.Contains(u.Id))
-                    foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, a, true);
+                    foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, 0, 0, a, true);
             }
+            yield break;
         }
-        else
+        foreach (var f in AplanarArbol(ArbolGrupos())) yield return f;
+    }
+    private IEnumerable<FilaUni> AplanarArbol(IReadOnlyList<NodoGrupo<UnidadDto>> nodos)
+    {
+        foreach (var n in nodos)
         {
-            foreach (var g in gs)
+            yield return new FilaUni(true, n.Titulo, n.Conteo, n.Nivel, null);
+            if (n.EsHoja)
             {
-                yield return new FilaUni(true, g, null);
-                foreach (var u in g.Items)
+                foreach (var u in n.Filas)
                 {
-                    yield return new FilaUni(false, null, u);
+                    yield return new FilaUni(false, null, 0, 0, u);
                     if (_anexosExpandidos.Contains(u.Id))
-                        foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, a, true);
+                        foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, 0, 0, a, true);
                 }
+            }
+            else
+            {
+                foreach (var f in AplanarArbol(n.Subgrupos)) yield return f;
             }
         }
     }
@@ -1677,8 +1667,11 @@ else
 
     // Orden efectivo: el 'orden' guardado por campo. Los que no lo tienen (todavia nadie los movio)
     // van despues, conservando el orden por defecto del catalogo.
+    // Override de orden EN MEMORIA (para reorden optimista por arrastre: repinta ya, persiste en background).
+    private Dictionary<string, int>? _ordenLocal;
     private int OrdenDe(string clave, int fallback)
-        => _camposConfig.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+        => _ordenLocal is not null && _ordenLocal.TryGetValue(clave, out var lo) ? lo
+           : (_camposConfig.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback);
 
     // Todas las columnas (sistema + personalizados) en el orden configurado.
     private IEnumerable<ColItem> ColumnasOrdenadas
@@ -1825,8 +1818,9 @@ else
     {
         try
         {
-            var ag = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey);
-            if (ag is "torre" or "propietario" or "estado" or "tipo") _agruparPor = ag;
+            var ag = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);
+            if (!string.IsNullOrWhiteSpace(ag))
+                _gruposU = ag.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         }
         catch { }
     }
@@ -2029,7 +2023,7 @@ else
 
         // Scroll infinito + FAB (solo vista Tabla sin agrupar): (re)instala los observers cuando cambia
         // el lote mostrado, el alta o el total. Sin agrupar se muestra todo (no hay scroll infinito).
-        if (_jwt is not null && _vista == "tabla" && _agruparPor == "")
+        if (_jwt is not null && _vista == "tabla" && _gruposU.Count == 0)
         {
             var sig = $"{_shown}|{_altaAbierta}|{Filtradas.Count}";
             if (sig != _wiredSig)
@@ -2038,6 +2032,14 @@ else
                 _self ??= DotNetObjectReference.Create(this);
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
             }
+        }
+
+        // Scroll al fondo pendiente (FAB "+ Agregar registro"): ya se pintaron todas las filas + la fila
+        // de alta, asi que ahora si el fondo es alcanzable.
+        if (_scrollBottomPending)
+        {
+            _scrollBottomPending = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".dst-scroll.tblscroll"); } catch { }
         }
     }
 
@@ -2635,8 +2637,15 @@ else
         var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
         if (from < 0 || to < 0) return;
         keys.RemoveAt(from); keys.Insert(to, src);
+        // Optimista: aplica el nuevo orden EN MEMORIA y repinta YA (antes se esperaba a persistir las 13
+        // columnas + recargar -> segundos de lag que se sentian como "no funciona").
+        _ordenLocal = keys.Select((k, i) => (k, i)).ToDictionary(x => x.k, x => x.i);
+        StateHasChanged();
+        // Persiste en background y luego recarga la config (que ya trae el orden) y suelta el override.
         for (int i = 0; i < keys.Count; i++) await GuardarCampoConfigAsync(FilaConfig(keys[i]) with { Orden = i });
-        await CargarCamposConfigAsync(); StateHasChanged();
+        await CargarCamposConfigAsync();
+        _ordenLocal = null;
+        StateHasChanged();
     }
 
     // ---- Menu contextual (clic derecho sobre una fila). ----
