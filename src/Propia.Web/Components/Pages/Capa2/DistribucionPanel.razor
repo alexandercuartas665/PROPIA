@@ -344,11 +344,11 @@ else
         <div class="dst-filtros">
             @* Boton "Filtros" (reglas dinamicas, componente compartido) PRIMERO y luego el buscador,
                orden estandar. Reemplaza los selects sueltos "Todo tipo"/"Toda torre". *@
-            <FiltroDinamico @ref="_fd" Campos="CamposFiltroU" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltroU" OnChanged="@(() => { _pagina = 1; _shown = InfBatch; StateHasChanged(); })" />
             <div class="dst-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input class="dst-search-inp" placeholder="Buscar unidad o propietario..."
-                       @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
+                       @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; _shown = InfBatch; })" />
             </div>
             <div class="dst-filtros-spacer"></div>
             @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
@@ -813,7 +813,7 @@ else
                     }
                     else
                     {
-                    <tr class="newrow">
+                    <tr class="newrow" id="dst-cta-row">
                         <td class="tbl-sel"></td>
                         <td class="tbl-exp"></td>
                         <td colspan="@(ColSpanTotal - 2)">
@@ -826,12 +826,17 @@ else
                     }
                     </tbody>
                 </table>
+                @* Centinela de scroll infinito (div, NO <tr>): dispara CargarMas y controla el FAB. *@
+                <div id="dst-inf-bottom" class="tbl-inf-sentinel">
+                    @if (_agruparPor == "" && _shown < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
                 </div>
-                <button type="button" class="tbl-fab" @onclick="AbrirAlta" title="Agregar registro">
+                </div>
+                <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregarAsync" title="Agregar registro">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     Agregar registro
                 </button>
                 </div>
+                <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Math.Min(_shown, Filtradas.Count)</div>
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
             else
@@ -884,9 +889,9 @@ else
                 </div>
             }
 
-            @* Paginacion: una PH puede tener cientos de unidades y no se listan todas de golpe.
-               Con agrupacion activa se muestran todos los grupos completos, sin paginar. *@
-            @if (_agruparPor == "")
+            @* Paginacion: SOLO en la vista Lista. La vista Tabla usa scroll infinito (piloto Unidades)
+               con su propio footer "N registros - mostrando M". Con agrupacion no se pagina. *@
+            @if (_vista != "tabla" && _agruparPor == "")
             {
             <div class="dst-pager">
                 <div class="dst-pager-info">
@@ -1046,6 +1051,14 @@ else
     private bool _altaAbierta;
     private void AbrirAlta() => _altaAbierta = true;
     private void CerrarAlta() => _altaAbierta = false;
+
+    // FAB "+ Agregar registro": abre la fila de alta y lleva el scroll al final (donde aparece).
+    private async Task FabAgregarAsync()
+    {
+        _altaAbierta = true;
+        StateHasChanged();
+        try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".dst-scroll.tblscroll"); } catch { }
+    }
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAlta();
@@ -1228,6 +1241,26 @@ else
     private static readonly int[] TamanosPagina = { 25, 50, 100 };
     private int _porPagina = 25;
     private int _pagina = 1;
+    // Scroll infinito (reemplaza la paginacion en la vista Tabla): lote inicial y se amplia al hacer scroll.
+    private const int InfBatch = 40;
+    private int _shown = InfBatch;
+    private bool _ctaVisible = true;      // FAB oculto cuando la fila "+ Agregar registro" en linea esta a la vista
+    private string? _wiredSig;            // firma para (re)instalar los observers solo cuando cambian lote/alta/total
+
+    // Llamado por el IntersectionObserver (propiaUI.dstInfinite): carga el siguiente lote al llegar al final.
+    [JSInvokable]
+    public Task CargarMas()
+    {
+        if (_agruparPor == "" && _shown < Filtradas.Count) { _shown += InfBatch; StateHasChanged(); }
+        return Task.CompletedTask;
+    }
+
+    // Llamado por el observer de la fila "+ Agregar" en linea: oculta el FAB cuando esa fila esta a la vista.
+    [JSInvokable]
+    public void SetCtaVisible(bool visible)
+    {
+        if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); }
+    }
 
     // Filtros (client-side). La paginacion cuenta sobre la lista YA filtrada: si contara
     // sobre el total, el pie diria "de 120" mostrando 3 resultados.
@@ -1392,7 +1425,9 @@ else
         var gs = Grupos();
         if (gs is null)
         {
-            foreach (var u in UnidadesPagina)
+            // Vista Tabla: scroll infinito (lote _shown). Vista Lista: mantiene la paginacion (UnidadesPagina).
+            var fuente = _vista == "tabla" ? Filtradas.Take(_shown) : UnidadesPagina;
+            foreach (var u in fuente)
             {
                 yield return new FilaUni(false, null, u);
                 if (_anexosExpandidos.Contains(u.Id))
@@ -1881,26 +1916,41 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored))
+            try
             {
-                _jwt = stored;
-                await RestaurarVistaAsync();
-                await RestaurarPrefsAsync();
-                await CargarAsync();
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    _jwt = stored;
+                    await RestaurarVistaAsync();
+                    await RestaurarPrefsAsync();
+                    await CargarAsync();
+                }
+                else
+                {
+                    Nav.NavigateTo("/login?returnUrl=%2Fdistribucion", true);
+                    return;
+                }
+                StateHasChanged();
             }
-            else
-            {
-                Nav.NavigateTo("/login?returnUrl=%2Fdistribucion", true);
-                return;
-            }
-            StateHasChanged();
+            catch { /* prerender */ }
         }
-        catch { /* prerender */ }
+
+        // Scroll infinito + FAB (solo vista Tabla sin agrupar): (re)instala los observers cuando cambia
+        // el lote mostrado, el alta o el total. Sin agrupar se muestra todo (no hay scroll infinito).
+        if (_jwt is not null && _vista == "tabla" && _agruparPor == "")
+        {
+            var sig = $"{_shown}|{_altaAbierta}|{Filtradas.Count}";
+            if (sig != _wiredSig)
+            {
+                _wiredSig = sig;
+                _self ??= DotNetObjectReference.Create(this);
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
+            }
+        }
     }
 
     // Opciones de fabrica del campo Estado (semilla). Las usan LeerOpciones/EsSemilla del popup de listas.

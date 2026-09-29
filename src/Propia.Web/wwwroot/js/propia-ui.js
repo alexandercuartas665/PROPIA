@@ -646,3 +646,37 @@ window.propiaFloatPos = window.propiaFloatPos || function (a, p) {
     else { maxH = below; top = r.bottom + gap; }
     return [Math.round(top), Math.round(left), Math.round(w), Math.round(maxH)];
 };
+
+// ===== Vista tabla de Unidades: scroll infinito + visibilidad del boton flotante (FAB) =====
+// (Re)instala 2 IntersectionObserver sobre el contenedor de scroll de la tabla:
+//  - sentinel: al entrar en vista, pide al servidor cargar el siguiente lote (CargarMas).
+//  - cta: la fila "+ Agregar registro" en linea; cuando esta visible, el FAB se oculta (SetCtaVisible).
+// Idempotente: desconecta los observers previos antes de reconectar (se llama tras cada render relevante).
+window.propiaUI = window.propiaUI || {};
+// Scroll infinito + FAB por POSICION de scroll (listener 'scroll', no IntersectionObserver): el observer
+// se pausa en paginas ocultas y es fragil sobre <tr>; el listener dispara siempre y es testeable.
+//  - cerca del fondo -> pide el siguiente lote (CargarMas; el guard .NET frena al llegar al total).
+//  - "cerca del fondo" = se ve el final/la fila de alta -> oculta el FAB (SetCtaVisible).
+window.propiaUI.dstInfinite = function (dotnetRef, scrollSel) {
+    try {
+        var scroller = document.querySelector(scrollSel);
+        if (!scroller) return;
+        if (scroller.__dstScrollH) { scroller.removeEventListener('scroll', scroller.__dstScrollH); }
+        function evalNow() {
+            var nearBottom = (scroller.scrollTop + scroller.clientHeight) >= (scroller.scrollHeight - 160);
+            if (nearBottom) { dotnetRef.invokeMethodAsync('CargarMas'); }
+            dotnetRef.invokeMethodAsync('SetCtaVisible', nearBottom);
+        }
+        var handler = function () {
+            if (scroller.__dstT) return;
+            scroller.__dstT = setTimeout(function () { scroller.__dstT = null; evalNow(); }, 80);
+        };
+        scroller.__dstScrollH = handler;
+        scroller.addEventListener('scroll', handler, { passive: true });
+        evalNow();   // estado inicial (FAB + posible primer lote)
+    } catch (e) { /* no-op */ }
+};
+// Lleva el scroll de la tabla al final (donde esta la fila "+ Agregar registro" en linea).
+window.propiaUI.dstScrollToCta = function (scrollSel) {
+    try { var s = document.querySelector(scrollSel); if (s) s.scrollTo({ top: s.scrollHeight, behavior: 'smooth' }); } catch (e) { }
+};
