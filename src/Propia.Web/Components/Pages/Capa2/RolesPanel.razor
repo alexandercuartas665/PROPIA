@@ -153,7 +153,7 @@ else
                     @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema).OrderBy(r => (int)r.Tipo).ThenBy(r => r.Nombre))
                     {
                         var rr = r;
-                        <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)">
+                        <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)" @oncontextmenu="e => AbrirCtxRol(e, rr)" @oncontextmenu:preventDefault="true">
                             <td class="rol-td-exp">
                                 <span class="rol-exp" title="Abrir la ficha">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -174,16 +174,12 @@ else
                                 else { <span class="rol-badge">Personalizado</span> }
                             </td>
                             <td class="rol-td-num">@r.CantidadUsuariosActivos</td>
+                            @* Acciones en el MENU CONTEXTUAL de la fila (spec P4/RP-02: nunca como columna).
+                               Se abre con el boton kebber o con clic derecho sobre la fila. *@
                             <td class="rol-td-acc" @onclick:stopPropagation="true">
-                                @if (r.Tipo == TipoRol.Extendido)
-                                {
-                                    <button class="rol-actbtn" @onclick="() => ToggleExtendido(rr.Id)">@(r.Activo ? "Desactivar" : "Activar")</button>
-                                }
-                                <button class="rol-actbtn" title="Duplicar el rol con su matriz" @onclick="() => DuplicarRol(rr)">Duplicar</button>
-                                @if (r.EsEliminable)
-                                {
-                                    <button class="rol-actbtn rol-actbtn-danger" title="Eliminar (solo sin usuarios activos, RP-03)" @onclick="() => EliminarRol(rr.Id)">Eliminar</button>
-                                }
+                                <button class="rol-kebab" title="Acciones del rol" @onclick="e => AbrirCtxRol(e, rr)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+                                </button>
                             </td>
                         </tr>
                     }
@@ -223,6 +219,8 @@ else
             }
         </div>
     }
+
+    <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 </div>
 }
 
@@ -248,6 +246,30 @@ else
     private string _nuevoNombre = "";
     private CategoriaRol _nuevoCategoria = CategoriaRol.Administrativo;
     private string _copiarDe = "";
+
+    // Menu contextual de la fila (spec P4/RP-02: las acciones van en el menu, NUNCA como columna).
+    // Se abre con el boton kebber de la fila o con clic derecho. Reusa el componente compartido.
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxRol(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, RolDto r)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        var items = new List<TablaCtxMenu.Item>
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => EditarRol(r.Id)),
+            new("Duplicar rol", "fi-rr-copy", OnClick: () => DuplicarRol(r)),
+        };
+        if (r.Tipo == TipoRol.Extendido)
+            items.Add(new(r.Activo ? "Desactivar" : "Activar", "fi-rr-power", OnClick: () => ToggleExtendido(r.Id)));
+        if (r.EsEliminable)
+        {
+            items.Add(new(Sep: true));
+            items.Add(new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => EliminarRol(r.Id)));
+        }
+        _ctxItems = items;
+        _ctxOpen = true;
+    }
 
     private static readonly (int Val, string Label)[] _facetasCat =
     {
