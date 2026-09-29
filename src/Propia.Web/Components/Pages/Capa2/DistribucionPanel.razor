@@ -785,7 +785,22 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></td>
                                     break;
                                 case "agrupacion":
-                                    <td class="nf-mut" title="Se define al crear anexos (+ anexo)">auto</td>
+                                    <td class="nf-cell">
+                                        <div class="nf-agrup">
+                                            <select class="nf-in" @bind="_nuAgrup" title="Individual, o Anexo de otra unidad (parqueadero / cuarto util / bodega)">
+                                                <option value="individual">Individual</option>
+                                                <option value="anexo">Anexo</option>
+                                            </select>
+                                            @if (_nuAgrup == "anexo")
+                                            {
+                                                <select class="nf-in nf-in--stack" @bind="_nuPrincipalId" title="Unidad principal a la que se vincula este anexo">
+                                                    <option value="">Principal...</option>
+                                                    @foreach (var p in _unidades.Where(x => x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase))
+                                                    { <option value="@p.Id">@p.Numero</option> }
+                                                </select>
+                                            }
+                                        </div>
+                                    </td>
                                     break;
                                 case "matricula":
                                     <td class="nf-cell"><input class="nf-in" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" placeholder="@AliasCampo("matricula", "Matricula")" @bind="_nuMatricula" @bind:event="oninput" /></td>
@@ -961,6 +976,8 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
+    private string _nuAgrup = "individual";   // alta inline: "individual" | "anexo"
+    private string? _nuPrincipalId;           // alta inline: principal elegido cuando _nuAgrup == "anexo"
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
@@ -1904,6 +1921,7 @@ else
     {
         if (_creandoUnidad) return;
         if (string.IsNullOrWhiteSpace(_nuNum)) { _inlineMsgU = "El numero de la unidad es obligatorio."; return; }
+        if (_nuAgrup == "anexo" && !Guid.TryParse(_nuPrincipalId, out _)) { _inlineMsgU = "Elige la unidad principal para el anexo."; return; }
         _creandoUnidad = true;
         try
         {
@@ -1950,12 +1968,31 @@ else
                         try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value)); valsNuevos[kv.Key] = kv.Value; } catch { }
                     }
                     if (valsNuevos.Count > 0) _camposValores[creada.Id] = valsNuevos;  // que las columnas muestren el valor sin recargar
-                    _unidades.Add(creada);
-                    _uniRecienCreados.Add(creada.Id);
-                    _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
+                    // Si el alta marca la unidad como Anexo, vincularla a su principal (RN-09).
+                    Guid padreNuevo = default;
+                    bool esAnexoNuevo = _nuAgrup == "anexo" && Guid.TryParse(_nuPrincipalId, out padreNuevo);
+                    bool anexoOk = false;
+                    if (esAnexoNuevo)
+                    {
+                        try
+                        {
+                            var rv = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{padreNuevo}/vinculos", new CrearVinculoUnidadRequest(creada.Id, false));
+                            if (rv.IsSuccessStatusCode) anexoOk = true;
+                            else _inlineMsgU = "Unidad creada, pero no se pudo vincular como anexo: " + await rv.Content.ReadAsStringAsync();
+                        }
+                        catch (Exception ex) { _inlineMsgU = "Unidad creada, pero fallo el vinculo de anexo: " + ex.Message; }
+                    }
+                    else
+                    {
+                        _unidades.Add(creada);
+                        _uniRecienCreados.Add(creada.Id);
+                    }
+                    if (!esAnexoNuevo) _inlineMsgU = $"Unidad {creada.Numero} creada.";
+                    else if (anexoOk) _inlineMsgU = $"Anexo {creada.Numero} vinculado.";
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrup = "individual"; _nuPrincipalId = null; _nuCampos.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
+                    if (esAnexoNuevo) await CargarAsync();  // refrescar el arbol para que el anexo salga bajo su principal
                 }
                 else { await CargarAsync(); }
             }
