@@ -785,21 +785,16 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></td>
                                     break;
                                 case "agrupacion":
+                                    @* Un solo select (misma altura que las demas celdas): Individual, o Anexo de una
+                                       unidad principal. Al elegir un principal, la unidad nueva se vincula como su anexo. *@
                                     <td class="nf-cell">
-                                        <div class="nf-agrup">
-                                            <select class="nf-in" @bind="_nuAgrup" title="Individual, o Anexo de otra unidad (parqueadero / cuarto util / bodega)">
-                                                <option value="individual">Individual</option>
-                                                <option value="anexo">Anexo</option>
-                                            </select>
-                                            @if (_nuAgrup == "anexo")
-                                            {
-                                                <select class="nf-in nf-in--stack" @bind="_nuPrincipalId" title="Unidad principal a la que se vincula este anexo">
-                                                    <option value="">Principal...</option>
-                                                    @foreach (var p in _unidades.Where(x => x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase))
-                                                    { <option value="@p.Id">@p.Numero</option> }
-                                                </select>
-                                            }
-                                        </div>
+                                        <select class="nf-in" @bind="_nuAgrupSel" title="Individual, o Anexo de una unidad principal (parqueadero / cuarto util / bodega)">
+                                            <option value="individual">Individual</option>
+                                            <optgroup label="Anexo de...">
+                                                @foreach (var p in _unidades.Where(x => x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase))
+                                                { <option value="@p.Id">@p.Numero</option> }
+                                            </optgroup>
+                                        </select>
                                     </td>
                                     break;
                                 case "matricula":
@@ -976,8 +971,7 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
-    private string _nuAgrup = "individual";   // alta inline: "individual" | "anexo"
-    private string? _nuPrincipalId;           // alta inline: principal elegido cuando _nuAgrup == "anexo"
+    private string _nuAgrupSel = "individual";   // alta inline: "individual" o el Guid del principal (=> anexo de ese)
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
@@ -1926,7 +1920,6 @@ else
     {
         if (_creandoUnidad) return;
         if (string.IsNullOrWhiteSpace(_nuNum)) { _inlineMsgU = "El numero de la unidad es obligatorio."; return; }
-        if (_nuAgrup == "anexo" && !Guid.TryParse(_nuPrincipalId, out _)) { _inlineMsgU = "Elige la unidad principal para el anexo."; return; }
         _creandoUnidad = true;
         try
         {
@@ -1975,7 +1968,7 @@ else
                     if (valsNuevos.Count > 0) _camposValores[creada.Id] = valsNuevos;  // que las columnas muestren el valor sin recargar
                     // Si el alta marca la unidad como Anexo, vincularla a su principal (RN-09).
                     Guid padreNuevo = default;
-                    bool esAnexoNuevo = _nuAgrup == "anexo" && Guid.TryParse(_nuPrincipalId, out padreNuevo);
+                    bool esAnexoNuevo = Guid.TryParse(_nuAgrupSel, out padreNuevo);
                     bool anexoOk = false;
                     if (esAnexoNuevo)
                     {
@@ -1994,7 +1987,7 @@ else
                     }
                     if (!esAnexoNuevo) _inlineMsgU = $"Unidad {creada.Numero} creada.";
                     else if (anexoOk) _inlineMsgU = $"Anexo {creada.Numero} vinculado.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrup = "individual"; _nuPrincipalId = null; _nuCampos.Clear();
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrupSel = "individual"; _nuCampos.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
                     if (esAnexoNuevo) await CargarAsync();  // refrescar el arbol para que el anexo salga bajo su principal
