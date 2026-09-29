@@ -173,25 +173,11 @@ else
                     {
                         <TablaOrdenarMenu Columnas="ColsOrdenablesT()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
                     }
-                    @* Agrupar: solo aplica en Tablero/Lista; en Calendario/Gantt no se muestra (agrupar no tiene
-                       sentido ahi). Comparte estado (_cardGroup) con las vistas; el menu es el mismo. *@
+                    @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel): solo aplica en Tablero/Lista;
+                       en Calendario/Gantt no se muestra. Comparte estado (_gruposT) con ambas vistas. *@
                     @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
                     {
-                        <div class="tb-menuwrap">
-                            <button class="tb-filter-btn @(!string.IsNullOrEmpty(_cardGroup) ? "on" : "")" @onclick="() => { _cardGroupMenu = !_cardGroupMenu; }" title="Agrupar">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>@(string.IsNullOrEmpty(_cardGroup) ? "Agrupar" : "Agrupar: " + GrupoLabel(_cardGroup))
-                            </button>
-                            @if (_cardGroupMenu)
-                            {
-                                <div class="tb-menu">
-                                    @foreach (var o in OpcionesGrupo())
-                                    {
-                                        var k = o.Key;
-                                        <button class="tb-menu-it @(_cardGroup == k ? "on" : "")" @onclick="() => SetCardGroup(k)">@o.Label</button>
-                                    }
-                                </div>
-                            }
-                        </div>
+                        <TablaAgruparMenu Columnas="ColsAgrupablesT()" Grupos="_gruposT" GruposChanged="OnGruposTChanged" />
                     }
                     @* Campos (gestor unificado, adopcion Selector opcion A): antes de los modos para la secuencia
                        Agrupar.Campos.Tarjetas.Tabla. Exige el permiso Aprobar (configurar, no basta con trabajar). *@
@@ -332,7 +318,7 @@ else
                    Ordenar.Agrupar.Campos.Tarjetas.Tabla); "Ordenar" usa el componente compartido. *@
             </div>
 
-            @if (string.IsNullOrEmpty(_cardGroup) || _cardGroup == "none")
+            @if (_gruposT.Count == 0 || _gruposT[0] == "estado")
             {
             <div class="tb-kanban" style="grid-template-columns:repeat(@_board.Estados.Count, minmax(260px, 1fr))">
                 @foreach (var est in _board.Estados)
@@ -539,10 +525,11 @@ else
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)@ChevCol(cid, campo.Label, true)@ColorDot(cid)</div> }
                     <div class="tb-lc tb-lc-acc"><button type="button" class="tb-hdr-addcampo" @onclick="AbrirEditorCampo" title="Agregar campo (columna)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Campo</button></div>
                 </div>
-                @if (_cardGroup == "none")
+                @if (_gruposT.Count == 0)
                 {
-                    @* Sin agrupar: lista plana PAGINADA (footer canonico), sin encabezados de grupo. La
-                       fila de alta compacta al final permite crear tareas tambien en esta vista. *@
+                    @* Sin agrupar (DEFAULT, mismo diseno que los demas modulos): lista plana PAGINADA
+                       (footer canonico), sin encabezados de grupo. La fila de alta compacta al final
+                       permite crear tareas tambien en esta vista. *@
                     var raicesT = AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()).ToList();
                     var totalPagT = raicesT.Count == 0 ? 1 : (int)Math.Ceiling(raicesT.Count / (double)_porPagina);
                     var pagT = Math.Clamp(_pagina, 1, totalPagT);
@@ -552,137 +539,19 @@ else
                     }
                     @NuevaFilaFlat
                 }
-                else if (string.IsNullOrEmpty(_cardGroup))
-                {
-                @foreach (var est in _board.Estados)
-                {
-                    var grupo = RaicesPorEstado(est.Id).Where(PasaFiltros).ToList();
-                    grupo = AplicarSort(grupo).ToList();
-                    @* Con filtros activos se ocultan las etapas que quedan sin tareas (no se muestran encabezados vacios). *@
-                    if (HayFiltros && grupo.Count == 0) { continue; }
-                    var estado = est;
-                    @EncabezadoGrupoLista(estado.Nombre, estado.Color ?? EstadoColorDefault, grupo.Count, estado.Id, grupo)
-                    @foreach (var t in grupo)
-                    {
-                        @RenderArbol(t, 0)
-                    }
-                    @* Fila "nueva tarea" inline estilo Excel: Tab salta entre campos, Enter crea.
-                       @@key=nf usa la identidad del draft (se reemplaza por uno nuevo al crear/Esc)
-                       para limpiar la fila; los inputs de texto usan @@oninput SIN value= para no
-                       perder pulsaciones (value= se reafirma en cada re-render en Blazor Server). *@
-                    @* Sin permiso de crear no se muestra la fila de alta: escribir en ella solo
-                       llevaria a un 403 al pulsar Enter. *@
-                    if (PuedeCrear)
-                    {
-                    var nf = NuevaFilaDe(estado.Id);
-                    <div class="tb-newrow" @key="nf">
-                        @* Expansor de la fila de alta: crea la tarea y abre su modal (se ve al escribir). *@
-                        <div class="tb-row-exp">
-                            <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                            </button>
-                        </div>
-                        <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
-                            <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estado.Id" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
-                        </div>
-                        @if (_colDesc)
-                        {
-                            <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripción" @oninput="@(e => nf.Descripcion = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
-                        }
-                        @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
-                        <div class="tb-row-cell-est">
-                            <select class="tb-est-sel" style="background:var(--propia-brand)" @bind="nf.EstadoId">
-                                @if (_board is not null) { @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@es.Nombre</option> } }
-                            </select>
-                        </div>
-                        @if (_colResp)
-                        {
-                            <div class="tb-row-resp">
-                                <select class="tb-nf-inp" value="@(nf.Asignados.Count > 0 ? nf.Asignados[0].ToString() : "")" @onchange="@(e => SetNuevaFilaAsignado(nf, e))">
-                                    <option value="">Sin asignar</option>
-                                    @foreach (var p in _personas ?? new List<PersonaMini>()) { <option value="@p.Id">@p.Nombre</option> }
-                                </select>
-                            </div>
-                        }
-                        <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
-                        @if (_colEtiq) { <div class="tb-row-etiq"></div> }
-                        @if (_colPrio)
-                        {
-                            <div class="tb-row-prio">
-                                <select class="tb-prio-sel" style="color:@PrioFg(nf.Prioridad);background:@PrioBg(nf.Prioridad)" @bind="nf.Prioridad" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))">
-                                    @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr</option> }
-                                </select>
-                            </div>
-                        }
-                        @if (_colDue)
-                        {
-                            <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="nf.FechaVencimiento" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
-                        }
-                        @if (_colValor)
-                        {
-                            <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" /></div>
-                        }
-                        @if (_colOrigen)
-                        {
-                            <div class="tb-row-orig">
-                                <select class="tb-orig-tsel" @onchange="@(e => { nf.OrigenTipo = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString(); nf.OrigenReferencia = null; })">
-                                    <option value="" selected="@(nf.OrigenTipo is null)">Sin relación</option>
-                                    <option value="inmueble" selected="@(nf.OrigenTipo == "inmueble")">Inmueble</option>
-                                    <option value="zona" selected="@(nf.OrigenTipo == "zona")">Zona común</option>
-                                    <option value="equipo" selected="@(nf.OrigenTipo == "equipo")">Equipo/activo</option>
-                                </select>
-                                @if (!string.IsNullOrEmpty(nf.OrigenTipo))
-                                {
-                                    <SelectorOrigenReferencia InputClass="tb-orig-rsel"
-                                                              Placeholder="@OrigenPlaceholder(nf.OrigenTipo)"
-                                                              Opciones="@OrigenBusquedaDe(nf.OrigenTipo)"
-                                                              Value="@nf.OrigenReferencia"
-                                                              ValueChanged="@(v => nf.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
-                                }
-                            </div>
-                        }
-                        @foreach (var c in CamposVisibles)
-                        {
-                            var campo = c;
-                            <div class="tb-row-campo tb-cc-@campo.Id @(CampoEsNumerico(campo) ? "tb-num" : "")">
-                                @if (campo.Tipo == TipoCampoTablero.Numero || campo.Tipo == TipoCampoTablero.Moneda)
-                                {
-                                    <input type="number" class="tb-nf-inp" placeholder="@campo.Label" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
-                                }
-                                else if (campo.Tipo == TipoCampoTablero.Fecha)
-                                {
-                                    <input type="date" class="tb-nf-inp" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
-                                }
-                                else
-                                {
-                                    <input class="tb-nf-inp" placeholder="@campo.Label" value="@(nf.Campos.GetValueOrDefault(campo.Id))" @oninput="@(e => nf.Campos[campo.Id] = e.Value?.ToString())" @onkeydown="@(e => NuevaFilaKeydown(e, estado.Id))" />
-                                }
-                            </div>
-                        }
-                        @* Crear en su lugar (Enter tambien crea); crear-y-abrir vive en el expansor. *@
-                        <div class="tb-row-acc tb-nf-acts">
-                            <button class="tb-nf-crear" title="Crear tarea (Enter)" @onclick="() => CrearDesdeNuevaFila(estado.Id)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">+ Agregar</button>
-                        </div>
-                    </div>
-                    }
-                }
-                }
                 else
                 {
-                    @* Agrupada por la dimension elegida (prioridad, responsable, torre, unidad, relacionado). *@
-                    @foreach (var gr in AgruparLista())
-                    {
-                        @EncabezadoGrupoLista(gr.Key, null, gr.Items.Count, null, gr.Items)
-                        @foreach (var t in gr.Items) { @RenderArbol(t, 0) }
-                    }
-                    @* Fila de alta SIEMPRE disponible tambien con agrupaciones personalizadas
-                       (la etapa se elige en la propia fila, igual que sin agrupar). *@
+                    @* Agrupada N-niveles (Etapa, Prioridad, Responsable, Torre, Unidad, ... apilables).
+                       Render recursivo con encabezados alineados a columnas (subtotales por grupo) y las
+                       filas hoja como arbol (tarea + subtareas). SIN paginacion (se ven los grupos
+                       completos). La fila de alta unica al pie crea en la etapa que se elija en la fila. *@
+                    @RenderGruposLista(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList(), 0)
                     @NuevaFilaFlat
                 }
                 @* La fila de TOTALES generales al pie se retiro a peticion del usuario;
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
             </div>
-            @if (_cardGroup == "none" && _tareas.Any(x => x.PadreId == null && PasaFiltros(x)))
+            @if (_gruposT.Count == 0 && _tareas.Any(x => x.PadreId == null && PasaFiltros(x)))
             {
                 <TablaPager Total="_tareas.Count(x => x.PadreId == null && PasaFiltros(x))" Pagina="_pagina" PorPagina="_porPagina" Entidad="tareas"
                             PaginaChanged="p => _pagina = p"
@@ -2259,12 +2128,31 @@ else
         return ordered ?? (IEnumerable<TareaListaDto>)g;
     }
 
-    // ---- Vista Tablero (tarjetas): ordenar + agrupar por dimension (incluye ubicacion) ----
-    private bool _cardGroupMenu; private string _cardGroup = "";
+    // ---- Agrupar (multi-nivel apilable, menu compartido TablaAgruparMenu, igual que los demas modulos).
+    // _gruposT: claves de las dimensiones apiladas (1er nivel, 2do nivel, ...). Vacio = SIN agrupar
+    // (default, lista plana paginada). En la vista Tablero (kanban) solo aplica el 1er nivel (a); el
+    // apilado multi-nivel solo afecta la vista Tabla. ----
+    private List<string> _gruposT = new();
     private int _pagina = 1;
     private int _porPagina = 25;
-    private async Task SetCardGroup(string k) { _cardGroup = k; _cardGroupMenu = false; _pagina = 1; await PersistGroupAsync(); }
-    private async Task ClearCardGroup() { _cardGroup = ""; _cardGroupMenu = false; await PersistGroupAsync(); }
+    private void OnGruposTChanged() { _pagina = 1; _ = PersistGroupAsync(); StateHasChanged(); }
+    // Columnas ofrecidas en el menu Agrupar (Etapa + dimensiones fijas + campos dinamicos del tablero).
+    private List<TablaAgruparMenu.Col> ColsAgrupablesT()
+    {
+        var cols = new List<TablaAgruparMenu.Col>
+        {
+            new("estado", "Etapa"),
+            new("prioridad", "Prioridad"),
+            new("responsable", "Responsable"),
+            new("torre", "Torre"),
+            new("unidad", "Unidad privada"),
+            new("relacionado", "Relacionado con"),
+        };
+        if (EsBoardCompartido) cols.Add(new("copropiedad", "Copropiedad"));
+        foreach (var c in CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && c.Tipo != TipoCampoTablero.Total))
+            cols.Add(new("cd:" + c.Id, c.Label));
+        return cols;
+    }
 
     // ===== Menu de columna (Oleada B): la flecha de cada header abre TablaColMenu con las acciones
     // estilo Airtable. Aqui se cablean las reales disponibles hoy; las que dependen de backend nuevo
@@ -2332,7 +2220,9 @@ else
                         ? (col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key)
                         : GrupoKeyFija(col.Key);
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
-                    await SetCardGroup(g);
+                    // "Agrupar por esta columna" (menu de columna) reemplaza la agrupacion por esta sola dimension.
+                    _gruposT = new() { g };
+                    OnGruposTChanged();
                 }
                 break;
             case TablaColMenu.Accion.Ocultar:
@@ -2387,10 +2277,10 @@ else
         "prioridad" => "prio", "vence" => "due", "valor" => "valor", "origen" => "orig",
         _ => null
     };
-    // Traduce la clave de una columna fija a la dimension de agrupacion (SetCardGroup). null = no soportado.
+    // Traduce la clave de una columna fija a la dimension de agrupacion (clave de _gruposT). null = no soportado.
     private static string? GrupoKeyFija(string sortKey) => sortKey switch
     {
-        "est" => "", "prioridad" => "prioridad", "asignado" => "responsable", "origen" => "relacionado",
+        "est" => "estado", "prioridad" => "prioridad", "asignado" => "responsable", "origen" => "relacionado",
         _ => null
     };
     private void ColToast(string m) { _colToast = m; }
@@ -2408,21 +2298,6 @@ else
             yield return (c.Id.ToString(), c.Label);
     }
     private string OrdenLabel(string k) => OpcionesOrden().FirstOrDefault(o => o.Key == k).Label ?? k;
-    private IEnumerable<(string Key, string Label)> OpcionesGrupo()
-    {
-        yield return ("", "Etapa");
-        yield return ("none", "Sin agrupar");
-        yield return ("prioridad", "Prioridad");
-        yield return ("responsable", "Responsable");
-        yield return ("torre", "Torre");
-        yield return ("unidad", "Unidad privada");
-        yield return ("relacionado", "Relacionado con");
-        if (EsBoardCompartido) yield return ("copropiedad", "Copropiedad");
-        // Agrupar por campo propio (dinamico) del tablero: clave "cd:{id}".
-        foreach (var c in CamposDelTablero.Where(c => c.Tipo != TipoCampoTablero.Separador && c.Tipo != TipoCampoTablero.Total))
-            yield return ("cd:" + c.Id, c.Label);
-    }
-    private string GrupoLabel(string k) => OpcionesGrupo().FirstOrDefault(o => o.Key == k).Label ?? k;
 
     // ===== Totales por grupo (estilo Airtable) =====
     // Funcion de agregacion por columna numerica. Clave: "valor" (columna fija) o el Id (string) del
@@ -2481,11 +2356,12 @@ else
 
     // Encabezado de grupo ALINEADO A COLUMNAS: nombre + conteo + boton Agregar en la celda Titulo,
     // y el total de cada columna numerica (Valor + campos Numero/Moneda) bajo SU columna.
-    private RenderFragment EncabezadoGrupoLista(string nombre, string? colorDot, int count, Guid? estadoId, IReadOnlyList<TareaListaDto> items)
+    private RenderFragment EncabezadoGrupoLista(string nombre, string? colorDot, int count, Guid? estadoId, IReadOnlyList<TareaListaDto> items, int nivel = 0)
     {
         return
-    @<div class="tb-list-group">
+    @<div class="tb-list-group tb-grp-lvl@(nivel > 2 ? 2 : nivel)">
         <div class="tb-lc tb-lc-tit tb-grp-lead @(_pinTitulo ? "tb-pin tb-pin-g" : "")">
+            @if (nivel > 0) { <span class="tb-grp-indent" style="width:@(nivel * 16)px"></span> }
             @if (colorDot is not null) { <span class="tb-col-dot" style="background:@colorDot"></span> }
             <span class="tb-group-nom">@nombre</span>
             <span class="tb-col-count">@count</span>
@@ -2681,13 +2557,15 @@ else
         var pre = idx > 0 ? s.Substring(0, idx).Trim() : s;
         return string.IsNullOrWhiteSpace(pre) ? "Sin torre" : pre;
     }
-    // Funcion de clave de agrupacion segun _cardGroup (compartida por Tablero y Lista).
-    private Func<TareaListaDto, string> ClaveGrupo()
+    // Funcion de clave de agrupacion para UNA dimension (usada por el kanban y por la particion de la
+    // vista Lista). "estado" (Etapa) se maneja aparte en ParticionarLista para respetar el orden del
+    // flujo y el color de la etapa; aqui su fallback es el nombre de la etapa.
+    private Func<TareaListaDto, string> ClaveGrupoDe(string clave)
     {
         // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada tarea.
-        if (_cardGroup.StartsWith("cd:", StringComparison.Ordinal) && CampoDinamico(_cardGroup[3..]) is { } gdef)
+        if (clave.StartsWith("cd:", StringComparison.Ordinal) && CampoDinamico(clave[3..]) is { } gdef)
             return t => { var v = CampoValor(t, gdef.Id); return string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!; };
-        return _cardGroup switch
+        return clave switch
         {
             "prioridad" => t => t.Prioridad.ToString(),
             "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
@@ -2698,18 +2576,38 @@ else
             _ => t => t.EstadoNombre
         };
     }
-    // Tablero (tarjetas): agrupa las raices aplicando los mismos filtros que la vista Lista.
+    // Tablero (tarjetas): el kanban solo agrupa por 1 nivel (a). Sin agrupacion o con "estado" como
+    // 1er nivel, las columnas son las etapas (rama de arriba); esta ruta cubre el resto de dimensiones.
     private List<(string Key, List<TareaListaDto> Items)> AgruparCards()
-        => _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupo())
+    {
+        var clave = _gruposT.Count > 0 ? _gruposT[0] : "estado";
+        return _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupoDe(clave))
             .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
             .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
-    // Lista: agrupa por la dimension elegida aplicando filtros y orden (para la vista tabla).
-    private List<(string Key, List<TareaListaDto> Items)> AgruparLista()
-        => _tareas.Where(t => t.PadreId == null).Where(PasaFiltros).GroupBy(ClaveGrupo())
-            .Select(g => (Key: g.Key, Items: AplicarSort(g.ToList()).ToList()))
-            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    }
+    // Vista Lista: particiona una lista por una dimension, EN EL ORDEN correcto de la dimension.
+    // Devuelve (Titulo, Color, EstadoId, Items). EstadoId != null solo cuando la dimension es "estado"
+    // (permite el punto de color y el boton "Agregar" de la etapa). Solo grupos con filas (igual que
+    // los demas modulos: no se muestran etapas vacias al agrupar).
+    private IEnumerable<(string Titulo, string? Color, Guid? EstadoId, List<TareaListaDto> Items)> ParticionarLista(List<TareaListaDto> items, string clave)
+    {
+        if (clave == "estado")
+        {
+            foreach (var est in _board!.Estados)
+            {
+                var g = items.Where(t => t.EstadoId == est.Id).ToList();
+                if (g.Count == 0) continue;
+                yield return (est.Nombre, est.Color ?? EstadoColorDefault, est.Id, g);
+            }
+        }
+        else
+        {
+            var key = ClaveGrupoDe(clave);
+            foreach (var g in items.GroupBy(key).OrderBy(x => x.Key, StringComparer.CurrentCultureIgnoreCase))
+                yield return (g.Key, null, (Guid?)null, g.ToList());
+        }
+    }
 
     // ---- Tiempo en el estado actual (indicador de tarjeta + tooltip en lista/calendario/gantt) ----
     private static string TiempoRelativo(DateTimeOffset? desde)
@@ -2911,7 +2809,15 @@ else
     private async Task PersistGroupAsync()
     {
         if (_board is null) return;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", GroupKey(_board.Tablero.Id), _cardGroup ?? ""); } catch { }
+        try { await Js.InvokeVoidAsync("localStorage.setItem", GroupKey(_board.Tablero.Id), string.Join(",", _gruposT)); } catch { }
+    }
+    // Compat: el valor viejo era una sola clave ("" = Etapa, "none" = plano). Ahora se guardan varios
+    // niveles separados por coma; "" y "none" migran a "sin agrupar" (default nuevo pedido por Alex).
+    private static List<string> ParseGrupos(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw == "none") return new();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                  .Where(k => k != "none").ToList();
     }
     private async Task PersistAggAsync()
     {
@@ -2920,8 +2826,8 @@ else
     }
     private async Task RestaurarAggGroupAsync()
     {
-        if (_board is null) { _cardGroup = ""; _agg = new(); return; }
-        try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", GroupKey(_board.Tablero.Id)); _cardGroup = g ?? ""; } catch { _cardGroup = ""; }
+        if (_board is null) { _gruposT = new(); _agg = new(); return; }
+        try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", GroupKey(_board.Tablero.Id)); _gruposT = ParseGrupos(g); } catch { _gruposT = new(); }
         try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", AggKey(_board.Tablero.Id)); _agg = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _agg = new(); }
         try { var raw = await Js.InvokeAsync<string?>("localStorage.getItem", ColColorKey(_board.Tablero.Id)); _colColor = string.IsNullOrEmpty(raw) ? new() : (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw) ?? new()); } catch { _colColor = new(); }
         try
@@ -3581,7 +3487,6 @@ else
     private void ToggleFiltros()
     {
         _filtrosMenu = !_filtrosMenu;
-        _cardGroupMenu = false;
         if (_filtrosMenu && _reglas.Count == 0) AgregarRegla();
     }
     private void AgregarRegla() { _reglas.Add(new FiltroRegla { Campo = "estado", Op = "es", Valor = "" }); }
@@ -3941,6 +3846,30 @@ else
         DayOfWeek.Thursday => "Ju", DayOfWeek.Friday => "Vi", DayOfWeek.Saturday => "Sa", _ => "Do"
     };
     private static string FechaCortaSimple(DateOnly d) => d.Day + " " + d.ToString("MMM yyyy", Es);
+
+    @* Render recursivo de la agrupacion N-niveles de la vista Lista: en cada nivel pinta el encabezado
+       alineado a columnas (con subtotales por grupo, indentado por profundidad) y, en el ultimo nivel,
+       las filas hoja como arbol de tarea + subtareas (RenderArbol). *@
+    private RenderFragment RenderGruposLista(List<TareaListaDto> items, int nivel) => __builder =>
+    {
+        var clave = _gruposT[nivel];
+        var esUltimo = nivel + 1 >= _gruposT.Count;
+        foreach (var part in ParticionarLista(items, clave))
+        {
+            @EncabezadoGrupoLista(part.Titulo, part.Color, part.Items.Count, esUltimo ? part.EstadoId : null, part.Items, nivel)
+            if (esUltimo)
+            {
+                foreach (var t in AplicarSort(part.Items))
+                {
+                    @RenderArbol(t, 0)
+                }
+            }
+            else
+            {
+                @RenderGruposLista(part.Items, nivel + 1)
+            }
+        }
+    };
 
     @* Render recursivo: la fila + sus tareas hijas (encadenadas) cuando esta expandida. Hasta 3 niveles, como el prototipo. *@
     private RenderFragment RenderArbol(TareaListaDto t, int depth) => __builder =>
