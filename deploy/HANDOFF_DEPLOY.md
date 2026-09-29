@@ -1,15 +1,61 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> Generado 2026-09-10, actualizado **2026-09-28 (split Tareas + ortografia A-F + editor de campo + switcher)**.
-> Version a desplegar: **0.0.98** (csproj bumpeado). HEAD `main` incluye el editor focalizado de campo de
-> sistema y el nuevo CopropiedadSwitcher (integrado por FF de `equipo/atlas-copropiedad-switcher`).
+> Generado 2026-09-10, actualizado **2026-09-28 (TANDA 2: carga masiva single-tenant + ficha unidad + AGRUPAR compartido + hubs)**.
+> Version a desplegar: **0.0.99** (csproj bumpeado). HEAD `main` (`0a9e147`) incluye ademas de la tanda 0.0.98:
+> carga masiva sin columna COPROPIEDAD (single-tenant), desplegable de UNIDAD PRIVADA en Residentes, la ficha
+> de unidad reestilizada (editor `.cpe-*`), el componente compartido de agrupacion `TablaAgruparMenu`, y la
+> tarjeta de carga masiva movida arriba de las pestanas en los hubs.
 > Prod (ultimo dato conocido, deploy 2026-09-24): **0.0.95** (`025676b`). Este deploy sube TODO lo acumulado
-> desde ahi (la tanda 0.0.96 de Usuarios + esta tanda 0.0.98). Lo nuevo de esta tanda esta en la seccion
-> **ESTADO 2026-09-28**.
+> desde ahi (0.0.96 Usuarios + 0.0.98 + esta tanda 0.0.99). Lo nuevo de ESTA tanda esta en la seccion
+> **ESTADO 2026-09-28 TANDA 2**; la anterior en **ESTADO 2026-09-28 (SPLIT TAREAS)**.
 > Repo: https://github.com/alexandercuartas665/PROPIA  ·  rama `main` (HEAD al desplegar).
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-09-28 TANDA 2 (carga masiva single-tenant + ficha + AGRUPAR - LEER PRIMERO)
+
+Tanda posterior a 0.0.98. Todo esta en `main` (HEAD `0a9e147`). **Es 100% migration-free: NO agrega ni una
+migracion vs 0.0.98** (las 3 migraciones aditivas siguen siendo las de la seccion "ESTADO 2026-09-28 (SPLIT
+TAREAS)"; si prod ya recibio 0.0.98 no hay nada que aplicar). Cambios (6 commits, `191393c..0a9e147`):
+
+1. **Carga masiva SINGLE-TENANT** (`7e59b65`): la plantilla Excel ya **NO emite la columna COPROPIEDAD** en
+   ninguna de las 7 hojas. Cada archivo carga en **una sola copropiedad: la activa**. El importador
+   (`UnidadesCargaImportService`) enruta las filas sin COPROPIEDAD a la copropiedad activa con **UPSERT**
+   (grupo interno "SoloVacias"); la logica de grupos multi-copropiedad no se toco. La fila de ejemplo se
+   marca con el sentinel `EJEMPLO (borrar fila)` en una celda de texto y el importador la ignora en cualquier
+   hoja. **COMPAT: los archivos VIEJOS que aun traigan COPROPIEDAD (incl. "Todas las copropiedades") se
+   siguen procesando** sin cambios. Migration-free.
+2. **Residentes: desplegable de UNIDAD PRIVADA** (`7e59b65`): en las hojas PERSONAS/VEHICULOS/MASCOTAS la
+   columna UNIDAD PRIVADA trae un desplegable (`LISTA_UNIDADES`) con los codigos TORRE-NUMERO de las unidades
+   ya cargadas. En onboarding (sin unidades) queda como texto libre. Los campos dinamicos siguen saliendo
+   como columnas `[Label]` por cada campo VISIBLE de la copropiedad (verificado en runtime). Migration-free.
+3. **Ficha de unidad reestilizada** (`6e5b411`, merge de `equipo/atlas-ficha-unidad`): `GestionarUnidadesModal`
+   pasa a editor `.cpe-*` de 4 pestanas. **Cache-busting: servir `unidades-modal.css?v=4`** (ya bumpeado en
+   `Components/App.razor`). Migration-free.
+4. **Descarga de plantilla solo en el hub** (`03e3a4c`): se quito el boton "Descargar plantilla" de la vista
+   Unidades standalone (`/distribucion`); la descarga vive UNICAMENTE en los hubs (`HubCargaMasiva`). Se
+   conserva "Cargar plantilla" en standalone. Migration-free.
+5. **AGRUPAR centralizado** (`a6790d7`, merge de `equipo/atlas-orden-agrupar`): nuevo componente compartido
+   **`Components/Shared/TablaAgruparMenu.razor`** (gemelo de `TablaOrdenarMenu`, agrupacion N-niveles, solo
+   tokens `--propia-*`), cableado en **Directorio** como modulo de referencia. Sin CSS nuevo (estilos inline
+   en el componente). Migration-free. (El rollout al resto de modulos, incluido Unidades, sigue en curso.)
+6. **Carga masiva ARRIBA de las pestanas** (`0a9e147`): la tarjeta `HubCargaMasiva` se movio de debajo de
+   `.cfg-tabs` a encima (entre titulo y pestanas) en los dos hubs (`ConfiguracionCopropiedad` scope config y
+   `ResidentesHub` scope residentes). Solo reorden de markup. Migration-free.
+
+**Verificacion post-deploy TANDA 2:**
+- [ ] **Carga masiva:** descargar la plantilla del hub -> **NINGUNA hoja pide COPROPIEDAD**; en Residentes la
+      columna UNIDAD PRIVADA trae desplegable con las unidades; los campos dinamicos visibles salen como `[Label]`.
+      Importar OK (cae en la copropiedad activa). Reimportar un archivo VIEJO con COPROPIEDAD -> tambien OK.
+- [ ] **Hubs:** la tarjeta "Carga masiva por plantilla" (Descargar/Cargar) aparece ARRIBA de las pestanas en
+      `/configuracion-copropiedad` y `/residentes-hub`.
+- [ ] **Unidades standalone** (`/distribucion`): solo boton "Cargar plantilla" (sin "Descargar").
+- [ ] **Ficha de unidad:** abrir una unidad -> editor de 4 pestanas `.cpe-*` con estilos correctos (verificar
+      que se sirve `unidades-modal.css?v=4`, sin CSS viejo cacheado).
+- [ ] **Agrupar (Directorio):** el boton "Agrupar" abre el menu compartido (`AGRUPAR POR` / `Agregar agrupacion`).
 
 ---
 

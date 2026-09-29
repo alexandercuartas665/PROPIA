@@ -1,8 +1,14 @@
-# Lista de chequeo - Campos y modulos de unidad (0.0.98, refrescado 2026-09-28)
+# Lista de chequeo - Campos y modulos de unidad (0.0.99, refrescado 2026-09-28 TANDA 2)
 
-> Que revisar en prod despues del deploy 0.0.98, especifico del trabajo de CAMPOS y de los modulos
+> Que revisar en prod despues del deploy 0.0.99, especifico del trabajo de CAMPOS y de los modulos
 > Unidades / Residentes / Vehiculos / Mascotas. El detalle de migraciones, variables y menu esta en
 > `HANDOFF_DEPLOY.md`. Marca cada punto en prod (copropiedad real, con un usuario Administrador).
+>
+> **Nuevo 0.0.99 (TANDA 2, migration-free):** la plantilla de carga masiva ya NO pide COPROPIEDAD (carga en
+> la copropiedad activa; los archivos viejos con COPROPIEDAD siguen funcionando). En Residentes la columna
+> UNIDAD PRIVADA de la plantilla trae un desplegable con las unidades ya cargadas, y los campos dinamicos
+> VISIBLES de personas/vehiculos/mascotas salen como columnas `[Label]` (verificado en runtime). La descarga
+> de plantilla vive solo en los hubs (arriba de las pestanas); Unidades standalone conserva solo "Cargar".
 >
 > **Nuevo 2026-09-15 (Fase 2 REFERENCIA, solo en Unidades, sin migracion):** el gestor de Campos de
 > Unidades ahora ofrece 3 tipos de campo mas (Formula, Usuario, Directorio). Ver seccion 1b. Aun NO estan
