@@ -15,6 +15,24 @@
 
 ---
 
+## ESTADO 2026-09-29 MODULO 2.5 v2.0 OLA A (matriz de roles por copropiedad + bandeja - LEER PRIMERO)
+
+Rama `equipo/atlas-usuarios-roles-25`. **Trae UNA migracion nueva ADITIVA que SI hay que aplicar en
+prod**: `20260929212521_Modulo25V2_RolCategoria_MatrizPorTenant` (owner `propia`, `dotnet ef database update`).
+- Agrega `roles_copropiedad.categoria` (int, default 1 = Administrativo).
+- Crea tabla `rol_permisos_tenant` (override de la matriz de permisos POR COPROPIEDAD) con **RLS FORCE +
+  policy `tenant_isolation` (USING+WITH CHECK) + GRANT a propia_app**. Fix critico: antes editar la
+  matriz de un rol base (global) mutaba la matriz de TODAS las copropiedades; ahora cada una guarda su
+  override y lee la matriz efectiva (default global + override del tenant). Cubierta por `RlsCoverageTests`.
+- Puramente aditiva y reversible (Down). **NO re-siembra roles**: el re-seed de los 7 roles base + el
+  remapeo de usuarios (Propietario/Residente->Portal Residente, Operario->Personal Operativo, etc.) es
+  el **D2**, que va en una migracion de DATOS SEPARADA posterior (con OK de Alex antes de aplicar).
+- UI: bandeja de Roles nueva en `/roles` (`RolesPanel.razor` + `css/modules/roles.css?v=1`, ya linkeado
+  en `App.razor`); el modal viejo de roles en Usuarios se elimino (el boton "Roles y permisos" navega a
+  `/roles`). Sin config nueva.
+
+---
+
 ## ESTADO 2026-09-28 TANDA 2 (carga masiva single-tenant + ficha + AGRUPAR - LEER PRIMERO)
 
 Tanda posterior a 0.0.98. Todo esta en `main` (HEAD `0a9e147`). **Es 100% migration-free: NO agrega ni una
