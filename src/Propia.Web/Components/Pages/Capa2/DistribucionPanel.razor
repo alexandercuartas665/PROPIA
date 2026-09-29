@@ -841,7 +841,7 @@ else
                 </table>
                 @* Centinela de scroll infinito (div, NO <tr>): dispara CargarMas y controla el FAB. *@
                 <div id="dst-inf-bottom" class="tbl-inf-sentinel">
-                    @if (_gruposU.Count == 0 && _shown < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
+                    @if (_gruposU.Count == 0 && Mostradas < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
                 </div>
                 </div>
                 <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregarAsync" title="Agregar registro">
@@ -853,7 +853,7 @@ else
                    completos (sin paginar), asi que el footer no aplica (homogeneo con el resto + skill §14). *@
                 @if (_gruposU.Count == 0)
                 {
-                    <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Math.Min(_shown, Filtradas.Count)</div>
+                    <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Mostradas</div>
                 }
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
@@ -1335,6 +1335,11 @@ else
     // Scroll infinito (reemplaza la paginacion en la vista Tabla): lote inicial y se amplia al hacer scroll.
     private const int InfBatch = 40;
     private int _shown = InfBatch;
+    // Hasta este tamano se renderiza TODA la lista de una (scroll nativo, sin lazy): evita el "salta/se regresa"
+    // de cargar de a lotes. El lazy (InfBatch) solo aplica a tenants muy grandes (> AutoAllMax unidades).
+    private const int AutoAllMax = 500;
+    // Filas planas a pintar en la vista Tabla: todas si la lista es pequena; si no, el lote acumulado.
+    private int Mostradas => Filtradas.Count <= AutoAllMax ? Filtradas.Count : Math.Min(_shown, Filtradas.Count);
     private bool _ctaVisible = true;      // FAB oculto cuando la fila "+ Agregar registro" en linea esta a la vista
     private string? _wiredSig;            // firma para (re)instalar los observers solo cuando cambian lote/alta/total
 
@@ -1508,7 +1513,7 @@ else
 
     // Unidades planas mostradas (para seleccionar todo): agrupado = todas; si no, el lote/pagina visible.
     private IEnumerable<UnidadDto> UnidadesMostradas()
-        => _gruposU.Count > 0 ? Filtradas : (_vista == "tabla" ? Filtradas.Take(_shown) : UnidadesPagina);
+        => _gruposU.Count > 0 ? Filtradas : (_vista == "tabla" ? Filtradas.Take(Mostradas) : UnidadesPagina);
 
     // Entrada a pintar (vista Lista + sel-all): cabecera de grupo (nivel/conteo) o unidad. La vista Tabla
     // usa el render compartido para los grupos; esta secuencia aplana el mismo arbol para Lista.
@@ -1517,7 +1522,7 @@ else
     {
         if (_gruposU.Count == 0)
         {
-            var fuente = _vista == "tabla" ? Filtradas.Take(_shown) : UnidadesPagina;
+            var fuente = _vista == "tabla" ? Filtradas.Take(Mostradas) : UnidadesPagina;
             foreach (var u in fuente)
             {
                 yield return new FilaUni(false, null, 0, 0, u);
