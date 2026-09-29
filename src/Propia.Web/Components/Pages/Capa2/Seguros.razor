@@ -122,27 +122,8 @@
             <div class="mod-filtros-spacer"></div>
             @* Ordenar (multi-criterio apilable): fuente unica compartida, JUSTO antes de Agrupar. *@
             <TablaOrdenarMenu Columnas="ColsOrdenablesS()" Sorts="_sortsS" SortsChanged="OnSortsSChanged" />
-            <div class="seg-menu-wrap">
-                <button type="button" class="seg-fsel @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar pólizas">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")
-                </button>
-                @if (_showAgruparMenu)
-                {
-                    <div class="seg-menu-bd" @onclick="() => _showAgruparMenu = false"></div>
-                    <div class="seg-menu">
-                        @foreach (var g in new[] { ("", "Sin agrupar"), ("aseguradora", "Aseguradora"), ("estado", "Vencimiento") })
-                        {
-                            var gk = g.Item1;
-                            <button class="seg-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgruparVal(gk)">@g.Item2</button>
-                        }
-                        @foreach (var cpo in CamposActivos)
-                        {
-                            var gk = ClaveCustom(cpo);
-                            <button class="seg-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgruparVal(gk))">@cpo.Label</button>
-                        }
-                    </div>
-                }
-            </div>
+            @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesS()" Grupos="_gruposS" GruposChanged="OnGruposSChanged" />
             <div class="seg-menu-wrap">
                 <button type="button" class="seg-fsel @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos: orden, visibilidad y campos personalizados">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
@@ -205,7 +186,10 @@
                     {
                         if (item.EsGrupo)
                         {
-                            <div class="seg-group"><span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span></div>
+                            <div class="seg-group" style="padding-left:@(14 + item.Nivel * 16)px;">
+                                @if (item.Color is not null) { <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:@item.Color;margin-right:6px;flex:0 0 auto;"></span> }
+                                <span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span>
+                            </div>
                             continue;
                         }
                         var p = item.Poliza!;
@@ -254,7 +238,7 @@
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast @(_inlineMsgEsError ? "seg-toast--error" : "")" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
                 @* Footer canonico SIEMPRE salvo con agrupacion activa (canon regla 14): con 0 filas "Mostrando 0 de 0". *@
-                @if (_agruparPor == "")
+                @if (_gruposS.Count == 0)
                 {
                     <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="polizas"
                                 PaginaChanged="p => _pagina = p"
@@ -640,10 +624,10 @@
     private string _q = "";
     private string _vista = "tabla";
     private const string VistaKey = "propia_view_seguros";
-    private string _agruparPor = "";
+    // Agrupar multi-nivel (menu compartido TablaAgruparMenu). Vacio = SIN agrupar (default).
+    private List<string> _gruposS = new();
     private int _pagina = 1;
     private int _porPagina = 25;
-    private bool _showAgruparMenu;
     private const string AgruparKey = "propia_agrupar_seguros";
 
     private bool _modal;
@@ -764,12 +748,12 @@
                     {
                         // En Seguros la clave de columna dinamica ya es "cd:{guid}".
                         var gk = col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key;
-                        await SetAgruparVal(gk);
+                        await SetGroupS(gk);
                         break;
                     }
                     var g = col.Key switch { "aseguradora" => "aseguradora", "vencimiento" => "estado", "estado" => "estado", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
-                    await SetAgruparVal(g);
+                    await SetGroupS(g);
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
@@ -1199,29 +1183,61 @@
         }
     }
 
-    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza);
-    // Clave de grupo por poliza: campo propio "cd:{id}" (por su valor), o dimensiones fijas.
-    private string GrupoClaveS(PolizaDto p)
+    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza, int Nivel = 0, string? Color = null);
+
+    // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + motor/aplanador TablaAgrupador).
+    // _gruposS vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a filas. =====
+    private async Task OnGruposSChanged() { _pagina = 1; await PersistGruposSAsync(); StateHasChanged(); }
+    private async Task SetGroupS(string clave) { _gruposS = new() { clave }; await OnGruposSChanged(); }
+    private async Task PersistGruposSAsync()
     {
-        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, string.Join(",", _gruposS)); } catch { }
+    }
+    // Compat: el valor viejo era una sola clave ("" = sin agrupar). Ahora varios niveles por coma.
+    private static List<string> ParseGruposS(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+    private List<TablaAgruparMenu.Col> ColsAgrupablesS()
+    {
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            if (CampoCustom(_agruparPor) is not { } def) return "Sin dato";
+            new("aseguradora", "Aseguradora"), new("estado", "Vencimiento"),
+        };
+        foreach (var c in CamposActivos) cols.Add(new(ClaveCustom(c), c.Label));
+        return cols;
+    }
+    // Valor de agrupacion de una poliza en una dimension (uno por dimension). Vencimiento lleva Orden
+    // por severidad del semaforo (Vencida < Por vencer < Al dia) para un orden logico de grupos.
+    private IEnumerable<ValorGrupo> ValorGrupoS(PolizaDto p, string clave)
+    {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoCustom(clave) is not { } def) yield break;
             var val = ValorCampoTexto(p, def);
-            return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val;
+            var t = string.IsNullOrWhiteSpace(val) ? "Sin dato" : val;
+            yield return new ValorGrupo(t, t);
+            yield break;
         }
-        return _agruparPor == "aseguradora"
-            ? (string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora)
-            : SemaforoTexto(p.Semaforo);
+        if (clave == "aseguradora")
+        {
+            var a = string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora;
+            yield return new ValorGrupo(a, a);
+        }
+        else // "estado" = vencimiento (semaforo)
+        {
+            var s = SemaforoTexto(p.Semaforo);
+            var ord = p.Semaforo switch { SemaforoContrato.Rojo => 0, SemaforoContrato.Amarillo => 1, SemaforoContrato.Verde => 2, _ => 3 };
+            yield return new ValorGrupo(s, s, Orden: ord);
+        }
     }
 
     private IEnumerable<Fila> FilasRender()
     {
-        // Agrupar por un campo propio inexistente (borrado) => se trata como sin agrupar.
-        var agr = _agruparPor.StartsWith("cd:", StringComparison.Ordinal) && CampoCustom(_agruparPor) is null ? "" : _agruparPor;
-        if (agr == "")
+        if (_gruposS.Count == 0)
         {
-            // Sin agrupar: en modo tabla se pagina; en tarjetas se muestran todas. (Con agrupacion
-            // se muestran los grupos completos, sin paginar.)
+            // Sin agrupar: en modo tabla se pagina; en tarjetas se muestran todas.
             if (_vista == "tabla")
             {
                 var total = Filtradas.Count;
@@ -1236,16 +1252,11 @@
             }
             yield break;
         }
-        var grupos = _agruparPor.StartsWith("cd:", StringComparison.Ordinal)
-            ? Filtradas.GroupBy(GrupoClaveS)
-                       .OrderBy(g => g.Key == "Sin dato" ? 1 : 0)
-                       .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
-            : Filtradas.GroupBy(GrupoClaveS)
-                       .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
-        foreach (var g in grupos)
+        // Agrupado: arbol N-niveles aplanado (grupos completos, sin paginar).
+        foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(Filtradas.ToList(), _gruposS, ValorGrupoS)))
         {
-            yield return new Fila(true, g.Key, g.Count(), null);
-            foreach (var p in g) yield return new Fila(false, null, 0, p);
+            if (el.Grupo is { } g) yield return new Fila(true, g.Titulo, g.Conteo, null, g.Nivel, g.Color);
+            else yield return new Fila(false, null, 0, el.Fila);
         }
     }
 
@@ -1290,7 +1301,7 @@
             {
                 _jwt = stored;
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
-                try { var a = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (a is "aseguradora" or "estado") _agruparPor = a; } catch { }
+                try { _gruposS = ParseGruposS(await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey)); } catch { }
                 await CargarAsync();
             }
             else { Nav.NavigateTo("/login?returnUrl=%2Fseguros", true); return; }
@@ -1381,13 +1392,6 @@
 
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
     private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
-    private async Task SetAgrupar(ChangeEventArgs e) { _agruparPor = e.Value?.ToString() ?? ""; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
-    private async Task SetAgruparVal(string v) { _agruparPor = v; _showAgruparMenu = false; _pagina = 1; try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, _agruparPor); } catch { } }
-    private string AgruparLabel(string v)
-    {
-        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(v)?.Label ?? "Campo";
-        return v switch { "aseguradora" => "Aseguradora", "estado" => "Vencimiento", _ => "" };
-    }
 
     private async Task AbrirModal(Guid? id)
     {

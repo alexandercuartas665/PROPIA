@@ -196,28 +196,8 @@ else
                 <div class="ctr-filtros-r">
                     @* Ordenar (multi-criterio apilable): fuente unica compartida, JUSTO antes de Agrupar. *@
                     <TablaOrdenarMenu Columnas="ColsOrdenablesC()" Sorts="_sortsC" SortsChanged="OnSortsCChanged" />
-                    <div class="ctr-cols-wrap">
-                        <button class="ctr-fbtn @(_cAgrupar != "" ? "on" : "")" @onclick="() => _showAgruparMenu = !_showAgruparMenu" title="Agrupar contratos">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                            <span>Agrupar@(_cAgrupar != "" ? ": " + AgruparLabelC(_cAgrupar) : "")</span>
-                        </button>
-                        @if (_showAgruparMenu)
-                        {
-                            <div class="ctr-fpop-bd" @onclick="() => _showAgruparMenu = false"></div>
-                            <div class="ctr-colspop" @onclick:stopPropagation="true">
-                                @foreach (var g in new[] { ("", "Sin agrupar"), ("etapa", "Etapa"), ("tipo", "Tipo"), ("tercero", "Tercero"), ("estado", "Estado") })
-                                {
-                                    var gk = g.Item1;
-                                    <button class="ctr-menu-it @(_cAgrupar == gk ? "on" : "")" @onclick="() => SetCAgrupar(gk)">@g.Item2</button>
-                                }
-                                @foreach (var cpo in CamposActivos)
-                                {
-                                    var gk = "cd:" + cpo.Id;
-                                    <button class="ctr-menu-it @(_cAgrupar == gk ? "on" : "")" @onclick="@(() => SetCAgrupar(gk))">@cpo.Label</button>
-                                }
-                            </div>
-                        }
-                    </div>
+                    @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
+                    <TablaAgruparMenu Columnas="ColsAgrupablesC()" Grupos="_gruposC" GruposChanged="OnGruposCChanged" />
                     <div class="ctr-cols-wrap">
                         <button class="ctr-fbtn @(_showColsMenu ? "on" : "")" @onclick="() => _showColsMenu = !_showColsMenu" title="Elegir y ordenar columnas">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
@@ -341,21 +321,25 @@ else
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var grupo in AgruparContratos(pageItems))
+                            @* Sin agrupar (default): pagina plana. Agrupado: secuencia aplanada de
+                               encabezados <tr> (N-niveles; motor + aplanador compartidos TablaAgrupador)
+                               + la MISMA fila hoja inline. Mismo diseno (.tgrt-*) que los demas modulos. *@
+                            @foreach (var el in ElementosC(filtrados, pageItems))
                             {
-                                @* Fila-agrupador dentro de la misma tabla (estilo Lista de Tareas), con punto de color si agrupa por etapa *@
-                                @if (_cAgrupar != "")
+                                @if (el.Grupo is { } g)
                                 {
-                                    var gcolor = _cAgrupar == "etapa" ? (_etapas.FirstOrDefault(e => e.Nombre == grupo.Key)?.Color ?? "#94A3B8") : null;
-                                    <tr class="ctr-grow">
+                                    <tr class="tgrt-hd tgrt-l@(g.Nivel > 2 ? 2 : g.Nivel)">
                                         <td colspan="@(ColsVisibles().Count() + 2)">
-                                            @if (gcolor is not null) { <span class="ctr-kdot" style="background:@gcolor"></span> }
-                                            <span class="ctr-grow-t">@grupo.Key</span> <span class="ctr-group-n">@grupo.Count()</span>
+                                            <span class="tgrt-lead" style="padding-left:@(14 + g.Nivel * 16)px;">
+                                                @if (g.Color is not null) { <span class="tgrt-dot" style="background:@g.Color"></span> }
+                                                <span class="tgrt-tit">@g.Titulo</span> <span class="tgrt-cnt">@g.Conteo</span>
+                                            </span>
                                         </td>
                                     </tr>
                                 }
-                                @foreach (var c in grupo)
+                                else
                                 {
+                                    var c = el.Fila!;
                                     var cc = c;
                                     <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "")">
                                         <td class="ctr-exp-col">
@@ -638,7 +622,7 @@ else
                 @* Footer canonico DENTRO de la caja (.ctr-tablebox), SIEMPRE visible salvo con
                    agrupacion activa (canon regla 14): con 0 filas muestra "Mostrando 0 de 0".
                    _cPage 0-based; el componente 1-based. *@
-                @if (_cAgrupar == "")
+                @if (_gruposC.Count == 0)
                 {
                     <TablaPager Total="filtrados.Count" Pagina="@(pag + 1)" PorPagina="_cPageSize" Entidad="contratos"
                                 PaginaChanged="p => _cPage = p - 1"
@@ -1361,7 +1345,8 @@ else
 
     // ---- Filtros de la tabla de contratos: buscador + constructor de reglas (estilo Tareas) ----
     private string _cFiltroTexto = "";
-    private string _cAgrupar = "";   // canon regla 3: por defecto SIN agrupar (el usuario elige Etapa/Tipo/...)
+    // Agrupar multi-nivel (menu compartido TablaAgruparMenu). Vacio = SIN agrupar (default, regla 3).
+    private List<string> _gruposC = new();
 
     // Indicadores tipo tarjeta (KPIs con degradado, estilo Tareas)
     private record CtrKpi(string Label, string Valor, string Sub, string Acento, string Icon);
@@ -1602,24 +1587,53 @@ else
     private IEnumerable<ContratoServicioDto> ContratosFiltrados()
         => _contratos.Where(PasaFiltrosC).OrderBy(c => c.Tipo).ThenBy(c => c.FechaFin);
 
-    private IEnumerable<IGrouping<string, ContratoServicioDto>> AgruparContratos(IEnumerable<ContratoServicioDto> lst)
+    // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + motor/aplanador TablaAgrupador).
+    // _gruposC vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a <tr>. =====
+    private void OnGruposCChanged() { _cPage = 0; StateHasChanged(); }
+    private void SetGroupC(string clave) { _gruposC = new() { clave }; OnGruposCChanged(); }
+    private List<TablaAgruparMenu.Col> ColsAgrupablesC()
     {
-        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada contrato.
-        if (_cAgrupar.StartsWith("cd:", StringComparison.Ordinal))
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            if (CampoDinC(_cAgrupar[3..]) is not { } gcd) return lst.GroupBy(_ => "");
-            return lst.GroupBy(c => { var val = ValorCampo(c, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                      .OrderBy(g => g.Key == "Sin dato" ? 1 : 0)
-                      .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
-        }
-        return _cAgrupar switch
-        {
-            "etapa"   => lst.GroupBy(c => EtapaNombreDe(c.EtapaId)).OrderBy(g => EtapaOrdenDe(g.Key)),
-            "tipo"    => lst.GroupBy(c => TipoLabel(c.Tipo)).OrderBy(g => g.Key),
-            "tercero" => lst.GroupBy(c => string.IsNullOrWhiteSpace(c.Proveedor) ? "(sin proveedor)" : c.Proveedor).OrderBy(g => g.Key),
-            "estado"  => lst.GroupBy(c => EstadoTextoContrato(c)).OrderBy(g => g.Key),
-            _ => lst.GroupBy(_ => "")
+            new("etapa", "Etapa"), new("tipo", "Tipo"), new("tercero", "Tercero"), new("estado", "Estado"),
         };
+        foreach (var c in CamposActivos) cols.Add(new("cd:" + c.Id, c.Label));
+        return cols;
+    }
+    // Valor de agrupacion de un contrato en una dimension (uno por dimension). Etapa lleva Orden (flujo).
+    private IEnumerable<ValorGrupo> ValorGrupoC(ContratoServicioDto c, string clave)
+    {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoDinC(clave[3..]) is not { } gcd) yield break;
+            var v = ValorCampo(c, gcd.Id);
+            var t = string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!;
+            yield return new ValorGrupo(t, t);
+            yield break;
+        }
+        switch (clave)
+        {
+            case "etapa":
+                var et = _etapas.FirstOrDefault(e => e.Id == c.EtapaId);
+                var en = et?.Nombre ?? "(sin etapa)";
+                yield return new ValorGrupo(en, en, et?.Color, Orden: et?.Orden ?? 999);
+                break;
+            case "tipo": var tl = TipoLabel(c.Tipo); yield return new ValorGrupo(tl, tl); break;
+            case "tercero": var p = string.IsNullOrWhiteSpace(c.Proveedor) ? "(sin proveedor)" : c.Proveedor!; yield return new ValorGrupo(p, p); break;
+            case "estado": var es = EstadoTextoContrato(c); yield return new ValorGrupo(es, es); break;
+        }
+    }
+    // Secuencia unica para el <tbody>: sin agrupar = filas de la pagina; agrupado = encabezados + filas
+    // (arbol aplanado sobre la lista filtrada+ordenada completa, sin paginar).
+    private IEnumerable<FilaOGrupo<ContratoServicioDto>> ElementosC(List<ContratoServicioDto> filtrados, List<ContratoServicioDto> pageItems)
+    {
+        if (_gruposC.Count == 0)
+        {
+            foreach (var c in pageItems) yield return new FilaOGrupo<ContratoServicioDto>(null, c);
+            yield break;
+        }
+        foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(filtrados, _gruposC, ValorGrupoC)))
+            yield return el;
     }
 
     private string EtapaNombreDe(Guid? id) => _etapas.FirstOrDefault(e => e.Id == id)?.Nombre ?? "(sin etapa)";
@@ -1936,13 +1950,6 @@ else
     // de config (convencion del componente).
     private Dictionary<string, UnidadCampoConfigDto> _cfgContrato = new(StringComparer.Ordinal);
     private bool _showColsMenu;
-    private bool _showAgruparMenu;
-    private string AgruparLabelC(string v)
-    {
-        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoDinC(v[3..])?.Label ?? "Campo";
-        return v switch { "etapa" => "Etapa", "tipo" => "Tipo", "tercero" => "Tercero", "estado" => "Estado", _ => "" };
-    }
-    private void SetCAgrupar(string v) { _cAgrupar = v; _showAgruparMenu = false; _cPage = 0; }
 
     // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a
     // lo REAL del modulo. Contratos gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto
@@ -1986,12 +1993,12 @@ else
                     {
                         // En Contratos la clave de columna dinamica es el guid pelado; el grupo usa "cd:{guid}".
                         var gk = col.Key.StartsWith("cd:", StringComparison.Ordinal) ? col.Key : "cd:" + col.Key;
-                        SetCAgrupar(gk);
+                        SetGroupC(gk);
                         break;
                     }
                     var g = col.Key switch { "etapa" => "etapa", "tipo" => "tipo", "tercero" => "tercero", "estado" => "estado", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
-                    SetCAgrupar(g);
+                    SetGroupC(g);
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:

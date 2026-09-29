@@ -1,0 +1,41 @@
+@typeparam T
+@* Render recursivo COMPARTIDO del arbol de agrupacion para modulos con <table> real (PQRSD,
+   Servicios, Seguros). Gemelo de TablaGruposRender (div-based): pinta una fila <tr> de encabezado
+   de grupo por nivel (con <td colspan>, indent + contador + punto de color opcional) y el modulo
+   aporta SOLO el <tr> de la fila hoja via FilaTemplate. Se coloca DENTRO del <tbody>; emite filas
+   <tr> sin envoltorio ni <style> (los estilos .tgrt-* viven en css/modules/tabla-grupos.css para no
+   inyectar un <style> dentro del <tbody>). Asi el anidamiento se ve IDENTICO en todos los modulos
+   de tabla (motor unico TablaAgrupador + este render unico). *@
+
+@foreach (var nodo in Nodos)
+{
+    <tr class="tgrt-hd tgrt-l@(nodo.Nivel > 2 ? 2 : nodo.Nivel)">
+        <td colspan="@Colspan">
+            <span class="tgrt-lead" style="padding-left:@(14 + nodo.Nivel * 16)px;">
+                @if (nodo.Color is not null) { <span class="tgrt-dot" style="background:@nodo.Color"></span> }
+                <span class="tgrt-tit">@nodo.Titulo</span>
+                <span class="tgrt-cnt">@nodo.Conteo</span>
+            </span>
+        </td>
+    </tr>
+    @if (nodo.EsHoja)
+    {
+        @foreach (var fila in nodo.Filas)
+        {
+            @FilaTemplate(fila)
+        }
+    }
+    else
+    {
+        <TablaGruposRenderTr T="T" Nodos="nodo.Subgrupos" FilaTemplate="FilaTemplate" Colspan="Colspan" />
+    }
+}
+
+@code {
+    /// <summary>Arbol de grupos ya construido por TablaAgrupador.Agrupar.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<NodoGrupo<T>> Nodos { get; set; } = System.Array.Empty<NodoGrupo<T>>();
+    /// <summary>Template de la fila hoja (lo pinta el modulo: su &lt;tr&gt; de tabla habitual).</summary>
+    [Parameter, EditorRequired] public RenderFragment<T> FilaTemplate { get; set; } = default!;
+    /// <summary>colspan del encabezado de grupo (>= numero de columnas; 99 abarca todas sin calcular).</summary>
+    [Parameter] public int Colspan { get; set; } = 99;
+}

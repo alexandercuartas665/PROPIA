@@ -164,26 +164,8 @@
                 <TablaOrdenarMenu Columnas="ColsOrdenablesPqr()" Sorts="_sortsPqr" SortsChanged="OnSortsPqrChanged" />
             }
 
-            <div class="pk-menu-wrap">
-                <button class="pk-input-btn @(_group != "ninguno" ? "pk-input-btn--on" : "")" @onclick='() => TogglePop("group")'>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                    Agrupar@(_group != "ninguno" ? ": " + GroupLabel(_group) : "")
-                </button>
-                @if (_pop == "group")
-                {
-                    <div class="pk-pop">
-                        @foreach (var g in new[] { "ninguno", "estado", "tipo", "categoria", "unidad" })
-                        {
-                            <button class="pk-pop-item @(_group == g ? "pk-pop-item--on" : "")" @onclick="() => SetGroup(g)">@GroupLabel(g)</button>
-                        }
-                        @foreach (var cpo in _campos.OrderBy(c => c.Orden))
-                        {
-                            var gk = CampoColKey(cpo.Id);
-                            <button class="pk-pop-item @(_group == gk ? "pk-pop-item--on" : "")" @onclick="@(() => SetGroup(gk))">@cpo.Label</button>
-                        }
-                    </div>
-                }
-            </div>
+            @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesPqr()" Grupos="_gruposPqr" GruposChanged="OnGruposPqrChanged" />
 
             @if (VistaEfectiva == "tabla")
             {
@@ -346,79 +328,21 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var grp in ItemsAgrupados)
+                        @* Sin agrupar (default): pagina plana. Agrupado: arbol N-niveles via el motor
+                           TablaAgrupador + render <tr> compartido TablaGruposRenderTr (mismo diseno que
+                           los demas modulos). La fila hoja la aporta FilaPqrTpl. *@
+                        @if (_gruposPqr.Count == 0)
                         {
-                            @if (_group != "ninguno")
+                            @foreach (var it in PaginaPqr())
                             {
-                                <tr class="pk-grp-row"><td colspan="99"><span class="pk-grp-lead">@grp.Key <span class="pk-grp-num">@grp.Count()</span></span></td></tr>
+                                @FilaPqrTpl(it)
                             }
-                            @foreach (var it in AplicarSortPqr(grp))
-                            {
-                                <tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)">
-                                    <td class="pk-td-exp" @onclick:stopPropagation="true">
-                                        <button type="button" class="pk-exp" title="Abrir la ficha" @onclick="() => IrA(it.Id)">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                        </button>
-                                    </td>
-                                    @foreach (var col in ColumnasVisibles)
-                                    {
-                                        @if (!col.EsCustom)
-                                        {
-                                        <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")">
-                                            @switch (col.Key)
-                                            {
-                                                case "radicado":
-                                                    <strong>@it.NumeroRadicado</strong>
-                                                    break;
-                                                case "asunto":
-                                                    <div class="pk-td-muted" style="max-width:380px;">@it.DescripcionResumen</div>
-                                                    break;
-                                                case "tipo": <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span> break;
-                                                case "categoria": <span>@it.CategoriaNombre</span> break;
-                                                case "estado": <span>@(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre ?? "-")</span> break;
-                                                case "semaforo":
-                                                    <span class="pk-sem @SemaforoClass(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span>
-                                                    <span class="pk-sem-dias @(it.DiasHastaVencimiento < 0 ? "pk-sem-dias--err" : it.DiasHastaVencimiento <= 3 ? "pk-sem-dias--warn" : "")">@DiasSlaTexto(it)</span>
-                                                    break;
-                                                case "radicador":
-                                                    @if (it.IdentidadReservada) { <span class="pk-rsv">[Reservada]</span> } else { <span>@it.RadicadorNombre</span> }
-                                                    break;
-                                                case "unidad": <span>@it.UnidadNumero</span> break;
-                                                case "vence":
-                                                    <span class="pk-vence @(it.DiasHastaVencimiento < 0 ? "pk-vence-err" : it.DiasHastaVencimiento <= 3 ? "pk-vence-warn" : "")">
-                                                        @(it.DiasHastaVencimiento < 0 ? $"-{Math.Abs(it.DiasHastaVencimiento)}d" : $"{it.DiasHastaVencimiento}d")
-                                                    </span>
-                                                    break;
-                                            }
-                                        </td>
-                                        }
-                                        else
-                                        {
-                                            var cd = _campos.FirstOrDefault(c => c.Id == col.CampoId);
-                                            var val = it.Campos?.FirstOrDefault(v => v.CampoId == col.CampoId)?.Valor;
-                                        <td class="pk-td-muted pk-col-c@(col.CampoId)">
-                                            @if (cd is { Tipo: TipoCampoTablero.Seleccion } && !string.IsNullOrWhiteSpace(val))
-                                            {
-                                                @* Chip de color de la lista propia: mismo formato que el gestor y la ficha. *@
-                                                var op = OpcionCampo.Parse(cd.Opciones).FirstOrDefault(o => string.Equals(o.K, val, StringComparison.OrdinalIgnoreCase));
-                                                var chipColor = op?.Color ?? PaletaChips.Neutro;
-                                                <span class="pk-lchip" style="background:@chipColor;color:@PaletaChips.TextoSobre(chipColor)">@val</span>
-                                            }
-                                            else
-                                            {
-                                                @val
-                                            }
-                                        </td>
-                                        }
-                                    }
-                                    <td class="pk-td-actions" @onclick:stopPropagation="true">
-                                        @if (_verArchivados)
-                                        {
-                                            <button class="pk-icon-btn" title="Reabrir" @onclick="() => Archivar(it.Id, false)">&#8635;</button>
-                                        }
-                                    </td>
-                                </tr>
-                            }
+                        }
+                        else
+                        {
+                            <TablaGruposRenderTr T="PqrsdBandejaItemDto"
+                                                 Nodos="TablaAgrupador.Agrupar(RaicesOrdenadasPqr(), _gruposPqr, ValorGrupoPqr)"
+                                                 FilaTemplate="FilaPqrTpl" />
                         }
                         @* Alta inline retirada: en PQRSD la creacion es siempre por el boton "Radicar nueva PQRSD"
                            (proceso de radicacion legal via wizard), no por fila inline en la tabla. *@
@@ -426,7 +350,7 @@
                 </table>
                 @if (ItemsFiltrados.Count() == 0) { <div class="pk-col-empty">Sin PQRs.</div> }
             </div>
-            @if (_group == "ninguno" && ItemsFiltrados.Any())
+            @if (_gruposPqr.Count == 0 && ItemsFiltrados.Any())
             {
                 <TablaPager Total="ItemsFiltrados.Count()" Pagina="_pagina" PorPagina="_porPagina" Entidad="PQRSD"
                             PaginaChanged="p => _pagina = p"
@@ -881,7 +805,7 @@
     private string _boardMode = "tablero";
     // En Cerrados solo hay tabla de consulta (mismo criterio que Tareas): se fuerza la vista.
     private string VistaEfectiva => _verArchivados ? "tabla" : _boardMode;
-    private string _group = "ninguno";
+    private List<string> _gruposPqr = new();
     private int _pagina = 1;
     private int _porPagina = 25;
     private bool _pin = true;  // primera columna SIEMPRE fija (sin boton)
@@ -1008,39 +932,129 @@
                 || x.DescripcionResumen.Contains(_buscar, StringComparison.OrdinalIgnoreCase))
             .Where(PasaReglas);
 
-    private IEnumerable<IGrouping<string, PqrsdBandejaItemDto>> ItemsAgrupados
+    // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + render <tr> compartido
+    // TablaGruposRenderTr + motor TablaAgrupador). _gruposPqr: dimensiones apiladas (1er nivel, 2do,
+    // ...). Vacio = SIN agrupar (default, pagina plana con footer). =====
+    private void OnGruposPqrChanged() { _pagina = 1; _ = PersistGruposPqrAsync(); StateHasChanged(); }
+    private void SetGroupPqr(string clave) { _gruposPqr = new() { clave }; OnGruposPqrChanged(); }
+    private async Task PersistGruposPqrAsync()
     {
-        get
+        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_group", string.Join(",", _gruposPqr)); } catch { }
+    }
+    // Compat: el valor viejo era una sola clave ("ninguno" = sin agrupar). Ahora varios niveles por coma.
+    private static List<string> ParseGruposPqr(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw == "ninguno") return new();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k != "ninguno").ToList();
+    }
+    private List<TablaAgruparMenu.Col> ColsAgrupablesPqr()
+    {
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            var items = ItemsFiltrados;
-            // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada radicado.
-            if (_group.StartsWith("cd:", StringComparison.Ordinal))
-            {
-                if (CampoDin(_group[3..]) is not { } gcd) return PaginarSinGrupoPqr(items);
-                return items.GroupBy(x => { var val = x.Campos?.FirstOrDefault(v => v.CampoId == gcd.Id)?.Valor; return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                            .OrderBy(g => g.Key == "Sin dato" ? 1 : 0)
-                            .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
-            }
-            return _group switch
-            {
-                "estado" => items.GroupBy(x => _estados.FirstOrDefault(e => e.Id == x.EstadoId)?.Nombre ?? "Sin columna"),
-                "tipo" => items.GroupBy(x => TipoLabel(x.Tipo)),
-                "categoria" => items.GroupBy(x => x.CategoriaNombre),
-                "unidad" => items.GroupBy(x => string.IsNullOrEmpty(x.UnidadNumero) ? "Sin unidad" : x.UnidadNumero!),
-                _ => PaginarSinGrupoPqr(items)   // sin agrupar: se ordena y se pagina (footer canonico)
-            };
+            new("estado", "Etapa"), new("tipo", "Tipo"), new("categoria", "Categoria"), new("unidad", "Unidad"),
+        };
+        foreach (var c in _campos.OrderBy(c => c.Orden)) cols.Add(new(CampoColKey(c.Id), c.Label));
+        return cols;
+    }
+    // Valor de agrupacion de un radicado en una dimension (un solo valor por dimension).
+    private IEnumerable<ValorGrupo> ValorGrupoPqr(PqrsdBandejaItemDto x, string clave)
+    {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            if (CampoDin(clave[3..]) is not { } gcd) yield break;
+            var v = x.Campos?.FirstOrDefault(vv => vv.CampoId == gcd.Id)?.Valor;
+            var t = string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!;
+            yield return new ValorGrupo(t, t);
+            yield break;
+        }
+        switch (clave)
+        {
+            case "estado":
+                var est = _estados.FirstOrDefault(e => e.Id == x.EstadoId);
+                var en = est?.Nombre ?? "Sin columna";
+                yield return new ValorGrupo(en, en, est?.Color, Orden: est?.Orden ?? 999);
+                break;
+            case "tipo": var tl = TipoLabel(x.Tipo); yield return new ValorGrupo(tl, tl); break;
+            case "categoria": var cat = string.IsNullOrWhiteSpace(x.CategoriaNombre) ? "Sin categoria" : x.CategoriaNombre!; yield return new ValorGrupo(cat, cat); break;
+            case "unidad": var u = string.IsNullOrEmpty(x.UnidadNumero) ? "Sin unidad" : x.UnidadNumero!; yield return new ValorGrupo(u, u); break;
         }
     }
-
-    // Sin agrupar: ordena la lista completa y devuelve SOLO la pagina actual como un unico "grupo"
-    // sin titulo (el header de grupo se oculta cuando _group == "ninguno").
-    private IEnumerable<IGrouping<string, PqrsdBandejaItemDto>> PaginarSinGrupoPqr(IEnumerable<PqrsdBandejaItemDto> items)
+    // Lista filtrada + ordenada (el arbol de grupos conserva ese orden en las hojas).
+    private List<PqrsdBandejaItemDto> RaicesOrdenadasPqr() => AplicarSortPqr(ItemsFiltrados).ToList();
+    // Sin agrupar: pagina la lista filtrada+ordenada (footer canonico).
+    private List<PqrsdBandejaItemDto> PaginaPqr()
     {
-        var ordenado = AplicarSortPqr(items).ToList();
+        var ordenado = RaicesOrdenadasPqr();
         var totalPag = ordenado.Count == 0 ? 1 : (int)Math.Ceiling(ordenado.Count / (double)_porPagina);
         var pag = Math.Clamp(_pagina, 1, totalPag);
-        return ordenado.Skip((pag - 1) * _porPagina).Take(_porPagina).GroupBy(_ => "");
+        return ordenado.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
     }
+    // Fila hoja de la tabla PQRSD (la aporta este modulo; el render de grupos <tr> la reutiliza).
+    private RenderFragment<PqrsdBandejaItemDto> FilaPqrTpl => it =>
+    @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)">
+        <td class="pk-td-exp" @onclick:stopPropagation="true">
+            <button type="button" class="pk-exp" title="Abrir la ficha" @onclick="() => IrA(it.Id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var col in ColumnasVisibles)
+        {
+            @if (!col.EsCustom)
+            {
+            <td class="pk-col-@col.Key @(col.Key == "radicado" ? "pk-td-pin" : "")">
+                @switch (col.Key)
+                {
+                    case "radicado":
+                        <strong>@it.NumeroRadicado</strong>
+                        break;
+                    case "asunto":
+                        <div class="pk-td-muted" style="max-width:380px;">@it.DescripcionResumen</div>
+                        break;
+                    case "tipo": <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span> break;
+                    case "categoria": <span>@it.CategoriaNombre</span> break;
+                    case "estado": <span>@(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre ?? "-")</span> break;
+                    case "semaforo":
+                        <span class="pk-sem @SemaforoClass(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span>
+                        <span class="pk-sem-dias @(it.DiasHastaVencimiento < 0 ? "pk-sem-dias--err" : it.DiasHastaVencimiento <= 3 ? "pk-sem-dias--warn" : "")">@DiasSlaTexto(it)</span>
+                        break;
+                    case "radicador":
+                        @if (it.IdentidadReservada) { <span class="pk-rsv">[Reservada]</span> } else { <span>@it.RadicadorNombre</span> }
+                        break;
+                    case "unidad": <span>@it.UnidadNumero</span> break;
+                    case "vence":
+                        <span class="pk-vence @(it.DiasHastaVencimiento < 0 ? "pk-vence-err" : it.DiasHastaVencimiento <= 3 ? "pk-vence-warn" : "")">
+                            @(it.DiasHastaVencimiento < 0 ? $"-{Math.Abs(it.DiasHastaVencimiento)}d" : $"{it.DiasHastaVencimiento}d")
+                        </span>
+                        break;
+                }
+            </td>
+            }
+            else
+            {
+                var cd = _campos.FirstOrDefault(c => c.Id == col.CampoId);
+                var val = it.Campos?.FirstOrDefault(v => v.CampoId == col.CampoId)?.Valor;
+            <td class="pk-td-muted pk-col-c@(col.CampoId)">
+                @if (cd is { Tipo: TipoCampoTablero.Seleccion } && !string.IsNullOrWhiteSpace(val))
+                {
+                    @* Chip de color de la lista propia: mismo formato que el gestor y la ficha. *@
+                    var op = OpcionCampo.Parse(cd.Opciones).FirstOrDefault(o => string.Equals(o.K, val, StringComparison.OrdinalIgnoreCase));
+                    var chipColor = op?.Color ?? PaletaChips.Neutro;
+                    <span class="pk-lchip" style="background:@chipColor;color:@PaletaChips.TextoSobre(chipColor)">@val</span>
+                }
+                else
+                {
+                    @val
+                }
+            </td>
+            }
+        }
+        <td class="pk-td-actions" @onclick:stopPropagation="true">
+            @if (_verArchivados)
+            {
+                <button class="pk-icon-btn" title="Reabrir" @onclick="() => Archivar(it.Id, false)">&#8635;</button>
+            }
+        </td>
+    </tr>;
 
     // ===================== Ordenamiento (vista Tabla) =====================
     // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en la
@@ -1092,10 +1106,10 @@
                 break;
             case TablaColMenu.Accion.Agrupar:
                 {
-                    if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal)) { await SetGroup(col.Key); break; }
+                    if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal)) { SetGroupPqr(col.Key); break; }
                     var g = col.Key switch { "estado" => "estado", "tipo" => "tipo", "categoria" => "categoria", "unidad" => "unidad", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
-                    await SetGroup(g);
+                    SetGroupPqr(g);
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
@@ -1504,7 +1518,7 @@
         try
         {
             _boardMode = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_view") ?? "tablero";
-            _group = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_group") ?? "ninguno";
+            _gruposPqr = ParseGruposPqr(await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_group"));
             await RestaurarFiltrosAsync();
         }
         catch { }
@@ -1564,12 +1578,6 @@
         _boardMode = v; _pop = null;
         try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_view", v); } catch { }
     }
-    private async Task SetGroup(string g)
-    {
-        _group = g; _pop = null; _pagina = 1;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_pqrs_group", g); } catch { }
-    }
-
     // ---------- Kanban drag ----------
     private void OnDragStart(Guid id) { _draggingId = id; }
     private void OnDragOver() { }
@@ -2212,15 +2220,6 @@
         if (hubo == true) { await CargarAsync(); Toast("Expediente actualizado.", false); }
     }
 
-    private string GroupLabel(string g)
-    {
-        if (g.StartsWith("cd:", StringComparison.Ordinal)) return CampoDin(g[3..])?.Label ?? "Campo";
-        return g switch
-        {
-            "ninguno" => "Ninguno", "estado" => "Etapa", "tipo" => "Tipo",
-            "categoria" => "Categoria", "unidad" => "Unidad", _ => g
-        };
-    }
 
     private static string TipoLabel(TipoPqrsd t) => t switch
     {

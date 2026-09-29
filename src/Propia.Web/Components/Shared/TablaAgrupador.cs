@@ -9,7 +9,7 @@ namespace Propia.Web.Components.Shared;
 /// devolver VARIOS valores en un nivel (multi-membership, p.ej. varias etiquetas); los modulos
 /// single-valued devuelven exactamente uno.
 /// </summary>
-public readonly record struct ValorGrupo(string Clave, string Titulo, string? Color = null, string? Icono = null);
+public readonly record struct ValorGrupo(string Clave, string Titulo, string? Color = null, string? Icono = null, int Orden = 0);
 
 /// <summary>
 /// Nodo del arbol de agrupacion anidada. En cada nivel: un grupo con su titulo/valor y su conteo;
@@ -79,7 +79,9 @@ public static class TablaAgrupador
         }
 
         var nodos = new List<NodoGrupo<T>>(buckets.Count + 1);
-        foreach (var k in orden.OrderBy(x => buckets[x].v.Titulo, System.StringComparer.CurrentCultureIgnoreCase))
+        // Orden de los grupos: primero por el Orden explicito del valor (util para dimensiones con
+        // flujo, p.ej. Etapa/Estado), luego alfabetico por titulo (default cuando Orden es 0 en todos).
+        foreach (var k in orden.OrderBy(x => buckets[x].v.Orden).ThenBy(x => buckets[x].v.Titulo, System.StringComparer.CurrentCultureIgnoreCase))
         {
             var (v, its) = buckets[k];
             nodos.Add(Nodo(v, its, niveles, valorDe, tituloSinValor, nivel));
@@ -106,4 +108,32 @@ public static class TablaAgrupador
             Filas = hoja ? its : System.Array.Empty<T>(),
         };
     }
+
+    /// <summary>
+    /// Aplana el arbol a una secuencia lineal de encabezados-de-grupo y filas hoja, en el orden en que
+    /// deben pintarse (encabezado de nivel 0, sus subgrupos/filas, siguiente grupo, ...). Util para las
+    /// tablas &lt;table&gt; que iteran un unico <c>@foreach</c> en el &lt;tbody&gt; emitiendo un &lt;tr&gt;
+    /// de encabezado o el &lt;tr&gt; de la fila segun cada elemento (sin extraer la fila a un template).
+    /// </summary>
+    public static IEnumerable<FilaOGrupo<T>> Aplanar<T>(IReadOnlyList<NodoGrupo<T>> nodos)
+    {
+        foreach (var n in nodos)
+        {
+            yield return new FilaOGrupo<T>(n, default);
+            if (n.EsHoja)
+            {
+                foreach (var f in n.Filas) yield return new FilaOGrupo<T>(null, f);
+            }
+            else
+            {
+                foreach (var x in Aplanar(n.Subgrupos)) yield return x;
+            }
+        }
+    }
 }
+
+/// <summary>
+/// Elemento de la secuencia aplanada: si <see cref="Grupo"/> != null es un ENCABEZADO de (sub)grupo
+/// (usar Titulo/Conteo/Nivel/Color); si es null es una FILA hoja (usar <see cref="Fila"/>).
+/// </summary>
+public readonly record struct FilaOGrupo<T>(NodoGrupo<T>? Grupo, T? Fila);
