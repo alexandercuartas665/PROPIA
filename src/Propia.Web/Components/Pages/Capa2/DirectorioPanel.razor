@@ -974,44 +974,39 @@
     private bool _agrupar => _gruposDir.Count > 0;
     private const string AgruparKey = "propia_agrupar_directorio";
 
+    // Valor de agrupacion de un contacto: sus etiquetas (multi-membership: una por chip; el contacto
+    // cae en cada grupo de etiqueta que tenga). Color/Icono viajan en el ValorGrupo para el chip. El
+    // motor comparte con el resto de modulos: agrupa, ordena por titulo y manda los "Sin etiqueta" al
+    // final (tituloSinValor) igual que antes. Directorio se queda en 1 nivel (solo "etiquetas").
+    private static IEnumerable<ValorGrupo> ValorGrupoPersona(PersonaResumenDto p, string clave)
+    {
+        if (p.Etiquetas is null) yield break;
+        foreach (var e in p.Etiquetas.DistinctBy(x => x.EtiquetaId))
+            yield return new ValorGrupo(e.EtiquetaId.ToString(), e.Nombre, e.Color, e.Icono);
+    }
+    private static IEnumerable<ValorGrupo> ValorGrupoEmpresa(EmpresaResumenDto em, string clave)
+    {
+        if (em.Etiquetas is null) yield break;
+        foreach (var e in em.Etiquetas.DistinctBy(x => x.EtiquetaId))
+            yield return new ValorGrupo(e.EtiquetaId.ToString(), e.Nombre, e.Color, e.Icono);
+    }
+
     private List<DirectorioPersonasVista.Grupo>? GruposPersonas()
     {
         var items = PersonasFiltradas;
         if (!_agrupar || items is null) return null;
-        var grupos = new List<DirectorioPersonasVista.Grupo>();
-        foreach (var chip in items
-            .Where(p => p.Etiquetas is not null)
-            .SelectMany(p => p.Etiquetas!)
-            .GroupBy(e => e.EtiquetaId)
-            .Select(g => g.First())
-            .OrderBy(e => e.Nombre, StringComparer.CurrentCultureIgnoreCase))
-        {
-            var miembros = items.Where(p => p.Etiquetas is not null && p.Etiquetas.Any(e => e.EtiquetaId == chip.EtiquetaId)).ToList();
-            if (miembros.Count > 0) grupos.Add(new(chip.Nombre, chip.Color, chip.Icono, miembros));
-        }
-        var sin = items.Where(p => p.Etiquetas is null || p.Etiquetas.Count == 0).ToList();
-        if (sin.Count > 0) grupos.Add(new("Sin etiqueta", null, null, sin));
-        return grupos;
+        return TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoPersona, "Sin etiqueta")
+            .Select(n => new DirectorioPersonasVista.Grupo(n.Titulo, n.Color, n.Icono, n.Filas.ToList()))
+            .ToList();
     }
 
     private List<DirectorioEmpresasVista.Grupo>? GruposEmpresas()
     {
         var items = EmpresasFiltradas;
         if (!_agrupar || items is null) return null;
-        var grupos = new List<DirectorioEmpresasVista.Grupo>();
-        foreach (var chip in items
-            .Where(e => e.Etiquetas is not null)
-            .SelectMany(e => e.Etiquetas!)
-            .GroupBy(e => e.EtiquetaId)
-            .Select(g => g.First())
-            .OrderBy(e => e.Nombre, StringComparer.CurrentCultureIgnoreCase))
-        {
-            var miembros = items.Where(e => e.Etiquetas is not null && e.Etiquetas.Any(x => x.EtiquetaId == chip.EtiquetaId)).ToList();
-            if (miembros.Count > 0) grupos.Add(new(chip.Nombre, chip.Color, chip.Icono, miembros));
-        }
-        var sin = items.Where(e => e.Etiquetas is null || e.Etiquetas.Count == 0).ToList();
-        if (sin.Count > 0) grupos.Add(new("Sin etiqueta", null, null, sin));
-        return grupos;
+        return TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoEmpresa, "Sin etiqueta")
+            .Select(n => new DirectorioEmpresasVista.Grupo(n.Titulo, n.Color, n.Icono, n.Filas.ToList()))
+            .ToList();
     }
 
     /// <summary>Campos por los que Directorio puede agrupar (hoy solo la Etiqueta, tag-based).</summary>
