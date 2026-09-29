@@ -79,29 +79,9 @@ else
         {
             @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
             <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sortsZ" SortsChanged="OnSortsChanged" />
-            @* Agrupar (menu) + Campos (menu), a la derecha, patron estandar. *@
-            <div class="zc-menu-wrap">
-                <button type="button" class="zc-fbtn @(_agruparZ != "" ? "on" : "")" @onclick="() => _showAgruparZ = !_showAgruparZ" title="Agrupar zonas">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                    <span>Agrupar@(_agruparZ != "" ? ": " + AgruparLabelZ(_agruparZ) : "")</span>
-                </button>
-                @if (_showAgruparZ)
-                {
-                    <div class="zc-menu-bd" @onclick="() => _showAgruparZ = false"></div>
-                    <div class="zc-menu">
-                        @foreach (var g in new[] { ("", "Sin agrupar"), ("categoria", "Categoria"), ("reserva", "Reserva"), ("estado", "Estado") })
-                        {
-                            var gk = g.Item1;
-                            <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="() => SetAgruparZ(gk)">@g.Item2</button>
-                        }
-                        @foreach (var d in _camposDef)
-                        {
-                            var gk = "cd:" + d.Id;
-                            <button class="zc-menu-it @(_agruparZ == gk ? "on" : "")" @onclick="@(() => SetAgruparZ(gk))">@d.Label</button>
-                        }
-                    </div>
-                }
-            </div>
+            @* Agrupar (menu compartido, multi-nivel) + Campos (menu), a la derecha, patron estandar.
+               Fuente unica: TablaAgruparMenu (menu) + TablaAgrupador (motor) + TablaGruposRender (render). *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesZ()" Grupos="_gruposZ" GruposChanged="OnGruposZChanged" />
             @* "Columnas" (inline, milimetrico a Unidades): orden, visibilidad y borrar campo dinamico.
                Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
             <div class="zc-menu-wrap">
@@ -318,100 +298,17 @@ else
                 <div></div>
                 <div class="zc-addcol-h"><button type="button" class="zc-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoZ"><i class="fi fi-rr-plus"></i></button></div>
             </div>
-            @foreach (var grupo in AgruparZonas(Filtradas()))
+            @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
+               TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaZonaTpl. *@
+            @if (_agrupadoZ)
             {
-                @if (_agruparZ != "")
+                <TablaGruposRender T="ZonaComunDto" Nodos="TablaAgrupador.Agrupar<ZonaComunDto>(Filtradas(), _gruposZ, ValorGrupoZona)" FilaTemplate="FilaZonaTpl" />
+            }
+            else
+            {
+                @foreach (var z in PaginaZonasZ())
                 {
-                    <div class="zc-group"><span class="zc-group-t">@grupo.Key</span><span class="zc-group-n">@grupo.Count()</span></div>
-                }
-                @foreach (var z in grupo)
-                {
-                    var zona = z;
-                    <div class="zc-list-row zc-grid @(_selZ.Contains(zona.Id) ? "zc-row-sel" : "")" style="@ZcGridStyle" @oncontextmenu="e => AbrirCtxZ(e, zona)" @oncontextmenu:preventDefault="true">
-                        <div class="zc-sel-cell"><label class="zc-chk"><input type="checkbox" checked="@_selZ.Contains(zona.Id)" @onchange="@(e => ToggleSelZ(zona.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
-                        <div class="zc-col-exp">
-                            <button type="button" class="zc-nf-exp zc-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaZonaAsync(zona)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                            </button>
-                        </div>
-                        @* Datos editables inline (value= + @onchange guarda al salir del campo). Una sola
-                           secuencia de columnas: las de sistema por clave, las propias via CampoCustom. *@
-                        @foreach (var k in ColsVisibles())
-                        {
-                            if (CampoCustom(k) is ZonaCampoDefinicionDto cd)
-                            {
-                                var cdd = cd;
-                                var vv = ValorCampo(zona.Id, cd.Id);
-                                switch (cd.Tipo)
-                                {
-                                    case TipoCampoTablero.Seleccion:
-                                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                                            <option value="">-</option>
-                                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
-                                        </select>
-                                        break;
-                                    case TipoCampoTablero.Numero:
-                                    case TipoCampoTablero.Moneda:
-                                        <input class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
-                                        break;
-                                    case TipoCampoTablero.Fecha:
-                                        <input class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
-                                        break;
-                                    case TipoCampoTablero.Booleano:
-                                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                                            <option value="">-</option>
-                                            <option value="Si" selected="@(vv == "Si")">Si</option>
-                                            <option value="No" selected="@(vv == "No")">No</option>
-                                        </select>
-                                        break;
-                                    default:
-                                        <input class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
-                                        break;
-                                }
-                                continue;
-                            }
-                            switch (k)
-                            {
-                                case "nombre":
-                                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
-                                    break;
-                                case "categoria":
-                                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
-                                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
-                                    </select>
-                                    break;
-                                case "reservable":
-                                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
-                                        <option value="false" selected="@(!z.EsReservable)">No</option>
-                                        <option value="true" selected="@z.EsReservable">Si</option>
-                                    </select>
-                                    break;
-                                case "aforo":
-                                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
-                                    break;
-                                case "estado":
-                                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
-                                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
-                                    </select>
-                                    break;
-                                case "descripcion":
-                                    <input class="zc-cell" value="@z.Descripcion" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "descripcion", e))" />
-                                    break;
-                                case "tarifa":
-                                    <input type="number" step="any" min="0" class="zc-cell zc-num" value="@z.TarifaReserva" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "tarifa", e))" />
-                                    break;
-                                case "reglas":
-                                    <input class="zc-cell" value="@z.ReglasUso" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "reglas", e))" />
-                                    break;
-                            }
-                        }
-                        <div class="zc-list-act">
-                            <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                            </button>
-                        </div>
-                        <div class="zc-addcol-cell"></div>
-                    </div>
+                    @FilaZonaTpl(z)
                 }
             }
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
@@ -513,7 +410,7 @@ else
                como en Unidades y no se vea "pegado". *@
             @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0");
                solo se oculta con agrupacion activa. *@
-            @if (_agruparZ == "")
+            @if (!_agrupadoZ)
             {
                 <TablaPager Total="Filtradas().Count()" Pagina="_paginaZ" PorPagina="_porPaginaZ" Entidad="zonas"
                             PaginaChanged="p => _paginaZ = p"
@@ -1092,42 +989,150 @@ else
     private int _paginaZ = 1;
     private int _porPaginaZ = 25;
 
-    // ===== Agrupar (boton "Agrupar"): agrupa la lista por un campo. =====
-    private string _agruparZ = "";
-    private bool _showAgruparZ;
-    private string AgruparLabelZ(string k)
+    // ===== Agrupar (boton "Agrupar", multi-nivel): fuente unica compartida (TablaAgruparMenu +
+    // TablaAgrupador + TablaGruposRender). El modulo mantiene los niveles (_gruposZ) y aporta el
+    // valor de cada dimension por fila (ValorGrupoZona). Con agrupacion activa NO se pagina. =====
+    private List<string> _gruposZ = new();
+    private bool _agrupadoZ => _gruposZ.Count > 0;
+
+    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    private List<TablaAgruparMenu.Col> ColsAgrupablesZ()
     {
-        if (k.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(k)?.Label ?? "Campo";
-        return k switch { "categoria" => "Categoria", "reserva" => "Reserva", "estado" => "Estado", _ => "" };
-    }
-    private void SetAgruparZ(string k) { _agruparZ = k; _showAgruparZ = false; _paginaZ = 1; }
-    private IEnumerable<IGrouping<string, ZonaComunDto>> AgruparZonas(IEnumerable<ZonaComunDto> zonas)
-    {
-        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
-        if (_agruparZ.StartsWith("cd:", StringComparison.Ordinal))
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            if (CampoCustom(_agruparZ) is not ZonaCampoDefinicionDto gcd) return PaginarSinGrupoZ(zonas);
-            return zonas.GroupBy(z => { var val = ValorCampo(z.Id, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                        .OrderBy(g => g.Key.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                        .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
-        }
-        return _agruparZ switch
-        {
-            "categoria" => zonas.GroupBy(z => z.Categoria.ToString()),
-            "reserva" => zonas.GroupBy(z => z.EsReservable ? "Reservable" : "No reservable"),
-            "estado" => zonas.GroupBy(z => z.Estado.ToString()),
-            _ => PaginarSinGrupoZ(zonas)   // sin agrupar: se pagina (footer canonico)
+            new("categoria", "Categoria"),
+            new("reserva", "Reserva"),
+            new("estado", "Estado"),
         };
+        foreach (var d in _camposDef) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
     }
-    // Envuelve la pagina actual en un unico "grupo" sin titulo (el header de grupo se oculta cuando
-    // _agruparZ == ""). Asi la vista tabla reusa el mismo render pero paginado.
-    private IEnumerable<IGrouping<string, ZonaComunDto>> PaginarSinGrupoZ(IEnumerable<ZonaComunDto> zonas)
+
+    // Valor de una dimension de agrupacion para una zona (uno por nivel; sin valor => grupo "(Sin dato)").
+    private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoZona(ZonaComunDto z, string clave)
     {
-        var list = zonas as IList<ZonaComunDto> ?? zonas.ToList();
+        switch (clave)
+        {
+            case "categoria": { var t = z.Categoria.ToString(); yield return new(t, t); yield break; }
+            case "reserva": { var t = z.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
+            case "estado": { var t = z.Estado.ToString(); yield return new(t, t); yield break; }
+        }
+        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorCampo).
+        if (CampoCustom(clave) is ZonaCampoDefinicionDto cd)
+        {
+            var v = ValorCampo(z.Id, cd.Id);
+            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v!;
+            yield return new(t, t);
+        }
+        // Clave no reconocida: no se emite valor (el motor la coloca en el grupo "(Sin dato)").
+    }
+
+    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
+    private void OnGruposZChanged() { _paginaZ = 1; }
+
+    // Clic derecho -> "Agrupar por esta columna": un unico nivel (vacio limpia). Reusa el menu compartido.
+    private void SetAgruparZ(string k) { _gruposZ = string.IsNullOrEmpty(k) ? new() : new() { k }; _paginaZ = 1; }
+
+    // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
+    // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
+    private IEnumerable<ZonaComunDto> PaginaZonasZ()
+    {
+        var list = Filtradas().ToList();
         var totalPag = list.Count == 0 ? 1 : (int)Math.Ceiling(list.Count / (double)_porPaginaZ);
         var pag = Math.Clamp(_paginaZ, 1, totalPag);
-        return list.Skip((pag - 1) * _porPaginaZ).Take(_porPaginaZ).GroupBy(_ => "");
+        return list.Skip((pag - 1) * _porPaginaZ).Take(_porPaginaZ);
     }
+
+    // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La
+    // pinta TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'zona';
+    // 'z' es un alias para conservar las expresiones de las columnas de sistema tal cual.
+    private RenderFragment<ZonaComunDto> FilaZonaTpl => zona =>
+    @<div class="zc-list-row zc-grid @(_selZ.Contains(zona.Id) ? "zc-row-sel" : "")" style="@ZcGridStyle" @oncontextmenu="e => AbrirCtxZ(e, zona)" @oncontextmenu:preventDefault="true">
+        @{ var z = zona; }
+        <div class="zc-sel-cell"><label class="zc-chk"><input type="checkbox" checked="@_selZ.Contains(zona.Id)" @onchange="@(e => ToggleSelZ(zona.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+        <div class="zc-col-exp">
+            <button type="button" class="zc-nf-exp zc-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaZonaAsync(zona)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </div>
+        @* Datos editables inline (value= + @onchange guarda al salir del campo). Una sola
+           secuencia de columnas: las de sistema por clave, las propias via CampoCustom. *@
+        @foreach (var k in ColsVisibles())
+        {
+            if (CampoCustom(k) is ZonaCampoDefinicionDto cd)
+            {
+                var cdd = cd;
+                var vv = ValorCampo(zona.Id, cd.Id);
+                switch (cd.Tipo)
+                {
+                    case TipoCampoTablero.Seleccion:
+                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
+                            <option value="">-</option>
+                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                        </select>
+                        break;
+                    case TipoCampoTablero.Numero:
+                    case TipoCampoTablero.Moneda:
+                        <input class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                        break;
+                    case TipoCampoTablero.Fecha:
+                        <input class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                        break;
+                    case TipoCampoTablero.Booleano:
+                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
+                            <option value="">-</option>
+                            <option value="Si" selected="@(vv == "Si")">Si</option>
+                            <option value="No" selected="@(vv == "No")">No</option>
+                        </select>
+                        break;
+                    default:
+                        <input class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                        break;
+                }
+                continue;
+            }
+            switch (k)
+            {
+                case "nombre":
+                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
+                    break;
+                case "categoria":
+                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
+                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
+                    </select>
+                    break;
+                case "reservable":
+                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
+                        <option value="false" selected="@(!z.EsReservable)">No</option>
+                        <option value="true" selected="@z.EsReservable">Si</option>
+                    </select>
+                    break;
+                case "aforo":
+                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
+                    break;
+                case "estado":
+                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
+                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
+                    </select>
+                    break;
+                case "descripcion":
+                    <input class="zc-cell" value="@z.Descripcion" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "descripcion", e))" />
+                    break;
+                case "tarifa":
+                    <input type="number" step="any" min="0" class="zc-cell zc-num" value="@z.TarifaReserva" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "tarifa", e))" />
+                    break;
+                case "reglas":
+                    <input class="zc-cell" value="@z.ReglasUso" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "reglas", e))" />
+                    break;
+            }
+        }
+        <div class="zc-list-act">
+            <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </button>
+        </div>
+        <div class="zc-addcol-cell"></div>
+    </div>;
 
     // Filtros (client-side: la lista de zonas de una copropiedad es corta).
     // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).
