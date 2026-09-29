@@ -496,99 +496,97 @@ else
             {
                 @* Tabla: primera columna Expandir (hover -> abre ficha) + celdas editables inline.
                    Columnas configurables (mostrar/ocultar/renombrar) y agrupables. *@
-                <div class="dst-scroll">
-                    <div class="dst-head dst-grid2" style="grid-template-columns:@GridCols">
-                        <div class="dst-sel-cell"><label class="dst-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></div>
-                        <div></div>
+                <div class="tblwrap">
+                <div class="dst-scroll tblscroll">
+                <table class="tbl">
+                    <colgroup>
+                        <col style="width:38px" /><col style="width:34px" />
+                        @foreach (var it in ColumnasVisibles) { <col style="width:@AnchoCol(it)" /> }
+                        <col style="width:120px" /><col style="width:40px" />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                        <th class="tbl-sel"><label class="tbl-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></th>
+                        <th class="tbl-exp"></th>
                         @foreach (var it in ColumnasVisibles)
                         {
                             var itc = it;
                             var clave = itc.Key;
-                            if (itc.EsCustom)
-                            {
-                                <div class="dst-th-dyn dst-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
-                                     @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
-                                    <span class="dst-th-lbl">@itc.Campo!.Label</span>
-                                    @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
-                                    @ChevCol(clave, itc.Campo!.Label, true)
-                                    <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="dst-th-dyn dst-th-sortable" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
-                                     @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
-                                    <span class="dst-th-lbl">@Etiqueta(itc.Def!)</span>
-                                    @if (_sortKey == clave) { <span class="dst-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
-                                    @ChevCol(clave, Etiqueta(itc.Def!), false)
-                                    <span class="dst-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
-                                </div>
-                            }
+                            var lbl = itc.EsCustom ? itc.Campo!.Label : Etiqueta(itc.Def!);
+                            <th class="tbl-th--menu@(itc.EsCustom ? " tbl-th--dyn" : "")" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorColumna(clave)">
+                                <span class="tbl-th-lbl">@lbl</span>
+                                @if (_sortKey == clave) { <span class="tbl-th-arrow">@((MarkupString)(_sortDir > 0 ? "&#9650;" : "&#9660;"))</span> }
+                                @ChevCol(clave, lbl, itc.EsCustom)
+                                <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
+                            </th>
                         }
-                        <div></div>
-                        <div class="dst-addcol-h"><button type="button" class="dst-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></div>
-                    </div>
+                        <th class="tbl-anx"></th>
+                        <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></th>
+                        </tr>
+                    </thead>
+                    <tbody>
                     @foreach (var item in FilasRender())
                     {
                         if (item.EsGrupo)
                         {
                             var g = item.Grupo!;
-                            <div class="dst-group"><span class="dst-group-t">@g.Titulo</span><span class="dst-group-n">@g.Items.Count</span></div>
+                            <tr class="tbl-grp"><td colspan="@ColSpanTotal"><span class="tbl-grp-lbl">@g.Titulo</span><span class="n">@g.Items.Count</span></td></tr>
                             continue;
                         }
                         var uu = item.Unidad!;
                         var esAnexo = item.EsAnexo;
                         var nAnx = esAnexo ? 0 : Anexos(uu.Id).Count;
-                        <div class="dst-row dst-grid2 @(esAnexo ? "dst-row--anexo" : "") @(_sel.Contains(uu.Id) ? "dst-row-sel" : "") @(_uniRecienCreados.Contains(uu.Id) ? "dst-row-nuevo" : "")" style="grid-template-columns:@GridCols" @oncontextmenu="e => AbrirCtx(e, uu)" @oncontextmenu:preventDefault="true">
-                            <div class="dst-sel-cell"><label class="dst-chk"><input type="checkbox" checked="@_sel.Contains(uu.Id)" @onchange="@(e => ToggleSel(uu.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
-                            <div class="dst-exp-col">
-                                <button type="button" class="dst-exp" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
+                        <tr class="dst-row--tr @(esAnexo ? "dst-row--anexo" : "") @(_sel.Contains(uu.Id) ? "dst-row-sel" : "") @(_uniRecienCreados.Contains(uu.Id) ? "tbl-row-new" : "")" @oncontextmenu="e => AbrirCtx(e, uu)" @oncontextmenu:preventDefault="true">
+                            <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(uu.Id)" @onchange="@(e => ToggleSel(uu.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
+                            <td class="tbl-exp">
+                                <button type="button" class="tbl-exp-btn" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
-                            </div>
+                            </td>
                             @foreach (var it in ColumnasVisibles)
                             {
                                 if (it.EsCustom)
                                 {
                                     var _cv = MostrarCampoCelda(uu.Id, it.Campo!);
                                     var _cc = ColorCampoCelda(uu.Id, it.Campo!);
-                                    <div class="dst-td-campo" title="@it.Campo!.Label">
+                                    <td title="@it.Campo!.Label">
                                         @if (_cc is not null)
                                         {
-                                            <span class="dst-cell-chip" style="background:@_cc">@_cv</span>
+                                            <span class="tbl-chip" style="background:@_cc">@_cv</span>
                                         }
                                         else
                                         {
                                             @_cv
                                         }
-                                    </div>
+                                    </td>
                                     continue;
                                 }
                                 switch (it.Def!.Key)
                                 {
                                     case "num":
-                                        <div class="dst-numcell">
+                                        <td>
                                             @if (esAnexo) { <span class="dst-anexo-branch" title="Anexo">&#8627;</span> }
-                                            <input class="dst-cell dst-cell-num" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
-                                        </div>
+                                            <input class="tbl-cell" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
+                                        </td>
                                         break;
                                     case "torre":
-                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "torre", e))">
+                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "torre", e))">
                                             <option value="" selected="@(uu.TorreId is null)">-</option>
                                             @foreach (var t in _torres.OrderBy(x => x.Nombre))
                                             {
                                                 <option value="@t.Id" selected="@(uu.TorreId == t.Id)">@t.Nombre</option>
                                             }
-                                        </select>
+                                        </select></td>
                                         break;
                                     case "piso":
-                                        <input class="dst-cell" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" /></td>
                                         break;
                                     case "tipo":
                                         @* Si el tipo de la unidad quedo oculto se ofrece igual: si no, el select
                                            mostraria otra opcion y al tocar la celda se guardaria un valor que
                                            nadie eligio. *@
-                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "tipo", e))">
+                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "tipo", e))">
                                             @foreach (var t in TiposBaseConVigente(uu))
                                             {
                                                 <option value="@($"e:{t}")" selected="@(uu.TipoCustomId is null && uu.Tipo == t)">@Etiqueta(t)</option>
@@ -600,73 +598,71 @@ else
                                                     @foreach (var tc in tcv) { <option value="@($"c:{tc.Id}")" selected="@(uu.TipoCustomId == tc.Id)">@tc.Nombre</option> }
                                                 </optgroup>
                                             }
-                                        </select>
+                                        </select></td>
                                         break;
                                     case "estado":
-                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "estado", e))">
+                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "estado", e))">
                                             @foreach (var es in EstadosConVigente(uu.Estado))
                                             {
                                                 <option value="@es" selected="@(string.Equals(uu.Estado, es, StringComparison.OrdinalIgnoreCase))">@es</option>
                                             }
-                                        </select>
+                                        </select></td>
                                         break;
                                     case "area":
-                                        <input class="dst-cell" type="number" step="@PasoDe("area")" value="@NumeroCelda(uu.AreaM2, "area")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("area")" value="@NumeroCelda(uu.AreaM2, "area")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" /></td>
                                         break;
                                     case "coef":
-                                        <input class="dst-cell" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" /></td>
                                         break;
                                     case { } mc when ModContribNumero(mc) is not null:
-                                        <input class="dst-cell" type="number" step="@PasoDe(mc)" placeholder="-"
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe(mc)" placeholder="-"
                                                value="@NumeroCelda(ModContribValor(uu, ModContribNumero(mc)!.Value), mc)"
-                                               @onchange="@(e => Inline(uu, mc, e))" />
+                                               @onchange="@(e => Inline(uu, mc, e))" /></td>
                                         break;
                                     case "habitaciones":
-                                        <input class="dst-cell" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" /></td>
                                         break;
                                     case "banos":
-                                        <input class="dst-cell" type="number" value="@(uu.Banos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "banos", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Banos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "banos", e))" /></td>
                                         break;
                                     case "parqueaderos":
-                                        <input class="dst-cell" type="number" value="@(uu.Parqueaderos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "parqueaderos", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Parqueaderos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "parqueaderos", e))" /></td>
                                         break;
                                     case "pagaadmin":
-                                        <select class="dst-cell" @onchange="@(e => Inline(uu, "pagaadmin", e))">
+                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "pagaadmin", e))">
                                             <option value="true" selected="@(uu.PagaAdministracion)">Si</option>
                                             <option value="false" selected="@(!uu.PagaAdministracion)">No</option>
-                                        </select>
+                                        </select></td>
                                         break;
                                     case "cuota":
-                                        <input class="dst-cell" type="number" step="@PasoDe("cuota")" value="@NumeroCelda(uu.CuotaMensual, "cuota")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" />
+                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("cuota")" value="@NumeroCelda(uu.CuotaMensual, "cuota")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" /></td>
                                         break;
                                     case "observaciones":
-                                        <input class="dst-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" />
+                                        <td><input class="tbl-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" /></td>
                                         break;
                                     case "agrupacion":
-                                        <div class="dst-c dst-ro">
-                                            @{ var agr = AgrupacionDe(uu); }
-                                            <span class="dst-agr dst-agr--@agr.ToLowerInvariant()">@agr</span>
-                                        </div>
+                                        var agr = AgrupacionDe(uu);
+                                        <td class="c"><span class="dst-agr dst-agr--@agr.ToLowerInvariant()">@agr</span></td>
                                         break;
                                     case "matricula":
-                                        <input class="dst-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" />
+                                        <td><input class="tbl-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" /></td>
                                         break;
                                     case "refpago":
-                                        <input class="dst-cell" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" />
+                                        <td><input class="tbl-cell" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" /></td>
                                         break;
                                     case "prop":
-                                        <div class="dst-c dst-ro">
-                                            @if (string.IsNullOrWhiteSpace(uu.PropietarioNombre)) { <span class="dst-sin">Sin propietario</span> }
+                                        <td>
+                                            @if (string.IsNullOrWhiteSpace(uu.PropietarioNombre)) { <span class="sin">Sin propietario</span> }
                                             else
                                             {
                                                 <span>@uu.PropietarioNombre</span>
                                                 @if (uu.PropietariosCount > 1) { <span class="dst-mas" title="@uu.PropietariosCount propietarios">+@(uu.PropietariosCount - 1)</span> }
                                             }
-                                        </div>
+                                        </td>
                                         break;
                                 }
                             }
-                            <div class="dst-anx-cell">
+                            <td class="tbl-anx">
                                 @if (!esAnexo)
                                 {
                                     @if (nAnx > 0)
@@ -678,11 +674,12 @@ else
                                     }
                                     <button class="dst-anx-add" type="button" @onclick="() => AbrirAgregarAnexo(uu)" title="Agregar anexo (parqueadero / cuarto util / bodega)">+ anexo</button>
                                 }
-                            </div>
-                            <div class="dst-addcol-cell"></div>
-                        </div>
+                            </td>
+                            <td class="tbl-addcol"></td>
+                        </tr>
                         @if (!esAnexo && _anexoAddPara == uu.Id)
                         {
+                            <tr class="dst-anexoadd-tr"><td colspan="@ColSpanTotal">
                             <div class="dst-anexoadd">
                                 <span class="dst-anexoadd-lbl">&#8627; Nuevo anexo de <strong>@uu.Numero</strong></span>
                                 <select class="dst-nf-inp dst-anexoadd-tipo" @bind="_anexoTipo">
@@ -696,19 +693,20 @@ else
                                 <button class="dst-row-add" type="button" @onclick="() => CrearAnexoAsync(uu)" disabled="@(_creandoAnexo || string.IsNullOrWhiteSpace(_anexoNum))">@(_creandoAnexo ? "..." : "Agregar")</button>
                                 <button class="dst-anx-cancel" type="button" @onclick="@(() => { _anexoAddPara = null; _anexoNum = string.Empty; })">Cancelar</button>
                             </div>
+                            </td></tr>
                         }
                     }
                     @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
                     @if (_altaAbierta)
                     {
-                    <div class="dst-row dst-newrow dst-newrow--edit dst-grid2" style="grid-template-columns:@GridCols" @onkeydown="OnAltaKeydown">
-                        <div class="dst-sel-cell"></div>
-                        <div class="dst-exp-col">
-                            <span class="dst-exp dst-exp-mut" title="Nuevo registro">
+                    <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                        <td class="tbl-sel"></td>
+                        <td class="tbl-exp">
+                            <span class="tbl-exp-btn" title="Nuevo registro" style="opacity:1">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </span>
-                        </div>
+                        </td>
                         @foreach (var it in ColumnasVisibles)
                         {
                             if (it.EsCustom)
@@ -718,44 +716,44 @@ else
                                 switch (cdd.Tipo)
                                 {
                                     case TipoCampoTablero.Seleccion:
-                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
                                             <option value="">- elegir -</option>
                                             @foreach (var o in OpcionCampo.Parse(cdd.Opciones).Where(x => !x.Oculta))
                                             {
                                                 <option value="@o.K" style="@(o.Color is null ? null : $"background:{o.Color}")">@o.K</option>
                                             }
-                                        </select>
+                                        </select></td>
                                         break;
                                     case TipoCampoTablero.Numero:
                                     case TipoCampoTablero.Moneda:
-                                        <input class="dst-nf-inp" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" />
+                                        <td class="nf-cell"><input class="nf-in" type="number" step="any" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" /></td>
                                         break;
                                     case TipoCampoTablero.Fecha:
-                                        <input class="dst-nf-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
+                                        <td class="nf-cell"><input class="nf-in" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" /></td>
                                         break;
                                     case TipoCampoTablero.Booleano:
-                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
                                             <option value="">- elegir -</option>
                                             <option value="Si">Si</option>
                                             <option value="No">No</option>
-                                        </select>
+                                        </select></td>
                                         break;
                                     case TipoCampoTablero.Formula:
                                         @* Calculado y de solo lectura: no se captura, se computa al guardar/leer. *@
-                                        <div class="dst-td-campo" style="font-style:italic;color:var(--propia-text-faint)" title="Se calcula automaticamente">(se calcula)</div>
+                                        <td class="nf-mut" title="Se calcula automaticamente">(se calcula)</td>
                                         break;
                                     case TipoCampoTablero.Usuario:
-                                        <select class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
+                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
                                             <option value="">- elegir -</option>
                                             @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId">@u.NombreCompleto</option> }
-                                        </select>
+                                        </select></td>
                                         break;
                                     case TipoCampoTablero.Directorio:
-                                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona..."
-                                                         SeleccionadaChanged="(c) => OnDirectorioSel(cdd.Id, c)" />
+                                        <td class="nf-cell"><SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona..."
+                                                         SeleccionadaChanged="(c) => OnDirectorioSel(cdd.Id, c)" /></td>
                                         break;
                                     default:
-                                        <input class="dst-nf-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" />
+                                        <td class="nf-cell"><input class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cdd.Label" /></td>
                                         break;
                                 }
                                 continue;
@@ -763,16 +761,16 @@ else
                             switch (it.Def!.Key)
                             {
                                 case "num":
-                                    <input class="dst-nf-inp" placeholder="A1-202" title="Código TORRE-APARTAMENTO (ej. A1-202). La torre sale del código y el piso se infiere del número de apto." @bind="_nuNum" @bind:event="oninput" />
+                                    <td class="nf-cell"><input class="nf-in" placeholder="A1-202" title="Código TORRE-APARTAMENTO (ej. A1-202). La torre sale del código y el piso se infiere del número de apto." @bind="_nuNum" @bind:event="oninput" /></td>
                                     break;
                                 case "torre":
-                                    <div class="dst-nf-mut" title="Se toma del código (ej. la 'A1' de A1-202)">del código</div>
+                                    <td class="nf-mut" title="Se toma del código (ej. la 'A1' de A1-202)">del código</td>
                                     break;
                                 case "piso":
-                                    <div class="dst-nf-mut" title="Se infiere del número de apto (ej. 202 = piso 2)">auto</div>
+                                    <td class="nf-mut" title="Se infiere del número de apto (ej. 202 = piso 2)">auto</td>
                                     break;
                                 case "tipo":
-                                    <select class="dst-nf-inp" @bind="_nuTipoKey">
+                                    <td class="nf-cell"><select class="nf-in" @bind="_nuTipoKey">
                                         @foreach (var t in TiposBaseVisibles) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
                                         @if (TiposCustomVisibles.Count > 0)
                                         {
@@ -780,52 +778,59 @@ else
                                                 @foreach (var tc in TiposCustomVisibles) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
                                             </optgroup>
                                         }
-                                    </select>
+                                    </select></td>
                                     break;
                                 case "area":
-                                    <input class="dst-nf-inp" type="number" step="@PasoDe("area")" placeholder="-" @bind="_nuArea" @bind:event="oninput" />
+                                    <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("area")" placeholder="-" @bind="_nuArea" @bind:event="oninput" /></td>
                                     break;
                                 case "coef":
-                                    <input class="dst-nf-inp" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" />
+                                    <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></td>
                                     break;
                                 case "agrupacion":
-                                    <div class="dst-nf-mut" title="Se define al crear anexos (+ anexo)">auto</div>
+                                    <td class="nf-mut" title="Se define al crear anexos (+ anexo)">auto</td>
                                     break;
                                 case "matricula":
-                                    <input class="dst-nf-inp" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" placeholder="@AliasCampo("matricula", "Matricula")" @bind="_nuMatricula" @bind:event="oninput" />
+                                    <td class="nf-cell"><input class="nf-in" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" placeholder="@AliasCampo("matricula", "Matricula")" @bind="_nuMatricula" @bind:event="oninput" /></td>
                                     break;
                                 case "refpago":
-                                    <input class="dst-nf-inp" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" placeholder="@AliasCampo("refpago", "Ref. pago")" @bind="_nuRefPago" @bind:event="oninput" />
+                                    <td class="nf-cell"><input class="nf-in" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" placeholder="@AliasCampo("refpago", "Ref. pago")" @bind="_nuRefPago" @bind:event="oninput" /></td>
                                     break;
                                 default:
-                                    <div class="dst-nf-mut" title="Se define en la ficha de la unidad">En la ficha</div>
+                                    <td class="nf-mut" title="Se define en la ficha de la unidad">En la ficha</td>
                                     break;
                             }
                         }
-                        <div class="dst-act dst-act-nf">
+                        <td class="tbl-anx dst-act-nf">
                             <button type="button" class="dst-nf-ok" title="Guardar registro (Enter)" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
                             </button>
                             <button type="button" class="dst-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_creandoUnidad">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
                             </button>
-                        </div>
-                        <div class="dst-addcol-cell"></div>
-                    </div>
+                        </td>
+                        <td class="tbl-addcol"></td>
+                    </tr>
                     }
                     else
                     {
-                    <div class="dst-row dst-newrow dst-newrow--cta dst-grid2" style="grid-template-columns:@GridCols">
-                        <div class="dst-sel-cell"></div>
-                        <div class="dst-exp-col"></div>
-                        <div class="dst-nf-ctacell" style="grid-column: 3 / -1;">
-                            <button type="button" class="dst-nf-cta" @onclick="AbrirAlta">
+                    <tr class="newrow">
+                        <td class="tbl-sel"></td>
+                        <td class="tbl-exp"></td>
+                        <td colspan="@(ColSpanTotal - 2)">
+                            <button type="button" class="row-add--sm" @onclick="AbrirAlta">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                 Agregar registro
                             </button>
-                        </div>
-                    </div>
+                        </td>
+                    </tr>
                     }
+                    </tbody>
+                </table>
+                </div>
+                <button type="button" class="tbl-fab" @onclick="AbrirAlta" title="Agregar registro">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    Agregar registro
+                </button>
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
@@ -1212,7 +1217,7 @@ else
         StateHasChanged();
     }
     // Flecha del header de columna (abre el menu). Se inserta en cada celda del header.
-    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="dst-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     private string LabelAgrupacionSingular => string.IsNullOrWhiteSpace(_resumen?.Identidad.LabelAgrupacion) ? "Torre" : _resumen!.Identidad.LabelAgrupacion!;
     private string LabelAgrupacionPlural => LabelAgrupacionSingular + "s";
@@ -1570,6 +1575,10 @@ else
     private string GridCols => "38px 34px "
         + string.Join(" ", ColumnasVisibles.Select(it => _colW.TryGetValue(it.Key, out var w) ? w + "px" : (it.EsCustom ? "170px" : it.Def!.Width)))
         + " 120px 40px";
+    // Ancho de una columna visible (mismo criterio que GridCols) para el <colgroup> del frame .tbl.
+    private string AnchoCol(ColItem it) => _colW.TryGetValue(it.Key, out var w) ? w + "px" : (it.EsCustom ? "170px" : it.Def!.Width);
+    // Columnas totales de la tabla (para colspan de filas de grupo/alta/centinela): sel + exp + visibles + anexos + addcol.
+    private int ColSpanTotal => 2 + ColumnasVisibles.Count() + 2;
 
     // Fila COMPLETA de config del campo con su estado actual. El PUT reemplaza la fila entera, asi que
     // siempre se manda todo y se muta con 'with' solo lo que cambia (no se pisa lo que no se toca).
