@@ -481,7 +481,7 @@ else
                     <colgroup>
                         <col style="width:38px" /><col style="width:34px" />
                         @foreach (var it in ColumnasVisibles) { <col style="width:@AnchoCol(it)" /> }
-                        <col style="width:120px" /><col style="width:40px" />
+                        <col style="width:76px" />
                     </colgroup>
                     <thead>
                         <tr>
@@ -500,7 +500,6 @@ else
                                 <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
                             </th>
                         }
-                        <th class="tbl-anx"></th>
                         <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></th>
                         </tr>
                     </thead>
@@ -513,9 +512,7 @@ else
                             continue;
                         }
                         var uu = item.Unidad!;
-                        var esAnexo = item.EsAnexo;
-                        var nAnx = esAnexo ? 0 : Anexos(uu.Id).Count;
-                        <tr class="dst-row--tr @(esAnexo ? "dst-row--anexo" : "") @(_sel.Contains(uu.Id) ? "dst-row-sel" : "") @(_uniRecienCreados.Contains(uu.Id) ? "tbl-row-new" : "")" @oncontextmenu="e => AbrirCtx(e, uu)" @oncontextmenu:preventDefault="true">
+                        <tr class="dst-row--tr @(_sel.Contains(uu.Id) ? "dst-row-sel" : "") @(_uniRecienCreados.Contains(uu.Id) ? "tbl-row-new" : "")" @oncontextmenu="e => AbrirCtx(e, uu)" @oncontextmenu:preventDefault="true">
                             <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(uu.Id)" @onchange="@(e => ToggleSel(uu.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
                             <td class="tbl-exp">
                                 <button type="button" class="tbl-exp-btn" title="Abrir la ficha de la unidad" @onclick="() => AbrirFichaAsync(uu)">
@@ -543,10 +540,7 @@ else
                                 switch (it.Def!.Key)
                                 {
                                     case "num":
-                                        <td>
-                                            @if (esAnexo) { <span class="dst-anexo-branch" title="Anexo">&#8627;</span> }
-                                            <input class="tbl-cell" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" />
-                                        </td>
+                                        <td><input class="tbl-cell" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" /></td>
                                         break;
                                     case "torre":
                                         <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "torre", e))">
@@ -619,24 +613,9 @@ else
                                         <td><input class="tbl-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" /></td>
                                         break;
                                     case "agrupacion":
-                                        var agr = AgrupacionDe(uu);
-                                        <td>
-                                            @if (_agrupLinkId == uu.Id)
-                                            {
-                                                <select class="tbl-cell" @onchange="(e) => VincularComoAnexoAsync(uu, e.Value?.ToString())">
-                                                    <option value="">Elige principal...</option>
-                                                    @foreach (var p in PrincipalesPosibles(uu)) { <option value="@p.Id">@p.Numero</option> }
-                                                </select>
-                                            }
-                                            else
-                                            {
-                                                <select class="tbl-cell" @onchange="(e) => AgrupacionInlineChangeAsync(uu, e.Value?.ToString())">
-                                                    <option value="individual" selected="@(agr == "Individual")">Individual</option>
-                                                    <option value="anexo" selected="@(agr == "Anexo")">Anexo</option>
-                                                    @if (agr == "Principal") { <option value="principal" selected>Principal</option> }
-                                                </select>
-                                            }
-                                        </td>
+                                        @* Solo lectura: la agrupacion (Individual / Principal) es derivada y los anexos
+                                           se gestionan desde la ficha de la unidad (modal), no inline. *@
+                                        <td class="tbl-ro" title="Los anexos se gestionan desde la ficha de la unidad">@AgrupacionDe(uu)</td>
                                         break;
                                     case "matricula":
                                         <td><input class="tbl-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" /></td>
@@ -660,39 +639,8 @@ else
                                         break;
                                 }
                             }
-                            <td class="tbl-anx">
-                                @if (!esAnexo)
-                                {
-                                    @if (nAnx > 0)
-                                    {
-                                        <button class="dst-anx-toggle" type="button" @onclick="() => ToggleAnexos(uu.Id)" title="Ver anexos (parqueaderos, cuartos utiles, bodegas)">
-                                            @if (_anexosExpandidos.Contains(uu.Id)) { <span>&#9662;</span> } else { <span>&#9656;</span> }
-                                            <span>@nAnx</span>
-                                        </button>
-                                    }
-                                    <button class="dst-anx-add" type="button" @onclick="() => AbrirAgregarAnexo(uu)" title="Agregar anexo (parqueadero / cuarto util / bodega)">+ anexo</button>
-                                }
-                            </td>
                             <td class="tbl-addcol"></td>
                         </tr>
-                        @if (!esAnexo && _anexoAddPara == uu.Id)
-                        {
-                            <tr class="dst-anexoadd-tr"><td colspan="@ColSpanTotal">
-                            <div class="dst-anexoadd">
-                                <span class="dst-anexoadd-lbl">&#8627; Nuevo anexo de <strong>@uu.Numero</strong></span>
-                                <select class="dst-nf-inp dst-anexoadd-tipo" @bind="_anexoTipo">
-                                    <option value="@TipoUnidad.Parqueadero">Parqueadero</option>
-                                    <option value="@TipoUnidad.UtilCuarto">Cuarto util</option>
-                                    <option value="@TipoUnidad.Bodega">Bodega</option>
-                                    <option value="@TipoUnidad.Deposito">Depósito</option>
-                                    <option value="@TipoUnidad.ParqueaderoDeposito">Parqueadero + depósito</option>
-                                </select>
-                                <input class="dst-nf-inp dst-anexoadd-num" placeholder="Número (ej. P-12)" @bind="_anexoNum" @bind:event="oninput" />
-                                <button class="dst-row-add" type="button" @onclick="() => CrearAnexoAsync(uu)" disabled="@(_creandoAnexo || string.IsNullOrWhiteSpace(_anexoNum))">@(_creandoAnexo ? "..." : "Agregar")</button>
-                                <button class="dst-anx-cancel" type="button" @onclick="@(() => { _anexoAddPara = null; _anexoNum = string.Empty; })">Cancelar</button>
-                            </div>
-                            </td></tr>
-                        }
                     }
                     @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
@@ -785,26 +733,8 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></td>
                                     break;
                                 case "agrupacion":
-                                    @* Coherente con las filas existentes: primero Individual/Anexo; al elegir Anexo el
-                                       MISMO select pasa a pedir la unidad principal (una sola linea, no deforma la fila). *@
-                                    <td class="nf-cell">
-                                        @if (_nuAgrup == "anexo")
-                                        {
-                                            <select class="nf-in" @onchange="OnAltaPrincipalChange" title="Unidad principal del anexo (o volver a Individual)">
-                                                <option value="__ind__">&larr; Individual</option>
-                                                <option value="" disabled selected="@string.IsNullOrEmpty(_nuPrincipalId)">Elige principal...</option>
-                                                @foreach (var p in _unidades.Where(x => x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase))
-                                                { <option value="@p.Id" selected="@(_nuPrincipalId == p.Id.ToString())">@p.Numero</option> }
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            <select class="nf-in" @onchange="OnAltaAgrupChange" title="Individual, o Anexo de una unidad principal">
-                                                <option value="individual" selected>Individual</option>
-                                                <option value="anexo">Anexo</option>
-                                            </select>
-                                        }
-                                    </td>
+                                    @* La unidad nueva nace Individual; para convertirla en anexo se usa su ficha (modal). *@
+                                    <td class="nf-mut" title="La unidad nueva nace Individual; conviertela en anexo desde su ficha">Individual</td>
                                     break;
                                 case "matricula":
                                     <td class="nf-cell"><input class="nf-in" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" placeholder="@AliasCampo("matricula", "Matricula")" @bind="_nuMatricula" @bind:event="oninput" /></td>
@@ -817,7 +747,7 @@ else
                                     break;
                             }
                         }
-                        <td class="tbl-anx dst-act-nf">
+                        <td class="tbl-addcol dst-act-nf">
                             <button type="button" class="dst-nf-ok" title="Guardar registro (Enter)" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
                             </button>
@@ -825,7 +755,6 @@ else
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
                             </button>
                         </td>
-                        <td class="tbl-addcol"></td>
                     </tr>
                     }
                     else
@@ -980,22 +909,6 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
-    private string _nuAgrup = "individual";   // alta inline: "individual" | "anexo"
-    private string? _nuPrincipalId;           // alta inline: Guid del principal cuando _nuAgrup == "anexo"
-
-    // Alta: cambio Individual/Anexo. Al pasar a Individual se limpia el principal.
-    private void OnAltaAgrupChange(ChangeEventArgs e)
-    {
-        _nuAgrup = e.Value?.ToString() == "anexo" ? "anexo" : "individual";
-        if (_nuAgrup == "individual") _nuPrincipalId = null;
-    }
-    // Alta: eleccion del principal (o "volver a Individual").
-    private void OnAltaPrincipalChange(ChangeEventArgs e)
-    {
-        var v = e.Value?.ToString();
-        if (v == "__ind__") { _nuAgrup = "individual"; _nuPrincipalId = null; }
-        else if (!string.IsNullOrEmpty(v)) _nuPrincipalId = v;
-    }
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
@@ -1054,58 +967,6 @@ else
         catch (Exception ex) { _inlineMsgU = "Error al asignar propietario: " + ex.Message; }
     }
 
-    // ===== Agrupacion editable inline (Individual <-> Anexo). Principal es derivado (tiene anexos):
-    //       no se vuelve Individual desde la celda sin quitar antes sus anexos. =====
-    private Guid? _agrupLinkId;   // unidad para la que se esta eligiendo el principal (volverla anexo)
-
-    // Unidades que pueden ser principal de otra: no ella misma y que no sean ya un anexo.
-    private IEnumerable<UnidadDto> PrincipalesPosibles(UnidadDto u)
-        => _unidades.Where(x => x.Id != u.Id && x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase);
-
-    private async Task AgrupacionInlineChangeAsync(UnidadDto u, string? val)
-    {
-        var agr = AgrupacionDe(u);
-        if (val == "anexo")
-        {
-            if (agr == "Anexo") return;
-            _agrupLinkId = u.Id;   // despliega el selector de principal en la celda
-        }
-        else if (val == "individual")
-        {
-            if (agr == "Anexo") await DesvincularAnexoAsync(u);
-            else if (agr == "Principal") _inlineMsgU = "Esta unidad es principal: primero quita o reasigna sus anexos.";
-        }
-    }
-
-    // Vincula la unidad como ANEXO del principal elegido (RN-09).
-    private async Task VincularComoAnexoAsync(UnidadDto u, string? principalIdStr)
-    {
-        _agrupLinkId = null;
-        if (!Guid.TryParse(principalIdStr, out var pid)) return;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{pid}/vinculos", new CrearVinculoUnidadRequest(u.Id, false));
-            if (resp.IsSuccessStatusCode) { _inlineMsgU = $"{u.Numero} quedo como anexo."; await CargarAsync(); }
-            else { _inlineMsgU = "No se pudo vincular: " + await resp.Content.ReadAsStringAsync(); }
-        }
-        catch (Exception ex) { _inlineMsgU = "Error al vincular: " + ex.Message; }
-    }
-
-    // Desvincula un anexo (busca su vinculo en el principal y lo elimina) -> vuelve Individual.
-    private async Task DesvincularAnexoAsync(UnidadDto u)
-    {
-        if (u.PrincipalId is not Guid pid) return;
-        try
-        {
-            var vincs = await Auth().GetFromJsonAsync<List<UnidadVinculoDto>>($"/api/mi-copropiedad/unidades/{pid}/vinculos");
-            var v = vincs?.FirstOrDefault(x => x.UnidadAsociadaId == u.Id);
-            if (v is null) { _inlineMsgU = "No se encontro el vinculo del anexo."; return; }
-            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/vinculos/{v.Id}");
-            if (resp.IsSuccessStatusCode) { _inlineMsgU = $"{u.Numero} quedo individual."; await CargarAsync(); }
-            else { _inlineMsgU = "No se pudo desvincular: " + await resp.Content.ReadAsStringAsync(); }
-        }
-        catch (Exception ex) { _inlineMsgU = "Error al desvincular: " + ex.Message; }
-    }
     // Config de campos dinamicos (modal "Configurar", ahora renderizado por ConfigCamposEntidad).
     private bool _configCamposAbierto;
     private bool _cfgBusy;   // lo comparten el guardado de config y el popup de listas (Tipo)
@@ -1547,9 +1408,8 @@ else
             var fuente = _vista == "tabla" ? Filtradas.Take(Mostradas) : UnidadesPagina;
             foreach (var u in fuente)
             {
+                // Los anexos ya NO se anidan inline en la tabla: se ven/gestionan desde la ficha (modal).
                 yield return new FilaUni(false, null, 0, 0, u);
-                if (_anexosExpandidos.Contains(u.Id))
-                    foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, 0, 0, a, true);
             }
             yield break;
         }
@@ -1565,8 +1425,6 @@ else
                 foreach (var u in n.Filas)
                 {
                     yield return new FilaUni(false, null, 0, 0, u);
-                    if (_anexosExpandidos.Contains(u.Id))
-                        foreach (var a in Anexos(u.Id)) yield return new FilaUni(false, null, 0, 0, a, true);
                 }
             }
             else
@@ -1576,42 +1434,8 @@ else
         }
     }
 
-    // ===== Anexos (unidades hijas: parqueaderos, cuartos utiles, bodegas) =====
-    private readonly HashSet<Guid> _anexosExpandidos = new();
-    private Guid? _anexoAddPara;
-    private string _anexoNum = "";
-    private TipoUnidad _anexoTipo = TipoUnidad.Parqueadero;
-    private bool _creandoAnexo;
-
-    private List<UnidadDto> Anexos(Guid principalId) => _unidades.Where(u => u.PrincipalId == principalId).OrderBy(u => u.Numero).ToList();
-    private void ToggleAnexos(Guid id) { if (!_anexosExpandidos.Add(id)) _anexosExpandidos.Remove(id); }
-    private void AbrirAgregarAnexo(UnidadDto principal) { _anexoAddPara = principal.Id; _anexoNum = ""; _anexoTipo = TipoUnidad.Parqueadero; }
-
-    // Crea el anexo como unidad (tipo parqueadero/cuarto/bodega) y lo vincula a la principal (RN-09).
-    private async Task CrearAnexoAsync(UnidadDto principal)
-    {
-        if (_creandoAnexo || string.IsNullOrWhiteSpace(_anexoNum)) return;
-        _creandoAnexo = true;
-        try
-        {
-            var req = new CrearUnidadRequest(_anexoNum.Trim(), _anexoTipo, principal.TorreId, principal.Piso, 0m, null,
-                null, null, null, null, null);
-            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-            if (!resp.IsSuccessStatusCode) { _inlineMsgU = "No se pudo crear el anexo: " + await resp.Content.ReadAsStringAsync(); return; }
-            var creada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
-            if (creada is not null)
-            {
-                var vresp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{principal.Id}/vinculos",
-                    new CrearVinculoUnidadRequest(creada.Id, true));
-                if (!vresp.IsSuccessStatusCode) _inlineMsgU = "Anexo creado, pero no se pudo vincular: " + await vresp.Content.ReadAsStringAsync();
-            }
-            _anexoAddPara = null; _anexoNum = "";
-            _anexosExpandidos.Add(principal.Id);
-            await CargarAsync();
-        }
-        catch (Exception ex) { _inlineMsgU = "Error al crear el anexo: " + ex.Message; }
-        finally { _creandoAnexo = false; }
-    }
+    // Anexos: se ven y se gestionan desde la ficha de la unidad (modal GestionarUnidadesModal),
+    // no en la tabla. La derivacion Individual/Principal la resuelve AgrupacionDe.
 
     // ===== Configuracion de columnas (POR COPROPIEDAD, en unidad_campos_config) =====
     // El orden (Orden) y la visibilidad (Oculto) de cada campo se guardan en la config del tenant,
@@ -1743,7 +1567,7 @@ else
     // Ancho de una columna visible (mismo criterio que GridCols) para el <colgroup> del frame .tbl.
     private string AnchoCol(ColItem it) => _colW.TryGetValue(it.Key, out var w) ? w + "px" : (it.EsCustom ? "170px" : it.Def!.Width);
     // Columnas totales de la tabla (para colspan de filas de grupo/alta/centinela): sel + exp + visibles + anexos + addcol.
-    private int ColSpanTotal => 2 + ColumnasVisibles.Count() + 2;
+    private int ColSpanTotal => 2 + ColumnasVisibles.Count() + 1;
 
     // Fila COMPLETA de config del campo con su estado actual. El PUT reemplaza la fila entera, asi que
     // siempre se manda todo y se muta con 'with' solo lo que cambia (no se pisa lo que no se toca).
@@ -1948,7 +1772,6 @@ else
     {
         if (_creandoUnidad) return;
         if (string.IsNullOrWhiteSpace(_nuNum)) { _inlineMsgU = "El numero de la unidad es obligatorio."; return; }
-        if (_nuAgrup == "anexo" && !Guid.TryParse(_nuPrincipalId, out _)) { _inlineMsgU = "Elige la unidad principal del anexo."; return; }
         _creandoUnidad = true;
         try
         {
@@ -1995,31 +1818,14 @@ else
                         try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value)); valsNuevos[kv.Key] = kv.Value; } catch { }
                     }
                     if (valsNuevos.Count > 0) _camposValores[creada.Id] = valsNuevos;  // que las columnas muestren el valor sin recargar
-                    // Si el alta marca la unidad como Anexo, vincularla a su principal (RN-09).
-                    Guid padreNuevo = default;
-                    bool esAnexoNuevo = _nuAgrup == "anexo" && Guid.TryParse(_nuPrincipalId, out padreNuevo);
-                    bool anexoOk = false;
-                    if (esAnexoNuevo)
-                    {
-                        try
-                        {
-                            var rv = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{padreNuevo}/vinculos", new CrearVinculoUnidadRequest(creada.Id, false));
-                            if (rv.IsSuccessStatusCode) anexoOk = true;
-                            else _inlineMsgU = "Unidad creada, pero no se pudo vincular como anexo: " + await rv.Content.ReadAsStringAsync();
-                        }
-                        catch (Exception ex) { _inlineMsgU = "Unidad creada, pero fallo el vinculo de anexo: " + ex.Message; }
-                    }
-                    else
-                    {
-                        _unidades.Add(creada);
-                        _uniRecienCreados.Add(creada.Id);
-                    }
-                    if (!esAnexoNuevo) _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    else if (anexoOk) _inlineMsgU = $"Anexo {creada.Numero} vinculado.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuAgrup = "individual"; _nuPrincipalId = null; _nuCampos.Clear();
+                    // La unidad nace Individual (queda al final, en verde). Convertirla en anexo se hace
+                    // luego desde su ficha (modal), no en el alta inline.
+                    _unidades.Add(creada);
+                    _uniRecienCreados.Add(creada.Id);
+                    _inlineMsgU = $"Unidad {creada.Numero} creada.";
+                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
-                    if (esAnexoNuevo) await CargarAsync();  // refrescar el arbol para que el anexo salga bajo su principal
                 }
                 else { await CargarAsync(); }
             }
