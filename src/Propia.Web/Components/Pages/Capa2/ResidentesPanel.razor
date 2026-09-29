@@ -47,29 +47,9 @@ else
         @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
         <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
 
-        @* Agrupar (menu) - disponible en ambas vistas. *@
-        <div class="res-menu-wrap">
-            <button type="button" class="res-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar residentes">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
-            </button>
-            @if (_showAgrupar)
-            {
-                <div class="res-menu-bd" @onclick="() => _showAgrupar = false"></div>
-                <div class="res-menu">
-                    @foreach (var g in new[] { ("", "Sin agrupar"), ("rol", "Rol"), ("unidad", "Unidad"), ("torre", "Torre") })
-                    {
-                        var gk = g.Item1;
-                        <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
-                    }
-                    @foreach (var d in _defs)
-                    {
-                        var gk = "cd:" + d.Id;
-                        <button class="res-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgrupar(gk))">@d.Label</button>
-                    }
-                </div>
-            }
-        </div>
+        @* Agrupar (menu compartido, multi-nivel) - disponible en ambas vistas.
+           Fuente unica: TablaAgruparMenu (menu) + TablaAgrupador (motor) + TablaGruposRender (render). *@
+        <TablaAgruparMenu Columnas="ColsAgrupablesR()" Grupos="_gruposR" GruposChanged="OnGruposRChanged" />
 
         @if (_vista == "tabla")
         {
@@ -205,7 +185,7 @@ else
                     </div>
                 }
             </div>
-            @if (_agruparPor == "")
+            @if (!_agrupadoR)
             {
                 <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
                             PaginaChanged="p => { _pagina = p; }"
@@ -286,83 +266,18 @@ else
                 <div class="res-addcol-h"><button type="button" class="res-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoR"><i class="fi fi-rr-plus"></i></button></div>
             </div>
 
-            @foreach (var item in FilasRender())
+            @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
+               TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaRTpl. *@
+            @if (_agrupadoR)
             {
-                if (item.EsGrupo)
+                <TablaGruposRender T="ResidenteResumenDto" Nodos="TablaAgrupador.Agrupar<ResidenteResumenDto>(Filtrados, _gruposR, ValorGrupoR)" FilaTemplate="FilaRTpl" />
+            }
+            else
+            {
+                @foreach (var r in PaginaR())
                 {
-                    <div class="res-group">
-                        <span class="res-group-chip">@item.GrupoTitulo</span>
-                        <span class="res-group-n">@item.GrupoCount</span>
-                    </div>
-                    continue;
+                    @FilaRTpl(r)
                 }
-                var r = item.Fila!;
-                <div class="res-listrow res-listgrid @(_selR.Contains(r.UnidadPersonaId) ? "res-row-sel" : "") @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="@PerGridStyle" @oncontextmenu="e => AbrirCtxR(e, r)" @oncontextmenu:preventDefault="true">
-                    <div class="res-sel-cell"><label class="res-chk"><input type="checkbox" checked="@_selR.Contains(r.UnidadPersonaId)" @onchange="@(e => ToggleSelR(r.UnidadPersonaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
-                    <div class="res-col-exp">
-                        <button type="button" class="res-exp res-exp-fijo" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </button>
-                    </div>
-                    @foreach (var k in ColsVisibles())
-                    {
-                        if (CampoCustom(k) is CampoDinDef def)
-                        {
-                            var d = def;
-                            var val = ValorDe(r.UnidadPersonaId, d.Id);
-                            if (d.Tipo == TipoCampoTablero.Seleccion)
-                            {
-                                <div class="res-selcell">
-                                    @if (!string.IsNullOrWhiteSpace(val))
-                                    {
-                                        var col = ColorOpcion(d, val);
-                                        <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
-                                    }
-                                    <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
-                                        <option value="">-</option>
-                                        @foreach (var op in d.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
-                                    </select>
-                                </div>
-                            }
-                            else if (d.Tipo == TipoCampoTablero.Formula)
-                            {
-                                <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
-                            }
-                            else if (d.Tipo == TipoCampoTablero.Usuario)
-                            {
-                                <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
-                                    <option value="">-</option>
-                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
-                                </select>
-                            }
-                            else if (d.Tipo == TipoCampoTablero.Directorio)
-                            {
-                                <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
-                            }
-                            else
-                            {
-                                <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())" />
-                            }
-                            continue;
-                        }
-                        switch (k)
-                        {
-                            case "unidad": <div class="res-c-cell"><span class="res-cod">@r.UnidadCodigo</span></div>; break;
-                            case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
-                            case "documento": <div class="res-c-cell">@r.Documento</div>; break;
-                            case "rol": <div class="res-c-cell res-c">@RolBadge(r.Rol)</div>; break;
-                            case "telefono": <input class="res-editcell" value="@r.Telefono" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Telefono, e.Value?.ToString())" />; break;
-                            case "email": <input class="res-editcell" value="@r.Email" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Email, e.Value?.ToString())" />; break;
-                            case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
-                        }
-                    }
-                    <div class="res-list-act">
-                        <button type="button" class="res-row-del" @onclick="() => EliminarResidenteAsync(r.UnidadPersonaId, r.Nombre)" title="Eliminar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                        </button>
-                    </div>
-                    <div class="res-addcol-cell"></div>
-                </div>
             }
 
             @* Alta inline "nace fila" (canon): CTA morado que abre una fila editable con foco
@@ -503,7 +418,7 @@ else
         </div>
 
         @* Footer canonico (solo sin agrupacion: agrupar y paginar juntos confunde). *@
-        @if (_agruparPor == "")
+        @if (!_agrupadoR)
         {
             <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
                         PaginaChanged="p => { _pagina = p; }"
@@ -565,10 +480,11 @@ else
     private FiltroDinamico? _fd;
     private string _q = "";
 
-    // Agrupacion
-    private string _agruparPor = "";
-    private bool _showAgrupar;
-    private const string AgruparKey = "propia_residentes_group";
+    // Agrupacion (multi-nivel): fuente unica compartida (TablaAgruparMenu + TablaAgrupador +
+    // TablaGruposRender). El modulo mantiene los niveles (_gruposR) y aporta el valor de cada
+    // dimension por fila (ValorGrupoR). Con agrupacion activa NO se pagina.
+    private List<string> _gruposR = new();
+    private bool _agrupadoR => _gruposR.Count > 0;
 
     // Paginacion
     private int _porPagina = 25;
@@ -891,7 +807,7 @@ else
                 {
                     var g = GrupoDeClave(col.Key);
                     if (g is null) { ColToast("Agrupar por este campo no esta disponible."); break; }
-                    await SetAgrupar(g);
+                    _gruposR = new() { g }; _pagina = 1;
                 }
                 break;
             case TablaColMenu.Accion.Filtrar:
@@ -930,7 +846,7 @@ else
         if (r.IsSuccessStatusCode) { await CargarAsync(); ColToast("Campo duplicado."); }
         else ColToast("No se pudo duplicar el campo.");
     }
-    // Traduce la clave de columna a la dimension de agrupacion soportada (SetAgrupar). null = no soportado.
+    // Traduce la clave de columna a la dimension de agrupacion soportada (menu Agrupar). null = no soportado.
     private string? GrupoDeClave(string clave)
     {
         if (clave.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(clave) is not null ? clave : null;
@@ -1135,7 +1051,6 @@ else
                 if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
                 _jwt = stored;
                 await RestaurarVistaAsync();
-                try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); if (g is "rol" or "unidad" or "torre") _agruparPor = g; } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -1236,55 +1151,140 @@ else
     private int TotalPaginas => Filtrados.Count == 0 ? 1 : (int)Math.Ceiling(Filtrados.Count / (double)_porPagina);
     private IEnumerable<ResidenteResumenDto> Pagina => Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
 
-    // ---------- Agrupacion ----------
-    private async Task SetAgrupar(string v)
+    // ---------- Agrupacion (multi-nivel, fuente unica compartida) ----------
+    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    private List<TablaAgruparMenu.Col> ColsAgrupablesR()
     {
-        _agruparPor = v; _pagina = 1; _showAgrupar = false;
-        try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, v); } catch { }
+        var cols = new List<TablaAgruparMenu.Col>
+        {
+            new("rol", "Rol"),
+            new("unidad", "Unidad"),
+            new("torre", "Torre"),
+        };
+        foreach (var d in _defs) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
     }
-    private string AgruparLabel(string k)
+
+    // Valor de una dimension de agrupacion para un residente (uno por nivel; sin valor => "(Sin dato)").
+    private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoR(ResidenteResumenDto r, string clave)
     {
-        if (k.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(k)?.Label ?? "Campo";
-        return k switch { "rol" => "Rol", "unidad" => "Unidad", "torre" => "Torre", _ => "" };
+        switch (clave)
+        {
+            case "rol": { var t = RolLabel(r.Rol); yield return new(t, t); yield break; }
+            case "unidad": { var t = r.UnidadCodigo; if (!string.IsNullOrWhiteSpace(t)) yield return new(t, t); yield break; }
+            case "torre": { var t = r.TorreNombre; if (!string.IsNullOrWhiteSpace(t)) yield return new(t!, t!); yield break; }
+        }
+        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorDe).
+        if (CampoCustom(clave) is CampoDinDef cd)
+        {
+            var v = ValorDe(r.UnidadPersonaId, cd.Id);
+            if (!string.IsNullOrWhiteSpace(v)) yield return new(v!, v!);
+        }
+        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
     }
+
+    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
+    private void OnGruposRChanged() { _pagina = 1; }
+
+    // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
+    // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
+    private IEnumerable<ResidenteResumenDto> PaginaR() => Pagina;
+
+    // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La pinta
+    // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'r'.
+    private RenderFragment<ResidenteResumenDto> FilaRTpl => r =>
+    @<div class="res-listrow res-listgrid @(_selR.Contains(r.UnidadPersonaId) ? "res-row-sel" : "") @(_resRecienCreados.Contains(r.UnidadPersonaId) ? "res-row-nuevo" : "")" style="@PerGridStyle" @oncontextmenu="e => AbrirCtxR(e, r)" @oncontextmenu:preventDefault="true">
+        <div class="res-sel-cell"><label class="res-chk"><input type="checkbox" checked="@_selR.Contains(r.UnidadPersonaId)" @onchange="@(e => ToggleSelR(r.UnidadPersonaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+        <div class="res-col-exp">
+            <button type="button" class="res-exp res-exp-fijo" title="Abrir ficha del residente" @onclick="() => AbrirFicha(r)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </div>
+        @foreach (var k in ColsVisibles())
+        {
+            if (CampoCustom(k) is CampoDinDef def)
+            {
+                var d = def;
+                var val = ValorDe(r.UnidadPersonaId, d.Id);
+                if (d.Tipo == TipoCampoTablero.Seleccion)
+                {
+                    <div class="res-selcell">
+                        @if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            var col = ColorOpcion(d, val);
+                            <span class="res-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                        }
+                        <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
+                            <option value="">-</option>
+                            @foreach (var op in d.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                        </select>
+                    </div>
+                }
+                else if (d.Tipo == TipoCampoTablero.Formula)
+                {
+                    <div class="res-c-cell res-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                }
+                else if (d.Tipo == TipoCampoTablero.Usuario)
+                {
+                    <select class="res-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())">
+                        <option value="">-</option>
+                        @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                    </select>
+                }
+                else if (d.Tipo == TipoCampoTablero.Directorio)
+                {
+                    <div class="res-c-cell res-mut">@(NombrePersona(val) ?? "-")</div>
+                }
+                else
+                {
+                    <input class="res-editcell" value="@val" placeholder="-" @onchange="e => GuardarDinamicoAsync(r.UnidadPersonaId, d.Id, e.Value?.ToString())" />
+                }
+                continue;
+            }
+            switch (k)
+            {
+                case "unidad": <div class="res-c-cell"><span class="res-cod">@r.UnidadCodigo</span></div>; break;
+                case "nombre": <div class="res-c-cell res-nom">@r.Nombre @if (r.EntidadTipo == EntidadDirectorio.Empresa) { <span class="res-tag">Empresa</span> }</div>; break;
+                case "documento": <div class="res-c-cell">@r.Documento</div>; break;
+                case "rol": <div class="res-c-cell res-c">@RolBadge(r.Rol)</div>; break;
+                case "telefono": <input class="res-editcell" value="@r.Telefono" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Telefono, e.Value?.ToString())" />; break;
+                case "email": <input class="res-editcell" value="@r.Email" placeholder="-" @onchange="e => EditarContactoAsync(r, TipoContacto.Email, e.Value?.ToString())" />; break;
+                case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
+            }
+        }
+        <div class="res-list-act">
+            <button type="button" class="res-row-del" @onclick="() => EliminarResidenteAsync(r.UnidadPersonaId, r.Nombre)" title="Eliminar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </button>
+        </div>
+        <div class="res-addcol-cell"></div>
+    </div>;
 
     private readonly record struct FilaR(bool EsGrupo, string? GrupoTitulo, int GrupoCount, ResidenteResumenDto? Fila);
 
+    // Secuencia plana para la vista TARJETAS (encabezados de (sub)grupo + filas): sin agrupacion, la
+    // pagina actual; con agrupacion, el arbol multi-nivel de TablaAgrupador aplanado en orden. Comparte
+    // el mismo motor que la tabla (TablaAgrupador + ValorGrupoR) para que la agrupacion sea identica.
     private IEnumerable<FilaR> FilasRender()
     {
-        if (_agruparPor == "")
+        if (!_agrupadoR)
         {
-            foreach (var r in Pagina) yield return new FilaR(false, null, 0, r);
+            foreach (var r in PaginaR()) yield return new FilaR(false, null, 0, r);
             yield break;
         }
-        // Agrupacion por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
-        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        foreach (var f in AplanarR(TablaAgrupador.Agrupar<ResidenteResumenDto>(Filtrados, _gruposR, ValorGrupoR)))
+            yield return f;
+    }
+
+    private static IEnumerable<FilaR> AplanarR(IReadOnlyList<Propia.Web.Components.Shared.NodoGrupo<ResidenteResumenDto>> nodos)
+    {
+        foreach (var n in nodos)
         {
-            if (CampoCustom(_agruparPor) is CampoDinDef gcd)
-            {
-                foreach (var g in Filtrados
-                    .GroupBy(r => { var val = ValorDe(r.UnidadPersonaId, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                    .OrderBy(g => g.Key.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                    .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
-                {
-                    yield return new FilaR(true, g.Key, g.Count(), null);
-                    foreach (var r in g) yield return new FilaR(false, null, 0, r);
-                }
-            }
-            yield break;
-        }
-        // Agrupacion sobre la lista filtrada completa (sin paginar).
-        Func<ResidenteResumenDto, string> clave = _agruparPor switch
-        {
-            "rol" => r => RolLabel(r.Rol),
-            "unidad" => r => r.UnidadCodigo,
-            "torre" => r => string.IsNullOrWhiteSpace(r.TorreNombre) ? "Sin torre" : r.TorreNombre!,
-            _ => r => ""
-        };
-        foreach (var g in Filtrados.GroupBy(clave).OrderBy(g => g.Key))
-        {
-            yield return new FilaR(true, g.Key, g.Count(), null);
-            foreach (var r in g) yield return new FilaR(false, null, 0, r);
+            yield return new FilaR(true, n.Titulo, n.Conteo, null);
+            if (n.EsHoja)
+                foreach (var r in n.Filas) yield return new FilaR(false, null, 0, r);
+            else
+                foreach (var f in AplanarR(n.Subgrupos)) yield return f;
         }
     }
 

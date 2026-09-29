@@ -41,29 +41,9 @@ else
         @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
         <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
 
-        @* Agrupar *@
-        <div class="mas-menu-wrap">
-            <button type="button" class="mas-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar filas">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                <span>@(_agruparPor == "" ? "Agrupar" : AgruparLabel(_agruparPor))</span>
-            </button>
-            @if (_showAgrupar)
-            {
-                <div class="mas-menu-bd" @onclick="() => _showAgrupar = false"></div>
-                <div class="mas-menu">
-                    @foreach (var g in new[] { ("", "Sin agrupar"), ("tipo", "Tipo de mascota"), ("unidad", "Unidad"), ("propietario", "Propietario") })
-                    {
-                        var gk = g.Item1;
-                        <button class="mas-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="() => SetAgrupar(gk)">@g.Item2</button>
-                    }
-                    @foreach (var d in _defs)
-                    {
-                        var gk = "cd:" + d.Id;
-                        <button class="mas-menu-it @(_agruparPor == gk ? "on" : "")" @onclick="@(() => SetAgrupar(gk))">@d.Label</button>
-                    }
-                </div>
-            }
-        </div>
+        @* Agrupar (menu compartido, multi-nivel), a la derecha, patron estandar.
+           Fuente unica: TablaAgruparMenu (menu) + TablaAgrupador (motor) + TablaGruposRender (render). *@
+        <TablaAgruparMenu Columnas="ColsAgrupablesM()" Grupos="_gruposM" GruposChanged="OnGruposMChanged" />
 
         @* "Columnas" (inline, milimetrico a Unidades/Zonas): orden, visibilidad y borrar campo dinamico.
            Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
@@ -190,103 +170,18 @@ else
                 <div class="mas-addcol-h"><button type="button" class="mas-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></div>
             </div>
 
-            @foreach (var item in FilasRender())
+            @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
+               TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaMTpl. *@
+            @if (_agrupadoM)
             {
-                if (item.EsGrupo)
+                <TablaGruposRender T="MascotaResumenDto" Nodos="TablaAgrupador.Agrupar<MascotaResumenDto>(Filtradas, _gruposM, ValorGrupoM)" FilaTemplate="FilaMTpl" />
+            }
+            else
+            {
+                @foreach (var v in PaginaM())
                 {
-                    <div class="mas-group">
-                        <span class="mas-group-chip">@item.GrupoTitulo</span>
-                        <span class="mas-group-n">@item.GrupoCount</span>
-                    </div>
-                    continue;
+                    @FilaMTpl(v)
                 }
-                var v = item.Fila!;
-                <div class="mas-row mas-grid @(_recienCreados.Contains(v.MascotaId) ? "mas-row-nuevo" : "") @(_sel.Contains(v.MascotaId) ? "mas-row-sel" : "")" style="grid-template-columns:@GridCols"
-                     @oncontextmenu="e => AbrirCtx(e, v)" @oncontextmenu:preventDefault="true">
-                    <div class="mas-sel-cell"><label class="mas-chk"><input type="checkbox" checked="@_sel.Contains(v.MascotaId)" @onchange="@(e => ToggleSel(v.MascotaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
-                    <div class="mas-col-exp">
-                        <button type="button" class="mas-exp-fijo" title="Abrir la unidad de esta mascota" @onclick="() => AbrirUnidad(v)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </button>
-                    </div>
-                    @foreach (var k in ColsVisibles())
-                    {
-                        if (CampoCustom(k) is CampoDinDef def)
-                        {
-                            var d = def;
-                            var val = ValorDe(v.MascotaId, def.Id);
-                            if (def.Tipo == TipoCampoTablero.Seleccion)
-                            {
-                                <div class="mas-selcell">
-                                    @if (!string.IsNullOrWhiteSpace(val))
-                                    {
-                                        var col = ColorOpcion(def, val);
-                                        <span class="mas-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
-                                    }
-                                    <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
-                                        <option value="">-</option>
-                                        @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
-                                    </select>
-                                </div>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Formula)
-                            {
-                                <div class="mas-cell mas-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Usuario)
-                            {
-                                <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
-                                    <option value="">-</option>
-                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
-                                </select>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Directorio)
-                            {
-                                <div class="mas-cell">@(NombrePersona(val) ?? "-")</div>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
-                            {
-                                <input class="mas-editcell" type="number" step="any" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Fecha)
-                            {
-                                <input class="mas-editcell" type="date" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
-                            }
-                            else
-                            {
-                                <input class="mas-editcell" value="@val" placeholder="-"
-                                       @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
-                            }
-                            continue;
-                        }
-                        switch (k)
-                        {
-                            case "unidad":
-                                <div class="mas-cell"><span class="mas-cod">@v.UnidadCodigo</span></div>
-                                break;
-                            case "nombre":
-                                <input class="mas-editcell" value="@v.Nombre" placeholder="-" @onchange="e => GuardarNombreAsync(v, e.Value?.ToString())" />
-                                break;
-                            case "tipo":
-                                <select class="mas-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
-                                    @foreach (var t in TiposMascota) { <option value="@t" selected="@(v.Tipo == t)">@TipoLabel(t)</option> }
-                                </select>
-                                break;
-                            case "raza":
-                                <input class="mas-editcell" value="@v.Raza" placeholder="-" @onchange="e => GuardarRazaAsync(v, e.Value?.ToString())" />
-                                break;
-                            case "propietario":
-                                <div class="mas-cell mas-prop">@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "-" : v.PropietarioNombre)</div>
-                                break;
-                        }
-                    }
-                    <div class="mas-acts">
-                        <button type="button" class="mas-del" title="Quitar la mascota" @onclick="() => EliminarAsync(v)">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-                        </button>
-                    </div>
-                    <div class="mas-addcol-cell"></div>
-                </div>
             }
 
             @* Alta "nace fila": CTA morado -> fila editable con foco redondeado + acciones checkmark/x.
@@ -396,7 +291,7 @@ else
             }
         </div>
 
-        @if (Grupos() is null)
+        @if (!_agrupadoM)
         {
             <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="mascotas"
                         PaginaChanged="p => { _pagina = p; }" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
@@ -490,8 +385,11 @@ else
 
     private string _q = "";
     private FiltroDinamico? _fd;
-    private string _agruparPor = "";
-    private bool _showAgrupar;
+    // ===== Agrupar (boton "Agrupar", multi-nivel): fuente unica compartida (TablaAgruparMenu +
+    // TablaAgrupador + TablaGruposRender). El modulo mantiene los niveles (_gruposM) y aporta el
+    // valor de cada dimension por fila (ValorGrupoM). Con agrupacion activa NO se pagina. =====
+    private List<string> _gruposM = new();
+    private bool _agrupadoM => _gruposM.Count > 0;
     private int _pagina = 1, _porPagina = 25;
 
     // Tipos ofrecidos: los mismos que la ficha de la unidad.
@@ -595,65 +493,141 @@ else
         }
     }
 
-    private sealed record GrupoMas(string Titulo, List<MascotaResumenDto> Items);
-
-    private List<GrupoMas>? Grupos()
+    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    private List<TablaAgruparMenu.Col> ColsAgrupablesM()
     {
-        if (_agruparPor == "") return null;
-        var items = Filtradas;
-        // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada fila.
-        if (_agruparPor.StartsWith("cd:", StringComparison.Ordinal))
+        var cols = new List<TablaAgruparMenu.Col>
         {
-            if (CampoCustom(_agruparPor) is not CampoDinDef gcd) return null;
-            return items.GroupBy(v => { var val = ValorDe(v.MascotaId, gcd.Id); return string.IsNullOrWhiteSpace(val) ? "Sin dato" : val!; })
-                        .Select(g => new GrupoMas(g.Key, g.ToList()))
-                        .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                        .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
-                        .ToList();
-        }
-        var gs = _agruparPor switch
-        {
-            "tipo" => items.GroupBy(v => TipoLabel(v.Tipo)),
-            "unidad" => items.GroupBy(v => v.UnidadCodigo),
-            "propietario" => items.GroupBy(v => string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "Sin propietario" : v.PropietarioNombre!),
-            _ => null
+            new("tipo", "Tipo de mascota"),
+            new("unidad", "Unidad"),
+            new("propietario", "Propietario"),
         };
-        if (gs is null) return null;
-        return gs.Select(g => new GrupoMas(g.Key, g.ToList()))
-                 .OrderBy(g => g.Titulo.StartsWith("Sin ", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-                 .ThenBy(g => g.Titulo, StringComparer.CurrentCultureIgnoreCase)
-                 .ToList();
+        foreach (var d in _defs) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
     }
 
-    private sealed record FilaRender(bool EsGrupo, MascotaResumenDto? Fila, string GrupoTitulo = "", int GrupoCount = 0);
-
-    // Con agrupacion se muestran los grupos completos (sin paginar), igual que en el resto del sistema.
-    private IEnumerable<FilaRender> FilasRender()
+    // Valor de una dimension de agrupacion para una mascota (uno por nivel; sin valor => grupo "(Sin dato)").
+    private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoM(MascotaResumenDto v, string clave)
     {
-        var grupos = Grupos();
-        if (grupos is not null)
+        switch (clave)
         {
-            foreach (var g in grupos)
-            {
-                yield return new FilaRender(true, null, g.Titulo, g.Items.Count);
-                foreach (var v in g.Items) yield return new FilaRender(false, v);
-            }
-            yield break;
+            case "tipo": { var t = TipoLabel(v.Tipo); yield return new(t, t); yield break; }
+            case "unidad": { var t = v.UnidadCodigo; if (!string.IsNullOrWhiteSpace(t)) yield return new(t, t); yield break; }
+            case "propietario": { var t = v.PropietarioNombre; if (!string.IsNullOrWhiteSpace(t)) yield return new(t!, t!); yield break; }
         }
+        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorDe).
+        if (CampoCustom(clave) is CampoDinDef cd)
+        {
+            var val = ValorDe(v.MascotaId, cd.Id);
+            if (!string.IsNullOrWhiteSpace(val)) yield return new(val!, val!);
+        }
+        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
+    }
+
+    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
+    private void OnGruposMChanged() { _pagina = 1; }
+
+    // Clic derecho -> "Agrupar por esta columna": un unico nivel (vacio limpia). Reusa el menu compartido.
+    private void SetAgrupar(string k) { _gruposM = string.IsNullOrEmpty(k) ? new() : new() { k }; _pagina = 1; }
+
+    // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
+    // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
+    private IEnumerable<MascotaResumenDto> PaginaM()
+    {
         var desde = (_pagina - 1) * _porPagina;
-        foreach (var v in Filtradas.Skip(desde).Take(_porPagina)) yield return new FilaRender(false, v);
+        return Filtradas.Skip(desde).Take(_porPagina);
     }
 
-    private string AgruparLabel(string v)
-    {
-        if (v.StartsWith("cd:", StringComparison.Ordinal)) return CampoCustom(v)?.Label ?? "Campo";
-        return v switch
+    // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La
+    // pinta TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro 'v' es
+    // el registro de la fila (mismo nombre que usaba el foreach original, sin cambios en el cuerpo).
+    private RenderFragment<MascotaResumenDto> FilaMTpl => v =>
+    @<div class="mas-row mas-grid @(_recienCreados.Contains(v.MascotaId) ? "mas-row-nuevo" : "") @(_sel.Contains(v.MascotaId) ? "mas-row-sel" : "")" style="grid-template-columns:@GridCols"
+         @oncontextmenu="e => AbrirCtx(e, v)" @oncontextmenu:preventDefault="true">
+        <div class="mas-sel-cell"><label class="mas-chk"><input type="checkbox" checked="@_sel.Contains(v.MascotaId)" @onchange="@(e => ToggleSel(v.MascotaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+        <div class="mas-col-exp">
+            <button type="button" class="mas-exp-fijo" title="Abrir la unidad de esta mascota" @onclick="() => AbrirUnidad(v)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </div>
+        @foreach (var k in ColsVisibles())
         {
-            "tipo" => "Tipo de mascota", "unidad" => "Unidad", "propietario" => "Propietario", _ => ""
-        };
-    }
-
-    private void SetAgrupar(string v) { _agruparPor = v; _pagina = 1; _showAgrupar = false; }
+            if (CampoCustom(k) is CampoDinDef def)
+            {
+                var d = def;
+                var val = ValorDe(v.MascotaId, def.Id);
+                if (def.Tipo == TipoCampoTablero.Seleccion)
+                {
+                    <div class="mas-selcell">
+                        @if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            var col = ColorOpcion(def, val);
+                            <span class="mas-chip" style="background:@(col ?? PaletaChips.Neutro);color:@PaletaChips.TextoSobre(col)">@val</span>
+                        }
+                        <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
+                            <option value="">-</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                        </select>
+                    </div>
+                }
+                else if (def.Tipo == TipoCampoTablero.Formula)
+                {
+                    <div class="mas-cell mas-auto" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(val) ? "-" : val)</div>
+                }
+                else if (def.Tipo == TipoCampoTablero.Usuario)
+                {
+                    <select class="mas-editcell" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())">
+                        <option value="">-</option>
+                        @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                    </select>
+                }
+                else if (def.Tipo == TipoCampoTablero.Directorio)
+                {
+                    <div class="mas-cell">@(NombrePersona(val) ?? "-")</div>
+                }
+                else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                {
+                    <input class="mas-editcell" type="number" step="any" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                }
+                else if (def.Tipo == TipoCampoTablero.Fecha)
+                {
+                    <input class="mas-editcell" type="date" value="@val" @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                }
+                else
+                {
+                    <input class="mas-editcell" value="@val" placeholder="-"
+                           @onchange="e => GuardarDinamicoAsync(v.MascotaId, d.Id, e.Value?.ToString())" />
+                }
+                continue;
+            }
+            switch (k)
+            {
+                case "unidad":
+                    <div class="mas-cell"><span class="mas-cod">@v.UnidadCodigo</span></div>
+                    break;
+                case "nombre":
+                    <input class="mas-editcell" value="@v.Nombre" placeholder="-" @onchange="e => GuardarNombreAsync(v, e.Value?.ToString())" />
+                    break;
+                case "tipo":
+                    <select class="mas-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
+                        @foreach (var t in TiposMascota) { <option value="@t" selected="@(v.Tipo == t)">@TipoLabel(t)</option> }
+                    </select>
+                    break;
+                case "raza":
+                    <input class="mas-editcell" value="@v.Raza" placeholder="-" @onchange="e => GuardarRazaAsync(v, e.Value?.ToString())" />
+                    break;
+                case "propietario":
+                    <div class="mas-cell mas-prop">@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "-" : v.PropietarioNombre)</div>
+                    break;
+            }
+        }
+        <div class="mas-acts">
+            <button type="button" class="mas-del" title="Quitar la mascota" @onclick="() => EliminarAsync(v)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+            </button>
+        </div>
+        <div class="mas-addcol-cell"></div>
+    </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
     private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
     private void AbrirUnidad(MascotaResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
