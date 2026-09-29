@@ -642,7 +642,23 @@ else
                                         break;
                                     case "agrupacion":
                                         var agr = AgrupacionDe(uu);
-                                        <td class="c"><span class="dst-agr dst-agr--@agr.ToLowerInvariant()">@agr</span></td>
+                                        <td>
+                                            @if (_agrupLinkId == uu.Id)
+                                            {
+                                                <select class="tbl-cell" @onchange="(e) => VincularComoAnexoAsync(uu, e.Value?.ToString())">
+                                                    <option value="">Elige principal...</option>
+                                                    @foreach (var p in PrincipalesPosibles(uu)) { <option value="@p.Id">@p.Numero</option> }
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                <select class="tbl-cell" @onchange="(e) => AgrupacionInlineChangeAsync(uu, e.Value?.ToString())">
+                                                    <option value="individual" selected="@(agr == "Individual")">Individual</option>
+                                                    <option value="anexo" selected="@(agr == "Anexo")">Anexo</option>
+                                                    @if (agr == "Principal") { <option value="principal" selected>Principal</option> }
+                                                </select>
+                                            }
+                                        </td>
                                         break;
                                     case "matricula":
                                         <td><input class="tbl-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" /></td>
@@ -652,12 +668,16 @@ else
                                         break;
                                     case "prop":
                                         <td>
-                                            @if (string.IsNullOrWhiteSpace(uu.PropietarioNombre)) { <span class="sin">Sin propietario</span> }
-                                            else
-                                            {
-                                                <span>@uu.PropietarioNombre</span>
-                                                @if (uu.PropietariosCount > 1) { <span class="dst-mas" title="@uu.PropietariosCount propietarios">+@(uu.PropietariosCount - 1)</span> }
-                                            }
+                                            <div class="tbl-prop">
+                                                @if (!string.IsNullOrWhiteSpace(uu.PropietarioNombre))
+                                                {
+                                                    <span class="tbl-prop-nom">@uu.PropietarioNombre</span>
+                                                    @if (uu.PropietariosCount > 1) { <span class="dst-mas" title="@uu.PropietariosCount propietarios">+@(uu.PropietariosCount - 1)</span> }
+                                                }
+                                                <SelectorPersona Flotante="true" Jwt="@_jwt"
+                                                                 Placeholder="@(string.IsNullOrWhiteSpace(uu.PropietarioNombre) ? "Asignar propietario..." : "Cambiar / agregar...")"
+                                                                 SeleccionadaChanged="(c) => AsignarPropietarioAsync(uu, c)" />
+                                            </div>
                                         </td>
                                         break;
                                 }
@@ -703,9 +723,9 @@ else
                     <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
                         <td class="tbl-sel"></td>
                         <td class="tbl-exp">
-                            <span class="tbl-exp-btn" title="Nuevo registro" style="opacity:1">
+                            <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearUnidadDesdeAltaAsync(true)" disabled="@_creandoUnidad">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                            </span>
+                            </button>
                         </td>
                         @foreach (var it in ColumnasVisibles)
                         {
@@ -1000,6 +1020,74 @@ else
         if (c is null) { _nuCampos[defId] = null; return; }
         _nuCampos[defId] = c.PersonaId.ToString();
         _usuarioNombre[c.PersonaId] = c.NombreCompleto;
+    }
+
+    // Propietario inline: asigna la persona elegida (SelectorPersona) como Propietario de la unidad.
+    // Reusa la API de miembros de unidad (PersonaId ya resuelto -> no exige documento). Refresca al terminar.
+    private async Task AsignarPropietarioAsync(UnidadDto u, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is null) return;
+        try
+        {
+            var req = new AgregarPersonaUnidadRequest("", "", "", null, null, RolUnidadPersona.Propietario, PersonaId: c.PersonaId);
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}/personas", req);
+            if (resp.IsSuccessStatusCode) { _inlineMsgU = $"Propietario asignado a {u.Numero}."; await CargarAsync(); }
+            else { _inlineMsgU = "No se pudo asignar propietario: " + await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al asignar propietario: " + ex.Message; }
+    }
+
+    // ===== Agrupacion editable inline (Individual <-> Anexo). Principal es derivado (tiene anexos):
+    //       no se vuelve Individual desde la celda sin quitar antes sus anexos. =====
+    private Guid? _agrupLinkId;   // unidad para la que se esta eligiendo el principal (volverla anexo)
+
+    // Unidades que pueden ser principal de otra: no ella misma y que no sean ya un anexo.
+    private IEnumerable<UnidadDto> PrincipalesPosibles(UnidadDto u)
+        => _unidades.Where(x => x.Id != u.Id && x.PrincipalId is null).OrderBy(x => x.Numero, StringComparer.OrdinalIgnoreCase);
+
+    private async Task AgrupacionInlineChangeAsync(UnidadDto u, string? val)
+    {
+        var agr = AgrupacionDe(u);
+        if (val == "anexo")
+        {
+            if (agr == "Anexo") return;
+            _agrupLinkId = u.Id;   // despliega el selector de principal en la celda
+        }
+        else if (val == "individual")
+        {
+            if (agr == "Anexo") await DesvincularAnexoAsync(u);
+            else if (agr == "Principal") _inlineMsgU = "Esta unidad es principal: primero quita o reasigna sus anexos.";
+        }
+    }
+
+    // Vincula la unidad como ANEXO del principal elegido (RN-09).
+    private async Task VincularComoAnexoAsync(UnidadDto u, string? principalIdStr)
+    {
+        _agrupLinkId = null;
+        if (!Guid.TryParse(principalIdStr, out var pid)) return;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{pid}/vinculos", new CrearVinculoUnidadRequest(u.Id, false));
+            if (resp.IsSuccessStatusCode) { _inlineMsgU = $"{u.Numero} quedo como anexo."; await CargarAsync(); }
+            else { _inlineMsgU = "No se pudo vincular: " + await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al vincular: " + ex.Message; }
+    }
+
+    // Desvincula un anexo (busca su vinculo en el principal y lo elimina) -> vuelve Individual.
+    private async Task DesvincularAnexoAsync(UnidadDto u)
+    {
+        if (u.PrincipalId is not Guid pid) return;
+        try
+        {
+            var vincs = await Auth().GetFromJsonAsync<List<UnidadVinculoDto>>($"/api/mi-copropiedad/unidades/{pid}/vinculos");
+            var v = vincs?.FirstOrDefault(x => x.UnidadAsociadaId == u.Id);
+            if (v is null) { _inlineMsgU = "No se encontro el vinculo del anexo."; return; }
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/vinculos/{v.Id}");
+            if (resp.IsSuccessStatusCode) { _inlineMsgU = $"{u.Numero} quedo individual."; await CargarAsync(); }
+            else { _inlineMsgU = "No se pudo desvincular: " + await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al desvincular: " + ex.Message; }
     }
     // Config de campos dinamicos (modal "Configurar", ahora renderizado por ConfigCamposEntidad).
     private bool _configCamposAbierto;
