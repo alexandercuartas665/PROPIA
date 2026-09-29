@@ -88,6 +88,9 @@
                 {
                     @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
                     <TablaOrdenarMenu Columnas="ColsOrdenablesU()" Sorts="_sortsU" SortsChanged="OnSortsUChanged" />
+                    @* Agrupar (menu compartido, multi-nivel): fuente unica (TablaAgruparMenu + TablaAgrupador +
+                       TablaGruposRender). El render agrupado vive en UsuariosTablaVista (donde esta la fila). *@
+                    <TablaAgruparMenu Columnas="ColsAgrupablesU()" Grupos="_gruposU" GruposChanged="OnGruposUChanged" />
                     <div class="usr-menu-wrap">
                         <button type="button" class="usr-fbtn @(_showColMenuU ? "on" : "")" @onclick="() => _showColMenuU = !_showColMenuU" title="Campos y columnas de la tabla">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
@@ -281,7 +284,9 @@
                         </div>
                     </div>
                 }
-                <UsuariosTablaVista Usuarios="pageU" Roles="_roles"
+                @* Con agrupacion activa NO se pagina: se alimenta la lista filtrada+ordenada COMPLETA y el
+                   hijo la agrupa (y oculta su pager); sin agrupacion, la pagina actual. *@
+                <UsuariosTablaVista Usuarios="@(_agrupadoU ? lista : pageU)" Grupos="_gruposU" Roles="_roles"
                                     Total="lista.Count" Pagina="_pagina" PorPagina="_porPagina"
                                     PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
@@ -1042,6 +1047,26 @@
             .Concat(_defsCampos.Select(d => new TablaOrdenarMenu.Col("cd:" + d.Id, d.Label)))
             .ToList();
     private void OnSortsUChanged() { _pagina = 1; StateHasChanged(); }
+
+    // ===== Agrupar (boton "Agrupar", multi-nivel): fuente unica compartida (TablaAgruparMenu +
+    // TablaAgrupador + TablaGruposRender). Esta pagina mantiene los niveles (_gruposU) y se los pasa a
+    // UsuariosTablaVista, que arma el arbol y lo pinta; con agrupacion NO se pagina. =====
+    private List<string> _gruposU = new();
+    private bool _agrupadoU => _gruposU.Count > 0;
+    // Columnas ofrecidas en el menu Agrupar: las de sistema con buen cardinal (rol/estado) + las propias.
+    private List<TablaAgruparMenu.Col> ColsAgrupablesU()
+    {
+        var cols = new List<TablaAgruparMenu.Col>
+        {
+            new("rol", ColLabelU("rol")),
+            new("estado", ColLabelU("estado")),
+        };
+        foreach (var d in _defsCampos) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
+    }
+    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
+    private void OnGruposUChanged() { _pagina = 1; }
+
     private void OrdenarPorColumnaU(string clave)
     {
         var ex = _sortsU.FirstOrDefault(s => s.Key == clave);
@@ -1527,7 +1552,10 @@
                 else { await ToggleVisibleColUAsync(col.Key); ColToast("Columna oculta. Usa Columnas para restaurarla."); }
                 break;
             case TablaColMenu.Accion.Agrupar:
-                ColToast("Agrupar por este campo aun no esta disponible en Usuarios.");
+                // Solo rol/estado y los campos propios (cd:) son agrupables; un unico nivel desde el menu de columna.
+                if (col.Key == "rol" || col.Key == "estado" || col.Key.StartsWith("cd:", StringComparison.Ordinal))
+                { _gruposU = new() { col.Key }; _pagina = 1; }
+                else ColToast("Agrupar por esta columna aun no esta disponible en Usuarios.");
                 break;
             case TablaColMenu.Accion.Filtrar:
                 if (_fd is not null && CamposFiltroUsr.Any(c => c.Key == col.Key))

@@ -79,6 +79,9 @@ else
         {
             @* Ordenar (multi-criterio apilable): fuente unica compartida. *@
             <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sortsE" SortsChanged="OnSortsChanged" />
+            @* Agrupar (menu compartido, multi-nivel). Fuente unica: TablaAgruparMenu (menu) + TablaAgrupador
+               (motor) + TablaGruposRender (render). *@
+            <TablaAgruparMenu Columnas="ColsAgrupablesE()" Grupos="_gruposE" GruposChanged="OnGruposEChanged" />
             @* "Columnas" (inline, milimetrico a Unidades): orden, visibilidad y borrar campo dinamico.
                Crear campo nuevo = "+" del header de la tabla; editar/eliminar = engranaje de la columna. *@
             <div class="ea-menu-wrap">
@@ -237,10 +240,6 @@ else
     }
     else
     {
-        var listaE = Filtrados().ToList();
-        var totalPagE = listaE.Count == 0 ? 1 : (int)Math.Ceiling(listaE.Count / (double)_porPagina);
-        var pagE = Math.Clamp(_pagina, 1, totalPagE);
-        var pageE = listaE.Skip((pagE - 1) * _porPagina).Take(_porPagina);
         @if (_selE.Count > 0)
         {
             <div class="ea-selbar">
@@ -311,129 +310,18 @@ else
                 <div></div>
                 <div class="ea-addcol-h"><button type="button" class="ea-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoE"><i class="fi fi-rr-plus"></i></button></div>
             </div>
-            @foreach (var e in pageE)
+            @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
+               TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaETpl. *@
+            @if (_agrupadoE)
             {
-                var eq = e;
-                @* Datos editables inline; el expansor (primera columna, se ve al hover) abre la ficha. *@
-                <div class="ea-list-row ea-listgrid @(_selE.Contains(eq.Id) ? "ea-row-sel" : "")" style="@EaGridStyle" @oncontextmenu="ev => AbrirCtxE(ev, eq)" @oncontextmenu:preventDefault="true">
-                    <div class="ea-sel-cell"><label class="ea-chk"><input type="checkbox" checked="@_selE.Contains(eq.Id)" @onchange="@(ev => ToggleSelE(eq.Id, (bool)(ev.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
-                    <div class="ea-col-exp">
-                        <button type="button" class="ea-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaEquipoAsync(eq)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </button>
-                    </div>
-                    @foreach (var k in ColsVisibles())
-                    {
-                        if (CampoCustom(k) is EquipoCampoDefinicionDto cd)
-                        {
-                            var cdd = cd;
-                            var vv = ValorCampo(eq.Id, cd.Id);
-                            switch (cd.Tipo)
-                            {
-                                case TipoCampoTablero.Seleccion:
-                                    <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                                        <option value="">-</option>
-                                        @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
-                                    </select>
-                                    break;
-                                case TipoCampoTablero.Numero:
-                                case TipoCampoTablero.Moneda:
-                                    <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
-                                    break;
-                                case TipoCampoTablero.Fecha:
-                                    <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
-                                    break;
-                                case TipoCampoTablero.Booleano:
-                                    <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                                        <option value="">-</option>
-                                        <option value="Si" selected="@(vv == "Si")">Si</option>
-                                        <option value="No" selected="@(vv == "No")">No</option>
-                                    </select>
-                                    break;
-                                default:
-                                    <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
-                                    break;
-                            }
-                            continue;
-                        }
-                        switch (k)
-                        {
-                            case "nombre":
-                                <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
-                                break;
-                            case "categoria":
-                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
-                                    @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
-                                </select>
-                                break;
-                            case "tipo":
-                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
-                                    <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
-                                    <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
-                                </select>
-                                break;
-                            case "cantidad":
-                                <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
-                                break;
-                            case "estado":
-                                <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
-                                    @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
-                                </select>
-                                break;
-                            case "reservable":
-                                <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "reservable", ev))">
-                                    <option value="false" selected="@(!e.EsReservable)">No</option>
-                                    <option value="true" selected="@e.EsReservable">Si</option>
-                                </select>
-                                break;
-                            case "modelo":
-                                <input class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
-                                break;
-                            case "serie":
-                                <input class="ea-cell" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
-                                break;
-                            case "ubicacion":
-                                <input class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
-                                break;
-                            case "observaciones":
-                                <input class="ea-cell" value="@e.Observaciones" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "observaciones", ev))" />
-                                break;
-                            case "vidautil":
-                                <input type="number" min="0" class="ea-cell ea-num" value="@e.VidaUtilAnios" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "vidautil", ev))" />
-                                break;
-                            case "valoradq":
-                                <input type="number" step="any" min="0" class="ea-cell ea-num" value="@e.ValorAdquisicion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "valoradq", ev))" />
-                                break;
-                            case "proveedor":
-                                <input class="ea-cell" value="@e.Proveedor" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "proveedor", ev))" />
-                                break;
-                            case "numfactura":
-                                <input class="ea-cell" value="@e.NumeroFactura" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "numfactura", ev))" />
-                                break;
-                            case "marca":
-                                <input class="ea-cell" value="@e.Marca" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "marca", ev))" />
-                                break;
-                            case "codigobarra":
-                                <input class="ea-cell" value="@e.CodigoBarra" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "codigobarra", ev))" />
-                                break;
-                            case "fechainstalacion":
-                                <input type="date" class="ea-cell" value="@(e.FechaInstalacion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechainstalacion", ev))" />
-                                break;
-                            case "garantiahasta":
-                                <input type="date" class="ea-cell" value="@(e.GarantiaHasta?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "garantiahasta", ev))" />
-                                break;
-                            case "fechaadquisicion":
-                                <input type="date" class="ea-cell" value="@(e.FechaAdquisicion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechaadquisicion", ev))" />
-                                break;
-                        }
-                    }
-                    <div class="ea-list-act">
-                        <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                        </button>
-                    </div>
-                    <div class="ea-addcol-cell"></div>
-                </div>
+                <TablaGruposRender T="EquipoActivoDto" Nodos="TablaAgrupador.Agrupar<EquipoActivoDto>(Filtrados(), _gruposE, ValorGrupoE)" FilaTemplate="FilaETpl" />
+            }
+            else
+            {
+                @foreach (var eq in PaginaE())
+                {
+                    @FilaETpl(eq)
+                }
             }
             @* Alta "nace fila": CTA morado -> fila editable con foco redondeado + ✓/×. *@
             @if (_altaAbiertaE)
@@ -536,10 +424,14 @@ else
                 </div>
             </div>
             }
-            @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0"). *@
-            <TablaPager Total="listaE.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="equipos"
-                        PaginaChanged="p => _pagina = p"
-                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            @* Footer canonico: visible con la tabla, incluso con 0 filas ("Mostrando 0 de 0");
+               solo se oculta con agrupacion activa. *@
+            @if (!_agrupadoE)
+            {
+                <TablaPager Total="Filtrados().Count()" Pagina="_pagina" PorPagina="_porPagina" Entidad="equipos"
+                            PaginaChanged="p => _pagina = p"
+                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            }
         </div>
     }
 
@@ -1052,7 +944,7 @@ else
                 await ToggleVisibleColEAsync(col.Key);   // el header solo pinta columnas visibles, asi que aqui oculta
                 break;
             case TablaColMenu.Accion.Agrupar:
-                ColToastE("Agrupar por este campo aun no esta disponible.");
+                _gruposE = new() { col.Key }; _pagina = 1;   // clic derecho: agrupa por esta columna (un nivel)
                 break;
             case TablaColMenu.Accion.Filtrar:
                 if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key))
@@ -1209,6 +1101,184 @@ else
             _ => ""
         };
     }
+
+    // ===== Agrupar (boton "Agrupar", multi-nivel): fuente unica compartida (TablaAgruparMenu +
+    // TablaAgrupador + TablaGruposRender). El modulo mantiene los niveles (_gruposE) y aporta el valor
+    // de cada dimension por fila (ValorGrupoE). Con agrupacion activa NO se pagina. =====
+    private List<string> _gruposE = new();
+    private bool _agrupadoE => _gruposE.Count > 0;
+
+    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    private List<TablaAgruparMenu.Col> ColsAgrupablesE()
+    {
+        var cols = new List<TablaAgruparMenu.Col>
+        {
+            new("categoria", "Categoria"),
+            new("tipo", "Tipo"),
+            new("estado", "Estado"),
+            new("reservable", "Reservable"),
+        };
+        foreach (var d in _camposDef) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
+    }
+
+    // Valor de una dimension de agrupacion para un equipo (uno por nivel; sin valor => grupo "(Sin dato)").
+    private IEnumerable<ValorGrupo> ValorGrupoE(EquipoActivoDto e, string clave)
+    {
+        switch (clave)
+        {
+            case "categoria": { var t = e.Categoria.ToString(); yield return new(t, t); yield break; }
+            case "tipo": { var t = e.Tipo == TipoElemento.Equipo ? "Equipo" : "Activo"; yield return new(t, t); yield break; }
+            case "estado": { var t = EstadoTextoCorto(e.Estado); yield return new(t, t); yield break; }
+            case "reservable": { var t = e.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
+        }
+        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorCampo).
+        if (CampoCustom(clave) is EquipoCampoDefinicionDto cd)
+        {
+            var v = ValorCampo(e.Id, cd.Id);
+            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v!;
+            yield return new(t, t);
+        }
+        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
+    }
+
+    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
+    private void OnGruposEChanged() { _pagina = 1; }
+
+    // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
+    // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
+    private IEnumerable<EquipoActivoDto> PaginaE()
+    {
+        var list = Filtrados().ToList();
+        var totalPag = list.Count == 0 ? 1 : (int)Math.Ceiling(list.Count / (double)_porPagina);
+        var pag = Math.Clamp(_pagina, 1, totalPag);
+        return list.Skip((pag - 1) * _porPagina).Take(_porPagina);
+    }
+
+    // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La pinta
+    // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'eq' (id +
+    // callbacks) y 'e' es un alias para conservar las expresiones de lectura de las columnas tal cual.
+    private RenderFragment<EquipoActivoDto> FilaETpl => eq =>
+    @<div class="ea-list-row ea-listgrid @(_selE.Contains(eq.Id) ? "ea-row-sel" : "")" style="@EaGridStyle" @oncontextmenu="ev => AbrirCtxE(ev, eq)" @oncontextmenu:preventDefault="true">
+        @{ var e = eq; }
+        <div class="ea-sel-cell"><label class="ea-chk"><input type="checkbox" checked="@_selE.Contains(eq.Id)" @onchange="@(ev => ToggleSelE(eq.Id, (bool)(ev.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
+        <div class="ea-col-exp">
+            <button type="button" class="ea-exp-fijo" title="Abrir la ficha para editar" @onclick="() => AbrirFichaEquipoAsync(eq)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </div>
+        @foreach (var k in ColsVisibles())
+        {
+            if (CampoCustom(k) is EquipoCampoDefinicionDto cd)
+            {
+                var cdd = cd;
+                var vv = ValorCampo(eq.Id, cd.Id);
+                switch (cd.Tipo)
+                {
+                    case TipoCampoTablero.Seleccion:
+                        <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                            <option value="">-</option>
+                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
+                        </select>
+                        break;
+                    case TipoCampoTablero.Numero:
+                    case TipoCampoTablero.Moneda:
+                        <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                        break;
+                    case TipoCampoTablero.Fecha:
+                        <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                        break;
+                    case TipoCampoTablero.Booleano:
+                        <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
+                            <option value="">-</option>
+                            <option value="Si" selected="@(vv == "Si")">Si</option>
+                            <option value="No" selected="@(vv == "No")">No</option>
+                        </select>
+                        break;
+                    default:
+                        <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                        break;
+                }
+                continue;
+            }
+            switch (k)
+            {
+                case "nombre":
+                    <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
+                    break;
+                case "categoria":
+                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
+                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
+                    </select>
+                    break;
+                case "tipo":
+                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
+                        <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
+                        <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
+                    </select>
+                    break;
+                case "cantidad":
+                    <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
+                    break;
+                case "estado":
+                    <select class="ea-cell ea-cell-est" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
+                        @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
+                    </select>
+                    break;
+                case "reservable":
+                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "reservable", ev))">
+                        <option value="false" selected="@(!e.EsReservable)">No</option>
+                        <option value="true" selected="@e.EsReservable">Si</option>
+                    </select>
+                    break;
+                case "modelo":
+                    <input class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
+                    break;
+                case "serie":
+                    <input class="ea-cell" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
+                    break;
+                case "ubicacion":
+                    <input class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
+                    break;
+                case "observaciones":
+                    <input class="ea-cell" value="@e.Observaciones" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "observaciones", ev))" />
+                    break;
+                case "vidautil":
+                    <input type="number" min="0" class="ea-cell ea-num" value="@e.VidaUtilAnios" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "vidautil", ev))" />
+                    break;
+                case "valoradq":
+                    <input type="number" step="any" min="0" class="ea-cell ea-num" value="@e.ValorAdquisicion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "valoradq", ev))" />
+                    break;
+                case "proveedor":
+                    <input class="ea-cell" value="@e.Proveedor" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "proveedor", ev))" />
+                    break;
+                case "numfactura":
+                    <input class="ea-cell" value="@e.NumeroFactura" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "numfactura", ev))" />
+                    break;
+                case "marca":
+                    <input class="ea-cell" value="@e.Marca" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "marca", ev))" />
+                    break;
+                case "codigobarra":
+                    <input class="ea-cell" value="@e.CodigoBarra" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "codigobarra", ev))" />
+                    break;
+                case "fechainstalacion":
+                    <input type="date" class="ea-cell" value="@(e.FechaInstalacion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechainstalacion", ev))" />
+                    break;
+                case "garantiahasta":
+                    <input type="date" class="ea-cell" value="@(e.GarantiaHasta?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "garantiahasta", ev))" />
+                    break;
+                case "fechaadquisicion":
+                    <input type="date" class="ea-cell" value="@(e.FechaAdquisicion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechaadquisicion", ev))" />
+                    break;
+            }
+        }
+        <div class="ea-list-act">
+            <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </button>
+        </div>
+        <div class="ea-addcol-cell"></div>
+    </div>;
 
     // Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu Columnas)
     private async Task IniciarReorderE(MouseEventArgs ev, string clave)
