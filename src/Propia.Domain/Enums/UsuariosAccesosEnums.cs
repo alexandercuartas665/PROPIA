@@ -43,6 +43,19 @@ public enum AccionPermiso
     Exportar = 6
 }
 
+/// <summary>
+/// Categoria del rol (spec 2.5 v2.0 seccion 3.1, seleccion unica). Agrupa/colorea los roles en la
+/// bandeja y ubica al usuario en la app (Administrativo = staff de gestion; Personal Operativo =
+/// operarios; Portal Residente = acceso residente; Terceros = proveedores/externos).
+/// </summary>
+public enum CategoriaRol
+{
+    Administrativo = 1,
+    PersonalOperativo = 2,
+    PortalResidente = 3,
+    Terceros = 4
+}
+
 /// <summary>Nivel de dato al que aplica el permiso. Spec 2.5 v1.0 tabla rol_permiso.nivel_dato.</summary>
 public enum NivelDato
 {

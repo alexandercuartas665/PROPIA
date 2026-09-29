@@ -1,0 +1,447 @@
+@using Propia.Application.UsuariosAccesos
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+@* Bandeja de Roles y Permisos (spec 2.5 v2.0): el modal paso a MODULO/bandeja propio, separado de
+   Usuarios (3 l.63/65; 11 l.311). Tabla con Rol/Categoria/Base/Usuarios; la matriz de permisos vive
+   DENTRO de la Vista Ficha del rol (MP-01). Filas de modulo dinamicas (MP-03). La matriz por
+   copropiedad usa el overlay rol_permisos_tenant ya cableado en RolesService (RP-04). Ola A: se
+   muestran las 6 acciones; el filtrado a "acciones validas por modulo" (MP-04) es Ola B. *@
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+}
+else if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+}
+else
+{
+<div class="usr-wrap">
+    <div class="mod-pagehead">
+        <div>
+            <h1 class="mod-pagetitle">Roles y Permisos</h1>
+            <p class="mod-pagesub">Cada rol define que puede ver y hacer. Los roles base no se eliminan ni renombran; su matriz se edita por copropiedad.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="usr-btn-ghost" @onclick='() => Nav.NavigateTo("/usuarios")'>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                Usuarios
+            </button>
+        </div>
+    </div>
+
+    @if (_msg is not null)
+    {
+        <div class="alert @_msgClass" @onclick="() => _msg = null" style="cursor:pointer">@_msg</div>
+    }
+
+    @if (_roles is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+    }
+    else if (_rolEditando is not null && _detalleEdit is not null)
+    {
+        @* ================= VISTA FICHA: matriz de permisos del rol ================= *@
+        <div class="rol-ficha">
+            <div class="rol-ficha-head">
+                <button class="usr-modal-x" @onclick="VolverALista" title="Volver a la lista">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="flex-grow-1">
+                    <div class="usr-modal-title">@_detalleEdit.Nombre</div>
+                    <div class="usr-modal-subtitle">Matriz de permisos por modulo y accion . @LabelCategoria(_detalleEdit.Categoria)@(_detalleEdit.Tipo == TipoRol.Base ? " . rol base" : "")</div>
+                </div>
+            </div>
+
+            <div class="usr-rolcfg">
+                <div class="usr-rolcfg-row">
+                    <div style="flex:1;min-width:0">
+                        <label class="usr-label">Nombre del rol</label>
+                        <input class="usr-input" @bind="_edNombre" disabled="@(_detalleEdit.Tipo == TipoRol.Base)" />
+                        @if (_detalleEdit.Tipo == TipoRol.Base) { <div class="usr-hint">Los roles base no se renombran (RN-03).</div> }
+                    </div>
+                    <div style="width:220px;flex-shrink:0">
+                        <label class="usr-label">Categoria</label>
+                        <select class="usr-select" @bind="_edCategoria" disabled="@(_detalleEdit.TenantId is null)">
+                            @foreach (var c in Enum.GetValues<CategoriaRol>())
+                            {
+                                <option value="@c">@LabelCategoria(c)</option>
+                            }
+                        </select>
+                        @if (_detalleEdit.TenantId is null) { <div class="usr-hint">Los roles base tienen categoria fija.</div> }
+                    </div>
+                    <button class="usr-rowbtn" style="align-self:flex-end" @onclick="GuardarConfigRol" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar")</button>
+                </div>
+                <div class="usr-rolcfg-seed">
+                    <label class="usr-label">Semilla en la Distribucion . al asignar una persona a estas facetas se crea su usuario con este rol</label>
+                    <div class="usr-facetas">
+                        @foreach (var f in _facetasCat)
+                        {
+                            var fv = f.Val; var on = _edFacetas.Contains(fv);
+                            <button type="button" class="usr-faceta @(on ? "on" : "")" @onclick="() => ToggleFaceta(fv)">@f.Label</button>
+                        }
+                    </div>
+                    <label class="usr-seedchk">
+                        <input type="checkbox" @bind="_edSoloDir" />
+                        <span>Ocultar y permitir solo en Directorio <em>(no aparecen en la lista de Usuarios)</em></span>
+                    </label>
+                    <div class="usr-hint">Recuerda pulsar <b>Guardar</b> para aplicar la siembra.</div>
+                </div>
+            </div>
+
+            <div class="usr-matrix">
+                <div class="usr-matrix-head">
+                    <div style="flex:1;font-size:11px;letter-spacing:.4px;font-weight:700;color:var(--propia-text-faint)">MODULO</div>
+                    @foreach (var a in Enum.GetValues<AccionPermiso>())
+                    {
+                        <div class="usr-matrix-col">@a.ToString().ToUpper()</div>
+                    }
+                    <div style="width:140px;flex-shrink:0;text-align:center;font-size:11px;letter-spacing:.3px;font-weight:700;color:var(--propia-text-faint)">NIVEL DE DATO</div>
+                </div>
+                @* Filas de modulo DINAMICAS (MP-03): iteran los modulos activos; un modulo nuevo aparece solo. *@
+                @foreach (var mod in ModulosActivos)
+                {
+                    var modCodigo = mod;
+                    var nivelActual = _detalleEdit.Permisos.Where(p => p.ModuloCodigo == mod).Select(p => p.NivelDato).DefaultIfEmpty(NivelDato.SinAcceso).Max();
+                    <div class="usr-matrix-row">
+                        <div class="usr-matrix-mod">@LabelModulo(mod)</div>
+                        @foreach (var accion in Enum.GetValues<AccionPermiso>())
+                        {
+                            var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == mod && p.Accion == accion);
+                            var hab = celda?.Habilitado ?? false;
+                            var modC = mod; var accC = accion;
+                            <div class="usr-cell">
+                                <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
+                                </button>
+                            </div>
+                        }
+                        <div style="width:140px;flex-shrink:0;display:flex;justify-content:center">
+                            <select class="usr-select" style="font-size:12px;padding:5px 8px" @onchange="(e) => CambiarNivel(modCodigo, Enum.Parse<NivelDato>(e.Value!.ToString()!))">
+                                <option value="@NivelDato.SinAcceso" selected="@(nivelActual == NivelDato.SinAcceso)">Sin acceso</option>
+                                <option value="@NivelDato.Propio" selected="@(nivelActual == NivelDato.Propio)">Solo propio</option>
+                                <option value="@NivelDato.Copropiedad" selected="@(nivelActual == NivelDato.Copropiedad)">Toda la PH</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="usr-hint mt-3">Los cambios de la matriz se guardan al instante y aplican SOLO a esta copropiedad (RP-04). "Administrador conserva acceso a Usuarios y Accesos" se aplica automaticamente.</div>
+        </div>
+    }
+    else
+    {
+        @* ================= BANDEJA (tabla) ================= *@
+        <div class="rol-tablebox">
+            <table class="rol-tbl">
+                <thead>
+                    <tr>
+                        <th class="rol-th-exp"></th>
+                        <th>ROL</th>
+                        <th>CATEGORIA</th>
+                        <th>BASE</th>
+                        <th class="rol-th-num">USUARIOS ASIGNADOS</th>
+                        <th class="rol-th-acc"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema).OrderBy(r => (int)r.Tipo).ThenBy(r => r.Nombre))
+                    {
+                        var rr = r;
+                        <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)">
+                            <td class="rol-td-exp">
+                                <span class="rol-exp" title="Abrir la ficha">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </span>
+                            </td>
+                            <td class="rol-td-nom">
+                                <div class="rol-nom">@r.Nombre</div>
+                                @if (!string.IsNullOrWhiteSpace(r.Descripcion)) { <div class="rol-desc">@r.Descripcion</div> }
+                            </td>
+                            <td>
+                                <span class="rol-cat" style="background:@ColorCategoriaSoft(r.Categoria);color:@ColorCategoria(r.Categoria)">
+                                    <span class="rol-cat-dot" style="background:@ColorCategoria(r.Categoria)"></span>@LabelCategoria(r.Categoria)
+                                </span>
+                            </td>
+                            <td>
+                                @if (r.Tipo == TipoRol.Base) { <span class="rol-badge rol-badge-base">Base</span> }
+                                else if (r.Tipo == TipoRol.Extendido) { <span class="rol-badge rol-badge-ext">Extendido@(r.Activo ? "" : " . inactivo")</span> }
+                                else { <span class="rol-badge">Personalizado</span> }
+                            </td>
+                            <td class="rol-td-num">@r.CantidadUsuariosActivos</td>
+                            <td class="rol-td-acc" @onclick:stopPropagation="true">
+                                @if (r.Tipo == TipoRol.Extendido)
+                                {
+                                    <button class="rol-actbtn" @onclick="() => ToggleExtendido(rr.Id)">@(r.Activo ? "Desactivar" : "Activar")</button>
+                                }
+                                <button class="rol-actbtn" title="Duplicar el rol con su matriz" @onclick="() => DuplicarRol(rr)">Duplicar</button>
+                                @if (r.EsEliminable)
+                                {
+                                    <button class="rol-actbtn rol-actbtn-danger" title="Eliminar (solo sin usuarios activos, RP-03)" @onclick="() => EliminarRol(rr.Id)">Eliminar</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (_creandoRol)
+                    {
+                        <tr class="rol-tr rol-newrow">
+                            <td class="rol-td-exp"></td>
+                            <td class="rol-td-nom">
+                                <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" />
+                            </td>
+                            <td>
+                                <select class="rol-inp" @bind="_nuevoCategoria">
+                                    @foreach (var c in Enum.GetValues<CategoriaRol>()) { <option value="@c">@LabelCategoria(c)</option> }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="rol-inp" @bind="_copiarDe">
+                                    <option value="">(Empezar vacio)</option>
+                                    @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema)) { <option value="@r.Id">Copiar de @r.Nombre</option> }
+                                </select>
+                            </td>
+                            <td></td>
+                            <td class="rol-td-acc">
+                                <button class="rol-actbtn rol-actbtn-add" @onclick="CrearRol" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoNombre))">Crear</button>
+                                <button class="rol-actbtn" @onclick="() => { _creandoRol = false; _nuevoNombre = string.Empty; _copiarDe = string.Empty; }">Cancelar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!_creandoRol)
+            {
+                <button class="rol-newbtn" @onclick="() => { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; }">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+                    Nueva rol
+                </button>
+            }
+        </div>
+    }
+</div>
+}
+
+@code {
+    private bool _authChecked;
+    private string? _jwt;
+    private bool _busy;
+    private string? _msg;
+    private string _msgClass = "alert-success";
+
+    private List<RolDto>? _roles;
+    private Guid? _rolEditando;
+    private RolDetalleDto? _detalleEdit;
+
+    // Edicion de la ficha
+    private string _edNombre = "";
+    private CategoriaRol _edCategoria = CategoriaRol.Administrativo;
+    private HashSet<int> _edFacetas = new();
+    private bool _edSoloDir;
+
+    // Alta
+    private bool _creandoRol;
+    private string _nuevoNombre = "";
+    private CategoriaRol _nuevoCategoria = CategoriaRol.Administrativo;
+    private string _copiarDe = "";
+
+    private static readonly (int Val, string Label)[] _facetasCat =
+    {
+        (1, "Propietario"), (2, "Residente"), (4, "Arrendatario"), (3, "Grupo familiar"), (5, "Apoderado")
+    };
+
+    // Modulos del catalogo (MP-03: filas dinamicas). Hoy = todos los modulos declarados; al agregar
+    // uno nuevo a ModuloCodigo.Todos aparece solo en la matriz.
+    private static IReadOnlyList<string> ModulosActivos => ModuloCodigo.Todos;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarRolesAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private async Task CargarRolesAsync()
+    {
+        try { _roles = await Auth().GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new(); }
+        catch { _roles = new(); }
+    }
+
+    private async Task EditarRol(Guid rolId)
+    {
+        _rolEditando = rolId;
+        _detalleEdit = await Auth().GetFromJsonAsync<RolDetalleDto>($"/api/roles/{rolId}");
+        _edNombre = _detalleEdit?.Nombre ?? "";
+        _edCategoria = _detalleEdit?.Categoria ?? CategoriaRol.Administrativo;
+        _edSoloDir = _detalleEdit?.SoloDirectorio ?? false;
+        _edFacetas = (_detalleEdit?.FacetasSemilla ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var n) ? n : 0).Where(n => n > 0).ToHashSet();
+    }
+
+    private void VolverALista() { _rolEditando = null; _detalleEdit = null; }
+
+    private void ToggleFaceta(int v) { if (!_edFacetas.Add(v)) _edFacetas.Remove(v); }
+
+    private async Task GuardarConfigRol()
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var facetasCsv = _edFacetas.Count == 0 ? null : string.Join(",", _edFacetas.OrderBy(x => x));
+            var req = new ActualizarRolRequest(_edNombre.Trim(), _detalleEdit.Descripcion, _edCategoria, _detalleEdit.Activo, facetasCsv, _edSoloDir);
+            var resp = await Auth().PutAsJsonAsync($"/api/roles/{_rolEditando}", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            _msg = "Rol actualizado."; _msgClass = "alert-success";
+            await CargarRolesAsync();
+            await EditarRol(_rolEditando.Value);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task TogglePermiso(string modulo, AccionPermiso accion, bool habilitado)
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == modulo && p.Accion == accion);
+        var nivel = celda?.NivelDato ?? NivelDato.Copropiedad;
+        if (habilitado && nivel == NivelDato.SinAcceso) nivel = NivelDato.Copropiedad;
+        var resp = await Auth().PutAsJsonAsync($"/api/roles/{_rolEditando}/permisos",
+            new ActualizarPermisoRequest(modulo, accion, habilitado, nivel));
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        await EditarRol(_rolEditando.Value);
+    }
+
+    private async Task CambiarNivel(string modulo, NivelDato nivel)
+    {
+        if (_rolEditando is null || _detalleEdit is null) return;
+        var http = Auth();
+        foreach (var accion in Enum.GetValues<AccionPermiso>())
+        {
+            var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == modulo && p.Accion == accion);
+            if (celda is null || !celda.Habilitado) continue;
+            await http.PutAsJsonAsync($"/api/roles/{_rolEditando}/permisos",
+                new ActualizarPermisoRequest(modulo, accion, true, nivel));
+        }
+        await EditarRol(_rolEditando.Value);
+    }
+
+    private async Task ToggleExtendido(Guid rolId)
+    {
+        await Auth().PutAsync($"/api/roles/{rolId}/activar", null);
+        await CargarRolesAsync();
+    }
+
+    private async Task CrearRol()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            Guid? copiar = Guid.TryParse(_copiarDe, out var g) ? g : null;
+            var resp = await Auth().PostAsJsonAsync("/api/roles",
+                new CrearRolRequest(_nuevoNombre.Trim(), null, _nuevoCategoria, copiar));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var creado = await resp.Content.ReadFromJsonAsync<RolDto>();
+            _msg = $"Rol '{_nuevoNombre}' creado."; _msgClass = "alert-success";
+            _nuevoNombre = ""; _copiarDe = ""; _creandoRol = false;
+            await CargarRolesAsync();
+            if (creado is not null) await EditarRol(creado.Id); // abre su ficha
+        }
+        finally { _busy = false; }
+    }
+
+    // Duplicar: crea un personalizado copiando la matriz EFECTIVA del origen (RP-02) y abre su ficha.
+    private async Task DuplicarRol(RolDto origen)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var nombre = $"Copia de {origen.Nombre}";
+            var resp = await Auth().PostAsJsonAsync("/api/roles",
+                new CrearRolRequest(nombre, origen.Descripcion, origen.Categoria, origen.Id));
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            var creado = await resp.Content.ReadFromJsonAsync<RolDto>();
+            _msg = $"Rol duplicado como '{nombre}'."; _msgClass = "alert-success";
+            await CargarRolesAsync();
+            if (creado is not null) await EditarRol(creado.Id);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarRol(Guid rolId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/roles/{rolId}");
+        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        _msg = "Rol eliminado."; _msgClass = "alert-success";
+        await CargarRolesAsync();
+    }
+
+    private static string LabelCategoria(CategoriaRol c) => c switch
+    {
+        CategoriaRol.Administrativo => "Administrativo",
+        CategoriaRol.PersonalOperativo => "Personal Operativo",
+        CategoriaRol.PortalResidente => "Portal Residente",
+        CategoriaRol.Terceros => "Terceros",
+        _ => c.ToString()
+    };
+
+    private static string ColorCategoria(CategoriaRol c) => c switch
+    {
+        CategoriaRol.Administrativo => "var(--propia-brand)",
+        CategoriaRol.PersonalOperativo => "var(--propia-success)",
+        CategoriaRol.PortalResidente => "var(--propia-warning, var(--propia-brand))",
+        CategoriaRol.Terceros => "var(--propia-text-secondary)",
+        _ => "var(--propia-text-secondary)"
+    };
+
+    private static string ColorCategoriaSoft(CategoriaRol c) => c switch
+    {
+        CategoriaRol.Administrativo => "var(--propia-brand-soft)",
+        CategoriaRol.PersonalOperativo => "var(--propia-ok-soft, var(--propia-brand-soft))",
+        CategoriaRol.PortalResidente => "var(--propia-warning-soft, var(--propia-brand-soft))",
+        CategoriaRol.Terceros => "var(--propia-bg-card-soft)",
+        _ => "var(--propia-bg-card-soft)"
+    };
+
+    private static string LabelModulo(string codigo) => codigo switch
+    {
+        "DASHBOARD" => "Dashboard",
+        "MI_COPROPIEDAD" => "Mi Copropiedad",
+        "DIRECTORIO" => "Directorio",
+        "USUARIOS_ACCESOS" => "Usuarios y Accesos",
+        "PRESUPUESTO" => "Presupuesto y Pagos",
+        "CARTERA" => "Cartera",
+        "ASAMBLEAS" => "Asambleas",
+        "PQRS" => "PQRSD y Convivencia",
+        "TAREAS" => "Tareas y Proyectos",
+        "MANTENIMIENTO" => "Mantenimiento",
+        "PORTERIA" => "Porteria",
+        "RESERVAS" => "Reservas",
+        "COMUNICACIONES" => "Comunicaciones",
+        "DOCUMENTOS" => "Documentos",
+        "REPORTES" => "Reportes",
+        _ => codigo
+    };
+}

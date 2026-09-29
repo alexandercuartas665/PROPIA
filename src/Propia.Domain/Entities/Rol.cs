@@ -20,6 +20,10 @@ public class Rol : BaseEntity
     public string Nombre { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
     public TipoRol Tipo { get; set; }
+
+    /// <summary>Categoria del rol (spec 2.5 v2.0 3.1, seleccion unica). Default Administrativo.</summary>
+    public CategoriaRol Categoria { get; set; } = CategoriaRol.Administrativo;
+
     public bool EsEliminable { get; set; } = true;
     public bool Activo { get; set; } = true;
 

@@ -100,11 +100,71 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var roles = await svc.ListarRolesAsync(CancellationToken.None);
         var admin = roles.First(r => r.Nombre == "Administrador");
 
-        var nuevo = await svc.CrearRolAsync(new CrearRolRequest("Admin Junior", "Copia de admin", admin.Id), CancellationToken.None);
+        var nuevo = await svc.CrearRolAsync(new CrearRolRequest("Admin Junior", "Copia de admin", CategoriaRol.Administrativo, admin.Id), CancellationToken.None);
         Assert.Equal(TipoRol.Personalizado, nuevo.Tipo);
 
         var detalle = await svc.GetRolDetalleAsync(nuevo.Id, CancellationToken.None);
         Assert.True(detalle!.Permisos.Count(p => p.Habilitado) >= 80); // copia ~todos
+    }
+
+    // ===== Aislamiento de la matriz por copropiedad (spec 2.5 v2.0 RP-04/RN-07) =====
+    // Es el bug critico que tapa la Ola A: hoy rol_permisos es global y editar un rol base mutaba la
+    // matriz para TODAS las copropiedades. Con rol_permisos_tenant (override por tenant) + overlay,
+    // editar en A NO afecta a B.
+
+    [Fact]
+    public async Task Editar_matriz_de_rol_base_global_en_un_tenant_no_afecta_a_otro()
+    {
+        var tenantA = await SeedTenantAsync("CP Aislamiento A");
+        var tenantB = await SeedTenantAsync("CP Aislamiento B");
+
+        // Tenant A: Consejero (base, global). Su default = Ver en todo; Tareas/Aprobar esta OFF.
+        var (svcA, _, _, scopeA) = BuildRoles(tenantA);
+        using (scopeA)
+        {
+            var consejeroA = (await svcA.ListarRolesAsync(CancellationToken.None)).First(r => r.Nombre == "Consejero");
+            var antes = await svcA.GetRolDetalleAsync(consejeroA.Id, CancellationToken.None);
+            Assert.False(antes!.Permisos.First(p => p.ModuloCodigo == ModuloCodigo.Tareas && p.Accion == AccionPermiso.Aprobar).Habilitado);
+
+            // Habilito Tareas/Aprobar SOLO en A (se guarda como override del tenant A).
+            await svcA.ActualizarPermisoAsync(consejeroA.Id,
+                new ActualizarPermisoRequest(ModuloCodigo.Tareas, AccionPermiso.Aprobar, true, NivelDato.Copropiedad), CancellationToken.None);
+
+            var despues = await svcA.GetRolDetalleAsync(consejeroA.Id, CancellationToken.None);
+            Assert.True(despues!.Permisos.First(p => p.ModuloCodigo == ModuloCodigo.Tareas && p.Accion == AccionPermiso.Aprobar).Habilitado);
+        }
+
+        // Tenant B: MISMO rol global, sin override -> sigue leyendo el default (OFF). No cambio.
+        var (svcB, _, _, scopeB) = BuildRoles(tenantB);
+        using (scopeB)
+        {
+            var consejeroB = (await svcB.ListarRolesAsync(CancellationToken.None)).First(r => r.Nombre == "Consejero");
+            var detalleB = await svcB.GetRolDetalleAsync(consejeroB.Id, CancellationToken.None);
+            Assert.False(detalleB!.Permisos.First(p => p.ModuloCodigo == ModuloCodigo.Tareas && p.Accion == AccionPermiso.Aprobar).Habilitado);
+        }
+    }
+
+    [Fact]
+    public async Task Rol_personalizado_de_un_tenant_no_es_visible_desde_otro()
+    {
+        var tenantA = await SeedTenantAsync("CP Perso A");
+        var tenantB = await SeedTenantAsync("CP Perso B");
+
+        Guid persoId;
+        var (svcA, _, _, scopeA) = BuildRoles(tenantA);
+        using (scopeA)
+        {
+            var nuevo = await svcA.CrearRolAsync(new CrearRolRequest("Rol Solo A", null, CategoriaRol.Administrativo, null), CancellationToken.None);
+            persoId = nuevo.Id;
+            Assert.Contains(await svcA.ListarRolesAsync(CancellationToken.None), r => r.Id == persoId);
+        }
+
+        var (svcB, _, _, scopeB) = BuildRoles(tenantB);
+        using (scopeB)
+        {
+            Assert.DoesNotContain(await svcB.ListarRolesAsync(CancellationToken.None), r => r.Id == persoId);
+            Assert.Null(await svcB.GetRolDetalleAsync(persoId, CancellationToken.None));
+        }
     }
 
     [Fact]

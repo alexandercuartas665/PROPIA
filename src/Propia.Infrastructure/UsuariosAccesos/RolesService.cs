@@ -51,7 +51,7 @@ public class RolesService : IRolesService
             overrides.TryGetValue(r.Id, out var ov);
             return new RolDto(
                 r.Id, r.TenantId, r.Nombre, r.Descripcion,
-                r.Tipo, r.EsEliminable, r.Activo,
+                r.Tipo, r.Categoria, r.EsEliminable, r.Activo,
                 conteos.GetValueOrDefault(r.Id, 0),
                 ov?.FacetasSemilla, ov?.SoloDirectorio ?? false);
         }).ToList();
@@ -62,20 +62,17 @@ public class RolesService : IRolesService
         var r = await _db.RolesCopropiedad.AsNoTracking().FirstOrDefaultAsync(x => x.Id == rolId, ct);
         if (r is null) return null;
 
-        var permisos = await _db.RolPermisos
-            .AsNoTracking()
-            .Where(p => p.RolId == rolId)
-            .Select(p => new PermisoMatrizDto(p.ModuloCodigo, p.Accion, p.Habilitado, p.NivelDato))
-            .ToListAsync(ct);
+        // Matriz EFECTIVA en la copropiedad activa (default global + override por tenant si el rol
+        // es global). La Ficha muestra/edita la matriz de ESTA copropiedad, no la global.
+        var efectiva = await MatrizEfectivaAsync(r, ct);
 
-        // Completar la matriz: para cada (modulo, accion) que no tenga registro, devolver SinAcceso
         var matriz = new List<PermisoMatrizDto>();
         foreach (var mod in ModuloCodigo.Todos)
         {
             foreach (var acc in Enum.GetValues<AccionPermiso>())
             {
-                var existente = permisos.FirstOrDefault(p => p.ModuloCodigo == mod && p.Accion == acc);
-                matriz.Add(existente ?? new PermisoMatrizDto(mod, acc, false, NivelDato.SinAcceso));
+                var (hab, niv) = efectiva.TryGetValue((mod, acc), out var v) ? v : (false, NivelDato.SinAcceso);
+                matriz.Add(new PermisoMatrizDto(mod, acc, hab, niv));
             }
         }
 
@@ -85,8 +82,27 @@ public class RolesService : IRolesService
         var ov = await _db.RolesSemillaTenant.AsNoTracking().FirstOrDefaultAsync(x => x.RolId == rolId, ct);
 
         return new RolDetalleDto(r.Id, r.TenantId, r.Nombre, r.Descripcion,
-            r.Tipo, r.EsEliminable, r.Activo, cuenta, matriz,
+            r.Tipo, r.Categoria, r.EsEliminable, r.Activo, cuenta, matriz,
             ov?.FacetasSemilla, ov?.SoloDirectorio ?? false);
+    }
+
+    /// <summary>
+    /// Matriz EFECTIVA (solo celdas con registro) de un rol en la copropiedad ACTIVA:
+    /// rol GLOBAL (TenantId null) = default de rol_permisos, sobrescrito celda a celda por el override
+    /// del tenant (rol_permisos_tenant, ya filtrado por RLS/query filter); rol PERSONALIZADO
+    /// (tenant-scoped) = rol_permisos directo (sin overrides). Es la clave del aislamiento por tenant.
+    /// </summary>
+    private async Task<Dictionary<(string Modulo, AccionPermiso Accion), (bool Habilitado, NivelDato Nivel)>> MatrizEfectivaAsync(Rol rol, CancellationToken ct)
+    {
+        var map = new Dictionary<(string, AccionPermiso), (bool, NivelDato)>();
+        var defaults = await _db.RolPermisos.AsNoTracking().Where(p => p.RolId == rol.Id).ToListAsync(ct);
+        foreach (var p in defaults) map[(p.ModuloCodigo, p.Accion)] = (p.Habilitado, p.NivelDato);
+        if (rol.TenantId is null)
+        {
+            var ov = await _db.RolPermisosTenant.AsNoTracking().Where(p => p.RolId == rol.Id).ToListAsync(ct);
+            foreach (var p in ov) map[(p.ModuloCodigo, p.Accion)] = (p.Habilitado, p.NivelDato);
+        }
+        return map;
     }
 
     public async Task<RolDto> CrearRolAsync(CrearRolRequest req, CancellationToken ct)
@@ -103,6 +119,7 @@ public class RolesService : IRolesService
             TenantId = tenantId,
             Nombre = nombre,
             Descripcion = req.Descripcion,
+            Categoria = req.Categoria,
             Tipo = TipoRol.Personalizado,
             EsEliminable = true,
             Activo = true,
@@ -113,25 +130,29 @@ public class RolesService : IRolesService
 
         if (req.CopiarDeRolId.HasValue)
         {
-            var permisosOrigen = await _db.RolPermisos
-                .Where(p => p.RolId == req.CopiarDeRolId.Value)
-                .ToListAsync(ct);
-            foreach (var po in permisosOrigen)
+            // Duplicar copia la matriz EFECTIVA del origen en esta copropiedad (default global +
+            // override del tenant si el origen es global), no solo el default global (RP-02).
+            var origen = await _db.RolesCopropiedad.AsNoTracking().FirstOrDefaultAsync(x => x.Id == req.CopiarDeRolId.Value, ct);
+            if (origen is not null)
             {
-                _db.RolPermisos.Add(new RolPermiso
+                var efectiva = await MatrizEfectivaAsync(origen, ct);
+                foreach (var kv in efectiva)
                 {
-                    RolId = rol.Id,
-                    ModuloCodigo = po.ModuloCodigo,
-                    Accion = po.Accion,
-                    Habilitado = po.Habilitado,
-                    NivelDato = po.NivelDato
-                });
+                    _db.RolPermisos.Add(new RolPermiso
+                    {
+                        RolId = rol.Id,
+                        ModuloCodigo = kv.Key.Modulo,
+                        Accion = kv.Key.Accion,
+                        Habilitado = kv.Value.Habilitado,
+                        NivelDato = kv.Value.Nivel
+                    });
+                }
+                await _db.SaveChangesAsync(ct);
             }
-            await _db.SaveChangesAsync(ct);
         }
 
         return new RolDto(rol.Id, rol.TenantId, rol.Nombre, rol.Descripcion,
-            rol.Tipo, rol.EsEliminable, rol.Activo, 0);
+            rol.Tipo, rol.Categoria, rol.EsEliminable, rol.Activo, 0);
     }
 
     public async Task<bool> ActualizarRolAsync(Guid rolId, ActualizarRolRequest req, CancellationToken ct)
@@ -145,6 +166,9 @@ public class RolesService : IRolesService
         rol.Nombre = req.Nombre.Trim();
         rol.Descripcion = req.Descripcion;
         rol.Activo = req.Activo;
+        // La categoria de los roles GLOBALES (base/extendido) es fija (definida en la semilla) para no
+        // mutarla entre copropiedades; solo los personalizados (tenant-scoped) la editan.
+        if (rol.TenantId is not null) rol.Categoria = req.Categoria;
 
         // Config de siembra: se guarda en el OVERRIDE por copropiedad (RolSemillaTenant), asi
         // aplica a cualquier tipo de rol (incluidos Base/Extendido globales) sin filtrarse entre
@@ -219,23 +243,54 @@ public class RolesService : IRolesService
         if (rol.Nombre == "Administrador" && req.ModuloCodigo == ModuloCodigo.UsuariosAccesos && !req.Habilitado)
             throw new InvalidOperationException("El Administrador siempre conserva acceso a Usuarios y Accesos (regla de seguridad).");
 
-        var existente = await _db.RolPermisos
-            .FirstOrDefaultAsync(p => p.RolId == rolId && p.ModuloCodigo == req.ModuloCodigo && p.Accion == req.Accion, ct);
-        if (existente is null)
+        if (rol.TenantId is null)
         {
-            _db.RolPermisos.Add(new RolPermiso
+            // Rol GLOBAL (base/extendido): el cambio se guarda como OVERRIDE de la copropiedad activa
+            // (rol_permisos_tenant, RLS). NO muta el default global ni afecta a otras copropiedades
+            // (RP-04/RN-07). TenantId lo asigna SaveChanges (TenantEntity); se fija explicito por claridad.
+            var tenantId = _tenantContext.CurrentTenantId
+                ?? throw new InvalidOperationException("Sin tenant activo.");
+            var ov = await _db.RolPermisosTenant
+                .FirstOrDefaultAsync(p => p.RolId == rolId && p.ModuloCodigo == req.ModuloCodigo && p.Accion == req.Accion, ct);
+            if (ov is null)
             {
-                RolId = rolId,
-                ModuloCodigo = req.ModuloCodigo,
-                Accion = req.Accion,
-                Habilitado = req.Habilitado,
-                NivelDato = req.NivelDato
-            });
+                _db.RolPermisosTenant.Add(new RolPermisoTenant
+                {
+                    TenantId = tenantId,
+                    RolId = rolId,
+                    ModuloCodigo = req.ModuloCodigo,
+                    Accion = req.Accion,
+                    Habilitado = req.Habilitado,
+                    NivelDato = req.NivelDato
+                });
+            }
+            else
+            {
+                ov.Habilitado = req.Habilitado;
+                ov.NivelDato = req.NivelDato;
+            }
         }
         else
         {
-            existente.Habilitado = req.Habilitado;
-            existente.NivelDato = req.NivelDato;
+            // Rol PERSONALIZADO (tenant-scoped): matriz directa en rol_permisos (aislada por su RolId).
+            var existente = await _db.RolPermisos
+                .FirstOrDefaultAsync(p => p.RolId == rolId && p.ModuloCodigo == req.ModuloCodigo && p.Accion == req.Accion, ct);
+            if (existente is null)
+            {
+                _db.RolPermisos.Add(new RolPermiso
+                {
+                    RolId = rolId,
+                    ModuloCodigo = req.ModuloCodigo,
+                    Accion = req.Accion,
+                    Habilitado = req.Habilitado,
+                    NivelDato = req.NivelDato
+                });
+            }
+            else
+            {
+                existente.Habilitado = req.Habilitado;
+                existente.NivelDato = req.NivelDato;
+            }
         }
         await _db.SaveChangesAsync(ct);
         return true;
@@ -261,11 +316,17 @@ public class RolesService : IRolesService
             .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.Estado == EstadoUsuarioTenant.Activo, ct);
         if (ut?.RolId is null) return Array.Empty<PermisoMatrizDto>();
 
-        return await _db.RolPermisos
-            .AsNoTracking()
-            .Where(p => p.RolId == ut.RolId && p.Habilitado)
-            .Select(p => new PermisoMatrizDto(p.ModuloCodigo, p.Accion, p.Habilitado, p.NivelDato))
-            .ToListAsync(ct);
+        var rol = await _db.RolesCopropiedad.AsNoTracking().FirstOrDefaultAsync(r => r.Id == ut.RolId, ct);
+        if (rol is null) return Array.Empty<PermisoMatrizDto>();
+
+        // Permisos EFECTIVOS = matriz efectiva (default global + override del tenant para roles
+        // globales), quedandonos con las celdas habilitadas. Asi el [RequierePermiso] respeta el
+        // override por copropiedad sin mutar el default global.
+        var efectiva = await MatrizEfectivaAsync(rol, ct);
+        return efectiva
+            .Where(kv => kv.Value.Habilitado)
+            .Select(kv => new PermisoMatrizDto(kv.Key.Modulo, kv.Key.Accion, true, kv.Value.Nivel))
+            .ToList();
     }
 
     public async Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct)

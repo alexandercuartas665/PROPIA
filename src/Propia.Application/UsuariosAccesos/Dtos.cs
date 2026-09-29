@@ -6,13 +6,13 @@ namespace Propia.Application.UsuariosAccesos;
 
 public record RolDto(
     Guid Id, Guid? TenantId, string Nombre, string? Descripcion,
-    TipoRol Tipo, bool EsEliminable, bool Activo,
+    TipoRol Tipo, CategoriaRol Categoria, bool EsEliminable, bool Activo,
     int CantidadUsuariosActivos,
     string? FacetasSemilla = null, bool SoloDirectorio = false);
 
 public record RolDetalleDto(
     Guid Id, Guid? TenantId, string Nombre, string? Descripcion,
-    TipoRol Tipo, bool EsEliminable, bool Activo,
+    TipoRol Tipo, CategoriaRol Categoria, bool EsEliminable, bool Activo,
     int CantidadUsuariosActivos,
     IReadOnlyList<PermisoMatrizDto> Permisos,
     string? FacetasSemilla = null, bool SoloDirectorio = false);
@@ -21,10 +21,10 @@ public record PermisoMatrizDto(
     string ModuloCodigo, AccionPermiso Accion, bool Habilitado, NivelDato NivelDato);
 
 public record CrearRolRequest(
-    string Nombre, string? Descripcion, Guid? CopiarDeRolId);
+    string Nombre, string? Descripcion, CategoriaRol Categoria, Guid? CopiarDeRolId);
 
 public record ActualizarRolRequest(
-    string Nombre, string? Descripcion, bool Activo,
+    string Nombre, string? Descripcion, CategoriaRol Categoria, bool Activo,
     string? FacetasSemilla = null, bool SoloDirectorio = false);
 
 public record ActualizarPermisoRequest(

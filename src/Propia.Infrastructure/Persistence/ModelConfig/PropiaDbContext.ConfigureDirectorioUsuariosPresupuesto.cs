@@ -131,6 +131,18 @@ public partial class PropiaDbContext
             // siempre via rol_id y el rol ya esta filtrado.
         });
 
+        // Override de matriz POR COPROPIEDAD (tenant-scoped, RLS) para roles GLOBALES (Base/Extendido).
+        // Spec 2.5 v2.0 RP-04/RN-07: config de roles independiente por copropiedad. Gemelo de
+        // RolSemillaTenant. La matriz efectiva de un rol global = override si existe, si no el default
+        // global de rol_permisos. Los roles Personalizados (tenant-scoped) siguen en rol_permisos.
+        modelBuilder.Entity<RolPermisoTenant>(b =>
+        {
+            b.Property(x => x.ModuloCodigo).IsRequired().HasMaxLength(50);
+            b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.RolId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.RolId, x.ModuloCodigo, x.Accion }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // Config de siembra por copropiedad (override tenant-scoped, RLS). Aplica a cualquier rol.
         modelBuilder.Entity<RolSemillaTenant>(b =>
         {

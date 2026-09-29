@@ -131,6 +131,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     // (RolesCopropiedad para no colisionar con IdentityDbContext.Roles de IdentityRole)
     public DbSet<Rol> RolesCopropiedad => Set<Rol>();
     public DbSet<RolPermiso> RolPermisos => Set<RolPermiso>();
+    public DbSet<RolPermisoTenant> RolPermisosTenant => Set<RolPermisoTenant>();
     public DbSet<RolSemillaTenant> RolesSemillaTenant => Set<RolSemillaTenant>();
     public DbSet<UsuarioInvitacion> UsuarioInvitaciones => Set<UsuarioInvitacion>();
     public DbSet<UsuarioAuthMetodo> UsuarioAuthMetodos => Set<UsuarioAuthMetodo>();
