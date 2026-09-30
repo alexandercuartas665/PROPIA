@@ -31,6 +31,28 @@ prod**: `20260929212521_Modulo25V2_RolCategoria_MatrizPorTenant` (owner `propia`
   en `App.razor`); el modal viejo de roles en Usuarios se elimino (el boton "Roles y permisos" navega a
   `/roles`). Sin config nueva.
 
+## ESTADO 2026-09-29 MODULO 2.5 v2.0 D2 (re-seed de roles base + remapeo de usuarios)
+
+Rama `equipo/atlas-roles-d2` (sale de Ola A). **Migracion de DATOS** (no toca esquema):
+`20260930021045_Modulo25V2_D2_ReseedRolesBase`. Debe correr DESPUES de la migracion de Ola A.
+- **Correr como owner `propia`** (`dotnet ef database update`). `propia` es superuser/BYPASSRLS, asi que
+  el remap alcanza todas las copropiedades. **NO aplicar como `propia_app`**: con RLS FORCE y sin
+  `app.tenant_id` la policy filtraria a 0 filas y el remap se saltaria en silencio.
+- Que hace (todo en 1 transaccion, con aserciones `DO` que ABORTAN si queda cualquier huerfano):
+  deja **7 roles base** (Administrador, Consejero, Coordinador, Asistente [categoria Administrativo];
+  Personal Operativo [ex-Operario, Operativo]; Portal Residente [NUEVO, fusiona Propietario+Residente,
+  categoria Portal Residente]; Terceros [NUEVO]); **borra** Propietario, Residente, Inmobiliaria,
+  Revisor Fiscal, Vigilante; **remapea** usuarios+invitaciones de Propietario/Residente a Portal
+  Residente; Portal Residente HEREDA la matriz de Propietario (10 celdas, decision de Alex); Contador
+  pasa a **personalizado** del tenant de su usuario; facetas de siembra Propietario+Residente se
+  fusionan por tenant en Portal Residente.
+- **Destructiva y NO reversible** (Down = no-op deliberado: el merge Propietario+Residente pierde la
+  distincion). **Antes de aplicar en prod: BACKUP.**
+- **DEV: APLICADO y verificado 2026-09-29** (7 roles base OK; 244 usuarios en Portal Residente; Contador
+  tipo=Personalizado tenant-scoped; matriz Portal Residente=10 celdas; facetas="1,2"; **0 huerfanos** en
+  usuarios_tenant / usuario_invitaciones / rol_permisos / rol_permisos_tenant). **PROD: PENDIENTE del
+  dale de Alex.**
+
 ---
 
 ## ESTADO 2026-09-28 TANDA 2 (carga masiva single-tenant + ficha + AGRUPAR - LEER PRIMERO)
