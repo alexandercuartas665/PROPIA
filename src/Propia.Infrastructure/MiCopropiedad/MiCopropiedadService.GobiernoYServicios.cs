@@ -169,6 +169,9 @@ public partial class MiCopropiedadService
             NitProveedor = req.NitProveedor,
             ContactoPersonaId = req.ContactoPersonaId,
             Contacto = req.Contacto,
+            TelefonoContratista = req.TelefonoContratista,
+            CorreoContratista = req.CorreoContratista,
+            DireccionContratista = req.DireccionContratista,
             FechaInicio = req.FechaInicio,
             FechaFin = req.FechaFin,
             ValorMensual = req.ValorMensual,
@@ -248,6 +251,9 @@ public partial class MiCopropiedadService
         if (!string.IsNullOrWhiteSpace(req.Proveedor)) c.Proveedor = req.Proveedor.Trim();
         if (req.NitProveedor is not null) c.NitProveedor = string.IsNullOrWhiteSpace(req.NitProveedor) ? null : req.NitProveedor.Trim();
         if (req.Contacto is not null) c.Contacto = string.IsNullOrWhiteSpace(req.Contacto) ? null : req.Contacto.Trim();
+        if (req.TelefonoContratista is not null) c.TelefonoContratista = string.IsNullOrWhiteSpace(req.TelefonoContratista) ? null : req.TelefonoContratista.Trim();
+        if (req.CorreoContratista is not null) c.CorreoContratista = string.IsNullOrWhiteSpace(req.CorreoContratista) ? null : req.CorreoContratista.Trim();
+        if (req.DireccionContratista is not null) c.DireccionContratista = string.IsNullOrWhiteSpace(req.DireccionContratista) ? null : req.DireccionContratista.Trim();
         if (req.FechaInicio.HasValue) c.FechaInicio = req.FechaInicio.Value;
         if (req.FechaFin.HasValue) c.FechaFin = req.FechaFin.Value;
         if (req.ValorMensual.HasValue) c.ValorMensual = req.ValorMensual.Value;
@@ -343,7 +349,8 @@ public partial class MiCopropiedadService
             c.Adjuntos?.Count ?? 0, valores, c.EtapaId,
             c.NumeroContrato, c.TipoContrato, c.Categoria, c.ValorTotal, c.FormaPagoCuotas, c.PagoMensual,
             c.AsociadoTipo, c.AsociadoId, asociadoNombre,
-            c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo);
+            c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo,
+            c.TelefonoContratista, c.CorreoContratista, c.DireccionContratista);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
