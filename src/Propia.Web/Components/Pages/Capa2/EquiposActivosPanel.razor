@@ -280,6 +280,7 @@ else
         <div class="ea-list">
             @* Columnas dirigidas por la config compartida (unidades-config, entidad 'equipo'): sistema y
                propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
+            <div class="ea-scroll">
             <div class="ea-list-head ea-listgrid" style="@EaGridStyle">
                 <div class="ea-sel-cell"><label class="ea-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSelE" @onchange="@(e => ToggleSelAllE((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
@@ -318,7 +319,7 @@ else
             }
             else
             {
-                @foreach (var eq in PaginaE())
+                @foreach (var eq in EquiposRenderE())
                 {
                     @FilaETpl(eq)
                 }
@@ -424,13 +425,16 @@ else
                 </div>
             </div>
             }
-            @* Footer canonico: visible con la tabla, incluso con 0 filas ("Mostrando 0 de 0");
-               solo se oculta con agrupacion activa. *@
+            </div>
+            @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
+            <button type="button" class="tbl-fab" hidden="@_ctaVisibleE" @onclick="FabAgregarE" title="Agregar registro">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar registro
+            </button>
+            @* Footer de conteo (como Unidades): sin paginacion, render completo. Se oculta con agrupacion. *@
             @if (!_agrupadoE)
             {
-                <TablaPager Total="Filtrados().Count()" Pagina="_pagina" PorPagina="_porPagina" Entidad="equipos"
-                            PaginaChanged="p => _pagina = p"
-                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+                <div class="tbl-foot">@Filtrados().Count() registros &middot; mostrando @Filtrados().Count()</div>
             }
         </div>
     }
@@ -658,6 +662,21 @@ else
             _focusPending = false;
             try { await _nombreRef.FocusAsync(); } catch { }
         }
+        if (_view == "list" && !_agrupadoE)
+        {
+            _selfE ??= DotNetObjectReference.Create(this);
+            var sig = $"{_altaAbiertaE}|{Filtrados().Count()}";
+            if (sig != _wiredSigE)
+            {
+                _wiredSigE = sig;
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfE, ".ea-scroll"); } catch { }
+            }
+        }
+        if (_scrollBottomPendingE)
+        {
+            _scrollBottomPendingE = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".ea-scroll"); } catch { }
+        }
     }
 
     private async Task CargarAsync()
@@ -675,6 +694,7 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _equipos = await resp.Content.ReadFromJsonAsync<List<EquipoActivoDto>>() ?? new();
+            if (_suppressRecienClearE) _suppressRecienClearE = false; else _recienE.Clear();
             await CargarCamposYConfigAsync();
             _loadError = null;
         }
@@ -804,6 +824,26 @@ else
         if (e.Key == "Escape") CerrarAltaE();
         else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
     }
+
+    // ===== FAB flotante + fila nueva verde/ultima + scroll-al-fondo (patron piloto Unidades) =====
+    private readonly HashSet<Guid> _recienE = new();
+    private bool _suppressRecienClearE;
+    private bool _ctaVisibleE = true;
+    private bool _scrollBottomPendingE;
+    private string? _wiredSigE;
+
+    // Filas planas: todas las filtradas; las recien creadas se empujan al FINAL (OrderBy estable).
+    private IEnumerable<EquipoActivoDto> EquiposRenderE()
+    {
+        var seq = Filtrados();
+        if (_recienE.Count > 0) seq = seq.OrderBy(x => _recienE.Contains(x.Id) ? 1 : 0);
+        return seq;
+    }
+
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisibleE != visible) { _ctaVisibleE = visible; StateHasChanged(); } }
+
+    private void FabAgregarE() { _altaAbiertaE = true; _draft.Reset(); _reveal = 0; _focusPending = true; _scrollBottomPendingE = true; }
 
     // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN). Crear campo = "+" del header; editar
     // /eliminar = engranaje. Persistencia identica a Unidades: unidades-config con Entidad="equipo". =====
@@ -1159,7 +1199,7 @@ else
     // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'eq' (id +
     // callbacks) y 'e' es un alias para conservar las expresiones de lectura de las columnas tal cual.
     private RenderFragment<EquipoActivoDto> FilaETpl => eq =>
-    @<div class="ea-list-row ea-listgrid @(_selE.Contains(eq.Id) ? "ea-row-sel" : "")" style="@EaGridStyle" @oncontextmenu="ev => AbrirCtxE(ev, eq)" @oncontextmenu:preventDefault="true">
+    @<div class="ea-list-row ea-listgrid @(_selE.Contains(eq.Id) ? "ea-row-sel" : "") @(_recienE.Contains(eq.Id) ? "ea-row-new" : "")" style="@EaGridStyle" @oncontextmenu="ev => AbrirCtxE(ev, eq)" @oncontextmenu:preventDefault="true">
         @{ var e = eq; }
         <div class="ea-sel-cell"><label class="ea-chk"><input type="checkbox" checked="@_selE.Contains(eq.Id)" @onchange="@(ev => ToggleSelE(eq.Id, (bool)(ev.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
         <div class="ea-col-exp">
@@ -1510,20 +1550,22 @@ else
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipos", req);
             if (resp.IsSuccessStatusCode)
             {
+                EquipoActivoDto? creado = null;
+                try { creado = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>(); } catch { }
                 // Persistir valores de campos dinamicos capturados en la fila de alta.
-                if (_nuCampos.Count > 0)
+                if (creado is not null && _nuCampos.Count > 0)
                 {
                     try
                     {
-                        var creado = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>();
-                        if (creado is not null)
-                            foreach (var kv in _nuCampos)
-                                if (!string.IsNullOrWhiteSpace(kv.Value))
-                                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{creado.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                        foreach (var kv in _nuCampos)
+                            if (!string.IsNullOrWhiteSpace(kv.Value))
+                                await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{creado.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
                     }
                     catch { }
-                    _nuCampos.Clear();
                 }
+                _nuCampos.Clear();
+                // El equipo nuevo queda al final y en verde hasta el proximo refresco (la recarga de aqui no lo limpia).
+                if (creado is not null) { _recienE.Add(creado.Id); _suppressRecienClearE = true; }
                 _draft.Reset(); _reveal = 0; _composerOpen = false; _altaAbiertaE = false; _nonce++; _focusPending = true;
                 await CargarAsync();
                 Msg("Equipo/activo creado. Haz clic en el para completar la ficha.", true);
@@ -1754,7 +1796,13 @@ else
     .ea-composer-ok { font-size: 12.5px; font-weight: 700; color: var(--propia-text-inverse); background: var(--propia-brand, var(--propia-brand)); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }
     .ea-composer-ok:disabled { opacity: .5; cursor: default; }
 
-    .ea-list { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
+    .ea-list { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); position: relative; }
+    /* Scroll interno (patron piloto): render completo + header sticky + FAB flotante + verde fila nueva */
+    .ea-scroll { overflow: auto; max-height: calc(100vh - 300px); overflow-anchor: none; }
+    .ea-list .ea-list-head { position: sticky; top: 0; z-index: 6; }
+    .ea-list .tbl-fab { bottom: 54px; }
+    .ea-list-row.ea-row-new { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .ea-list-row.ea-row-new:hover { background: var(--propia-ok-soft); }
     .ea-listgrid { display: grid; grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; }
     /* Columna del expansor: se ve al pasar el mouse por la fila (o al escribir en la fila de alta). */
     .ea-col-exp { display: flex; align-items: center; justify-content: center; }
