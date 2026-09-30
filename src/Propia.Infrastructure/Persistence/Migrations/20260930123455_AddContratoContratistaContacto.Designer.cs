@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Propia.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Propia.Infrastructure.Persistence;
 namespace Propia.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PropiaDbContext))]
-    partial class PropiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930123455_AddContratoContratistaContacto")]
+    partial class AddContratoContratistaContacto
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -10683,61 +10686,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "PolizaId");
 
                     b.ToTable("poliza_reclamaciones");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.PolizaReclamacionComentario", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AutorNombre")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("autor_nombre");
-
-                    b.Property<Guid?>("AutorUsuarioId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("autor_usuario_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<Guid>("PolizaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("poliza_id");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<string>("Texto")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)")
-                        .HasColumnName("texto");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PolizaId");
-
-                    b.HasIndex("TenantId", "PolizaId");
-
-                    b.ToTable("poliza_reclamacion_comentarios");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.PorteriaCampo", b =>
@@ -21429,17 +21377,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("Propia.Domain.Entities.Poliza", "Poliza")
                         .WithMany("Reclamaciones")
-                        .HasForeignKey("PolizaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Poliza");
-                });
-
-            modelBuilder.Entity("Propia.Domain.Entities.PolizaReclamacionComentario", b =>
-                {
-                    b.HasOne("Propia.Domain.Entities.Poliza", "Poliza")
-                        .WithMany()
                         .HasForeignKey("PolizaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

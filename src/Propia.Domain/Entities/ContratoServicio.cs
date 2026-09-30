@@ -25,6 +25,13 @@ public class ContratoServicio : TenantEntity
     public Guid? ContactoPersonaId { get; set; }
     public string? Contacto { get; set; }
 
+    // Datos de contacto del contratista (snapshot en el contrato, como Proveedor/NitProveedor). La maqueta
+    // los muestra en la seccion Contratista; el campo "Contacto" unico se retira del modal (su columna/dato
+    // se conserva para no perder los contratos ya cargados).
+    public string? TelefonoContratista { get; set; }
+    public string? CorreoContratista { get; set; }
+    public string? DireccionContratista { get; set; }
+
     public DateOnly FechaInicio { get; set; }
     public DateOnly? FechaFin { get; set; }
     public decimal? ValorMensual { get; set; }
