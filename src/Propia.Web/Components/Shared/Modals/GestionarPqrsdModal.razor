@@ -457,19 +457,46 @@
                                             <div class="gpqc-bubble @(it.Adj is not null ? "has-file" : "")">
                                                 @if (it.Adj is PqrsdAdjuntoDto adj)
                                                 {
-                                                    @if (EsImg(adj.UrlStorage))
+                                                    var mime = (adj.TipoMime ?? "").ToLowerInvariant();
+                                                    @if (mime.StartsWith("audio/"))
                                                     {
-                                                        <div class="gpqc-img" @onclick="() => _lightbox = adj.UrlStorage" title="Clic para ampliar">
-                                                            <img src="@adj.UrlStorage" alt="@adj.NombreArchivo" />
+                                                        @* AUDIO: player estilo maqueta (play + waveform + peso). *@
+                                                        <div class="gpqc-att gpqc-att--audio">
+                                                            <button type="button" class="gpqc-audio-play" @onclick="() => ReproducirAudio(adj.UrlStorage)" title="Reproducir">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                                                            </button>
+                                                            <span class="gpqc-audio-wave">@for (var i = 0; i < 16; i++) { <i></i> }</span>
+                                                            <span class="gpqc-att-dur">@FmtBytes(adj.TamanioBytes)</span>
                                                         </div>
                                                     }
-                                    @* PDFs/otros: solo tarjeta-enlace (abrir a demanda). No se pre-carga en
-                                       iframe: el storage sirve el archivo como adjunto y forzaba una descarga
-                                       automatica al abrir el modal. *@
-                                                    <a class="gpqc-file" href="@adj.UrlStorage" target="_blank" title="@adj.NombreArchivo">
-                                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
-                                                        <span class="gpqc-fnm">@adj.NombreArchivo</span>
-                                                    </a>
+                                                    else if (mime.StartsWith("image/") || EsImg(adj.UrlStorage))
+                                                    {
+                                                        @* IMAGEN: miniatura real + nombre + peso (tarjeta, estilo maqueta). Clic = lightbox. *@
+                                                        <div class="gpqc-att gpqc-att--img" @onclick="() => _lightbox = adj.UrlStorage" title="Clic para ampliar">
+                                                            <span class="gpqc-att-thumb"><img src="@adj.UrlStorage" alt="@adj.NombreArchivo" /></span>
+                                                            <span class="gpqc-att-meta"><b>@adj.NombreArchivo</b><span>@FmtBytes(adj.TamanioBytes)</span></span>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        @* ARCHIVO: icono por tipo + nombre + peso + descargar (abrir a demanda). *@
+                                                        <a class="gpqc-att gpqc-att--file" href="@adj.UrlStorage" target="_blank" title="@adj.NombreArchivo">
+                                                            <span class="gpqc-att-ic">
+                                                                @if (mime == "application/pdf" || EsPdf(adj.UrlStorage))
+                                                                {
+                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/><path d="M9 13h1.5a1.5 1.5 0 0 1 0 3H9zM9 13v6"/></svg>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                                                                }
+                                                            </span>
+                                                            <span class="gpqc-att-meta"><b>@adj.NombreArchivo</b><span>@FmtBytes(adj.TamanioBytes)</span></span>
+                                                            <span class="gpqc-att-dl" title="Descargar">
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg>
+                                                            </span>
+                                                        </a>
+                                                    }
                                                     @if (!string.IsNullOrWhiteSpace(adj.Texto))
                                                     {
                                                         <div class="gpqc-tx gpqc-cap">@adj.Texto</div>
@@ -484,6 +511,14 @@
                                     </div>
                                 }
                             }
+                        }
+                    </div>
+                    <div class="gpqc-qr-row">
+                        <span class="gpqc-qr-lbl">Respuesta rapida</span>
+                        @foreach (var qr in _respuestasRapidas)
+                        {
+                            var t = qr;
+                            <button type="button" class="gpqc-qr" @onclick="() => UsarRespuestaRapida(t)">@t</button>
                         }
                     </div>
                     <div class="gpqc-composerwrap">
@@ -515,6 +550,21 @@
                                 <InputFile OnChange="SeleccionarArchivo" style="display:none" />
                             </label>
                             <textarea class="gpqc-input2" rows="1" @bind="_nuevoComentario" @bind:event="oninput" @bind:after="DetectarMencion" placeholder="@(_pendingFileName is null ? "Escribe un comentario o @menciona..." : "Anade un comentario (opcional)...")"></textarea>
+                            <div class="gpqc-emoji-wrap">
+                                <button type="button" class="gpqc-emoji-btn" @onclick="ToggleEmoji" title="Emoji">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
+                                </button>
+                                @if (_emojiOpen)
+                                {
+                                    <div class="gpqc-emoji-pop">
+                                        @foreach (var e in _emojis)
+                                        {
+                                            var em = e;
+                                            <button type="button" class="gpqc-emoji" @onclick="() => InsertarEmoji(em)">@em</button>
+                                        }
+                                    </div>
+                                }
+                            </div>
                             <button class="gpqc-send" @onclick="EnviarMensaje" disabled="@(_reportando || _subiendo || (_pendingFile is null && string.IsNullOrWhiteSpace(_nuevoComentario)))" title="Enviar">
                                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                             </button>
@@ -1088,6 +1138,28 @@
     private static readonly System.Globalization.CultureInfo Es = new("es-CO");
     private Guid _miUsuarioId;                       // para pintar "los mios a la derecha"
     private string _nuevoComentario = "";
+
+    // Actividad milimetrica: respuestas rapidas + emojis + audio (patron de la maqueta / chat de polizas).
+    private static readonly string[] _respuestasRapidas = { "Gracias, lo reviso", "En proceso", "Agendo visita", "Resuelto" };
+    private static readonly string[] _emojis = { "\U0001F44D", "\U0001F64F", "✅", "\U0001F527", "\U0001F4CC", "⚠️", "\U0001F600", "\U0001F389", "\U0001F44C", "\U0001F4CE", "\U0001F552", "❤️" };
+    private bool _emojiOpen;
+    private void ToggleEmoji() => _emojiOpen = !_emojiOpen;
+    private void UsarRespuestaRapida(string t)
+        => _nuevoComentario = string.IsNullOrWhiteSpace(_nuevoComentario) ? t : _nuevoComentario.TrimEnd() + " " + t;
+    private void InsertarEmoji(string e) { _nuevoComentario = (_nuevoComentario ?? "") + e; _emojiOpen = false; }
+    private async Task ReproducirAudio(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try { await Js.InvokeVoidAsync("propiaPlayAudio", url); } catch { }
+    }
+    private static string FmtBytes(long b)
+    {
+        if (b <= 0) return "";
+        string[] u = { "B", "KB", "MB", "GB" };
+        double v = b; int i = 0;
+        while (v >= 1024 && i < u.Length - 1) { v /= 1024; i++; }
+        return (i == 0 ? v.ToString("0") : v.ToString("0.#")) + " " + u[i];
+    }
     private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _pendingFile;
     private string? _pendingFileName;               // archivo elegido que se sube al enviar (con caption)
     private string? _lightbox;                       // url de imagen ampliada
