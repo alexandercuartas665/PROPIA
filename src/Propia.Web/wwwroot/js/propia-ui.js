@@ -8,6 +8,16 @@
 (function () {
     'use strict';
 
+    // Reproductor de audio simple para los adjuntos de la Actividad (PQRSD): toca/pausa 1 audio a la vez.
+    var _propiaAudio = null;
+    window.propiaPlayAudio = function (url) {
+        try {
+            if (_propiaAudio && !_propiaAudio.paused) { _propiaAudio.pause(); return; }
+            _propiaAudio = new Audio(url);
+            _propiaAudio.play().catch(function () {});
+        } catch (e) {}
+    };
+
     var docEl = document.documentElement;
     var STORAGE_KEY = 'propia_theme';
 
