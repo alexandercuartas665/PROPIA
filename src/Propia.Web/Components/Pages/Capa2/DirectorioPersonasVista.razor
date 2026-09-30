@@ -156,7 +156,7 @@ else
                 }
                 var p = item.Persona!;
                 var pid = p.Id;
-                <div class="dtab-row dvp-grid @(Seleccion is not null && Seleccion.Contains(pid) ? "dtab-row-sel" : "")" style="grid-template-columns:@GridCols" @oncontextmenu="e => AbrirCtx(e, p)" @oncontextmenu:preventDefault="true">
+                <div class="dtab-row dvp-grid @(Seleccion is not null && Seleccion.Contains(pid) ? "dtab-row-sel" : "") @(Recien is not null && Recien.Contains(pid) ? "dtab-row-new" : "")" style="grid-template-columns:@GridCols" @oncontextmenu="e => AbrirCtx(e, p)" @oncontextmenu:preventDefault="true">
                     <div class="dtab-sel-cell"><label class="dtab-chk"><input type="checkbox" checked="@(Seleccion is not null && Seleccion.Contains(pid))" @onchange="e => OnSeleccionar.InvokeAsync((pid, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
                     <div class="dtab-exp-col">
                         <button type="button" class="dtab-exp" title="Abrir la ficha para editar" @onclick="() => OnAbrir.InvokeAsync(pid)">
@@ -321,12 +321,15 @@ else
                 </div>
             </div>
         </div>
-        @* Footer canonico: se muestra SIEMPRE que la tabla este visible (incluso con 0 filas
-           -> "Mostrando 0 de 0"); solo se oculta cuando hay agrupacion activa (Grupos no null). *@
+        @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
+        <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregar" title="Agregar registro">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar registro
+        </button>
+        @* Footer de conteo (como Unidades): sin paginacion, render completo. Se oculta con agrupacion. *@
         @if (Grupos is null)
         {
-            <TablaPager Total="Total" Pagina="Pagina" PorPagina="PorPagina" Entidad="personas"
-                        PaginaChanged="PaginaChanged" PorPaginaChanged="PorPaginaChanged" />
+            <div class="tbl-foot">@Total registros &middot; mostrando @(Personas?.Count ?? 0)</div>
         }
     </div>
 }
@@ -337,6 +340,7 @@ else
 
 @code {
     [Parameter] public List<PersonaResumenDto>? Personas { get; set; }
+    [Parameter] public HashSet<Guid>? Recien { get; set; }   // personas recien creadas: verde + al final
     [Parameter] public EventCallback<Guid> OnAbrir { get; set; }
     [Parameter] public EventCallback<NuevaPersonaDir> OnCrear { get; set; }
     /// <summary>Variante del alta: crear y ABRIR la ficha de una (expander de la fila).</summary>
@@ -498,9 +502,31 @@ else
     private bool _focusPending;         // devolver el foco al primer campo tras recrear la fila
     private ElementReference _firstRef;
 
+    // ===== FAB flotante + scroll-al-fondo (patron piloto Unidades). El alta esta siempre al final. =====
+    private bool _ctaVisible = true;
+    private bool _scrollBottomPending;
+    private string? _wiredSig;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render completo: no hay lotes
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    private void FabAgregar() { _scrollBottomPending = true; _focusPending = true; }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+        if (Grupos is null)
+        {
+            var sig = $"{Personas?.Count ?? 0}";
+            if (sig != _wiredSig)
+            {
+                _wiredSig = sig;
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", Self, ".dtab-scroll"); } catch { }
+            }
+        }
+        if (_scrollBottomPending)
+        {
+            _scrollBottomPending = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".dtab-scroll"); } catch { }
+        }
     }
 
     private bool DraftValido =>
