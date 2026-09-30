@@ -268,6 +268,7 @@ else
                del registro para editarlo; en la fila de alta crea la zona y abre su ficha. *@
             @* Columnas dirigidas por la config compartida (unidades-config, entidad 'zona'): sistema y
                propias en UNA sola secuencia, con el orden/visibilidad/alias del Selector de Campos. *@
+            <div class="zc-scroll">
             <div class="zc-list-head zc-grid" style="@ZcGridStyle">
                 <div class="zc-sel-cell"><label class="zc-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSelZ" @onchange="@(e => ToggleSelAllZ((bool)(e.Value ?? false)))" /></label></div>
                 <div></div>
@@ -306,7 +307,7 @@ else
             }
             else
             {
-                @foreach (var z in PaginaZonasZ())
+                @foreach (var z in ZonasRenderZ())
                 {
                     @FilaZonaTpl(z)
                 }
@@ -406,15 +407,16 @@ else
                 </div>
             </div>
             }
-            @* Footer DENTRO del contenedor de la tabla (borde/radio/overflow), para que se integre
-               como en Unidades y no se vea "pegado". *@
-            @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0");
-               solo se oculta con agrupacion activa. *@
+            </div>
+            @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
+            <button type="button" class="tbl-fab" hidden="@_ctaVisibleZ" @onclick="FabAgregarZ" title="Agregar registro">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar registro
+            </button>
+            @* Footer de conteo (como Unidades): sin paginacion, render completo. Se oculta con agrupacion. *@
             @if (!_agrupadoZ)
             {
-                <TablaPager Total="Filtradas().Count()" Pagina="_paginaZ" PorPagina="_porPaginaZ" Entidad="zonas"
-                            PaginaChanged="p => _paginaZ = p"
-                            PorPaginaChanged="n => { _porPaginaZ = n; _paginaZ = 1; }" />
+                <div class="tbl-foot">@Filtradas().Count() registros &middot; mostrando @Filtradas().Count()</div>
             }
         </div>
     }
@@ -978,6 +980,27 @@ else
         else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
     }
 
+    // ===== FAB flotante + fila nueva verde/ultima + scroll-al-fondo (patron piloto Unidades) =====
+    private readonly HashSet<Guid> _recienZ = new();   // zonas recien creadas: verde + al final hasta el proximo refresco
+    private bool _suppressRecienClearZ;                 // la recarga post-creacion NO limpia el resaltado
+    private bool _ctaVisibleZ = true;                   // FAB oculto cuando la fila "+ Agregar" en linea esta a la vista
+    private bool _scrollBottomPendingZ;                 // bajar al fondo tras el render (al abrir alta con el FAB)
+    private string? _wiredSigZ;                         // (re)instala el listener de scroll solo cuando cambia el estado
+
+    // Filas planas a pintar: todas las filtradas; las recien creadas se empujan al FINAL (OrderBy estable).
+    private IEnumerable<ZonaComunDto> ZonasRenderZ()
+    {
+        var seq = Filtradas();
+        if (_recienZ.Count > 0) seq = seq.OrderBy(z => _recienZ.Contains(z.Id) ? 1 : 0);
+        return seq;
+    }
+
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render completo: no hay lotes que cargar
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisibleZ != visible) { _ctaVisibleZ = visible; StateHasChanged(); } }
+
+    // FAB: abre el alta al final y baja el scroll hasta la fila nueva.
+    private void FabAgregarZ() { _altaAbiertaZ = true; _draft.Reset(); _focusPending = true; _scrollBottomPendingZ = true; }
+
     // El gestor compartido cambio algo (alias/orden/visibilidad/campo propio): refresca todo.
     private async Task RecargarCamposYConfigAsync()
     {
@@ -1047,7 +1070,7 @@ else
     // pinta TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'zona';
     // 'z' es un alias para conservar las expresiones de las columnas de sistema tal cual.
     private RenderFragment<ZonaComunDto> FilaZonaTpl => zona =>
-    @<div class="zc-list-row zc-grid @(_selZ.Contains(zona.Id) ? "zc-row-sel" : "")" style="@ZcGridStyle" @oncontextmenu="e => AbrirCtxZ(e, zona)" @oncontextmenu:preventDefault="true">
+    @<div class="zc-list-row zc-grid @(_selZ.Contains(zona.Id) ? "zc-row-sel" : "") @(_recienZ.Contains(zona.Id) ? "zc-row-new" : "")" style="@ZcGridStyle" @oncontextmenu="e => AbrirCtxZ(e, zona)" @oncontextmenu:preventDefault="true">
         @{ var z = zona; }
         <div class="zc-sel-cell"><label class="zc-chk"><input type="checkbox" checked="@_selZ.Contains(zona.Id)" @onchange="@(e => ToggleSelZ(zona.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
         <div class="zc-col-exp">
@@ -1248,6 +1271,22 @@ else
             _focusPending = false;
             try { await _nombreRef.FocusAsync(); } catch { }
         }
+        // Scroll infinito/FAB (patron piloto): (re)instala el listener cuando cambia el estado relevante.
+        if (_view == "list" && !_agrupadoZ)
+        {
+            _selfZ ??= DotNetObjectReference.Create(this);
+            var sig = $"{_altaAbiertaZ}|{Filtradas().Count()}";
+            if (sig != _wiredSigZ)
+            {
+                _wiredSigZ = sig;
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfZ, ".zc-scroll"); } catch { }
+            }
+        }
+        if (_scrollBottomPendingZ)
+        {
+            _scrollBottomPendingZ = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".zc-scroll"); } catch { }
+        }
     }
 
     private async Task CargarAsync()
@@ -1265,6 +1304,9 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _zonas = await resp.Content.ReadFromJsonAsync<List<ZonaComunDto>>() ?? new();
+            // Tras un refresco real las recien creadas vuelven a su orden natural (sin verde); la recarga
+            // que dispara la propia creacion conserva el resaltado (suppress).
+            if (_suppressRecienClearZ) _suppressRecienClearZ = false; else _recienZ.Clear();
             await CargarCamposYConfigAsync();
             _loadError = null;
         }
@@ -1444,19 +1486,21 @@ else
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/zonas", req);
             if (resp.IsSuccessStatusCode)
             {
-                if (_nuCampos.Count > 0)
+                ZonaComunDto? creada = null;
+                try { creada = await resp.Content.ReadFromJsonAsync<ZonaComunDto>(); } catch { }
+                if (creada is not null && _nuCampos.Count > 0)
                 {
                     try
                     {
-                        var creada = await resp.Content.ReadFromJsonAsync<ZonaComunDto>();
-                        if (creada is not null)
-                            foreach (var kv in _nuCampos)
-                                if (!string.IsNullOrWhiteSpace(kv.Value))
-                                    await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                        foreach (var kv in _nuCampos)
+                            if (!string.IsNullOrWhiteSpace(kv.Value))
+                                await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{creada.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
                     }
                     catch { }
-                    _nuCampos.Clear();
                 }
+                _nuCampos.Clear();
+                // La zona nueva queda al final y en verde hasta el proximo refresco (la recarga de aqui no lo limpia).
+                if (creada is not null) { _recienZ.Add(creada.Id); _suppressRecienClearZ = true; }
                 _draft.Reset(); _reveal = 0; _composerOpen = false; _altaAbiertaZ = false; _nonce++; _focusPending = true;
                 await CargarAsync();
                 Msg("Zona común creada. Haz clic en ella para completar la ficha.", true);
@@ -1590,7 +1634,13 @@ else
     .zc-composer-ok { font-size: 12.5px; font-weight: 700; color: var(--propia-text-inverse); background: var(--propia-brand, var(--propia-brand)); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-family: inherit; }
     .zc-composer-ok:disabled { opacity: .5; cursor: default; }
 
-    .zc-list { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
+    .zc-list { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); position: relative; }
+    /* Scroll interno (patron piloto): render completo + header sticky + FAB flotante + verde fila nueva */
+    .zc-scroll { overflow: auto; max-height: calc(100vh - 300px); overflow-anchor: none; }
+    .zc-list .zc-list-head { position: sticky; top: 0; z-index: 6; }
+    .zc-list .tbl-fab { bottom: 54px; }
+    .zc-list-row.zc-row-new { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
+    .zc-list-row.zc-row-new:hover { background: var(--propia-ok-soft); }
     /* Primera columna fija (34px) para el expansor: abrir/editar la ficha del registro. */
     /* Columnas via estilo inline (ZcGridStyle) para soportar orden/visibilidad configurables. */
     .zc-grid { display: grid; gap: 10px; align-items: center; }
