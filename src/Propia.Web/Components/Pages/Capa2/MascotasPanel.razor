@@ -178,7 +178,7 @@ else
             }
             else
             {
-                @foreach (var v in PaginaM())
+                @foreach (var v in MascotasRenderM())
                 {
                     @FilaMTpl(v)
                 }
@@ -291,10 +291,13 @@ else
             }
         </div>
 
+        <button type="button" class="tbl-fab" hidden="@_ctaVisibleM" @onclick="FabAgregarM" title="Agregar registro">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar registro
+        </button>
         @if (!_agrupadoM)
         {
-            <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="mascotas"
-                        PaginaChanged="p => { _pagina = p; }" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Filtradas.Count</div>
         }
     </div>
 }
@@ -371,6 +374,21 @@ else
     private List<CampoDinDef> _defs = new();
     private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();
     private readonly HashSet<Guid> _recienCreados = new();
+
+    // ===== FAB flotante + fila nueva verde/ultima + scroll-al-fondo (patron piloto Unidades) =====
+    private bool _suppressRecienClearM;
+    private bool _ctaVisibleM = true;
+    private bool _scrollBottomPendingM;
+    private string? _wiredSigM;
+    private IEnumerable<MascotaResumenDto> MascotasRenderM()
+    {
+        IEnumerable<MascotaResumenDto> seq = Filtradas;
+        if (_recienCreados.Count > 0) seq = seq.OrderBy(v => _recienCreados.Contains(v.MascotaId) ? 1 : 0);
+        return seq;
+    }
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisibleM != visible) { _ctaVisibleM = visible; StateHasChanged(); } }
+    private void FabAgregarM() { _altaAbierta = true; _focusPending = true; _scrollBottomPendingM = true; }
 
     // Alta inline "nace fila".
     private bool _altaAbierta;
@@ -654,6 +672,21 @@ else
             _focusPending = false;
             try { await _nombreRef.FocusAsync(); } catch { }
         }
+        if (!_agrupadoM)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = $"{_altaAbierta}|{Filtradas.Count}";
+            if (sig != _wiredSigM)
+            {
+                _wiredSigM = sig;
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".mas-scroll"); } catch { }
+            }
+        }
+        if (_scrollBottomPendingM)
+        {
+            _scrollBottomPendingM = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".mas-scroll"); } catch { }
+        }
     }
 
     private HttpClient Auth()
@@ -669,6 +702,7 @@ else
         {
             var http = Auth();
             _mascotas = await http.GetFromJsonAsync<List<MascotaResumenDto>>("/api/mi-copropiedad/mascotas") ?? new();
+            if (_suppressRecienClearM) _suppressRecienClearM = false; else _recienCreados.Clear();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
             await CargarCamposAsync(http);
@@ -777,7 +811,7 @@ else
                 foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
                     await Auth().PutAsJsonAsync($"/api/mi-copropiedad/mascotas-campos-valores/{creada.Id}/{defId}",
                         new SetCampoValorRequest(valor));
-                _recienCreados.Add(creada.Id);
+                _recienCreados.Add(creada.Id); _suppressRecienClearM = true;
             }
 
             _nuNombre = ""; _nuRaza = ""; _nuTipo = TipoMascota.Perro; _nuUnidadId = null; _nuDinamicos.Clear();
@@ -1320,8 +1354,9 @@ else
     .mas-confirm-acts { display: flex; justify-content: flex-end; gap: 10px; }
 
     /* El footer va DENTRO de la caja de la tabla, como en Unidades. */
-    .mas-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
-    .mas-scroll { overflow: auto; max-height: calc(100vh - 260px); }
+    .mas-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); position: relative; }
+    .mas-scroll { overflow: auto; max-height: calc(100vh - 260px); overflow-anchor: none; }
+    .mas-table .tbl-fab { bottom: 54px; }
     .mas-grid { display: grid; align-items: center; gap: 12px; padding: 10px 18px; min-width: max-content; }
     .mas-head { position: sticky; top: 0; z-index: 8; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; }
     .mas-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
