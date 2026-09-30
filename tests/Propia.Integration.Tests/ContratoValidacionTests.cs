@@ -203,6 +203,51 @@ public class ContratoValidacionTests
         await CleanupTenantAsync(tenantId);
     }
 
+    [Fact]
+    public async Task Contacto_del_contratista_persiste_y_el_PUT_merge_es_granular()
+    {
+        // Follow-up columnas Contratista (Tel/Correo/Direccion): round-trip crear/leer + el PUT-merge
+        // no pisa lo que no viene (actualizar solo Observaciones conserva los 3; actualizar solo el
+        // telefono cambia ese y conserva correo/direccion).
+        var tenantId = await SeedTenantAsync("[ATLAS] CP contacto contratista");
+        var svc = BuildService(tenantId);
+
+        var c = await svc.CrearContratoAsync(
+            ContratoValido() with
+            {
+                TelefonoContratista = "3001234567",
+                CorreoContratista = "contacto@aseo.co",
+                DireccionContratista = "Calle 45 # 12-30"
+            },
+            CancellationToken.None);
+
+        // El DTO devuelto trae los 3 (proyeccion del servicio).
+        Assert.Equal("3001234567", c.TelefonoContratista);
+        Assert.Equal("contacto@aseo.co", c.CorreoContratista);
+        Assert.Equal("Calle 45 # 12-30", c.DireccionContratista);
+
+        // Actualizar SOLO Observaciones: el merge NO debe pisar Tel/Correo/Direccion.
+        await svc.ActualizarContratoAsync(c.Id,
+            new ActualizarContratoRequest(EstadoContrato.Vigente, 30, Observaciones: "[ATLAS] solo obs"),
+            CancellationToken.None);
+        var tras1 = (await svc.ListContratosAsync(CancellationToken.None)).Single();
+        Assert.Equal("3001234567", tras1.TelefonoContratista);
+        Assert.Equal("contacto@aseo.co", tras1.CorreoContratista);
+        Assert.Equal("Calle 45 # 12-30", tras1.DireccionContratista);
+        Assert.Equal("[ATLAS] solo obs", tras1.Observaciones);
+
+        // Actualizar SOLO el telefono: cambia ese, conserva correo/direccion (merge granular).
+        await svc.ActualizarContratoAsync(c.Id,
+            new ActualizarContratoRequest(EstadoContrato.Vigente, 30, TelefonoContratista: "3009998877"),
+            CancellationToken.None);
+        var tras2 = (await svc.ListContratosAsync(CancellationToken.None)).Single();
+        Assert.Equal("3009998877", tras2.TelefonoContratista);
+        Assert.Equal("contacto@aseo.co", tras2.CorreoContratista);
+        Assert.Equal("Calle 45 # 12-30", tras2.DireccionContratista);
+
+        await CleanupTenantAsync(tenantId);
+    }
+
     // ----------------------------- infraestructura de los tests -----------------------------
 
     private IMiCopropiedadService BuildService(Guid tenantId)
