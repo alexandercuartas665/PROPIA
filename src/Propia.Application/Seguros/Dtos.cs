@@ -67,3 +67,7 @@ public record ReclamacionDto(
     EstadoReclamacion Estado, decimal? MontoReconocido, DateTimeOffset? FechaCierre, Guid? ExpedienteId);
 public record CrearReclamacionRequest(DateOnly Fecha, decimal MontoReclamado, string Descripcion, Guid? ExpedienteId = null);
 public record CerrarReclamacionRequest(decimal MontoReconocido);
+
+// ----- Hilo de actividad (chat) de reclamaciones, por-poliza (MVP). Coexiste con el CRUD de arriba. -----
+public record PolizaComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
+public record AgregarComentarioPolizaRequest(string Texto);

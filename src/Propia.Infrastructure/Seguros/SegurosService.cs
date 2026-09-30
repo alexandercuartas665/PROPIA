@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Propia.Application.Seguros;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -13,7 +15,20 @@ public class SegurosService : ISegurosService
 {
     private readonly PropiaDbContext _db;
     private readonly Storage.IBlobStorage _blob;
-    public SegurosService(PropiaDbContext db, Storage.IBlobStorage blob) { _db = db; _blob = blob; }
+    private readonly IHttpContextAccessor _http;
+    public SegurosService(PropiaDbContext db, Storage.IBlobStorage blob, IHttpContextAccessor http) { _db = db; _blob = blob; _http = http; }
+
+    // Autor actual desde los claims del JWT (mismo patron que PqrsdService.ActorActual).
+    private (Guid? UsuarioId, string? Nombre) ActorActual()
+    {
+        var u = _http.HttpContext?.User;
+        Guid? uid = Guid.TryParse(u?.FindFirst("user_id")?.Value, out var g) ? g : null;
+        var nombre = u?.FindFirst("name")?.Value
+            ?? u?.FindFirst(ClaimTypes.Name)?.Value
+            ?? u?.FindFirst("email")?.Value
+            ?? u?.FindFirst(ClaimTypes.Email)?.Value;
+        return (uid, nombre);
+    }
 
     // ----------------------------- Polizas -----------------------------
     public async Task<IReadOnlyList<PolizaDto>> ListPolizasAsync(CancellationToken ct)
@@ -350,6 +365,37 @@ public class SegurosService : ISegurosService
         r.FechaCierre = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    // --------------- Hilo de actividad (chat) de reclamaciones, por-poliza (MVP) ---------------
+    // Coexiste con el CRUD de siniestros de arriba: solo agrega/lee comentarios, no toca reclamaciones.
+    public async Task<IReadOnlyList<PolizaComentarioDto>> ListComentariosAsync(Guid polizaId, CancellationToken ct)
+    {
+        if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct)) return Array.Empty<PolizaComentarioDto>();
+        return await _db.PolizaReclamacionComentarios.AsNoTracking()
+            .Where(c => c.PolizaId == polizaId)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new PolizaComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId))
+            .ToListAsync(ct);
+    }
+
+    public async Task<PolizaComentarioDto> AgregarComentarioAsync(Guid polizaId, AgregarComentarioPolizaRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Texto))
+            throw new InvalidOperationException("El comentario no puede estar vacio.");
+        if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct))
+            throw new InvalidOperationException("Poliza no encontrada.");
+        var (uid, nombre) = ActorActual();
+        var c = new PolizaReclamacionComentario
+        {
+            PolizaId = polizaId,
+            Texto = req.Texto.Trim(),
+            AutorUsuarioId = uid,
+            AutorNombre = nombre
+        };
+        _db.PolizaReclamacionComentarios.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new PolizaComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId);
     }
 
     private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

@@ -147,7 +147,7 @@ public class SegurosCamposTests
             .UseNpgsql(_fx.AppConnectionString)
             .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
             .Options;
-        return new SegurosService(new PropiaDbContext(options, tenantCtx), new NoopBlobStorage());
+        return new SegurosService(new PropiaDbContext(options, tenantCtx), new NoopBlobStorage(), new Microsoft.AspNetCore.Http.HttpContextAccessor());
     }
 
     private PropiaDbContext OwnerDb()

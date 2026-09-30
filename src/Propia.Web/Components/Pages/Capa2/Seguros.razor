@@ -436,6 +436,38 @@
                         <button class="seg-btn-brand" style="margin-top:8px;" @onclick="CrearReclamacion" disabled="@(_busy || string.IsNullOrWhiteSpace(_nrDesc))">Agregar reclamación</button>
                     </div>
                 }
+
+                @* Hilo de actividad (chat) por-poliza. Coexiste con el CRUD de siniestros de arriba (no lo reemplaza). *@
+                <div class="seg-chat">
+                    <div class="seg-doc-h" style="margin-top:16px;">Actividad</div>
+                    @if (_comentarios.Count == 0)
+                    {
+                        <p class="seg-doc-note">Aun no hay comentarios. Escribe el primero.</p>
+                    }
+                    else
+                    {
+                        <div class="seg-chat-feed">
+                            @foreach (var c in _comentarios)
+                            {
+                                <div class="seg-chat-msg">
+                                    <div class="seg-chat-meta"><span class="seg-chat-autor">@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Sistema" : c.AutorNombre)</span> <span class="seg-chat-fecha">@c.CreatedAt.ToLocalTime().ToString("dd MMM yyyy - HH:mm")</span></div>
+                                    <div class="seg-chat-texto">@c.Texto</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="seg-chat-qr">
+                        @foreach (var qr in _respuestasRapidas)
+                        {
+                            var t = qr;
+                            <button type="button" class="seg-chat-qrbtn" @onclick="() => EnviarComentario(t)" disabled="@_busy">@t</button>
+                        }
+                    </div>
+                    <div class="seg-chat-compose">
+                        <input class="seg-input" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." @onkeydown="OnChatKey" />
+                        <button class="seg-btn-brand" @onclick="() => EnviarComentario(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))">Enviar</button>
+                    </div>
+                </div>
             }
 
         </div>
@@ -597,6 +629,19 @@
     .seg-recl-badge.cer { color: var(--propia-ok); background: var(--propia-ok-soft); }
     .seg-recl-form { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .seg-mini { width: 160px; }
+    /* Hilo de actividad (chat) de reclamaciones, por-poliza. */
+    .seg-chat-feed { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; max-height: 320px; overflow-y: auto; }
+    .seg-chat-msg { border: 1px solid var(--propia-border-divider); border-radius: 10px; padding: 8px 11px; background: var(--propia-bg-card-soft); }
+    .seg-chat-meta { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+    .seg-chat-autor { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); }
+    .seg-chat-fecha { font-size: 10.5px; color: var(--propia-text-faint); }
+    .seg-chat-texto { font-size: 13px; color: var(--propia-text-body); white-space: pre-wrap; word-break: break-word; }
+    .seg-chat-qr { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .seg-chat-qrbtn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+    .seg-chat-qrbtn:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .seg-chat-qrbtn:disabled { opacity: .5; cursor: default; }
+    .seg-chat-compose { display: flex; gap: 8px; align-items: center; }
+    .seg-chat-compose .seg-input { flex: 1; }
 
     /* Gestionar campos */
     .seg-cm-empty { font-size: 12.5px; color: var(--propia-text-muted); background: var(--propia-bg-table-head); border: 1px dashed var(--propia-border-card); border-radius: 10px; padding: 16px; text-align: center; }
@@ -1396,7 +1441,7 @@
 
     private async Task AbrirModal(Guid? id)
     {
-        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _cerrarId = null; _campoValores.Clear();
+        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _comentarios = new(); _nuevoComentario = ""; _cerrarId = null; _campoValores.Clear();
         if (_expedientes.Count == 0)
         {
             try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/expedientes") ?? new(); } catch { }
@@ -1620,7 +1665,39 @@
         if (_editId is { } id)
         {
             try { _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? new(); } catch { }
+            try { _comentarios = await Auth().GetFromJsonAsync<List<Propia.Application.Seguros.PolizaComentarioDto>>($"/api/seguros/polizas/{id}/comentarios") ?? new(); } catch { }
         }
+    }
+
+    // Hilo de actividad (chat) por-poliza. Coexiste con el CRUD de siniestros; solo agrega/lee comentarios.
+    private List<Propia.Application.Seguros.PolizaComentarioDto> _comentarios = new();
+    private string _nuevoComentario = "";
+    private static readonly string[] _respuestasRapidas = { "Gracias, lo reviso", "En proceso", "Agendo visita", "Resuelto" };
+
+    private async Task EnviarComentario(string? textoRapido)
+    {
+        if (_editId is not { } id) return;
+        var texto = (textoRapido ?? _nuevoComentario).Trim();
+        if (string.IsNullOrWhiteSpace(texto)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/seguros/polizas/{id}/comentarios",
+                new Propia.Application.Seguros.AgregarComentarioPolizaRequest(texto));
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<Propia.Application.Seguros.PolizaComentarioDto>();
+                if (dto is not null) _comentarios.Add(dto);
+                if (textoRapido is null) _nuevoComentario = "";
+            }
+        }
+        catch { }
+        finally { _busy = false; }
+    }
+
+    private async Task OnChatKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await EnviarComentario(null);
     }
 
     private async Task CrearReclamacion()

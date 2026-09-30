@@ -93,6 +93,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PolizaCampo> PolizaCampos => Set<PolizaCampo>();
     public DbSet<PolizaCampoValor> PolizaCampoValores => Set<PolizaCampoValor>();
     public DbSet<PolizaReclamacion> PolizaReclamaciones => Set<PolizaReclamacion>();
+    public DbSet<PolizaReclamacionComentario> PolizaReclamacionComentarios => Set<PolizaReclamacionComentario>();
     // Informes de gestion (plantillas inteligentes + generacion IA)
     public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
     public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();

@@ -411,7 +411,7 @@ public class SegurosValidacionTests
 
     // ----------------------------- infraestructura de los tests -----------------------------
 
-    private ISegurosService BuildService(Guid tenantId) => new SegurosService(AppDb(tenantId), new NoopBlobStorage());
+    private ISegurosService BuildService(Guid tenantId) => new SegurosService(AppDb(tenantId), new NoopBlobStorage(), new Microsoft.AspNetCore.Http.HttpContextAccessor());
 
     private PropiaDbContext AppDb(Guid tenantId)
     {

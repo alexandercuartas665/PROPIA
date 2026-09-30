@@ -136,4 +136,16 @@ public class SegurosController : ControllerBase
         try { return await _svc.CerrarReclamacionAsync(reclamacionId, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    // ---- Hilo de actividad (chat) de reclamaciones, por-poliza (MVP) ----
+    [HttpGet("polizas/{id:guid}/comentarios")]
+    public async Task<IActionResult> ListComentarios(Guid id, CancellationToken ct) => Ok(await _svc.ListComentariosAsync(id, ct));
+
+    [HttpPost("polizas/{id:guid}/comentarios")]
+    [RequiereRol("Administrador")]  // consistente con las escrituras de reclamaciones; RBAC de comentarios a revisar con Alex
+    public async Task<IActionResult> AgregarComentario(Guid id, [FromBody] AgregarComentarioPolizaRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarComentarioAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }

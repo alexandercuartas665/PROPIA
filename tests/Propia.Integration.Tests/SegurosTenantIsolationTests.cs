@@ -55,6 +55,45 @@ public class SegurosTenantIsolationTests
         await CleanupTenantAsync(tB);
     }
 
+    /// <summary>
+    /// Chat de reclamaciones (por-poliza): el comentario PERSISTE y se lee de vuelta, NO se ve entre
+    /// copropiedades (RLS FORCE + policy), y el CRUD de siniestros sigue intacto (el chat no lo toca).
+    /// </summary>
+    [Fact]
+    public async Task Comentarios_de_reclamaciones_persisten_no_se_ven_entre_copropiedades_y_no_tocan_el_CRUD()
+    {
+        var tA = await SeedTenantAsync("[ATLAS] ISO coment A");
+        var tB = await SeedTenantAsync("[ATLAS] ISO coment B");
+        var svcA = BuildService(tA);
+        var svcB = BuildService(tB);
+
+        var pA = await svcA.CrearPolizaAsync(Poliza("[ATLAS] Aseg A", "[ATLAS]-CA"), CancellationToken.None);
+        var pB = await svcB.CrearPolizaAsync(Poliza("[ATLAS] Aseg B", "[ATLAS]-CB"), CancellationToken.None);
+
+        // Persistencia: el comentario se guarda (fila en BD) y se lee de vuelta.
+        var c1 = await svcA.AgregarComentarioAsync(pA.Id, new AgregarComentarioPolizaRequest("Revisando el siniestro"), CancellationToken.None);
+        Assert.NotEqual(Guid.Empty, c1.Id);
+        Assert.Equal("Revisando el siniestro", c1.Texto);
+        await svcA.AgregarComentarioAsync(pA.Id, new AgregarComentarioPolizaRequest("Agendo visita"), CancellationToken.None);
+
+        var comentariosA = await svcA.ListComentariosAsync(pA.Id, CancellationToken.None);
+        Assert.Equal(2, comentariosA.Count);
+        Assert.Equal("Revisando el siniestro", comentariosA[0].Texto); // orden por CreatedAt
+
+        // Aislamiento: B no ve los comentarios de A (ni por su poliza ni apuntando al id de la de A).
+        Assert.Empty(await svcB.ListComentariosAsync(pB.Id, CancellationToken.None));
+        Assert.Empty(await svcB.ListComentariosAsync(pA.Id, CancellationToken.None));
+
+        // CRUD de siniestros intacto: el chat no lo altera.
+        await svcA.CrearReclamacionAsync(pA.Id, new CrearReclamacionRequest(new DateOnly(2026, 6, 1), 500m, "Siniestro X"), CancellationToken.None);
+        var reclA = await svcA.ListReclamacionesAsync(pA.Id, CancellationToken.None);
+        Assert.Single(reclA);
+        Assert.Equal(500m, reclA[0].MontoReclamado);
+
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     private static CrearPolizaRequest Poliza(string aseguradora, string numero)
@@ -69,7 +108,7 @@ public class SegurosTenantIsolationTests
             .UseNpgsql(_fx.AppConnectionString)
             .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
             .Options;
-        return new SegurosService(new PropiaDbContext(options, tenantCtx), new NoopBlobStorage());
+        return new SegurosService(new PropiaDbContext(options, tenantCtx), new NoopBlobStorage(), new Microsoft.AspNetCore.Http.HttpContextAccessor());
     }
 
     private PropiaDbContext OwnerDb()
@@ -92,6 +131,8 @@ public class SegurosTenantIsolationTests
         await using var ctx = OwnerDb();
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campo_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_reclamacion_comentarios WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_reclamaciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM polizas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }

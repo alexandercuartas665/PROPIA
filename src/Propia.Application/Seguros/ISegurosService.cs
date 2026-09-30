@@ -27,4 +27,8 @@ public interface ISegurosService
     Task<IReadOnlyList<ReclamacionDto>> ListReclamacionesAsync(Guid polizaId, CancellationToken ct);
     Task<ReclamacionDto> CrearReclamacionAsync(Guid polizaId, CrearReclamacionRequest req, CancellationToken ct);
     Task<bool> CerrarReclamacionAsync(Guid reclamacionId, CerrarReclamacionRequest req, CancellationToken ct);
+
+    // Hilo de actividad (chat) de reclamaciones, por-poliza (MVP). Coexiste con el CRUD de arriba.
+    Task<IReadOnlyList<PolizaComentarioDto>> ListComentariosAsync(Guid polizaId, CancellationToken ct);
+    Task<PolizaComentarioDto> AgregarComentarioAsync(Guid polizaId, AgregarComentarioPolizaRequest req, CancellationToken ct);
 }

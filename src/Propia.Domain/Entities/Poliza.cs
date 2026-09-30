@@ -104,3 +104,21 @@ public class PolizaReclamacion : TenantEntity
     /// <summary>Expediente con los soportes de la reclamacion (opcional).</summary>
     public Guid? ExpedienteId { get; set; }
 }
+
+/// <summary>
+/// Comentario del hilo de actividad (chat) de las reclamaciones de una poliza (por-poliza, MVP).
+/// COEXISTE con el CRUD de siniestros (PolizaReclamacion): es la conversacion/seguimiento, no lo
+/// reemplaza (no toca montos/cierre/expediente). Modelado como PqrsdComentario (feed de Tareas/PQRSD).
+/// Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class PolizaReclamacionComentario : TenantEntity
+{
+    public Guid PolizaId { get; set; }
+    public Poliza? Poliza { get; set; }
+
+    /// <summary>Texto libre del comentario (incluye las respuestas rapidas, que insertan texto canoneo).</summary>
+    public string Texto { get; set; } = string.Empty;
+
+    public Guid? AutorUsuarioId { get; set; }
+    public string? AutorNombre { get; set; }
+}

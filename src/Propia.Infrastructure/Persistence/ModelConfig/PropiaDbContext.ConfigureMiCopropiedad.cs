@@ -431,6 +431,14 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.TenantId, x.PolizaId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        modelBuilder.Entity<PolizaReclamacionComentario>(b =>
+        {
+            b.Property(x => x.Texto).IsRequired().HasMaxLength(4000);
+            b.Property(x => x.AutorNombre).HasMaxLength(200);
+            b.HasIndex(x => new { x.TenantId, x.PolizaId });
+            b.HasOne(x => x.Poliza).WithMany().HasForeignKey(x => x.PolizaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
 
         // Informes de gestion (plantillas inteligentes + generacion IA)
         modelBuilder.Entity<InformePlantilla>(b =>
