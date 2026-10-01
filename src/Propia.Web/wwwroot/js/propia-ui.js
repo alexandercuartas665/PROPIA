@@ -484,34 +484,65 @@
     // soltar, devuelve (origen, destino) a .NET (OnColReorder). Un clic sin arrastre NO
     // reordena (deja pasar el @onclick de ordenar); tras un arrastre se traga el click.
     // -------------------------------------------------------------------------
+    // Reorden de columnas por arrastre (compartido por las vistas-tabla). Feedback visual estilo pro:
+    // columna FANTASMA elevada que sigue el cursor + DROP-LINE vertical en el punto de insercion.
+    // La logica de reorden/persistencia no cambia (OnColReorder en el .razor). Solo columnas con
+    // [data-clave]: la columna de acciones / "+ Agregar" no lo tiene, asi que nunca es destino.
     window.propiaTablaColReorder = {
         start: function (dotnetRef, srcClave, clientX, clientY) {
-            var startX = clientX, startY = clientY, dragging = false, lastCell = null;
-            function cellAt(x, y) {
-                var el = document.elementFromPoint(x, y);
-                return el ? el.closest('[data-clave]') : null;
+            var startX = clientX, startY = clientY, dragging = false, ghost = null, dropline = null;
+            var srcCell = (function () { var el = document.elementFromPoint(clientX, clientY); return el ? el.closest('[data-clave]') : null; })();
+            var tbl = srcCell ? (srcCell.closest('table') || srcCell.parentElement) : null;
+            function cellAt(x, y) { var el = document.elementFromPoint(x, y); return el ? el.closest('[data-clave]') : null; }
+            function cleanup() {
+                if (ghost) { ghost.remove(); ghost = null; }
+                if (dropline) { dropline.remove(); dropline = null; }
+                if (srcCell) srcCell.classList.remove('tbl-col-dragging');
             }
-            function clearHi() { if (lastCell) { lastCell.style.boxShadow = ''; lastCell = null; } }
+            function makeGhost() {
+                if (!srcCell) return;
+                var r = srcCell.getBoundingClientRect();
+                ghost = document.createElement('div');
+                ghost.className = 'tbl-col-ghost';
+                ghost.textContent = (srcCell.innerText || '').trim();
+                ghost.style.minWidth = Math.min(Math.max(r.width, 80), 240) + 'px';
+                document.body.appendChild(ghost);
+                srcCell.classList.add('tbl-col-dragging');
+                dropline = document.createElement('div');
+                dropline.className = 'tbl-col-dropline';
+                document.body.appendChild(dropline);
+            }
+            function showDrop(cell, x) {
+                if (!dropline || !cell) return;
+                var r = cell.getBoundingClientRect();
+                var lineX = (x > r.left + r.width / 2) ? r.right : r.left;
+                var top = r.top, h = r.height;
+                if (tbl) { var tr = tbl.getBoundingClientRect(); top = tr.top; h = Math.min(tr.height, window.innerHeight - tr.top - 4); }
+                dropline.style.left = (lineX - 1) + 'px';
+                dropline.style.top = top + 'px';
+                dropline.style.height = h + 'px';
+                dropline.style.display = 'block';
+            }
+            function hideDrop() { if (dropline) dropline.style.display = 'none'; }
             function mv(e) {
                 if (!dragging) {
                     if (Math.abs(e.clientX - startX) < 5 && Math.abs(e.clientY - startY) < 5) return;
                     dragging = true;
                     document.body.style.cursor = 'grabbing';
                     document.body.style.userSelect = 'none';
+                    makeGhost();
                 }
+                if (ghost) { ghost.style.left = (e.clientX + 12) + 'px'; ghost.style.top = (e.clientY + 10) + 'px'; }
                 var cell = cellAt(e.clientX, e.clientY);
                 var dest = cell && cell.getAttribute('data-clave');
-                if (cell !== lastCell) {
-                    clearHi();
-                    if (cell && dest && dest !== srcClave) { cell.style.boxShadow = 'inset 2px 0 0 var(--propia-brand,#6D4FE3)'; lastCell = cell; }
-                }
+                if (cell && dest && dest !== srcClave) showDrop(cell, e.clientX); else hideDrop();
             }
             function up(e) {
                 document.removeEventListener('mousemove', mv);
                 document.removeEventListener('mouseup', up);
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                clearHi();
+                cleanup();
                 if (dragging) {
                     // traga el click sintetico que sigue al arrastre (no ordenar).
                     var supp = function (ev) { ev.stopPropagation(); ev.preventDefault(); document.removeEventListener('click', supp, true); };
