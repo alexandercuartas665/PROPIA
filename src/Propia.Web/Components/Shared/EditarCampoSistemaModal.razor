@@ -37,6 +37,38 @@
                 </div>
             </div>
 
+            @* Campo del sistema tipo LISTA: opciones existentes en SOLO LECTURA (no se quitan ni editan;
+               pueden estar en uso) + agregar opciones propias. Solo si el padre pasa OpcionesLista. *@
+            @if (OpcionesLista is not null)
+            {
+                <div class="ecs-fld">
+                    <label>Opciones de la lista</label>
+                    <div class="ecs-opts">
+                        @if (OpcionesLista.Count == 0)
+                        {
+                            <div class="ecs-opt-empty">Esta lista aun no tiene opciones.</div>
+                        }
+                        else
+                        {
+                            @foreach (var o in OpcionesLista)
+                            {
+                                <div class="ecs-opt ecs-opt--ro" title="Opcion existente (no se puede quitar)">
+                                    <span class="ecs-opt-color" style="background:@(string.IsNullOrWhiteSpace(o.Color) ? "var(--propia-border-divider)" : o.Color)"></span>
+                                    <span class="ecs-opt-txt">@o.Texto</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                    <div class="ecs-opt-add">
+                        <input class="ecs-in" placeholder="Nueva opción..." @bind="_nuevaOpcion" @bind:event="oninput"
+                               @onkeydown="OnNuevaOpcionKey" disabled="@_busy" />
+                        <button type="button" class="ecs-btn-soft" @onclick="AgregarOpcionAsync"
+                                disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpcion))"><i class="fi fi-rr-plus"></i> Añadir</button>
+                    </div>
+                    <span class="ecs-hint">No se pueden quitar opciones existentes (pueden estar en uso); solo agregar.</span>
+                </div>
+            }
+
             <div class="ecs-fld">
                 <label>Descripción (opcional)</label>
                 <textarea class="ecs-in" style="min-height:54px;resize:vertical;" @bind="_descripcion" @bind:event="oninput"
@@ -83,7 +115,16 @@
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public EventCallback Guardado { get; set; }
     [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Opciones actuales de una lista de SISTEMA (solo lectura). Null = el campo no es lista
+    /// (no se muestra la seccion). El padre las provee (semilla + propias) y persiste al agregar.</summary>
+    [Parameter] public List<OpcionVista>? OpcionesLista { get; set; }
+    /// <summary>Agregar una opcion propia: el padre la persiste (field-specific) y refresca OpcionesLista.</summary>
+    [Parameter] public EventCallback<string> OnAgregarOpcion { get; set; }
 
+    /// <summary>Opcion de lista para mostrar en solo lectura (texto + color opcional).</summary>
+    public sealed record OpcionVista(string Texto, string? Color = null);
+
+    private string _nuevaOpcion = "";
     private string _alias = "";
     private string _descripcion = "";
     private bool _oculto;
@@ -116,6 +157,20 @@
     }
 
     private async Task Cerrar() => await Cerrado.InvokeAsync();
+
+    private void OnNuevaOpcionKey(KeyboardEventArgs e) { if (e.Key == "Enter") _ = AgregarOpcionAsync(); }
+
+    // Agregar una opcion propia: valida vacio/duplicado y delega la persistencia field-specific al padre
+    // (ej. Tipo crea un tipo propio; Estado agrega al config). El padre refresca OpcionesLista.
+    private async Task AgregarOpcionAsync()
+    {
+        var v = (_nuevaOpcion ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(v)) return;
+        if (OpcionesLista is not null && OpcionesLista.Any(o => string.Equals(o.Texto, v, StringComparison.OrdinalIgnoreCase)))
+        { _msg = "Esa opcion ya existe."; return; }
+        _msg = null; _nuevaOpcion = "";
+        await OnAgregarOpcion.InvokeAsync(v);
+    }
 
     private async Task GuardarAsync()
     {
@@ -193,4 +248,16 @@
     .ecs-btn-brand:disabled { opacity: .55; cursor: default; }
     .ecs-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); }
     .ecs-btn-ghost:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    /* Opciones de lista (solo lectura) + agregar — calca .cn-opt--ro / .cn-opt-add de la maqueta */
+    .ecs-opts { display: flex; flex-direction: column; gap: 5px; max-height: 190px; overflow: auto; }
+    .ecs-opt { display: flex; align-items: center; gap: 9px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 7px 10px; background: var(--propia-bg-card-soft); }
+    .ecs-opt--ro { color: var(--propia-text-secondary); }
+    .ecs-opt-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .ecs-opt-txt { font-size: 12.5px; color: var(--propia-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ecs-opt-empty { font-size: 12px; color: var(--propia-text-muted); font-style: italic; padding: 4px 2px; }
+    .ecs-opt-add { display: flex; gap: 7px; margin-top: 7px; }
+    .ecs-opt-add .ecs-in { flex: 1; min-width: 0; }
+    .ecs-btn-soft { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); color: var(--propia-brand); white-space: nowrap; }
+    .ecs-btn-soft:hover:not(:disabled) { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    .ecs-btn-soft:disabled { opacity: .5; cursor: default; }
 </style>

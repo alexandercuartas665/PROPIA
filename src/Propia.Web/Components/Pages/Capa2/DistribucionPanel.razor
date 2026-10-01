@@ -194,6 +194,8 @@
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="unidad" TituloSingular="unidad" Jwt="@_jwt"
+                             OpcionesLista="@(_editSisTipo == TipoCampoTablero.Seleccion ? OpcionesVistaDe(_editSisClave) : null)"
+                             OnAgregarOpcion="@((t) => AgregarOpcionDesdeModalAsync(_editSisClave, t))"
                              Guardado="RecargarTrasCrearCampo" Cerrado="() => _editSisClave = null" />
 }
 
@@ -231,7 +233,7 @@
                                      TituloPlural="unidades"
                                      Ejemplo="Ej. N de medidor, Color de fachada"
                                      Jwt="@_jwt"
-                                     OnGestionarLista="AbrirLista"
+                                     OnGestionarLista="AbrirEditarCampoSistema"
                                      ContarOpcionesExterna="ContarOpcionesLista"
                                      Cambiado="RecargarCamposTrasComponente" />
             </div>
@@ -2030,6 +2032,38 @@ else
     private Task GuardarOpcionesAsync(string clave, List<OpcionLista> ops)
         => EnCola(() => GuardarCampoConfigAsync(
             FilaConfig(clave) with { Opciones = System.Text.Json.JsonSerializer.Serialize(ops) }));
+
+    // ===== Opciones de lista dentro de EditarCampoSistemaModal (menu de columna "Editar campo") =====
+    // Reemplaza el popup separado: la gestion (ver rigidas read-only + agregar propias) vive en el modal.
+    private List<EditarCampoSistemaModal.OpcionVista> OpcionesVistaDe(string? clave)
+    {
+        if (string.IsNullOrEmpty(clave)) return new();
+        return LeerOpciones(clave).Where(o => !o.Oculta)
+            .Select(o => new EditarCampoSistemaModal.OpcionVista(EtiquetaOpcion(clave, o.K), o.Color))
+            .ToList();
+    }
+
+    // Agregar una opcion propia desde el modal (field-specific: Tipo crea un tipo propio; las demas
+    // listas de sistema agregan al 'Opciones' de la config). El modal refresca al re-renderizar.
+    private async Task AgregarOpcionDesdeModalAsync(string? clave, string texto)
+    {
+        if (string.IsNullOrEmpty(clave)) return;
+        var v = (texto ?? "").Trim();
+        if (v.Length == 0) return;
+        var ops = LeerOpciones(clave);
+        if (ops.Any(o => string.Equals(EtiquetaOpcion(clave, o.K), v, StringComparison.OrdinalIgnoreCase))) return;
+        if (clave == "tipo")
+        {
+            _nuevoTipoNombre = v;
+            await AgregarTipoCustomAsync();   // crea tipos_unidad_custom + refresca _tiposCustom
+        }
+        else
+        {
+            ops.Add(new OpcionLista(v));
+            await GuardarOpcionesAsync(clave, ops);   // persiste + actualiza _camposConfig
+        }
+        StateHasChanged();
+    }
 
     // Estados ofrecidos al elegir: solo los visibles, en su orden.
     private IEnumerable<string> EstadosConfig() => LeerOpciones("estado").Where(o => !o.Oculta).Select(o => o.K);
