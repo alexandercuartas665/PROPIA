@@ -8,8 +8,8 @@
 @* Bandeja de Roles y Permisos (spec 2.5 v2.0): el modal paso a MODULO/bandeja propio, separado de
    Usuarios (3 l.63/65; 11 l.311). Tabla con Rol/Categoria/Base/Usuarios; la matriz de permisos vive
    DENTRO de la Vista Ficha del rol (MP-01). Filas de modulo dinamicas (MP-03). La matriz por
-   copropiedad usa el overlay rol_permisos_tenant ya cableado en RolesService (RP-04). Ola A: se
-   muestran las 6 acciones; el filtrado a "acciones validas por modulo" (MP-04) es Ola B. *@
+   copropiedad usa el overlay rol_permisos_tenant ya cableado en RolesService (RP-04). MP-04/MP-06:
+   la matriz muestra SOLO las acciones validas por modulo (ver AccionesPorModulo); el resto = "." . *@
 
 @if (!_authChecked)
 {
@@ -112,14 +112,22 @@ else
                         <div class="usr-matrix-mod">@LabelModulo(mod)</div>
                         @foreach (var accion in Enum.GetValues<AccionPermiso>())
                         {
-                            var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == mod && p.Accion == accion);
-                            var hab = celda?.Habilitado ?? false;
-                            var modC = mod; var accC = accion;
-                            <div class="usr-cell">
-                                <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
-                                </button>
-                            </div>
+                            @* MP-04/MP-06: solo las acciones validas del modulo son editables; el resto = "." (no aplica). *@
+                            if (!AccionAplica(mod, accion))
+                            {
+                                <div class="usr-cell"><span class="usr-cell-na" title="No aplica en este modulo">&middot;</span></div>
+                            }
+                            else
+                            {
+                                var celda = _detalleEdit.Permisos.FirstOrDefault(p => p.ModuloCodigo == mod && p.Accion == accion);
+                                var hab = celda?.Habilitado ?? false;
+                                var modC = mod; var accC = accion;
+                                <div class="usr-cell">
+                                    <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
+                                    </button>
+                                </div>
+                            }
                         }
                         <div style="width:140px;flex-shrink:0;display:flex;justify-content:center">
                             <select class="usr-select" style="font-size:12px;padding:5px 8px" @onchange="(e) => CambiarNivel(modCodigo, Enum.Parse<NivelDato>(e.Value!.ToString()!))">
@@ -279,6 +287,34 @@ else
     // Modulos del catalogo (MP-03: filas dinamicas). Hoy = todos los modulos declarados; al agregar
     // uno nuevo a ModuloCodigo.Todos aparece solo en la matriz.
     private static IReadOnlyList<string> ModulosActivos => ModuloCodigo.Todos;
+
+    // MP-04 / MP-06: acciones VALIDAS por modulo. La matriz muestra solo las acciones que aplican a cada
+    // modulo; el resto se pinta como "." (no aplica), nunca como checkbox. Fuente: Maqueta1 P.modAcciones
+    // (modulos.js v2.0) + spec 2.5 (Dashboard solo Ver). Un modulo sin entrada muestra todas las acciones.
+    private static readonly IReadOnlyDictionary<string, AccionPermiso[]> AccionesPorModulo =
+        new Dictionary<string, AccionPermiso[]>
+        {
+            [ModuloCodigo.Dashboard] = new[] { AccionPermiso.Ver },
+            [ModuloCodigo.MiCopropiedad] = new[] { AccionPermiso.Ver, AccionPermiso.Editar },
+            [ModuloCodigo.Directorio] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            [ModuloCodigo.UsuariosAccesos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            [ModuloCodigo.Presupuesto] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Aprobar },
+            [ModuloCodigo.Cartera] = new[] { AccionPermiso.Ver, AccionPermiso.Editar, AccionPermiso.Exportar },
+            [ModuloCodigo.Asambleas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar },
+            [ModuloCodigo.Pqrs] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar },
+            [ModuloCodigo.Tareas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            [ModuloCodigo.Mantenimiento] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            // Porteria no esta en la maqueta: acciones tomadas del contrato real del PorteriaController
+            // (RequierePermiso Crear/Editar/Eliminar/Aprobar) + Ver baseline. Tiene flujo de aprobacion.
+            [ModuloCodigo.Porteria] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar },
+            [ModuloCodigo.Reservas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Aprobar },
+            [ModuloCodigo.Comunicaciones] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar },
+            [ModuloCodigo.Documentos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Eliminar, AccionPermiso.Exportar },
+            [ModuloCodigo.Reportes] = new[] { AccionPermiso.Ver, AccionPermiso.Exportar },
+        };
+
+    private static bool AccionAplica(string modulo, AccionPermiso accion)
+        => !AccionesPorModulo.TryGetValue(modulo, out var validas) || validas.Contains(accion);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

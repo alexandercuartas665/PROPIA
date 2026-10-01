@@ -52,7 +52,8 @@ public static class MenuCatalog
         // Las rutas /zonas-comunes y /equipos-activos siguen existiendo (sus wrappers) pero salen del menu.
         new MenuItemDef("mi-espacios", "tabMiPH", "Equipos y Zonas Comunes", "/espacios", "fi-rr-trees", 7),
         new MenuItemDef("mi-directorio", "tabMiPH", "Directorio", "/directorio", "fi-rr-address-book", 8),
-        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios y roles", "/usuarios", "fi-rr-users-alt", 9),
+        new MenuItemDef("mi-usuarios", "tabMiPH", "Usuarios", "/usuarios", "fi-rr-users-alt", 9),
+        new MenuItemDef("mi-roles", "tabMiPH", "Roles", "/roles", "fi-rr-shield", 10),
 
         // Finanzas
         new MenuItemDef("fin-presupuesto", "tabFinanzas", "Presupuesto y cuotas", "/presupuesto", "fi-rr-money-bill-wave", 1),
