@@ -174,7 +174,7 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasParaVista()" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
+            <DirectorioPersonasVista Personas="PersonasParaVista()" Recien="_recienP" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
                                      Etiquetas="_etiquetasTodas"
                                      ColsWidth="_widthPersonas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
@@ -190,7 +190,7 @@
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
+            <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Recien="_recienE" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
                                      ColsWidth="_widthEmpresas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
@@ -887,23 +887,25 @@
     private int _pagina = 1;
     private int _porPagina = 25;
 
-    // Lista que se pasa a la sub-vista: paginada en Tabla sin agrupar; completa en Tarjetas o agrupado.
+    // Lista que se pasa a la sub-vista: render COMPLETO (patron piloto Unidades, sin paginacion). Las
+    // recien creadas se empujan al FINAL (OrderBy estable) hasta el proximo refresco.
     private List<PersonaResumenDto>? PersonasParaVista()
     {
         var all = PersonasFiltradas;
-        if (all is null || _agrupar || _view != "tabla") return all;
-        var totalPag = all.Count == 0 ? 1 : (int)Math.Ceiling(all.Count / (double)_porPagina);
-        var pag = Math.Clamp(_pagina, 1, totalPag);
-        return all.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
+        if (all is null || _recienP.Count == 0) return all;
+        return all.OrderBy(p => _recienP.Contains(p.Id) ? 1 : 0).ToList();
     }
     private List<EmpresaResumenDto>? EmpresasParaVista()
     {
         var all = EmpresasFiltradas;
-        if (all is null || _agrupar || _view != "tabla") return all;
-        var totalPag = all.Count == 0 ? 1 : (int)Math.Ceiling(all.Count / (double)_porPagina);
-        var pag = Math.Clamp(_pagina, 1, totalPag);
-        return all.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
+        if (all is null || _recienE.Count == 0) return all;
+        return all.OrderBy(e => _recienE.Contains(e.Id) ? 1 : 0).ToList();
     }
+    // Ids recien creados (verde + al final). Se limpian en el proximo refresco real (CargarAsync),
+    // salvo la recarga que dispara la propia creacion (suppress).
+    private readonly HashSet<Guid> _recienP = new();
+    private readonly HashSet<Guid> _recienE = new();
+    private bool _suppressRecienClear;
 
     private List<PersonaResumenDto>? PersonasFiltradas
     {
@@ -1708,6 +1710,9 @@
                 _personas = await resp.Content.ReadFromJsonAsync<List<PersonaResumenDto>>() ?? new();
             else
                 _empresas = await resp.Content.ReadFromJsonAsync<List<EmpresaResumenDto>>() ?? new();
+            // Tras un refresco real, las recien creadas vuelven a su orden natural (sin verde); la recarga
+            // que dispara la propia creacion conserva el resaltado (suppress).
+            if (_suppressRecienClear) _suppressRecienClear = false; else { _recienP.Clear(); _recienE.Clear(); }
             await CargarCamposDirAsync(http);
         }
         catch (Exception ex) { _loadError = ex.Message; }
@@ -2034,6 +2039,7 @@
             var etiquetas = d.EtiquetaId is Guid et ? new List<Guid> { et } : new List<Guid>();
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), etiquetas));
+            _recienP.Add(nueva.Id); _suppressRecienClear = true;   // verde + al final hasta el proximo refresco
         }
         await CargarAsync();
         return nueva?.Id;
@@ -2097,8 +2103,11 @@
         }
         var nueva = await crear.Content.ReadFromJsonAsync<EmpresaDetalleDto>();
         if (nueva is not null)
+        {
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
+            _recienE.Add(nueva.Id); _suppressRecienClear = true;   // verde + al final hasta el proximo refresco
+        }
         await CargarAsync();
         return nueva?.Id;
     }

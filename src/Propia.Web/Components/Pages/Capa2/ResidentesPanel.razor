@@ -417,12 +417,15 @@ else
             }
         </div>
 
-        @* Footer canonico (solo sin agrupacion: agrupar y paginar juntos confunde). *@
+        @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
+        <button type="button" class="tbl-fab" hidden="@(_ctaVisibleR || _agrupadoR)" @onclick="FabAgregarR" title="Agregar registro">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar registro
+        </button>
+        @* Footer de conteo (como Unidades): sin paginacion, render completo. Se oculta con agrupacion. *@
         @if (!_agrupadoR)
         {
-            <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="residentes"
-                        PaginaChanged="p => { _pagina = p; }"
-                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+            <div class="tbl-foot">@Filtrados.Count registros &middot; mostrando @Filtrados.Count</div>
         }
     </div>
     }
@@ -1062,6 +1065,21 @@ else
             _focusPending = false;
             try { await _unidadRef.FocusAsync(); } catch { }
         }
+        if (_vista == "tabla" && !_agrupadoR)
+        {
+            _selfR ??= DotNetObjectReference.Create(this);
+            var sig = $"{_altaAbierta}|{Filtrados.Count}";
+            if (sig != _wiredSigR)
+            {
+                _wiredSigR = sig;
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfR, ".res-scroll"); } catch { }
+            }
+        }
+        if (_scrollBottomPendingR)
+        {
+            _scrollBottomPendingR = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".res-scroll"); } catch { }
+        }
     }
 
     private HttpClient Auth()
@@ -1087,6 +1105,7 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _residentes = await resp.Content.ReadFromJsonAsync<List<ResidenteResumenDto>>() ?? new();
+            if (_suppressRecienClearR) _suppressRecienClearR = false; else _resRecienCreados.Clear();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
             await CargarCamposAsync(http);
@@ -1186,9 +1205,10 @@ else
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
     private void OnGruposRChanged() { _pagina = 1; }
 
-    // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
-    // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
-    private IEnumerable<ResidenteResumenDto> PaginaR() => Pagina;
+    // Vista tabla SIN agrupacion: render COMPLETO (patron piloto Unidades, sin paginar). Las recien
+    // creadas se empujan al FINAL (OrderBy estable) hasta el proximo refresco.
+    private IEnumerable<ResidenteResumenDto> PaginaR()
+        => _resRecienCreados.Count == 0 ? Filtrados : Filtrados.OrderBy(r => _resRecienCreados.Contains(r.UnidadPersonaId) ? 1 : 0);
 
     // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La pinta
     // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'r'.
@@ -1316,6 +1336,15 @@ else
     private RolUnidadPersona _rolNuevo = RolUnidadPersona.Residente;
     private bool _habitaNuevo = true;
     private readonly HashSet<Guid> _resRecienCreados = new();   // ids de filas recien creadas (resaltado)
+    private bool _suppressRecienClearR;   // la recarga post-creacion NO limpia el resaltado
+
+    // ===== FAB flotante + scroll-al-fondo (patron piloto Unidades) =====
+    private bool _ctaVisibleR = true;
+    private bool _scrollBottomPendingR;
+    private string? _wiredSigR;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render completo: no hay lotes
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisibleR != visible) { _ctaVisibleR = visible; StateHasChanged(); } }
+    private void FabAgregarR() { AbrirAltaR(); _scrollBottomPendingR = true; }
 
     private UnidadDto? UnidadElegida =>
         _unidades.FirstOrDefault(u => string.Equals(CodigoUnidad(u), _unidadQuery.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -1437,7 +1466,7 @@ else
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPersonaDto>();
             if (creada is not null)
             {
-                _resRecienCreados.Add(creada.Id);   // resalta la fila hasta el proximo refresco
+                _resRecienCreados.Add(creada.Id); _suppressRecienClearR = true;   // verde + al final hasta el proximo refresco
                 // Los campos propios se guardan despues del alta: necesitan el id del registro (UnidadPersona).
                 foreach (var (defId, valor) in _nuDinamicos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
                     await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{creada.Id}/{defId}", new SetCampoValorRequest(valor));
@@ -1555,8 +1584,9 @@ else
     .res-msg.err { background: var(--propia-danger-soft); color: #C0392B; }
 
     /* ---- Tabla ---- */
-    .res-table { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; }
-    .res-scroll { overflow: auto; max-height: calc(100vh - 320px); }
+    .res-table { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(16,32,52,.04); overflow: hidden; position: relative; }
+    .res-scroll { overflow: auto; max-height: calc(100vh - 320px); overflow-anchor: none; }
+    .res-table .tbl-fab { bottom: 54px; }
     .res-listgrid { display: grid; align-items: center; gap: 10px; padding: 6px 14px; min-width: 1000px; }
     /* .res-head lleva ademas la clase marcadora zc-list-head para que el JS de resize (compartido)
        encuentre la celda por [data-clave]; se sobreescribe aqui (mayor especificidad) para no heredar
