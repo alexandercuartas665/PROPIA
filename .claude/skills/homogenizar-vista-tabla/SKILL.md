@@ -60,18 +60,51 @@ El "orden de campos" va ANTES de Agrupar en la barra. Mismo icono y misma ubicac
 
 Click en el encabezado ordena; reclick invierte; indicador ▲/▼.
 
-## 6. HEADER de la tabla (referencia: Tareas `.tb-list-hdr`)
+## 6. HEADER de la tabla (referencia: Unidades `.tbl thead th` / `.tbl-hdcell` en tabla-base.css)
 
-Fijo SOLO en vertical (sticky top) y OPACO; las filas pasan por DEBAJO. El header NO fija columnas horizontales.
-- Contenedor scroll = la lista (`overflow:auto; max-height: calc(100vh - 190px)`). Scroll dentro de la tabla.
-  Tareas ofrece barra horizontal espejo ARRIBA (`.tb-topscroll`, sincronizada) para alcanzar columnas.
-- Header row: `display:flex; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid #EEF3F8;
-  background:#FAFBFC; position:sticky; top:0; z-index:8; min-width:max-content`. Fondo SOLIDO (nunca transparente).
-- Celdas header: 10.5px, peso 700, letter-spacing .4px, color #A6B7C8, uppercase.
-- CASO `<table>` real (PQRSD/Contratos): `<th> position:sticky; top:0; background solido; z-index alto` +
-  **`border-collapse: separate; border-spacing:0`** (NUNCA `collapse`: el borde colapsado se filtra bajo el
-  header y parece que los datos pasan por detras). Separadores de fila en el `td`, no en el `tr`. Sombra
-  opcional `box-shadow: 0 2px 4px -2px rgba(27,42,58,.12)`.
+Fijo SOLO en vertical (sticky top0) y OPACO; las filas pasan por DEBAJO. El header NO fija columnas horizontales.
+La FUENTE UNICA del look vive en `wwwroot/css/modules/tabla-base.css` (frame `.tbl` + clase reutilizable
+`.tbl-hdcell`). La referencia ya NO es Tareas: es Unidades (DistribucionPanel). Colores/bordes por TOKEN
+(eso mata la divergencia); tipografia por los valores canonicos de abajo. (F2, cerrado 2026-10-01.)
+
+VALORES CANONICOS del header (medir computed, deben coincidir 1:1 con Unidades):
+- position:sticky; top:0; z-index:6; background:var(--propia-bg-table-head) (#FAFBFC / rgb(250,251,252)).
+- font-size:11.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; white-space:nowrap.
+- color:var(--propia-text-secondary) (#516F90 / rgb(81,111,144)).
+- border-bottom:1px solid var(--propia-border-card) (#E1E8EE / rgb(225,232,238)).
+- SEPARADORES de columna: border-right:1px solid var(--propia-border-card) entre celdas de DATOS, full-height;
+  excepciones sin separador: seleccion, expander, +columna/acciones y la ultima.
+- El PADDING horizontal NO es libre: cada modulo conserva el suyo para que la celda de header quede ALINEADA
+  con su columna de cuerpo (medir 0px de drift header<->cuerpo). Forzar el padding de Unidades donde el cuerpo
+  tiene otra geometria corre el texto = BUG. Regla: ALINEACION > igualar el numero de padding.
+
+DOS CAMINOS segun la estructura (ambos miden computed == Unidades):
+- `<table>` real (PQRSD, Contratos): dar la clase `.tbl-hdcell` (+ `--plain` en expander/acciones) a los `<th>`;
+  el look sale de tabla-base.css. `border-collapse: separate; border-spacing:0` (NUNCA `collapse`: el borde
+  colapsado se filtra bajo el header sticky y se ven separadores "huerfanos"). El padding queda en el modulo,
+  alineado a su `td`.
+- Pseudo-tabla CSS-grid (Zonas, Equipos, Residentes, Usuarios, Directorio P+E, Mascotas, Vehiculos):
+  `.tbl-hdcell` NO aplica (en grid el sticky+bg+border-bottom van en la FILA, no en la celda; ponerlos por
+  celda duplica el sticky y hace el border-bottom un stub bajo cada label, ademas .tbl-hdcell no trae el
+  stretch). Se llevan los VALORES canonicos IN-PLACE por token: bg/sticky/border-bottom/tipografia en la FILA
+  (`*-head`), separador full-height en las CELDAS. Separador full-height = `align-self:stretch` + mover el
+  padding VERTICAL de la fila a la celda (fila `padding:0 <h>`, celda `padding:<v> 0`) + `display:flex;
+  align-items:center` para centrar; el padding HORIZONTAL no se toca (alineacion). Alinea sin drift si el grid
+  resuelve el MISMO ancho en header y cuerpo (min-width fijo, o celdas con `min-width:0`). Si el grid usa
+  `min-width:max-content`, header y cuerpo toman anchos distintos y el separador queda huerfano (ver excepcion).
+
+EXCEPCION Mascotas / Vehiculos (decision de Alex, 2026-10-01): su grid usa `min-width:max-content`, con lo que
+header y cuerpo se dimensionan a su propio contenido (anchos distintos) y un separador quedaria huerfano (medido
+~94px de drift). Alex eligio NO tocar la geometria del cuerpo: quedan con TODO el tratamiento canonico pero SIN
+separadores verticales. (Seguros SI acepto el refactor de geometria -Seguros-B-: `min-width:0` en celdas de
+header y cuerpo -> los tracks fr resuelven por peso -> separadores alineados; esto toca el cuerpo y requiere OK
+explicito de Alex por modulo.)
+
+DRAG de columnas (F1, comportamiento aparte del DISEÑO del header): el "feel" pro (columna fantasma + drop-line)
+vive en `propiaTablaColReorder` (propia-ui.js) + clases `.tbl-col-*` (tabla-base.css). Solo las celdas con
+`data-clave` son arrastrables (`[data-clave]{cursor:grab}` global). NO poner `data-clave` en un header que no
+cablee `OnColReorder`: dispararia el cursor grab sin drag real. El drag NO es parte del "diseño del header";
+no se agrega en modulos que no lo tengan ya.
 
 ## 7. Sin KPIs / indicadores (decision de producto)
 
