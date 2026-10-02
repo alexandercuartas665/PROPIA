@@ -15,6 +15,41 @@
 
 ---
 
+## ESTADO 2026-10-02 ROLES REFINO VISUAL + MENU (LEER PRIMERO)
+
+Rama `equipo/alex-roles-refino` mergeada a `main` (commits `95da282` Roles refino + `43172f3` EditarCampoSistema).
+**NO trae migraciones nuevas** (el esquema de Roles ya entro con la migracion de 2026-09-29 OLA A de abajo).
+Es UI + un cambio de DATO en la tabla global `menu_overrides`.
+
+**UI (auto-deploy desde main):**
+- Roles y Permisos (`RolesPanel.razor`): matriz muestra SOLO acciones validas por modulo (MP-04/MP-06; el
+  resto pinta "."); ficha del rol como MODAL (`.usr-modal-roles`); bandeja migrada al frame canonico `.tbl`
+  (llena el ancho, header sticky, footer); barra Filtros/Buscar/Ordenar/Agrupar; badge base "Sistema".
+- EditarCampoSistema (`EditarCampoSistemaModal.razor` + `DistribucionPanel.razor`): campos de sistema tipo
+  lista muestran opciones rigidas (solo lectura) + permiten agregar propias.
+- CSS bumps: `usuarios.css?v=9`, `roles.css?v=4`, (App.razor).
+- Menu base (`MenuCatalog.cs`): `mi-usuarios` "Usuarios y roles" -> "Usuarios"; nuevo item `mi-roles`
+  "Roles" -> `/roles`.
+
+**ACCION MANUAL EN PROD (correr tu, Alex): mover "Roles" a la seccion Configuracion del menu.**
+El menu real lo arma `menu_overrides` (tabla GLOBAL, sin tenant_id). En dev ya se aplico. En prod, el
+`parent_key` de la seccion "Configuracion" puede tener OTRO id (es un custom-sec-*). Pasos:
+1. Ver el id real de la seccion Configuracion en prod:
+   `SELECT node_key,label FROM menu_overrides WHERE label ILIKE 'config%' AND is_custom=true;`
+2. Con ese `<ID_CONFIG>`, correr (ajusta `sort_order` si choca con otro item de esa seccion):
+   ```sql
+   BEGIN;
+   UPDATE menu_overrides SET label='Usuarios', updated_at=now() WHERE node_key='mi-usuarios';
+   UPDATE menu_overrides SET sort_order=6, updated_at=now() WHERE node_key='mi-directorio';
+   INSERT INTO menu_overrides (id, node_key, label, parent_key, sort_order, created_at, is_custom, hidden)
+   VALUES (gen_random_uuid(), 'mi-roles', NULL, '<ID_CONFIG>', 5, now(), false, false);
+   COMMIT;
+   ```
+   (En dev el id fue `custom-sec-3954c8fdc250481f9197e077ba2c6893` y quedo Usuarios(4) -> Roles(5) -> Terceros(6).)
+   Si NO se corre: "Roles" igual funciona y aparece, pero bajo "Mi Copropiedad" (el catalogo base), no en Configuracion.
+
+---
+
 ## ESTADO 2026-09-29 MODULO 2.5 v2.0 OLA A (matriz de roles por copropiedad + bandeja - LEER PRIMERO)
 
 Rama `equipo/atlas-usuarios-roles-25`. **Trae UNA migracion nueva ADITIVA que SI hay que aplicar en
