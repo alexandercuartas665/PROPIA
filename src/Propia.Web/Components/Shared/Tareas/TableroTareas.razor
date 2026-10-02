@@ -11,6 +11,7 @@
 @inject IJSRuntime Js
 @inject NavigationManager Nav
 @inject IModalService Modals
+@implements IDisposable
 
 @if (!Compacto) { <PageTitle>Tareas y proyectos - PROPIA</PageTitle> }
 
@@ -530,10 +531,9 @@ else
                     @* Sin agrupar (DEFAULT, mismo diseno que los demas modulos): lista plana PAGINADA
                        (footer canonico), sin encabezados de grupo. La fila de alta compacta al final
                        permite crear tareas tambien en esta vista. *@
+                    @* SIN paginacion: scroll infinito (render-all) + footer canonico (patron piloto vista-tabla). *@
                     var raicesT = AplicarSort(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList()).ToList();
-                    var totalPagT = raicesT.Count == 0 ? 1 : (int)Math.Ceiling(raicesT.Count / (double)_porPagina);
-                    var pagT = Math.Clamp(_pagina, 1, totalPagT);
-                    foreach (var t in raicesT.Skip((pagT - 1) * _porPagina).Take(_porPagina))
+                    foreach (var t in raicesT)
                     {
                         @RenderArbol(t, 0)
                     }
@@ -551,11 +551,15 @@ else
                 @* La fila de TOTALES generales al pie se retiro a peticion del usuario;
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
             </div>
-            @if (_gruposT.Count == 0 && _tareas.Any(x => x.PadreId == null && PasaFiltros(x)))
+            @* FAB flotante: aparece al desplazar (cuando la fila de alta no esta a la vista); oculto si se agrupa. *@
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0)" @onclick="FabAgregarTarea" title="Agregar tarea">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar registro
+            </button>
+            @if (_gruposT.Count == 0)
             {
-                <TablaPager Total="_tareas.Count(x => x.PadreId == null && PasaFiltros(x))" Pagina="_pagina" PorPagina="_porPagina" Entidad="tareas"
-                            PaginaChanged="p => _pagina = p"
-                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+                var totalRaicesT = _tareas.Count(x => x.PadreId == null && PasaFiltros(x));
+                <div class="tbl-foot">@totalRaicesT registros &middot; mostrando @totalRaicesT</div>
             }
             </div>
         }
@@ -2087,7 +2091,7 @@ else
     // Ordenamiento multi-criterio apilable (boton "Ordenar" compartido). El clic en el encabezado
     // (vista Lista) es el caso de un solo criterio, sincronizado con esta misma lista.
     private List<TablaOrdenarMenu.Sort> _sorts = new();
-    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
+    private void OnSortsChanged() { StateHasChanged(); }
     // Columnas ofrecidas en el menu Ordenar: las mismas opciones que ya existian (fijas + dinamicas).
     private List<TablaOrdenarMenu.Col> ColsOrdenablesT()
         => OpcionesOrden().Select(o => new TablaOrdenarMenu.Col(o.Key, o.Label)).ToList();
@@ -2133,9 +2137,16 @@ else
     // (default, lista plana paginada). En la vista Tablero (kanban) solo aplica el 1er nivel (a); el
     // apilado multi-nivel solo afecta la vista Tabla. ----
     private List<string> _gruposT = new();
-    private int _pagina = 1;
-    private int _porPagina = 25;
-    private void OnGruposTChanged() { _pagina = 1; _ = PersistGroupAsync(); StateHasChanged(); }
+    // ===== Scroll infinito + FAB flotante (Ola A, patron piloto vista-tabla) =====
+    private bool _ctaVisible = true;                       // true = la fila de alta esta a la vista -> FAB oculto
+    private DotNetObjectReference<TableroTareas>? _selfTbl;
+    private string? _wiredSigTbl;
+    private bool _scrollCtaPendT;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    private void FabAgregarTarea() { _scrollCtaPendT = true; _nfFocusEstado = _board?.Estados.FirstOrDefault()?.Id; }
+    public void Dispose() { _selfTbl?.Dispose(); }
+    private void OnGruposTChanged() { _ = PersistGroupAsync(); StateHasChanged(); }
     // Columnas ofrecidas en el menu Agrupar (Etapa + dimensiones fijas + campos dinamicos del tablero).
     private List<TablaAgruparMenu.Col> ColsAgrupablesT()
     {
@@ -2171,9 +2182,9 @@ else
         switch (accion)
         {
             case TablaColMenu.Accion.OrdenarAsc:
-                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
-                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
                 if (col.EsDinamico && Guid.TryParse(col.Key, out var cid1))
@@ -3090,6 +3101,23 @@ else
         if (_boardMode == "lista")
         {
             try { await Js.InvokeVoidAsync("propiaUI.syncTopScroll", "tbTopScroll", "tbTopScrollInner", "tbList"); } catch { }
+            // Scroll infinito + FAB (patron piloto vista-tabla): sin agrupar, observa el scroll de la tabla;
+            // cuando la fila de alta no esta a la vista muestra el FAB (SetCtaVisible via dstInfinite).
+            if (_gruposT.Count == 0)
+            {
+                _selfTbl ??= DotNetObjectReference.Create(this);
+                var sig = $"{_tareas.Count}|{_boardMode}";
+                if (sig != _wiredSigTbl)
+                {
+                    _wiredSigTbl = sig;
+                    try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfTbl, "#tbList"); } catch { }
+                }
+            }
+            if (_scrollCtaPendT)
+            {
+                _scrollCtaPendT = false;
+                try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", "#tbList"); } catch { }
+            }
         }
         // Chat de actividad: al abrir la tarjeta o tras enviar un mensaje, dejarlo scrolleado abajo (ultimo mensaje visible).
         if (_scrollChatPend)
