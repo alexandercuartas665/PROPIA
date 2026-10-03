@@ -727,3 +727,23 @@ window.propiaUI.dstScrollToCta = function (scrollSel) {
         setTimeout(function () { try { s.scrollTop = s.scrollHeight; } catch (e) { } }, 320);
     } catch (e) { }
 };
+// Guardar al salir de la fila (alta inline sin botones): observa focusout de la fila; cuando el foco
+// sale de ella (y no a otra celda de la misma fila), invoca el metodo .NET (que crea si hay titulo, o
+// descarta si esta vacia). Re-attachable (idempotente): quita el handler previo antes de montar.
+window.propiaUI.rowBlurSave = function (dotnetRef, rowSel, method) {
+    try {
+        var row = document.querySelector(rowSel);
+        if (!row) return;
+        if (row.__blurH) { row.removeEventListener('focusout', row.__blurH); }
+        var h = function () {
+            setTimeout(function () {
+                try {
+                    if (!document.body.contains(row)) return;
+                    if (!row.contains(document.activeElement)) { dotnetRef.invokeMethodAsync(method); }
+                } catch (e) { }
+            }, 140);
+        };
+        row.__blurH = h;
+        row.addEventListener('focusout', h);
+    } catch (e) { }
+};
