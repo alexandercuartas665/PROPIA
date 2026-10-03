@@ -1253,6 +1253,9 @@ else
                 <button type="button" class="tbc-tab @(_cardTab == "detalle" ? "on" : "")" @onclick='() => _cardTab = "detalle"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Detalle
                 </button>
+                <button type="button" class="tbc-tab @(_cardTab == "subtareas" ? "on" : "")" @onclick='() => _cardTab = "subtareas"'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Sub-tareas @if (d.Id is not null) { var nk = Hijos(d.Id.Value).Count; if (nk > 0) { <span class="tbc-tab-badge">@nk</span> } }
+                </button>
                 <button type="button" class="tbc-tab @(_cardTab == "archivos" ? "on" : "")" @onclick='() => _cardTab = "archivos"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
                 </button>
@@ -1417,29 +1420,7 @@ else
                         </div>
                     </div>
 
-                    @* Subtareas REALES (tareas hijas con PadreId): anidan en modo lista y muestran el chip "N sub" en tarjetas. *@
-                    @if (d.Id is not null)
-                    {
-                        var kids = Hijos(d.Id.Value);
-                        <div class="tbc-fld">
-                            <label>Subtareas @if (kids.Count > 0) { <span class="tbc-mut">- @kids.Count(k => k.EstadoEsTerminal)/@kids.Count</span> }</label>
-                            <div class="tbc-sublist">
-                                @foreach (var k in kids)
-                                {
-                                    var kid = k;
-                                    <div class="tbc-sub tbc-subtask" @onclick="() => AbrirCardDraft(kid, null)" title="Abrir subtarea">
-                                        <span class="tbc-sub-dot" style="background:@(k.EstadoColor ?? "var(--propia-brand)")"></span>
-                                        <span class="tbc-sub-t @(k.EstadoEsTerminal ? "done" : "")">@k.Titulo</span>
-                                        <span class="tbc-sub-est">@k.EstadoNombre</span>
-                                    </div>
-                                }
-                                <div class="tbc-sub-add">
-                                    <input @bind="_subtareaNew" @bind:event="oninput" placeholder="Nueva subtarea (tarea hija)..." />
-                                    <button class="tbc-add-btn" @onclick="CrearSubtareaRapida" disabled="@(_busy || string.IsNullOrWhiteSpace(_subtareaNew))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
-                                </div>
-                            </div>
-                        </div>
-                    }
+                    @* Subtareas: viven en su propia pestana "Sub-tareas" (tabla completa, Ola C). *@
 
                     @* Traza de COPIAS: copias independientes hechas desde esta tarea (NO son subtareas). *@
                     @if (d.Id is not null && d.Copias.Count > 0)
@@ -1690,6 +1671,61 @@ else
                             @if (!string.IsNullOrEmpty(_cardMsg)) { <div class="tbc-cardmsg">@_cardMsg</div> }
                         }
                     </div>
+                </div>
+            </div>
+            }
+
+            @* ===== TAB SUB-TAREAS: tabla completa (Ola C). Subtarea/Codigo/Estado/Encargado/Progreso/Prioridad/Vence + alta inline. ===== *@
+            @if (_cardTab == "subtareas")
+            {
+            <div class="tbc-body">
+                <div class="tbc-col" style="flex:1;min-width:0">
+                    @if (d.Id is null)
+                    {
+                        <div class="tbc-mut">Guarda la tarea para poder agregarle subtareas.</div>
+                    }
+                    else
+                    {
+                        var kids = Hijos(d.Id.Value);
+                        var padreCod = _tareas.FirstOrDefault(t => t.Id == d.Id.Value)?.NumeroTarea;
+                        <div class="tbc-subtbl-wrap">
+                            <table class="tbl tbc-subtbl">
+                                <thead>
+                                    <tr>
+                                        <th>SUBTAREA</th><th>CODIGO</th><th>ESTADO</th><th>ENCARGADO</th><th class="c">PROGRESO</th><th>PRIORIDAD</th><th>VENCE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ var ki = 0; }
+                                    @foreach (var k in kids)
+                                    {
+                                        var kid = k; ki++;
+                                        <tr class="tbc-subtr" @onclick="() => AbrirCardDraft(kid, null)" title="Abrir subtarea">
+                                            <td class="nom">@k.Titulo</td>
+                                            <td class="mut">@(string.IsNullOrWhiteSpace(padreCod) ? (string.IsNullOrWhiteSpace(k.NumeroTarea) ? "-" : k.NumeroTarea) : $"{padreCod}.{ki}")</td>
+                                            <td><span class="tbc-sub-est">@k.EstadoNombre</span></td>
+                                            <td class="mut">@(k.AsignadoNombre ?? "-")</td>
+                                            <td class="c">@k.Progreso%</td>
+                                            <td>@k.Prioridad</td>
+                                            <td class="mut">@(k.FechaVencimiento?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                        </tr>
+                                    }
+                                    @if (kids.Count == 0)
+                                    {
+                                        <tr><td colspan="7" class="mut" style="text-align:center;padding:16px">Sin subtareas todavia.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                            @if (!EsBoardForaneo)
+                            {
+                                <div class="tbc-sub-add" style="margin-top:10px">
+                                    <input @bind="_subtareaNew" @bind:event="oninput" placeholder="+ Agregar subtarea..."
+                                           @onkeydown="@(async e => { if (e.Key == "Enter") await CrearSubtareaRapida(); })" />
+                                    <button class="tbc-add-btn" @onclick="CrearSubtareaRapida" disabled="@(_busy || string.IsNullOrWhiteSpace(_subtareaNew))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
             }
