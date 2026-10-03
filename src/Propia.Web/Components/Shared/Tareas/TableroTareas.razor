@@ -2176,6 +2176,39 @@ else
         _ctxItems = items;
         _ctxOpen = true;
     }
+
+    // ===== Subtareas como sub-registros (Ola C): alta INLINE de subtarea al expandir la fila padre. =====
+    private readonly Dictionary<Guid, string> _subInline = new();
+    private RenderFragment FilaNuevaSubtarea(TareaListaDto padre, int depth) => __builder =>
+    {
+        var pid = padre.Id;
+        var val = _subInline.GetValueOrDefault(pid, "");
+        <div class="tb-newrow tb-subadd-row">
+            <div class="tb-row-exp"></div>
+            <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
+                <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
+                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." value="@val"
+                       @oninput="e => _subInline[pid] = e.Value?.ToString() ?? string.Empty"
+                       @onkeydown="e => SubInlineKeydown(e, padre)" />
+            </div>
+        </div>
+    };
+    private async Task SubInlineKeydown(KeyboardEventArgs e, TareaListaDto padre)
+    {
+        if (e.Key == "Enter") await CrearSubtareaInline(padre);
+        else if (e.Key == "Escape") _subInline[padre.Id] = "";
+    }
+    private async Task CrearSubtareaInline(TareaListaDto padre)
+    {
+        if (EsBoardForaneo || _board is null) return;
+        var titulo = _subInline.GetValueOrDefault(padre.Id, "").Trim();
+        if (string.IsNullOrWhiteSpace(titulo)) return;
+        var req = new CrearTareaRequest(titulo, null, PrioridadTarea.Normal, padre.EstadoId, null, null, null, padre.Id, new List<Guid>(), _board.Tablero.Id);
+        var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
+        if (resp.IsSuccessStatusCode) { _subInline[padre.Id] = ""; _expandidas.Add(padre.Id); await RecargarBoard(); }
+        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+    }
+
     private void OnGruposTChanged() { _ = PersistGroupAsync(); StateHasChanged(); }
     // Columnas ofrecidas en el menu Agrupar (Etapa + dimensiones fijas + campos dinamicos del tablero).
     private List<TablaAgruparMenu.Col> ColsAgrupablesT()
@@ -3932,21 +3965,26 @@ else
     };
 
     @* Render recursivo: la fila + sus tareas hijas (encadenadas) cuando esta expandida. Hasta 3 niveles, como el prototipo. *@
-    private RenderFragment RenderArbol(TareaListaDto t, int depth) => __builder =>
+    private RenderFragment RenderArbol(TareaListaDto t, int depth, string? codigo = null) => __builder =>
     {
-        @RenderFila(t, depth)
+        var cod = string.IsNullOrWhiteSpace(codigo) ? t.NumeroTarea : codigo;
+        @RenderFila(t, depth, cod)
         @if (t.CantidadSubtareas > 0 && _expandidas.Contains(t.Id) && depth < 3)
         {
-            foreach (var h in Hijos(t.Id))
+            var kids = Hijos(t.Id).ToList();
+            @* Subtareas = sub-registros: filas hijas completas con codigo .N (padre + indice). *@
+            for (int i = 0; i < kids.Count; i++)
             {
-                @RenderArbol(h, depth + 1)
+                @RenderArbol(kids[i], depth + 1, $"{cod}.{i + 1}")
             }
+            @* Alta INLINE de subtarea al final de las hijas (Enter crea, Esc/vacio descarta). *@
+            @if (depth < 3 && !EsBoardForaneo) { @FilaNuevaSubtarea(t, depth + 1) }
         }
     };
 
     private string? CampoValor(TareaListaDto t, Guid campoId) => t.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
 
-    private RenderFragment RenderFila(TareaListaDto t, int depth) => __builder =>
+    private RenderFragment RenderFila(TareaListaDto t, int depth, string? codigo = null) => __builder =>
     {
         var tarea = t;
         var esHija = depth > 0;
@@ -3969,7 +4007,7 @@ else
                 }
                 else if (esHija)
                 {
-                    <span class="tb-row-kidmark">&rsaquo;</span>
+                    <span class="tb-row-kidmark" title="Subtarea">&#x2514;</span>
                 }
                 @if (EnEd(t.Id, "titulo"))
                 {
@@ -4004,7 +4042,8 @@ else
             @if (_colCodigo)
             {
                 <div class="tb-row-cod">
-                    @if (!string.IsNullOrWhiteSpace(t.NumeroTarea)) { <span class="tb-row-num" title="Codigo de la tarea">@t.NumeroTarea</span> }
+                    @{ var codMostrar = string.IsNullOrWhiteSpace(codigo) ? t.NumeroTarea : codigo; }
+                    @if (!string.IsNullOrWhiteSpace(codMostrar)) { <span class="tb-row-num" title="Codigo de la tarea">@codMostrar</span> }
                 </div>
             }
             @* ---- ETAPA ---- *@
