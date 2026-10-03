@@ -1985,6 +1985,16 @@ else
     </div>
 }
 
+@* Ola B: editor FOCALIZADO de campo de SISTEMA (una sola puerta). Tipo bloqueado + alias + visibilidad;
+   calca EditarCampoSistemaModal (como Unidades), persistiendo en columnas-config del tablero. *@
+@if (_editSisClave is not null && _board is not null)
+{
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+                             RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
+                             EntidadConfig="tablero" TituloSingular="tarjeta" Jwt="@_jwt"
+                             Guardado="RecargarTrasCambioCampos" Cerrado="() => _editSisClave = null" />
+}
+
 @* CSS movido a wwwroot/css/modules/tareas.css (auditoria R-02: fuera del render tree). *@
 
 @code {
@@ -2291,7 +2301,7 @@ else
                     var campo = CamposDelTablero.FirstOrDefault(c => c.Id == cid1);
                     if (campo is not null) { CfgEditCampo(campo); await AbrirPopEn(new MouseEventArgs { ClientX = _colMenuX, ClientY = _colMenuY }); }
                 }
-                else { AbrirGestorCampos(); }   // sistema: se edita en el gestor (alias/descripcion/visibilidad)
+                else { AbrirEditorCampoSistema(col.Key, col.Label); }   // sistema: editor focalizado (alias + tipo bloqueado + visibilidad)
                 break;
             case TablaColMenu.Accion.CopiarUrl:
                 try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}tareas#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
@@ -5131,6 +5141,34 @@ else
     // Y re-lee la config de columnas, para que el alias/visibilidad/orden se reflejen en la tabla sin F5.
     // RecargarBoard por si solo no re-lee columnas-config (para no pagar ese GET en cada edicion de tarea).
     private async Task RecargarTrasCambioCampos() { await RecargarBoard(); await RestaurarColsAsync(); }
+
+    // ===== Ola B: editor FOCALIZADO de campo de SISTEMA (una sola puerta desde el menu de columna). =====
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private TipoCampoTablero? _editSisTipo;
+    private bool _editSisReq;
+    // El menu de columna usa claves de orden (descripcion/numero/asignado...); la config/catalogo usa las
+    // cortas (desc/cod/resp...). Este mapa las concilia para leer/guardar la fila correcta de columnas-config.
+    private static string ClaveSisConfig(string chevKey) => chevKey switch
+    {
+        "descripcion" => "desc",
+        "numero" => "cod",
+        "asignado" => "resp",
+        "progreso" => "prog",
+        "prioridad" => "prio",
+        "vence" => "due",
+        "origen" => "orig",
+        _ => chevKey   // titulo, est, etiq, valor ya coinciden
+    };
+    private void AbrirEditorCampoSistema(string chevKey, string label)
+    {
+        var clave = ClaveSisConfig(chevKey);
+        var def = ColumnasSistemaCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisClave = clave;
+        _editSisLabel = def?.Label ?? label;
+        _editSisTipo = def?.Tipo;
+        _editSisReq = def?.Fija ?? false;
+    }
 
     // ---- Config de motivos de cierre (modulo tareas) ----
     private string _nuevoMotivoTareaNombre = "";
