@@ -13,11 +13,11 @@
 
 ## Ola 1 - Seguridad + bloqueos funcionales (P1-P3, lo mas urgente)
 
-| Item | Sev | Detalle | Archivos |
-|---|---|---|---|
-| D-1 | ALTA (seguridad) | alta de Unidad con numero duplicado vuelca stack trace crudo (rutas, esquema BD) a la UI. Traducir PostgresException SqlState 23505 a error de negocio limpio; asegurar que el handler global NO serialice el stack al body. Revisar otras altas inline. | MiCopropiedadService.*, UnidadesPlantillaService, Distribucion.razor, handler global |
-| V-1 | ALTA (onboarding) | en Vehiculos/Mascotas con pocas filas el dropdown de UNIDAD (.suc2-drop) se recorta por el overflow:auto del scroll. Render del dropdown en position:fixed (portal). Re-verificar 6 consumidores (Vehiculos, Mascotas, GestionarPqrsdModal, NuevaPqrsdWizardModal, Reservas, Porteria). | SelectorUnidadCodigo.razor (compartido) |
-| T-1 | MEDIA | no se puede editar una tarea creada con el admin como solicitante (POST acepta, PUT rechaza). Alinear validacion create/update (permitir actor logueado/admin como solicitante). | TareasController, TareasService.* |
+| Item | Sev | Estado | Detalle | Archivos |
+|---|---|---|---|---|
+| D-1 | ALTA (seguridad) | HECHO (41afa7c) | duplicado de unidad -> 400 limpio (traduce 23505 a InvalidOperationException); handler global registrado en TODOS los entornos (JSON sin stack, intercepta el Developer Exception Page). Validado por API. | MiCopropiedadService.Unidades.cs, Program.cs |
+| V-1 | ALTA (onboarding) | pendiente | en Vehiculos/Mascotas con pocas filas el dropdown de UNIDAD (.suc2-drop) se recorta por el overflow:auto del scroll. Render del dropdown en position:fixed (portal). Re-verificar 6 consumidores (Vehiculos, Mascotas, GestionarPqrsdModal, NuevaPqrsdWizardModal, Reservas, Porteria). | SelectorUnidadCodigo.razor (compartido) |
+| T-1 | MEDIA | pendiente | no se puede editar una tarea creada con el admin como solicitante (POST acepta, PUT rechaza). Alinear validacion create/update (permitir actor logueado/admin como solicitante). | TareasController, TareasService.* |
 
 ## Ola 2 - FAB + scroll infinito (homogeneidad vista-tabla) - HECHA
 
