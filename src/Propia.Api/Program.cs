@@ -266,19 +266,22 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// S-18: en entornos no-Development, cualquier excepcion NO controlada se loguea completa en el
-// servidor pero al cliente se le responde un mensaje generico (sin stack ni detalles internos).
-if (!app.Environment.IsDevelopment())
+// S-18 / D-1: cualquier excepcion NO controlada se loguea completa en el servidor, pero al cliente se le
+// responde SIEMPRE JSON sin stack. Se registra en TODOS los entornos (incluido Development) y queda como
+// middleware interno respecto al Developer Exception Page auto-agregado por el host: al capturar primero,
+// evita que esa pagina vuelque el stack/esquema de BD. En prod el mensaje es generico; en Development se
+// incluye el mensaje de la excepcion (util para depurar) pero nunca el stack.
+app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
 {
-    app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
-    {
-        var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
-        app.Logger.LogError(ex, "Excepcion no controlada en {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
-        ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsJsonAsync(new { error = "Ocurrio un error procesando la solicitud." });
-    }));
-}
+    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    app.Logger.LogError(ex, "Excepcion no controlada en {Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+    ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    ctx.Response.ContentType = "application/json";
+    var msg = app.Environment.IsDevelopment() && ex is not null
+        ? $"[dev] {ex.GetType().Name}: {ex.Message}"
+        : "Ocurrio un error procesando la solicitud.";
+    await ctx.Response.WriteAsJsonAsync(new { error = msg });
+}));
 
 // Bootstrap del founder SuperAdmin para PRODUCCION (idempotente, desde env vars
 // SuperAdmin__BootstrapEmail / SuperAdmin__BootstrapPassword). No-op si no estan configuradas.

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Propia.Application.Common;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
@@ -180,6 +181,11 @@ public partial class MiCopropiedadService
             .ToListAsync(ct);
     }
 
+    // 23505 = unique_violation (Npgsql). True si el fallo de guardado proviene de una violacion de indice
+    // unico; sirve para traducirla a un InvalidOperationException (que el controller mapea a 400 {error}).
+    private static bool EsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is PostgresException { SqlState: "23505" };
+
     public async Task<UnidadDto> CrearUnidadAsync(CrearUnidadRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Numero))
@@ -212,7 +218,13 @@ public partial class MiCopropiedadService
             ModuloContributivo5 = req.ModuloContributivo5
         };
         _db.UnidadesPrivadas.Add(unidad);
-        await _db.SaveChangesAsync(ct);
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (EsUniqueViolation(ex))
+        {
+            // Indice unico (TenantId, Numero): numero repetido. Se traduce a un error de negocio limpio
+            // en vez de dejar la excepcion sin controlar (500 generico en prod, stack en Development).
+            throw new InvalidOperationException($"Ya existe una unidad con el numero '{req.Numero}' en esta copropiedad.");
+        }
         var torreNombre = unidad.TorreId.HasValue
             ? await _db.Torres.Where(t => t.Id == unidad.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
             : null;
