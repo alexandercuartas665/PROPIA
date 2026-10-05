@@ -74,13 +74,14 @@
 
 ## OLA E - Decisiones a confirmar con Alex (NO ejecutar sin OK)
 
-- [x] E1. Controles por campo: **RESUELTO (Alex): dejar los campos sin edicion como en Unidades.** Los
-      demas campos quedan como estan.
-      -> NUEVA TAREA derivada (E1b, PENDIENTE ACLARAR): Alex pide que **Rol y Cargo** (listas) permitan
-      **agregar mas valores inline**, parecido a "tipo unidad" (TipoCustom). Dudas a aclarar antes de construir:
-      (a) "Cargo" no existe hoy como campo del alta (el `CargoConsejo` es un ENUM fijo en el modal de
-      gobierno/consejo); hay que definir que campo es y donde va. (b) "Rol agregar valores" = crear roles
-      inline? Los roles viven en el modulo Roles y Permisos (con matriz). Confirmar alcance.
+- [x] E1. Controles por campo: **RESUELTO (Alex): dejar los campos sin edicion como en Unidades.**
+- [x] E1b-Rol. **HECHO (f78ce3e):** crear rol basico inline desde el select de Rol del alta ("+" ->
+      nombre -> POST /api/roles -> seleccionado). Validado en Chrome.
+- [ ] E1b-Cargo. **BLOQUEADO / decision de Alex.** El alta de Usuarios es una INVITACION (usuario
+      Pendiente, sin registro materializado), asi que no hay a quien pegarle un valor de Cargo en el alta
+      (misma raiz que anulo el verde D2). Opciones: (A) Cargo editable en usuarios EXISTENTES + "+ agregar
+      valor" (en el alta queda "-"); (B) Cargo en Directorio personas (el alta crea fila real -> funciona en
+      el alta); (C) arrastrar cargo por la invitacion (backend + migracion, contradice 2b). PENDIENTE elegir.
 - [x] E2. Render-all vs lotes: **dejar render-all** (es solo rendimiento, no visual; recomendacion aceptada).
 - [x] E3. Footer de Usuarios unificado a "N registros - mostrando M" (como Unidades/Directorio).
 
