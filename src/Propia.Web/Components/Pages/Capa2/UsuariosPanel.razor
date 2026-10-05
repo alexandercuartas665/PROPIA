@@ -255,10 +255,8 @@
             else
             {
                 @* La Tabla siempre se pinta aunque no haya usuarios: su fila de alta es la
-                   via para invitar en caliente (mismo criterio que el Directorio). Paginada. *@
-                var totalPagU = lista.Count == 0 ? 1 : (int)Math.Ceiling(lista.Count / (double)_porPagina);
-                var pagU = Math.Clamp(_pagina, 1, totalPagU);
-                var pageU = lista.Skip((pagU - 1) * _porPagina).Take(_porPagina).ToList();
+                   via para invitar en caliente (mismo criterio que el Directorio). Render-all +
+                   scroll infinito + FAB (canon Unidades/Roles): sin paginacion de servidor. *@
                 @* Barra de seleccion multiple: revocar acceso en lote (solo usuarios activos). *@
                 @if (_selU.Count > 0)
                 {
@@ -284,11 +282,10 @@
                         </div>
                     </div>
                 }
-                @* Con agrupacion activa NO se pagina: se alimenta la lista filtrada+ordenada COMPLETA y el
-                   hijo la agrupa (y oculta su pager); sin agrupacion, la pagina actual. *@
-                <UsuariosTablaVista Usuarios="@(_agrupadoU ? lista : pageU)" Grupos="_gruposU" Roles="_roles"
-                                    Total="lista.Count" Pagina="_pagina" PorPagina="_porPagina"
-                                    PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
+                @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
+                   muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
+                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles"
+                                    Total="lista.Count"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     SortKey="@_sortKeyU" SortDir="_sortDirU" OnOrdenar="OrdenarPorColumnaU"
                                     OnRevocar="RevocarAccesoAsync" OnMensaje="MostrarMensajeInfo"
@@ -821,11 +818,8 @@
         new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
                 Opciones = _etiquetas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
     };
-    private int _pagina = 1;
-    private int _porPagina = 25;
-
     // Orden por columna en la vista Tabla (clic en cabecera; reclic invierte). Se aplica sobre
-    // la lista filtrada ANTES de paginar (la paginacion la hace esta pagina, no la sub-vista).
+    // la lista filtrada (render-all; el hijo no pagina).
     // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en
     // cabecera es un caso de un solo criterio, sincronizado con esta misma lista.
     private List<TablaOrdenarMenu.Sort> _sortsU = new();
@@ -836,7 +830,7 @@
         => ColsVisiblesU().Select(k => new TablaOrdenarMenu.Col(k, ColLabelU(k)))
             .Concat(_defsCampos.Select(d => new TablaOrdenarMenu.Col("cd:" + d.Id, d.Label)))
             .ToList();
-    private void OnSortsUChanged() { _pagina = 1; StateHasChanged(); }
+    private void OnSortsUChanged() { StateHasChanged(); }
 
     // ===== Agrupar (boton "Agrupar", multi-nivel): fuente unica compartida (TablaAgruparMenu +
     // TablaAgrupador + TablaGruposRender). Esta pagina mantiene los niveles (_gruposU) y se los pasa a
@@ -854,15 +848,14 @@
         foreach (var d in _defsCampos) cols.Add(new("cd:" + d.Id, d.Label));
         return cols;
     }
-    // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
-    private void OnGruposUChanged() { _pagina = 1; }
+    // Cambio de niveles desde el menu compartido: el reagrupado es automatico (render-all, sin pagina).
+    private void OnGruposUChanged() { StateHasChanged(); }
 
     private void OrdenarPorColumnaU(string clave)
     {
         var ex = _sortsU.FirstOrDefault(s => s.Key == clave);
         if (_sortsU.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
         else _sortsU = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
-        _pagina = 1;
     }
     // Valor de orden para una clave (fija via SortStrU; dinamica "cd:{id}" via el valor del campo propio).
     private string ValorOrdenU(UsuarioListaDto u, string key)
@@ -1183,7 +1176,6 @@
 
     private async Task CargarAsync()
     {
-        _pagina = 1;   // toda recarga (busqueda incluida) vuelve a la primera pagina
         try
         {
             var http = Auth();
@@ -1281,9 +1273,9 @@
         switch (accion)
         {
             case TablaColMenu.Accion.OrdenarAsc:
-                _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+                _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
-                _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+                _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
                 if (campo is not null) AbrirEditarCampoU(campo);
@@ -1323,7 +1315,7 @@
             case TablaColMenu.Accion.Agrupar:
                 // Solo rol/estado y los campos propios (cd:) son agrupables; un unico nivel desde el menu de columna.
                 if (col.Key == "rol" || col.Key == "estado" || col.Key.StartsWith("cd:", StringComparison.Ordinal))
-                { _gruposU = new() { col.Key }; _pagina = 1; }
+                { _gruposU = new() { col.Key }; }
                 else ColToast("Agrupar por esta columna aun no esta disponible en Usuarios.");
                 break;
             case TablaColMenu.Accion.Filtrar:

@@ -122,12 +122,15 @@
             </div>
         </div>
     </div>
-    @* Footer canonico: visible SIEMPRE con la tabla, incluso con 0 filas ("Mostrando 0 de 0").
-       Con agrupacion activa NO se pagina (se muestran los grupos completos), asi que se oculta. *@
+    @* FAB flotante (patron Unidades/Roles): aparece al desplazar cuando la fila de alta no se ve.
+       Footer canonico con el conteo total. Con agrupacion NO se pagina, asi que no van ni FAB ni footer. *@
     @if (!Agrupado)
     {
-        <TablaPager Total="Total" Pagina="Pagina" PorPagina="PorPagina" Entidad="usuarios"
-                    PaginaChanged="PaginaChanged" PorPaginaChanged="PorPaginaChanged" />
+        <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabNuevo" title="Agregar usuario">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            Agregar registro
+        </button>
+        <div class="tbl-foot"><strong>@Total</strong>&nbsp;usuarios</div>
     }
 </div>
 
@@ -328,12 +331,20 @@
     [JSInvokable] public async Task OnColResize(string clave, int width) => await OnRedimensionarCol.InvokeAsync((clave, width));
     public void Dispose() => _self?.Dispose();
 
-    // Paginacion (footer canonico, dentro del contenedor .usr-table). La pagina la controla el padre.
+    // Conteo total para el footer canonico (dentro del contenedor .usr-table). El padre envia la lista
+    // COMPLETA (render-all); no hay paginacion de servidor: el scroll infinito solo alterna el FAB.
     [Parameter] public int Total { get; set; }
-    [Parameter] public int Pagina { get; set; } = 1;
-    [Parameter] public int PorPagina { get; set; } = 25;
-    [Parameter] public EventCallback<int> PaginaChanged { get; set; }
-    [Parameter] public EventCallback<int> PorPaginaChanged { get; set; }
+
+    // ===== FAB flotante + scroll infinito (canon Unidades/Roles) =====
+    // _ctaVisible=true => la fila de alta esta a la vista -> FAB oculto. dstInfinite (propia-ui.js) observa
+    // el scroll de .utb-scroll: cerca del fondo muestra la fila de alta y oculta el FAB (SetCtaVisible).
+    private bool _ctaVisible = true;
+    private bool _scrollCtaPend;
+    private string? _fabSig;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    // Clic del FAB: baja a la fila de alta y enfoca el primer campo (documento).
+    private void FabNuevo() { _scrollCtaPend = true; _focusPending = true; }
 
     // ===== Menu contextual (clic derecho) =====
     private bool _ctxOpenU;
@@ -372,6 +383,15 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+        // FAB: observar el scroll de la tabla solo sin agrupacion (con grupos no hay footer/alta a la vista).
+        if (!Agrupado)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = Usuarios.Count.ToString();
+            if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".utb-scroll"); } catch { } }
+        }
+        else { _fabSig = null; }
+        if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".utb-scroll"); } catch { } }
     }
 
     private bool Valido =>
