@@ -56,22 +56,24 @@
 - [x] B3. Validado: botones check/cancel presentes y estilados 1:1 (`dst-nf-ok`/`dst-nf-cancel`); texto viejo
       retirado. (Guardar reusa el metodo existente; cancelar resetea el borrador via @key.)
 
-## OLA C - CTA colapsable + FAB que ABRE la fila
+## OLA C - CTA colapsable + FAB que ABRE la fila  -- HECHA (3a80850)
 
-- [ ] C1. Usuarios: flag `_altaAbierta`; por defecto CTA colapsada `row-add--sm` "Agregar registro"; al
-      pulsarla o al pulsar el FAB -> abre la fila de edicion; al guardar/cancelar -> colapsa de nuevo.
-- [ ] C2. Directorio: idem.
-- [ ] C3. Validar: el FAB ABRE la fila (no solo baja el scroll); tras guardar vuelve a la CTA colapsada.
+- [x] C1. Usuarios: flag `_altaAbierta`; CTA colapsada `row-add--sm` por defecto; CTA o FAB abren la fila;
+      guardar/cancelar/Escape colapsan. (Validado ciclo completo en Chrome.)
+- [x] C2. Directorio Personas + Empresas: idem. (Personas validado; Empresas mismo codigo.)
+- [x] C3. Validado: FAB/CTA abren la fila; tras guardar/cancelar vuelve a la CTA colapsada.
 
 ## OLA D - Expander + resaltado verde (brechas propias de Usuarios)
 
-- [ ] D1. Usuarios: agregar columna expander (icono flecha diagonal, aparece al hover) que crea+abre la
-      ficha, estilo `tbl-exp-btn`.
-- [ ] D2. Usuarios: resaltado verde de fila recien creada (`utb-row-new` = `ok-soft` + barra `ok`; rastrear
-      con `HashSet _recienCreados`; reordenar las recien creadas al final hasta el proximo refresco).
-- [ ] D3. Directorio: verificar que `dtab-row-new` (verde) y el expander ya cumplen 1:1 con Unidades;
-      ajustar solo si difieren.
-- [ ] D4. Validar D1-D3 en Chrome.
+- [x] D3. Directorio: `dtab-row-new` (verde) + expander en la fila de alta abierta -> intactos tras Ola C.
+      Directorio YA coincide con Unidades en #6 (verde) y #7 (expander).
+- [ ] D1. Usuarios - columna expander. **PENDIENTE DECISION DE ALEX:** las filas de Usuarios ya tienen
+      boton lapiz "Editar" que abre el usuario, asi que el expander queda redundante + es cirugia de grid
+      (GridStyle del padre + header + filas + alta deben recalzar). Valor marginal. Recomendacion: omitir.
+- [ ] D2. Usuarios - resaltado verde. **PENDIENTE DECISION DE ALEX:** "crear" en Usuarios = INVITAR, que
+      genera un usuario PENDIENTE (aparece en la pestana Pendientes, no en la tabla de Activos). No hay fila
+      recien creada en la tabla actual para pintar verde. El canon no mapea. Recomendacion: N/A por diseno,
+      o (alternativa) tras invitar saltar a Pendientes y resaltar alli.
 
 ## OLA E - Decisiones a confirmar con Alex (NO ejecutar sin OK)
 
