@@ -1,12 +1,15 @@
 @using Propia.Application.MiCopropiedad
+@inject IJSRuntime JS
 
 @* Selector de unidad por CODIGO con autocompletado. Reemplaza el filtro en cascada
    Torre -> Piso -> Apartamento: se escribe el codigo de la unidad (UnidadPrivada.Numero,
    ej. 101, A-203) y se elige de la lista de coincidencias. Reutilizable en todo el sistema.
-   Emite el Id de la unidad privada seleccionada (UnidadId / UnidadIdChanged). *@
+   Emite el Id de la unidad privada seleccionada (UnidadId / UnidadIdChanged).
+   V-1: el dropdown FLOTA siempre (position:fixed anclado al input via propiaFloatPos) para escapar
+   del overflow:auto del contenedor (tablas de Vehiculos/Mascotas con pocas filas lo recortaban). *@
 
 <div class="suc2" @onfocusout="OnBlur">
-    <div class="suc2-inwrap">
+    <div class="suc2-inwrap" @ref="_anchorRef">
         <input class="@InputClass" type="text" autocomplete="off"
                placeholder="@Placeholder" disabled="@Disabled"
                value="@_query" @oninput="OnInput" @onfocus="OnFocus" />
@@ -17,7 +20,7 @@
     </div>
     @if (_open && _filtradas.Count > 0)
     {
-        <div class="suc2-drop">
+        <div class="suc2-drop" @ref="_popRef" style="@(_popStyle ?? "position:fixed;visibility:hidden")">
             @foreach (var u in _filtradas)
             {
                 var uni = u;
@@ -31,7 +34,7 @@
     }
     else if (_open && !string.IsNullOrWhiteSpace(_query))
     {
-        <div class="suc2-drop"><div class="suc2-empty">Sin unidades con ese código.</div></div>
+        <div class="suc2-drop" @ref="_popRef" style="@(_popStyle ?? "position:fixed;visibility:hidden")"><div class="suc2-empty">Sin unidades con ese código.</div></div>
     }
 </div>
 
@@ -48,8 +51,39 @@
     private bool _editando;   // el usuario esta escribiendo: no re-sincronizar desde UnidadId
     private List<UnidadDto> _filtradas = new();
 
+    // V-1: panel flotante (position:fixed) anclado al input. _anchorRef = wrapper del input;
+    // _popRef = panel; _popStyle lo calcula propiaFloatPos (top/left/width/max-height, con flip y clamp).
+    private ElementReference _anchorRef;
+    private ElementReference _popRef;
+    private string? _popStyle;
+
     private string InputClass => string.IsNullOrWhiteSpace(Class) ? "suc2-input" : Class;
     private UnidadDto? _seleccionada => UnidadId is Guid id ? Unidades?.FirstOrDefault(u => u.Id == id) : null;
+
+    // Posiciona el dropdown fixed justo debajo del input para escapar del overflow del contenedor.
+    // Se recalcula tras cada render mientras el panel esta visible; estable porque depende solo del input.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var visible = _open && (_filtradas.Count > 0 || !string.IsNullOrWhiteSpace(_query));
+        if (visible)
+        {
+            try
+            {
+                var r = await JS.InvokeAsync<double[]?>("propiaFloatPos", _anchorRef, _popRef);
+                if (r is { Length: 4 })
+                {
+                    var s = $"position:fixed; top:{r[0]}px; left:{r[1]}px; width:{r[2]}px; max-height:{r[3]}px; overflow-y:auto; z-index:4000;";
+                    if (s != _popStyle) { _popStyle = s; StateHasChanged(); }
+                }
+            }
+            catch { }
+        }
+        else if (_popStyle is not null)
+        {
+            _popStyle = null;
+            StateHasChanged();
+        }
+    }
 
     protected override void OnParametersSet()
     {
@@ -116,7 +150,9 @@
     .suc2-x:hover { color: #B91C1C; }
     .suc2-input { width: 100%; box-sizing: border-box; padding: 8px 26px 8px 10px; border: 1px solid var(--propia-border-card); border-radius: 9px; font-size: 13px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .suc2-input:focus { border-color: var(--propia-primary, var(--propia-brand)); box-shadow: 0 0 0 2px rgba(89,85,209,.12); }
-    .suc2-drop { position: absolute; z-index: 4000; top: calc(100% + 3px); left: 0; right: 0; max-height: 260px; overflow-y: auto; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 12px 30px rgba(27,42,58,.18); padding: 4px; }
+    /* V-1: fixed (no absolute) para escapar del overflow del contenedor. top/left/width/max-height
+       los fija el estilo inline via propiaFloatPos; aqui solo el aspecto. */
+    .suc2-drop { position: fixed; z-index: 4000; max-height: 260px; overflow-y: auto; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 12px 30px rgba(27,42,58,.18); padding: 4px; }
     .suc2-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 7px 9px; border-radius: 7px; cursor: pointer; font-family: inherit; }
     .suc2-item:hover { background: var(--propia-brand-soft-2); }
     .suc2-item.on { background: var(--propia-brand-soft); }
