@@ -4,6 +4,7 @@
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 @* Bandeja de Roles y Permisos (spec 2.5 v2.0): el modal paso a MODULO/bandeja propio, separado de
    Usuarios (3 l.63/65; 11 l.311). Tabla con Rol/Categoria/Base/Usuarios; la matriz de permisos vive
@@ -279,6 +280,11 @@ else
                     Nuevo rol
                 </button>
             }
+            @* FAB flotante (patron Unidades): aparece al desplazar cuando la fila/boton de alta no se ve. *@
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _creandoRol)" @onclick="FabNuevoRol" title="Agregar rol">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar registro
+            </button>
             <div class="tbl-foot"><strong>@_roles.Count(r => r.Tipo != TipoRol.Sistema)</strong>&nbsp;roles</div>
         </div>
     }
@@ -396,8 +402,28 @@ else
     private static bool AccionAplica(string modulo, AccionPermiso accion)
         => !AccionesPorModulo.TryGetValue(modulo, out var validas) || validas.Contains(accion);
 
+    // ===== FAB flotante + scroll infinito (patron Unidades) =====
+    private bool _ctaVisible = true;
+    private DotNetObjectReference<RolesPanel>? _self;
+    private string? _fabSig;
+    private bool _scrollCtaPend;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    private void FabNuevoRol() { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; _scrollCtaPend = true; }
+    public void Dispose() { _self?.Dispose(); }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // FAB flotante + scroll infinito (patron Unidades): observa el scroll de la bandeja.
+        if (_roles is not null && _rolEditando is null)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = $"b{_roles.Count}";
+            if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".rol-scroll"); } catch { } }
+        }
+        else { _fabSig = null; }
+        if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".rol-scroll"); } catch { } }
+
         if (!firstRender || _jwt is not null) return;
         try
         {
