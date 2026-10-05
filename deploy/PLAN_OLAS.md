@@ -11,13 +11,13 @@
 |---|---|---|
 | FAB Roles | boton flotante + scroll infinito (canon Unidades) en RolesPanel | HECHO (388fcf4) |
 
-## Ola 1 - Seguridad + bloqueos funcionales (P1-P3, lo mas urgente)
+## Ola 1 - Seguridad + bloqueos funcionales (P1-P3) - HECHA
 
 | Item | Sev | Estado | Detalle | Archivos |
 |---|---|---|---|---|
 | D-1 | ALTA (seguridad) | HECHO (41afa7c) | duplicado de unidad -> 400 limpio (traduce 23505 a InvalidOperationException); handler global registrado en TODOS los entornos (JSON sin stack, intercepta el Developer Exception Page). Validado por API. | MiCopropiedadService.Unidades.cs, Program.cs |
-| V-1 | ALTA (onboarding) | pendiente | en Vehiculos/Mascotas con pocas filas el dropdown de UNIDAD (.suc2-drop) se recorta por el overflow:auto del scroll. Render del dropdown en position:fixed (portal). Re-verificar 6 consumidores (Vehiculos, Mascotas, GestionarPqrsdModal, NuevaPqrsdWizardModal, Reservas, Porteria). | SelectorUnidadCodigo.razor (compartido) |
-| T-1 | MEDIA | pendiente | no se puede editar una tarea creada con el admin como solicitante (POST acepta, PUT rechaza). Alinear validacion create/update (permitir actor logueado/admin como solicitante). | TareasController, TareasService.* |
+| V-1 | ALTA (onboarding) | HECHO (0ccc903) | dropdown de unidad flota (position:fixed via propiaFloatPos, patron SelectorPersona Flotante) para escapar del overflow del scroll. Validado en Vehiculos y Mascotas (panel flota con 15 items, sin recorte). Aplica a los 6 consumidores. | SelectorUnidadCodigo.razor (compartido) |
+| T-1 | MEDIA | HECHO (97202cd) | ActualizarTareaAsync solo re-valida pertenencia al Directorio del solicitante/asignado cuando CAMBIA (PUT=MERGE); el solicitante por defecto (admin) ya no bloquea la edicion. Validado por API: editar -> 204; cambiar a persona no vinculada -> 400. | TareasService.Tareas.cs |
 
 ## Ola 2 - FAB + scroll infinito (homogeneidad vista-tabla) - HECHA
 
