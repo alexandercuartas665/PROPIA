@@ -89,10 +89,9 @@
                         </div>
                         break;
                     case "usuario":
-                        <div class="utb-nf-nombre">
-                            <input class="utb-inp" placeholder="Nuevo usuario..." @oninput="@(e => _d.Nombres = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
-                            <input class="utb-inp" placeholder="Apellidos" @oninput="@(e => _d.Apellidos = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
-                        </div>
+                        @* Un solo campo "Nombre completo" (igual que la columna USUARIO de la tabla): se
+                           divide en nombres/apellidos al guardar. *@
+                        <input class="utb-inp" placeholder="Nombre completo" @oninput="@(e => _d.NombreCompleto = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
                         break;
                     case "rol":
                         @if (_creandoRol)
@@ -434,20 +433,27 @@
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".utb-scroll"); } catch { } }
     }
 
+    // Valido: el nombre completo debe tener al menos 2 palabras (nombres + apellidos, ambos obligatorios en BD).
     private bool Valido =>
         !string.IsNullOrWhiteSpace(_d.Documento) &&
-        !string.IsNullOrWhiteSpace(_d.Nombres) &&
-        !string.IsNullOrWhiteSpace(_d.Apellidos) &&
+        _d.NombreCompleto.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2 &&
         _d.RolId != Guid.Empty;
+
+    // Divide "Nombre completo" en nombres (primera palabra) y apellidos (el resto).
+    private static (string Nombres, string Apellidos) PartirNombre(string completo)
+    {
+        var p = completo.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (p.Length <= 1) return (p.Length == 1 ? p[0] : "", "");
+        return (p[0], string.Join(" ", p[1..]));
+    }
 
     private sealed class Draft
     {
         public TipoDocumento TipoDocumento = TipoDocumento.CC;
         public string Documento = "";
-        public string Nombres = "";
-        public string Apellidos = "";
+        public string NombreCompleto = "";
         public Guid RolId = Guid.Empty;
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; RolId = Guid.Empty; }
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolId = Guid.Empty; }
     }
 
     private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -486,14 +492,15 @@
     {
         if (!Valido)
         {
-            await OnMensaje.InvokeAsync("Completa documento, nombres, apellidos y rol para invitar.");
+            await OnMensaje.InvokeAsync("Completa documento, nombre completo (nombres y apellidos) y rol para invitar.");
             return;
         }
         _busy = true;
         try
         {
+            var (nombres, apellidos) = PartirNombre(_d.NombreCompleto);
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
-                _d.TipoDocumento, _d.Documento.Trim(), _d.Nombres.Trim(), _d.Apellidos.Trim(), _d.RolId));
+                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, _d.RolId));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
             _d.Reset(); _nonce++; _altaAbierta = false;
         }
