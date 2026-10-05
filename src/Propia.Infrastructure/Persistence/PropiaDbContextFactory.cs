@@ -13,7 +13,7 @@ public class PropiaDbContextFactory : IDesignTimeDbContextFactory<PropiaDbContex
     public PropiaDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<PropiaDbContext>()
-            .UseNpgsql("Host=localhost;Port=5433;Database=propia_dev;Username=propia;Password=PropiaDev2026!")
+            .UseNpgsql("Host=127.0.0.1;Port=5433;Database=propia_dev;Username=propia;Password=PropiaDev2026!")
             .Options;
 
         // En design time no hay tenant - se usa un context vacio
