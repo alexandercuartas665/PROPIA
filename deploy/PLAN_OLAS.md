@@ -40,13 +40,13 @@
 | RL-1 | menor | **HECHO (7ae3062)** - confirmacion antes de borrar rol. Validado end-to-end por UI (dialogo con nombre -> borra). |
 | S-1 | menor | PENDIENTE (aparte) - banner transitorio "Error inesperado" al crear poliza; reproducir con datepicker real. |
 
-## Ola 4 - Tests + deuda/infra
+## Ola 4 - Tests + deuda/infra - HECHA
 
 | Item | Sev | Detalle |
 |---|---|---|
 | B-4 | MEDIA (tests) | **HECHO (6537d1f)** - UsuariosAccesosFlowTests 12/12 verde. Catalogo canonico confirmado 7 base / 0 extendidos globales (D2). Se corrigieron tambien 2 rojos preexistentes (faltaba vincular la persona al Directorio antes de invitar, S-02b). |
 | B-1 | deuda | **HECHO (c14e002)** - las 8 tablas sin RLS son BaseEntity con tenant_id descriptivo; documentadas en TablasExentas (RlsCoverageTests) con justificacion por tabla. Sin migracion (forzar RLS romperia consola A&D / auditoria / notificaciones). RlsCoverageTests 2/2 verde. |
-| E-1 | infra | dos Postgres en :5433 (WSL real via ::1 vs docker propia-postgres stale). Alinear/renombrar el stale. |
+| E-1 | infra | **HECHO (b75cf7a)** - verificado por marcador que hay UNA sola DB (los 2 listeners :5433 son el dual IPv4/IPv6 de Docker Desktop al mismo contenedor). Se fijo el host dev a 127.0.0.1 (Api/Web + factory de migraciones) para quitar la ambiguedad ::1/wslrelay. No reproduce "dos Postgres" aqui. |
 
 ## Ola 5 - Confirmar con Alex (posible por diseno)
 
@@ -57,8 +57,8 @@
 
 ## Deploy pendiente (manual, tuyo)
 
-- SQL del menu de Roles en prod (menu_overrides: Configuracion -> Usuarios/Roles/Terceros).
-- Migracion D2 ReseedRolesBase (SENSIBLE: solo con OK explicito de Alex).
+- SQL del menu de Roles en prod -> HECHO por Alex manualmente (2026-10-05).
+- Migracion D2 ReseedRolesBase (SENSIBLE) -> confirmar si ya se aplico en prod.
 
 ## NO tocar (clasificados NO-bug por la auditoria)
 
