@@ -44,7 +44,7 @@
 
 | Item | Sev | Detalle |
 |---|---|---|
-| B-4 | MEDIA (tests) | UsuariosAccesosFlowTests 2->4 rojos por reseed Roles V2 (espera 5 base, hay 7; .First(Nombre==...) falla). Actualizar tests (confirmar con Alex que 7 base es intencional). |
+| B-4 | MEDIA (tests) | **HECHO (6537d1f)** - UsuariosAccesosFlowTests 12/12 verde. Catalogo canonico confirmado 7 base / 0 extendidos globales (D2). Se corrigieron tambien 2 rojos preexistentes (faltaba vincular la persona al Directorio antes de invitar, S-02b). |
 | B-1 | deuda | RLS: 8 tablas con tenant_id sin RLS (RlsCoverageTests). Documentar globales o agregar RLS. |
 | E-1 | infra | dos Postgres en :5433 (WSL real via ::1 vs docker propia-postgres stale). Alinear/renombrar el stale. |
 
