@@ -27,12 +27,37 @@ public class RlsCoverageTests
     /// <summary>
     /// Tablas que tienen columna tenant_id pero NO son tablas operativas de Capa 2.
     ///
-    /// Esta lista debe quedarse VACIA. NO agregar tablas aqui para "hacer pasar" el test:
-    /// si el test senala una tabla incumplidora, la solucion es agregarle RLS en una
-    /// migracion, no exonerarla. Solo se justifica una entrada aqui si la tabla es
-    /// demostrablemente global y su tenant_id es un dato descriptivo, no de aislamiento.
+    /// Regla: por defecto esta lista deberia estar VACIA. NO agregar tablas aqui para "hacer pasar"
+    /// el test: si una tabla es operativa de tenant, la solucion es RLS en una migracion, no exonerarla.
+    /// Solo se justifica una entrada si la tabla es demostrablemente GLOBAL/plataforma y su tenant_id
+    /// es un dato DESCRIPTIVO (no la clave de aislamiento). Cada entrada lleva su razon.
+    ///
+    /// B-1 (auditoria QA, 2026-10-05): las 8 tablas de abajo son todas `BaseEntity` (no `TenantEntity`),
+    /// es decir su tenant_id nunca fue la clave de aislamiento. Se aislan por otro medio (destinatario,
+    /// OrganizacionId, scope de consola A&D) o son de plataforma/diagnostico (sin tenant para filas de
+    /// SuperAdmin). Una policy tenant_id=current_tenant_id() ROMPERIA funcionalidad (consola A&D leyendo
+    /// cross-tenant, auditoria/sesiones de plataforma con tenant NULL invisibles, notificaciones aisladas
+    /// por destinatario). Por eso se exoneran del contrato RLS por-tenant en lugar de forzarlo.
     /// </summary>
-    private static readonly string[] TablasExentas = Array.Empty<string>();
+    private static readonly string[] TablasExentas =
+    [
+        // Consola A&D (plataforma): colaboradores <-> copropiedades; la lee EquipoOrgService cross-tenant.
+        "org_colaborador_copropiedades",
+        // Panel consolidado A&D (plataforma): snapshots de TODAS las copropiedades; PanelConsolidadoService.
+        "panel_snapshot_copropiedades",
+        // Calendario A&D: se aisla por OrganizacionId (no por tenant); tenant_id descriptivo/nullable.
+        "calendario_eventos",
+        // Notificaciones: se aislan por DESTINATARIO (usuario/persona); las de plataforma van con tenant NULL.
+        "notificaciones",
+        // Auditoria de login: incluye logins de plataforma/SuperAdmin SIN tenant; dato de auditoria global.
+        "login_audit_events",
+        // Sesiones de usuario: incluye SuperAdmin sin tenant; se validan por token, no por tenant.
+        "usuario_sesiones",
+        // Log de extraccion IA (OCR): diagnostico write-only; tenant_id descriptivo.
+        "document_extraction_logs",
+        // Logs de sistema/infraestructura: globales; tenant_id descriptivo.
+        "sistema_logs",
+    ];
 
     /// <summary>Tablas de infraestructura que nunca llevan RLS.</summary>
     private static readonly string[] TablasInfraestructura = ["__EFMigrationsHistory"];
