@@ -63,26 +63,26 @@
 - [x] C2. Directorio Personas + Empresas: idem. (Personas validado; Empresas mismo codigo.)
 - [x] C3. Validado: FAB/CTA abren la fila; tras guardar/cancelar vuelve a la CTA colapsada.
 
-## OLA D - Expander + resaltado verde (brechas propias de Usuarios)
+## OLA D - Expander + resaltado verde  -- CERRADA (opcion A)
 
 - [x] D3. Directorio: `dtab-row-new` (verde) + expander en la fila de alta abierta -> intactos tras Ola C.
       Directorio YA coincide con Unidades en #6 (verde) y #7 (expander).
-- [ ] D1. Usuarios - columna expander. **PENDIENTE DECISION DE ALEX:** las filas de Usuarios ya tienen
-      boton lapiz "Editar" que abre el usuario, asi que el expander queda redundante + es cirugia de grid
-      (GridStyle del padre + header + filas + alta deben recalzar). Valor marginal. Recomendacion: omitir.
-- [ ] D2. Usuarios - resaltado verde. **PENDIENTE DECISION DE ALEX:** "crear" en Usuarios = INVITAR, que
-      genera un usuario PENDIENTE (aparece en la pestana Pendientes, no en la tabla de Activos). No hay fila
-      recien creada en la tabla actual para pintar verde. El canon no mapea. Recomendacion: N/A por diseno,
-      o (alternativa) tras invitar saltar a Pendientes y resaltar alli.
+- [x] D1. Usuarios - columna expander: **OMITIDO (opcion A, "dale ola d").** Las filas de Usuarios ya tienen
+      boton lapiz "Editar" que abre el usuario (redundante) + era cirugia de grid de valor marginal.
+- [x] D2. Usuarios - resaltado verde: **N/A por diseno.** Invitar crea un usuario PENDIENTE (pestana
+      Pendientes, no la tabla de Activos), asi que no hay fila recien creada en la tabla actual para pintar.
 
 ## OLA E - Decisiones a confirmar con Alex (NO ejecutar sin OK)
 
-- [ ] E1. Controles por campo (#4): Unidades usa `date` + `SelectorPersona Flotante` en campos dinamicos;
-      Usuarios/Directorio no tienen esos campos en el alta. Confirmar: se deja por datos (recomendado) o se
-      quiere algo mas.
-- [ ] E2. Render-all vs lotes (#8): Unidades pagina por lotes (`_shown`); Usuarios/Directorio hacen render
-      completo. Es solo rendimiento (no visual). Confirmar: migrar a lotes o dejar render-all.
-- [ ] E3. Texto del footer: unificar a "N registros - mostrando M" (hoy Usuarios dice "N usuarios").
+- [x] E1. Controles por campo: **RESUELTO (Alex): dejar los campos sin edicion como en Unidades.** Los
+      demas campos quedan como estan.
+      -> NUEVA TAREA derivada (E1b, PENDIENTE ACLARAR): Alex pide que **Rol y Cargo** (listas) permitan
+      **agregar mas valores inline**, parecido a "tipo unidad" (TipoCustom). Dudas a aclarar antes de construir:
+      (a) "Cargo" no existe hoy como campo del alta (el `CargoConsejo` es un ENUM fijo en el modal de
+      gobierno/consejo); hay que definir que campo es y donde va. (b) "Rol agregar valores" = crear roles
+      inline? Los roles viven en el modulo Roles y Permisos (con matriz). Confirmar alcance.
+- [x] E2. Render-all vs lotes: **dejar render-all** (es solo rendimiento, no visual; recomendacion aceptada).
+- [x] E3. Footer de Usuarios unificado a "N registros - mostrando M" (como Unidades/Directorio).
 
 ## OLA F - Gate milimetrico final
 
