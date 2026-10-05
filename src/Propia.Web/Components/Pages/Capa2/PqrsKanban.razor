@@ -11,6 +11,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 @using Propia.Web.Components.Shared.Modals
 @using Propia.Web.Components.Shared
 
@@ -154,7 +155,7 @@
                 }
             </div>
 
-            <input class="pk-input" value="@_buscar" @oninput="e => { _buscar = e.Value?.ToString() ?? string.Empty; _pagina = 1; }" placeholder="Buscar por radicado o resumen..." />
+            <input class="pk-input" value="@_buscar" @oninput="e => { _buscar = e.Value?.ToString() ?? string.Empty; }" placeholder="Buscar por radicado o resumen..." />
 
             <div class="pk-filters-spacer"></div>
 
@@ -333,7 +334,8 @@
                            los demas modulos). La fila hoja la aporta FilaPqrTpl. *@
                         @if (_gruposPqr.Count == 0)
                         {
-                            @foreach (var it in PaginaPqr())
+                            @* Render-all (canon Unidades/Roles): sin paginar; el scroll infinito solo alterna el FAB. *@
+                            @foreach (var it in RaicesOrdenadasPqr())
                             {
                                 @FilaPqrTpl(it)
                             }
@@ -350,11 +352,15 @@
                 </table>
                 @if (ItemsFiltrados.Count() == 0) { <div class="pk-col-empty">Sin PQRs.</div> }
             </div>
-            @if (_gruposPqr.Count == 0 && ItemsFiltrados.Any())
+            @* FAB flotante + footer de conteo (canon Unidades/Roles). En PQRSD la creacion es por wizard
+               legal (IrNueva), no por alta inline: el FAB abre el wizard. Con agrupacion no van ni FAB ni footer. *@
+            @if (_gruposPqr.Count == 0)
             {
-                <TablaPager Total="ItemsFiltrados.Count()" Pagina="_pagina" PorPagina="_porPagina" Entidad="PQRSD"
-                            PaginaChanged="p => _pagina = p"
-                            PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+                <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="IrNueva" title="Radicar nueva PQRSD">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                    Radicar PQRSD
+                </button>
+                <div class="tbl-foot"><strong>@ItemsFiltrados.Count()</strong>&nbsp;PQRSD</div>
             }
             </div>
         }
@@ -806,8 +812,15 @@
     // En Cerrados solo hay tabla de consulta (mismo criterio que Tareas): se fuerza la vista.
     private string VistaEfectiva => _verArchivados ? "tabla" : _boardMode;
     private List<string> _gruposPqr = new();
-    private int _pagina = 1;
-    private int _porPagina = 25;
+    // ===== FAB flotante + scroll infinito (canon Unidades/Roles) =====
+    // _ctaVisible=true => el fondo de la lista se ve -> FAB oculto. dstInfinite (propia-ui.js) observa
+    // #pkTableWrap. En PQRSD no hay alta inline: el FAB abre el wizard de radicacion (IrNueva).
+    private bool _ctaVisible = true;
+    private string? _fabSig;
+    private DotNetObjectReference<PqrsKanban>? _self;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    public void Dispose() { _self?.Dispose(); }
     private bool _pin = true;  // primera columna SIEMPRE fija (sin boton)
     private string? _pop;
 
@@ -935,7 +948,7 @@
     // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + render <tr> compartido
     // TablaGruposRenderTr + motor TablaAgrupador). _gruposPqr: dimensiones apiladas (1er nivel, 2do,
     // ...). Vacio = SIN agrupar (default, pagina plana con footer). =====
-    private void OnGruposPqrChanged() { _pagina = 1; _ = PersistGruposPqrAsync(); StateHasChanged(); }
+    private void OnGruposPqrChanged() { _ = PersistGruposPqrAsync(); StateHasChanged(); }
     private void SetGroupPqr(string clave) { _gruposPqr = new() { clave }; OnGruposPqrChanged(); }
     private async Task PersistGruposPqrAsync()
     {
@@ -979,16 +992,8 @@
             case "unidad": var u = string.IsNullOrEmpty(x.UnidadNumero) ? "Sin unidad" : x.UnidadNumero!; yield return new ValorGrupo(u, u); break;
         }
     }
-    // Lista filtrada + ordenada (el arbol de grupos conserva ese orden en las hojas).
+    // Lista filtrada + ordenada (render-all; el arbol de grupos conserva ese orden en las hojas).
     private List<PqrsdBandejaItemDto> RaicesOrdenadasPqr() => AplicarSortPqr(ItemsFiltrados).ToList();
-    // Sin agrupar: pagina la lista filtrada+ordenada (footer canonico).
-    private List<PqrsdBandejaItemDto> PaginaPqr()
-    {
-        var ordenado = RaicesOrdenadasPqr();
-        var totalPag = ordenado.Count == 0 ? 1 : (int)Math.Ceiling(ordenado.Count / (double)_porPagina);
-        var pag = Math.Clamp(_pagina, 1, totalPag);
-        return ordenado.Skip((pag - 1) * _porPagina).Take(_porPagina).ToList();
-    }
     // Fila hoja de la tabla PQRSD (la aporta este modulo; el render de grupos <tr> la reutiliza).
     private RenderFragment<PqrsdBandejaItemDto> FilaPqrTpl => it =>
     @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)">
@@ -1065,7 +1070,7 @@
     // Columnas ofrecidas en el menu Ordenar: las visibles de la vista Tabla (fijas + dinamicas "cd:{id}").
     private List<TablaOrdenarMenu.Col> ColsOrdenablesPqr()
         => ColumnasVisibles.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
-    private void OnSortsPqrChanged() { _pagina = 1; StateHasChanged(); }
+    private void OnSortsPqrChanged() { StateHasChanged(); }
 
     // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a lo
     // REAL del modulo. PQRSD gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto con
@@ -1097,9 +1102,9 @@
         switch (accion)
         {
             case TablaColMenu.Accion.OrdenarAsc:
-                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
-                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+                _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
             case TablaColMenu.Accion.CopiarUrl:
                 try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}pqrs#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
                 catch { ColToast("No se pudo copiar el enlace."); }
@@ -1203,7 +1208,6 @@
         var ex = _sortsPqr.FirstOrDefault(s => s.Key == clave);
         if (_sortsPqr.Count == 1 && ex is not null) ex.Dir = -ex.Dir;
         else _sortsPqr = new() { new TablaOrdenarMenu.Sort { Key = clave, Dir = 1 } };
-        _pagina = 1;
     }
     // Indicador de la cabecera: se deriva del PRIMER criterio del orden multi-criterio.
     private MarkupString SortIndPqr(string clave)
@@ -1511,6 +1515,15 @@
         {
             try { await Js.InvokeVoidAsync("propiaUI.syncTopScroll", "pkTopScroll", "pkTopScrollInner", "pkTableWrap"); } catch { }
         }
+        // FAB + scroll infinito: observar #pkTableWrap cuando la tabla esta visible y sin agrupacion.
+        // La firma incluye la vista para re-enganchar al cambiar de modo (elemento recreado).
+        if (VistaEfectiva == "tabla" && _gruposPqr.Count == 0)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = VistaEfectiva + ":" + ItemsFiltrados.Count();
+            if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, "#pkTableWrap"); } catch { } }
+        }
+        else { _fabSig = null; }
     }
 
     private async Task RestaurarPrefsAsync()
