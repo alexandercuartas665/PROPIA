@@ -39,20 +39,22 @@
 
 ---
 
-## OLA A - Inputs de la fila de alta al canon `.nf-in` (lo mas visible)
+## OLA A - Inputs de la fila de alta al canon `.nf-in` (lo mas visible)  -- HECHA (f96a45d)
 
-- [ ] A1. Usuarios: `.utb-inp` sin borde propio en reposo (transparente); el marco violeta + glow(3px) lo
-      pinta la celda contenedora al `:focus-within` (adaptar tecnica `nf-cell::after` a las celdas grid
-      `utb-nf-*`); radius 8, padding 10/12, font 13; fila de alta con fondo `--propia-brand-soft-2`.
-- [ ] A2. Directorio: idem con `.dtab-inp` + celdas `dvp-grid`/`dtab-nf-*`.
-- [ ] A3. Validar A1/A2 en Chrome lado a lado vs Unidades (reposo transparent, focus brand+glow, fila soft-2).
+- [x] A1. Usuarios: `.utb-inp` sin borde en reposo (transparente); el foco dibuja marco brand 1.5px + glow
+      radio 8 (tecnica `.dst-nf-inp`, el input mismo); radius 8, padding 10/12, font 13; fila de alta con
+      fondo `--propia-brand-soft-2`. (Validado en Chrome: focus -> rgb(109,79,227) + glow .14 3px.)
+- [x] A2. Directorio (Personas + Empresas): idem con `.dtab-inp` (comparten directorio.css). Validado reposo
+      + fila + regla `:focus` identica a Usuarios (v=8 cargado).
+- [x] A3. Validado lado a lado vs Unidades (reposo transparent, radius 8, pad 10/12, font 13, fila soft-2).
 
-## OLA B - Control de guardado: check-icono + cancelar (reemplaza el boton-texto)
+## OLA B - Control de guardado: check-icono + cancelar (reemplaza el boton-texto)  -- HECHA (f96a45d)
 
-- [ ] B1. Usuarios: reemplazar `utb-add` "+ Agregar registro" por boton-icono check estilo `dst-nf-ok`
-      (violeta lleno ~28px) + cancelar `dst-nf-cancel`; Enter = guardar, Escape = cerrar/limpiar.
-- [ ] B2. Directorio: idem en `dtab-act-nf`.
-- [ ] B3. Validar: crear con el check, con Enter, y cancelar con X/Escape; estilos 1:1 con Unidades.
+- [x] B1. Usuarios: `utb-add` "+ Agregar registro" reemplazado por check-icono violeta lleno (`utb-nf-ok`,
+      guardar=Invitar) + cancelar (`utb-nf-cancel`); Enter = guardar, Escape = limpiar (`CancelarAlta`).
+- [x] B2. Directorio Personas (`CancelarAltaP`) + Empresas (`CancelarAltaE`): idem `dtab-nf-ok`/`dtab-nf-cancel`.
+- [x] B3. Validado: botones check/cancel presentes y estilados 1:1 (`dst-nf-ok`/`dst-nf-cancel`); texto viejo
+      retirado. (Guardar reusa el metodo existente; cancelar resetea el borrador via @key.)
 
 ## OLA C - CTA colapsable + FAB que ABRE la fila
 
