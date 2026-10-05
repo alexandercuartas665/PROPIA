@@ -9,6 +9,7 @@
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 <PageTitle>Seguros - PROPIA</PageTitle>
 
@@ -238,12 +239,14 @@
                     </div>
                 </div>
                 @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast @(_inlineMsgEsError ? "seg-toast--error" : "")" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
-                @* Footer canonico SIEMPRE salvo con agrupacion activa (canon regla 14): con 0 filas "Mostrando 0 de 0". *@
+                @* FAB flotante + footer de conteo (canon Unidades/Roles). Con agrupacion no van ni FAB ni footer. *@
                 @if (_gruposS.Count == 0)
                 {
-                    <TablaPager Total="Filtradas.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="polizas"
-                                PaginaChanged="p => _pagina = p"
-                                PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+                    <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabNuevaPoliza" title="Agregar poliza">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                        Agregar registro
+                    </button>
+                    <div class="tbl-foot"><strong>@Filtradas.Count</strong>&nbsp;polizas</div>
                 }
             </div>
         }
@@ -555,8 +558,9 @@
     .seg-empty strong { font-size: 14.5px; color: var(--propia-text-body); }
     .seg-empty span { font-size: 13px; color: var(--propia-text-muted); }
 
-    .seg-table { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; }
-    .seg-scroll { overflow: auto; max-height: calc(100vh - 300px); }
+    .seg-table { position: relative; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; }
+    .seg-table .tbl-fab { bottom: 54px; }
+    .seg-scroll { overflow: auto; max-height: calc(100vh - 300px); overflow-anchor: none; }
     .seg-grid { display: grid; grid-template-columns: 34px 1.1fr 1.6fr 1.3fr 1fr 1fr 1.1fr 1fr .7fr; align-items: center; gap: 8px; padding: 8px 16px; min-width: 1000px; }
     /* Header canonico (estandar Tareas): tokens homogeneos, sticky top OPACO. */
     /* Header canonico (= Unidades / tabla-base.css): bg opaco, 11.5/700 uppercase, color text-secondary,
@@ -694,9 +698,20 @@
     private const string VistaKey = "propia_view_seguros";
     // Agrupar multi-nivel (menu compartido TablaAgruparMenu). Vacio = SIN agrupar (default).
     private List<string> _gruposS = new();
-    private int _pagina = 1;
-    private int _porPagina = 25;
     private const string AgruparKey = "propia_agrupar_seguros";
+
+    // ===== FAB flotante + scroll infinito (canon Unidades/Roles) =====
+    // _ctaVisible=true => la fila de alta se ve -> FAB oculto. dstInfinite (propia-ui.js) observa
+    // .seg-scroll: cerca del fondo muestra la fila de alta y oculta el FAB (SetCtaVisible).
+    private bool _ctaVisible = true;
+    private bool _scrollCtaPend;
+    private string? _fabSig;
+    private DotNetObjectReference<Seguros>? _self;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    // Clic del FAB: baja a la fila de alta inline.
+    private void FabNuevaPoliza() { _scrollCtaPend = true; }
+    public void Dispose() { _self?.Dispose(); }
 
     private bool _modal;
     private string _tab = "poliza";
@@ -772,7 +787,7 @@
     private List<TablaOrdenarMenu.Sort> _sortsS = new();
     private List<TablaOrdenarMenu.Col> ColsOrdenablesS()
         => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
-    private void OnSortsSChanged() { _pagina = 1; StateHasChanged(); }
+    private void OnSortsSChanged() { StateHasChanged(); }
 
     // ===== Menu de columna (estilo Airtable): la flecha del header abre TablaColMenu y aqui se mapea a lo
     // REAL del modulo. Seguros gestiona sus campos por el boton "Campos" (ConfigCamposEntidad, abierto con
@@ -803,9 +818,9 @@
         switch (accion)
         {
             case TablaColMenu.Accion.OrdenarAsc:
-                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
-                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+                _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
             case TablaColMenu.Accion.CopiarUrl:
                 try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}seguros#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
                 catch { ColToast("No se pudo copiar el enlace."); }
@@ -1255,7 +1270,7 @@
 
     // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + motor/aplanador TablaAgrupador).
     // _gruposS vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a filas. =====
-    private async Task OnGruposSChanged() { _pagina = 1; await PersistGruposSAsync(); StateHasChanged(); }
+    private async Task OnGruposSChanged() { await PersistGruposSAsync(); StateHasChanged(); }
     private async Task SetGroupS(string clave) { _gruposS = new() { clave }; await OnGruposSChanged(); }
     private async Task PersistGruposSAsync()
     {
@@ -1305,19 +1320,8 @@
     {
         if (_gruposS.Count == 0)
         {
-            // Sin agrupar: en modo tabla se pagina; en tarjetas se muestran todas.
-            if (_vista == "tabla")
-            {
-                var total = Filtradas.Count;
-                var totalPag = total == 0 ? 1 : (int)Math.Ceiling(total / (double)_porPagina);
-                var pag = Math.Clamp(_pagina, 1, totalPag);
-                foreach (var p in Filtradas.Skip((pag - 1) * _porPagina).Take(_porPagina))
-                    yield return new Fila(false, null, 0, p);
-            }
-            else
-            {
-                foreach (var p in Filtradas) yield return new Fila(false, null, 0, p);
-            }
+            // Sin agrupar: render-all (canon Unidades/Roles); el scroll infinito solo alterna el FAB.
+            foreach (var p in Filtradas) yield return new Fila(false, null, 0, p);
             yield break;
         }
         // Agrupado: arbol N-niveles aplanado (grupos completos, sin paginar).
@@ -1360,6 +1364,17 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // FAB + scroll infinito: observar .seg-scroll cuando la tabla esta visible y sin agrupacion.
+        // La firma incluye la vista para re-enganchar al volver de tarjetas a tabla (elemento recreado).
+        if (_jwt is not null && _vista == "tabla" && _gruposS.Count == 0)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = _vista + ":" + Filtradas.Count;
+            if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".seg-scroll"); } catch { } }
+        }
+        else { _fabSig = null; }
+        if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".seg-scroll"); } catch { } }
+
         if (!firstRender || _jwt is not null) return;
         try
         {
@@ -1458,7 +1473,7 @@
         catch { _cfgPoliza = new(StringComparer.Ordinal); }
     }
 
-    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; }
     private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
 
     private async Task AbrirModal(Guid? id)
