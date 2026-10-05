@@ -32,7 +32,7 @@
 
 | Item | Sev | Detalle |
 |---|---|---|
-| S-2 | MEDIA | falta "Eliminar poliza" en UI (el DELETE /api/seguros/polizas/{id} ya existe). Cablear con modal de confirmacion. (Seguros.razor) |
+| S-2 | MEDIA | **HECHO (de3e1f9)** - "Eliminar poliza" cableado en el modal ficha con dialogo de confirmacion (DELETE existente, cascade). Validado por UI (7->6). |
 | T-2 | menor | banner de error de Tareas muestra JSON crudo `{"error":...}`; mostrar solo el texto |
 | C-1 | menor | modal borrar Contrato generico; incluir nombre/numero del contratista |
 | R-1 | menor | editar telefono inline en Residentes reordena/duplica visual; `@key="v.Id"` en el @foreach |
