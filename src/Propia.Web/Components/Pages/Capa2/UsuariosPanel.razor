@@ -285,7 +285,7 @@
                 @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
                    muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
                 <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles"
-                                    Total="lista.Count"
+                                    Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     SortKey="@_sortKeyU" SortDir="_sortDirU" OnOrdenar="OrdenarPorColumnaU"
                                     OnRevocar="RevocarAccesoAsync" OnMensaje="MostrarMensajeInfo"
@@ -1522,6 +1522,23 @@
             _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
         }
         catch { /* sin roles no podemos invitar pero el resto funciona */ }
+    }
+
+    // E1b: crear un rol basico inline desde el alta de Usuarios (reusa el endpoint del modulo Roles con
+    // la matriz por defecto). Recarga el catalogo y devuelve el id del rol creado para seleccionarlo.
+    private async Task<Guid?> CrearRolInlineAsync(string nombre)
+    {
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/roles",
+                new CrearRolRequest(nombre, null, CategoriaRol.Administrativo, null));
+            if (!resp.IsSuccessStatusCode) { MostrarMensajeInfo("No se pudo crear el rol."); return null; }
+            var creado = await resp.Content.ReadFromJsonAsync<RolDto>();
+            await CargarRolesAsync();
+            StateHasChanged();   // re-render el padre para que el select del hijo reciba el rol nuevo
+            return creado?.Id;
+        }
+        catch { MostrarMensajeInfo("No se pudo crear el rol."); return null; }
     }
 
     // ---------------- Invitar ----------------

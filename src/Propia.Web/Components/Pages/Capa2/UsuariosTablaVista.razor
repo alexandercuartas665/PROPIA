@@ -95,13 +95,28 @@
                         </div>
                         break;
                     case "rol":
-                        <select class="utb-inp" @bind="_d.RolId">
-                            <option value="@Guid.Empty">Rol...</option>
-                            @foreach (var r in Roles.Where(r => r.Activo))
-                            {
-                                <option value="@r.Id">@r.Nombre</option>
-                            }
-                        </select>
+                        @if (_creandoRol)
+                        {
+                            @* E1b: crear rol basico inline (como "agregar tipo" en Unidades). *@
+                            <div class="utb-nf-first">
+                                <input class="utb-inp" placeholder="Nombre del rol nuevo" value="@_nuevoRolNombre" @oninput="@(e => _nuevoRolNombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="RolKey" />
+                                <button type="button" class="utb-nf-ok" title="Crear rol" @onclick="ConfirmarNuevoRol" disabled="@_rolBusy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg></button>
+                                <button type="button" class="utb-nf-cancel" title="Cancelar" @onclick="() => _creandoRol = false" disabled="@_rolBusy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="utb-nf-first">
+                                <select class="utb-inp" @bind="_d.RolId">
+                                    <option value="@Guid.Empty">Rol...</option>
+                                    @foreach (var r in Roles.Where(r => r.Activo))
+                                    {
+                                        <option value="@r.Id">@r.Nombre</option>
+                                    }
+                                </select>
+                                <button type="button" class="utb-rol-add" title="Nuevo rol" @onclick="AbrirNuevoRol">+</button>
+                            </div>
+                        }
                         break;
                     case "email":
                         <div class="utb-nf-mut">Al aceptar</div>
@@ -158,6 +173,8 @@
 @code {
     [Parameter] public List<UsuarioListaDto> Usuarios { get; set; } = new();
     [Parameter] public List<RolDto> Roles { get; set; } = new();
+    // E1b: crear un rol basico inline desde el alta. La pagina hace el POST y devuelve el id del rol creado.
+    [Parameter] public Func<string, Task<Guid?>>? CrearRolInline { get; set; }
     [Parameter] public EventCallback<UsuarioListaDto> OnEditar { get; set; }
     [Parameter] public EventCallback<Guid> OnReactivar { get; set; }
     [Parameter] public EventCallback<NuevoUsuarioInvitar> OnInvitar { get; set; }
@@ -437,6 +454,30 @@
     {
         if (e.Key == "Enter") await Invitar();
         else if (e.Key == "Escape") CerrarAlta();
+    }
+
+    // E1b: crear rol basico inline (reusa el servicio de Roles via la pagina; devuelve el id y lo selecciona).
+    private bool _creandoRol;
+    private bool _rolBusy;
+    private string _nuevoRolNombre = "";
+    private void AbrirNuevoRol() { _creandoRol = true; _nuevoRolNombre = ""; }
+    private async Task RolKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ConfirmarNuevoRol();
+        else if (e.Key == "Escape") _creandoRol = false;
+    }
+    private async Task ConfirmarNuevoRol()
+    {
+        var nombre = _nuevoRolNombre.Trim();
+        if (nombre.Length == 0 || CrearRolInline is null) { _creandoRol = false; return; }
+        _rolBusy = true;
+        try
+        {
+            var id = await CrearRolInline(nombre);
+            if (id is Guid g && g != Guid.Empty) _d.RolId = g;
+            _creandoRol = false;
+        }
+        finally { _rolBusy = false; }
     }
 
     // UI "tonta": recolecta y emite; la pagina hace los POST con su propio Auth().
