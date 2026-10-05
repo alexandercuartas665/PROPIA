@@ -67,15 +67,21 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task Catalogo_seed_tiene_5_base_y_6_extendidos()
+    public async Task Catalogo_seed_tiene_7_base_y_0_extendidos_globales()
     {
+        // B-4: tras el reseed Roles V2 (migracion D2, spec 2.5 v2.0 3.2/11) el catalogo canonico GLOBAL
+        // visible para una copropiedad nueva son 7 roles base (Administrador, Consejero, Personal
+        // Operativo, Coordinador, Asistente, Portal Residente, Terceros) y 0 extendidos globales: D2
+        // promovio Coordinador+Asistente de Extendido a Base, fusiono Propietario+Residente en Portal
+        // Residente, convirtio Contador en Personalizado de un tenant y borro los extendidos sin uso
+        // (Inmobiliaria, Revisor Fiscal, Vigilante de Seguridad).
         var (svc, _, _, _) = BuildRoles(await SeedTenantAsync("CP Roles"));
         var roles = await svc.ListarRolesAsync(CancellationToken.None);
 
-        Assert.Equal(5, roles.Count(r => r.Tipo == TipoRol.Base));
-        Assert.Equal(6, roles.Count(r => r.Tipo == TipoRol.Extendido));
+        Assert.Equal(7, roles.Count(r => r.Tipo == TipoRol.Base));
+        Assert.Equal(0, roles.Count(r => r.Tipo == TipoRol.Extendido));
         Assert.Contains(roles, r => r.Nombre == "Administrador" && r.Tipo == TipoRol.Base);
-        Assert.Contains(roles, r => r.Nombre == "Revisor Fiscal" && r.Tipo == TipoRol.Extendido);
+        Assert.Contains(roles, r => r.Nombre == "Portal Residente" && r.Tipo == TipoRol.Base);
     }
 
     [Fact]
@@ -192,7 +198,8 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
     {
         var tenantId = await SeedTenantAsync("CP Invitar");
         var (svcU, _, _, db) = BuildUsuarios(tenantId);
-        var rolPropietarioId = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Propietario")).Id;
+        // B-4: "Propietario" se fusiono en "Portal Residente" (reseed Roles V2 / migracion D2).
+        var rolPropietarioId = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Portal Residente")).Id;
 
         // Crear persona en directorio (paso previo segun RN-02)
         var persona = new Persona
@@ -205,6 +212,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         };
         db.Personas.Add(persona);
         await db.SaveChangesAsync();
+        await VincularPersonaAlDirectorioAsync(db, tenantId, persona.Id);
 
         // Invitar
         var inv = await svcU.InvitarAsync(new CrearInvitacionRequest(
@@ -235,7 +243,8 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
     {
         var tenantId = await SeedTenantAsync("CP Exp");
         var (svcU, _, _, db) = BuildUsuarios(tenantId);
-        var rol = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Residente"));
+        // B-4: "Residente" se fusiono en "Portal Residente" (reseed Roles V2 / migracion D2).
+        var rol = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Portal Residente"));
         var persona = new Persona
         {
             TipoDocumento = TipoDocumento.CC,
@@ -246,6 +255,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         };
         db.Personas.Add(persona);
         await db.SaveChangesAsync();
+        await VincularPersonaAlDirectorioAsync(db, tenantId, persona.Id);
 
         var inv = await svcU.InvitarAsync(new CrearInvitacionRequest(persona.Id, rol.Id, CanalEnvioInvitacion.Email), CancellationToken.None);
         // Forzar expiracion
@@ -264,7 +274,7 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var (svcU, _, _, db) = BuildUsuarios(tenantId);
 
         // Setup: 1 admin + 1 propietario activo
-        var rolPropId = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Propietario")).Id;
+        var rolPropId = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Portal Residente")).Id;
         var rolAdminId = (await db.RolesCopropiedad.FirstAsync(r => r.Nombre == "Administrador")).Id;
         var admin = await CreateActiveUsuarioTenantAsync(db, tenantId, rolAdminId, "Administrador");
         var prop = await CreateActiveUsuarioTenantAsync(db, tenantId, rolPropId, "Propietario");
@@ -367,6 +377,21 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         db.Tenants.Add(t);
         await db.SaveChangesAsync();
         return t.Id;
+    }
+
+    // B-4: InvitarAsync (S-02b) exige que la persona tenga un vinculo en el Directorio del tenant actual.
+    // El setup debe crearlo; de lo contrario la invitacion se rechaza ("Vincula primero a la persona").
+    private static async Task VincularPersonaAlDirectorioAsync(PropiaDbContext db, Guid tenantId, Guid personaId)
+    {
+        db.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Persona,
+            EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+            Estado = EstadoVinculo.Activo
+        });
+        await db.SaveChangesAsync();
     }
 
     private async Task<UsuarioTenant> CreateActiveUsuarioTenantAsync(PropiaDbContext db, Guid tenantId, Guid rolId, string rolNombre)
