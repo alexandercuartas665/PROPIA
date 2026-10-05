@@ -189,7 +189,7 @@ else
                     </div>
                 }
             </div>
-            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; _cPage = 0; }" /></div>
+            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
             </div>
             @if (_vistaC != "tarjetas")
             {
@@ -306,9 +306,6 @@ else
             }
             else
             {
-                var totalPag = Math.Max(1, (int)Math.Ceiling(filtrados.Count / (double)_cPageSize));
-                var pag = Math.Min(Math.Max(0, _cPage), totalPag - 1);
-                var pageItems = filtrados.Skip(pag * _cPageSize).Take(_cPageSize).ToList();
                 <div class="ctr-topscroll" id="ctrTopScroll"><div class="ctr-topscroll-in"></div></div>
                 <div class="ctr-tablebox">
                 <div class="ctr-table-wrap ctr-scroll" id="ctrTableWrap">
@@ -324,7 +321,7 @@ else
                             @* Sin agrupar (default): pagina plana. Agrupado: secuencia aplanada de
                                encabezados <tr> (N-niveles; motor + aplanador compartidos TablaAgrupador)
                                + la MISMA fila hoja inline. Mismo diseno (.tgrt-*) que los demas modulos. *@
-                            @foreach (var el in ElementosC(filtrados, pageItems))
+                            @foreach (var el in ElementosC(filtrados))
                             {
                                 @if (el.Grupo is { } g)
                                 {
@@ -619,14 +616,15 @@ else
                         </tbody>
                     </table>
                 </div>
-                @* Footer canonico DENTRO de la caja (.ctr-tablebox), SIEMPRE visible salvo con
-                   agrupacion activa (canon regla 14): con 0 filas muestra "Mostrando 0 de 0".
-                   _cPage 0-based; el componente 1-based. *@
+                @* FAB flotante + footer de conteo DENTRO de la caja (.ctr-tablebox), canon Unidades/Roles.
+                   Con agrupacion no van ni FAB ni footer. *@
                 @if (_gruposC.Count == 0)
                 {
-                    <TablaPager Total="filtrados.Count" Pagina="@(pag + 1)" PorPagina="_cPageSize" Entidad="contratos"
-                                PaginaChanged="p => _cPage = p - 1"
-                                PorPaginaChanged="n => { _cPageSize = n; _cPage = 0; }" />
+                    <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabNuevoContrato" title="Agregar contrato">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                        Agregar registro
+                    </button>
+                    <div class="tbl-foot"><strong>@filtrados.Count</strong>&nbsp;contratos</div>
                 }
                 </div>
                 @if (!string.IsNullOrEmpty(_msg)) { <div class="ctr-toast @(_msgEsError ? "ctr-toast--error" : "")" @onclick='() => { _msg = null; _msgEsError = false; }'>@_msg</div> }
@@ -1605,7 +1603,7 @@ else
 
     // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + motor/aplanador TablaAgrupador).
     // _gruposC vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a <tr>. =====
-    private void OnGruposCChanged() { _cPage = 0; StateHasChanged(); }
+    private void OnGruposCChanged() { StateHasChanged(); }
     private void SetGroupC(string clave) { _gruposC = new() { clave }; OnGruposCChanged(); }
     private List<TablaAgruparMenu.Col> ColsAgrupablesC()
     {
@@ -1641,11 +1639,12 @@ else
     }
     // Secuencia unica para el <tbody>: sin agrupar = filas de la pagina; agrupado = encabezados + filas
     // (arbol aplanado sobre la lista filtrada+ordenada completa, sin paginar).
-    private IEnumerable<FilaOGrupo<ContratoServicioDto>> ElementosC(List<ContratoServicioDto> filtrados, List<ContratoServicioDto> pageItems)
+    private IEnumerable<FilaOGrupo<ContratoServicioDto>> ElementosC(List<ContratoServicioDto> filtrados)
     {
         if (_gruposC.Count == 0)
         {
-            foreach (var c in pageItems) yield return new FilaOGrupo<ContratoServicioDto>(null, c);
+            // Render-all (canon Unidades/Roles): sin paginar; el scroll infinito solo alterna el FAB.
+            foreach (var c in filtrados) yield return new FilaOGrupo<ContratoServicioDto>(null, c);
             yield break;
         }
         foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(filtrados, _gruposC, ValorGrupoC)))
@@ -1784,7 +1783,7 @@ else
         }
     }
 
-    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+    public void Dispose() { Nav.LocationChanged -= OnLocationChanged; _self?.Dispose(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -1804,6 +1803,16 @@ else
         {
             try { await Js.InvokeVoidAsync("propiaSyncScroll", "#ctrTopScroll", "#ctrTableWrap"); } catch { }
         }
+        // FAB + scroll infinito: observar #ctrTableWrap cuando la tabla de contratos esta visible y sin
+        // agrupacion. La firma incluye la vista para re-enganchar al volver de tarjetas a tabla.
+        if (EsContratos && _vistaC != "tarjetas" && _jwt is not null && _gruposC.Count == 0)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = _vistaC + ":" + ContratosFiltrados().Count();
+            if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, "#ctrTableWrap"); } catch { } }
+        }
+        else { _fabSig = null; }
+        if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", "#ctrTableWrap"); } catch { } }
     }
 
     private async Task CargarAsync()
@@ -1957,9 +1966,17 @@ else
         if (!resp.IsSuccessStatusCode) await CargarAsync();
     }
 
-    // ---- Paginacion de la tabla ----
-    private int _cPage = 0;
-    private int _cPageSize = 25;
+    // ===== FAB flotante + scroll infinito (canon Unidades/Roles) =====
+    // _ctaVisible=true => la fila de alta se ve -> FAB oculto. dstInfinite (propia-ui.js) observa
+    // #ctrTableWrap: cerca del fondo muestra la fila de alta y oculta el FAB (SetCtaVisible).
+    private bool _ctaVisible = true;
+    private bool _scrollCtaPend;
+    private string? _fabSig;
+    private DotNetObjectReference<Servicios>? _self;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    // Clic del FAB: baja a la fila de alta inline.
+    private void FabNuevoContrato() { _scrollCtaPend = true; }
 
     // ---- Columnas de la lista: visibilidad/orden/alias leidos de unidades-config (entidad 'contrato') ----
     // Adopcion Fase 1: el gestor propio (menu "Columnas de la lista" + seccion "Campos personalizados") se
@@ -1999,9 +2016,9 @@ else
         switch (accion)
         {
             case TablaColMenu.Accion.OrdenarAsc:
-                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _cPage = 0; break;
+                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
-                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _cPage = 0; break;
+                _sortsC = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
             case TablaColMenu.Accion.CopiarUrl:
                 try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}{(EsContratos ? "contratos" : "servicios")}#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
                 catch { ColToast("No se pudo copiar el enlace."); }
@@ -2159,7 +2176,7 @@ else
     private List<TablaOrdenarMenu.Sort> _sortsC = new();
     private List<TablaOrdenarMenu.Col> ColsOrdenablesC()
         => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
-    private void OnSortsCChanged() { _cPage = 0; StateHasChanged(); }
+    private void OnSortsCChanged() { StateHasChanged(); }
     // Valor de orden por clave de columna: dinamica (guid) via ValorCampo; fijas via el mismo
     // vocabulario que pinta el switch de la tabla.
     private string ValorOrdenC(ContratoServicioDto c, string key)
