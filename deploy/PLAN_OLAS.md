@@ -1,5 +1,9 @@
 # PLAN DE PENDIENTES POR OLAS - sesion ALEX (dev principal)
 
+> **CIERRE 2026-10-05: Olas 0, 1, 2, 3 y 4 CERRADAS y en `main` (auto-deploy prod).**
+> Pendiente aparte: S-1 (menor) y Ola 5 (P-1 / stale-count, decisiones de diseno). En prod: menu
+> hecho por Alex; confirmar D2. HEAD de cierre: `e37ce24`.
+
 > Backlog priorizado. Mezcla lo que veniamos trabajando (FAB + scroll infinito) con los hallazgos
 > de la sesion auditora (QA). Cada item no trivial lleva su plan de 5 lineas + OK de Alex antes de
 > codear (CLAUDE.md + protocolo de auditoria). Ultima revision: 2026-10-05.
