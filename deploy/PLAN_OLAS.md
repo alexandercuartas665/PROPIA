@@ -45,7 +45,7 @@
 | Item | Sev | Detalle |
 |---|---|---|
 | B-4 | MEDIA (tests) | **HECHO (6537d1f)** - UsuariosAccesosFlowTests 12/12 verde. Catalogo canonico confirmado 7 base / 0 extendidos globales (D2). Se corrigieron tambien 2 rojos preexistentes (faltaba vincular la persona al Directorio antes de invitar, S-02b). |
-| B-1 | deuda | RLS: 8 tablas con tenant_id sin RLS (RlsCoverageTests). Documentar globales o agregar RLS. |
+| B-1 | deuda | **HECHO (c14e002)** - las 8 tablas sin RLS son BaseEntity con tenant_id descriptivo; documentadas en TablasExentas (RlsCoverageTests) con justificacion por tabla. Sin migracion (forzar RLS romperia consola A&D / auditoria / notificaciones). RlsCoverageTests 2/2 verde. |
 | E-1 | infra | dos Postgres en :5433 (WSL real via ::1 vs docker propia-postgres stale). Alinear/renombrar el stale. |
 
 ## Ola 5 - Confirmar con Alex (posible por diseno)
