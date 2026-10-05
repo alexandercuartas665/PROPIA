@@ -2020,6 +2020,22 @@ else
     private string? _msg;
     private string _msgClass = "alert-info";
 
+    // T-2: el API responde {"error":"..."} en los 400 de validacion. Sin esto el banner mostraba el JSON
+    // crudo. Extrae el texto del campo 'error'; si el cuerpo no es ese JSON, devuelve el cuerpo tal cual.
+    private static async Task<string> ErrTxtAsync(HttpResponseMessage resp)
+    {
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m)
+                return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "Ocurrio un error." : cuerpo;
+    }
+
     private List<TableroDto>? _tableros;
     private ResumenTareasDto? _resumen;   // KPIs globales del modulo (todos los tableros)
     private List<TenantInfoDto> _tenants = new();   // copropiedades a las que tiene acceso el usuario
@@ -2219,7 +2235,7 @@ else
         var req = new CrearTareaRequest(titulo, null, PrioridadTarea.Normal, padre.EstadoId, null, null, null, padre.Id, new List<Guid>(), _board.Tablero.Id);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _subInline[padre.Id] = ""; _expandidas.Add(padre.Id); await RecargarBoard(); }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     private void OnGruposTChanged() { _ = PersistGroupAsync(); StateHasChanged(); }
@@ -2985,7 +3001,7 @@ else
                 if (_boardMode == "tablero") _expandidas.Add(padreId);
                 await RecargarBoard();   // refresca _board.Tareas -> Hijos(padreId) + chip del padre
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
         }
         finally { _busy = false; }
     }
@@ -4273,7 +4289,7 @@ else
         PatchLocal(tareaId, t => t with { EstadoId = estadoId, EstadoNombre = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Nombre ?? t.EstadoNombre, EstadoColor = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Color ?? t.EstadoColor });
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; await RecargarBoard(); }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; await RecargarBoard(); }
     }
 
     // ================= Edicion inline tipo Excel (vista tabla) =================
@@ -4327,7 +4343,7 @@ else
             if (body is not null)
             {
                 var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", body);
-                if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; await RecargarBoard(); }
+                if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; await RecargarBoard(); }
             }
         }
         finally { _editBusy = false; }
@@ -4453,7 +4469,7 @@ else
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard(); }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     /// <summary>
@@ -4472,7 +4488,7 @@ else
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
-        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
         _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
         await RecargarBoard();
         try
@@ -4573,7 +4589,7 @@ else
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; await RecargarBoard(); }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     // ---- Drag & drop de tarjetas entre columnas del Kanban ----
@@ -4620,7 +4636,7 @@ else
     {
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null, motivoId));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
     // Reabre una tarea cerrada moviendola al primer estado NO terminal (vuelve al tablero activo y sale de "Cerrados").
     private async Task ReabrirTareaCerrada(Guid tareaId)
@@ -4973,7 +4989,7 @@ else
     private async Task PutEstadoAsync(EstadoTareaDto est, string nombre, string? color, int orden)
     {
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, true));
-        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     private async Task GuardarEstadoColorAsync(EstadoTareaDto est, string color)
@@ -5083,7 +5099,7 @@ else
             var resp = _tableroDraft.Id is null
                 ? await Auth().PostAsJsonAsync("/api/tareas/tableros", req)
                 : await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_tableroDraft.Id}", req);
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
             _tableroDraft = null;
             await CargarAsync();
             await RecargarBoard();
@@ -5174,7 +5190,7 @@ else
         try
         {
             var resp = await Auth().PostAsJsonAsync("/api/tareas/estados", new CrearEstadoRequest(_cfgEstadoNew.Trim(), null, 0, _board.Tablero.Id));
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
             _cfgEstadoNew = "";
             await RecargarBoard();
         }
@@ -5184,7 +5200,7 @@ else
     {
         if (_board is null) return;
         var resp = await Auth().DeleteAsync($"/api/tareas/estados/{estadoId}");
-        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
         await RecargarBoard();
     }
     private void CfgNuevoCampo() => _campoDraft = new CampoDraft();
@@ -5257,7 +5273,7 @@ else
                     _campoDraft.Label.Trim(), _campoDraft.Tipo, opciones, _campoDraft.MostrarEnFiltro, _campoDraft.Columna,
                     descripcion, _campoDraft.Requerido, valorDef, _campoDraft.PermiteVarios, camposSuma));
             }
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
             _campoDraft = new CampoDraft();
             await RecargarBoard();
         }
@@ -5296,14 +5312,14 @@ else
             await RecargarBoard();
             await CargarCamposArchivados();
         }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
     private async Task RestaurarCampo(Guid campoId)
     {
         if (_board is null) return;
         var resp = await Auth().PutAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}/archivar?archivar=false", null);
         if (resp.IsSuccessStatusCode) { await RecargarBoard(); await CargarCamposArchivados(); }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     // ----- Helpers de campos personalizados -----
@@ -5411,7 +5427,7 @@ else
                     if (t2 is not null) await AbrirCardDraft(t2, null);
                 }
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
         }
         finally { _copiaBusy = false; }
     }
@@ -5532,7 +5548,7 @@ else
                     origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
                 resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
 
             // Etiquetas: en tarjeta existente, sincronizar (asignar nuevas / quitar removidas) via endpoints.
             if (d.Id is { } tid)
@@ -5560,7 +5576,7 @@ else
         try
         {
             var resp = await Auth().DeleteAsync($"/api/tareas/{_cardDraft.Id}");
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
             CerrarCard();
             await RecargarBoard();
         }
@@ -5629,7 +5645,7 @@ else
                 var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
                 if (nueva is not null) { _etiquetasCat.Add(nueva); _nuevaEtiqueta = ""; }
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
         }
         finally { _busy = false; }
     }
@@ -5638,7 +5654,7 @@ else
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/etiquetas/{id}");
         if (resp.IsSuccessStatusCode) { _etiquetasCat.RemoveAll(x => x.Id == id); await RecargarBoard(); }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     // ----- Edicion inline de etiquetas desde la vista tabla (chips) -----
@@ -5677,7 +5693,7 @@ else
             if (i >= 0) _etiquetasCat[i] = et;
             await RecargarBoard();
         }
-        else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
 
     private async Task CrearEtiquetaInline()
@@ -5697,7 +5713,7 @@ else
                 var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
                 if (nueva is not null) { _etiquetasCat.Add(nueva); _cardDraft.EtiquetaIds.Add(nueva.Id); _nuevaEtiqueta = ""; }
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
         }
         finally { _busy = false; }
     }
@@ -5753,7 +5769,7 @@ else
                 }
                 _pendingFile = null; _pendingFileName = null; _nuevoComentario = ""; _scrollChatPend = true;
             }
-            else { _cardMsg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else { _cardMsg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
         }
         catch (Exception ex) { _cardMsg = ex.Message; }
         finally { _subiendo = false; }
@@ -5812,7 +5828,7 @@ else
                 _cardDraft.Historial.Add(new LogVM("Comentario agregado", dto?.CreatedAt ?? DateTimeOffset.Now));
                 _nuevoComentario = ""; _mencionQuery = null; _mencionMatches.Clear(); _scrollChatPend = true;
             }
-            else { _cardMsg = await resp.Content.ReadAsStringAsync(); }
+            else { _cardMsg = await ErrTxtAsync(resp); }
         }
         catch (Exception ex) { _cardMsg = ex.Message; }
         finally { _busy = false; }
