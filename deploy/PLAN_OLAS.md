@@ -5,11 +5,11 @@
 > codear (CLAUDE.md + protocolo de auditoria). Ultima revision: 2026-10-05.
 > Validacion: por API / recarga dura (NO `docker exec psql`: hay un Postgres stale en :5433).
 
-## Ola 0 - En curso (no bloquea nada)
+## Ola 0 - Hecha
 
 | Item | Detalle | Estado |
 |---|---|---|
-| FAB Roles | boton flotante + scroll infinito (canon Unidades) en RolesPanel | en curso (build) |
+| FAB Roles | boton flotante + scroll infinito (canon Unidades) en RolesPanel | HECHO (388fcf4) |
 
 ## Ola 1 - Seguridad + bloqueos funcionales (P1-P3, lo mas urgente)
 
@@ -19,14 +19,14 @@
 | V-1 | ALTA (onboarding) | en Vehiculos/Mascotas con pocas filas el dropdown de UNIDAD (.suc2-drop) se recorta por el overflow:auto del scroll. Render del dropdown en position:fixed (portal). Re-verificar 6 consumidores (Vehiculos, Mascotas, GestionarPqrsdModal, NuevaPqrsdWizardModal, Reservas, Porteria). | SelectorUnidadCodigo.razor (compartido) |
 | T-1 | MEDIA | no se puede editar una tarea creada con el admin como solicitante (POST acepta, PUT rechaza). Alinear validacion create/update (permitir actor logueado/admin como solicitante). | TareasController, TareasService.* |
 
-## Ola 2 - FAB + scroll infinito (homogeneidad vista-tabla)
+## Ola 2 - FAB + scroll infinito (homogeneidad vista-tabla) - HECHA
 
-| Item | Detalle |
-|---|---|
-| Usuarios (vista Tabla) | FAB + scroll infinito (quitar paginador; UsuariosTablaVista + manejo de paging en UsuariosPanel) |
-| Seguros | FAB + scroll infinito (hoy paginador) |
-| Contratos | FAB + scroll infinito (hoy paginador) |
-| PQRSD | FAB + scroll infinito (hoy paginador) |
+| Item | Detalle | Estado |
+|---|---|---|
+| Usuarios (vista Tabla) | render-all + footer + FAB sobre .utb-scroll | HECHO (5a20835) |
+| Seguros | render-all + footer + FAB sobre .seg-scroll | HECHO (e91e4d1) |
+| Contratos | render-all + footer + FAB sobre #ctrTableWrap (toggle validado) | HECHO (8800a94) |
+| PQRSD | render-all + footer + FAB sobre #pkTableWrap; FAB abre wizard (IrNueva) | HECHO (5269f5a) |
 
 ## Ola 3 - Funcionalidad faltante + UX menores
 
