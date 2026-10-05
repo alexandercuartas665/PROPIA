@@ -290,6 +290,21 @@ else
     }
 
     <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
+    @* RL-1: confirmacion de borrado de rol personalizado (reusa .usr-confirm global). *@
+    @if (_confirmDelRol is { } rolDel)
+    {
+        <div class="usr-cfg-back" @onclick="() => { if (!_eliminandoRol) _confirmDelRol = null; }">
+            <div class="usr-confirm" @onclick:stopPropagation="true">
+                <div class="usr-confirm-t">Eliminar rol</div>
+                <div class="usr-confirm-s">Se eliminara el rol "@rolDel.Nombre". Los usuarios con este rol quedaran sin el. Esta accion no se puede deshacer.</div>
+                <div class="usr-confirm-acts">
+                    <button type="button" class="usr-btn-ghost" @onclick="() => _confirmDelRol = null" disabled="@_eliminandoRol">Cancelar</button>
+                    <button type="button" class="usr-selbar-del" @onclick="EliminarRolConfirmadoAsync" disabled="@_eliminandoRol">@(_eliminandoRol ? "Eliminando..." : "Si, eliminar")</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
@@ -359,7 +374,7 @@ else
         if (r.EsEliminable)
         {
             items.Add(new(Sep: true));
-            items.Add(new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => EliminarRol(r.Id)));
+            items.Add(new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => PedirEliminarRol(r)));
         }
         _ctxItems = items;
         _ctxOpen = true;
@@ -554,12 +569,24 @@ else
         finally { _busy = false; }
     }
 
-    private async Task EliminarRol(Guid rolId)
+    // RL-1: el borrado de un rol personalizado pasa por una confirmacion (antes borraba al instante).
+    private RolDto? _confirmDelRol;
+    private bool _eliminandoRol;
+    private Task PedirEliminarRol(RolDto r) { _confirmDelRol = r; return Task.CompletedTask; }
+
+    private async Task EliminarRolConfirmadoAsync()
     {
-        var resp = await Auth().DeleteAsync($"/api/roles/{rolId}");
-        if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
-        _msg = "Rol eliminado."; _msgClass = "alert-success";
-        await CargarRolesAsync();
+        if (_confirmDelRol is not { } rol) return;
+        _eliminandoRol = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/roles/{rol.Id}");
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; _confirmDelRol = null; return; }
+            _msg = "Rol eliminado."; _msgClass = "alert-success";
+            _confirmDelRol = null;
+            await CargarRolesAsync();
+        }
+        finally { _eliminandoRol = false; }
     }
 
     private static string LabelCategoria(CategoriaRol c) => c switch
