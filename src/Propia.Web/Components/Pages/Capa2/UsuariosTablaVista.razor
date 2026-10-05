@@ -68,7 +68,10 @@
            Se pinta por las mismas columnas visibles para no desalinearse al reordenar/ocultar. *@
         @* @@key limpia la fila al invitar; @@oninput SIN value= evita perder pulsaciones
            (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server). *@
-        <div class="utb-newrow utb-grid" style="@GridStyle" @key="_nonce">
+        @* Ola C (canon Unidades): por defecto CTA colapsada; al pulsarla o el FAB se abre la fila de edicion. *@
+        @if (_altaAbierta)
+        {
+        <div class="utb-newrow utb-newrow--edit utb-grid" style="@GridStyle" @key="_nonce">
             <div class="utb-sel-cell"></div>
             @foreach (var k in Columnas)
             {
@@ -121,11 +124,21 @@
                 <button type="button" class="utb-nf-ok" title="Agregar (Enter)" @onclick="Invitar" disabled="@_busy">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg>
                 </button>
-                <button type="button" class="utb-nf-cancel" title="Limpiar (Esc)" @onclick="CancelarAlta" disabled="@_busy">
+                <button type="button" class="utb-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
                 </button>
             </div>
         </div>
+        }
+        else
+        {
+            <div class="utb-cta-row">
+                <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                    Agregar registro
+                </button>
+            </div>
+        }
     </div>
     @* FAB flotante (patron Unidades/Roles): aparece al desplazar cuando la fila de alta no se ve.
        Footer canonico con el conteo total. Con agrupacion NO se pagina, asi que no van ni FAB ni footer. *@
@@ -349,7 +362,12 @@
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
     // Clic del FAB: baja a la fila de alta y enfoca el primer campo (documento).
-    private void FabNuevo() { _scrollCtaPend = true; _focusPending = true; }
+    // Ola C (canon Unidades): la fila de alta nace colapsada (CTA) y se abre al pulsar la CTA o el FAB.
+    private bool _altaAbierta;
+    private void AbrirAlta() { _altaAbierta = true; _focusPending = true; }
+    private void CerrarAlta() { _altaAbierta = false; _d.Reset(); _nonce++; }
+    // El FAB abre la fila (no solo baja el scroll) y luego baja al fondo + enfoca.
+    private void FabNuevo() { _altaAbierta = true; _scrollCtaPend = true; _focusPending = true; }
 
     // ===== Menu contextual (clic derecho) =====
     private bool _ctxOpenU;
@@ -418,11 +436,8 @@
     private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await Invitar();
-        else if (e.Key == "Escape") CancelarAlta();
+        else if (e.Key == "Escape") CerrarAlta();
     }
-
-    // Cancelar/limpiar la fila de alta (boton X o Escape): resetea el borrador; @key recrea la fila limpia.
-    private void CancelarAlta() { _d.Reset(); _nonce++; }
 
     // UI "tonta": recolecta y emite; la pagina hace los POST con su propio Auth().
     // Canonico: el boton NO se deshabilita por borrador invalido; se valida al clic con toast.
@@ -438,7 +453,8 @@
         {
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
                 _d.TipoDocumento, _d.Documento.Trim(), _d.Nombres.Trim(), _d.Apellidos.Trim(), _d.RolId));
-            _d.Reset(); _nonce++; _focusPending = true;
+            // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
+            _d.Reset(); _nonce++; _altaAbierta = false;
         }
         finally { _busy = false; }
     }

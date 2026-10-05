@@ -229,6 +229,9 @@ else
             @* @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones
                (value= se reafirma en cada re-render y pisa lo escrito en Blazor Server).
                Razon social y NIT son requeridos para el alta: no se pueden ocultar. *@
+            @* Ola C (canon Unidades): por defecto CTA colapsada; al pulsarla o el FAB se abre la fila de edicion. *@
+            @if (_altaAbierta)
+            {
             <div class="dtab-newrow dve-grid" @key="_nonce" style="grid-template-columns:@GridCols">
                 <div class="dtab-sel-cell"></div>
                 <div class="dtab-exp-col">
@@ -269,13 +272,23 @@ else
                     <button type="button" class="dtab-nf-ok" title="Agregar (Enter)" @onclick="CrearEmpresaInline" disabled="@_busy">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg>
                     </button>
-                    <button type="button" class="dtab-nf-cancel" title="Limpiar (Esc)" @onclick="CancelarAltaE" disabled="@_busy">
+                    <button type="button" class="dtab-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
                     </button>
                 </div>
             </div>
+            }
+            else
+            {
+                <div class="dtab-cta-row">
+                    <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                        Agregar registro
+                    </button>
+                </div>
+            }
         </div>
-        @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
+        @* FAB flotante: aparece solo cuando la fila/CTA de alta no esta a la vista. *@
         <button type="button" class="tbl-fab" hidden="@(_ctaVisible || Grupos is not null)" @onclick="FabAgregar" title="Agregar registro">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
             Agregar registro
@@ -442,7 +455,12 @@ else
     private string? _wiredSig;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
-    private void FabAgregar() { _scrollBottomPending = true; _focusPending = true; }
+    // Ola C (canon Unidades): la fila de alta nace colapsada (CTA) y se abre al pulsar la CTA o el FAB.
+    private bool _altaAbierta;
+    private void AbrirAlta() { _altaAbierta = true; _focusPending = true; }
+    private void CerrarAlta() { _altaAbierta = false; _draft.Reset(); _nonce++; }
+    // El FAB abre la fila (no solo baja el scroll) y luego baja al fondo + enfoca.
+    private void FabAgregar() { _altaAbierta = true; _scrollBottomPending = true; _focusPending = true; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -480,11 +498,8 @@ else
     private async Task RowKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && DraftValido) await CrearEmpresaInline();
-        else if (e.Key == "Escape") CancelarAltaE();
+        else if (e.Key == "Escape") CerrarAlta();
     }
-
-    // Cancelar/limpiar la fila de alta (boton X o Escape): resetea el borrador; @key recrea la fila limpia.
-    private void CancelarAltaE() { _draft.Reset(); _nonce++; }
 
     // Canonico: el boton "+ Agregar" NO se deshabilita por borrador invalido; se valida al clic con toast.
     private async Task CrearEmpresaInline()
@@ -494,7 +509,8 @@ else
         try
         {
             await OnCrear.InvokeAsync(DraftDto());
-            _draft.Reset(); _nonce++; _focusPending = true;
+            // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
+            _draft.Reset(); _nonce++; _altaAbierta = false;
         }
         finally { _busy = false; }
     }
@@ -507,7 +523,7 @@ else
         try
         {
             await OnCrearAbrir.InvokeAsync(DraftDto());
-            _draft.Reset(); _nonce++;
+            _draft.Reset(); _nonce++; _altaAbierta = false;
         }
         finally { _busy = false; }
     }
