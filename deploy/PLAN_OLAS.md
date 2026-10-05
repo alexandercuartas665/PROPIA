@@ -33,12 +33,12 @@
 | Item | Sev | Detalle |
 |---|---|---|
 | S-2 | MEDIA | **HECHO (de3e1f9)** - "Eliminar poliza" cableado en el modal ficha con dialogo de confirmacion (DELETE existente, cascade). Validado por UI (7->6). |
-| T-2 | menor | banner de error de Tareas muestra JSON crudo `{"error":...}`; mostrar solo el texto |
-| C-1 | menor | modal borrar Contrato generico; incluir nombre/numero del contratista |
-| R-1 | menor | editar telefono inline en Residentes reordena/duplica visual; `@key="v.Id"` en el @foreach |
-| CM-1 | menor | Comunicaciones: lista stale ("0 comunicados") tras cancelar wizard; refrescar al cerrar |
-| RL-1 | menor | borrado de rol personalizado sin modal de confirmacion; agregar (confirmar comportamiento) |
-| S-1 | menor | banner transitorio "Error inesperado" al crear poliza; reproducir con datepicker real |
+| T-2 | menor | **HECHO (e9cedad)** - helper ErrTxtAsync extrae 'error' del JSON; ~22 banners ya no vuelcan el crudo. (code-verified: /tareas renderiza; API retorna {"error"}) |
+| C-1 | menor | **HECHO (64fafba)** - modal borrar Contrato muestra proveedor + numero. Validado por UI ("...con Limpieza Brillante?"). |
+| R-1 | menor | **HECHO (f1197b8)** - `@key="r.UnidadPersonaId"` en la fila de Residentes. (code-verified: /residentes renderiza 593 filas). |
+| CM-1 | menor | **HECHO (16e3a0d)** - cancelar wizard recarga la lista (CancelarCrearAsync -> CargarAsync). Verificado: wizard abre/cierra y re-renderiza. |
+| RL-1 | menor | **HECHO (7ae3062)** - confirmacion antes de borrar rol. Validado end-to-end por UI (dialogo con nombre -> borra). |
+| S-1 | menor | PENDIENTE (aparte) - banner transitorio "Error inesperado" al crear poliza; reproducir con datepicker real. |
 
 ## Ola 4 - Tests + deuda/infra
 
