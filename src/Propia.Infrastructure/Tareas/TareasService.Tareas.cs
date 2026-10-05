@@ -443,9 +443,15 @@ public partial class TareasService
         if (t is null) return false;
         // T-06: mismas validaciones que al crear.
         ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
-        // T-02: idem al crear, antes del primer save.
-        await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
-        await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
+        // T-02 / T-1: solo re-validar pertenencia al Directorio cuando el responsable CAMBIA. Un PUT (MERGE)
+        // que reenvia el mismo asignado/solicitante que ya tiene la tarea no debe re-rechazarlo: al crear, el
+        // solicitante por defecto (la persona del usuario que crea; p.ej. un admin que no esta vinculado en
+        // el Directorio) se fija sin exigir ese vinculo, asi que re-validarlo en cada edicion impedia editar
+        // la tarea (bug T-1 de la auditoria). Al cambiarlo a una persona distinta si se exige el vinculo.
+        if (req.AsignadoPersonaId != t.AsignadoPersonaId)
+            await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
+        if (req.SolicitantePersonaId != t.SolicitantePersonaId)
+            await ValidarPersonaDelTenantAsync(req.SolicitantePersonaId, "solicitante", ct);
 
         // T-03: el estado se resuelve y valida ANTES de tocar nada. Este PUT no cierra tareas:
         // cerrar exige motivo y va por PUT /api/tareas/{id}/estado, que es el camino que ya usa la
