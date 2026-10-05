@@ -479,11 +479,29 @@
         @if (_editId is null || _tab == "poliza")
         {
             <div class="seg-modal-foot">
+                @if (_editId is not null)
+                {
+                    <button class="seg-btn-danger" style="margin-right:auto;" @onclick="() => _confirmEliminarP = true" disabled="@_busy">Eliminar</button>
+                }
                 <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
                 <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear poliza" : "Guardar poliza")</button>
             </div>
         }
     </div>
+    @* S-2: confirmacion de borrado de poliza (sobre el modal ficha). El DELETE hace cascade de
+       reclamaciones y valores de campos; la accion no se puede deshacer. *@
+    @if (_confirmEliminarP)
+    {
+        <div class="seg-ov seg-ov--top" @onclick="() => { if (!_eliminandoP) _confirmEliminarP = false; }"></div>
+        <div class="seg-confirm" @onclick:stopPropagation="true">
+            <div class="seg-confirm-t">Eliminar póliza</div>
+            <div class="seg-confirm-s">Se eliminará la póliza @(string.IsNullOrWhiteSpace(_f.NumeroPoliza) ? _f.Aseguradora : _f.NumeroPoliza) junto con sus reclamaciones y valores. Esta acción no se puede deshacer.</div>
+            <div class="seg-confirm-acts">
+                <button class="seg-btn-ghost" @onclick="() => _confirmEliminarP = false" disabled="@_eliminandoP">Cancelar</button>
+                <button class="seg-btn-danger" @onclick="BorrarPolizaAsync" disabled="@_eliminandoP">@(_eliminandoP ? "Eliminando..." : "Sí, eliminar")</button>
+            </div>
+        </div>
+    }
 }
 
 <style>
@@ -635,6 +653,15 @@
     .seg-check input { accent-color: var(--propia-brand, var(--propia-brand)); }
     .seg-modal-foot { display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
     .seg-btn-ghost { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); font-size: 13px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    /* S-2: boton destructivo + dialogo de confirmacion (sobre el modal ficha). Solo tokens. */
+    .seg-btn-danger { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--propia-danger-border, var(--propia-danger)); background: var(--propia-danger-soft); font-size: 13px; font-weight: 700; color: var(--propia-danger); cursor: pointer; font-family: inherit; }
+    .seg-btn-danger:hover:not(:disabled) { background: var(--propia-danger); color: var(--propia-text-inverse); }
+    .seg-btn-danger:disabled { opacity: .5; cursor: default; }
+    .seg-ov--top { z-index: 1090; }
+    .seg-confirm { position: fixed; z-index: 1091; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 32px)); background: var(--propia-bg-card); border-radius: 12px; box-shadow: 0 24px 60px rgba(27,42,58,.32); padding: 20px; }
+    .seg-confirm-t { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); margin-bottom: 6px; }
+    .seg-confirm-s { font-size: 13px; color: var(--propia-text-secondary); line-height: 1.5; margin-bottom: 16px; }
+    .seg-confirm-acts { display: flex; justify-content: flex-end; gap: 8px; }
     .seg-btn-brand { padding: 8px 14px; border-radius: 8px; border: 0; background: var(--propia-brand, var(--propia-brand)); color: var(--propia-text-inverse); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .seg-btn-brand:disabled { opacity: .55; cursor: not-allowed; }
     .seg-banner { margin-top: 12px; padding: 10px 12px; border-radius: 9px; font-size: 12.5px; }
@@ -1594,6 +1621,29 @@
         }
         catch (Exception ex) { _modalError = ex.Message; }
         finally { _busy = false; }
+    }
+
+    // ---- S-2: eliminar poliza (DELETE existente). El servicio hace cascade de reclamaciones/valores. ----
+    private bool _confirmEliminarP;
+    private bool _eliminandoP;
+    private async Task BorrarPolizaAsync()
+    {
+        if (_editId is not Guid pid) { _confirmEliminarP = false; return; }
+        _eliminandoP = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/seguros/polizas/{pid}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _confirmEliminarP = false;
+                _modal = false;
+                _inlineMsg = "Poliza eliminada."; _inlineMsgEsError = false;
+                await CargarAsync();
+            }
+            else { _modalError = await MensajeErrorAsync(resp); _confirmEliminarP = false; }
+        }
+        catch (Exception ex) { _modalError = ex.Message; _confirmEliminarP = false; }
+        finally { _eliminandoP = false; }
     }
 
     // ---- OCR: extrae y prellena ----
