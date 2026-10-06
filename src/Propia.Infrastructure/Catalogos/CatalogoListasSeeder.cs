@@ -66,6 +66,39 @@ public static class CatalogoListasSeeder
                 .Select((t, i) => new SemillaOpcion("e:" + t, t.ToString(), i))
                 .ToList()));
 
+        // Equipos (enum): categoria/estado/tipo. Labels = los que muestra el panel (estado abrevia).
+        reg.Add(("equipo.categoria",
+            Enum.GetValues<CategoriaEquipo>()
+                .Select((c, i) => new SemillaOpcion("e:" + c, c.ToString(), i))
+                .ToList()));
+        reg.Add(("equipo.estado", new List<SemillaOpcion>
+        {
+            new("e:Operativo", "Operativo", 0),
+            new("e:EnMantenimiento", "Mantenimiento", 1),
+            new("e:FueraDeServicio", "Fuera", 2),
+        }));
+        reg.Add(("equipo.tipo", new List<SemillaOpcion>
+        {
+            new("e:Equipo", "Equipo", 0),
+            new("e:Activo", "Activo", 1),
+        }));
+
+        // Zonas (enum): categoria/estado. Labels = enum (ToString, como el panel).
+        reg.Add(("zona.categoria",
+            Enum.GetValues<CategoriaZonaComun>()
+                .Select((c, i) => new SemillaOpcion("e:" + c, c.ToString(), i))
+                .ToList()));
+        reg.Add(("zona.estado",
+            Enum.GetValues<EstadoZonaComunMantenimiento>()
+                .Select((s, i) => new SemillaOpcion("e:" + s, s.ToString(), i))
+                .ToList()));
+
+        // Personas/Directorio: sexo (enum GeneroPersona). tipo de ID y tipo residente se enganchan aparte.
+        reg.Add(("persona.sexo",
+            Enum.GetValues<GeneroPersona>()
+                .Select((g, i) => new SemillaOpcion("e:" + g, g.ToString(), i))
+                .ToList()));
+
         return reg;
     }
 

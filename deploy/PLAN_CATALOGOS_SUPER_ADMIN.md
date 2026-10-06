@@ -181,11 +181,16 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
 - [x] **Vehículos · Tipo** / **Mascotas · Tipo** (patrón B). `TipoLabel` re-ruteado al catálogo
       (`vehiculo.tipovehiculo` con el map Automovil→"Carro"; `mascota.tipo`=enum), fallback al switch.
       **Verificado:** renombré "Carro"→"Carro TEST" en el catálogo y el select de Vehículos lo mostró. (2026-10-06)
-- [ ] **Equipos · Categoría/Tipo/Estado**, **Zonas · Categoría/Estado** (patrón B): re-rutear labels.
-      Ojo lógica: Equipos `tipo`=Equipo fuerza Cantidad=1; Zonas `estado`=EnMantenimiento bloquea reservas
-      (no cambia por renombrar label; la clave enum se mantiene).
-- [ ] **Personas · Tipo de ID** (candidato limpio, enum `TipoDocumento`), **Sexo** (enum `GeneroPersona`),
-      **Tipo residente** (string-semilla espejo de `RolUnidadPersona`).
+- [x] **Equipos · Categoría/Tipo/Estado**, **Zonas · Categoría/Estado** (patrón B). Labels re-ruteados al
+      catálogo vía helpers (`LblCatEq/LblTipoEq/EstadoTextoCorto`, `LblCatZn/LblEstZn`) en TODOS los spots
+      (tarjeta, selects de alta/edición, agrupación, def de filtros); los spots de value/sort/filtro
+      quedan con la clave enum (estables). La lógica (Equipo→Cantidad=1; EnMantenimiento→bloquea reservas)
+      usa el valor enum, no el label, así que no se afecta. **Verificado:** renombré zona.categoría
+      "Social"→"Social TEST" y la tarjeta de la zona lo mostró. (2026-10-06)
+- [x] **Personas · Sexo** (enum `GeneroPersona`) re-ruteado (`LblSexo`, 2 spots en DirectorioPanel).
+      **Tipo de ID** y **Tipo residente** quedan pendientes: NO se materializan en DirectorioPanel (tipo
+      residente se edita en la ficha de unidad / carga masiva; tipo de ID está declarado `EsLista` pero sin
+      universo en el panel). Engancharlos exige hacerlo donde realmente se renderizan → se deja anotado.
 
 **Tranche B (con-lógica, cuidado — metadata + refactor del switch):**
 - [ ] **PQRSD · Tipo** (plazo legal Ley 1755), **Etapa/Estado** (workflow terminal), **semáforo** — hoy

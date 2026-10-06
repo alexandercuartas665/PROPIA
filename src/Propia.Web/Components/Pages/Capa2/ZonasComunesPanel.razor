@@ -1,4 +1,5 @@
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @using Microsoft.AspNetCore.Components.Web
@@ -162,7 +163,7 @@ else
                     <div class="zc-card-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
                     <div class="zc-card-id">
                         <div class="zc-card-nom">@z.Nombre</div>
-                        <div class="zc-card-meta">@z.Categoria@(z.CapacidadPersonas.HasValue ? $" · Aforo {z.CapacidadPersonas}" : "") · @(z.EsReservable ? "Reservable" : "No reservable")</div>
+                        <div class="zc-card-meta">@LblCatZn(z.Categoria)@(z.CapacidadPersonas.HasValue ? $" · Aforo {z.CapacidadPersonas}" : "") · @(z.EsReservable ? "Reservable" : "No reservable")</div>
                     </div>
                     @if (z.Estado == EstadoZonaComunMantenimiento.EnMantenimiento) { <span class="zc-card-mant">Mant.</span> }
                     <span class="zc-card-del" role="button" @onclick:stopPropagation="true" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar zona">
@@ -193,7 +194,7 @@ else
                     @if (_reveal >= 1)
                     {
                         <select class="zc-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
-                            @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                            @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@LblCatZn(c)</option> }
                         </select>
                     }
                     @if (_reveal >= 2)
@@ -362,7 +363,7 @@ else
                             break;
                         case "categoria":
                             <select class="zc-row-inp" @bind="_draft.Categoria">
-                                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@c</option> }
+                                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@LblCatZn(c)</option> }
                             </select>
                             break;
                         case "reservable":
@@ -1036,9 +1037,9 @@ else
     {
         switch (clave)
         {
-            case "categoria": { var t = z.Categoria.ToString(); yield return new(t, t); yield break; }
+            case "categoria": { var t = z.Categoria.ToString(); yield return new(t, LblCatZn(z.Categoria)); yield break; }
             case "reserva": { var t = z.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
-            case "estado": { var t = z.Estado.ToString(); yield return new(t, t); yield break; }
+            case "estado": { var t = z.Estado.ToString(); yield return new(t, LblEstZn(z.Estado)); yield break; }
         }
         // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorCampo).
         if (CampoCustom(clave) is ZonaCampoDefinicionDto cd)
@@ -1121,7 +1122,7 @@ else
                     break;
                 case "categoria":
                     <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
-                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@c</option> }
+                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@LblCatZn(c)</option> }
                     </select>
                     break;
                 case "reservable":
@@ -1135,7 +1136,7 @@ else
                     break;
                 case "estado":
                     <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
-                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@s</option> }
+                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@LblEstZn(s)</option> }
                     </select>
                     break;
                 case "descripcion":
@@ -1168,9 +1169,9 @@ else
     {
         new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
         new() { Key = "categoria", Label = "Categoria", Kind = "sel",
-                Opciones = Enum.GetValues<CategoriaZonaComun>().Select(c => (c.ToString(), c.ToString())).ToList() },
+                Opciones = Enum.GetValues<CategoriaZonaComun>().Select(c => (c.ToString(), LblCatZn(c))).ToList() },
         new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => (s.ToString(), s.ToString())).ToList() },
+                Opciones = Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => (s.ToString(), LblEstZn(s))).ToList() },
         new() { Key = "reservable", Label = "Reservable", Kind = "sel",
                 Opciones = new() { ("si", "Si"), ("no", "No") } },
         new() { Key = "aforo", Label = "Aforo", Kind = "num" },
@@ -1289,6 +1290,13 @@ else
         }
     }
 
+    // Labels del catalogo global (Ola 4: zona.categoria/estado, editable por A&D). Fallback al enum. La
+    // clave enum no cambia (la logica -EnMantenimiento bloquea reservas- usa el valor, no el label).
+    private Dictionary<string, string> _catZnCat = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catZnEstado = new(StringComparer.Ordinal);
+    private string LblCatZn(CategoriaZonaComun c) => _catZnCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString();
+    private string LblEstZn(EstadoZonaComunMantenimiento s) => _catZnEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s.ToString();
+
     private async Task CargarAsync()
     {
         try
@@ -1304,6 +1312,8 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _zonas = await resp.Content.ReadFromJsonAsync<List<ZonaComunDto>>() ?? new();
+            try { _catZnCat = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=zona.categoria") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catZnCat = new(StringComparer.Ordinal); }
+            try { _catZnEstado = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=zona.estado") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catZnEstado = new(StringComparer.Ordinal); }
             // Tras un refresco real las recien creadas vuelven a su orden natural (sin verde); la recarga
             // que dispara la propia creacion conserva el resaltado (suppress).
             if (_suppressRecienClearZ) _suppressRecienClearZ = false; else _recienZ.Clear();

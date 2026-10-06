@@ -23,6 +23,12 @@ public static class CatalogoListasRegistro
         new("contrato.categoria",   "Contratos · Categoría",               false),
         new("vehiculo.tipovehiculo","Vehículos · Tipo de vehículo",        false),
         new("mascota.tipo",         "Mascotas · Tipo de mascota",          false),
+        new("equipo.categoria",     "Equipos · Categoría",                  false),
+        new("equipo.tipo",          "Equipos · Tipo (equipo/activo)",       false),
+        new("equipo.estado",        "Equipos · Estado",                     false),
+        new("zona.categoria",       "Zonas comunes · Categoría",            false),
+        new("zona.estado",          "Zonas comunes · Estado",               false),
+        new("persona.sexo",         "Personas · Sexo",                      false),
     };
 
     public static ListaInfo Info(string lista)

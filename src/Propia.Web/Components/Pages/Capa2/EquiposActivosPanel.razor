@@ -1,4 +1,5 @@
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @using Microsoft.AspNetCore.Components.Web
@@ -168,7 +169,7 @@ else
                             @if (e.Tipo == TipoElemento.Activo && e.Cantidad > 1) { <span class="ea-qty">x@(e.Cantidad)</span> }
                         </div>
                         <div class="ea-card-meta">
-                            @e.Categoria
+                            @LblCatEq(e.Categoria)
                             @if (e.EsReservable) { <span class="ea-flag">reservable</span> }
                         </div>
                     </div>
@@ -200,7 +201,7 @@ else
                     @if (_reveal >= 1)
                     {
                         <select class="ea-composer-sel" @bind="_draft.Categoria" @onfocus="@(() => Reveal(1))">
-                            @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                            @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@LblCatEq(c)</option> }
                         </select>
                     }
                     @if (_reveal >= 2)
@@ -374,13 +375,13 @@ else
                             break;
                         case "categoria":
                             <select class="ea-row-inp" @bind="_draft.Categoria">
-                                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@c</option> }
+                                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@LblCatEq(c)</option> }
                             </select>
                             break;
                         case "tipo":
                             <select class="ea-row-inp" @bind="_draft.Tipo">
-                                <option value="@TipoElemento.Equipo">Equipo</option>
-                                <option value="@TipoElemento.Activo">Activo</option>
+                                <option value="@TipoElemento.Equipo">@LblTipoEq(TipoElemento.Equipo)</option>
+                                <option value="@TipoElemento.Activo">@LblTipoEq(TipoElemento.Activo)</option>
                             </select>
                             break;
                         case "cantidad":
@@ -553,11 +554,11 @@ else
     {
         new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
         new() { Key = "categoria", Label = "Categoria", Kind = "sel",
-                Opciones = Enum.GetValues<CategoriaEquipo>().Select(c => (c.ToString(), c.ToString())).ToList() },
+                Opciones = Enum.GetValues<CategoriaEquipo>().Select(c => (c.ToString(), LblCatEq(c))).ToList() },
         new() { Key = "estado", Label = "Estado", Kind = "sel",
                 Opciones = Enum.GetValues<EstadoEquipoActivo>().Select(s => (s.ToString(), EstadoTextoCorto(s))).ToList() },
         new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = new() { (TipoElemento.Equipo.ToString(), "Equipo"), (TipoElemento.Activo.ToString(), "Activo") } },
+                Opciones = new() { (TipoElemento.Equipo.ToString(), LblTipoEq(TipoElemento.Equipo)), (TipoElemento.Activo.ToString(), LblTipoEq(TipoElemento.Activo)) } },
         new() { Key = "reservable", Label = "Reservable", Kind = "sel",
                 Opciones = new() { ("si", "Si"), ("no", "No") } },
         new() { Key = "ubicacion", Label = "Ubicacion", Kind = "texto" },
@@ -694,6 +695,9 @@ else
             }
             resp.EnsureSuccessStatusCode();
             _equipos = await resp.Content.ReadFromJsonAsync<List<EquipoActivoDto>>() ?? new();
+            try { _catEqCat = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.categoria") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqCat = new(StringComparer.Ordinal); }
+            try { _catEqTipo = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.tipo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqTipo = new(StringComparer.Ordinal); }
+            try { _catEqEstado = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.estado") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqEstado = new(StringComparer.Ordinal); }
             if (_suppressRecienClearE) _suppressRecienClearE = false; else _recienE.Clear();
             await CargarCamposYConfigAsync();
             _loadError = null;
@@ -1167,8 +1171,8 @@ else
     {
         switch (clave)
         {
-            case "categoria": { var t = e.Categoria.ToString(); yield return new(t, t); yield break; }
-            case "tipo": { var t = e.Tipo == TipoElemento.Equipo ? "Equipo" : "Activo"; yield return new(t, t); yield break; }
+            case "categoria": { var t = e.Categoria.ToString(); yield return new(t, LblCatEq(e.Categoria)); yield break; }
+            case "tipo": { var t = e.Tipo.ToString(); yield return new(t, LblTipoEq(e.Tipo)); yield break; }
             case "estado": { var t = EstadoTextoCorto(e.Estado); yield return new(t, t); yield break; }
             case "reservable": { var t = e.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
         }
@@ -1248,13 +1252,13 @@ else
                     break;
                 case "categoria":
                     <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
-                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@c</option> }
+                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c" selected="@(e.Categoria == c)">@LblCatEq(c)</option> }
                     </select>
                     break;
                 case "tipo":
                     <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
-                        <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">Equipo</option>
-                        <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">Activo</option>
+                        <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">@LblTipoEq(TipoElemento.Equipo)</option>
+                        <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">@LblTipoEq(TipoElemento.Activo)</option>
                     </select>
                     break;
                 case "cantidad":
@@ -1620,13 +1624,21 @@ else
         _ => "ok"
     };
 
-    private static string EstadoTextoCorto(EstadoEquipoActivo s) => s switch
-    {
-        EstadoEquipoActivo.Operativo => "Operativo",
-        EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
-        EstadoEquipoActivo.FueraDeServicio => "Fuera",
-        _ => s.ToString()
-    };
+    // Labels del catalogo global (Ola 4: equipo.categoria/tipo/estado, editable por A&D). Fallback al
+    // codigo. La clave enum no cambia (la logica -Equipo fuerza Cantidad=1, etc.- usa el valor, no el label).
+    private Dictionary<string, string> _catEqCat = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catEqTipo = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catEqEstado = new(StringComparer.Ordinal);
+    private string LblCatEq(CategoriaEquipo c) => _catEqCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString();
+    private string LblTipoEq(TipoElemento t) => _catEqTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : (t == TipoElemento.Equipo ? "Equipo" : "Activo");
+    private string EstadoTextoCorto(EstadoEquipoActivo s)
+        => _catEqEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s switch
+        {
+            EstadoEquipoActivo.Operativo => "Operativo",
+            EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
+            EstadoEquipoActivo.FueraDeServicio => "Fuera",
+            _ => s.ToString()
+        };
 
     private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
     {

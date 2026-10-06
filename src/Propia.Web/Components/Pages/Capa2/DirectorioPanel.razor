@@ -1,5 +1,6 @@
 @using Propia.Application.Directorio
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @using Propia.Web.Components.Shared
@@ -377,7 +378,7 @@
                                 <div class="dir-field"><label>Genero</label>
                                     <select @bind="_edGenero">
                                         <option value="">- Genero -</option>
-                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
+                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@LblSexo(g)</option> }
                                     </select>
                                 </div>
                             }
@@ -642,7 +643,7 @@
                                 <div class="dir-field"><label>Genero</label>
                                     <select @bind="_persona.Genero">
                                         <option value="">- Genero -</option>
-                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@g</option> }
+                                        @foreach (var g in Enum.GetValues<GeneroPersona>()) { <option value="@g">@LblSexo(g)</option> }
                                     </select>
                                 </div>
                                 <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
@@ -1688,6 +1689,10 @@
         catch { }
     }
 
+    // Label del sexo: del catalogo global (persona.sexo, editable por A&D) si cargo; si no, el enum.
+    private Dictionary<string, string> _catSexo = new(StringComparer.Ordinal);
+    private string LblSexo(GeneroPersona g) => _catSexo.TryGetValue("e:" + g, out var l) && !string.IsNullOrWhiteSpace(l) ? l : g.ToString();
+
     private async Task CargarAsync()
     {
         try
@@ -1710,6 +1715,7 @@
                 _personas = await resp.Content.ReadFromJsonAsync<List<PersonaResumenDto>>() ?? new();
             else
                 _empresas = await resp.Content.ReadFromJsonAsync<List<EmpresaResumenDto>>() ?? new();
+            try { _catSexo = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=persona.sexo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catSexo = new(StringComparer.Ordinal); }
             // Tras un refresco real, las recien creadas vuelven a su orden natural (sin verde); la recarga
             // que dispara la propia creacion conserva el resaltado (suppress).
             if (_suppressRecienClear) _suppressRecienClear = false; else { _recienP.Clear(); _recienE.Clear(); }
