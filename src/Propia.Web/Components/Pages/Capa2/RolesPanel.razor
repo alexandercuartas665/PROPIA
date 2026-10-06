@@ -218,11 +218,7 @@ else
                         <th>CATEGORIA</th>
                         <th>BASE</th>
                         <th class="rol-th-num">USUARIOS ASIGNADOS</th>
-                        <th class="rol-th-acc">
-                            <button type="button" class="rol-addcol-btn" title="Nuevo rol" @onclick="FabNuevoRol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        </th>
+                        <th class="rol-th-acc"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -300,10 +296,14 @@ else
             </div>
             @if (!_creandoRol)
             {
-                <button class="rol-newbtn" @onclick="() => { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; }">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
-                    Nuevo rol
-                </button>
+                @* Boton de alta al canon del resto del sistema (.row-add--sm en una fila CTA con border-top,
+                   igual que Unidades/Usuarios/Directorio). *@
+                <div class="rol-cta-row">
+                    <button type="button" class="row-add--sm" @onclick="() => { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; }">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar registro
+                    </button>
+                </div>
             }
             @* FAB flotante (patron Unidades): aparece al desplazar cuando la fila/boton de alta no se ve. *@
             <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _creandoRol)" @onclick="FabNuevoRol" title="Agregar rol">
@@ -378,9 +378,14 @@ else
                 || (r.Descripcion ?? "").ToLowerInvariant().Contains(t)
                 || LabelCategoria(r.Categoria).ToLowerInvariant().Contains(t));
         }
+        // Los roles de sistema (base: no se pueden seleccionar ni borrar) van SIEMPRE primero; el orden
+        // por nombre (o por categoria al agrupar) se aplica dentro de cada grupo. clave base-first:
+        // !PuedeSeleccionar => 0 (arriba), seleccionables => 1.
         q = _agruparCat
-            ? q.OrderBy(r => (int)r.Categoria).ThenBy(r => (int)r.Tipo).ThenBy(r => r.Nombre)
-            : (_ordenAsc ? q.OrderBy(r => r.Nombre) : q.OrderByDescending(r => r.Nombre));
+            ? q.OrderBy(r => (int)r.Categoria).ThenBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenBy(r => r.Nombre)
+            : (_ordenAsc
+                ? q.OrderBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenBy(r => r.Nombre)
+                : q.OrderBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenByDescending(r => r.Nombre));
         return q;
     }
 
