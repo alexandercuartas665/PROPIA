@@ -744,6 +744,38 @@ else
                                 case "refpago":
                                     <td class="nf-cell"><input class="nf-in" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" placeholder="@AliasCampo("refpago", "Ref. pago")" @bind="_nuRefPago" @bind:event="oninput" /></td>
                                     break;
+                                case "estado":
+                                    <td class="nf-cell"><select class="nf-in" @bind="_nuEstado">
+                                        <option value="">- elegir -</option>
+                                        @foreach (var es in EstadosConfig()) { <option value="@es">@es</option> }
+                                    </select></td>
+                                    break;
+                                case "habitaciones":
+                                    <td class="nf-cell"><input class="nf-in" type="number" placeholder="-" @bind="_nuHab" @bind:event="oninput" /></td>
+                                    break;
+                                case "banos":
+                                    <td class="nf-cell"><input class="nf-in" type="number" placeholder="-" @bind="_nuBanos" @bind:event="oninput" /></td>
+                                    break;
+                                case "parqueaderos":
+                                    <td class="nf-cell"><input class="nf-in" type="number" placeholder="-" @bind="_nuParq" @bind:event="oninput" /></td>
+                                    break;
+                                case "pagaadmin":
+                                    <td class="nf-cell"><select class="nf-in" @bind="_nuPagaAdmin">
+                                        <option value="true">Si</option>
+                                        <option value="false">No</option>
+                                    </select></td>
+                                    break;
+                                case "cuota":
+                                    <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("cuota")" placeholder="-" @bind="_nuCuota" @bind:event="oninput" /></td>
+                                    break;
+                                case "observaciones":
+                                    <td class="nf-cell"><input class="nf-in" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" placeholder="-" @bind="_nuObs" @bind:event="oninput" /></td>
+                                    break;
+                                case { } mc when ModContribNumero(mc) is not null:
+                                    <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe(mc)" placeholder="-"
+                                           value="@(_nuMod.GetValueOrDefault(ModContribNumero(mc)!.Value, string.Empty))"
+                                           @onchange="(e) => _nuMod[ModContribNumero(mc)!.Value] = e.Value?.ToString() ?? string.Empty" /></td>
+                                    break;
                                 default:
                                     <td class="nf-mut" title="Se define en la ficha de la unidad">En la ficha</td>
                                     break;
@@ -911,6 +943,16 @@ else
     private string _nuCoef = "";
     private string _nuMatricula = "";
     private string _nuRefPago = "";
+    // Resto de campos de sistema capturables en el alta inline (antes solo en la ficha/edicion):
+    // estado, habitaciones, banos, parqueaderos, paga admin, cuota, observaciones y modulos contributivos.
+    private string _nuEstado = "";          // vacio = sin estado (null)
+    private string _nuHab = "";
+    private string _nuBanos = "";
+    private string _nuParq = "";
+    private string _nuPagaAdmin = "true";   // "Si" por defecto (coincide con el default del request)
+    private string _nuCuota = "";
+    private string _nuObs = "";
+    private readonly Dictionary<int, string> _nuMod = new();  // modcontrib 1..5 -> valor tecleado
     // Campos dinamicos: definiciones (catalogo del tenant) + valores capturados en la fila de alta.
     private List<UnidadCampoDefinicionDto> _camposDef = new();
     private readonly Dictionary<Guid, string?> _nuCampos = new();
@@ -1800,11 +1842,25 @@ else
             decimal? area = decimal.TryParse(_nuArea, System.Globalization.NumberStyles.Any, ci, out var aa) ? aa : null;
             decimal coef = decimal.TryParse(_nuCoef, System.Globalization.NumberStyles.Any, ci, out var cc) ? cc : 0m;
             var (nuTipo, nuTipoCustom) = ParseTipoKey(_nuTipoKey);
+            // Resto de campos de sistema capturados en el alta inline (mismos que en edicion/ficha).
+            int? hab = int.TryParse(_nuHab, out var hh) ? hh : null;
+            int? banos = int.TryParse(_nuBanos, out var bn) ? bn : null;
+            int? parq = int.TryParse(_nuParq, out var pq) ? pq : null;
+            string? estado = string.IsNullOrWhiteSpace(_nuEstado) ? null : _nuEstado.Trim();
+            string? obs = string.IsNullOrWhiteSpace(_nuObs) ? null : _nuObs.Trim();
+            bool pagaAdmin = !string.Equals(_nuPagaAdmin, "false", StringComparison.OrdinalIgnoreCase);
+            decimal? cuota = decimal.TryParse(_nuCuota, System.Globalization.NumberStyles.Any, ci, out var cq) ? cq : null;
+            decimal? ModAlta(int n) => _nuMod.TryGetValue(n, out var s) && decimal.TryParse(s, System.Globalization.NumberStyles.Any, ci, out var mv) ? mv : null;
             var req = new CrearUnidadRequest(numero, nuTipo, torreId, piso, coef, area,
-                null, null, null, null, null,
+                hab, banos, parq, estado, obs,
                 MatriculaInmobiliaria: string.IsNullOrWhiteSpace(_nuMatricula) ? null : _nuMatricula.Trim(),
+                PagaAdministracion: pagaAdmin,
+                CuotaMensual: cuota,
                 ReferenciaPago: string.IsNullOrWhiteSpace(_nuRefPago) ? null : _nuRefPago.Trim(),
-                TipoCustomId: nuTipoCustom);
+                TipoCustomId: nuTipoCustom,
+                ModuloContributivo1: ModAlta(1), ModuloContributivo2: ModAlta(2),
+                ModuloContributivo3: ModAlta(3), ModuloContributivo4: ModAlta(4),
+                ModuloContributivo5: ModAlta(5));
             var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
             if (resp.IsSuccessStatusCode)
             {
@@ -1826,6 +1882,7 @@ else
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
                     _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
+                    _nuEstado = ""; _nuHab = ""; _nuBanos = ""; _nuParq = ""; _nuPagaAdmin = "true"; _nuCuota = ""; _nuObs = ""; _nuMod.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
                 }
