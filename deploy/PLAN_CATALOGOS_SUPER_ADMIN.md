@@ -99,6 +99,23 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
 - **Resolvedor único** (servicio + cache): `label/opciones = merge(catálogo global, override tenant)`.
   Reemplaza/alimenta los `Etiqueta()` / `LeerOpciones()` dispersos. Fuente única de verdad.
 
+## Estado al cierre (2026-10-06, sesión ALEX) — LEER PARA RETOMAR
+
+**Hecho y en la rama `equipo/alex-header-zonas-equipos` (NO mergeado a main; 10 commits):** Olas 1, 2, 3 y
+**Ola 4 Tranche A completo** (Contratos, Vehículos, Mascotas, Equipos, Zonas, Personas-sexo). 12 listas en
+el catálogo global, editables desde la consola A&D (`/admin/catalogos`), cada módulo las lee con override
+por copropiedad encima. Todo verificado con "prueba de oro" (renombrar en A&D → el módulo lo muestra sin
+deploy). 1 migración aplicada en dev (`AddCatalogoOpcion`), pendiente de prod (ver HANDOFF_DEPLOY).
+
+**Siguiente (sesión fresca): Ola 4 Tranche B — PQRSD-unify** (decisión de Alex: unificar al catálogo).
+Es el grande: PQRSD tiene su propio CRUD por tenant (`pqrsd_tipos`/`pqrsd_estados`) con metadata legal
+(`DiasHabiles`, `Legal`, `EsTerminal`) y lógica de plazos Ley 1755 (`SumarDiasHabiles`,
+`PqrsdService.BandejaYRadicacion.cs:254-265`) + workflow terminal (`PqrsKanban.razor:1635`). Pasos:
+(1) llevar esa metadata al campo `Meta` del catálogo (`pqrsd.tipo` con `{plazoDias,legal}`, `pqrsd.estado`
+con `{terminal,orden}`); (2) migración de datos que traiga lo existente por tenant → catálogo + override;
+(3) refactor del cálculo de plazos/workflow para leer del `Meta` en vez del enum/tabla. Requiere migración
+(OK de Alex) y validación legal cuidadosa. Mantenimiento (periodicidad) y Contratos estado quedan después.
+
 ## 4. Plan por OLAS
 
 > Estado: [ ] pendiente · (🔄) en curso · [x] hecho. Cada ola es desplegable por sí sola.
