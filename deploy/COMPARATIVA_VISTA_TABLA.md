@@ -39,6 +39,12 @@ Mascotas; y Unidades Tipo (en "Editar campo").
 - 2026-10-06 R4: PQRSD categoría cableada al modal "Editar campo" (ver+agregar, lee/crea pqrsd_categorias).
   Validado en Chrome (agregó ZZCATTEST -> persistió) + BD; dato borrado. **Frente "listas en config del
   campo" CERRADO** (Contratos tipo/categoria, Unidades Tipo ya ok, PQRSD categoria; tipo/estado read-only).
+- 2026-10-06 R7: **Contratos — fix del resize** (el de R5 persistía pero NO cambiaba el ancho visual: mismo
+  gotcha de `table-layout:auto` + `<col width>` parcial). Aplicado el mismo fix que PQRSD: `AnchoColC`
+  devuelve ancho explícito para TODAS las columnas (default por columna) + `min-width:max-content` en
+  `.ctr-table` (servicios.css ?v=9). Validado en Chrome (/contratos, 21 filas): numero 130→220 cambió de
+  verdad y persistió; reorder numero↔tercero persistió; reset doble-clic 220→130; orden/anchos restaurados;
+  servicio de prueba borrado. **R5 quedaba a medias — ahora Contratos filas 7/8 ✅ de verdad.**
 - 2026-10-06 R6: **PQRSD** — reordenar (arrastre header) + redimensionar columnas (handle `.pk-col-rz`,
   doble-clic autoajusta), canon Unidades (interop propiaTablaColReorder/Resize; orden+ancho en
   unidades-config entidad=pqrsd, ancho en Formato "w"). **Gotcha clave:** con `table-layout:auto` un
