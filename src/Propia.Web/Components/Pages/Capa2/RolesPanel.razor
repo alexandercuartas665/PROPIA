@@ -1,4 +1,5 @@
 @using Propia.Application.UsuariosAccesos
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
@@ -210,14 +211,22 @@ else
         <div class="rol-tablebox">
             <div class="rol-scroll">
             <table class="tbl">
+                <colgroup>
+                    <col style="width:38px" /><col style="width:34px" />
+                    @foreach (var col in ColsRoles) { <col style="@AnchoCol(col.Clave)" /> }
+                    <col style="width:52px" />
+                </colgroup>
                 <thead>
                     <tr>
                         <th class="tbl-sel"><input type="checkbox" class="rol-chk-in" title="Seleccionar todo" checked="@TodosSel" @onchange="ToggleSelAll" /></th>
                         <th class="tbl-exp"></th>
-                        <th>ROL</th>
-                        <th>CATEGORIA</th>
-                        <th>BASE</th>
-                        <th class="rol-th-num">USUARIOS ASIGNADOS</th>
+                        @foreach (var col in ColsRoles)
+                        {
+                            var ck = col.Clave;
+                            <th class="@(ck == "usuarios" ? "rol-th-num" : "")" data-clave="@ck" @onmousedown="e => IniciarReorder(e, ck)">
+                                @col.Label<span class="rol-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(ck)" @ondblclick:stopPropagation="true"></span>
+                            </th>
+                        }
                         <th class="rol-th-acc"></th>
                     </tr>
                 </thead>
@@ -241,21 +250,35 @@ else
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </span>
                             </td>
-                            <td class="rol-td-nom">
-                                <div class="rol-nom">@r.Nombre</div>
-                                @if (!string.IsNullOrWhiteSpace(r.Descripcion)) { <div class="rol-desc">@r.Descripcion</div> }
-                            </td>
-                            <td>
-                                <span class="rol-cat" style="background:@ColorCategoriaSoft(r.Categoria);color:@ColorCategoria(r.Categoria)">
-                                    <span class="rol-cat-dot" style="background:@ColorCategoria(r.Categoria)"></span>@LabelCategoria(r.Categoria)
-                                </span>
-                            </td>
-                            <td>
-                                @if (r.Tipo == TipoRol.Base) { <span class="rol-badge rol-badge-sys">Sistema</span> }
-                                else if (r.Tipo == TipoRol.Extendido) { <span class="rol-badge rol-badge-ext">Extendido@(r.Activo ? "" : " . inactivo")</span> }
-                                else { <span class="rol-badge">Personalizado</span> }
-                            </td>
-                            <td class="rol-td-num">@r.CantidadUsuariosActivos</td>
+                            @foreach (var col in ColsRoles)
+                            {
+                                switch (col.Clave)
+                                {
+                                    case "nombre":
+                                        <td class="rol-td-nom">
+                                            <div class="rol-nom">@r.Nombre</div>
+                                            @if (!string.IsNullOrWhiteSpace(r.Descripcion)) { <div class="rol-desc">@r.Descripcion</div> }
+                                        </td>
+                                        break;
+                                    case "categoria":
+                                        <td>
+                                            <span class="rol-cat" style="background:@ColorCategoriaSoft(r.Categoria);color:@ColorCategoria(r.Categoria)">
+                                                <span class="rol-cat-dot" style="background:@ColorCategoria(r.Categoria)"></span>@LabelCategoria(r.Categoria)
+                                            </span>
+                                        </td>
+                                        break;
+                                    case "base":
+                                        <td>
+                                            @if (r.Tipo == TipoRol.Base) { <span class="rol-badge rol-badge-sys">Sistema</span> }
+                                            else if (r.Tipo == TipoRol.Extendido) { <span class="rol-badge rol-badge-ext">Extendido@(r.Activo ? "" : " . inactivo")</span> }
+                                            else { <span class="rol-badge">Personalizado</span> }
+                                        </td>
+                                        break;
+                                    case "usuarios":
+                                        <td class="rol-td-num">@r.CantidadUsuariosActivos</td>
+                                        break;
+                                }
+                            }
                             @* Acciones en el MENU CONTEXTUAL de la fila (spec P4/RP-02: nunca como columna).
                                Se abre con el boton kebber o con clic derecho sobre la fila. *@
                             <td class="rol-td-acc" @onclick:stopPropagation="true">
@@ -270,21 +293,35 @@ else
                         <tr class="rol-tr rol-newrow">
                             <td class="tbl-sel"></td>
                             <td class="tbl-exp"></td>
-                            <td class="rol-td-nom">
-                                <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" />
-                            </td>
-                            <td>
-                                <select class="rol-inp" @bind="_nuevoCategoria">
-                                    @foreach (var c in Enum.GetValues<CategoriaRol>()) { <option value="@c">@LabelCategoria(c)</option> }
-                                </select>
-                            </td>
-                            <td>
-                                <select class="rol-inp" @bind="_copiarDe">
-                                    <option value="">(Empezar vacio)</option>
-                                    @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema)) { <option value="@r.Id">Copiar de @r.Nombre</option> }
-                                </select>
-                            </td>
-                            <td></td>
+                            @foreach (var col in ColsRoles)
+                            {
+                                switch (col.Clave)
+                                {
+                                    case "nombre":
+                                        <td class="rol-td-nom">
+                                            <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" />
+                                        </td>
+                                        break;
+                                    case "categoria":
+                                        <td>
+                                            <select class="rol-inp" @bind="_nuevoCategoria">
+                                                @foreach (var c in Enum.GetValues<CategoriaRol>()) { <option value="@c">@LabelCategoria(c)</option> }
+                                            </select>
+                                        </td>
+                                        break;
+                                    case "base":
+                                        <td>
+                                            <select class="rol-inp" @bind="_copiarDe">
+                                                <option value="">(Empezar vacio)</option>
+                                                @foreach (var r in _roles.Where(r => r.Tipo != TipoRol.Sistema)) { <option value="@r.Id">Copiar de @r.Nombre</option> }
+                                            </select>
+                                        </td>
+                                        break;
+                                    case "usuarios":
+                                        <td></td>
+                                        break;
+                                }
+                            }
                             <td class="rol-td-acc">
                                 <button class="rol-actbtn rol-actbtn-add" @onclick="CrearRol" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoNombre))">Crear</button>
                                 <button class="rol-actbtn" @onclick="() => { _creandoRol = false; _nuevoNombre = string.Empty; _copiarDe = string.Empty; }">Cancelar</button>
@@ -563,6 +600,97 @@ else
     {
         try { _roles = await Auth().GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new(); }
         catch { _roles = new(); }
+        await RecargarConfigAsync();
+        HidratarAnchos();
+    }
+
+    // ===== Columnas de la tabla: orden + ancho configurables por copropiedad (canon vista-tabla).
+    // Reusa el endpoint/tabla compartidos unidades-config con entidad "rol"; el ancho va en el JSON
+    // Formato clave "w", el orden en Orden. Reorder/resize via el interop compartido. =====
+    private sealed record ColRol(string Clave, string Label);
+    private static readonly ColRol[] ColsRolesBase =
+    {
+        new("nombre", "ROL"),
+        new("categoria", "CATEGORIA"),
+        new("base", "BASE"),
+        new("usuarios", "USUARIOS ASIGNADOS"),
+    };
+    private IEnumerable<ColRol> ColsRoles =>
+        ColsRolesBase.Select((c, i) => (c, ord: OrdenDe(c.Clave, i))).OrderBy(x => x.ord).Select(x => x.c);
+
+    private Dictionary<string, UnidadCampoConfigDto> _camposConfig = new(StringComparer.Ordinal);
+    private int OrdenDe(string clave, int fallback)
+        => _camposConfig.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    // La tabla LLENA el contenedor (sin scroll horizontal): la columna ROL (nombre) queda FLEXIBLE
+    // (sin ancho -> absorbe el espacio restante) salvo que el usuario la redimensione; las demas llevan
+    // ancho px explicito (default o redimensionado) y son las que "mandan" el ancho.
+    private string AnchoCol(string k)
+    {
+        if (_colW.TryGetValue(k, out var w)) return $"width:{w}px";
+        if (k == "nombre") return string.Empty;   // flexible
+        return $"width:{AnchoDefault(k)}px";
+    }
+    private static int AnchoDefault(string k) => k switch
+    {
+        "categoria" => 190,
+        "base" => 150,
+        "usuarios" => 160,
+        _ => 240,
+    };
+
+    private GuardarUnidadCampoConfigRequest FilaConfig(string k)
+    {
+        _camposConfig.TryGetValue(k, out var c);
+        return new GuardarUnidadCampoConfigRequest(k, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "rol");
+    }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+
+    private async Task IniciarReorder(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable] public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ColsRoles.Select(c => c.Clave).ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfg(FilaConfig(keys[i]) with { Orden = i });
+        await RecargarConfigAsync(); StateHasChanged();
+    }
+    private async Task IniciarResize(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResize(string k) => OnColResize(k, 0);
+    [JSInvokable] public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        var fila = FilaConfig(clave);
+        await GuardarCfg(fila with { Formato = ConAncho(fila.Formato, w) });
+        await RecargarConfigAsync(); HidratarAnchos(); StateHasChanged();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _camposConfig) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private async Task RecargarConfigAsync()
+    {
+        try { _camposConfig = (await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=rol") ?? new()).ToDictionary(x => x.CampoClave, StringComparer.Ordinal); }
+        catch { }
     }
 
     private async Task EditarRol(Guid rolId)

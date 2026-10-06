@@ -941,7 +941,7 @@ public partial class MiCopropiedadService
     // entraran cuando YUNQUE adopte.)
     private static readonly string[] EntidadesCampoConfig =
         { "unidad", "personas", "vehiculos", "mascotas", "terceros", "pqrsd", "contrato", "poliza",
-          "programacion", "zona", "equipo", "usuario" };
+          "programacion", "zona", "equipo", "usuario", "rol" };
 
     private static string NormalizarEntidadCampoConfig(string? entidad)
     {
