@@ -22,11 +22,14 @@ Este deploy acumula: **catalogo global de listas (Olas 1-4A)**, **alta inline de
 **vista-tabla reordenar/redimensionar columnas** (Contratos + PQRSD). Detalle del catalogo:
 `deploy/PLAN_CATALOGOS_SUPER_ADMIN.md`.
 
-### 1 MIGRACION NUEVA ADITIVA — APLICAR EN PROD
-`20261006164654_AddCatalogoOpcion` (owner `propia`, `dotnet ef database update`). Crea la tabla GLOBAL
-`catalogo_opciones` (sin tenant_id, **sin RLS** a proposito: tabla de plataforma; `RlsCoverageTests` solo
-mira tablas con tenant_id, asi que no aplica) + GRANT a `propia_app`. Aditiva: rollback = redeploy del
-artefacto anterior, sin revertir esquema (la tabla queda sin uso).
+### 2 MIGRACIONES NUEVAS — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+1. `20261006120327_ContratoTipoCategoriaAString` — `contrato_servicios.tipo_contrato` y `.categoria` de
+   `integer` (enum) a `text`, mapeando los valores existentes (int -> etiqueta) con un `CASE`. Habilita que
+   "Tipo de contrato"/"Categoria" sean listas editables por copropiedad. Rollback real = redeploy anterior
+   (su `Down` vuelve a int; texto nuevo sin mapeo quedaria NULL).
+2. `20261006164654_AddCatalogoOpcion` — tabla GLOBAL `catalogo_opciones` (sin tenant_id, **sin RLS** a
+   proposito: tabla de plataforma; `RlsCoverageTests` solo mira tablas con tenant_id, asi que no aplica) +
+   GRANT a `propia_app`. Rollback = redeploy anterior, sin revertir esquema (la tabla queda sin uso).
 
 ### CONFIG/ARRANQUE NUEVO — seeder idempotente
 `CatalogoListasSeeder.EnsureAsync` corre en CADA arranque (Web y Api), SIEMPRE. Siembra las 12 listas de
