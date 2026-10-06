@@ -192,17 +192,37 @@ else
                 }
             </div>
         }
+        @* Barra de acciones masivas: aparece al seleccionar filas con el checkbox. Activar/Desactivar aplica
+           solo a roles extendidos; Eliminar solo a personalizados (los base quedan protegidos). *@
+        @if (_sel.Count > 0)
+        {
+            <div class="rol-selbar">
+                <span class="rol-selbar-n">@_sel.Count seleccionado@(_sel.Count == 1 ? "" : "s")</span>
+                <div class="rol-tb-spacer"></div>
+                <button class="rol-tb-btn" @onclick="() => BulkActivarAsync(true)" disabled="@_bulkBusy">Activar</button>
+                <button class="rol-tb-btn" @onclick="() => BulkActivarAsync(false)" disabled="@_bulkBusy">Desactivar</button>
+                <button class="usr-selbar-del" @onclick="() => _confirmBulkDel = true" disabled="@(_bulkBusy || SelEliminables == 0)">
+                    Eliminar@(SelEliminables > 0 ? $" ({SelEliminables})" : "")
+                </button>
+                <button class="rol-tb-btn" @onclick="LimpiarSel" disabled="@_bulkBusy">Cancelar</button>
+            </div>
+        }
         <div class="rol-tablebox">
             <div class="rol-scroll">
             <table class="tbl">
                 <thead>
                     <tr>
+                        <th class="tbl-sel"><input type="checkbox" class="rol-chk-in" title="Seleccionar todo" checked="@TodosSel" @onchange="ToggleSelAll" /></th>
                         <th class="tbl-exp"></th>
                         <th>ROL</th>
                         <th>CATEGORIA</th>
                         <th>BASE</th>
                         <th class="rol-th-num">USUARIOS ASIGNADOS</th>
-                        <th class="rol-th-acc"></th>
+                        <th class="rol-th-acc">
+                            <button type="button" class="rol-addcol-btn" title="Nuevo rol" @onclick="FabNuevoRol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -213,9 +233,13 @@ else
                         if (_agruparCat && r.Categoria != _lastCat)
                         {
                             _lastCat = r.Categoria;
-                            <tr class="rol-grouprow"><td colspan="6" class="rol-grouphdr">@LabelCategoria(r.Categoria)</td></tr>
+                            <tr class="rol-grouprow"><td colspan="7" class="rol-grouphdr">@LabelCategoria(r.Categoria)</td></tr>
                         }
                         <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)" @oncontextmenu="e => AbrirCtxRol(e, rr)" @oncontextmenu:preventDefault="true">
+                            <td class="tbl-sel">
+                                <input type="checkbox" class="rol-chk-in" checked="@_sel.Contains(rr.Id)" disabled="@(!PuedeSeleccionar(rr))"
+                                       @onclick:stopPropagation="true" @onchange="e => ToggleSel(rr.Id, (bool)(e.Value ?? false))" />
+                            </td>
                             <td class="tbl-exp">
                                 <span class="rol-exp" title="Abrir la ficha">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -248,6 +272,7 @@ else
                     @if (_creandoRol)
                     {
                         <tr class="rol-tr rol-newrow">
+                            <td class="tbl-sel"></td>
                             <td class="tbl-exp"></td>
                             <td class="rol-td-nom">
                                 <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" />
@@ -305,6 +330,21 @@ else
             </div>
         </div>
     }
+
+    @* Confirmacion de borrado MASIVO: solo elimina los personalizados de la seleccion. *@
+    @if (_confirmBulkDel)
+    {
+        <div class="usr-cfg-back" @onclick="() => { if (!_bulkBusy) _confirmBulkDel = false; }">
+            <div class="usr-confirm" @onclick:stopPropagation="true">
+                <div class="usr-confirm-t">Eliminar @SelEliminables rol@(SelEliminables == 1 ? "" : "es") personalizado@(SelEliminables == 1 ? "" : "s")</div>
+                <div class="usr-confirm-s">Solo se eliminan los roles personalizados de la seleccion (@SelEliminables de @_sel.Count). Los usuarios con esos roles quedaran sin el. Esta accion no se puede deshacer.</div>
+                <div class="usr-confirm-acts">
+                    <button type="button" class="usr-btn-ghost" @onclick="() => _confirmBulkDel = false" disabled="@_bulkBusy">Cancelar</button>
+                    <button type="button" class="usr-selbar-del" @onclick="BulkEliminarAsync" disabled="@_bulkBusy">@(_bulkBusy ? "Eliminando..." : "Si, eliminar")</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 }
 
@@ -342,6 +382,59 @@ else
             ? q.OrderBy(r => (int)r.Categoria).ThenBy(r => (int)r.Tipo).ThenBy(r => r.Nombre)
             : (_ordenAsc ? q.OrderBy(r => r.Nombre) : q.OrderByDescending(r => r.Nombre));
         return q;
+    }
+
+    // ===== Seleccion multiple + acciones masivas (checkbox de la bandeja) =====
+    // Un rol es accionable en masa solo si se puede activar/desactivar (Extendido) o eliminar (personalizado);
+    // los roles base no se pueden tocar, asi que su checkbox va deshabilitado.
+    private readonly HashSet<Guid> _sel = new();
+    private bool _bulkBusy;
+    private bool _confirmBulkDel;
+    private static bool PuedeSeleccionar(RolDto r) => r.Tipo == TipoRol.Extendido || r.EsEliminable;
+    private bool TodosSel => RolesVista().Any(PuedeSeleccionar) && RolesVista().Where(PuedeSeleccionar).All(r => _sel.Contains(r.Id));
+    private int SelEliminables => _roles?.Count(r => _sel.Contains(r.Id) && r.EsEliminable) ?? 0;
+    private void ToggleSel(Guid id, bool on) { if (on) _sel.Add(id); else _sel.Remove(id); }
+    private void ToggleSelAll(ChangeEventArgs e)
+    {
+        var on = (bool)(e.Value ?? false);
+        _sel.Clear();
+        if (on) foreach (var r in RolesVista().Where(PuedeSeleccionar)) _sel.Add(r.Id);
+    }
+    private void LimpiarSel() => _sel.Clear();
+
+    // Activar/Desactivar en masa: /activar ALTERNA, asi que solo se llama sobre los Extendido seleccionados
+    // que todavia no esten en el estado deseado (los base/personalizados no tienen ese toggle).
+    private async Task BulkActivarAsync(bool activar)
+    {
+        if (_roles is null) return;
+        _bulkBusy = true; _msg = null;
+        try
+        {
+            var objetivo = _roles.Where(r => _sel.Contains(r.Id) && r.Tipo == TipoRol.Extendido && r.Activo != activar).ToList();
+            foreach (var r in objetivo) await Auth().PutAsync($"/api/roles/{r.Id}/activar", null);
+            if (objetivo.Count == 0) { _msg = "No habia roles aplicables en la seleccion (activar/desactivar aplica solo a roles extendidos)."; _msgClass = "alert-danger"; }
+            else { _msg = $"{objetivo.Count} rol(es) {(activar ? "activados" : "desactivados")}."; _msgClass = "alert-success"; }
+            _sel.Clear();
+            await CargarRolesAsync();
+        }
+        finally { _bulkBusy = false; }
+    }
+
+    // Eliminar en masa: solo los personalizados (EsEliminable) de la seleccion; los base se omiten.
+    private async Task BulkEliminarAsync()
+    {
+        if (_roles is null) return;
+        _bulkBusy = true; _msg = null;
+        try
+        {
+            var objetivo = _roles.Where(r => _sel.Contains(r.Id) && r.EsEliminable).ToList();
+            var ok = 0;
+            foreach (var r in objetivo) { var resp = await Auth().DeleteAsync($"/api/roles/{r.Id}"); if (resp.IsSuccessStatusCode) ok++; }
+            _msg = $"{ok} rol(es) eliminados."; _msgClass = "alert-success";
+            _sel.Clear(); _confirmBulkDel = false;
+            await CargarRolesAsync();
+        }
+        finally { _bulkBusy = false; }
     }
 
     // Edicion de la ficha
