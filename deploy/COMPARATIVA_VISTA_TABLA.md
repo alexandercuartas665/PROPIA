@@ -39,6 +39,14 @@ Mascotas; y Unidades Tipo (en "Editar campo").
 - 2026-10-06 R4: PQRSD categoría cableada al modal "Editar campo" (ver+agregar, lee/crea pqrsd_categorias).
   Validado en Chrome (agregó ZZCATTEST -> persistió) + BD; dato borrado. **Frente "listas en config del
   campo" CERRADO** (Contratos tipo/categoria, Unidades Tipo ya ok, PQRSD categoria; tipo/estado read-only).
+- 2026-10-06 R6: **PQRSD** — reordenar (arrastre header) + redimensionar columnas (handle `.pk-col-rz`,
+  doble-clic autoajusta), canon Unidades (interop propiaTablaColReorder/Resize; orden+ancho en
+  unidades-config entidad=pqrsd, ancho en Formato "w"). **Gotcha clave:** con `table-layout:auto` un
+  `<col width>` suelto entre hermanos 'auto' se IGNORA; el canon `.tbl` funciona porque TODAS las `<col>`
+  llevan ancho px explícito. Fix: `AnchoColP` devuelve ancho (redimensionado o default por columna) para
+  todas + `min-width:max-content` en `.pk-table` (igual que `.tbl`). Validado en Chrome: resize visual
+  170→250, persistió tras recarga; reorder tipo↔categoria, persistió; reset doble-clic 250→170; layout
+  del demo restaurado. **Matriz: filas 7 y 8 → ✅ en PQRSD.** Falta Seguros, Tareas.
 
 Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) · Contratos
 `Pages/Capa2/Servicios.razor` (`.ctr-*`) · Seguros `Pages/Capa2/Seguros.razor` (`.seg-*`) · PQRSD
@@ -54,8 +62,8 @@ Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) 
 | 4 | Agrupar (multinivel) | ✅ | ✅ | ✅ | ✅ |
 | 5 | Ordenar por columna (clic header + ▲▼) | ✅ | 🟡 | 🟡 | ✅ |
 | 6 | Menú de columna (chevron ˅ siempre visible) | ✅ | ✅ | ✅ | ✅ |
-| 7 | Reordenar columnas (arrastre) | ❌ | ✅ | ❌ | ❌ |
-| 8 | Redimensionar columnas | ❌ | ✅ | ❌ | ❌ |
+| 7 | Reordenar columnas (arrastre) | ❌ | ✅ | ❌ | ✅ |
+| 8 | Redimensionar columnas | ❌ | ✅ | ❌ | ✅ |
 | 9 | Botón "+" agregar campo (header) | 🟡 | ✅ | ✅ | 🟡 |
 | 10 | Columna expander | ✅ | ✅ | ✅ | 🟡 |
 | 11 | Checkbox selección múltiple | ❌ | ❌ | ❌ | ❌ |
@@ -84,12 +92,12 @@ Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) 
 - **Tareas:** 14 ✅ · 11 🟡 · 4 ❌ · 1 ⚪ — el más completo (tabla "viva" con edición inline).
 - **Contratos:** 14 ✅ · 9 🟡 · 6 ❌ · 1 ⚪.
 - **Seguros:** 11 ✅ · 8 🟡 · 9 ❌ · 2 ⚪.
-- **PQRSD:** 8 ✅ · 9 🟡 · 6 ❌ · 7 ⚪ — muchos ⚪ porque el alta es por **wizard legal**, no inline.
+- **PQRSD:** 10 ✅ · 9 🟡 · 4 ❌ · 7 ⚪ — muchos ⚪ porque el alta es por **wizard legal**, no inline.
 
 ## Brechas COMUNES (a los 4 les falta — mayor retorno)
 
-1. **Reordenar columnas por arrastre (❌ x4).** Ninguno engancha `propiaTablaColReorder`; el orden solo cambia desde el gestor de campos. El interop JS ya existe (Unidades), solo hay que cablearlo al header.
-2. **Redimensionar columnas (❌ x4).** Falta el handle `.*-col-rz` + `propiaTablaResize`. Anchos fijos por CSS.
+1. **Reordenar columnas por arrastre (❌ Seguros, Tareas).** Hecho en Contratos (`R5`) y PQRSD (`R6`). Falta Seguros y Tareas: cablear `propiaTablaColReorder` al header.
+2. **Redimensionar columnas (❌ Seguros, Tareas).** Hecho en Contratos (`R5`) y PQRSD (`R6`). Falta Seguros y Tareas: handle `.*-col-rz` + `propiaTablaResize`. **Ojo:** para que el ancho se respete, TODAS las `<col>` deben llevar ancho px explícito (no solo las redimensionadas) — ver gotcha R6.
 3. **Checkbox selección múltiple (❌ x4).** Ninguno permite seleccionar filas en la tabla.
 4. **Barra de acciones masivas (❌ x4).** Sin borrado/acción en lote (eliminar es fila a fila o desde modal).
 5. **Scroll infinito real (🟡 x4).** Todos son render-all: `CargarMas()` no-op, `dstInfinite` solo alterna el FAB. (Unidades sí carga por lotes.) — Prioridad baja si los volúmenes son chicos.
@@ -110,7 +118,7 @@ Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) 
 - 🟡 Alta solo 6 campos fijos (dinámicos → "(auto)") · 🟡 ordenar sin clic en header · 🟡 footer no TablaPager · 🟡 filtros sin persistencia.
 
 **PQRSD** (muchos ⚪ por diseño = alta por wizard legal):
-- ❌ Reordenar/redimensionar · ❌ selección+acciones masivas · ❌ menú contextual · ❌ edición inline de celdas (la fila navega a la ficha).
+- ✅ Reordenar/redimensionar columnas (R6). · ❌ selección+acciones masivas · ❌ menú contextual · ❌ edición inline de celdas (la fila navega a la ficha).
 - 🟡 Footer→TablaPager · 🟡 filtros con popover propio (aunque persiste) · 🟡 expander solo abre ficha.
 - ⚪ Alta inline / ✓-✗ / selector persona / CTA / Excel: N/A (radicación por wizard).
 

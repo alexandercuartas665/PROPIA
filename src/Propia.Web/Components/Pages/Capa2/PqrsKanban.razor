@@ -313,6 +313,11 @@
             <div class="pk-tablebox">
             <div class="pk-table-wrap" id="pkTableWrap">
                 <table class="pk-table @(_pin ? "pk-table--pin" : "")">
+                    <colgroup>
+                        <col style="width:34px" />
+                        @foreach (var col in ColumnasVisibles) { <col style="@AnchoColP(col.Key)" /> }
+                        <col />
+                    </colgroup>
                     <thead>
                         <tr>
                             <th class="pk-th-exp tbl-hdcell tbl-hdcell--plain"></th>
@@ -321,8 +326,8 @@
                                 var ck = col.Key;
                                 var sk = ck; // clave de orden = col.Key ("cd:{id}" para las dinamicas)
                                 var cls = col.EsCustom ? $"pk-col-c{col.CampoId}" : $"pk-col-{ck}";
-                                <th class="pk-th-sort tbl-hdcell @cls @(ck == "radicado" ? "pk-th-pin" : "")" @onclick="() => SortByPqr(sk)">
-                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>@ChevCol(ck, col.Label, col.EsCustom)
+                                <th class="pk-th-sort tbl-hdcell @cls @(ck == "radicado" ? "pk-th-pin" : "")" data-clave="@ck" @onmousedown="e => IniciarReorderP(e, ck)" @onclick="() => SortByPqr(sk)">
+                                    <span class="pk-th-lbl">@col.Label@SortIndPqr(sk)</span>@ChevCol(ck, col.Label, col.EsCustom)<span class="pk-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeP(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeP(ck)" @ondblclick:stopPropagation="true"></span>
                                 </th>
                             }
                             <th class="pk-th-actions tbl-hdcell tbl-hdcell--plain"><button type="button" class="pk-addcol-btn" title="Agregar campo (columna)" @onclick="() => _cfgCamposOpen = true"><i class="fi fi-rr-plus"></i></button></th>
@@ -1596,6 +1601,7 @@
                     .ToDictionary(x => x.CampoClave, StringComparer.Ordinal);
             }
             catch { _camposConfig = new(StringComparer.Ordinal); }
+            HidratarAnchosP();
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             if (string.IsNullOrEmpty(_compCategoria)) _compCategoria = _categorias.FirstOrDefault(c => c.Activa)?.Id.ToString() ?? "";
@@ -1878,8 +1884,84 @@
         {
             _camposConfig = ((await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=pqrsd")) ?? new())
                 .ToDictionary(x => x.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosP();
         }
         catch { }
+    }
+
+    // ===== Reordenar + redimensionar columnas (canon Unidades .tbl: interop compartido propiaTablaColReorder /
+    // propiaTablaResize + persistencia en unidades-config entidad 'pqrsd'; el ancho va en el JSON Formato bajo
+    // la clave "w", sin migracion). En PQRSD la clave de columna (col.Key) YA es la clave de config: los
+    // campos del sistema usan su clave y los propios "cd:{guid}", asi que _camposConfig se indexa directo. =====
+    private readonly Dictionary<string, int> _colWP = new(StringComparer.Ordinal);
+    // Estilo del <col>: TODAS las columnas fijan un ancho px explicito (ancho redimensionado si existe, si
+    // no el default por columna). Igual que el canon Unidades (.tbl): con cada <col> en px el layout es
+    // determinista y el ancho se respeta; un <col> en px suelto entre hermanos 'auto' se ignora.
+    private string AnchoColP(string k) => $"width:{(_colWP.TryGetValue(k, out var w) ? w : AnchoDefaultP(k))}px";
+    // Ancho de fabrica por columna (coincide con los min-width de pqrs.css; campos propios y resto -> 170).
+    private static int AnchoDefaultP(string k) => k switch
+    {
+        "radicado" => 140,
+        "asunto" => 300,
+        "tipo" => 120,
+        "categoria" => 150,
+        "estado" => 130,
+        "semaforo" => 155,
+        "radicador" => 240,
+        "unidad" => 170,
+        "vence" => 130,
+        _ => 170,
+    };
+    private GuardarUnidadCampoConfigRequest FilaConfigP(string k)
+    {
+        _camposConfig.TryGetValue(k, out var c);
+        return new GuardarUnidadCampoConfigRequest(k, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "pqrsd");
+    }
+    private async Task GuardarCfgP(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task IniciarReorderP(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable] public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ColumnasVisibles.Select(c => c.Key).ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgP(FilaConfigP(keys[i]) with { Orden = i });
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    private async Task IniciarResizeP(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResizeP(string k) => OnColResize(k, 0);
+    [JSInvokable] public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colWP.Remove(clave); else _colWP[clave] = w.Value;
+        var fila = FilaConfigP(clave);
+        await GuardarCfgP(fila with { Formato = ConAnchoP(fila.Formato, w) });
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    // Hidrata los anchos persistidos (Formato "w") en el cache _colWP (la clave ya es la de config).
+    private void HidratarAnchosP()
+    {
+        _colWP.Clear();
+        foreach (var kv in _camposConfig)
+        {
+            var w = AnchoDeFormatoP(kv.Value.Formato);
+            if (w is > 0) _colWP[kv.Key] = w.Value;
+        }
+    }
+    private static int? AnchoDeFormatoP(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAnchoP(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
     }
 
     private async Task AgregarCampoCfg()
