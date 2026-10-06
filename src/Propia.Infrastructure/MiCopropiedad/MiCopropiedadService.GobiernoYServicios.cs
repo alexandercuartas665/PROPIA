@@ -183,8 +183,8 @@ public partial class MiCopropiedadService
             ProyectoTareaId = req.ProyectoTareaId,
             // ----- Campos del pedido de Contratos (Ola 1) -----
             NumeroContrato = string.IsNullOrWhiteSpace(req.NumeroContrato) ? null : req.NumeroContrato.Trim(),
-            TipoContrato = req.TipoContrato,
-            Categoria = req.Categoria,
+            TipoContrato = string.IsNullOrWhiteSpace(req.TipoContrato) ? null : req.TipoContrato.Trim(),
+            Categoria = string.IsNullOrWhiteSpace(req.Categoria) ? null : req.Categoria.Trim(),
             ValorTotal = req.ValorTotal,
             FormaPagoCuotas = req.FormaPagoCuotas,
             PagoMensual = req.PagoMensual,
@@ -260,8 +260,8 @@ public partial class MiCopropiedadService
         if (req.Observaciones is not null) c.Observaciones = string.IsNullOrWhiteSpace(req.Observaciones) ? null : req.Observaciones.Trim();
         // ----- Campos del pedido de Contratos (Ola 1). MERGE: se aplican si vienen. -----
         if (req.NumeroContrato is not null) c.NumeroContrato = string.IsNullOrWhiteSpace(req.NumeroContrato) ? null : req.NumeroContrato.Trim();
-        if (req.TipoContrato.HasValue) c.TipoContrato = req.TipoContrato.Value;
-        if (req.Categoria.HasValue) c.Categoria = req.Categoria.Value;
+        if (req.TipoContrato is not null) c.TipoContrato = string.IsNullOrWhiteSpace(req.TipoContrato) ? null : req.TipoContrato.Trim();
+        if (req.Categoria is not null) c.Categoria = string.IsNullOrWhiteSpace(req.Categoria) ? null : req.Categoria.Trim();
         if (req.ValorTotal.HasValue) c.ValorTotal = req.ValorTotal.Value;
         if (req.FormaPagoCuotas.HasValue) c.FormaPagoCuotas = req.FormaPagoCuotas.Value;
         if (req.PagoMensual.HasValue) c.PagoMensual = req.PagoMensual.Value;
@@ -297,8 +297,8 @@ public partial class MiCopropiedadService
         if (c.FormaPagoCuotas != cuotasAntes) cambios.Add($"cuotas: {FfEnum(cuotasAntes)} -> {FfEnum(c.FormaPagoCuotas)}");
         if (c.PagoMensual != pagoAntes) cambios.Add($"pago mensual: {FfBool(pagoAntes)} -> {FfBool(c.PagoMensual)}");
         if (c.Estado != estadoAntes) cambios.Add($"estado: {estadoAntes} -> {c.Estado}");
-        if (!Equals(c.Categoria, catAntes)) cambios.Add($"categoria: {FfEnum(catAntes)} -> {FfEnum(c.Categoria)}");
-        if (!Equals(c.TipoContrato, tcAntes)) cambios.Add($"tipo de contrato: {FfEnum(tcAntes)} -> {FfEnum(c.TipoContrato)}");
+        if (!Equals(c.Categoria, catAntes)) cambios.Add($"categoria: {FfTxt(catAntes)} -> {FfTxt(c.Categoria)}");
+        if (!Equals(c.TipoContrato, tcAntes)) cambios.Add($"tipo de contrato: {FfTxt(tcAntes)} -> {FfTxt(c.TipoContrato)}");
         if (c.Tipo != tipoAntes) cambios.Add($"tipo de servicio: {tipoAntes} -> {c.Tipo}");
         if (c.RenovacionAutomatica != renovAntes) cambios.Add($"renovacion automatica: {FfBool(renovAntes)} -> {FfBool(c.RenovacionAutomatica)}");
         if (c.AsociadoTipo != asocTipoAntes || c.AsociadoId != asocIdAntes) cambios.Add("asociado actualizado");

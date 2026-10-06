@@ -304,7 +304,7 @@ public record ContratoServicioDto(
     Guid? ProyectoTareaId = null, int CantidadAdjuntos = 0,
     IReadOnlyList<ContratoCampoValorDto>? CamposValores = null, Guid? EtapaId = null,
     // ----- Campos del pedido de Contratos (Ola 1) -----
-    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    string? NumeroContrato = null, string? TipoContrato = null, string? Categoria = null,
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, string? AsociadoNombre = null,
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
@@ -348,7 +348,7 @@ public record CrearContratoServicioRequest(
     Guid? ProyectoTareaId = null,
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
     // ----- Campos del pedido de Contratos (Ola 1) -----
-    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    string? NumeroContrato = null, string? TipoContrato = null, string? Categoria = null,
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null,
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null);
@@ -368,7 +368,7 @@ public record ActualizarContratoRequest(
     bool ActualizarVinculos = false, bool RenovacionAutomatica = false,
     Guid? ServicioId = null, Guid? ExpedienteId = null, Guid? ProyectoTareaId = null,
     // ----- Campos del pedido de Contratos (Ola 1). MERGE: se aplican si vienen con valor. -----
-    string? NumeroContrato = null, TipoContrato? TipoContrato = null, CategoriaContrato? Categoria = null,
+    string? NumeroContrato = null, string? TipoContrato = null, string? Categoria = null,
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool? PagoMensual = null,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, bool LimpiarAsociado = false,
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,

@@ -41,11 +41,14 @@ public class ContratoServicio : TenantEntity
     public string? NumeroContrato { get; set; }
 
     /// <summary>Tipo de contrato (clasificacion legal del pedido: Prestacion de servicios, Obra, ...).
-    /// Distinto de Tipo (TipoServicio), que sigue vivo para el modulo Servicios.</summary>
-    public TipoContrato? TipoContrato { get; set; }
+    /// Distinto de Tipo (TipoServicio), que sigue vivo para el modulo Servicios.
+    /// Texto configurable por copropiedad (opciones en unidades-config, entidad 'contrato'); las de
+    /// fabrica se siembran de ContratoCamposSistema.TiposContratoSemilla. Antes era enum TipoContrato.</summary>
+    public string? TipoContrato { get; set; }
 
-    /// <summary>Categoria del contrato (Administracion, Aseo, Seguridad, ...).</summary>
-    public CategoriaContrato? Categoria { get; set; }
+    /// <summary>Categoria del contrato (Administracion, Aseo, Seguridad, ...). Texto configurable por
+    /// copropiedad (semilla ContratoCamposSistema.CategoriasSemilla). Antes era enum CategoriaContrato.</summary>
+    public string? Categoria { get; set; }
 
     /// <summary>Valor total del contrato (COP).</summary>
     public decimal? ValorTotal { get; set; }

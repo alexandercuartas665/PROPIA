@@ -452,20 +452,20 @@ else
                                                         {
                                                             <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "tipocontrato", e)' @onblur="CancelarCEd">
                                                                 <option value="">-</option>
-                                                                @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@((int)t)">@TipoContratoLabel(t)</option> }
+                                                                @foreach (var t in OpcionesSisC("tipocontrato")) { <option value="@t">@t</option> }
                                                             </select>
                                                         }
-                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "tipocontrato", cc.TipoContrato is { } t0 ? ((int)t0).ToString() : "")'>@(c.TipoContrato is { } tc ? TipoContratoLabel(tc) : "-")</span> }
+                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "tipocontrato", cc.TipoContrato ?? "")'>@(string.IsNullOrWhiteSpace(c.TipoContrato) ? "-" : c.TipoContrato)</span> }
                                                         break;
                                                     case "categoria":
                                                         @if (CEnEd(c.Id, "categoria"))
                                                         {
                                                             <select class="ctr-inp" value="@_cEditVal" @onchange='(e) => CSelChange(cc, "categoria", e)' @onblur="CancelarCEd">
                                                                 <option value="">-</option>
-                                                                @foreach (var ca0 in Enum.GetValues<CategoriaContrato>()) { <option value="@((int)ca0)">@CategoriaContratoLabel(ca0)</option> }
+                                                                @foreach (var ca0 in OpcionesSisC("categoria")) { <option value="@ca0">@ca0</option> }
                                                             </select>
                                                         }
-                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "categoria", cc.Categoria is { } c0 ? ((int)c0).ToString() : "")'>@(c.Categoria is { } ca ? CategoriaContratoLabel(ca) : "-")</span> }
+                                                        else { <span class="ctr-ed ctr-cval" @onclick='() => IniciarCEd(cc.Id, "categoria", cc.Categoria ?? "")'>@(string.IsNullOrWhiteSpace(c.Categoria) ? "-" : c.Categoria)</span> }
                                                         break;
                                                     case "asociado":
                                                         @if (CEnEd(c.Id, "asociado"))
@@ -562,7 +562,7 @@ else
                                             case "tipocontrato":
                                                 <select class="ctr-inp" @bind="_ncTipoContrato">
                                                     <option value="">- Tipo -</option>
-                                                    @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@((int)t)">@TipoContratoLabel(t)</option> }
+                                                    @foreach (var t in OpcionesSisC("tipocontrato")) { <option value="@t">@t</option> }
                                                 </select>
                                                 break;
                                             case "numero":
@@ -571,7 +571,7 @@ else
                                             case "categoria":
                                                 <select class="ctr-inp" @bind="_ncCategoria">
                                                     <option value="">- Categoría -</option>
-                                                    @foreach (var ca in Enum.GetValues<CategoriaContrato>()) { <option value="@((int)ca)">@CategoriaContratoLabel(ca)</option> }
+                                                    @foreach (var ca in OpcionesSisC("categoria")) { <option value="@ca">@ca</option> }
                                                 </select>
                                                 break;
                                             case "asociado":
@@ -852,7 +852,7 @@ else
                     <label class="srv-lbl">Categoría</label>
                     <select class="srv-input" @bind="_f.Categoria">
                         <option value="">- Sin especificar -</option>
-                        @foreach (var c in Enum.GetValues<CategoriaContrato>()) { <option value="@c">@CategoriaContratoLabel(c)</option> }
+                        @foreach (var c in OpcionesSisC("categoria")) { <option value="@c">@c</option> }
                     </select>
                 </div>
                 <div>
@@ -887,7 +887,7 @@ else
                     <label class="srv-lbl">Tipo de contrato</label>
                     <select class="srv-input" @bind="_f.TipoContrato">
                         <option value="">- Sin especificar -</option>
-                        @foreach (var t in Enum.GetValues<TipoContrato>()) { <option value="@t">@TipoContratoLabel(t)</option> }
+                        @foreach (var t in OpcionesSisC("tipocontrato")) { <option value="@t">@t</option> }
                     </select>
                 </div>
                 <div>
@@ -1753,8 +1753,8 @@ else
         public string? ProyectoId { get; set; }
         // ----- Campos del pedido de Contratos (Ola 1) -----
         public string? NumeroContrato { get; set; }
-        public TipoContrato? TipoContrato { get; set; }
-        public CategoriaContrato? Categoria { get; set; }
+        public string? TipoContrato { get; set; }
+        public string? Categoria { get; set; }
         public decimal? ValorTotal { get; set; }
         public int? FormaPagoCuotas { get; set; }
         public bool PagoMensual { get; set; }
@@ -2128,7 +2128,11 @@ else
     private static readonly IReadOnlyList<CampoSistemaDef> ContratoCatalogo =
         ContratoCamposSistema.Todos.Select(c => new CampoSistemaDef(
             c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
-            OpcionesEditables: false, Semilla: OpcionesFijasContrato(c.Clave), Entero: false, Ayuda: null,
+            // tipocontrato y categoria: lista editable por copropiedad (opciones en unidades-config,
+            // entidad 'contrato'; semilla del enum). 'estado' (Vencimiento) se deriva por fecha y 'tipo'
+            // (servicio) es legacy -> se quedan de solo lectura.
+            OpcionesEditables: c.Clave is "tipocontrato" or "categoria",
+            Semilla: OpcionesFijasContrato(c.Clave), Entero: false, Ayuda: null,
             TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
 
     // SOLICITUD_SELLO_05: las listas de sistema de SOLO LECTURA del contrato entregan sus opciones al
@@ -2142,6 +2146,16 @@ else
         "tipo" => Enum.GetNames<TipoServicio>(),
         _ => null
     };
+
+    // Opciones VISIBLES de una lista de sistema editable (tipocontrato/categoria): las que configuro la
+    // copropiedad (unidades-config, formato OpcionCampo) o, si no hay nada guardado, la semilla del enum.
+    // Reusa el helper compartido OpcionCampo (mismo formato que escribe ConfigCamposEntidad).
+    private string[] OpcionesSisC(string clave)
+    {
+        var raw = _cfgContrato.TryGetValue(ConfigClave(clave), out var c) ? c.Opciones : null;
+        if (!string.IsNullOrWhiteSpace(raw)) return OpcionCampo.VisiblesK(raw);
+        return OpcionesFijasContrato(clave) ?? Array.Empty<string>();
+    }
 
     // Clave de config: campo de sistema -> su clave; campo propio (guid) -> "cd:{guid}".
     private static string ConfigClave(string k) => Guid.TryParse(k, out _) ? "cd:" + k : k;
@@ -2186,9 +2200,9 @@ else
         return key switch
         {
             "tercero" => c.Proveedor ?? "",
-            "tipocontrato" => c.TipoContrato is { } tc ? TipoContratoLabel(tc) : "",
+            "tipocontrato" => c.TipoContrato ?? "",
             "numero" => c.NumeroContrato ?? "",
-            "categoria" => c.Categoria is { } ca ? CategoriaContratoLabel(ca) : "",
+            "categoria" => c.Categoria ?? "",
             "asociado" => c.AsociadoNombre ?? "",
             "inicio" => c.FechaInicio.ToString("yyyy-MM-dd", ci),
             "fin" => c.FechaFin?.ToString("yyyy-MM-dd", ci) ?? "",
@@ -2609,8 +2623,8 @@ else
         {
             Guid? ppid = _ncProveedor.EntidadTipo == EntidadDirectorio.Empresa ? null : _ncProveedor.PersonaId;
             Guid? peid = _ncProveedor.EntidadTipo == EntidadDirectorio.Empresa ? _ncProveedor.PersonaId : (Guid?)null;
-            TipoContrato? tc = int.TryParse(_ncTipoContrato, out var tci) && Enum.IsDefined(typeof(TipoContrato), tci) ? (TipoContrato)tci : null;
-            CategoriaContrato? cat = int.TryParse(_ncCategoria, out var cai) && Enum.IsDefined(typeof(CategoriaContrato), cai) ? (CategoriaContrato)cai : null;
+            string? tc = string.IsNullOrWhiteSpace(_ncTipoContrato) ? null : _ncTipoContrato.Trim();
+            string? cat = string.IsNullOrWhiteSpace(_ncCategoria) ? null : _ncCategoria.Trim();
             TipoActivoMantenimiento? asocTipo = null; Guid? asocId = null;
             if (!string.IsNullOrEmpty(_ncAsociado))
             {
@@ -2766,19 +2780,6 @@ else
         _f.AsociadoId = null;   // al cambiar de tipo, se limpia el elemento elegido
     }
 
-    private static string TipoContratoLabel(TipoContrato t) => t switch
-    {
-        TipoContrato.PrestacionServicios => "Prestacion de servicios",
-        TipoContrato.CompraVenta => "Compra y venta",
-        _ => t.ToString()
-    };
-
-    private static string CategoriaContratoLabel(CategoriaContrato c) => c switch
-    {
-        CategoriaContrato.ServiciosPublicos => "Servicios publicos",
-        _ => c.ToString()
-    };
-
     /// <summary>
     /// K-01: el backend devuelve {"error":"..."} en los 400 de validacion. Sin esto la pantalla
     /// mostraba el JSON crudo al usuario.
@@ -2907,8 +2908,8 @@ else
             int dias = c.DiasAnticipacionAlerta;
             string? obs = null;              // null => MERGE conserva observaciones
             string? numero = null;           // null => MERGE conserva
-            TipoContrato? tipoC = null;      // null => MERGE conserva
-            CategoriaContrato? cat = null;   // null => MERGE conserva
+            string? tipoC = null;            // null => MERGE conserva; "" limpia
+            string? cat = null;              // null => MERGE conserva; "" limpia
             var val = _cEditVal.Trim();
 
             switch (campo)
@@ -2939,9 +2940,9 @@ else
                 case "numero":
                     numero = string.IsNullOrWhiteSpace(val) ? "" : val; break;   // "" limpia
                 case "tipocontrato":
-                    if (int.TryParse(val, out var tci) && Enum.IsDefined(typeof(TipoContrato), tci)) tipoC = (TipoContrato)tci; break;
+                    tipoC = string.IsNullOrWhiteSpace(val) ? "" : val; break;   // "" limpia
                 case "categoria":
-                    if (int.TryParse(val, out var cai) && Enum.IsDefined(typeof(CategoriaContrato), cai)) cat = (CategoriaContrato)cai; break;
+                    cat = string.IsNullOrWhiteSpace(val) ? "" : val; break;     // "" limpia
             }
             CancelarCEd();
             var req = new ActualizarContratoRequest(
