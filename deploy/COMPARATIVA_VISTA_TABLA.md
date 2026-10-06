@@ -4,6 +4,38 @@
 > ([[Inventario vista tabla - Unidades Privadas (topicos)]]). Fecha: 2026-10-06 (sesión ALEX).
 > Leyenda: ✅ cumple · 🟡 parcial (existe pero distinto) · ❌ falta · ⚪ N/A (no aplica por diseño).
 
+## TAREAS EXTRA — "listas en la config del campo" (pedido Alex 2026-10-06)
+
+> Frente de trabajo: que TODAS las listas (select) se editen DENTRO de la config del campo, no por
+> fuera. Se actualiza tras CADA ronda. Estado: [x] hecho · [ ] pendiente · (🔄) en curso · (⛔) descartado.
+
+- [x] **Contratos · Tipo de contrato** → editable inline (migración enum→string). `fd631db` · dev OK, prod en deploy.
+- [x] **Contratos · Categoría** → editable inline (migración enum→string). `fd631db`.
+- [x] (⛔) **PQRSD · Tipo** → read-only: determina el plazo legal (Ley 1755). Descartado por diseño.
+- [x] (⛔) **PQRSD · Estado** → read-only: flujo del kanban/SLA legal. Descartado por diseño.
+- [x] **Unidades · Tipo** → **YA CUMPLÍA**: sus opciones se editan en el modal "Editar campo"
+      (`EditarCampoSistemaModal`: Opciones de la lista + Añadir), que ES la config del campo. Sin trabajo.
+- [x] **PQRSD · Categoría** → ver+agregar en la config del campo (modal "Editar campo", lee/crea
+      `pqrsd_categorias`); patrón de Unidades Tipo. La gestión completa (renombrar/activar/eliminar) sigue
+      en la pestaña Categorías. Validado en Chrome + BD.
+
+**Mecanismo correcto (no hace falta refactor compartido):** el modal "Editar campo"
+(`EditarCampoSistemaModal`) ya muestra "Opciones de la lista" dentro de la config del campo. Para listas
+con fuente externa (tabla propia) se cablea `OnGestionarLista`+`OpcionesVistaDe`+`OnAgregarOpcion`.
+
+**Ya cumplían (sin trabajo):** Estado/Categoría/Tipo editables inline en Unidades/Zonas/Equipos/Vehículos/
+Mascotas; y Unidades Tipo (en "Editar campo").
+
+### Bitácora por ronda
+- 2026-10-06 R1: Contratos tipo+categoria enum→string editable inline. Validado en Chrome + BD. `fd631db`.
+- 2026-10-06 R2: decisión PQRSD — tipo/estado read-only (legal).
+- 2026-10-06 R3: descubrimiento — Unidades Tipo YA cumplía (opciones en "Editar campo"). Se revirtió un
+  refactor de `ConfigCamposEntidad` que apuntaba a un gestor enterrado (innecesario). PQRSD categoría se
+  hará con el patrón "Editar campo" (no refactor compartido).
+- 2026-10-06 R4: PQRSD categoría cableada al modal "Editar campo" (ver+agregar, lee/crea pqrsd_categorias).
+  Validado en Chrome (agregó ZZCATTEST -> persistió) + BD; dato borrado. **Frente "listas en config del
+  campo" CERRADO** (Contratos tipo/categoria, Unidades Tipo ya ok, PQRSD categoria; tipo/estado read-only).
+
 Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) · Contratos
 `Pages/Capa2/Servicios.razor` (`.ctr-*`) · Seguros `Pages/Capa2/Seguros.razor` (`.seg-*`) · PQRSD
 `Pages/Capa2/PqrsKanban.razor` (vista tabla `.pk-*`).

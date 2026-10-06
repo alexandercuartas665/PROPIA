@@ -390,6 +390,8 @@
                                          RutaConfig="unidades-config"
                                          EntidadConfig="pqrsd"
                                          Jwt="@_jwt"
+                                         OnGestionarLista="AbrirEditarCampoSistema"
+                                         ContarOpcionesExterna="ContarCategoriasPqrsd"
                                          Cambiado="CargarAsync" />
                 </div>
             </div>
@@ -400,6 +402,8 @@
     {
         <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                                  EntidadConfig="pqrsd" TituloSingular="campo" Jwt="@_jwt"
+                                 OpcionesLista="@(_editSisClave == "categoria" ? CategoriasVistaPqrsd() : null)"
+                                 OnAgregarOpcion="@((t) => AgregarCategoriaDesdeCampoAsync(t))"
                                  Guardado="CargarAsync" Cerrado="() => _editSisClave = null" />
     }
 
@@ -889,9 +893,11 @@
     private string? _shareMsg;
 
     // Fase 1 Selector de Campos: catalogo de los campos del SISTEMA del expediente (PqrsdCamposSistema)
-    // mapeado a la forma neutra que consume ConfigCamposEntidad. Opcion (b): los de Seleccion
-    // (tipo/categoria/etapa) NO tienen opciones editables aqui (viven en pqrsd_tipos/categorias/estados);
-    // por eso OpcionesEditables=false y ListaExterna=false, y sus tipos son fijos (TiposIntercambiables vacio).
+    // mapeado a la forma neutra que consume ConfigCamposEntidad.
+    // 'categoria' SI es editable por copropiedad (vive en pqrsd_categorias): se marca OpcionesEditables +
+    //   ListaExterna para que la config del campo muestre "Gestionar lista" y abra el modal "Editar campo"
+    //   con ver+agregar (OnGestionarLista -> AbrirEditarCampoSistema + OpcionesLista/OnAgregarOpcion).
+    // 'tipo' (plazo legal Ley 1755) y 'estado' (flujo kanban/SLA) quedan de solo lectura: enum fijo.
     private IReadOnlyList<CampoSistemaDef> PqrsdCatalogo => PqrsdCamposSistema.Todos.Select(c =>
         new CampoSistemaDef(
             Clave: c.Clave,
@@ -899,12 +905,12 @@
             Tipo: c.Tipo,
             VisibleDefault: c.VisiblePorDefecto,
             Fija: c.Fija,
-            OpcionesEditables: false,
+            OpcionesEditables: c.Clave == "categoria",
             Semilla: null,
             Entero: false,
             Ayuda: c.Ayuda,
             TiposIntercambiables: Array.Empty<TipoCampoTablero>(),
-            ListaExterna: false))
+            ListaExterna: c.Clave == "categoria"))
         .ToList();
 
     // ===== Config por copropiedad de las columnas del sistema (unidades-config?entidad=pqrsd) =====
@@ -1095,6 +1101,26 @@
         _editSisTipo = s?.Tipo;
         _editSisReq = s?.Fija ?? false;
         _editSisClave = clave;
+    }
+
+    // Categoria PQRSD en el modal "Editar campo": ver + agregar (misma vista que Unidades Tipo). Las
+    // opciones salen de pqrsd_categorias (solo activas se ofrecen); la gestion completa (renombrar/
+    // activar/eliminar) sigue en la pestana Categorias del modal de configuracion.
+    private List<EditarCampoSistemaModal.OpcionVista> CategoriasVistaPqrsd()
+        => _categorias.Where(c => c.Activa).OrderBy(c => c.Orden).ThenBy(c => c.Nombre)
+            .Select(c => new EditarCampoSistemaModal.OpcionVista(c.Nombre, null)).ToList();
+
+    private (int Visibles, int Ocultas) ContarCategoriasPqrsd(string clave)
+        => clave == "categoria" ? (_categorias.Count(c => c.Activa), _categorias.Count(c => !c.Activa)) : (0, 0);
+
+    // Agregar una categoria propia desde el modal "Editar campo" (crea la fila en pqrsd_categorias).
+    private async Task AgregarCategoriaDesdeCampoAsync(string texto)
+    {
+        var nombre = (texto ?? "").Trim();
+        if (nombre.Length == 0) return;
+        if (_categorias.Any(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))) return;
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/categorias", new CrearCategoriaRequest(nombre, _categorias.Count));
+        if (resp.IsSuccessStatusCode) await CargarTiposCatAsync();
     }
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
