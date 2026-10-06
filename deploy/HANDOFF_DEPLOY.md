@@ -15,26 +15,39 @@
 
 ---
 
-## ESTADO 2026-10-06 CATALOGO GLOBAL DE LISTAS - OLA 1 (infra, LEER PRIMERO)
+## ESTADO 2026-10-06 DEPLOY 0.0.103 (LEER PRIMERO)
 
-Rama `equipo/alex-header-zonas-equipos`. Primer entregable del plan "mudar las listas del sistema al
-Super Admin" (catalogo global editable por A&D). **Ola 1 = solo infraestructura; NINGUN modulo lee aun
-del catalogo, nada cambia en pantalla.**
+Rama `equipo/alex-header-zonas-equipos` -> **mergeada a `main`** (HEAD `0d110c5`). Version **0.0.103**.
+Este deploy acumula: **catalogo global de listas (Olas 1-4A)**, **alta inline de Unidades completa**, y la
+**vista-tabla reordenar/redimensionar columnas** (Contratos + PQRSD). Detalle del catalogo:
+`deploy/PLAN_CATALOGOS_SUPER_ADMIN.md`.
 
-**TRAE UNA MIGRACION NUEVA ADITIVA que SI hay que aplicar en prod:**
+### 1 MIGRACION NUEVA ADITIVA — APLICAR EN PROD
 `20261006164654_AddCatalogoOpcion` (owner `propia`, `dotnet ef database update`). Crea la tabla GLOBAL
-`catalogo_opciones` (sin tenant_id, **sin RLS** a proposito: tabla de plataforma; `RlsCoverageTests` no
-la toca porque solo mira tablas con tenant_id) + GRANT a `propia_app`. Aditiva: si falla el deploy, la
-tabla queda sin uso (rollback = redeploy del artefacto anterior, sin revertir esquema).
+`catalogo_opciones` (sin tenant_id, **sin RLS** a proposito: tabla de plataforma; `RlsCoverageTests` solo
+mira tablas con tenant_id, asi que no aplica) + GRANT a `propia_app`. Aditiva: rollback = redeploy del
+artefacto anterior, sin revertir esquema (la tabla queda sin uso).
 
-**CONFIG/ARRANQUE NUEVO:** se agrego un seeder idempotente `CatalogoListasSeeder.EnsureAsync` que corre
-en CADA arranque (Web y Api), SIEMPRE (no solo dev). Inserta solo las semillas que falten (hoy
-`unidad.tipo` = enum `TipoUnidad`, `unidad.estado` = {Habitada,Desocupada,Arrendada}); NO pisa lo que
-A&D edite despues. Es no-op tras la primera vez. Va envuelto en try/catch: si falla, loguea y NO bloquea
-el arranque. **Orden:** la migracion debe estar aplicada ANTES de arrancar (si no, el seeder loguea
-warning y sigue; al proximo arranque ya siembra).
+### CONFIG/ARRANQUE NUEVO — seeder idempotente
+`CatalogoListasSeeder.EnsureAsync` corre en CADA arranque (Web y Api), SIEMPRE. Siembra las 12 listas de
+fabrica (unidad.tipo/estado, contrato.tipocontrato/categoria, vehiculo.tipovehiculo, mascota.tipo,
+equipo.categoria/tipo/estado, zona.categoria/estado, persona.sexo) desde los enums/semillas. Solo inserta
+lo que falta; NO pisa lo que A&D edite. No-op tras la primera vez. Va en try/catch: si falla, loguea y NO
+bloquea el arranque. **La migracion debe estar aplicada ANTES de arrancar** (si no, loguea warning y al
+proximo arranque siembra).
 
-Sin cambios de comportamiento de usuario en esta ola. Pilotos (enganche real de Unidades) van en Ola 3.
+### Que cambia para el usuario
+- **Consola A&D -> nueva pagina `/admin/catalogos`** (pestana Plataforma): editar labels/orden/color/activo
+  y agregar opciones de las 12 listas, para TODAS las copropiedades, sin tocar codigo. La clave no se edita
+  (los datos apuntan a ella); las semilla no se borran, se desactivan.
+- Cada modulo (Unidades, Contratos, Vehiculos, Mascotas, Equipos, Zonas, Personas-sexo) **lee sus labels/
+  opciones del catalogo**, componiendo el override por copropiedad encima. Sin catalogo, usa el fallback de
+  codigo (comportamiento identico al actual), asi que es seguro aun si el seeder no corrio.
+- **Alta inline de Unidades** ahora captura estado, habitaciones, banos, parqueaderos, paga admin, cuota,
+  observaciones y modulos contributivos (antes "En la ficha"). Sin migracion (el request ya los soportaba).
+- **Contratos y PQRSD**: reordenar (arrastrar header) + redimensionar columnas (tirador + doble-clic).
+
+### Pendiente (NO en este deploy): PQRSD-unify (Ola 4 Tranche B) — proxima sesion.
 
 ## ESTADO 2026-10-02 ROLES REFINO VISUAL + MENU (LEER PRIMERO)
 
