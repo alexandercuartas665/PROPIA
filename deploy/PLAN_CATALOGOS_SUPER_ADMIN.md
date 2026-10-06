@@ -178,7 +178,9 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
       (`contrato.tipocontrato`/`contrato.categoria`); `OpcionesFijasContrato` lee del catálogo con
       fallback; override por tenant intacto. **Verificado:** renombré "Obra"→"Obra TEST" en A&D y
       Contratos lo mostró. (2026-10-06)
-- [ ] **Vehículos · Tipo** / **Mascotas · Tipo** (patrón B, 1 lista c/u): re-rutear `TipoLabel` al catálogo.
+- [x] **Vehículos · Tipo** / **Mascotas · Tipo** (patrón B). `TipoLabel` re-ruteado al catálogo
+      (`vehiculo.tipovehiculo` con el map Automovil→"Carro"; `mascota.tipo`=enum), fallback al switch.
+      **Verificado:** renombré "Carro"→"Carro TEST" en el catálogo y el select de Vehículos lo mostró. (2026-10-06)
 - [ ] **Equipos · Categoría/Tipo/Estado**, **Zonas · Categoría/Estado** (patrón B): re-rutear labels.
       Ojo lógica: Equipos `tipo`=Equipo fuerza Cantidad=1; Zonas `estado`=EnMantenimiento bloquea reservas
       (no cambia por renombrar label; la clave enum se mantiene).

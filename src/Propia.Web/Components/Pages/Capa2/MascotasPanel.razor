@@ -1,4 +1,5 @@
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @using Microsoft.AspNetCore.Components.Web
@@ -412,7 +413,10 @@ else
 
     // Tipos ofrecidos: los mismos que la ficha de la unidad.
     private static readonly TipoMascota[] TiposMascota = Enum.GetValues<TipoMascota>();
-    private static string TipoLabel(TipoMascota t) => t.ToString();
+    // Label del tipo: del catalogo global (mascota.tipo, editable por A&D) si cargo; si no, el enum.
+    private Dictionary<string, string> _catTipoMas = new(StringComparer.Ordinal);
+    private string TipoLabel(TipoMascota t)
+        => _catTipoMas.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString();
 
     // ===== Columnas dinamicas dirigidas por unidades-config (entidad 'mascotas') =====
     // Estructurales (unidad, propietario) + de sistema (nombre, tipo, raza) + propias (cd:{id}).
@@ -702,6 +706,7 @@ else
         {
             var http = Auth();
             _mascotas = await http.GetFromJsonAsync<List<MascotaResumenDto>>("/api/mi-copropiedad/mascotas") ?? new();
+            try { _catTipoMas = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=mascota.tipo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catTipoMas = new(StringComparer.Ordinal); }
             if (_suppressRecienClearM) _suppressRecienClearM = false; else _recienCreados.Clear();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }

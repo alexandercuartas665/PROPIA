@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.Catalogos;
@@ -48,6 +49,21 @@ public static class CatalogoListasSeeder
         reg.Add(("contrato.categoria",
             ContratoCamposSistema.CategoriasSemilla
                 .Select((s, i) => new SemillaOpcion(s, s, i))
+                .ToList()));
+
+        // Listas enum "patron B" (Ola 4 tranche A): clave estable "e:<Enum>", label = el que muestra hoy
+        // el panel (switch bespoke). Se replica aqui SOLO para la semilla de paridad; luego manda el catalogo.
+        reg.Add(("vehiculo.tipovehiculo", new List<SemillaOpcion>
+        {
+            new("e:Automovil", "Carro", 0),   // el panel mapea Automovil -> "Carro"
+            new("e:Moto", "Moto", 1),
+            new("e:Bicicleta", "Bicicleta", 2),
+            new("e:Camioneta", "Camioneta", 3),
+            new("e:Otro", "Otro", 4),
+        }));
+        reg.Add(("mascota.tipo",
+            Enum.GetValues<TipoMascota>()
+                .Select((t, i) => new SemillaOpcion("e:" + t, t.ToString(), i))
                 .ToList()));
 
         return reg;

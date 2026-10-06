@@ -21,6 +21,8 @@ public static class CatalogoListasRegistro
         new("unidad.estado",        "Unidades · Estado de la propiedad",  false),
         new("contrato.tipocontrato","Contratos · Tipo de contrato",        false),
         new("contrato.categoria",   "Contratos · Categoría",               false),
+        new("vehiculo.tipovehiculo","Vehículos · Tipo de vehículo",        false),
+        new("mascota.tipo",         "Mascotas · Tipo de mascota",          false),
     };
 
     public static ListaInfo Info(string lista)
