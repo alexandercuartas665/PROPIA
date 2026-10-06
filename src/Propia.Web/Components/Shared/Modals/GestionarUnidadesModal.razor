@@ -138,8 +138,8 @@
 
                 <div class="cpe-tabs">
                     <button type="button" class="cpe-tab @(_fichaTab == "detalle" ? "on" : "")" @onclick='() => _fichaTab = "detalle"'>Detalle</button>
+                    <button type="button" class="cpe-tab @(_fichaTab == "anexas" ? "on" : "")" @onclick='() => _fichaTab = "anexas"'>Unidades anexas</button>
                     <button type="button" class="cpe-tab @(_fichaTab == "historial" ? "on" : "")" @onclick='() => _fichaTab = "historial"'>Historial relacionado</button>
-                    <button type="button" class="cpe-tab @(_fichaTab == "cuenta" ? "on" : "")" @onclick='() => _fichaTab = "cuenta"'>Estado de cuenta</button>
                     <button type="button" class="cpe-tab @(_fichaTab == "documentos" ? "on" : "")" @onclick='() => _fichaTab = "documentos"'>Documentos</button>
                 </div>
 
@@ -227,139 +227,115 @@
                             <button class="cpe-addfield" type="button" @onclick="() => _cfOpen = true"><i class="fi fi-rr-plus"></i> Agregar campo</button>
                         }
 
-                        @* ===== ANEXOS de la unidad (parqueaderos, cuartos utiles, bodegas): se ven y se
-                               agregan/quitan aqui mismo (no dependen de "Editar ficha"). Reemplaza la gestion
-                               inline que estaba en la tabla. ===== *@
-                        <div class="gum-unit-card--full" style="margin-top:14px">
-                            <div class="gum-unit-eyebrow">ANEXOS (PARQUEADEROS, CUARTOS UTILES, BODEGAS)</div>
-                            @if (_vinculos.Count == 0)
-                            {
-                                <div class="gum-people-empty">Esta unidad no tiene anexos. Agrega uno abajo.</div>
-                            }
-                            else
-                            {
-                                <div class="gum-inm-list">
-                                    @foreach (var v in _vinculos)
-                                    {
-                                        <div class="gum-inm">
-                                            <div class="gum-inm-icon" style="background:var(--propia-brand-soft);color:var(--propia-brand)">
-                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18v13H3zM8 7V4h8v3"/></svg>
-                                            </div>
-                                            <div class="gum-inm-text">
-                                                <div class="gum-inm-name">@TipoLabel(v.AsociadaTipo) @v.AsociadaNumero</div>
-                                                @if (v.IncluyeEnFacturacion) { <div class="gum-inm-fact" style="color:var(--propia-brand)">Incluido en la factura</div> }
-                                            </div>
-                                            <button class="gum-inm-del" type="button" @onclick="() => EliminarVinculo(v.Id)" title="Quitar anexo">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                            </button>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            <div class="gum-inm-add" style="flex-direction:column;align-items:stretch">
-                                <select class="gum-inm-input" @bind="_nuevoVinculoUnidadId">
-                                    <option value="@Guid.Empty">Vincular una unidad como anexo...</option>
-                                    @foreach (var u in AnexosCandidatos()) { <option value="@u.Id">@LabelU(u) @u.Numero</option> }
-                                </select>
-                                <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-                                    <label style="flex:1;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--propia-text-secondary)"><input type="checkbox" @bind="_nuevoVinculoFactura" /> Incluir en la factura</label>
-                                    <button class="gum-inm-add-btn" type="button" @onclick="AgregarVinculo" disabled="@(_busy || _nuevoVinculoUnidadId == Guid.Empty)">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
                     }
 
-                @* === Card ARRIENDOS Y COBROS MENSUALES (proto v3) === *@
-                @if (_fichaTab == "cuenta") {
-                <div class="gum-unit-card">
-                    <div class="gum-unit-eyebrow">ARRIENDOS Y COBROS MENSUALES</div>
-                    @if (_arriendos.Count == 0)
+                    @* ===== UNIDADES ANEXAS: pestana propia (parqueaderos, depositos, etc. vinculados).
+                           Cada anexa es un registro Unidad con los MISMOS campos; aqui se vincula, crea,
+                           edita y mueve a otra unidad privada. Diseno .cpe-anx-* (maqueta editor-ficha). ===== *@
+                    @if (_fichaTab == "anexas")
                     {
-                        <div class="gum-people-empty">Esta unidad no tiene arriendos ni cobros mensuales adicionales.</div>
-                    }
-                    else
-                    {
-                        <div class="gum-inm-list">
-                            @foreach (var a in _arriendos)
-                            {
-                                <div class="gum-inm">
-                                    <div class="gum-inm-icon" style="background:var(--propia-ok-soft);color:var(--propia-success)">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                                    </div>
-                                    <div class="gum-inm-text">
-                                        <div class="gum-inm-name">@a.Concepto</div>
-                                        <div class="gum-inm-fact" style="color:var(--propia-success)">$@a.ValorMensual.ToString("N0") / mes@(string.IsNullOrEmpty(a.Referencia) ? "" : $" - {a.Referencia}")</div>
-                                    </div>
-                                    @if (_editMode)
-                                    {
-                                        <button class="gum-inm-del" type="button" @onclick="() => EliminarArriendo(a.Id)" title="Quitar">
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        </button>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_editMode)
-                    {
-                        <div class="gum-inm-add" style="flex-direction:column;align-items:stretch">
-                            <select class="gum-inm-input" @bind="_nuevoArrRef">
-                                <option value="">Que arrienda? (opcional)</option>
-                                @foreach (var v in _vinculos)
-                                {
-                                    <option value="@($"{v.AsociadaTipo} {v.AsociadaNumero}")">@v.AsociadaTipo @v.AsociadaNumero</option>
-                                }
-                            </select>
-                            <div style="display:flex;gap:6px">
-                                <input class="gum-inm-input" style="flex:1;min-width:0" @bind="_nuevoArrConcepto" @bind:event="oninput" placeholder="Concepto (ej. Arriendo mensual)" />
-                                <input class="gum-inm-input" style="width:90px" type="number" step="1" @bind="_nuevoArrValor" placeholder="$ valor" />
-                                <button class="gum-inm-add-btn" type="button" @onclick="AgregarArriendo" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoArrConcepto) || _nuevoArrValor is null)">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </div>
-                }
-
-                @* === ESTADISTICA: deuda + estado de cuenta (2.7) + PQRSD (Ola 6) === *@
-                @if (_fichaTab == "cuenta") {
-                <div class="gum-unit-card--full gum-stats">
-                    <div class="gum-stat">
-                        <div class="gum-stat-lbl">Deuda actual</div>
-                        <div class="gum-stat-val @((_cartera?.SaldoTotal ?? 0) > 0 ? "gum-stat-val--err" : "gum-stat-val--ok")">$ @((_cartera?.SaldoTotal ?? 0).ToString("N0"))</div>
-                    </div>
-                    <div class="gum-stat">
-                        <div class="gum-stat-lbl">Estado de cuenta</div>
-                        @if (_cartera is null)
+                        <div class="gum-unit-eyebrow">UNIDADES ANEXAS</div>
+                        <p class="cpe-anx-help">Parqueaderos, depósitos y demás unidades vinculadas a esta unidad privada. Cada unidad anexa tiene los <b>mismos campos</b> de la tabla Unidades Privadas; desde aquí las vinculas, las creas, las <b>editas</b> o las <b>mueves</b> a otra unidad privada.</p>
+                        @if (_vinculos.Count == 0)
                         {
-                            <div class="gum-stat-val gum-stat-val--ok">Sin cartera</div>
-                        }
-                        else if (_cartera.DiasMora > 0)
-                        {
-                            <div class="gum-stat-val gum-stat-val--err">En mora · @_cartera.DiasMora d</div>
+                            <div class="gum-tab-empty">Sin unidades anexas vinculadas todavía.</div>
                         }
                         else
                         {
-                            <div class="gum-stat-val gum-stat-val--ok">Al día</div>
+                            <div class="cpe-anx-list">
+                                @foreach (var v in _vinculos)
+                                {
+                                    var vv = v;
+                                    var au = AnexaUnidad(v.UnidadAsociadaId);
+                                    <div class="cpe-anx-item">
+                                        <span class="cpe-anx-ic"><i class="fi @AnexIcon(v.AsociadaTipo)"></i></span>
+                                        <div class="cpe-anx-id">
+                                            <div class="cpe-anx-nm">@TipoLabel(v.AsociadaTipo) @v.AsociadaNumero</div>
+                                            <div class="cpe-anx-sub">@AnexSubtitulo(v, au)</div>
+                                        </div>
+                                        <button class="cpe-anx-x" type="button" title="Opciones" @onclick="() => ToggleAnxMenu(vv.Id)">
+                                            <i class="fi fi-rr-menu-dots"></i>
+                                        </button>
+                                        @if (_anxMenu == v.Id)
+                                        {
+                                            <div class="cpe-anx-menu" @onclick:stopPropagation="true">
+                                                @if (_anxMoveOpen)
+                                                {
+                                                    @if (AnexMoverDestinos().Count == 0)
+                                                    {
+                                                        <div class="cpe-anx-menu-empty">No hay otras unidades privadas</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        @foreach (var dest in AnexMoverDestinos())
+                                                        {
+                                                            var dd = dest;
+                                                            <button type="button" class="cpe-anx-menu-it" @onclick="() => MoverAnexa(vv, dd)"><i class="fi fi-rr-home"></i> @LabelU(dd) @dd.Numero</button>
+                                                        }
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="cpe-anx-menu-it" @onclick="() => AbrirEditarAnexa(vv)"><i class="fi fi-rr-pencil"></i> Editar</button>
+                                                    <button type="button" class="cpe-anx-menu-it" @onclick="() => _anxMoveOpen = true"><i class="fi fi-rr-exchange"></i> Mover a otra unidad privada</button>
+                                                    <div class="cpe-anx-menu-sep"></div>
+                                                    <button type="button" class="cpe-anx-menu-it cpe-anx-menu-it--danger" @onclick="() => AbrirEliminarAnexa(vv)"><i class="fi fi-rr-trash"></i> Eliminar</button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
-                    </div>
-                    <div class="gum-stat">
-                        <div class="gum-stat-lbl">PQRSD</div>
-                        <div class="gum-stat-val">@(_histResumen?.TotalPqrsd ?? 0)</div>
-                    </div>
-                </div>
-                }
 
-                @* === HISTORIAL RELACIONADO (Ola 2/3): tareas + PQRSD + mantenimientos de la unidad === *@
-                @if (_fichaTab == "historial") {
-                <div class="gum-unit-card gum-unit-card--full">
-                    <div class="gum-unit-eyebrow">HISTORIAL RELACIONADO</div>
-                    <HistorialRelacionadoPanel Jwt="@Jwt" Tipo="TipoEntidadHistorial.Unidad" EntidadId="@_selected.Id" />
-                </div>
-                }
+                        @if (!_anxFormOpen)
+                        {
+                            <button class="cpe-addfield" type="button" @onclick="AbrirAltaAnexa"><i class="fi fi-rr-plus"></i> Agregar unidad anexa</button>
+                        }
+                        else
+                        {
+                            <div class="cpe-anx-form">
+                                <div class="gum-unit-eyebrow" style="margin-top:0">@(_anxEditId is null ? "NUEVA UNIDAD ANEXA" : "EDITAR UNIDAD ANEXA")</div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-home"></i> Unidad</label>
+                                    <input class="cpe-fin" @bind="_anx.Numero" placeholder="Ej. PQ-012" @ref="_anxFirstInput" />
+                                </div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-apps"></i> Tipo</label>
+                                    <select class="cpe-fin" @bind="_anx.TipoKey">
+                                        @foreach (var t in TiposUnidadSel) { <option value="@($"e:{t}")">@TipoLabel(t)</option> }
+                                        @if (TiposCustomVisibles().Count > 0) { <optgroup label="Tipos propios">@foreach (var tc in TiposCustomVisibles()) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }</optgroup> }
+                                    </select>
+                                </div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-building"></i> @AgrupacionLabelSingular</label>
+                                    <select class="cpe-fin" @bind="_anx.TorreId">
+                                        <option value="@Guid.Empty">- elegir -</option>
+                                        @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
+                                    </select>
+                                </div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-layers"></i> @PisoLabelSingular</label>
+                                    <input type="number" class="cpe-fin" @bind="_anx.Piso" />
+                                </div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-ruler-combined"></i> Área m2</label>
+                                    <input type="number" step="0.01" class="cpe-fin" @bind="_anx.AreaM2" />
+                                </div>
+                                <div class="cpe-field">
+                                    <label class="cpe-flabel"><i class="fi fi-rr-calculator"></i> Coeficiente</label>
+                                    <input type="number" step="0.0001" class="cpe-fin" @bind="_anx.CoeficientePropiedad" />
+                                </div>
+                                <div class="cpe-anx-actions">
+                                    <button class="gum-btn-ghost" type="button" @onclick="CerrarAnxForm" disabled="@_busy">Cancelar</button>
+                                    <button class="gum-btn-brand" type="button" @onclick="GuardarAnexa" disabled="@(_busy || string.IsNullOrWhiteSpace(_anx.Numero))">
+                                        <i class="fi @(_anxEditId is null ? "fi-rr-check" : "fi-rr-disk")"></i> @(_anxEditId is null ? "Crear y vincular" : "Guardar cambios")
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+
 
                 @* === BITACORA DE CAMBIOS (RN-06): eventos automaticos de la unidad === *@
                 @if (_fichaTab == "historial") {
@@ -438,48 +414,6 @@
                 </div>
                 }
 
-                @* === ESTADO DE CUENTA (2.7 Cartera) - Ola 6: datos reales === *@
-                @if (_fichaTab == "cuenta") {
-                <div class="gum-unit-card gum-unit-card--full">
-                    <div class="gum-unit-eyebrow">ESTADO DE CUENTA &middot; 2.7 CARTERA</div>
-                    @if (_cartera is null)
-                    {
-                        <div class="gum-hist-empty">Sin movimientos de cartera para esta unidad (aun no hay liquidaciones del módulo 2.6).</div>
-                    }
-                    else
-                    {
-                        <div class="gum-cta-grid">
-                            <div class="gum-cta-box"><span>Capital</span><b>$ @_cartera.SaldoCapital.ToString("N0")</b></div>
-                            <div class="gum-cta-box"><span>Intereses</span><b>$ @_cartera.SaldoIntereses.ToString("N0")</b></div>
-                            <div class="gum-cta-box"><span>Total</span><b class="@(_cartera.SaldoTotal > 0 ? "gum-cta-neg" : "")">$ @_cartera.SaldoTotal.ToString("N0")</b></div>
-                            <div class="gum-cta-box"><span>Días en mora</span><b>@_cartera.DiasMora</b></div>
-                        </div>
-                        @if (_cartera.TieneAcuerdoVigente)
-                        {
-                            <div class="gum-cta-badge">Con acuerdo de pago vigente</div>
-                        }
-                        @if (_cartera.Deudas.Count > 0)
-                        {
-                            <div class="gum-cta-deudas">
-                                @foreach (var d in _cartera.Deudas.OrderByDescending(x => x.Periodo).Take(8))
-                                {
-                                    <div class="gum-cta-deuda">
-                                        <div class="gum-cta-deuda-main">
-                                            <span class="gum-cta-deuda-con">@d.Concepto</span>
-                                            <span class="gum-cta-deuda-per">@d.Periodo.ToString("MMM yyyy")</span>
-                                        </div>
-                                        <span class="gum-cta-deuda-val">$ @((d.CapitalPendiente + d.InteresAcumulado).ToString("N0"))</span>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="gum-people-empty" style="margin-top:8px">La unidad esta al día: sin deudas pendientes.</div>
-                        }
-                    }
-                </div>
-                }
             </div>
             </div>
         }
@@ -521,6 +455,31 @@
                         disabled="@(_busy || !ConfirmCoincide)" title="@(ConfirmCoincide ? "Eliminar definitivamente" : "Escribe el codigo exacto para habilitar")">
                     @(_busy ? "Eliminando..." : "Eliminar definitivamente")
                 </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ====== CONFIRMACION: eliminar una UNIDAD ANEXA completa (no solo desvincular) ====== *@
+@if (_anxConfirmDel && _anxDelVinculo is not null)
+{
+    <div class="gum-cdel-overlay" @onclick="() => { _anxConfirmDel = false; _anxDelVinculo = null; }">
+        <div class="gum-cdel-card" @onclick:stopPropagation="true">
+            <div class="gum-cdel-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="gum-cdel-title">Eliminar unidad anexa</div>
+            <div class="gum-cdel-sub">
+                Vas a eliminar <b>@TipoLabel(_anxDelVinculo.AsociadaTipo) @_anxDelVinculo.AsociadaNumero</b> de la copropiedad
+                (no solo el vínculo). Esta acción es <b>permanente y no se puede deshacer</b>.
+            </div>
+            @if (!string.IsNullOrEmpty(_msg) && _msgError)
+            {
+                <div class="gum-cdel-err">@_msg</div>
+            }
+            <div class="gum-cdel-actions">
+                <button class="gum-cdel-cancel" type="button" @onclick="() => { _anxConfirmDel = false; _anxDelVinculo = null; }" disabled="@_busy">Cancelar</button>
+                <button class="gum-cdel-go" type="button" @onclick="EliminarAnexaConfirmada" disabled="@_busy">@(_busy ? "Eliminando..." : "Eliminar definitivamente")</button>
             </div>
         </div>
     </div>
@@ -592,8 +551,17 @@
         ((_selected.TorreNombre is { Length: > 0 } tn ? tn.Split(' ').Last() + "-" : "") + _selected.Numero);
 
     private List<BitacoraEntradaDto> _bitacora = new();
-    private CarteraUnidadDetalleDto? _cartera;        // estado de cuenta real (2.7), null si la unidad no tiene cartera
-    private HistorialRelacionadoDto? _histResumen;    // solo para el contador de PQRSD en la estadistica
+
+    // ===== Unidades anexas (pestana propia). Un vinculo liga _selected (padre) a una Unidad anexa. =====
+    private bool _anxFormOpen;
+    private Guid? _anxEditId;              // null = alta; id de la Unidad anexa en edicion
+    private EditUnidadForm _anx = new();
+    private Guid? _anxMenu;                // vinculo con el menu ... abierto
+    private bool _anxMoveOpen;             // submenu "Mover" abierto
+    private ElementReference _anxFirstInput;
+    private bool _anxFocusPending;
+    private bool _anxConfirmDel;
+    private UnidadVinculoDto? _anxDelVinculo;
     private class EditUnidadForm
     {
         public string Codigo { get; set; } = "";   // solo en modo "nueva unidad": mascara TORRE-APARTAMENTO (A1-202)
@@ -778,16 +746,6 @@
         catch { _arriendos = new(); }
         try { _bitacora = await Auth().GetFromJsonAsync<List<BitacoraEntradaDto>>($"/api/mi-copropiedad/unidades/{u.Id}/bitacora") ?? new(); }
         catch { _bitacora = new(); }
-        // Estado de cuenta real (2.7). 404 si la unidad aun no tiene cartera -> queda null.
-        try
-        {
-            var cResp = await Auth().GetAsync($"/api/cartera/unidades/{u.Id}");
-            _cartera = cResp.IsSuccessStatusCode ? await cResp.Content.ReadFromJsonAsync<CarteraUnidadDetalleDto>() : null;
-        }
-        catch { _cartera = null; }
-        // Contador de PQRSD (reusa el motor de Historial de Ola 2).
-        try { _histResumen = await Auth().GetFromJsonAsync<HistorialRelacionadoDto>($"/api/historial/1/{u.Id}"); }
-        catch { _histResumen = null; }
     }
 
     // Recarga solo la bitacora (tras un cambio inline/edicion) para reflejar el nuevo evento.
@@ -1192,6 +1150,171 @@
         {
             _vinculos.RemoveAll(v => v.Id == vinculoId);
             _huboCambios = true;
+        }
+    }
+
+    // ===== Unidades anexas (pestana propia): helpers + CRUD (reusa vinculos + unidades) =====
+    private UnidadDto? AnexaUnidad(Guid id) => _unidades.FirstOrDefault(u => u.Id == id);
+
+    private static string AnexIcon(TipoUnidad t) => t switch
+    {
+        TipoUnidad.Parqueadero => "fi-rr-parking",
+        TipoUnidad.Deposito => "fi-rr-box",
+        TipoUnidad.Local => "fi-rr-shop",
+        _ => "fi-rr-home",
+    };
+
+    private string AnexSubtitulo(UnidadVinculoDto v, UnidadDto? u)
+    {
+        var parts = new List<string> { TipoLabel(v.AsociadaTipo) };
+        if (!string.IsNullOrWhiteSpace(u?.TorreNombre)) parts.Add(u!.TorreNombre!);
+        if (u?.Piso is int p) parts.Add($"{PisoLabelSingular.ToLower()} {p}");
+        if (u?.AreaM2 is decimal a) parts.Add($"{a:0.##} m2");
+        if (u is not null) parts.Add($"coef {u.CoeficientePropiedad:0.####}");
+        return string.Join(" · ", parts);
+    }
+
+    private void ToggleAnxMenu(Guid vinculoId)
+    {
+        _anxMenu = _anxMenu == vinculoId ? (Guid?)null : vinculoId;
+        _anxMoveOpen = false;
+    }
+
+    // Otras unidades privadas (principales) a las que se puede mover la anexa.
+    private List<UnidadDto> AnexMoverDestinos()
+        => _selected is null ? new()
+           : _unidades.Where(u => u.Id != _selected.Id && u.PrincipalId is null)
+                      .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase).Take(14).ToList();
+
+    private void AbrirAltaAnexa()
+    {
+        _anxEditId = null;
+        _anx = new EditUnidadForm { Tipo = TipoUnidad.Parqueadero, TipoKey = "e:Parqueadero", TorreId = _selected?.TorreId };
+        _anxFormOpen = true; _anxMenu = null; _anxFocusPending = true;
+    }
+
+    private void AbrirEditarAnexa(UnidadVinculoDto v)
+    {
+        var u = AnexaUnidad(v.UnidadAsociadaId);
+        _anxEditId = v.UnidadAsociadaId;
+        _anx = new EditUnidadForm
+        {
+            Numero = u?.Numero ?? v.AsociadaNumero,
+            Tipo = u?.Tipo ?? v.AsociadaTipo,
+            TipoCustomId = u?.TipoCustomId,
+            TipoKey = u?.TipoCustomId is Guid cg ? $"c:{cg}" : $"e:{(u?.Tipo ?? v.AsociadaTipo)}",
+            TorreId = u?.TorreId,
+            Piso = u?.Piso,
+            AreaM2 = u?.AreaM2,
+            CoeficientePropiedad = u?.CoeficientePropiedad ?? 0m,
+        };
+        _anxFormOpen = true; _anxMenu = null; _anxFocusPending = true;
+    }
+
+    private void CerrarAnxForm() { _anxFormOpen = false; _anxEditId = null; }
+
+    private async Task RefrescarFichaSelAsync()
+    {
+        await CargarAsync();
+        if (_selected is not null)
+        {
+            var refreshed = _unidades.FirstOrDefault(x => x.Id == _selected.Id);
+            if (refreshed is not null) await SeleccionarUnidad(refreshed);
+        }
+        _fichaTab = "anexas";
+    }
+
+    private async Task GuardarAnexa()
+    {
+        if (_selected is null || string.IsNullOrWhiteSpace(_anx.Numero)) return;
+        _busy = true;
+        try
+        {
+            var tipo = _anx.Tipo;
+            var custom = _anx.TipoCustomId;
+            Guid? torreId = (_anx.TorreId is Guid g && g != Guid.Empty) ? g : null;
+            if (_anxEditId is Guid editId)
+            {
+                var req = new ActualizarUnidadRequest(
+                    _anx.Numero.Trim(), tipo, torreId, _anx.Piso,
+                    _anx.CoeficientePropiedad, _anx.AreaM2,
+                    null, null, null, null, null, null, true, null, null, custom);
+                var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{editId}", req);
+                if (!resp.IsSuccessStatusCode) { ShowMsg("No se pudo guardar: " + await resp.Content.ReadAsStringAsync(), true); return; }
+                _huboCambios = true;
+                await RefrescarFichaSelAsync();
+                ShowMsg("Unidad anexa actualizada.", false);
+            }
+            else
+            {
+                var req = new CrearUnidadRequest(
+                    _anx.Numero.Trim(), tipo, torreId, _anx.Piso,
+                    _anx.CoeficientePropiedad, _anx.AreaM2,
+                    null, null, null, null, null, null, TipoCustomId: custom);
+                var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
+                if (!resp.IsSuccessStatusCode) { ShowMsg("No se pudo crear: " + await resp.Content.ReadAsStringAsync(), true); return; }
+                var creada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
+                if (creada is not null)
+                {
+                    await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/vinculos",
+                        new CrearVinculoUnidadRequest(creada.Id, false));
+                }
+                _huboCambios = true;
+                await RefrescarFichaSelAsync();
+                ShowMsg("Unidad anexa creada y vinculada.", false);
+            }
+            CerrarAnxForm();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task MoverAnexa(UnidadVinculoDto v, UnidadDto destino)
+    {
+        _anxMenu = null; _anxMoveOpen = false;
+        _busy = true;
+        try
+        {
+            var del = await Auth().DeleteAsync($"/api/mi-copropiedad/vinculos/{v.Id}");
+            if (!del.IsSuccessStatusCode) { ShowMsg("No se pudo mover: " + await del.Content.ReadAsStringAsync(), true); return; }
+            _vinculos.RemoveAll(x => x.Id == v.Id);
+            await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{destino.Id}/vinculos",
+                new CrearVinculoUnidadRequest(v.UnidadAsociadaId, v.IncluyeEnFacturacion));
+            _huboCambios = true;
+            ShowMsg($"Anexa {v.AsociadaNumero} movida a {destino.Numero}.", false);
+        }
+        finally { _busy = false; }
+    }
+
+    private void AbrirEliminarAnexa(UnidadVinculoDto v)
+    {
+        _anxMenu = null;
+        _anxDelVinculo = v;
+        _anxConfirmDel = true;
+    }
+
+    private async Task EliminarAnexaConfirmada()
+    {
+        if (_selected is null || _anxDelVinculo is null) return;
+        _busy = true;
+        try
+        {
+            var anexaId = _anxDelVinculo.UnidadAsociadaId;
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{anexaId}");
+            if (!resp.IsSuccessStatusCode) { ShowMsg("No se pudo eliminar: " + await resp.Content.ReadAsStringAsync(), true); return; }
+            _vinculos.RemoveAll(x => x.UnidadAsociadaId == anexaId);
+            _huboCambios = true;
+            await RefrescarFichaSelAsync();
+            ShowMsg("Unidad anexa eliminada.", false);
+        }
+        finally { _busy = false; _anxConfirmDel = false; _anxDelVinculo = null; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_anxFocusPending)
+        {
+            _anxFocusPending = false;
+            try { await _anxFirstInput.FocusAsync(); } catch { }
         }
     }
 
