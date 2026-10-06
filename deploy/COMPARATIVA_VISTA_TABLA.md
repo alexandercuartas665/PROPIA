@@ -26,6 +26,10 @@ con fuente externa (tabla propia) se cablea `OnGestionarLista`+`OpcionesVistaDe`
 **Ya cumplían (sin trabajo):** Estado/Categoría/Tipo editables inline en Unidades/Zonas/Equipos/Vehículos/
 Mascotas; y Unidades Tipo (en "Editar campo").
 
+> **Estado del frente "columnas reordenar/redimensionar" (2026-10-06, sesión ALEX): 2 de 4 cerrados y en
+> `main`** — Contratos (`9ad7e35` reorder + `f6b5650` fix resize) y PQRSD (`9ad7e35`). Seguros y Tareas
+> quedan pendientes (enfoque grid/flex, ver nota en "Brechas COMUNES").
+
 ### Bitácora por ronda
 - 2026-10-06 R1: Contratos tipo+categoria enum→string editable inline. Validado en Chrome + BD. `fd631db`.
 - 2026-10-06 R2: decisión PQRSD — tipo/estado read-only (legal).
@@ -102,8 +106,20 @@ Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) 
 
 ## Brechas COMUNES (a los 4 les falta — mayor retorno)
 
-1. **Reordenar columnas por arrastre (❌ Seguros, Tareas).** Hecho en Contratos (`R5`) y PQRSD (`R6`). Falta Seguros y Tareas: cablear `propiaTablaColReorder` al header.
-2. **Redimensionar columnas (❌ Seguros, Tareas).** Hecho en Contratos (`R5`) y PQRSD (`R6`). Falta Seguros y Tareas: handle `.*-col-rz` + `propiaTablaResize`. **Ojo:** para que el ancho se respete, TODAS las `<col>` deben llevar ancho px explícito (no solo las redimensionadas) — ver gotcha R6.
+1. **Reordenar columnas por arrastre.** ✅ Contratos (`R5`) y ✅ PQRSD (`R6`), en `main`. Falta **Seguros** y **Tareas**.
+2. **Redimensionar columnas.** ✅ Contratos (`R7` tras el fix) y ✅ PQRSD (`R6`), en `main`. Falta **Seguros** y **Tareas**. **Ojo (gotcha R6/R7):** para que el ancho se respete, TODAS las `<col>` deben llevar ancho px explícito (no solo las redimensionadas) + `min-width:max-content` en la tabla.
+
+> **IMPORTANTE para Seguros y Tareas (pendientes, enfoque DISTINTO).** Estos dos NO son tablas HTML
+> `<table>`, así que el mecanismo de `<colgroup>`/`propiaTablaResize` usado en Contratos/PQRSD **no aplica
+> tal cual**:
+> - **Seguros** (`Seguros.razor`): es **CSS grid** (`.seg-table` > `.seg-head/.seg-row` con `.seg-grid` y
+>   `style="@GridStyle()"`). Reorder/resize = manipular `grid-template-columns` (el string de `GridStyle()`),
+>   no `<col>`.
+> - **Tareas** (`TableroTareas.razor`, modo lista): celdas **flex** (`.tb-list-hdr` display:flex, celdas
+>   `.tb-lc` con ancho por celda). Reorder = mover celdas; resize = cambiar `flex-basis`/width por celda.
+>
+> Requiere adaptar el interop a grid/flex (más trabajo; Tareas es el componente más usado). **Se dejó aquí
+> por decisión de Alex (2026-10-06): cerrar con Contratos+PQRSD; Seguros/Tareas quedan pendientes.**
 3. **Checkbox selección múltiple (❌ x4).** Ninguno permite seleccionar filas en la tabla.
 4. **Barra de acciones masivas (❌ x4).** Sin borrado/acción en lote (eliminar es fila a fila o desde modal).
 5. **Scroll infinito real (🟡 x4).** Todos son render-all: `CargarMas()` no-op, `dstInfinite` solo alterna el FAB. (Unidades sí carga por lotes.) — Prioridad baja si los volúmenes son chicos.
