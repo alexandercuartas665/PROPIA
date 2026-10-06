@@ -166,16 +166,36 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
 - **Pendiente menor:** backfill/normalización de ortografía de fábrica desde A&D (ya es posible; se hará
       cuando Alex lo pida por lista).
 
-### Ola 4 — Resto de módulos (uno por uno, reusando el resolvedor)
-- [ ] PQRSD: Categoría (Libre) → al catálogo; Tipo/Etapa (con-lógica) → al catálogo **con metadata**
-      (`plazoDias`, `terminal`, `cuentaSla`) y **refactor del `switch(enum)` para leer la metadata**
-      del catálogo (así una opción nueva de A&D funciona sin tocar código).
-- [ ] Contratos: Tipo/Categoría (ya string) → al catálogo como Libre; Vencimiento/Forma de pago
-      (con-lógica) → con metadata.
-- [ ] Directorio/Personas (tipo residente/ID/sexo), Mantenimiento (tipo/prioridad/periodicidad),
-      Equipos/Zonas/Vehículos/Mascotas, Seguros… según inventario.
-- **Hecho =** cada módulo lee del resolvedor; las listas con-lógica leen su metadata del catálogo (ya
-      no hay `switch(enum)` hardcodeado para su comportamiento).
+### Ola 4 — Resto de módulos (uno por uno, reusando el patrón piloto)
+
+> Mapa de resolución por módulo (hecho 2026-10-06): 3 patrones. **A** = editable por tenant
+> (`OpcionCampo`, como Unidades) → solo re-rutear la semilla al catálogo. **B** = enum read-only, label
+> por `switch` bespoke en cada panel → re-rutear el label (como Tipo de Unidad), universo sigue del enum.
+> **C** = tabla por tenant con CRUD propio + lógica fuerte (PQRSD) → NO colapsar sin preservar metadata.
+
+**Tranche A (listas libres / labels, bajo riesgo):**
+- [x] **Contratos · Tipo de contrato + Categoría** (patrón A). Semillas → catálogo
+      (`contrato.tipocontrato`/`contrato.categoria`); `OpcionesFijasContrato` lee del catálogo con
+      fallback; override por tenant intacto. **Verificado:** renombré "Obra"→"Obra TEST" en A&D y
+      Contratos lo mostró. (2026-10-06)
+- [ ] **Vehículos · Tipo** / **Mascotas · Tipo** (patrón B, 1 lista c/u): re-rutear `TipoLabel` al catálogo.
+- [ ] **Equipos · Categoría/Tipo/Estado**, **Zonas · Categoría/Estado** (patrón B): re-rutear labels.
+      Ojo lógica: Equipos `tipo`=Equipo fuerza Cantidad=1; Zonas `estado`=EnMantenimiento bloquea reservas
+      (no cambia por renombrar label; la clave enum se mantiene).
+- [ ] **Personas · Tipo de ID** (candidato limpio, enum `TipoDocumento`), **Sexo** (enum `GeneroPersona`),
+      **Tipo residente** (string-semilla espejo de `RolUnidadPersona`).
+
+**Tranche B (con-lógica, cuidado — metadata + refactor del switch):**
+- [ ] **PQRSD · Tipo** (plazo legal Ley 1755), **Etapa/Estado** (workflow terminal), **semáforo** — hoy
+      en tablas por tenant (`pqrsd_tipos/estados`) con su propio CRUD + lógica (`PlazosBase`,
+      `SumarDiasHabiles`, `EsTerminal`). Decidir con Alex si se unifican al catálogo global o se dejan en
+      su CRUD por tenant (riesgo legal alto). **Categoría** sí es migrable (ya editable).
+- [ ] **Mantenimiento · Periodicidad** (cálculo próxima ejecución `PasoPeriodicidad`), **Tipo activo**
+      (módulo origen) — con metadata.
+- [ ] **Contratos · Estado/Vencimiento** (derivado por fecha, `CalcularSemaforoContrato`), **Tipo de
+      servicio** (cosmético) — con metadata / solo label.
+- **Hecho =** cada módulo lee del catálogo; las con-lógica leen su metadata del catálogo (sin
+      `switch(enum)` hardcodeado para su comportamiento).
 
 ### Ola 5 — Gobierno, limpieza y pruebas
 - [ ] Deprecar las semillas hardcodeadas ya migradas (dejar solo las claves/enum backbone).

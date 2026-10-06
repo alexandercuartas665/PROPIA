@@ -39,6 +39,17 @@ public static class CatalogoListasSeeder
                 .Select((e, i) => new SemillaOpcion(e, e, i))
                 .ToList()));
 
+        // Contratos (Ola 4): tipocontrato y categoria ya eran editables por tenant (patron Unidades);
+        // la clave ES el texto de la semilla (etiquetas de los enums TipoContrato / CategoriaContrato).
+        reg.Add(("contrato.tipocontrato",
+            ContratoCamposSistema.TiposContratoSemilla
+                .Select((s, i) => new SemillaOpcion(s, s, i))
+                .ToList()));
+        reg.Add(("contrato.categoria",
+            ContratoCamposSistema.CategoriasSemilla
+                .Select((s, i) => new SemillaOpcion(s, s, i))
+                .ToList()));
+
         return reg;
     }
 

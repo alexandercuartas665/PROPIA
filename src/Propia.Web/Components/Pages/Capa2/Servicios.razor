@@ -2,6 +2,7 @@
 @page "/contratos"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Application.ServiciosPublicos
 @using Propia.Application.Servicios
 @using Propia.Application.Directorio
@@ -2130,7 +2131,7 @@ else
 
     // Catalogo de campos de SISTEMA del contrato para el componente (forma neutra). La tabla los pinta por
     // clave con formato fijo, asi que van sin cambio de tipo ni formato (TiposIntercambiables vacio + SinFormato).
-    private static readonly IReadOnlyList<CampoSistemaDef> ContratoCatalogo =
+    private IReadOnlyList<CampoSistemaDef> ContratoCatalogo =>
         ContratoCamposSistema.Todos.Select(c => new CampoSistemaDef(
             c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
             // tipocontrato y categoria: lista editable por copropiedad (opciones en unidades-config,
@@ -2143,14 +2144,20 @@ else
     // SOLICITUD_SELLO_05: las listas de sistema de SOLO LECTURA del contrato entregan sus opciones al
     // componente (via Semilla del catalogo), para que muestre el conteo real y no "0 opciones". La PAGINA
     // conoce sus propios enums/semillas; el COMPONENTE no.
-    private static string[]? OpcionesFijasContrato(string clave) => clave switch
+    // Opciones "de fabrica" por lista. tipocontrato/categoria salen del catalogo GLOBAL (editable por A&D)
+    // si cargo; si no, la semilla de codigo (fallback). estado/tipo siguen en codigo (estado es derivado
+    // por fecha; tipo de servicio es cosmetico). El override por copropiedad se compone encima (OpcionesSisC).
+    private string[]? OpcionesFijasContrato(string clave) => clave switch
     {
-        "tipocontrato" => ContratoCamposSistema.TiposContratoSemilla,
-        "categoria" => ContratoCamposSistema.CategoriasSemilla,
+        "tipocontrato" => _catCtrTipo.Count > 0 ? _catCtrTipo.ToArray() : ContratoCamposSistema.TiposContratoSemilla,
+        "categoria" => _catCtrCat.Count > 0 ? _catCtrCat.ToArray() : ContratoCamposSistema.CategoriasSemilla,
         "estado" => ContratoCamposSistema.EstadosSemilla,
         "tipo" => Enum.GetNames<TipoServicio>(),
         _ => null
     };
+    // Universo global (labels) de las listas editables de Contratos (Ola 4). Vacio = usar la semilla.
+    private List<string> _catCtrTipo = new();
+    private List<string> _catCtrCat = new();
 
     // Opciones VISIBLES de una lista de sistema editable (tipocontrato/categoria): las que configuro la
     // copropiedad (unidades-config, formato OpcionCampo) o, si no hay nada guardado, la semilla del enum.
@@ -2319,6 +2326,9 @@ else
             var cfg = await GetAuthAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=contrato") ?? new();
             _cfgContrato = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
             HidratarAnchosC();
+            // Catalogo global de listas de Contratos (Ola 4). Si falla, se usan los fallbacks de codigo.
+            try { _catCtrTipo = (await GetAuthAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=contrato.tipocontrato") ?? new()).Select(o => o.Label).ToList(); } catch { _catCtrTipo = new(); }
+            try { _catCtrCat = (await GetAuthAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=contrato.categoria") ?? new()).Select(o => o.Label).ToList(); } catch { _catCtrCat = new(); }
         }
         catch (SesionRedirigidaException) { }
         catch { _cfgContrato = new(StringComparer.Ordinal); }

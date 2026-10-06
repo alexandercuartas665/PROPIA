@@ -17,8 +17,10 @@ public static class CatalogoListasRegistro
 
     public static readonly IReadOnlyList<ListaInfo> Conocidas = new List<ListaInfo>
     {
-        new("unidad.tipo",   "Unidades · Tipo de unidad",          false),
-        new("unidad.estado", "Unidades · Estado de la propiedad",  false),
+        new("unidad.tipo",          "Unidades · Tipo de unidad",          false),
+        new("unidad.estado",        "Unidades · Estado de la propiedad",  false),
+        new("contrato.tipocontrato","Contratos · Tipo de contrato",        false),
+        new("contrato.categoria",   "Contratos · Categoría",               false),
     };
 
     public static ListaInfo Info(string lista)
