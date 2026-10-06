@@ -1,4 +1,5 @@
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared.Modals
 @using Microsoft.AspNetCore.Components.Forms
@@ -1540,7 +1541,7 @@ else
             VisibleDefault: c.VisiblePorDefecto,
             Fija: c.Clave == "num",
             OpcionesEditables: c.EsLista,
-            Semilla: c.Clave == "estado" ? EstadoSemilla : null,
+            Semilla: c.Clave == "estado" ? EstadoUniverso.ToArray() : null,
             Entero: c.Clave is "piso" or "habitaciones" or "banos" or "parqueaderos",
             Ayuda: c.Clave switch
             {
@@ -1977,8 +1978,17 @@ else
         }
     }
 
-    // Opciones de fabrica del campo Estado (semilla). Las usan LeerOpciones/EsSemilla del popup de listas.
+    // Opciones de fabrica del campo Estado (semilla de CODIGO). Es el FALLBACK si el catalogo global
+    // (unidad.estado) aun no cargo; la fuente real es _catEstado (editable por A&D).
     private static readonly string[] EstadoSemilla = UnidadCamposSistema.EstadosSemilla;
+
+    // ===== Catalogo GLOBAL de listas (Ola 3: Tipo/Estado leen de aqui; A&D lo edita sin deploy). El
+    // override por copropiedad (unidad_campos_config / tipos propios) se compone encima, como siempre. =====
+    private Dictionary<string, string> _catTipo = new(StringComparer.Ordinal);   // "e:<Enum>" -> label global
+    private List<CatalogoOpcionDto> _catEstado = new();                          // universo global de estados (label/orden)
+    // Universo de estados: el del catalogo si cargo; si no, la semilla de codigo (fallback).
+    private IReadOnlyList<string> EstadoUniverso
+        => _catEstado.Count > 0 ? _catEstado.Select(o => o.Label).ToList() : EstadoSemilla;
 
     // El panel de configuracion quedo con una sola vista: los campos de la UNIDAD. Las pestanas de
     // entidades vinculadas salieron a sus propios modulos (Personas -> /residentes, Vehiculos ->
@@ -2021,9 +2031,9 @@ else
     }
     private void OnNuevaOpcionKeyUp(KeyboardEventArgs e) { if (e.Key == "Enter" && _listaAbierta is { } k) _ = AgregarOpcionListaAsync(k); }
 
-    private static bool EsSemilla(string clave, string k)
+    private bool EsSemilla(string clave, string k)
         => clave == "tipo" ? k.StartsWith("e:", StringComparison.Ordinal)
-                           : EstadoSemilla.Contains(k, StringComparer.OrdinalIgnoreCase);
+                           : EstadoUniverso.Contains(k, StringComparer.OrdinalIgnoreCase);
 
     private string EtiquetaOpcion(string clave, string k)
     {
@@ -2048,7 +2058,7 @@ else
     private List<string> UniversoOpciones(string clave, List<OpcionLista> guardadas)
         => clave == "tipo"
             ? TiposUnidadSel.Select(t => "e:" + t).Concat(_tiposCustom.Select(t => "c:" + t.Id)).ToList()
-            : EstadoSemilla.Concat(guardadas.Select(g => g.K)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            : EstadoUniverso.Concat(guardadas.Select(g => g.K)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     private List<OpcionLista> LeerOpciones(string clave)
     {
@@ -2295,7 +2305,7 @@ else
                     $"Se van a quitar {propias.Count} opcion(es) propia(s) de Estado y volver a las de fabrica. Continuar?");
                 if (!ok) return;
             }
-            await GuardarOpcionesAsync("estado", EstadoSemilla.Select(s => new OpcionLista(s)).ToList());
+            await GuardarOpcionesAsync("estado", EstadoUniverso.Select(s => new OpcionLista(s)).ToList());
             _listaMsg = "Opciones restauradas a las de fabrica.";
             return;
         }
@@ -2743,6 +2753,9 @@ else
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave, StringComparer.Ordinal); } catch { _camposConfig = new(); }
+            // Catalogo global de listas (Tipo/Estado). Si falla, se usan los fallbacks de codigo.
+            try { _catTipo = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=unidad.tipo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catTipo = new(StringComparer.Ordinal); }
+            try { _catEstado = await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=unidad.estado") ?? new(); } catch { _catEstado = new(); }
             HidratarAnchos();   // anchos de columna persistidos (Formato "w") -> cache _colW
             AplicarOrdenTiposCustom();   // el orden de los tipos propios sale de la config del campo 'tipo'
             try { _estadosUso = await http.GetFromJsonAsync<List<UnidadEstadoUsoDto>>("/api/mi-copropiedad/unidades/estados-uso") ?? new(); } catch { _estadosUso = new(); }
@@ -2970,7 +2983,10 @@ else
 
     // Del catalogo compartido: la plantilla de carga ofrece estas MISMAS etiquetas y el importador
     // las resuelve, asi que lo que el usuario ve aqui es lo que puede escribir en el Excel.
-    private static string Etiqueta(TipoUnidad t) => TiposUnidadCatalogo.Etiqueta(t);
+    // Label de un tipo del sistema: el del catalogo global (unidad.tipo, editable por A&D) si cargo;
+    // si no, la etiqueta de codigo (fallback). La clave enum no cambia: solo el texto visible.
+    private string Etiqueta(TipoUnidad t)
+        => _catTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : TiposUnidadCatalogo.Etiqueta(t);
 }
 
 <style>

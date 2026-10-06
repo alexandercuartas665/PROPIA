@@ -147,15 +147,24 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
       (clave estable) ✓, agregar opción (clave slug, es_semilla=false) ✓, reordenar ✓. Datos de prueba
       revertidos/borrados. Build 0 errores, sin warnings nuevos.
 
-### Ola 3 — Enganchar Unidades (PILOTO)
-- [ ] `Etiqueta(TipoUnidad)` y la semilla de Estado leen el **label desde el catálogo global**
-      (clave = enum/semilla). El override por tenant (`unidad_campos_config`, `tipos_unidad_custom`)
-      sigue mandando sobre lo global.
-- [ ] Backfill: `Estado` (texto hoy) referencia la clave del catálogo; corregir ortografía de fábrica
-      aquí (de una, para todos).
-- [ ] **Prueba de oro:** editar el label de "Depósito" en A&D → se ve en la copropiedad **sin deploy**,
-      sin romper datos históricos (el enum/clave intacto). Borrar datos de prueba.
-- **Hecho =** Unidades Tipo/Estado 100% resueltos por el catálogo; demo de edición sin deploy.
+### Ola 3 — Enganchar Unidades (PILOTO)  ✅ (2026-10-06, sesión ALEX)
+- [x] `Etiqueta(TipoUnidad)` ahora lee el label del catálogo global (`unidad.tipo`, clave `e:<Enum>`);
+      si el catálogo no cargó, fallback a `TiposUnidadCatalogo`. Es la ÚNICA función de labels de tipo,
+      así que el cambio propaga a tabla/selects/grupos/config. La clave enum no cambia (datos intactos).
+- [x] Estado: el universo + labels salen de `unidad.estado` (`EstadoUniverso`, fallback `EstadoSemilla`).
+      Así A&D puede agregar estados globales y renombrar; el override por copropiedad
+      (`unidad_campos_config`, tipos propios) se compone encima sin cambios (`LeerOpciones` igual).
+- [x] Endpoint tenant read-only `GET /api/catalogos?lista=X` (`CatalogosController`, `[Authorize]`);
+      el panel lo carga en `CargarAsync`.
+- [x] **PRUEBA DE ORO verificada:** en A&D renombré `e:Bodega` → "Bodega TEST"; Unidades (tenant demo)
+      mostró "Bodega TEST" en el selector de tipo **sin deploy ni recompilar**, sin "Bodega" viejo suelto;
+      clave `e:Bodega` intacta. Revertido. Build 0 errores.
+- **Scope del piloto (deliberado):** para TIPO se enrutan los LABELS; el universo de tipos base sigue
+      saliendo del enum (NO se quitan/agregan tipos base desde el catálogo todavía: agregar un tipo nuevo
+      necesita decidir su almacenamiento —enum vs custom— y desactivar uno base necesita cuidado con
+      unidades en uso). ESTADO sí toma universo del catálogo (es texto libre). Resto en Ola 4.
+- **Pendiente menor:** backfill/normalización de ortografía de fábrica desde A&D (ya es posible; se hará
+      cuando Alex lo pida por lista).
 
 ### Ola 4 — Resto de módulos (uno por uno, reusando el resolvedor)
 - [ ] PQRSD: Categoría (Libre) → al catálogo; Tipo/Etapa (con-lógica) → al catálogo **con metadata**
