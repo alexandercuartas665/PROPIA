@@ -129,12 +129,23 @@ rompe lógica. A lo sumo se les edita el **label** si aparecen en UI, nunca el c
   `Infrastructure/Catalogos/{CatalogoListasService,CatalogoListasSeeder}.cs`, config en
   `ConfigureGlobalesCore`, DbSet, DI, Program.cs (Web+Api), migración, test.
 
-### Ola 2 — Super Admin UI (consola A&D)
-- [ ] Nueva sección "Catálogos de listas" en la consola A&D (`Propia.Web`, `~/api/admin/catalogos`,
-      gateada a A&D): elegir una lista, editar label/orden/color/activo, agregar opción (si es Libre),
-      marcar/ver Protegidas (Solo-label no deja agregar/borrar).
-- [ ] Aviso de "en uso" al ocultar/renombrar (cuántas copropiedades/registros usan la clave).
-- **Hecho =** A&D edita una lista y persiste; validado en runtime (consola → BD).
+### Ola 2 — Super Admin UI (consola A&D)  ✅ (2026-10-06, sesión ALEX)
+- [x] Sección "Catálogos de listas" en la consola A&D (`/admin/catalogos`, en la pestaña Plataforma):
+      índice de listas a la izquierda; a la derecha tabla con orden (subir/bajar), nombre visible
+      editable, color, activo (switch), clave read-only + badge "semilla", botón Guardar por fila, y
+      fila para agregar opción. Página `Pages/Capa0/Admin/Catalogos.razor` + entrada en `AdminNavMenu`.
+- [x] Backend: `AdminCatalogosController` (`[Route("api/admin/catalogos")]`, policy **SuperAdmin**):
+      GET listas / GET opciones / POST crear / PUT actualizar / POST reordenar. Servicio
+      `ICatalogoListasAdmin` + `CatalogoListasAdminService` (genera string-clave slug para opciones
+      nuevas; invalida el cache del lector en cada escritura). `CatalogoListasRegistro` (nombres
+      amigables + flag con-lógica) en Application. **Sin migración.**
+- [x] Gotcha resuelto: el Web hostea los controllers (`MapControllers`), así que la ruta del controller
+      DEBE llevar `api/` (`api/admin/catalogos`); con `admin/catalogos` chocaba con la página Blazor
+      (`AmbiguousMatchException`). Patrón confirmado contra `BillingController`.
+- [ ] (pendiente, menor) Aviso de "en uso" al ocultar/renombrar (conteo por tenant). No bloquea.
+- **Hecho =** verificado en runtime (consola A&D, login founder dev, 3 write paths → BD): editar label
+      (clave estable) ✓, agregar opción (clave slug, es_semilla=false) ✓, reordenar ✓. Datos de prueba
+      revertidos/borrados. Build 0 errores, sin warnings nuevos.
 
 ### Ola 3 — Enganchar Unidades (PILOTO)
 - [ ] `Etiqueta(TipoUnidad)` y la semilla de Estado leen el **label desde el catálogo global**

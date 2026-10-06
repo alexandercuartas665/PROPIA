@@ -1,0 +1,249 @@
+@page "/admin/catalogos"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Catalogos
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Catalogos de listas - Plataforma</PageTitle>
+
+<h1 class="h3 mb-1">Catalogos de listas</h1>
+<p class="text-muted mb-4">
+    Opciones "de fabrica" de las listas de seleccion del producto (Tipo de unidad, Estado, etc.).
+    Editar aqui aplica a TODAS las copropiedades; cada una puede, por encima, ocultar/renombrar/agregar
+    en su propia configuracion.
+</p>
+
+@if (_jwt is null || _cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-md-4 col-lg-3">
+            <div class="list-group">
+                @foreach (var l in _listas)
+                {
+                    <button type="button"
+                            class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(l.Lista == _listaSel ? "active" : "")"
+                            @onclick="() => SeleccionarAsync(l.Lista)">
+                        <span>
+                            @l.Nombre
+                            @if (l.ConLogica) { <span class="badge bg-warning text-dark ms-1" title="Lista con logica atada">logica</span> }
+                        </span>
+                        <span class="badge bg-secondary rounded-pill">@l.Activas/@l.Opciones</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="col-md-8 col-lg-9">
+            @if (_listaSel is null)
+            {
+                <div class="text-muted">Elige una lista a la izquierda.</div>
+            }
+            else
+            {
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgCls py-2">@_msg</div> }
+
+                <div class="card">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <strong>@CatalogoListasRegistro.Info(_listaSel).Nombre</strong>
+                        <code class="text-muted small">@_listaSel</code>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width:70px">Orden</th>
+                                    <th>Nombre visible</th>
+                                    <th style="width:120px">Color</th>
+                                    <th style="width:90px" class="text-center">Activo</th>
+                                    <th style="width:180px">Clave</th>
+                                    <th style="width:90px"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < _ops.Count; i++)
+                                {
+                                    var idx = i;
+                                    var op = _ops[idx];
+                                    <tr class="@(op.Activo ? "" : "table-light text-muted")">
+                                        <td class="text-nowrap">
+                                            <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Subir"
+                                                    disabled="@(idx == 0 || _busy)" @onclick="() => MoverAsync(idx, -1)">&uarr;</button>
+                                            <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Bajar"
+                                                    disabled="@(idx == _ops.Count - 1 || _busy)" @onclick="() => MoverAsync(idx, 1)">&darr;</button>
+                                        </td>
+                                        <td><input class="form-control form-control-sm" @bind="op.Label" /></td>
+                                        <td><input class="form-control form-control-sm" placeholder="(sin color)" @bind="op.Color" /></td>
+                                        <td class="text-center">
+                                            <div class="form-check form-switch d-inline-block">
+                                                <input class="form-check-input" type="checkbox" @bind="op.Activo" />
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <code class="small">@op.Clave</code>
+                                            @if (op.EsSemilla) { <span class="badge bg-info text-dark ms-1" title="Viene del enum/semilla">semilla</span> }
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-dark" disabled="@_busy" @onclick="() => GuardarAsync(idx)">Guardar</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-light">
+                                    <td></td>
+                                    <td><input class="form-control form-control-sm" placeholder="Nueva opcion..." @bind="_nuevoLabel" @onkeyup="NuevoKeyUp" /></td>
+                                    <td><input class="form-control form-control-sm" placeholder="(color)" @bind="_nuevoColor" /></td>
+                                    <td></td>
+                                    <td class="text-muted small">se genera la clave</td>
+                                    <td><button class="btn btn-sm btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoLabel))" @onclick="AgregarAsync">+ Agregar</button></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                <p class="text-muted small mt-2">
+                    La <strong>clave</strong> no se edita (los datos apuntan a ella). Las opciones <em>semilla</em>
+                    no se borran: para sacarlas de los selectores, desactivalas. Ocultar/renombrar una opcion en uso
+                    no cambia los registros existentes.
+                </p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+    private string _msgCls = "alert-info";
+
+    private List<CatalogoListaInfoDto> _listas = new();
+    private string? _listaSel;
+    private List<OpcionRow> _ops = new();
+    private string _nuevoLabel = "";
+    private string? _nuevoColor;
+
+    // Fila editable (los DTO son records inmutables).
+    private sealed class OpcionRow
+    {
+        public Guid Id { get; set; }
+        public string Clave { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string? Color { get; set; }
+        public bool Activo { get; set; } = true;
+        public bool EsSemilla { get; set; }
+        public string? Meta { get; set; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarListasAsync();
+        }
+        finally { _cargando = false; StateHasChanged(); }
+    }
+
+    private async Task CargarListasAsync()
+    {
+        _listas = (await Auth().GetFromJsonAsync<List<CatalogoListaInfoDto>>("/api/admin/catalogos")) ?? new();
+        if (_listaSel is null && _listas.Count > 0) await SeleccionarAsync(_listas[0].Lista);
+    }
+
+    private async Task SeleccionarAsync(string lista)
+    {
+        _listaSel = lista;
+        _msg = null;
+        await CargarOpcionesAsync();
+    }
+
+    private async Task CargarOpcionesAsync()
+    {
+        var dtos = await Auth().GetFromJsonAsync<List<CatalogoOpcionAdminDto>>($"/api/admin/catalogos/opciones?lista={Uri.EscapeDataString(_listaSel!)}") ?? new();
+        _ops = dtos.Select(d => new OpcionRow
+        {
+            Id = d.Id, Clave = d.Clave, Label = d.Label, Color = d.Color, Activo = d.Activo, EsSemilla = d.EsSemilla, Meta = d.Meta
+        }).ToList();
+    }
+
+    private async Task GuardarAsync(int idx)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var op = _ops[idx];
+            var req = new ActualizarOpcionCatalogoRequest(op.Label?.Trim() ?? "", string.IsNullOrWhiteSpace(op.Color) ? null : op.Color!.Trim(), op.Activo, op.Meta);
+            var resp = await Auth().PutAsJsonAsync($"/api/admin/catalogos/opcion/{op.Id}", req);
+            if (resp.IsSuccessStatusCode) { Ok("Opcion guardada."); await CargarListasAsync(); }
+            else Err(await LeerError(resp));
+        }
+        catch (Exception ex) { Err(ex.Message); }
+        finally { _busy = false; }
+    }
+
+    private async Task AgregarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoLabel)) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new CrearOpcionCatalogoRequest(_nuevoLabel.Trim(), string.IsNullOrWhiteSpace(_nuevoColor) ? null : _nuevoColor!.Trim(), null);
+            var resp = await Auth().PostAsJsonAsync($"/api/admin/catalogos/opciones?lista={Uri.EscapeDataString(_listaSel!)}", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _nuevoLabel = ""; _nuevoColor = null;
+                Ok("Opcion agregada.");
+                await CargarOpcionesAsync(); await CargarListasAsync();
+            }
+            else Err(await LeerError(resp));
+        }
+        catch (Exception ex) { Err(ex.Message); }
+        finally { _busy = false; }
+    }
+
+    private async Task MoverAsync(int idx, int dir)
+    {
+        var j = idx + dir;
+        if (j < 0 || j >= _ops.Count) return;
+        (_ops[idx], _ops[j]) = (_ops[j], _ops[idx]);   // swap local
+        _busy = true; _msg = null;
+        try
+        {
+            var ids = _ops.Select(o => o.Id).ToList();
+            var resp = await Auth().PostAsJsonAsync($"/api/admin/catalogos/reordenar?lista={Uri.EscapeDataString(_listaSel!)}", ids);
+            if (!resp.IsSuccessStatusCode) { Err(await LeerError(resp)); await CargarOpcionesAsync(); }
+        }
+        catch (Exception ex) { Err(ex.Message); await CargarOpcionesAsync(); }
+        finally { _busy = false; }
+    }
+
+    private void NuevoKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    { if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_nuevoLabel)) _ = AgregarAsync(); }
+
+    private void Ok(string m) { _msg = m; _msgCls = "alert-success"; }
+    private void Err(string m) { _msg = m; _msgCls = "alert-danger"; }
+
+    private static async Task<string> LeerError(HttpResponseMessage r)
+    {
+        try { var t = await r.Content.ReadAsStringAsync(); return string.IsNullOrWhiteSpace(t) ? $"Error {(int)r.StatusCode}" : t; }
+        catch { return $"Error {(int)r.StatusCode}"; }
+    }
+}
