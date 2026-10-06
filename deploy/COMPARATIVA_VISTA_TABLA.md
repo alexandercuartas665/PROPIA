@@ -32,6 +32,10 @@ Mascotas; y Unidades Tipo (en "Editar campo").
 - 2026-10-06 R3: descubrimiento — Unidades Tipo YA cumplía (opciones en "Editar campo"). Se revirtió un
   refactor de `ConfigCamposEntidad` que apuntaba a un gestor enterrado (innecesario). PQRSD categoría se
   hará con el patrón "Editar campo" (no refactor compartido).
+- 2026-10-06 R5: **Contratos** — reordenar (arrastre header) + redimensionar columnas (handle, doble-clic
+  autoajusta), canon Unidades (interop propiaTablaColReorder/Resize; orden+ancho en unidades-config,
+  ancho en Formato "w"). Validado en Chrome (reordenó + redimensionó + persistió) + BD; test limpiado.
+  **Matriz: filas 7 y 8 → ✅ en Contratos.** Falta PQRSD, Seguros, Tareas.
 - 2026-10-06 R4: PQRSD categoría cableada al modal "Editar campo" (ver+agregar, lee/crea pqrsd_categorias).
   Validado en Chrome (agregó ZZCATTEST -> persistió) + BD; dato borrado. **Frente "listas en config del
   campo" CERRADO** (Contratos tipo/categoria, Unidades Tipo ya ok, PQRSD categoria; tipo/estado read-only).
@@ -50,8 +54,8 @@ Componentes: Tareas `Shared/Tareas/TableroTareas.razor` (modo lista `.tb-lc-*`) 
 | 4 | Agrupar (multinivel) | ✅ | ✅ | ✅ | ✅ |
 | 5 | Ordenar por columna (clic header + ▲▼) | ✅ | 🟡 | 🟡 | ✅ |
 | 6 | Menú de columna (chevron ˅ siempre visible) | ✅ | ✅ | ✅ | ✅ |
-| 7 | Reordenar columnas (arrastre) | ❌ | ❌ | ❌ | ❌ |
-| 8 | Redimensionar columnas | ❌ | ❌ | ❌ | ❌ |
+| 7 | Reordenar columnas (arrastre) | ❌ | ✅ | ❌ | ❌ |
+| 8 | Redimensionar columnas | ❌ | ✅ | ❌ | ❌ |
 | 9 | Botón "+" agregar campo (header) | 🟡 | ✅ | ✅ | 🟡 |
 | 10 | Columna expander | ✅ | ✅ | ✅ | 🟡 |
 | 11 | Checkbox selección múltiple | ❌ | ❌ | ❌ | ❌ |

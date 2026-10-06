@@ -310,10 +310,15 @@ else
                 <div class="ctr-tablebox">
                 <div class="ctr-table-wrap ctr-scroll" id="ctrTableWrap">
                     <table class="ctr-table">
+                        <colgroup>
+                            <col style="width:34px" />
+                            @foreach (var k in ColsVisibles()) { <col style="@AnchoColC(k)" /> }
+                            <col style="width:74px" />
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th class="ctr-exp-col tbl-hdcell tbl-hdcell--plain"></th>
-                                @foreach (var k in ColsVisibles()) { var kDin = Guid.TryParse(k, out _); <th class="tbl-hdcell @ColThClass(k)" title="@ColDesc(k)">@ColLabel(k)@ChevCol(k, ColLabel(k), kDin)</th> }
+                                @foreach (var k in ColsVisibles()) { var kDin = Guid.TryParse(k, out _); <th class="tbl-hdcell @ColThClass(k)" data-clave="@k" title="@ColDesc(k)" @onmousedown="e => IniciarReorderC(e, k)">@ColLabel(k)@ChevCol(k, ColLabel(k), kDin)<span class="ctr-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeC(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeC(k)" @ondblclick:stopPropagation="true"></span></th> }
                                 <th class="ctr-w2 tbl-hdcell tbl-hdcell--plain"><button type="button" class="ctr-addcol-btn" title="Agregar campo (columna)" @onclick="() => _showColsMenu = true"><i class="fi fi-rr-plus"></i></button></th>
                             </tr>
                         </thead>
@@ -2160,6 +2165,63 @@ else
     // Clave de config: campo de sistema -> su clave; campo propio (guid) -> "cd:{guid}".
     private static string ConfigClave(string k) => Guid.TryParse(k, out _) ? "cd:" + k : k;
 
+    // ===== Reordenar + redimensionar columnas (canon Unidades .tbl: interop compartido + persistencia en
+    // unidades-config entidad 'contrato'; el ancho va en el JSON Formato bajo la clave "w", sin migracion). =====
+    private readonly Dictionary<string, int> _colWC = new(StringComparer.Ordinal);
+    // Estilo del <col>: solo las columnas redimensionadas fijan ancho; el resto queda auto (CSS actual).
+    private string? AnchoColC(string k) => _colWC.TryGetValue(k, out var w) ? $"width:{w}px" : null;
+    private GuardarUnidadCampoConfigRequest FilaConfigC(string k)
+    {
+        _cfgContrato.TryGetValue(ConfigClave(k), out var c);
+        return new GuardarUnidadCampoConfigRequest(ConfigClave(k), c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "contrato");
+    }
+    private async Task GuardarCfgC(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task IniciarReorderC(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable] public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ColsVisibles().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgC(FilaConfigC(keys[i]) with { Orden = i });
+        await CargarConfigContratoAsync(); StateHasChanged();
+    }
+    private async Task IniciarResizeC(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResizeC(string k) => OnColResize(k, 0);
+    [JSInvokable] public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colWC.Remove(clave); else _colWC[clave] = w.Value;
+        var fila = FilaConfigC(clave);
+        await GuardarCfgC(fila with { Formato = ConAnchoC(fila.Formato, w) });
+        await CargarConfigContratoAsync(); StateHasChanged();
+    }
+    // Hidrata los anchos persistidos (Formato "w") en el cache _colWC (clave sin el prefijo cd:).
+    private void HidratarAnchosC()
+    {
+        _colWC.Clear();
+        foreach (var kv in _cfgContrato)
+        {
+            var w = AnchoDeFormatoC(kv.Value.Formato);
+            if (w is > 0) { var key = kv.Key.StartsWith("cd:", StringComparison.Ordinal) ? kv.Key[3..] : kv.Key; _colWC[key] = w.Value; }
+        }
+    }
+    private static int? AnchoDeFormatoC(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAnchoC(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+
     private IEnumerable<(string Key, string Label)> ColsCatalogo()
         => ContratoCamposSistema.Todos.Select(c => (Key: c.Clave, Label: c.Label))
             .Concat(CamposActivos.Select(c => (Key: c.Id.ToString(), Label: c.Label)));
@@ -2237,6 +2299,7 @@ else
         {
             var cfg = await GetAuthAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=contrato") ?? new();
             _cfgContrato = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosC();
         }
         catch (SesionRedirigidaException) { }
         catch { _cfgContrato = new(StringComparer.Ordinal); }
