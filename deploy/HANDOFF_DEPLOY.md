@@ -15,6 +15,27 @@
 
 ---
 
+## ESTADO 2026-10-06 CATALOGO GLOBAL DE LISTAS - OLA 1 (infra, LEER PRIMERO)
+
+Rama `equipo/alex-header-zonas-equipos`. Primer entregable del plan "mudar las listas del sistema al
+Super Admin" (catalogo global editable por A&D). **Ola 1 = solo infraestructura; NINGUN modulo lee aun
+del catalogo, nada cambia en pantalla.**
+
+**TRAE UNA MIGRACION NUEVA ADITIVA que SI hay que aplicar en prod:**
+`20261006164654_AddCatalogoOpcion` (owner `propia`, `dotnet ef database update`). Crea la tabla GLOBAL
+`catalogo_opciones` (sin tenant_id, **sin RLS** a proposito: tabla de plataforma; `RlsCoverageTests` no
+la toca porque solo mira tablas con tenant_id) + GRANT a `propia_app`. Aditiva: si falla el deploy, la
+tabla queda sin uso (rollback = redeploy del artefacto anterior, sin revertir esquema).
+
+**CONFIG/ARRANQUE NUEVO:** se agrego un seeder idempotente `CatalogoListasSeeder.EnsureAsync` que corre
+en CADA arranque (Web y Api), SIEMPRE (no solo dev). Inserta solo las semillas que falten (hoy
+`unidad.tipo` = enum `TipoUnidad`, `unidad.estado` = {Habitada,Desocupada,Arrendada}); NO pisa lo que
+A&D edite despues. Es no-op tras la primera vez. Va envuelto en try/catch: si falla, loguea y NO bloquea
+el arranque. **Orden:** la migracion debe estar aplicada ANTES de arrancar (si no, el seeder loguea
+warning y sigue; al proximo arranque ya siembra).
+
+Sin cambios de comportamiento de usuario en esta ola. Pilotos (enganche real de Unidades) van en Ola 3.
+
 ## ESTADO 2026-10-02 ROLES REFINO VISUAL + MENU (LEER PRIMERO)
 
 Rama `equipo/alex-roles-refino` mergeada a `main` (commits `95da282` Roles refino + `43172f3` EditarCampoSistema).

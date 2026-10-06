@@ -70,6 +70,9 @@ public static class DependencyInjection
         services.AddScoped<ISuperAdminAuthService, SuperAdminAuthService>();
         services.AddScoped<ISuperAdminService, SuperAdminService>();
 
+        // Catalogo global de listas (editable desde la consola A&D). Lector con cache de proceso.
+        services.AddScoped<Application.Catalogos.ICatalogoListas, Catalogos.CatalogoListasService>();
+
         // Modulo 0.2 Billing y Suscripciones
         services.AddScoped<IBillingService, BillingService>();
 

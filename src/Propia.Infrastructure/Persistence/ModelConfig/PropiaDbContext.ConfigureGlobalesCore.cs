@@ -28,6 +28,20 @@ public partial class PropiaDbContext
             b.HasIndex(x => x.Nit).IsUnique().HasFilter("nit IS NOT NULL");
         });
 
+        // Catalogo global de listas (editable desde la consola A&D). Tabla GLOBAL (sin tenant_id/RLS):
+        // fuente de "fabrica" de las listas de seleccion; el override por copropiedad se compone encima.
+        modelBuilder.Entity<CatalogoOpcion>(b =>
+        {
+            b.Property(x => x.Lista).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Clave).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Label).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Color).HasMaxLength(40);
+            b.Property(x => x.Meta).HasColumnType("jsonb");
+            // Una clave por lista; y lectura ordenada por (lista, orden).
+            b.HasIndex(x => new { x.Lista, x.Clave }).IsUnique();
+            b.HasIndex(x => new { x.Lista, x.Orden });
+        });
+
         // Tenant (Copropiedad)
         modelBuilder.Entity<Tenant>(b =>
         {

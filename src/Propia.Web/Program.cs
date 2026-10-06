@@ -252,6 +252,11 @@ app.Use(async (ctx, next) =>
 // Bootstrap del founder SuperAdmin (prod, idempotente desde env vars). No-op si no estan.
 await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configuration);
 
+// Catalogo global de listas (fuente de "fabrica" editable desde la consola A&D). Idempotente,
+// corre SIEMPRE: inserta solo las semillas que falten; no pisa lo que A&D ya edito.
+try { await Propia.Infrastructure.Catalogos.CatalogoListasSeeder.EnsureAsync(app.Services); }
+catch (Exception ex) { app.Logger.LogWarning(ex, "CatalogoListasSeeder fallo (no bloquea el arranque)."); }
+
 if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);

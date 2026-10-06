@@ -288,6 +288,11 @@ app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
 // En Development el founder dev se crea abajo; en prod este es el unico camino de aprovisionamiento.
 await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configuration);
 
+// Catalogo global de listas (fuente de "fabrica" editable desde la consola A&D). Idempotente,
+// corre SIEMPRE: inserta solo las semillas que falten; no pisa lo que A&D ya edito.
+try { await Propia.Infrastructure.Catalogos.CatalogoListasSeeder.EnsureAsync(app.Services); }
+catch (Exception ex) { app.Logger.LogWarning(ex, "CatalogoListasSeeder fallo (no bloquea el arranque)."); }
+
 // Seed dev del founder SuperAdmin (solo en Development)
 if (app.Environment.IsDevelopment())
 {

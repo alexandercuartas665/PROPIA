@@ -43,6 +43,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
+    // Catalogo global de listas (editable desde la consola A&D). Tabla GLOBAL, sin tenant/RLS.
+    public DbSet<CatalogoOpcion> CatalogoOpciones => Set<CatalogoOpcion>();
 
     // Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels. Globales singleton.
     public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
