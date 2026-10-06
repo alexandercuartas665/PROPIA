@@ -6,11 +6,14 @@
 
 ## Objetivo del deploy
 
-- **Rama / HEAD:** `main` @ `288ebbb`
-- **Version:** `0.0.100`
+- **Rama / HEAD:** `main` @ `acbfe54`
+- **Version:** `0.0.101`
 - **Repo:** https://github.com/alexandercuartas665/PROPIA (rama `main`)
-- **Mecanismo:** auto-deploy desde `main` (Railway). Al estar `main` en `288ebbb`, prod toma ese commit.
-- **Base anterior:** deploy 2026-10-03 era `main` @ `2742ddc` (v0.0.99). Esta tanda suma 30 commits.
+- **Mecanismo:** auto-deploy desde `main` (Railway). Al estar `main` en `acbfe54`, prod toma ese commit.
+- **Base anterior:** deploy 2026-10-03 era `main` @ `2742ddc` (v0.0.99). Esta tanda suma ~50 commits.
+- **NOTA:** esta portada se actualizo durante el 2026-10-05 de `288ebbb` (v0.0.100) a `acbfe54` (v0.0.101)
+  para sumar B-1, E-1 y el rework de alta inline de Usuarios/Directorio + expander (ver seccion de abajo).
+  NO agrega migraciones.
 
 ## Que entra en esta tanda (commits nuevos sobre `2742ddc`)
 
@@ -44,6 +47,24 @@
 **Tests:**
 - `6537d1f` **B-4**: `UsuariosAccesosFlowTests` 12/12 verde (catalogo canonico 7 base / 0 extendidos
   globales tras Roles V2; + 2 rojos preexistentes del baseline corregidos).
+
+**Agregado despues de `288ebbb` (hasta `acbfe54`, mismo dia) - UI/servicio/tests, SIN migraciones:**
+- `41f1a9d` bump de version `0.0.100` -> `0.0.101`.
+- `c14e002` / `90642ee` **B-1**: se exoneran del contrato RLS por-tenant 8 tablas globales/plataforma
+  (BaseEntity con `tenant_id` descriptivo, no operativo) con justificacion; `RlsCoverageTests` 2/2 verde.
+- `b75cf7a` **E-1** (infra DEV): fija el host de la BD dev a `127.0.0.1` (quita ambiguedad `::1`/wslrelay).
+  Solo afecta la cadena de conexion de desarrollo; NO cambia prod.
+- **Alta inline de Usuarios y Directorio al canon Unidades** (`001a071`, `f96a45d`, `3a80850`, `f344cdd`,
+  `f78ce3e`, `a0daf30`, `86dd80b`, `975ddbc`, `acbfe54`):
+  - Inputs de la fila de alta al canon (borde transparente en reposo, foco violeta con glow), botones
+    guardar/cancelar con iconos check/x, CTA colapsable + FAB que abre la fila (Usuarios tabla y
+    Directorio Personas/Empresas).
+  - Usuarios: rol basico creable inline desde el alta (como "agregar tipo" en Unidades); un solo campo
+    "Nombre completo" (se divide al invitar); columnas "Tipo doc" y "Documento" separadas; anchos de
+    columna rebalanceados para que header/fila/alta alineen; **columna expander** (abre la ficha en filas
+    de datos; confirma el alta en la fila nueva). `UsuarioListaDto` ahora expone `TipoDocumento` (campo
+    ya existente en `personas`, sin cambio de esquema).
+  - Directorio ya tenia verde + expander; solo se homogenizo el alta (Olas A/B/C).
 
 Todo validado en runtime (Chrome / API, tenant demo). Solo ASCII en codigo; colores por tokens.
 
@@ -108,6 +129,15 @@ Ola 3:
 - [ ] Roles: eliminar un rol personalizado -> pide confirmacion.
 - [ ] Comunicaciones: abrir y cancelar el wizard -> la lista queda consistente.
 
+Alta inline (Usuarios / Directorio):
+- [ ] Usuarios (tabla): la fila de alta nace colapsada (CTA "+ Agregar registro"); el FAB flotante la
+      abre; header/fila/alta alineados; columnas "Tipo doc" y "Documento" separadas; el expander (flecha
+      diagonal) abre la ficha en filas existentes.
+- [ ] Usuarios (alta): un solo campo "Nombre completo"; se puede crear un rol basico inline con el "+".
+- [ ] Directorio (Personas/Empresas): fila de alta al canon (inputs fantasma, guardar check/x, FAB).
+- [ ] Carga Excel de Unidades: importar la plantilla y verificar que la columna COEFICIENTE entra con sus
+      decimales (p.ej. 1,25 -> 1.2500). (Nota: la BD guarda 4 decimales; ver deuda abajo.)
+
 ## Rollback
 
 - Redeploy del artefacto anterior (ultimo bueno en prod). Esta tanda es UI/servicio/tests SIN esquema
@@ -117,5 +147,17 @@ Ola 3:
 - D2 (si se aplico en esta ventana) NO es auto-reversible (remapea usuarios); su rollback esta en el
   `Down` de la migracion pero pierde la distincion Propietario/Residente. Coordinar con Alex.
 
+## Deudas conocidas (NO bloquean este deploy)
+
+- **Coeficiente de unidad: escala `numeric(7,4)` (4 decimales).** El import de Excel lee y guarda bien
+  (verificado end-to-end el 2026-10-05: 1,25/1,3/2/3/0,5 -> correctos), pero la columna solo retiene 4
+  decimales mientras la ayuda de la plantilla dice "Max 5 decimales". Coeficientes con 5+ decimales se
+  redondean; uno `< 0,00005` se volveria 0. Si se manejan coeficientes fraccionarios finos, decidir con
+  Alex migrar a `numeric(9,6)` + alinear la ayuda. (Pendiente, requiere migracion.)
+- **El import NO llena la tabla multi-tipo `UnidadCoeficiente`** (solo el campo legacy
+  `UnidadPrivada.CoeficientePropiedad`, que es el que lee la grilla y la ficha). Si algun panel de "tipos
+  de coeficiente" lee de la multi-tipo, las unidades importadas se veran vacias ahi.
+
 ---
-Generado 2026-10-05. Companions: `HANDOFF_DEPLOY.md`, `DEPLOY_CHECKLIST.md`, `PLAN_OLAS.md`, `menu-roles-prod.sql`.
+Generado 2026-10-05 (actualizado a `acbfe54` / v0.0.101). Companions: `HANDOFF_DEPLOY.md`,
+`DEPLOY_CHECKLIST.md`, `PLAN_OLAS.md`, `menu-roles-prod.sql`.
