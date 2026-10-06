@@ -130,6 +130,7 @@ public class UsuariosService : IUsuariosService
         return lista.Select(u => new UsuarioListaDto(
             u.Id, u.PersonaId,
             $"{u.Persona!.Nombres} {u.Persona.Apellidos}",
+            u.Persona.TipoDocumento,
             u.Persona.Documento,
             u.Persona.Email, u.Persona.Telefono,
             u.RolId, u.RolNavigation?.Nombre ?? u.Rol,

@@ -34,7 +34,7 @@ public record ActualizarPermisoRequest(
 
 public record UsuarioListaDto(
     Guid UsuarioTenantId,
-    Guid PersonaId, string NombreCompleto, string Documento,
+    Guid PersonaId, string NombreCompleto, TipoDocumento TipoDocumento, string Documento,
     string? Email, string? Telefono,
     Guid? RolId, string RolNombre,
     EstadoUsuarioTenant Estado,
