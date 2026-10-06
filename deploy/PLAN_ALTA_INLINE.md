@@ -63,12 +63,16 @@
 - [x] C2. Directorio Personas + Empresas: idem. (Personas validado; Empresas mismo codigo.)
 - [x] C3. Validado: FAB/CTA abren la fila; tras guardar/cancelar vuelve a la CTA colapsada.
 
-## OLA D - Expander + resaltado verde  -- CERRADA (opcion A)
+## OLA D - Expander + resaltado verde  -- CERRADA
 
 - [x] D3. Directorio: `dtab-row-new` (verde) + expander en la fila de alta abierta -> intactos tras Ola C.
       Directorio YA coincide con Unidades en #6 (verde) y #7 (expander).
-- [x] D1. Usuarios - columna expander: **OMITIDO (opcion A, "dale ola d").** Las filas de Usuarios ya tienen
-      boton lapiz "Editar" que abre el usuario (redundante) + era cirugia de grid de valor marginal.
+- [x] D1. Usuarios - columna expander: **HECHO (Alex lo pidio explicito 2026-10-05: "en usuarios falta el
+      expander que tiene el modulo de unidades privadas").** Se agrego la 2a columna (34px) en el GridStyle
+      (`38px 34px ...`) y la celda expander en los 3 grids (header placeholder, fila de datos, fila de alta)
+      de `UsuariosTablaVista.razor`. En filas de datos la flecha diagonal abre la ficha al hover (OnEditar);
+      en la fila de alta confirma el registro (Invitar). CSS `.utb-exp-col`/`.utb-exp` inline, espejo de
+      `.dtab-exp` del Directorio. (Revierte la "opcion A" anterior que lo omitia.)
 - [x] D2. Usuarios - resaltado verde: **N/A por diseno.** Invitar crea un usuario PENDIENTE (pestana
       Pendientes, no la tabla de Activos), asi que no hay fila recien creada en la tabla actual para pintar.
 
