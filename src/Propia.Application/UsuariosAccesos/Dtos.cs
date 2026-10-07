@@ -44,7 +44,13 @@ public record UsuarioListaDto(
     string? FotoUrl,          // avatar de la Persona (resuelto a URL publica actual)
     bool EnDirectorio,        // si la Persona ya tiene vinculo activo en el Directorio del tenant (2.5.E)
     IReadOnlyList<EtiquetaUsuarioDto> Etiquetas,
-    IReadOnlyList<string> GruposGobierno);  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
+    IReadOnlyList<string> GruposGobierno,  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
+    // 2.5 v2.0 multi-rol/cargo: TODOS los roles asignados (chips) y los cargos (descriptivos).
+    IReadOnlyList<RolChipDto> Roles,
+    IReadOnlyList<string> Cargos);
+
+/// <summary>Rol como chip (id + nombre) para pintar la selección múltiple en la tabla de Usuarios.</summary>
+public record RolChipDto(Guid Id, string Nombre);
 
 public record RegistroDirectorioDto(bool YaEstaba, bool PerfilIncompleto);
 
@@ -70,6 +76,10 @@ public record UsuarioSesionDto(
 public record AuthMetodoDto(TipoAuthMetodo Tipo, bool Activo);
 
 public record CambiarRolUsuarioRequest(Guid RolId);
+
+// 2.5 v2.0 multi-rol/cargo: reemplazan el conjunto completo de roles/cargos de un usuario.
+public record ActualizarRolesUsuarioRequest(IReadOnlyList<Guid> RolIds);
+public record ActualizarCargosUsuarioRequest(IReadOnlyList<string> Cargos);
 
 public record RevocarAccesoRequest(string? Motivo);
 

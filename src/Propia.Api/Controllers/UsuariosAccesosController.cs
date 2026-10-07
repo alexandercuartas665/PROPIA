@@ -117,6 +117,21 @@ public class UsuariosAccesosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // -------- Multi-rol / Cargo (2.5 v2.0): reemplazan el conjunto completo --------
+    [HttpPut("{id:guid}/roles")]
+    public async Task<IActionResult> ActualizarRoles(Guid id, [FromBody] ActualizarRolesUsuarioRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarRolesAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpPut("{id:guid}/cargos")]
+    public async Task<IActionResult> ActualizarCargos(Guid id, [FromBody] ActualizarCargosUsuarioRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarCargosAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("{id:guid}/revocar")]
     public async Task<IActionResult> Revocar(Guid id, [FromBody] RevocarAccesoRequest req, CancellationToken ct)
     {

@@ -96,6 +96,24 @@ public class UsuariosService : IUsuariosService
             .ToDictionary(g => g.Key,
                 g => (IReadOnlyList<EtiquetaUsuarioDto>)g.Select(x => new EtiquetaUsuarioDto(x.e.Id, x.e.Nombre, x.e.Color, x.e.Activo)).ToList());
 
+        // 2.5 v2.0 multi-rol: TODOS los roles asignados por usuario (join a roles_copropiedad para el nombre).
+        var rolesPorUsuario = (await _db.UsuarioTenantRoles.AsNoTracking()
+                .Where(utr => utIds.Contains(utr.UsuarioTenantId))
+                .Join(_db.RolesCopropiedad, utr => utr.RolId, r => r.Id,
+                      (utr, r) => new { utr.UsuarioTenantId, r.Id, r.Nombre })
+                .ToListAsync(ct))
+            .GroupBy(x => x.UsuarioTenantId)
+            .ToDictionary(g => g.Key,
+                g => (IReadOnlyList<RolChipDto>)g.Select(x => new RolChipDto(x.Id, x.Nombre)).ToList());
+
+        // 2.5 v2.0 Cargos (descriptivos) por usuario.
+        var cargosPorUsuario = (await _db.UsuarioTenantCargos.AsNoTracking()
+                .Where(utc => utIds.Contains(utc.UsuarioTenantId))
+                .Select(utc => new { utc.UsuarioTenantId, utc.Cargo })
+                .ToListAsync(ct))
+            .GroupBy(x => x.UsuarioTenantId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.Select(x => x.Cargo).ToList());
+
         // Grupos de gobierno / equipo por persona (2.5.1) -> tags en la lista de usuarios
         var personaIds = lista.Select(u => u.PersonaId).Distinct().ToList();
         var gConsejo = await _db.MiembrosConsejo.AsNoTracking()
@@ -139,7 +157,9 @@ public class UsuariosService : IUsuariosService
             _blob.ResolveUrl(u.Persona.FotoUrl),
             enDirectorio.Contains(u.PersonaId),
             etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>(),
-            GruposDe(u.PersonaId)
+            GruposDe(u.PersonaId),
+            rolesPorUsuario.TryGetValue(u.Id, out var rls) ? rls : new List<RolChipDto>(),
+            cargosPorUsuario.TryGetValue(u.Id, out var cgs) ? cgs : new List<string>()
         )).ToList();
     }
 
@@ -700,8 +720,87 @@ public class UsuariosService : IUsuariosService
 
         ut.RolId = rol.Id;
         ut.Rol = rol.Nombre;
+        // Mantener el join multi-rol consistente con el cambio de rol principal (2.5 v2.0).
+        var existRol1 = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId == ut.Id).ToListAsync(ct);
+        _db.UsuarioTenantRoles.RemoveRange(existRol1);
+        _db.UsuarioTenantRoles.Add(new UsuarioTenantRol { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, RolId = rol.Id });
         await _db.SaveChangesAsync(ct);
         await RegistrarAuditoriaAsync(TipoEventoAuditoria.RolCambiado, ut.TenantId, ut.Id, rol.Nombre, ct);
+        return true;
+    }
+
+    // ===================== Multi-rol / Cargo (2.5 v2.0) =====================
+
+    /// <summary>Reemplaza el conjunto COMPLETO de roles de un usuario (chips). Sincroniza el rol principal
+    /// (UsuarioTenant.RolId/Rol = el primero). Default spec: si queda vacio -> "Portal Residente".
+    /// Guard: no deja la copropiedad sin Administrador activo.</summary>
+    public async Task<bool> ActualizarRolesAsync(Guid usuarioTenantId, ActualizarRolesUsuarioRequest req, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut is null) return false;
+
+        var idsPedidos = (req.RolIds ?? Array.Empty<Guid>()).Distinct().ToList();
+        var rolesValidos = await _db.RolesCopropiedad.Where(r => idsPedidos.Contains(r.Id)).ToListAsync(ct);
+        // Orden estable: respetar el orden en que llegaron los ids.
+        rolesValidos = idsPedidos.Select(id => rolesValidos.FirstOrDefault(r => r.Id == id)).Where(r => r is not null).Select(r => r!).ToList();
+
+        if (rolesValidos.Count == 0)
+        {
+            var portal = await _db.RolesCopropiedad.FirstOrDefaultAsync(r => r.Nombre == "Portal Residente", ct);
+            if (portal is not null) rolesValidos.Add(portal);
+            if (rolesValidos.Count == 0) throw new InvalidOperationException("Debe quedar al menos un rol.");
+        }
+
+        // RN: no quitar el ultimo Administrador activo de la copropiedad.
+        var nuevoEsAdmin = rolesValidos.Any(r => r.Nombre == "Administrador");
+        if (!nuevoEsAdmin && ut.Estado == EstadoUsuarioTenant.Activo)
+        {
+            var rolesActuales = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId == ut.Id)
+                .Join(_db.RolesCopropiedad, x => x.RolId, r => r.Id, (x, r) => r.Nombre).ToListAsync(ct);
+            var eraAdmin = ut.Rol == "Administrador" || rolesActuales.Contains("Administrador");
+            if (eraAdmin)
+            {
+                var otrosAdmins = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId != ut.Id)
+                    .Join(_db.RolesCopropiedad.Where(r => r.Nombre == "Administrador"), x => x.RolId, r => r.Id, (x, r) => x.UsuarioTenantId)
+                    .Join(_db.UsuariosTenant.Where(u => u.Estado == EstadoUsuarioTenant.Activo), uid => uid, u => u.Id, (uid, u) => u.Id)
+                    .Distinct().CountAsync(ct);
+                if (otrosAdmins == 0)
+                    throw new InvalidOperationException("No puedes quitar el rol Administrador al ultimo activo de la copropiedad.");
+            }
+        }
+
+        var existentes = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId == ut.Id).ToListAsync(ct);
+        _db.UsuarioTenantRoles.RemoveRange(existentes);
+        foreach (var r in rolesValidos)
+            _db.UsuarioTenantRoles.Add(new UsuarioTenantRol { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, RolId = r.Id });
+
+        var principal = rolesValidos[0];
+        ut.RolId = principal.Id;
+        ut.Rol = principal.Nombre;
+
+        await _db.SaveChangesAsync(ct);
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.RolCambiado, ut.TenantId, ut.Id, string.Join(", ", rolesValidos.Select(r => r.Nombre)), ct);
+        return true;
+    }
+
+    /// <summary>Reemplaza el conjunto de Cargos (descriptivos, no dan permisos) de un usuario. Vacio es valido.</summary>
+    public async Task<bool> ActualizarCargosAsync(Guid usuarioTenantId, ActualizarCargosUsuarioRequest req, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut is null) return false;
+
+        var cargos = (req.Cargos ?? Array.Empty<string>())
+            .Select(c => (c ?? string.Empty).Trim())
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var existentes = await _db.UsuarioTenantCargos.Where(x => x.UsuarioTenantId == ut.Id).ToListAsync(ct);
+        _db.UsuarioTenantCargos.RemoveRange(existentes);
+        foreach (var c in cargos)
+            _db.UsuarioTenantCargos.Add(new UsuarioTenantCargo { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, Cargo = c });
+
+        await _db.SaveChangesAsync(ct);
         return true;
     }
 
