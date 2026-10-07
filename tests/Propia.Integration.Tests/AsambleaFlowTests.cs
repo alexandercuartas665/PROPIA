@@ -324,8 +324,6 @@ public class AsambleaFlowTests : IAsyncLifetime
     {
         var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
         await using var ctx = new PropiaDbContext(opts, new TenantContext());
-        var torre = new Torre { TenantId = tenantId, Nombre = "T1", Descripcion = "Test" };
-        ctx.Torres.Add(torre);
         var ids = new List<Guid>();
         for (int i = 0; i < cantidad; i++)
         {
@@ -334,7 +332,6 @@ public class AsambleaFlowTests : IAsyncLifetime
             {
                 TenantId = tenantId,
                 Numero = $"{100 + i}",
-                TorreId = torre.Id,
                 CoeficientePropiedad = coef
             };
             ctx.UnidadesPrivadas.Add(u);
@@ -363,7 +360,6 @@ public class AsambleaFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesiones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asamblea_config WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
-        await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {_userId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {_personaId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");

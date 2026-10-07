@@ -98,12 +98,9 @@ public class PresupuestoFlowTests
         var (svc, db, tctx) = BuildService(tenantId);
 
         // Setup: 2 unidades con coeficientes 60% y 40%
-        var torre = new Torre { Nombre = "Torre A" };
-        db.Torres.Add(torre);
-        await db.SaveChangesAsync();
         db.UnidadesPrivadas.AddRange(
-            new UnidadPrivada { Numero = "101", Tipo = TipoUnidad.Apartamento, TorreId = torre.Id, CoeficientePropiedad = 60m },
-            new UnidadPrivada { Numero = "102", Tipo = TipoUnidad.Apartamento, TorreId = torre.Id, CoeficientePropiedad = 40m });
+            new UnidadPrivada { Numero = "101", Tipo = TipoUnidad.Apartamento, CoeficientePropiedad = 60m },
+            new UnidadPrivada { Numero = "102", Tipo = TipoUnidad.Apartamento, CoeficientePropiedad = 40m });
         await db.SaveChangesAsync();
 
         // Presupuesto con un solo rubro $12M anual (= $1M mensual)
@@ -142,9 +139,7 @@ public class PresupuestoFlowTests
         var tenantId = await SeedTenantAsync("CP Pago");
         var (svc, db, _) = BuildService(tenantId);
 
-        var torre = new Torre { Nombre = "T" };
-        db.Torres.Add(torre);
-        db.UnidadesPrivadas.Add(new UnidadPrivada { Numero = "101", Tipo = TipoUnidad.Apartamento, Torre = torre, CoeficientePropiedad = 100m });
+        db.UnidadesPrivadas.Add(new UnidadPrivada { Numero = "101", Tipo = TipoUnidad.Apartamento, CoeficientePropiedad = 100m });
         await db.SaveChangesAsync();
 
         var p = await svc.CrearPresupuestoAsync(new CrearPresupuestoRequest("X", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), true), CancellationToken.None);
@@ -245,7 +240,6 @@ public class PresupuestoFlowTests
         // audit_log_presupuestos es append-only (RN-12) - los registros del tenant quedan huerfanos pero
         // no afectan otros tests porque cada test usa su propio tenant.
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
-        await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
 }

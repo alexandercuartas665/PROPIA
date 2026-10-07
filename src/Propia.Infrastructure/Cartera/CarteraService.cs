@@ -303,8 +303,6 @@ public class CarteraService : ICarteraService
         var rows = await (
             from cu in _db.CarteraUnidades.AsNoTracking().Where(c => c.SaldoCapital > 0)
             join u in _db.UnidadesPrivadas.AsNoTracking() on cu.UnidadPrivadaId equals u.Id
-            join t in _db.Torres.AsNoTracking() on u.TorreId equals t.Id into tj
-            from t in tj.DefaultIfEmpty()
             join e in _db.EstadosCarteraConfig.AsNoTracking() on cu.EstadoGestionId equals e.Id into ej
             from e in ej.DefaultIfEmpty()
             orderby cu.SaldoCapital descending
@@ -312,7 +310,6 @@ public class CarteraService : ICarteraService
             {
                 cu.UnidadPrivadaId,
                 u.Numero,
-                TorreNombre = t == null ? null : t.Nombre,
                 cu.SaldoCapital,
                 cu.SaldoIntereses,
                 cu.FechaPrimerMora,
@@ -325,7 +322,7 @@ public class CarteraService : ICarteraService
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var unidadesEnMora = rows.Select(r => new CarteraUnidadListaDto(
-            r.UnidadPrivadaId, r.Numero, r.TorreNombre, null,
+            r.UnidadPrivadaId, r.Numero, null,
             r.SaldoCapital, r.SaldoIntereses, r.SaldoCapital + r.SaldoIntereses,
             r.FechaPrimerMora.HasValue ? hoy.DayNumber - r.FechaPrimerMora.Value.DayNumber : 0,
             r.EstadoId, r.EstadoNombre, r.EstadoColor, r.TieneAcuerdoVigente)).ToList();
@@ -361,7 +358,6 @@ public class CarteraService : ICarteraService
     {
         await AsegurarConfigYEstadosAsync(ct);
         var unidad = await _db.UnidadesPrivadas.AsNoTracking()
-            .Include(u => u.Torre)
             .FirstOrDefaultAsync(u => u.Id == unidadPrivadaId, ct);
         if (unidad is null) return null;
 
@@ -412,7 +408,7 @@ public class CarteraService : ICarteraService
             acuerdoDto = ToAcuerdoDto(acuerdoVigente, unidad.Numero);
 
         return new CarteraUnidadDetalleDto(
-            unidad.Id, unidad.Numero, unidad.Torre?.Nombre, null,
+            unidad.Id, unidad.Numero, null,
             cu?.SaldoCapital ?? 0, cu?.SaldoIntereses ?? 0, (cu?.SaldoCapital ?? 0) + (cu?.SaldoIntereses ?? 0),
             cu?.FechaPrimerMora.HasValue == true ? hoy.DayNumber - cu.FechaPrimerMora!.Value.DayNumber : 0,
             cu?.EstadoGestionId, cu?.EstadoGestion?.Nombre, cu?.EstadoGestion?.Color,

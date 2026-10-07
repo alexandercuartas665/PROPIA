@@ -151,9 +151,32 @@ public class AuthController : ControllerBase
         var t = User.FindFirstValue("tenant_id");
         if (Guid.TryParse(t, out var parsed)) activeTenant = parsed;
 
-        var me = await _auth.GetMeAsync(userId.Value, activeTenant, ct);
+        Guid? activeRol = null;
+        var r = User.FindFirstValue("rol_id");
+        if (Guid.TryParse(r, out var parsedRol)) activeRol = parsedRol;
+
+        var me = await _auth.GetMeAsync(userId.Value, activeTenant, ct, activeRol);
         if (me is null) return NotFound();
         return Ok(me);
+    }
+
+    /// <summary>
+    /// Reemite un JWT fijando el rol ACTIVO de la sesion (2.5 v2.0 multi-rol). El usuario debe tener
+    /// asignado ese rol en la copropiedad activa. El tenant activo se toma del JWT actual.
+    /// </summary>
+    [HttpPost("switch-rol")]
+    [Authorize]
+    public async Task<IActionResult> SwitchRol([FromBody] SwitchRolRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        var t = User.FindFirstValue("tenant_id");
+        if (!Guid.TryParse(t, out var tenantId)) return BadRequest(new { error = "sin_tenant_activo" });
+
+        var result = await _auth.SwitchRolAsync(userId.Value, tenantId, request.RolId, ct);
+        if (result is null) return Forbid();
+        return Ok(result);
     }
 
     /// <summary>Reemite un JWT con un tenant_id distinto. El usuario debe tener acceso al tenant pedido.</summary>

@@ -19,9 +19,6 @@ public class UnidadPrivada : TenantEntity
     /// Cuando no es null, prevalece sobre el enum Tipo para mostrar la etiqueta. Opcional.</summary>
     public Guid? TipoCustomId { get; set; }
 
-    public Guid? TorreId { get; set; }
-    public Torre? Torre { get; set; }
-
     public int? Piso { get; set; }
 
     /// <summary>Coeficiente de propiedad en porcentaje (Ley 675 art. 26). Suma total 100.0%.</summary>

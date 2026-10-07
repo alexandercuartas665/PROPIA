@@ -163,9 +163,7 @@ public class CarteraFlowTests : IAsyncLifetime
         await svc.SincronizarDesdePresupuestoAsync(CancellationToken.None);
 
         // Crear unidad sin deuda
-        var torre = new Torre { TenantId = tenantId, Nombre = "T-PS", Descripcion = "Test" };
-        db.Torres.Add(torre);
-        var unidad = new UnidadPrivada { TenantId = tenantId, Numero = "PS-001", TorreId = torre.Id };
+        var unidad = new UnidadPrivada { TenantId = tenantId, Numero = "T-PS-001" };
         db.UnidadesPrivadas.Add(unidad);
         await db.SaveChangesAsync();
 
@@ -241,9 +239,7 @@ public class CarteraFlowTests : IAsyncLifetime
         var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
         await using var ctx = new PropiaDbContext(opts, new TenantContext());
 
-        var torre = new Torre { TenantId = tenantId, Nombre = "T1", Descripcion = "Test" };
-        ctx.Torres.Add(torre);
-        var unidad = new UnidadPrivada { TenantId = tenantId, Numero = "101", TorreId = torre.Id, CoeficientePropiedad = 1m };
+        var unidad = new UnidadPrivada { TenantId = tenantId, Numero = "101", CoeficientePropiedad = 1m };
         ctx.UnidadesPrivadas.Add(unidad);
 
         var presupuesto = new Domain.Entities.Presupuesto
@@ -305,7 +301,6 @@ public class CarteraFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM liquidaciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM presupuestos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
-        await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
 }

@@ -1,29 +1,18 @@
 @* ============================================================================
-   SelectorUnidadCascada - selector de unidad en CASCADA: primero Torre, luego Unidad.
-   Reutilizable en todo el sistema (Reservas, Porteria, PQRSD, ...). Deriva la lista de
-   torres de las propias unidades (UnidadDto ya trae TorreId + TorreNombre), asi que no
-   requiere cargar torres aparte. Two-way binding con UnidadId (Guid?).
+   SelectorUnidadCascada - selector de unidad. Ya no hay Torre: el codigo de la unidad
+   ES su Numero, asi que se elige la unidad directamente de la lista (UnidadDto).
+   Reutilizable en todo el sistema (Reservas, Porteria, PQRSD, ...). Two-way binding con
+   UnidadId (Guid?). Se conservan los parametros publicos historicos para no romper a los
+   llamadores; la Torre dejo de renderizarse.
    ============================================================================ *@
 @using Propia.Application.MiCopropiedad
 
-<div class="suc @((Inline && !SoloUnidad) ? "suc--inline" : "")">
-    @* Modo SoloUnidad: se oculta la Torre y la unidad se elige directo (id de la unidad privada). *@
-    @if (!SoloUnidad)
-    {
-        <div class="suc-fld">
-            @if (MostrarLabels) { <label class="suc-lbl">Torre@(Requerido ? " *" : "")</label> }
-            <select class="@SelClass" value="@_torreSel" @onchange="OnTorreChanged" disabled="@Disabled">
-                <option value="">@PlaceholderTorre</option>
-                @foreach (var t in _torres) { <option value="@t.Key">@t.Nombre</option> }
-            </select>
-        </div>
-    }
+<div class="suc">
     <div class="suc-fld">
         @if (MostrarLabels) { <label class="suc-lbl">Unidad@(Requerido ? " *" : "")</label> }
-        <select class="@SelClass" value="@(UnidadId?.ToString() ?? "")" @onchange="OnUnidadChanged"
-                disabled="@(Disabled || (!SoloUnidad && string.IsNullOrEmpty(_torreSel)))">
-            <option value="">@((!SoloUnidad && string.IsNullOrEmpty(_torreSel)) ? "Elige torre primero" : PlaceholderUnidad)</option>
-            @foreach (var u in (SoloUnidad ? UnidadesTodas : UnidadesDeTorre)) { <option value="@u.Id">@u.Numero</option> }
+        <select class="@SelClass" value="@(UnidadId?.ToString() ?? "")" @onchange="OnUnidadChanged" disabled="@Disabled">
+            <option value="">@PlaceholderUnidad</option>
+            @foreach (var u in UnidadesTodas) { <option value="@u.Id">@u.Numero</option> }
         </select>
     </div>
 </div>
@@ -37,69 +26,20 @@
     [Parameter] public bool Requerido { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public bool Inline { get; set; } = true;
+    // Conservados por compatibilidad con llamadores existentes (ya no se usan: no hay Torre).
     [Parameter] public string PlaceholderTorre { get; set; } = "Torre...";
     [Parameter] public string PlaceholderUnidad { get; set; } = "Unidad...";
-    /// <summary>Oculta la Torre y permite elegir la unidad (id de la unidad privada) directamente.</summary>
+    /// <summary>Historico: hoy el selector siempre elige la unidad directamente.</summary>
     [Parameter] public bool SoloUnidad { get; set; }
-
-    private const string SinTorre = "__sin__";
-    private string _torreSel = "";
 
     // Si el host pasa una Class (ej. "po-input"), usa esa (calza con el estilo de la pagina);
     // si no, usa el estilo propio del componente.
     private string SelClass => string.IsNullOrWhiteSpace(Class) ? "suc-select" : Class!;
 
-    private record TorreOpt(string Key, string Nombre);
-
-    private List<TorreOpt> _torres = new();
-
-    private List<UnidadDto> UnidadesDeTorre =>
-        (Unidades ?? new List<UnidadDto>())
-            .Where(u => TorreKey(u) == _torreSel)
-            .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    // Todas las unidades (modo SoloUnidad, sin filtrar por torre).
     private List<UnidadDto> UnidadesTodas =>
         (Unidades ?? new List<UnidadDto>())
             .OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-    private static string TorreKey(UnidadDto u) => u.TorreId?.ToString() ?? SinTorre;
-
-    protected override void OnParametersSet()
-    {
-        // Torres distintas derivadas de las unidades (por si la lista cambio).
-        _torres = (Unidades ?? new List<UnidadDto>())
-            .GroupBy(TorreKey)
-            .Select(g => new TorreOpt(g.Key,
-                g.Key == SinTorre ? "(Sin torre)" : (g.First().TorreNombre ?? "Torre")))
-            .OrderBy(t => t.Nombre, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // Si viene una unidad ya elegida (modo edicion), sincroniza la torre.
-        if (UnidadId is Guid uid && uid != Guid.Empty)
-        {
-            var u = (Unidades ?? new List<UnidadDto>()).FirstOrDefault(x => x.Id == uid);
-            if (u is not null) _torreSel = TorreKey(u);
-        }
-        // Comodidad: si solo hay una torre, preseleccionala.
-        else if (string.IsNullOrEmpty(_torreSel) && _torres.Count == 1)
-        {
-            _torreSel = _torres[0].Key;
-        }
-    }
-
-    private async Task OnTorreChanged(ChangeEventArgs e)
-    {
-        _torreSel = e.Value?.ToString() ?? "";
-        // Al cambiar de torre, la unidad elegida deja de ser valida.
-        if (UnidadId is not null)
-        {
-            UnidadId = null;
-            await UnidadIdChanged.InvokeAsync(null);
-        }
-    }
 
     private async Task OnUnidadChanged(ChangeEventArgs e)
     {
@@ -112,7 +52,6 @@
 
 <style>
     .suc { display: grid; gap: 10px; }
-    .suc--inline { grid-template-columns: 1fr 1fr; }
     .suc-fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     .suc-lbl { font-size: 12px; font-weight: 600; color: var(--propia-text-secondary); }
     .suc-select {
@@ -122,5 +61,4 @@
     }
     .suc-select:focus { outline: none; border-color: var(--propia-brand, var(--propia-brand)); box-shadow: 0 0 0 3px rgba(109,79,227,.12); }
     .suc-select:disabled { background: var(--propia-bg-hover); color: #94A3B8; cursor: not-allowed; }
-    @@media (max-width: 560px) { .suc--inline { grid-template-columns: 1fr; } }
 </style>

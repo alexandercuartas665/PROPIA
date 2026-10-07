@@ -33,8 +33,9 @@ public class DevLoginGateTests
         public FakeAuth(LoginResponse? login) => _login = login;
         public Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct, string? ip = null, string? userAgent = null)
             => Task.FromResult(_login);
-        public Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct) => Task.FromResult<MeResponse?>(null);
+        public Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct, Guid? activeRolId = null) => Task.FromResult<MeResponse?>(null);
         public Task<LoginResponse?> SwitchTenantAsync(Guid userId, Guid newTenantId, CancellationToken ct) => Task.FromResult<LoginResponse?>(null);
+        public Task<LoginResponse?> SwitchRolAsync(Guid userId, Guid activeTenantId, Guid rolId, CancellationToken ct) => Task.FromResult<LoginResponse?>(null);
         public Task<LoginResponse?> RefreshAsync(string rawJwt, CancellationToken ct) => Task.FromResult<LoginResponse?>(null);
         public Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct) => Task.FromResult((true, (string?)null));
     }

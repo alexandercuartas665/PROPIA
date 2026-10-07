@@ -126,7 +126,7 @@ public class AuthService : IAuthService
         catch { /* la auditoria nunca bloquea el login */ }
     }
 
-    public async Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct)
+    public async Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct, Guid? activeRolId = null)
     {
         var user = await _db.Users
             .Include(u => u.Persona)
@@ -134,6 +134,15 @@ public class AuthService : IAuthService
         if (user is null) return null;
 
         var tenants = await LoadAvailableTenantsAsync(userId, ct);
+
+        // Roles que el usuario tiene en la copropiedad ACTIVA (2.5 v2.0 multi-rol). Este endpoint corre
+        // con tenant activo (el middleware ya fijo app.tenant_id del claim tenant_id), asi que RLS deja
+        // leer usuario_tenant_roles de ESTA copropiedad. El cliente usa AvailableRoles + ActiveRolId para
+        // decidir si debe pedir "elegir rol antes de entrar" (mas de un rol y aun sin elegir).
+        var roles = (user.PersonaId.HasValue && activeTenantId.HasValue)
+            ? await LoadRolesEnTenantActivoAsync(user.PersonaId.Value, ct)
+            : new List<RolInfo>();
+
         return new MeResponse(
             user.Id,
             user.Email!,
@@ -143,7 +152,53 @@ public class AuthService : IAuthService
             activeTenantId,
             tenants,
             _blob.ResolveUrl(user.Persona?.FotoUrl),
-            _blob.ResolveUrl(user.Persona?.FirmaUrl));
+            _blob.ResolveUrl(user.Persona?.FirmaUrl),
+            activeRolId,
+            roles);
+    }
+
+    public async Task<LoginResponse?> SwitchRolAsync(Guid userId, Guid activeTenantId, Guid rolId, CancellationToken ct)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user?.PersonaId is null) return null;
+
+        // Corre en contexto autenticado con tenant (el JWT trae tenant_id -> middleware fijo
+        // app.tenant_id), asi que RLS limita a la copropiedad activa. Validamos que el rol pedido sea
+        // uno de los roles del usuario en ESTA copropiedad antes de reemitir con el claim rol_id.
+        var roles = await LoadRolesEnTenantActivoAsync(user.PersonaId.Value, ct);
+        if (!roles.Any(r => r.RolId == rolId)) return null;
+
+        var (token, expires) = _tokenService.IssueAccessToken(user, activeTenantId, rolId);
+        return new LoginResponse(token, expires, user.Id, user.Email!, activeTenantId,
+            await LoadAvailableTenantsAsync(userId, ct), rolId, roles);
+    }
+
+    /// <summary>
+    /// Roles asignados al usuario (via usuario_tenant_roles) en la copropiedad ACTIVA. Debe llamarse en
+    /// un scope CON tenant activo (RLS). Si el vinculo no tiene filas en usuario_tenant_roles (datos
+    /// previos al backfill), cae al rol principal (UsuarioTenant.RolId) como unico rol disponible.
+    /// </summary>
+    private async Task<List<RolInfo>> LoadRolesEnTenantActivoAsync(Guid personaId, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.Estado == EstadoUsuarioTenant.Activo, ct);
+        if (ut is null) return new();
+
+        var roles = await _db.UsuarioTenantRoles.AsNoTracking()
+            .Where(utr => utr.UsuarioTenantId == ut.Id)
+            .Join(_db.RolesCopropiedad, utr => utr.RolId, r => r.Id, (utr, r) => new RolInfo(r.Id, r.Nombre))
+            .ToListAsync(ct);
+
+        if (roles.Count == 0 && ut.RolId is Guid principal)
+        {
+            var nombre = await _db.RolesCopropiedad.AsNoTracking()
+                .Where(r => r.Id == principal).Select(r => r.Nombre).FirstOrDefaultAsync(ct);
+            if (nombre is not null) roles.Add(new RolInfo(principal, nombre));
+        }
+
+        return roles
+            .GroupBy(r => r.RolId).Select(g => g.First())
+            .OrderBy(r => r.Nombre).ToList();
     }
 
     public async Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct)
@@ -239,13 +294,23 @@ public class AuthService : IAuthService
         var t = principal.FindFirstValue("tenant_id");
         if (Guid.TryParse(t, out var parsedTenant)) activeTenant = parsedTenant;
 
+        // 2.5 v2.0: conserva el rol ACTIVO por sesion a traves del refresh sliding (si no, el usuario
+        // perderia su rol elegido al volver al tab). No se revalida aqui (refresh es anonimo, sin tenant
+        // en contexto para RLS): el enforcement RBAC revalida el rol en cada request (ResolverRolActivoId).
+        Guid? activeRol = null;
+        var r = principal.FindFirstValue("rol_id");
+        if (Guid.TryParse(r, out var parsedRol)) activeRol = parsedRol;
+
         var tenants = await LoadAvailableTenantsAsync(userId, ct);
         // Si el tenant del JWT viejo ya no esta disponible, reasignamos al primero o null.
         if (activeTenant.HasValue && !tenants.Any(x => x.TenantId == activeTenant.Value))
+        {
             activeTenant = tenants.Count == 1 ? tenants[0].TenantId : null;
+            activeRol = null;  // cambio de copropiedad -> el rol activo ya no aplica
+        }
 
-        var (nuevoToken, expires) = _tokenService.IssueAccessToken(user, activeTenant);
-        return new LoginResponse(nuevoToken, expires, user.Id, user.Email!, activeTenant, tenants);
+        var (nuevoToken, expires) = _tokenService.IssueAccessToken(user, activeTenant, activeRol);
+        return new LoginResponse(nuevoToken, expires, user.Id, user.Email!, activeTenant, tenants, activeRol);
     }
 
     // ---------- Helpers ----------

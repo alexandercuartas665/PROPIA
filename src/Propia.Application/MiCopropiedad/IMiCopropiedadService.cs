@@ -13,11 +13,7 @@ public interface IMiCopropiedadService
     // Seccion 1 - Identidad
     Task<IdentidadDto?> ActualizarIdentidadAsync(Guid tenantId, ActualizarIdentidadRequest req, CancellationToken ct);
 
-    // Seccion 2 - Distribucion (torres + unidades)
-    Task<IReadOnlyList<TorreDto>> ListTorresAsync(CancellationToken ct);
-    Task<TorreDto> CrearTorreAsync(CrearTorreRequest req, CancellationToken ct);
-    Task<bool> EliminarTorreAsync(Guid torreId, CancellationToken ct);
-
+    // Seccion 2 - Distribucion (unidades; el codigo de la unidad ES su Numero)
     Task<IReadOnlyList<UnidadDto>> ListUnidadesAsync(CancellationToken ct);
     Task<UnidadDto?> ObtenerUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadDto> CrearUnidadAsync(CrearUnidadRequest req, CancellationToken ct);
@@ -120,7 +116,7 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadCoeficienteDto>> ListCoeficientesUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadCoeficienteDto> SetCoeficienteUnidadAsync(Guid unidadId, SetCoeficienteUnidadRequest req, CancellationToken ct);
 
-    // Generador inteligente - crea torres + unidades en transaccion
+    // Generador inteligente - crea unidades en transaccion (el prefijo se antepone al codigo/Numero)
     Task<GenerarUnidadesResponse> GenerarUnidadesAsync(GenerarUnidadesRequest req, CancellationToken ct);
 
     // Importacion CSV transaccional (todo-o-nada)

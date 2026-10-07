@@ -360,7 +360,7 @@ public record PqrsdContextoPersonaDto(
     string? Email, string? Telefono, string Rol, bool EsRadicador);
 
 public record PqrsdContextoUnidadDto(
-    Guid? UnidadId, string? UnidadNumero, string? TorreNombre, int? Piso,
+    Guid? UnidadId, string? UnidadNumero, int? Piso,
     string? Tipo, decimal? CoeficientePropiedad);
 
 public record PqrsdContextoDto(

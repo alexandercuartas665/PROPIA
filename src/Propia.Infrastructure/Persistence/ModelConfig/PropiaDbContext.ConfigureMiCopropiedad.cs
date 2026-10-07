@@ -46,14 +46,6 @@ public partial class PropiaDbContext
             b.Property(x => x.TasaMoraValor).HasPrecision(6, 4);
         });
 
-        modelBuilder.Entity<Torre>(b =>
-        {
-            b.Property(x => x.Nombre).IsRequired().HasMaxLength(100);
-            b.Property(x => x.Descripcion).HasMaxLength(500);
-            b.HasIndex(x => x.TenantId);
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
-        });
-
         modelBuilder.Entity<UnidadPrivada>(b =>
         {
             b.Property(x => x.Numero).IsRequired().HasMaxLength(20);
@@ -71,7 +63,6 @@ public partial class PropiaDbContext
             b.Property(x => x.ModuloContributivo3).HasColumnName("modulo_contributivo_3").HasPrecision(7, 4);
             b.Property(x => x.ModuloContributivo4).HasColumnName("modulo_contributivo_4").HasPrecision(7, 4);
             b.Property(x => x.ModuloContributivo5).HasColumnName("modulo_contributivo_5").HasPrecision(7, 4);
-            b.HasOne(x => x.Torre).WithMany().HasForeignKey(x => x.TorreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);

@@ -208,7 +208,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     if (existente is not null)
                     {
                         var upd = new ActualizarUnidadRequest(
-                            existente.Numero, tipoRes?.Tipo ?? existente.Tipo, existente.TorreId, piso ?? existente.Piso,
+                            existente.Numero, tipoRes?.Tipo ?? existente.Tipo, piso ?? existente.Piso,
                             coef, area ?? existente.AreaM2,
                             habitaciones ?? existente.Habitaciones, banos ?? existente.Banos,
                             parqueaderos ?? existente.Parqueaderos,
@@ -231,7 +231,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     else
                     {
                         var req = new CrearUnidadRequest(
-                            numero, tipoRes?.Tipo ?? TipoUnidad.Apartamento, null, piso,
+                            numero, tipoRes?.Tipo ?? TipoUnidad.Apartamento, piso,
                             coef, area, habitaciones, banos, parqueaderos,
                             estado, observaciones,
                             matricula, pagaAdmin ?? true, cuota, refPago,
@@ -664,27 +664,18 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         return Guid.Empty;
     }
 
-    // Indice de las unidades YA existentes del tenant activo (RLS ya acota). Cada unidad se indexa por su
-    // Numero crudo y por su codigo TORRE-NUMERO (mismo calculo que Residentes/Distribucion), sin pisar un
-    // match por Numero (el match exacto tiene prioridad).
+    // Indice de las unidades YA existentes del tenant activo (RLS ya acota). El codigo de la unidad ES
+    // su Numero (texto libre), asi que el indice mapea el Numero crudo a su id.
     private async Task<Dictionary<string, Guid>> BuildUnidadIndexAsync(CancellationToken ct)
     {
         var idx = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         var unis = await _db.UnidadesPrivadas.AsNoTracking()
-            .Select(u => new { u.Id, u.Numero, Torre = u.Torre != null ? u.Torre.Nombre : null })
+            .Select(u => new { u.Id, u.Numero })
             .ToListAsync(ct);
         foreach (var u in unis)
         {
             var n = (u.Numero ?? "").Trim();
-            if (n.Length > 0) idx[n] = u.Id;   // 1a pasada: Numero crudo
-        }
-        foreach (var u in unis)
-        {
-            var n = (u.Numero ?? "").Trim();
-            if (n.Length == 0) continue;
-            var torreShort = string.IsNullOrWhiteSpace(u.Torre) ? "" : u.Torre!.Split(' ').Last();
-            if (torreShort.Length == 0) continue;
-            idx.TryAdd($"{torreShort}-{n}", u.Id);   // 2a pasada: codigo TORRE-NUMERO, sin pisar
+            if (n.Length > 0) idx[n] = u.Id;
         }
         return idx;
     }

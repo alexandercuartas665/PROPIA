@@ -66,15 +66,19 @@ public interface IRolesService
     Task<bool> ActualizarPermisoAsync(Guid rolId, ActualizarPermisoRequest req, CancellationToken ct);
     Task<bool> ActivarRolExtendidoAsync(Guid rolId, CancellationToken ct);
 
-    /// <summary>Evaluacion de permisos efectivos para una persona/copropiedad. Usado por modulos para autorizar.</summary>
-    Task<IReadOnlyList<PermisoMatrizDto>> GetPermisosEfectivosAsync(Guid personaId, CancellationToken ct);
+    /// <summary>
+    /// Evaluacion de permisos efectivos para una persona/copropiedad. Usado por modulos para autorizar.
+    /// 2.5 v2.0 multi-rol: si <paramref name="rolActivoId"/> viene (claim rol_id de la sesion) y le
+    /// pertenece al usuario, los permisos se calculan contra ESE rol; si es null, cae al rol principal.
+    /// </summary>
+    Task<IReadOnlyList<PermisoMatrizDto>> GetPermisosEfectivosAsync(Guid personaId, CancellationToken ct, Guid? rolActivoId = null);
 
     /// <summary>
     /// Rol (string) del actor en la copropiedad ACTIVA (tenant del JWT). Devuelve null si no hay
-    /// vinculo activo. Usado por el enforcement de autorizacion por rol (P0) mientras la matriz
-    /// granular rol_permisos no este sembrada.
+    /// vinculo activo. 2.5 v2.0 multi-rol: con <paramref name="rolActivoId"/> valido devuelve el nombre
+    /// de ESE rol (rol activo por sesion); si es null, cae al rol principal del vinculo.
     /// </summary>
-    Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct);
+    Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct, Guid? rolActivoId = null);
 
     /// <summary>
     /// Idempotente: crea los roles base (globales) con su matriz por defecto si no existen y

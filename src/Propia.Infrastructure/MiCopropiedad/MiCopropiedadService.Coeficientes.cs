@@ -86,11 +86,10 @@ public partial class MiCopropiedadService
     {
         return await _db.UnidadesPrivadas
             .AsNoTracking()
-            .Include(u => u.Torre)
             .Where(u => u.Id == unidadId)
             .Select(u => new UnidadDto(
                 u.Id, u.Numero, u.Tipo,
-                u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
+                u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
                 u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
@@ -304,62 +303,45 @@ public partial class MiCopropiedadService
     public async Task<GenerarUnidadesResponse> GenerarUnidadesAsync(GenerarUnidadesRequest req, CancellationToken ct)
     {
         if (req.Torres is null || req.Torres.Count == 0)
-            throw new InvalidOperationException("Debes definir al menos una torre/agrupacion.");
+            throw new InvalidOperationException("Debes definir al menos una agrupacion.");
         if (req.CoeficientePorUnidad < 0)
             throw new InvalidOperationException("Coeficiente por unidad no puede ser negativo.");
 
-        var torresCreadas = new List<Torre>();
         var unidadesCreadas = new List<UnidadPrivada>();
-        var torresExistentes = await _db.Torres.CountAsync(ct);
         var unidadesExistentesNumeros = await _db.UnidadesPrivadas.Select(u => u.Numero).ToListAsync(ct);
-        var unidadesGeneradas = new HashSet<string>(unidadesExistentesNumeros, StringComparer.OrdinalIgnoreCase);
+        // El codigo de la unidad ES su Numero. Ya no hay Torre: el "Nombre" de cada spec es un PREFIJO
+        // que se antepone al codigo generado. La deduplicacion y la unicidad se verifican sobre el
+        // codigo final (case- y acento-insensible), igual que al crear a mano.
+        var codigosVistos = new HashSet<string>(unidadesExistentesNumeros.Select(NormalizarCodigo));
 
-        // Si hay torres pre-existentes o se piden multiples torres nuevas, usamos
-        // prefijo de indice de torre para garantizar unicidad global de identificadores.
-        var usarPrefijoIdx = req.Torres.Count > 1 || torresExistentes > 0;
+        // Numeracion corrida: secuencia global que arranca despues de las unidades existentes.
         var corridoSeq = unidadesExistentesNumeros.Count + 1;
-        var torreIdx = torresExistentes;
 
         foreach (var spec in req.Torres)
         {
-            torreIdx++;
-            if (string.IsNullOrWhiteSpace(spec.Nombre))
-                throw new InvalidOperationException("Cada torre debe tener nombre.");
             if (spec.CantidadPisos <= 0 || spec.UnidadesPorPiso <= 0)
-                throw new InvalidOperationException($"Torre '{spec.Nombre}': pisos y unidades por piso deben ser > 0.");
-            if (await _db.Torres.AnyAsync(t => t.Nombre == spec.Nombre, ct))
-                throw new InvalidOperationException($"Ya existe una torre llamada '{spec.Nombre}' en esta copropiedad.");
-
-            var torre = new Torre { Nombre = spec.Nombre.Trim(), CantidadPisos = spec.CantidadPisos };
-            _db.Torres.Add(torre);
-            torresCreadas.Add(torre);
+                throw new InvalidOperationException($"Agrupacion '{spec.Nombre}': pisos y unidades por piso deben ser > 0.");
+            var prefijo = (spec.Nombre ?? "").Trim();
 
             for (var piso = 1; piso <= spec.CantidadPisos; piso++)
             {
                 for (var n = 1; n <= spec.UnidadesPorPiso; n++)
                 {
-                    // PisoNumero: si ya hay torres en la copropiedad o se piden multiples,
-                    // prefijamos con el indice de torre (Torre 1 piso 1 #1 -> 1101) para
-                    // garantizar unicidad global. Con 1 sola torre y tenant vacio: 101, 102 (spec).
-                    string numero;
-                    if (req.Patron == PatronNumeracion.Corrido)
-                    {
-                        numero = corridoSeq.ToString();
-                        corridoSeq++;
-                    }
-                    else
-                    {
-                        numero = usarPrefijoIdx ? $"{torreIdx}{piso}{n:D2}" : $"{piso}{n:D2}";
-                    }
-                    if (!unidadesGeneradas.Add(numero))
+                    // Codigo base: corrido (1, 2, 3...) o piso+numero (101, 102...). El prefijo, si lo
+                    // hay, se antepone con guion (ej. prefijo "A" + 101 -> "A-101").
+                    string baseCode = req.Patron == PatronNumeracion.Corrido
+                        ? (corridoSeq++).ToString()
+                        : $"{piso}{n:D2}";
+                    var numero = prefijo.Length > 0 ? $"{prefijo}-{baseCode}" : baseCode;
+
+                    if (!codigosVistos.Add(NormalizarCodigo(numero)))
                         throw new InvalidOperationException(
-                            $"Colision de identificador '{numero}'. Otra unidad ya tiene ese numero. " +
-                            "Renombra la torre o cambia el patron de numeracion.");
+                            $"Colision de codigo '{numero}'. Otra unidad ya tiene ese codigo. " +
+                            "Cambia el prefijo o el patron de numeracion.");
                     var unidad = new UnidadPrivada
                     {
                         Numero = numero,
                         Tipo = req.TipoUnidadDefault,
-                        Torre = torre,
                         Piso = piso,
                         CoeficientePropiedad = req.CoeficientePorUnidad
                     };
@@ -370,13 +352,10 @@ public partial class MiCopropiedadService
         }
 
         await _db.SaveChangesAsync(ct);
-        var nombresTorre = string.Join(", ", torresCreadas.Select(t => t.Nombre));
         await RegistrarBitacoraAsync("Distribucion",
-            $"Generador automatico: {torresCreadas.Count} torre(s) [{nombresTorre}] + {unidadesCreadas.Count} unidades creadas (coef {req.CoeficientePorUnidad}% c/u).", ct);
+            $"Generador automatico: {unidadesCreadas.Count} unidades creadas (coef {req.CoeficientePorUnidad}% c/u).", ct);
         return new GenerarUnidadesResponse(
-            torresCreadas.Count,
             unidadesCreadas.Count,
-            torresCreadas.Select(t => t.Id).ToList(),
             unidadesCreadas.Select(u => u.Id).ToList());
     }
 
@@ -390,11 +369,12 @@ public partial class MiCopropiedadService
 
         // Formato esperado (header en fila 1):
         //   identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2,paga_administracion
-        // Solo identificador, tipo_unidad y coeficiente son obligatorios.
+        // Solo identificador, tipo_unidad y coeficiente son obligatorios. Ya no hay Torre: si la columna
+        // 'agrupacion' trae valor, se antepone como PREFIJO del codigo ("<agrupacion>-<identificador>").
 
         var lineas = req.CsvContent.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
         var errores = new List<ImportacionFilaError>();
-        var filas = new List<(int Linea, string Numero, TipoUnidad Tipo, string? Agrupacion, int? Piso, decimal Coef, decimal? Area)>();
+        var filas = new List<(int Linea, string Numero, TipoUnidad Tipo, int? Piso, decimal Coef, decimal? Area)>();
 
         if (lineas.Length < 2)
         {
@@ -435,10 +415,6 @@ public partial class MiCopropiedadService
                 errores.Add(new(nroFila, "identificador", "Campo obligatorio."));
                 continue;
             }
-            if (!numerosVistos.Add(numero))
-            {
-                errores.Add(new(nroFila, "identificador", $"Identificador '{numero}' aparece duplicado en el archivo."));
-            }
             if (!Enum.TryParse<TipoUnidad>(tipoTxt, ignoreCase: true, out var tipo))
             {
                 errores.Add(new(nroFila, "tipo_unidad", $"Tipo '{tipoTxt}' no esta en el catalogo base."));
@@ -450,8 +426,16 @@ public partial class MiCopropiedadService
                 continue;
             }
 
+            // Ya no hay Torre: la 'agrupacion', si viene, se hornea como prefijo del codigo. El codigo
+            // final (= Numero de la unidad) es lo que se deduplica y lo que se compara contra la BD.
             string? agrupacion = idxAgr >= 0 && celdas.Length > idxAgr ? celdas[idxAgr].Trim() : null;
             if (string.IsNullOrWhiteSpace(agrupacion)) agrupacion = null;
+            var codigo = agrupacion is not null ? $"{agrupacion}-{numero}" : numero;
+
+            if (!numerosVistos.Add(codigo))
+            {
+                errores.Add(new(nroFila, "identificador", $"Identificador '{codigo}' aparece duplicado en el archivo."));
+            }
 
             int? piso = null;
             if (idxPiso >= 0 && celdas.Length > idxPiso && int.TryParse(celdas[idxPiso].Trim(), out var p)) piso = p;
@@ -460,7 +444,7 @@ public partial class MiCopropiedadService
             if (idxArea >= 0 && celdas.Length > idxArea && decimal.TryParse(celdas[idxArea].Trim(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var a)) area = a;
 
             suma += coef;
-            filas.Add((nroFila, numero, tipo, agrupacion, piso, coef, area));
+            filas.Add((nroFila, codigo, tipo, piso, coef, area));
         }
 
         if (errores.Count > 0)
@@ -477,30 +461,15 @@ public partial class MiCopropiedadService
         if (errores.Count > 0)
             return new ImportarUnidadesResponse(false, filas.Count, 0, suma, errores);
 
-        // Crear torres faltantes
-        var nombresTorres = filas.Where(f => f.Agrupacion is not null).Select(f => f.Agrupacion!).Distinct().ToList();
-        var torresExistentes = await _db.Torres
-            .Where(t => nombresTorres.Contains(t.Nombre))
-            .ToDictionaryAsync(t => t.Nombre, t => t, ct);
-        foreach (var nombreTorre in nombresTorres.Where(n => !torresExistentes.ContainsKey(n)))
-        {
-            var nuevaTorre = new Torre { Nombre = nombreTorre };
-            _db.Torres.Add(nuevaTorre);
-            torresExistentes[nombreTorre] = nuevaTorre;
-        }
-
         foreach (var f in filas)
         {
-            var torreId = f.Agrupacion is not null ? torresExistentes[f.Agrupacion].Id : (Guid?)null;
-            var torre = f.Agrupacion is not null ? torresExistentes[f.Agrupacion] : null;
             _db.UnidadesPrivadas.Add(new UnidadPrivada
             {
                 Numero = f.Numero,
                 Tipo = f.Tipo,
                 Piso = f.Piso,
                 CoeficientePropiedad = f.Coef,
-                AreaM2 = f.Area,
-                Torre = torre  // EF asigna torreId al guardar la torre nueva
+                AreaM2 = f.Area
             });
         }
         await _db.SaveChangesAsync(ct);

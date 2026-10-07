@@ -141,7 +141,7 @@ public class CamposFase2VinculadosTests
     }
 
     private static CrearUnidadRequest NuevaUnidad(string numero)
-        => new(numero, TipoUnidad.Apartamento, null, null, 1.0m, null, null, null, null, null, null);
+        => new(numero, TipoUnidad.Apartamento, null, 1.0m, null, null, null, null, null, null);
 
     private async Task<Guid> SeedPlacaAsync(Guid tenantId, Guid unidadId, string placa)
     {
@@ -221,7 +221,6 @@ public class CamposFase2VinculadosTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_coeficientes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_coeficiente WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
-        await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
 

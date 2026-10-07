@@ -62,13 +62,13 @@ public class RbacFlowTests : IAsyncLifetime
             new { copropiedadId = tenant.Id, organizacionEntranteId = Guid.NewGuid() });
         Assert.Equal(HttpStatusCode.Forbidden, custRes.StatusCode);
 
-        // S-06 fase 2 (modulo de negocio): MiCopropiedad crear torre -> 403 (Residente no tiene MiCopropiedad).
-        var torreRes = await resiClient.PostAsJsonAsync("/api/mi-copropiedad/torres", new { nombre = "T1" });
-        Assert.Equal(HttpStatusCode.Forbidden, torreRes.StatusCode);
+        // S-06 fase 2 (modulo de negocio): MiCopropiedad crear unidad -> 403 (Residente no tiene MiCopropiedad).
+        var unidadRes = await resiClient.PostAsJsonAsync("/api/mi-copropiedad/unidades", new { numero = "T1", tipo = "Apartamento" });
+        Assert.Equal(HttpStatusCode.Forbidden, unidadRes.StatusCode);
 
-        // S-06 fase 2 (lectura abierta al tenant): el mismo Residente SI puede LEER torres (GET sin permiso).
-        var torreGet = await resiClient.GetAsync("/api/mi-copropiedad/torres");
-        Assert.NotEqual(HttpStatusCode.Forbidden, torreGet.StatusCode);
+        // S-06 fase 2 (lectura abierta al tenant): el mismo Residente SI puede LEER unidades (GET sin permiso).
+        var unidadGet = await resiClient.GetAsync("/api/mi-copropiedad/unidades");
+        Assert.NotEqual(HttpStatusCode.Forbidden, unidadGet.StatusCode);
 
         // ----- Administrador (control positivo) -----
         var (admEmail, admPersona) = await CrearUsuarioAsync(userManager, db, "Admin", "Istrador");
@@ -80,8 +80,8 @@ public class RbacFlowTests : IAsyncLifetime
         Assert.NotEqual(HttpStatusCode.Forbidden, pAdm.StatusCode);
 
         // S-06 fase 2: el Administrador (bypass) tampoco recibe 403 en un modulo de negocio.
-        var torreAdm = await admClient.PostAsJsonAsync("/api/mi-copropiedad/torres", new { nombre = "T1" });
-        Assert.NotEqual(HttpStatusCode.Forbidden, torreAdm.StatusCode);
+        var unidadAdm = await admClient.PostAsJsonAsync("/api/mi-copropiedad/unidades", new { numero = "T1", tipo = "Apartamento" });
+        Assert.NotEqual(HttpStatusCode.Forbidden, unidadAdm.StatusCode);
 
         // Cleanup
         await db.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE persona_id IN ({resiPersona.Id}, {admPersona.Id})");

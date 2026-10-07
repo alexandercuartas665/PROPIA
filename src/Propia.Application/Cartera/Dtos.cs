@@ -21,7 +21,6 @@ public record CarteraKpisDto(
 public record CarteraUnidadListaDto(
     Guid UnidadPrivadaId,
     string UnidadNumero,
-    string? TorreNombre,
     string? PropietarioNombre,
     decimal SaldoCapital,
     decimal SaldoIntereses,
@@ -53,7 +52,6 @@ public record DeudaDetalleDto(
 public record CarteraUnidadDetalleDto(
     Guid UnidadPrivadaId,
     string UnidadNumero,
-    string? TorreNombre,
     string? PropietarioNombre,
     decimal SaldoCapital,
     decimal SaldoIntereses,

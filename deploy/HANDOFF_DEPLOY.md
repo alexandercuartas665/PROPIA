@@ -15,6 +15,27 @@
 
 ---
 
+## ESTADO 2026-10-07 DEPLOY 0.0.112 (LEER PRIMERO)
+
+Rama `equipo/alex-header-zonas-equipos` -> mergear a `main`. Version **0.0.112** (desde 0.0.111).
+Detalle completo en **`deploy/DEPLOY_HANDOFF_2026-10-07_v0.0.112.md`** (leer ese). Resumen:
+
+- **B2b - rol activo por sesion** (SIN migracion): el JWT lleva `rol_id`; el RBAC autoriza con el rol activo;
+  `POST /connect/switch-rol`; gate "elige tu rol" para multi-rol. Aditivo (tokens viejos/mono-rol = sin cambio).
+- **Unidades: eliminado el concepto Torre** (1 MIGRACION DESTRUCTIVA): la unidad se identifica solo por su
+  codigo (`numero`); se quitaron entidad/tabla/columna/FK `Torre`, CRUD `/torres`, tools MCP de torres, y
+  `TorreNombre`/`TorreId` de los DTOs. **+ validacion de codigo duplicado** (sin mayus/tildes, con mensaje).
+
+### 1 MIGRACION NUEVA — DESTRUCTIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261007214045_RemoveTorreDeUnidades` — **hornea** el codigo en `numero` (`<torreShort>-<numero>`,
+  desambigua duplicados por tenant) y luego **DROP** FK + tabla `torres` + columna `torre_id`. Irreversible
+  (el Down recrea la estructura vacia pero los codigos ya horneados no se des-hornean).
+- **ORDEN CRITICO:** desplegar el codigo 0.0.112 PRIMERO (no consulta `torres`), y recien DESPUES aplicar la
+  migracion. Si se aplica antes de que el codigo nuevo este vivo, el codigo viejo (0.0.111) da 500 (consulta
+  `torres`/`torre_id`). `database update` aplica tambien `20261007135437` si prod venia por detras de 0.0.111.
+
+---
+
 ## ESTADO 2026-10-06 DEPLOY 0.0.103 (LEER PRIMERO)
 
 Rama `equipo/alex-header-zonas-equipos` -> **mergeada a `main`** (HEAD `0d110c5`). Version **0.0.103**.

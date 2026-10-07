@@ -45,12 +45,17 @@ public sealed class RequiereRolFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        var rol = await _roles.GetRolActorAsync(personaId, context.HttpContext.RequestAborted);
+        var rolActivo = RolActivo(context.HttpContext.User);
+        var rol = await _roles.GetRolActorAsync(personaId, context.HttpContext.RequestAborted, rolActivo);
         if (rol is null || !_rolesPermitidos.Contains(rol, StringComparer.OrdinalIgnoreCase))
         {
             context.Result = Forbidden("rol_insuficiente");
         }
     }
+
+    // Rol ACTIVO por sesion (claim rol_id). null si el token no lo trae (mono-rol / tokens viejos).
+    internal static Guid? RolActivo(System.Security.Claims.ClaimsPrincipal user)
+        => Guid.TryParse(user.FindFirstValue("rol_id"), out var id) ? id : (Guid?)null;
 
     private static ObjectResult Forbidden(string reason) =>
         new(new { error = "forbidden", reason }) { StatusCode = StatusCodes.Status403Forbidden };
@@ -92,12 +97,15 @@ public sealed class RequierePermisoFilter : IAsyncAuthorizationFilter
         }
 
         var ct = context.HttpContext.RequestAborted;
-        var rol = await _roles.GetRolActorAsync(personaId, ct);
+        var rolActivo = RequiereRolFilter.RolActivo(context.HttpContext.User);
+        var rol = await _roles.GetRolActorAsync(personaId, ct, rolActivo);
 
-        // El Administrador siempre conserva acceso (regla de seguridad spec 2.5).
+        // El Administrador siempre conserva acceso (regla de seguridad spec 2.5). Con rol activo por
+        // sesion, "Administrador" es el rol ACTIVO: un usuario multi-rol que eligio otro rol NO recibe
+        // el bypass hasta volver a activar Administrador (esa es la semantica de rol activo).
         if (string.Equals(rol, "Administrador", StringComparison.OrdinalIgnoreCase)) return;
 
-        var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct);
+        var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct, rolActivo);
         var ok = permisos.Any(p => p.ModuloCodigo == _modulo && p.Accion == _accion && p.Habilitado);
         if (!ok) context.Result = Deny("permiso_insuficiente");
     }

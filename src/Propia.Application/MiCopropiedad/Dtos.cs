@@ -33,16 +33,14 @@ public record ActualizarIdentidadRequest(
     string? Pais = null,
     string? CertificadoMayorExtension = null);
 
-// ----- Distribucion: Torres + Unidades (seccion 2) -----
-public record TorreDto(Guid Id, string Nombre, int? CantidadPisos, string? Descripcion, int CantidadUnidades);
-public record CrearTorreRequest(string Nombre, int? CantidadPisos, string? Descripcion);
+// ----- Distribucion: Unidades (seccion 2). El codigo de la unidad ES su Numero (texto libre). -----
 
 // PropietarioNombre/PropietariosCount vienen resueltos en el listado (ListUnidadesAsync) para
 // que la tabla de Distribucion pueda mostrar el propietario sin pedir las personas de cada
 // unidad una por una. Van al final y con default: los demas consumidores no se enteran.
 public record UnidadDto(
     Guid Id, string Numero, TipoUnidad Tipo,
-    Guid? TorreId, string? TorreNombre, int? Piso,
+    int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
@@ -59,7 +57,7 @@ public record UnidadDto(
     decimal? ModuloContributivo5 = null);
 
 public record CrearUnidadRequest(
-    string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
+    string Numero, TipoUnidad Tipo, int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
@@ -72,7 +70,7 @@ public record CrearUnidadRequest(
 
 /// <summary>Actualiza la ficha completa de una unidad (todos los campos editables).</summary>
 public record ActualizarUnidadRequest(
-    string Numero, TipoUnidad Tipo, Guid? TorreId, int? Piso,
+    string Numero, TipoUnidad Tipo, int? Piso,
     decimal CoeficientePropiedad, decimal? AreaM2,
     int? Habitaciones, int? Banos, int? Parqueaderos,
     string? Estado, string? Observaciones,
@@ -105,7 +103,7 @@ public record UnidadPersonaDto(
 // ----- Residentes: vista agregada de TODAS las personas de las unidades del tenant.
 //       Cada fila es un UnidadPersona (persona o empresa) con el codigo de su unidad. -----
 public record ResidenteResumenDto(
-    Guid UnidadPersonaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    Guid UnidadPersonaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     EntidadDirectorio EntidadTipo, Guid? PersonaId, Guid? EmpresaId,
     string Nombre, string Documento, string? Email, string? Telefono,
     RolUnidadPersona Rol, bool Habita, string? Parentesco, bool Activo);
@@ -198,7 +196,7 @@ public record UnidadPlacaDto(Guid Id, string Placa, TipoVehiculo TipoVehiculo);
 // que pertenecen. Mismo patron que ResidenteResumenDto: la ficha de la unidad sigue trabajando con
 // UnidadPlacaDto; esto es solo para la tabla transversal.
 public record VehiculoResumenDto(
-    Guid PlacaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    Guid PlacaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     string Placa, TipoVehiculo TipoVehiculo,
     string? PropietarioNombre);
 public record CrearUnidadPlacaRequest(string Placa, TipoVehiculo TipoVehiculo);
@@ -214,7 +212,7 @@ public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string?
 
 // Vista agregada de TODAS las mascotas de la copropiedad (modulo /mascotas). Ver VehiculoResumenDto.
 public record MascotaResumenDto(
-    Guid MascotaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo, string? TorreNombre,
+    Guid MascotaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     string Nombre, TipoMascota Tipo, string? Raza,
     string? PropietarioNombre);
 public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza);
@@ -416,15 +414,15 @@ public record GenerarUnidadesRequest(
     TipoUnidad TipoUnidadDefault,
     decimal CoeficientePorUnidad);
 
+// Nombre ya no crea una Torre: es un PREFIJO de codigo que se antepone al Numero de cada
+// unidad generada (ej. prefijo "A" + piso/numero -> "A-101"). Vacio = sin prefijo.
 public record GeneradorTorreDto(
     string Nombre,
     int CantidadPisos,
     int UnidadesPorPiso);
 
 public record GenerarUnidadesResponse(
-    int TorresCreadas,
     int UnidadesCreadas,
-    IReadOnlyList<Guid> TorreIds,
     IReadOnlyList<Guid> UnidadIds);
 
 // ----- Tipos de coeficiente PH (spec 2.3 - RN-02) -----
@@ -527,7 +525,6 @@ public record AgregarCampoRequest(string Label, string? Valor);
 // ----- Resumen / Completitud -----
 public record ResumenMiCopropiedadDto(
     IdentidadDto Identidad,
-    int CantidadTorres,
     int CantidadUnidades,
     decimal CoeficientesTotalPct,
     int CantidadZonasComunes,

@@ -51,7 +51,7 @@ public record LiquidacionDto(
 
 public record LiquidacionUnidadDto(
     Guid Id, Guid LiquidacionId, DateOnly Periodo,
-    Guid UnidadId, string UnidadNumero, string? TorreNombre,
+    Guid UnidadId, string UnidadNumero,
     decimal Monto, EstadoPagoLiquidacion EstadoPago,
     IReadOnlyList<RenglonDesgloseDto> Desglose);
 
@@ -101,7 +101,7 @@ public record RecaudoResumenDto(
     int UnidadesTotales, int UnidadesPagadas, int UnidadesPendientes, int UnidadesVencidas);
 
 public record UnidadRecaudoDto(
-    Guid UnidadId, string UnidadNumero, string? TorreNombre,
+    Guid UnidadId, string UnidadNumero,
     string? PropietarioNombre,
     decimal MontoCuota, EstadoPagoLiquidacion EstadoPago,
     Guid? LiquidacionUnidadId);
@@ -110,7 +110,7 @@ public record UnidadRecaudoDto(
 
 public record MiCuotaDto(
     Guid? LiquidacionUnidadId, DateOnly? Periodo,
-    Guid UnidadId, string UnidadNumero, string? TorreNombre,
+    Guid UnidadId, string UnidadNumero,
     decimal MontoTotal, EstadoPagoLiquidacion? EstadoPago,
     DateOnly? FechaVencimiento,
     IReadOnlyList<RenglonDesgloseDto> Desglose,

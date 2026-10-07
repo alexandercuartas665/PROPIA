@@ -663,22 +663,19 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     // ===================== Referencia: unidades ya cargadas (para el desplegable) =====================
-    // Codigos de las unidades de la copropiedad ACTIVA (RLS ya acota por app.tenant_id): TORRE-NUMERO
-    // cuando la unidad tiene torre, o el Numero suelto si no. Mismo calculo que usa Residentes/Distribucion
-    // y que el importador resuelve en ResolverUnidad (por Numero y por TORRE-NUMERO), asi lo que el usuario
-    // elige del desplegable siempre encuentra su unidad al reimportar.
+    // Codigos de las unidades de la copropiedad ACTIVA (RLS ya acota por app.tenant_id). El codigo de la
+    // unidad ES su Numero (texto libre), que es lo que el importador resuelve en ResolverUnidad.
     private async Task<List<string>> UnidadesCodigosAsync(CancellationToken ct)
     {
         var unis = await _db.UnidadesPrivadas.AsNoTracking()
-            .Select(u => new { u.Numero, Torre = u.Torre != null ? u.Torre.Nombre : null })
+            .Select(u => u.Numero)
             .ToListAsync(ct);
         var codigos = new List<string>();
-        foreach (var u in unis)
+        foreach (var numero in unis)
         {
-            var n = (u.Numero ?? "").Trim();
+            var n = (numero ?? "").Trim();
             if (n.Length == 0) continue;
-            var torreShort = string.IsNullOrWhiteSpace(u.Torre) ? "" : u.Torre!.Split(' ').Last();
-            codigos.Add(torreShort.Length == 0 ? n : $"{torreShort}-{n}");
+            codigos.Add(n);
         }
         return codigos.Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();

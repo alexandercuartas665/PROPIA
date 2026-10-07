@@ -7,25 +7,26 @@ namespace Propia.Infrastructure.MiCopropiedad;
 
 /// <summary>
 /// Genera la plantilla de Distribucion y procesa la carga masiva. Reusa IMiCopropiedadService
-/// (CrearTorreAsync / CrearUnidadAsync) para que la validacion, RLS y bitacora sean identicas a la
-/// creacion manual. El orden de las columnas es fijo (documentado en la hoja Instrucciones).
+/// (CrearUnidadAsync) para que la validacion, RLS y bitacora sean identicas a la creacion manual.
+/// El orden de las columnas es fijo (documentado en la hoja Instrucciones). El codigo de la unidad
+/// ES su Numero (texto libre): ya no hay Torre.
 /// </summary>
 public class DistribucionImportService : IDistribucionImportService
 {
     private readonly IMiCopropiedadService _svc;
     public DistribucionImportService(IMiCopropiedadService svc) => _svc = svc;
 
-    // Encabezados fijos (el import mapea por POSICION, no por texto). Las primeras 14 columnas
-    // son la unidad (igual que antes, para no romper el import existente); de la 15 en adelante
-    // van las personas y los inmuebles vinculados, todo en la misma fila = 1 unidad con su gente.
+    // Encabezados fijos (el import mapea por POSICION, no por texto). Las primeras 13 columnas
+    // son la unidad; de la 14 en adelante van las personas y los inmuebles vinculados, todo en la
+    // misma fila = 1 unidad con su gente. Un archivo LEGADO que aun traiga la columna "Torre" (en la
+    // posicion 3) se detecta por el encabezado y su valor se hornea como prefijo del codigo.
     private static readonly string[] UnidadesHeaders = BuildUnidadesHeaders();
-    private static readonly string[] TorresHeaders = { "Nombre *", "Cantidad de pisos", "Descripción" };
 
     private static string[] BuildUnidadesHeaders()
     {
         var h = new List<string>
         {
-            "Número *", "Tipo *", "Torre", "Piso", "Coeficiente (%)", "Área (m2)",
+            "Número *", "Tipo *", "Piso", "Coeficiente (%)", "Área (m2)",
             "Habitaciones", "Baños", "Parqueaderos", "Estado", "Matrícula inmobiliaria",
             "Paga administración (Si/No)", "Cuota mensual", "Observaciones",
         };
@@ -55,7 +56,6 @@ public class DistribucionImportService : IDistribucionImportService
 
         HojaInstrucciones(wb);
         HojaUnidades(wb);
-        HojaTorres(wb);
         HojaCatalogos(wb);
 
         using var ms = new MemoryStream();
@@ -71,19 +71,17 @@ public class DistribucionImportService : IDistribucionImportService
         {
             ("PLANTILLA DE DISTRIBUCIÓN - PROPIA", true, true),
             ("", false, false),
-            ("Con esta plantilla cargas de una sola vez las TORRES y las UNIDADES privadas de la copropiedad.", false, false),
-            ("El archivo ya trae un ejemplo completo (2 torres + 8 unidades con sus propietarios, residentes, arrendatarios, familiares e inmuebles vinculados). Reemplaza esas filas por tus datos reales.", false, false),
+            ("Con esta plantilla cargas de una sola vez las UNIDADES privadas de la copropiedad.", false, false),
+            ("El archivo ya trae un ejemplo completo (8 unidades con sus propietarios, residentes, arrendatarios, familiares e inmuebles vinculados). Reemplaza esas filas por tus datos reales.", false, false),
             ("Todas las personas del ejemplo se crean en el Directorio al importar. Cada unidad es UNA fila con toda su gente en columnas.", false, false),
             ("", false, false),
             ("PASOS:", true, false),
-            ("1. Llena primero la hoja 'Torres' (tabla de apoyo). Cada torre se identifica por su Nombre.", false, false),
-            ("2. Llena la hoja 'Unidades'. La columna 'Torre' debe coincidir con un Nombre de la hoja 'Torres'", false, false),
-            ("   (si escribes una torre que no existe, se crea automáticamente). Déjala vacía si la unidad no tiene torre.", false, false),
-            ("3. Guarda el archivo y súbelo en Mi Copropiedad > Distribución > Importar.", false, false),
+            ("1. Llena la hoja 'Unidades'. El 'Número' es el código de la unidad (texto libre) y debe ser único.", false, false),
+            ("2. Guarda el archivo y súbelo en Mi Copropiedad > Distribución > Importar.", false, false),
             ("", false, false),
             ("REGLAS:", true, false),
             ("- No cambies el ORDEN ni borres las columnas de encabezado; el importador las lee por posición.", false, false),
-            ("- Los campos marcados con * son obligatorios (Número y Tipo en Unidades; Nombre en Torres).", false, false),
+            ("- Los campos marcados con * son obligatorios (Número y Tipo en Unidades).", false, false),
             ("- 'Tipo' debe ser uno de los valores válidos (ver hoja 'Catalogos'): Apartamento, Local, Casa, Oficina, Bodega, Parqueadero, UtilCuarto.", false, false),
             ("- 'Coeficiente (%)' es el porcentaje de participación de la unidad. La suma de todas debería dar 100.", false, false),
             ("- Parqueaderos y Cuartos útiles TAMBIÉN pueden tener coeficiente. Si 'Paga administración' = Si, su coeficiente cuenta dentro del 100% (como en el ejemplo P-01 y CU-01).", false, false),
@@ -126,7 +124,7 @@ public class DistribucionImportService : IDistribucionImportService
         var ejemplo = new List<object[]>
         {
             // A101: habitada por sus 2 duenos, con 2 familiares y 2 inmuebles vinculados (P-01, CU-01).
-            new object[] { "A101", "Apartamento", "Torre A", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-A101", "Si", 350000, "" }
+            new object[] { "A101", "Apartamento", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-A101", "Si", 350000, "" }
                 .Concat(P("1090111", "Alex", "Cuartas", "alex@demo.com", "3001112233"))
                 .Concat(P("52233444", "Maria", "Gomez", "maria@demo.com", "3004445566"))
                 .Concat(B5) // residente (viven los duenos)
@@ -137,34 +135,34 @@ public class DistribucionImportService : IDistribucionImportService
                 .Concat(new object[] { "P-01", "CU-01", "" })  // inmuebles vinculados
                 .ToArray(),
             // A102: arrendada. 1 dueno + arrendatario que la habita.
-            new object[] { "A102", "Apartamento", "Torre A", 1, 16, 72, 3, 2, 1, "Arrendado", "MAT-A102", "Si", 350000, "" }
+            new object[] { "A102", "Apartamento", 1, 16, 72, 3, 2, 1, "Arrendado", "MAT-A102", "Si", 350000, "" }
                 .Concat(P("70012345", "Jorge", "Rios", "jorge@demo.com", "3007778899"))
                 .Concat(B5)  // prop 2
                 .Concat(B5)  // residente
                 .Concat(P("1122334", "Camila", "Soto", "camila@demo.com", "3010001122"))  // arrendatario
                 .ToArray(),
             // A201: por ahora solo un dueno registrado.
-            new object[] { "A201", "Apartamento", "Torre A", 2, 16, 80, 3, 2, 1, "Desocupado", "MAT-A201", "Si", 380000, "" }
+            new object[] { "A201", "Apartamento", 2, 16, 80, 3, 2, 1, "Desocupado", "MAT-A201", "Si", 380000, "" }
                 .Concat(P("43112233", "Lucia", "Marin", "lucia@demo.com", "3020003344"))
                 .ToArray(),
             // B101: dueno + residente (un tercero que habita, no dueno).
-            new object[] { "B101", "Apartamento", "Torre B", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-B101", "Si", 350000, "" }
+            new object[] { "B101", "Apartamento", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-B101", "Si", 350000, "" }
                 .Concat(P("80045566", "Pedro", "Navarro", "pedro@demo.com", "3030005566"))
                 .Concat(B5)  // prop 2
                 .Concat(P("1133557", "Sara", "Navarro", "sara@demo.com", "3033335555"))  // residente
                 .ToArray(),
-            new object[] { "B102", "Apartamento", "Torre B", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-B102", "Si", 350000, "" }
+            new object[] { "B102", "Apartamento", 1, 16, 72, 3, 2, 1, "Ocupado", "MAT-B102", "Si", 350000, "" }
                 .Concat(P("52999888", "Diana", "Pena", "diana@demo.com", "3040007788"))
                 .ToArray(),
             // L-01: local arrendado (dueno + arrendatario).
-            new object[] { "L-01", "Local", "", 1, 10, 45, 0, 1, 0, "Arrendado", "MAT-L01", "Si", 600000, "Local comercial esquinero" }
+            new object[] { "L-01", "Local", 1, 10, 45, 0, 1, 0, "Arrendado", "MAT-L01", "Si", 600000, "Local comercial esquinero" }
                 .Concat(P("79088777", "Ricardo", "Vega", "ricardo@demo.com", "3050009900"))
                 .Concat(B5).Concat(B5)  // prop 2 + residente
                 .Concat(P("15577889", "Raul", "Prieto", "raul@demo.com", "3055551212"))  // arrendatario
                 .ToArray(),
             // P-01 y CU-01: sin personas; son los inmuebles que A101 vincula.
-            new object[] { "P-01",  "Parqueadero", "Torre A", 1, 5, 12, 0, 0, 0, "Disponible", "MAT-P01",  "Si", "", "Parqueadero con coeficiente (cuenta en el 100%)" },
-            new object[] { "CU-01", "UtilCuarto",  "Torre A", 1, 5,  6, 0, 0, 0, "Disponible", "MAT-CU01", "Si", "", "Cuarto util con coeficiente (cuenta en el 100%)" },
+            new object[] { "P-01",  "Parqueadero", 1, 5, 12, 0, 0, 0, "Disponible", "MAT-P01",  "Si", "", "Parqueadero con coeficiente (cuenta en el 100%)" },
+            new object[] { "CU-01", "UtilCuarto",  1, 5,  6, 0, 0, 0, "Disponible", "MAT-CU01", "Si", "", "Cuarto util con coeficiente (cuenta en el 100%)" },
         };
         int r = 2;
         foreach (var fila in ejemplo)
@@ -181,25 +179,6 @@ public class DistribucionImportService : IDistribucionImportService
         // Anchos fijos (NO usar AdjustToContents: en servidor headless dispara el motor de fuentes
         // de ClosedXML y tarda decenas de segundos).
         for (int col = 1; col <= UnidadesHeaders.Length; col++) ws.Column(col).Width = 16;
-        ws.SheetView.FreezeRows(1);
-    }
-
-    private static void HojaTorres(XLWorkbook wb)
-    {
-        var ws = wb.AddWorksheet("Torres");
-        EscribirEncabezado(ws, TorresHeaders);
-        object[][] ejemplo =
-        {
-            new object[] { "Torre A", 3, "Torre principal" },
-            new object[] { "Torre B", 3, "Torre secundaria" },
-        };
-        int r = 2;
-        foreach (var fila in ejemplo)
-        {
-            for (int col = 0; col < fila.Length; col++) ws.Cell(r, col + 1).Value = XLCellValue.FromObject(fila[col]);
-            r++;
-        }
-        ws.Column(1).Width = 22; ws.Column(2).Width = 18; ws.Column(3).Width = 30;
         ws.SheetView.FreezeRows(1);
     }
 
@@ -256,14 +235,9 @@ public class DistribucionImportService : IDistribucionImportService
     public async Task<ImportarDistribucionResultado> ImportarAsync(Stream contenidoXlsx, CancellationToken ct)
     {
         var errores = new List<ImportarErrorFila>();
-        int torresCreadas = 0, unidadesCreadas = 0, personasVinculadas = 0, vinculosCreados = 0;
+        int unidadesCreadas = 0, personasVinculadas = 0, vinculosCreados = 0;
 
         using var wb = new XLWorkbook(contenidoXlsx);
-
-        // Mapa Nombre(insensible a mayus/minus) -> torreId. Se siembra con las torres ya existentes.
-        var torres = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        foreach (var t in await _svc.ListTorresAsync(ct))
-            torres[t.Nombre.Trim()] = t.Id;
 
         // Mapa Numero -> unidadId (para resolver los inmuebles vinculados al final). Se siembra
         // con las unidades ya existentes por si una fila vincula una unidad que ya estaba.
@@ -275,28 +249,16 @@ public class DistribucionImportService : IDistribucionImportService
         // (la unidad asociada puede aparecer en una fila posterior del archivo).
         var vinculosPend = new List<(int fila, string principal, string asociada)>();
 
-        // ---- Torres ----
-        if (wb.TryGetWorksheet("Torres", out var wsT))
-        {
-            foreach (var row in wsT.RowsUsed().Skip(1))
-            {
-                ct.ThrowIfCancellationRequested();
-                var nombre = Str(row.Cell(1));
-                if (nombre is null) continue;
-                if (torres.ContainsKey(nombre)) continue; // ya existe (o repetida en el archivo)
-                try
-                {
-                    var dto = await _svc.CrearTorreAsync(new CrearTorreRequest(nombre, Int(row.Cell(2)), Str(row.Cell(3))), ct);
-                    torres[dto.Nombre.Trim()] = dto.Id;
-                    torresCreadas++;
-                }
-                catch (Exception ex) { errores.Add(new("Torres", row.RowNumber(), Msg(ex))); }
-            }
-        }
-
         // ---- Unidades ----
         if (wb.TryGetWorksheet("Unidades", out var wsU))
         {
+            // Compatibilidad con archivos LEGADOS: si la plantilla trae todavia la columna "Torre"
+            // en la posicion 3, se detecta por el encabezado y todas las columnas siguientes van
+            // corridas en 1. El valor de esa columna, si viene, se hornea como prefijo del codigo.
+            var cab3 = Str(wsU.Cell(1, 3));
+            var tieneTorre = cab3 is not null && cab3.Trim().ToLowerInvariant().StartsWith("torre");
+            int off = tieneTorre ? 1 : 0;
+
             foreach (var row in wsU.RowsUsed().Skip(1))
             {
                 ct.ThrowIfCancellationRequested();
@@ -313,28 +275,19 @@ public class DistribucionImportService : IDistribucionImportService
                     continue;
                 }
 
-                Guid? torreId = null;
-                var torreNombre = Str(row.Cell(3));
-                if (torreNombre is not null)
+                // Legado: la columna Torre (pos 3) se hornea como prefijo del codigo ("<torre>-<numero>").
+                if (tieneTorre)
                 {
-                    if (!torres.TryGetValue(torreNombre, out var tid))
-                    {
-                        try
-                        {
-                            var d = await _svc.CrearTorreAsync(new CrearTorreRequest(torreNombre, null, null), ct);
-                            tid = d.Id; torres[d.Nombre.Trim()] = d.Id; torresCreadas++;
-                        }
-                        catch (Exception ex) { errores.Add(new("Unidades", fila, $"No se pudo crear la torre '{torreNombre}': {Msg(ex)}")); continue; }
-                    }
-                    torreId = tid;
+                    var torreNombre = Str(row.Cell(3));
+                    if (torreNombre is not null) numero = $"{torreNombre}-{numero}";
                 }
 
                 var req = new CrearUnidadRequest(
-                    numero, tipo.Value, torreId, Int(row.Cell(4)),
-                    Dec(row.Cell(5)) ?? 0m, Dec(row.Cell(6)),
-                    Int(row.Cell(7)), Int(row.Cell(8)), Int(row.Cell(9)),
-                    Str(row.Cell(10)), Str(row.Cell(14)),
-                    Str(row.Cell(11)), Bool(row.Cell(12), true), Dec(row.Cell(13)));
+                    numero, tipo.Value, Int(row.Cell(3 + off)),
+                    Dec(row.Cell(4 + off)) ?? 0m, Dec(row.Cell(5 + off)),
+                    Int(row.Cell(6 + off)), Int(row.Cell(7 + off)), Int(row.Cell(8 + off)),
+                    Str(row.Cell(9 + off)), Str(row.Cell(13 + off)),
+                    Str(row.Cell(10 + off)), Bool(row.Cell(11 + off), true), Dec(row.Cell(12 + off)));
 
                 UnidadDto creada;
                 try { creada = await _svc.CrearUnidadAsync(req, ct); }
@@ -342,19 +295,19 @@ public class DistribucionImportService : IDistribucionImportService
                 unidadesCreadas++;
                 unidades[creada.Numero.Trim()] = creada.Id;
 
-                // Personas 1:1 (bloques de 5 columnas): Prop1 (15), Prop2 (20), Residente (25),
-                // Arrendatario (30). Cada una se crea en el Directorio (dedup por cedula) y se
+                // Personas 1:1 (bloques de 5 columnas): Prop1 (14), Prop2 (19), Residente (24),
+                // Arrendatario (29). Cada una se crea en el Directorio (dedup por cedula) y se
                 // vincula a la unidad con su rol. Un error de persona NO tumba la unidad.
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 15, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 20, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 25, RolUnidadPersona.Residente, false, fila, errores, ct)) personasVinculadas++;
-                if (await AgregarPersonaDesdeFila(creada.Id, row, 30, RolUnidadPersona.Arrendatario, false, fila, errores, ct)) personasVinculadas++;
-                // Grupo familiar: bloques de 4 columnas (cedula, nombres, apellidos, parentesco) desde la 35.
-                for (int fCol = 35; fCol <= 51; fCol += 4)
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 14 + off, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 19 + off, RolUnidadPersona.Propietario, false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 24 + off, RolUnidadPersona.Residente, false, fila, errores, ct)) personasVinculadas++;
+                if (await AgregarPersonaDesdeFila(creada.Id, row, 29 + off, RolUnidadPersona.Arrendatario, false, fila, errores, ct)) personasVinculadas++;
+                // Grupo familiar: bloques de 4 columnas (cedula, nombres, apellidos, parentesco) desde la 34.
+                for (int fCol = 34 + off; fCol <= 50 + off; fCol += 4)
                     if (await AgregarPersonaDesdeFila(creada.Id, row, fCol, RolUnidadPersona.Familiar, true, fila, errores, ct)) personasVinculadas++;
 
-                // Inmuebles vinculados (cols 55, 56, 57): numero de la unidad asociada. Se difiere.
-                foreach (var vCol in new[] { 55, 56, 57 })
+                // Inmuebles vinculados (cols 54, 55, 56): numero de la unidad asociada. Se difiere.
+                foreach (var vCol in new[] { 54 + off, 55 + off, 56 + off })
                 {
                     var asociada = Str(row.Cell(vCol));
                     if (asociada is not null) vinculosPend.Add((fila, numero, asociada));
@@ -376,7 +329,7 @@ public class DistribucionImportService : IDistribucionImportService
             catch (Exception ex) { errores.Add(new("Unidades", fila, $"Inmueble vinculado {principal}->{asociada}: {Msg(ex)}")); }
         }
 
-        return new ImportarDistribucionResultado(torresCreadas, unidadesCreadas, errores.Count, errores, personasVinculadas, vinculosCreados);
+        return new ImportarDistribucionResultado(unidadesCreadas, errores.Count, errores, personasVinculadas, vinculosCreados);
     }
 
     /// <summary>

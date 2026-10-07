@@ -700,7 +700,6 @@ else
     private static string Val(string? s) => string.IsNullOrWhiteSpace(s) ? "-" : s;
     private static string FmtDv(string? nit, string? dv) =>
         string.IsNullOrWhiteSpace(nit) ? "-" : (string.IsNullOrWhiteSpace(dv) ? nit : $"{nit}-{dv}");
-    private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
     private List<MiembroConsejoDto> _consejo = new();
     private List<ContratoServicioDto> _contratos = new();
@@ -738,8 +737,6 @@ else
     private bool _ctaBusy;
     private bool CompRecaudo => !string.IsNullOrWhiteSpace(_linkPago) || (_cuentas?.Any(c => !c.Cancelada) ?? false);
 
-    private NuevaTorre _nuevaTorre = new();
-    private NuevaUnidad _nuevaUnidad = new();
     private NuevoContrato _nuevoContrato = new() { FechaInicio = DateTime.Today };
     private NuevaZona _nuevaZona = new();
     private NuevoEquipo _nuevoEquipo = new();
@@ -845,7 +842,6 @@ else
             // El formulario de identidad ya no vive aqui: es el componente IdentidadForm, que se
             // inicializa desde _resumen.Identidad cuando se entra en modo edicion.
             _editIdentidad = false;
-            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             _consejo = await http.GetFromJsonAsync<List<MiembroConsejoDto>>("/api/mi-copropiedad/consejo") ?? new();
             _contratos = await http.GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new();
@@ -1361,7 +1357,7 @@ else
         if (resp.IsSuccessStatusCode)
         {
             var r = await resp.Content.ReadFromJsonAsync<GenerarUnidadesResponse>();
-            Msg($"Generadas {r!.TorresCreadas} {LabelAgrupacionPlural.ToLower()} y {r.UnidadesCreadas} unidades.", true);
+            Msg($"Generadas {r!.UnidadesCreadas} unidades.", true);
             _gen = new();
             _showGenerador = false;
             await CargarAsync();
@@ -1410,26 +1406,6 @@ else
         public int UnidadesPorPiso { get; set; } = 1;
     }
 
-    private async Task CrearTorre()
-    {
-        if (string.IsNullOrWhiteSpace(_nuevaTorre.Nombre)) return;
-        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres",
-            new CrearTorreRequest(_nuevaTorre.Nombre, _nuevaTorre.CantidadPisos, null));
-        if (resp.IsSuccessStatusCode) { _nuevaTorre = new(); await CargarAsync(); }
-        else Msg(await resp.Content.ReadAsStringAsync(), false);
-    }
-    private async Task EliminarTorre(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/torres/{id}"); await CargarAsync(); }
-
-    private async Task CrearUnidad()
-    {
-        if (string.IsNullOrWhiteSpace(_nuevaUnidad.Numero)) return;
-        var req = new CrearUnidadRequest(_nuevaUnidad.Numero, _nuevaUnidad.Tipo,
-            _nuevaUnidad.TorreId, _nuevaUnidad.Piso, _nuevaUnidad.Coef ?? 0,
-            null, null, null, null, null, null);
-        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-        if (resp.IsSuccessStatusCode) { _nuevaUnidad = new(); await CargarAsync(); }
-        else Msg(await resp.Content.ReadAsStringAsync(), false);
-    }
     private async Task EliminarUnidad(Guid id) { await Auth().DeleteAsync($"/api/mi-copropiedad/unidades/{id}"); await CargarAsync(); }
 
     private async Task DesactivarConsejo(Guid id) { await Auth().PutAsync($"/api/mi-copropiedad/consejo/{id}/desactivar", null); await CargarAsync(); }
@@ -1721,8 +1697,6 @@ else
 
     private void Msg(string m, bool exito) { _actionMsg = m; _actionMsgClass = exito ? "alert-success" : "alert-danger"; }
 
-    private class NuevaTorre { public string Nombre { get; set; } = ""; public int? CantidadPisos { get; set; } }
-    private class NuevaUnidad { public string Numero { get; set; } = ""; public TipoUnidad Tipo { get; set; } = TipoUnidad.Apartamento; public Guid? TorreId { get; set; } public int? Piso { get; set; } public decimal? Coef { get; set; } }
     private class NuevoContrato { public TipoServicio Tipo { get; set; } = TipoServicio.Aseo; public string Proveedor { get; set; } = ""; public DateTime FechaInicio { get; set; } public DateTime? FechaFin { get; set; } public decimal? ValorMensual { get; set; } }
     private class NuevaZona { public string Nombre { get; set; } = ""; public CategoriaZonaComun Categoria { get; set; } = CategoriaZonaComun.Social; public bool Reservable { get; set; } public int? Capacidad { get; set; } }
     private class NuevoEquipo { public string Nombre { get; set; } = ""; public CategoriaEquipo Categoria { get; set; } = CategoriaEquipo.Otros; public string? Marca { get; set; } }

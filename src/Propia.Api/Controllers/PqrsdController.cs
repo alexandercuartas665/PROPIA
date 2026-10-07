@@ -495,14 +495,14 @@ public class PqrsdController : ControllerBase
         // el caso por los endpoints de contenido (detalle, respuestas, adjuntos), que no dependen de la identidad.
         if (exp.IdentidadReservada)
             return Ok(new PqrsdContextoDto(
-                new PqrsdContextoUnidadDto(null, null, null, null, null, null),
+                new PqrsdContextoUnidadDto(null, null, null, null, null),
                 new List<PqrsdContextoPersonaDto>()));
 
         // Buscar UnidadPersona donde PersonaId = RadicadorPersonaId. Tomo la primera asociacion como "unidad del expediente".
         var unidadPersona = await (from up in _db.UnidadPersonas.AsNoTracking()
                                    join u in _db.UnidadesPrivadas.AsNoTracking() on up.UnidadId equals u.Id
                                    where up.PersonaId == exp.RadicadorPersonaId
-                                   select new { up.UnidadId, u.Numero, u.TorreId, u.Piso, u.Tipo, u.CoeficientePropiedad })
+                                   select new { up.UnidadId, u.Numero, u.Piso, u.Tipo, u.CoeficientePropiedad })
                                   .FirstOrDefaultAsync(ct);
 
         PqrsdContextoUnidadDto unidadDto;
@@ -510,11 +510,8 @@ public class PqrsdController : ControllerBase
 
         if (unidadPersona is not null)
         {
-            var torreNombre = unidadPersona.TorreId.HasValue
-                ? await _db.Torres.AsNoTracking().Where(t => t.Id == unidadPersona.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
-                : null;
             unidadDto = new PqrsdContextoUnidadDto(
-                unidadPersona.UnidadId, unidadPersona.Numero, torreNombre,
+                unidadPersona.UnidadId, unidadPersona.Numero,
                 unidadPersona.Piso, unidadPersona.Tipo.ToString(), unidadPersona.CoeficientePropiedad);
 
             // Todas las personas de esa unidad con sus datos
@@ -531,7 +528,7 @@ public class PqrsdController : ControllerBase
         }
         else
         {
-            unidadDto = new PqrsdContextoUnidadDto(null, null, null, null, null, null);
+            unidadDto = new PqrsdContextoUnidadDto(null, null, null, null, null);
             // Aun sin unidad asociada, devolver al menos el radicador
             var rad = await _db.Personas.AsNoTracking().FirstOrDefaultAsync(p => p.Id == exp.RadicadorPersonaId, ct);
             if (rad is not null)

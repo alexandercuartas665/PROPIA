@@ -24,16 +24,6 @@ namespace Propia.Api.Mcp;
 [McpServerToolType]
 public sealed class MiCopropiedadCreacionTools
 {
-    [McpServerTool(Name = "micopropiedad_crear_torre")]
-    [Description("Crea una torre/agrupacion en la copropiedad activa. Por defecto es dry-run (valida sin guardar); pasa dryRun=false para confirmar la creacion.")]
-    public static Task<ResultadoCreacionMcp> CrearTorre(
-        [Description("Datos de la torre a crear.")] CrearTorreRequest torre,
-        IMiCopropiedadService svc, PropiaDbContext db, ITenantContext tenant, CancellationToken ct,
-        [Description("Si true (por defecto) solo valida sin persistir. Pasa false para guardar.")] bool dryRun = true)
-        => EjecutarAsync(db, svc, tenant, dryRun, "Torre",
-            r => $"Torre '{((TorreDto)r!).Nombre}' creada (agente MCP).",
-            async () => await svc.CrearTorreAsync(torre, ct), ct);
-
     [McpServerTool(Name = "micopropiedad_crear_unidad")]
     [Description("Crea una unidad privada (apartamento, local, parqueadero, etc.) en la copropiedad activa. El coeficiente debe estar entre 0 y 100. Por defecto es dry-run; pasa dryRun=false para confirmar.")]
     public static Task<ResultadoCreacionMcp> CrearUnidad(

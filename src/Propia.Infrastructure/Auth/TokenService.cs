@@ -22,7 +22,7 @@ public class TokenService : ITokenService
         }
     }
 
-    public (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId)
+    public (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId, Guid? activeRolId = null)
     {
         var now = DateTimeOffset.UtcNow;
         var expires = now.AddMinutes(_settings.AccessTokenMinutes);
@@ -44,6 +44,11 @@ public class TokenService : ITokenService
 
         if (activeTenantId.HasValue)
             claims.Add(new Claim("tenant_id", activeTenantId.Value.ToString()));
+
+        // Rol ACTIVO por sesion (2.5 v2.0 multi-rol). Si no viene, el enforcement RBAC cae al
+        // rol principal del vinculo (compat con tokens viejos y usuarios mono-rol).
+        if (activeRolId.HasValue)
+            claims.Add(new Claim("rol_id", activeRolId.Value.ToString()));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SigningKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

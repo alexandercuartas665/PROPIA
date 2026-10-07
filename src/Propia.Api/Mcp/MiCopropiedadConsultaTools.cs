@@ -22,7 +22,7 @@ namespace Propia.Api.Mcp;
 public sealed class MiCopropiedadConsultaTools
 {
     [McpServerTool(Name = "micopropiedad_resumen")]
-    [Description("Resumen de la copropiedad activa: identidad, conteos (torres, unidades, zonas, equipos, contratos, consejo), suma de coeficientes y porcentaje de completitud por seccion. Util como primer vistazo del estado de la ficha.")]
+    [Description("Resumen de la copropiedad activa: identidad, conteos (unidades, zonas, equipos, contratos, consejo), suma de coeficientes y porcentaje de completitud por seccion. Util como primer vistazo del estado de la ficha.")]
     public static async Task<ResumenMiCopropiedadDto> Resumen(
         IMiCopropiedadService svc, ITenantContext tenant, CancellationToken ct)
     {
@@ -31,14 +31,8 @@ public sealed class MiCopropiedadConsultaTools
             ?? throw new InvalidOperationException("No existe la copropiedad activa.");
     }
 
-    [McpServerTool(Name = "micopropiedad_listar_torres")]
-    [Description("Lista las torres/agrupaciones de la copropiedad activa, con su cantidad de unidades.")]
-    public static async Task<IReadOnlyList<TorreDto>> ListarTorres(
-        IMiCopropiedadService svc, CancellationToken ct)
-        => await svc.ListTorresAsync(ct);
-
     [McpServerTool(Name = "micopropiedad_listar_unidades")]
-    [Description("Lista todas las unidades privadas (apartamentos, locales, parqueaderos, etc.) de la copropiedad activa, con tipo, torre, piso, coeficiente, area y estado.")]
+    [Description("Lista todas las unidades privadas (apartamentos, locales, parqueaderos, etc.) de la copropiedad activa, con tipo, piso, coeficiente, area y estado. El codigo de la unidad es su numero.")]
     public static async Task<IReadOnlyList<UnidadDto>> ListarUnidades(
         IMiCopropiedadService svc, CancellationToken ct)
         => await svc.ListUnidadesAsync(ct);

@@ -16,8 +16,9 @@ namespace Propia.Api.Mcp;
 /// </summary>
 public static class AgentContactoHelper
 {
-    /// <summary>Unidad de la copropiedad (para resolver texto libre y etiquetar coincidencias).</summary>
-    public sealed record UnidadInfo(Guid Id, string Numero, string? Torre);
+    /// <summary>Unidad de la copropiedad (para resolver texto libre y etiquetar coincidencias).
+    /// El codigo de la unidad ES su Numero.</summary>
+    public sealed record UnidadInfo(Guid Id, string Numero);
 
     /// <summary>Unidad resuelta desde texto libre.</summary>
     public sealed record UnidadResuelta(Guid Id, string Label);
@@ -54,8 +55,7 @@ public static class AgentContactoHelper
     public static bool EsRolResidente(RolUnidadPersona r)
         => r == RolUnidadPersona.Propietario || r == RolUnidadPersona.Residente;
 
-    public static string Label(UnidadInfo u)
-        => string.IsNullOrWhiteSpace(u.Torre) ? u.Numero : $"{u.Torre} - {u.Numero}";
+    public static string Label(UnidadInfo u) => u.Numero;
 
     /// <summary>Ultimos 10 digitos del telefono (quita +, espacios, guiones y tolera el prefijo pais 57). null si no hay digitos.</summary>
     public static string? PhoneTail(string? raw)
@@ -89,7 +89,7 @@ public static class AgentContactoHelper
     /// <summary>Unidades de la copropiedad activa (RLS), para resolver texto libre y etiquetar.</summary>
     public static async Task<IReadOnlyList<UnidadInfo>> CargarUnidadesAsync(PropiaDbContext db, CancellationToken ct)
         => await db.UnidadesPrivadas.AsNoTracking()
-            .Select(u => new UnidadInfo(u.Id, u.Numero, u.Torre != null ? u.Torre.Nombre : null))
+            .Select(u => new UnidadInfo(u.Id, u.Numero))
             .ToListAsync(ct);
 
     /// <summary>
@@ -166,9 +166,9 @@ public static class AgentContactoHelper
     }
 
     /// <summary>
-    /// Resuelve la unidad indicada en texto libre. Estrategia: (1) match exacto por "torre+numero" o
-    /// por numero; (2) el texto contiene el numero de la unidad (unico); (3) desambigua por torre.
-    /// Devuelve null si no logra una resolucion inequivoca (mejor no resolver que resolver mal).
+    /// Resuelve la unidad indicada en texto libre. Estrategia: (1) match exacto por el codigo (Numero);
+    /// (2) el texto contiene el codigo de la unidad (unico). Devuelve null si no logra una resolucion
+    /// inequivoca (mejor no resolver que resolver mal).
     /// </summary>
     public static UnidadResuelta? ResolverUnidad(IReadOnlyList<UnidadInfo> units, string? input)
     {
@@ -176,16 +176,11 @@ public static class AgentContactoHelper
         var q = Norm(input);
         if (q.Length == 0 || units.Count == 0) { return null; }
 
-        var exact = units.FirstOrDefault(u => Norm($"{u.Torre}{u.Numero}") == q || Norm(u.Numero) == q);
+        var exact = units.FirstOrDefault(u => Norm(u.Numero) == q);
         if (exact is not null) { return new UnidadResuelta(exact.Id, Label(exact)); }
 
         var byNumero = units.Where(u => Norm(u.Numero).Length > 0 && q.Contains(Norm(u.Numero))).ToList();
         if (byNumero.Count == 1) { return new UnidadResuelta(byNumero[0].Id, Label(byNumero[0])); }
-        if (byNumero.Count > 1)
-        {
-            var conTorre = byNumero.Where(u => !string.IsNullOrWhiteSpace(u.Torre) && q.Contains(Norm(u.Torre))).ToList();
-            if (conTorre.Count == 1) { return new UnidadResuelta(conTorre[0].Id, Label(conTorre[0])); }
-        }
         return null;
     }
 }

@@ -68,7 +68,6 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<UsuarioTenant> UsuariosTenant => Set<UsuarioTenant>();
 
     // Modulo 2.3 Mi Copropiedad - todas TenantEntity (RLS + tenant_id)
-    public DbSet<Torre> Torres => Set<Torre>();
     public DbSet<UnidadPrivada> UnidadesPrivadas => Set<UnidadPrivada>();
     public DbSet<UnidadVinculo> UnidadVinculos => Set<UnidadVinculo>();
     public DbSet<UnidadPersona> UnidadPersonas => Set<UnidadPersona>();

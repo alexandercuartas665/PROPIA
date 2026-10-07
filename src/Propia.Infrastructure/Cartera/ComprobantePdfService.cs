@@ -26,7 +26,7 @@ public class ComprobantePdfService : IComprobantePdfService
         QuestPDF.Settings.License = LicenseType.Community;
 
         var pago = await _db.PagosCuotas.AsNoTracking()
-            .Include(p => p.UnidadPrivada!).ThenInclude(u => u.Torre)
+            .Include(p => p.UnidadPrivada!)
             .FirstOrDefaultAsync(p => p.Id == pagoId, ct);
         if (pago is null) return null;
 
@@ -40,11 +40,7 @@ public class ComprobantePdfService : IComprobantePdfService
                 .FirstOrDefaultAsync(ct)
             : null;
 
-        var nombreUnidad = pago.UnidadPrivada is null
-            ? "-"
-            : pago.UnidadPrivada.Torre is null
-                ? pago.UnidadPrivada.Numero
-                : $"{pago.UnidadPrivada.Torre.Nombre} - {pago.UnidadPrivada.Numero}";
+        var nombreUnidad = pago.UnidadPrivada is null ? "-" : pago.UnidadPrivada.Numero;
 
         var moneda = string.IsNullOrEmpty(tenant.Moneda) ? "COP" : tenant.Moneda;
         var codigoVerificacion = $"PG-{pago.Id.ToString("N").Substring(0, 10).ToUpper()}";

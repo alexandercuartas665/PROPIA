@@ -8,7 +8,12 @@ public record LoginResponse(
     Guid UserId,
     string Email,
     Guid? ActiveTenantId,
-    IReadOnlyList<TenantInfo> AvailableTenants);
+    IReadOnlyList<TenantInfo> AvailableTenants,
+    // 2.5 v2.0 multi-rol: rol activo por sesion. ActiveRolId null = aun sin elegir (el cliente debe
+    // elegir si AvailableRoles tiene mas de uno). AvailableRoles solo se llena en contexto con tenant
+    // (p.ej. /connect/me), no en el login inicial (RLS no deja leerlos sin tenant activo).
+    Guid? ActiveRolId = null,
+    IReadOnlyList<RolInfo>? AvailableRoles = null);
 
 public record MeResponse(
     Guid UserId,
@@ -19,7 +24,10 @@ public record MeResponse(
     Guid? ActiveTenantId,
     IReadOnlyList<TenantInfo> AvailableTenants,
     string? PersonaFotoUrl = null,
-    string? PersonaFirmaUrl = null);
+    string? PersonaFirmaUrl = null,
+    // Rol activo por sesion (del claim rol_id) + roles que el usuario tiene en la copropiedad activa.
+    Guid? ActiveRolId = null,
+    IReadOnlyList<RolInfo>? AvailableRoles = null);
 
 public record TenantInfo(
     Guid TenantId,
@@ -28,7 +36,13 @@ public record TenantInfo(
     string? LogoUrl = null,
     string? CodigoCorto = null);
 
+/// <summary>Un rol que el usuario tiene asignado en la copropiedad activa (2.5 v2.0 multi-rol).</summary>
+public record RolInfo(Guid RolId, string Nombre);
+
 public record SwitchTenantRequest(Guid TenantId);
+
+/// <summary>Elige el rol ACTIVO para la sesion (reemite el JWT con el claim rol_id).</summary>
+public record SwitchRolRequest(Guid RolId);
 
 /// <summary>
 /// Respuesta del login UNIFICADO (/connect/login). Un solo punto de entrada para todos los

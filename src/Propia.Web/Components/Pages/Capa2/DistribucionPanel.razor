@@ -22,7 +22,7 @@
     {
         <div>
             <h1 class="dst-pagetitle">Unidades Privadas</h1>
-            <p class="dst-pagesub">Composicion de @(_resumen?.Identidad.Nombre ?? "la copropiedad") &mdash; @LabelAgrupacionPlural.ToLower(), @LabelPisoSingular.ToLower()s y unidades con su coeficiente.</p>
+            <p class="dst-pagesub">Composicion de @(_resumen?.Identidad.Nombre ?? "la copropiedad") &mdash; unidades con su codigo y coeficiente.</p>
         </div>
     }
     @if (!Embedded && _authChecked && _jwt is not null)
@@ -545,15 +545,6 @@ else
                                     case "num":
                                         <td><input class="tbl-cell" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" /></td>
                                         break;
-                                    case "torre":
-                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "torre", e))">
-                                            <option value="" selected="@(uu.TorreId is null)">-</option>
-                                            @foreach (var t in _torres.OrderBy(x => x.Nombre))
-                                            {
-                                                <option value="@t.Id" selected="@(uu.TorreId == t.Id)">@t.Nombre</option>
-                                            }
-                                        </select></td>
-                                        break;
                                     case "piso":
                                         <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" /></td>
                                         break;
@@ -710,13 +701,10 @@ else
                             switch (it.Def!.Key)
                             {
                                 case "num":
-                                    <td class="nf-cell"><input class="nf-in" placeholder="A1-202" title="Código TORRE-APARTAMENTO (ej. A1-202). La torre sale del código y el piso se infiere del número de apto." @bind="_nuNum" @bind:event="oninput" /></td>
-                                    break;
-                                case "torre":
-                                    <td class="nf-mut" title="Se toma del código (ej. la 'A1' de A1-202)">del código</td>
+                                    <td class="nf-cell"><input class="nf-in" placeholder="A1-202" title="Código de la unidad (texto libre, ej. A1-202). Debe ser único en la copropiedad." @bind="_nuNum" @bind:event="oninput" /></td>
                                     break;
                                 case "piso":
-                                    <td class="nf-mut" title="Se infiere del número de apto (ej. 202 = piso 2)">auto</td>
+                                    <td class="nf-cell"><input class="nf-in nf-in-num" type="number" placeholder="-" @bind="_nuPiso" @bind:event="oninput" /></td>
                                     break;
                                 case "tipo":
                                     <td class="nf-cell"><select class="nf-in" @bind="_nuTipoKey">
@@ -845,7 +833,7 @@ else
                             </span>
                             <span class="dst-lmain">
                                 <span class="dst-lnum">@u.Numero</span>
-                                <span class="dst-lmeta">@(u.TorreNombre ?? "-")@(u.Piso is null ? "" : $" - {LabelPisoSingular} {u.Piso}") - @EtiquetaU(u)</span>
+                                <span class="dst-lmeta">@(u.Piso is null ? "" : $"{LabelPisoSingular} {u.Piso} - ")@EtiquetaU(u)</span>
                             </span>
                             <span class="dst-lprop">
                                 @if (string.IsNullOrWhiteSpace(u.PropietarioNombre))
@@ -921,13 +909,11 @@ else
     private string? _loadError;
 
     private ResumenMiCopropiedadDto? _resumen;
-    private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
     private List<TipoUnidadCustomDto> _tiposCustom = new();   // tipos propios del tenant (Configurar)
 
     // Alta inline (crear unidad desde la vista Tabla, como Zonas/Seguros).
     private string _nuNum = "";
-    private string _nuTorreId = "";
     private string _nuPiso = "";
     private string _nuTipoKey = "e:Apartamento";   // "e:<enum>" o "c:<guidCustom>"
 
@@ -1205,7 +1191,7 @@ else
                 {
                     if (col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && CampoDeClave(col.Key) is not null)
                     { await SetGrupoU(col.Key); break; }
-                    var g = col.Key switch { "torre" => "torre", "prop" => "propietario", "estado" => "estado", "tipo" => "tipo", _ => (string?)null };
+                    var g = col.Key switch { "prop" => "propietario", "estado" => "estado", "tipo" => "tipo", _ => (string?)null };
                     if (g is null) { ColToast("Agrupar por este campo aun no esta disponible."); break; }
                     await SetGrupoU(g);
                 }
@@ -1297,8 +1283,6 @@ else
         // Estado usa las opciones configuradas por la copropiedad (mismas que la tabla y la ficha).
         new() { Key = "estado", Label = AliasCampo("estado", "Estado"), Kind = "sel",
                 Opciones = EstadosConfig().Select(e => (e, e)).ToList() },
-        new() { Key = "torre", Label = LabelAgrupacionSingular, Kind = "sel",
-                Opciones = _torres.OrderBy(x => x.Nombre).Select(t => (t.Id.ToString(), t.Nombre)).ToList() },
         new() { Key = "piso", Label = AliasCampo("piso", LabelPisoSingular), Kind = "num" },
         new() { Key = "area", Label = AliasCampo("area", "Area"), Kind = "num" },
         new() { Key = "coef", Label = AliasCampo("coef", "Coeficiente"), Kind = "num" },
@@ -1344,7 +1328,6 @@ else
                     "numero" => u.Numero,
                     "tipo" => EtiquetaU(u),
                     "estado" => u.Estado ?? "",
-                    "torre" => u.TorreId?.ToString() ?? "",
                     "piso" => u.Piso?.ToString() ?? "",
                     "area" => u.AreaM2?.ToString(ci) ?? "",
                     "coef" => u.CoeficientePropiedad.ToString(ci),
@@ -1396,7 +1379,6 @@ else
     {
         var cols = new List<TablaAgruparMenu.Col>
         {
-            new("torre", LabelAgrupacionSingular),
             new("estado", "Estado"),
             new("tipo", "Tipo"),
             new("propietario", "Propietario"),
@@ -1420,7 +1402,6 @@ else
         }
         switch (clave)
         {
-            case "torre": var tn = u.TorreNombre ?? $"Sin {LabelAgrupacionSingular.ToLower()}"; yield return new ValorGrupo(tn, tn); break;
             case "estado": var es = string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!; yield return new ValorGrupo(es, es); break;
             case "tipo": var tp = EtiquetaU(u); yield return new ValorGrupo(tp, tp); break;
             case "propietario": var pr = string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!; yield return new ValorGrupo(pr, pr); break;
@@ -1748,7 +1729,7 @@ else
     private async Task GuardarUnidadInline(UnidadDto u, string campo, string? val)
     {
         var v = val?.Trim();
-        var numero = u.Numero; var tipo = u.Tipo; var torreId = u.TorreId; var piso = u.Piso;
+        var numero = u.Numero; var tipo = u.Tipo; var piso = u.Piso;
         var coef = u.CoeficientePropiedad; var area = u.AreaM2;
         var matricula = u.MatriculaInmobiliaria; var refpago = u.ReferenciaPago;
         var tipoCustom = u.TipoCustomId;
@@ -1768,7 +1749,6 @@ else
                 break;
             case "num": if (string.IsNullOrWhiteSpace(v) || v == u.Numero) return; numero = v; break;
             case "tipo": var (tp, tc) = ParseTipoKey(v); if (tp == u.Tipo && tc == u.TipoCustomId) return; tipo = tp; tipoCustom = tc; break;
-            case "torre": var t = string.IsNullOrEmpty(v) ? (Guid?)null : (Guid.TryParse(v, out var g) ? g : u.TorreId); if (t == u.TorreId) return; torreId = t; break;
             case "piso": var pi = string.IsNullOrWhiteSpace(v) ? (int?)null : (int.TryParse(v, out var pp) ? pp : u.Piso); if (pi == u.Piso) return; piso = pi; break;
             case "coef": if (!decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var cf) || cf == u.CoeficientePropiedad) return; coef = cf; break;
             case "area": var ar = string.IsNullOrWhiteSpace(v) ? (decimal?)null : (decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var aa) ? aa : u.AreaM2); if (ar == u.AreaM2) return; area = ar; break;
@@ -1783,7 +1763,7 @@ else
             case "observaciones": var ob = string.IsNullOrWhiteSpace(v) ? null : v; if (string.Equals(ob, u.Observaciones, StringComparison.Ordinal)) return; observaciones = ob; break;
             default: return;
         }
-        var req = new ActualizarUnidadRequest(numero, tipo, torreId, piso, coef, area,
+        var req = new ActualizarUnidadRequest(numero, tipo, piso, coef, area,
             habitaciones, banos, parqueaderos, estado, observaciones,
             matricula, pagaAdmin, cuota, refpago, TipoCustomId: tipoCustom,
             ModuloContributivo1: mc1, ModuloContributivo2: mc2, ModuloContributivo3: mc3,
@@ -1793,10 +1773,9 @@ else
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
             if (r.IsSuccessStatusCode)
             {
-                var nombreTorre = torreId is null ? null : _torres.FirstOrDefault(x => x.Id == torreId)?.Nombre ?? u.TorreNombre;
                 var nombreCustom = tipoCustom is { } cg ? _tiposCustom.FirstOrDefault(x => x.Id == cg)?.Nombre : null;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
-                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, TorreId = torreId, TorreNombre = nombreTorre, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago, ModuloContributivo1 = mc1, ModuloContributivo2 = mc2, ModuloContributivo3 = mc3, ModuloContributivo4 = mc4, ModuloContributivo5 = mc5 };
+                if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago, ModuloContributivo1 = mc1, ModuloContributivo2 = mc2, ModuloContributivo3 = mc3, ModuloContributivo4 = mc4, ModuloContributivo5 = mc5 };
             }
         }
         catch { }
@@ -1821,24 +1800,9 @@ else
         try
         {
             var ci = System.Globalization.CultureInfo.InvariantCulture;
-            Guid? torreId = Guid.TryParse(_nuTorreId, out var tg) ? tg : null;
             int? piso = int.TryParse(_nuPiso, out var pp) ? pp : null;
+            // El codigo de la unidad ES su Numero (texto libre): se guarda tal cual lo escribio el usuario.
             var numero = _nuNum.Trim();
-
-            // Codigo mascara TORRE-APARTAMENTO (ej. A1-202) en el campo "Nueva unidad".
-            // Si trae separador, se parsea, se crea la torre si no existe y se infiere el piso del apto.
-            if (numero.IndexOfAny(new[] { '-', '/' }) >= 0)
-            {
-                var parts = numero.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (parts.Length >= 2)
-                {
-                    var tId = await ResolverOCrearTorreAsync(parts[0]);
-                    if (tId is null) { _inlineMsgU = "No se pudo resolver o crear la torre del codigo."; _creandoUnidad = false; return; }
-                    torreId = tId;
-                    numero = string.Join("-", parts.Skip(1)).Trim();
-                    piso = InferirPiso(numero) ?? piso;
-                }
-            }
 
             decimal? area = decimal.TryParse(_nuArea, System.Globalization.NumberStyles.Any, ci, out var aa) ? aa : null;
             decimal coef = decimal.TryParse(_nuCoef, System.Globalization.NumberStyles.Any, ci, out var cc) ? cc : 0m;
@@ -1852,7 +1816,7 @@ else
             bool pagaAdmin = !string.Equals(_nuPagaAdmin, "false", StringComparison.OrdinalIgnoreCase);
             decimal? cuota = decimal.TryParse(_nuCuota, System.Globalization.NumberStyles.Any, ci, out var cq) ? cq : null;
             decimal? ModAlta(int n) => _nuMod.TryGetValue(n, out var s) && decimal.TryParse(s, System.Globalization.NumberStyles.Any, ci, out var mv) ? mv : null;
-            var req = new CrearUnidadRequest(numero, nuTipo, torreId, piso, coef, area,
+            var req = new CrearUnidadRequest(numero, nuTipo, piso, coef, area,
                 hab, banos, parq, estado, obs,
                 MatriculaInmobiliaria: string.IsNullOrWhiteSpace(_nuMatricula) ? null : _nuMatricula.Trim(),
                 PagaAdministracion: pagaAdmin,
@@ -1882,7 +1846,7 @@ else
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
-                    _nuNum = ""; _nuTorreId = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
+                    _nuNum = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
                     _nuEstado = ""; _nuHab = ""; _nuBanos = ""; _nuParq = ""; _nuPagaAdmin = "true"; _nuCuota = ""; _nuObs = ""; _nuMod.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
                     if (abrir) await AbrirModalAsync(creada.Id);
@@ -1892,43 +1856,15 @@ else
             else
             {
                 var detalle = await resp.Content.ReadAsStringAsync();
-                _inlineMsgU = string.IsNullOrWhiteSpace(detalle) ? "No se pudo crear la unidad." : $"No se pudo crear: {detalle}";
+                // El API devuelve { "error": "..." }; mostramos solo el mensaje (ej. "Ya existe la unidad 'X'...").
+                string? msg = null;
+                try { if (System.Text.Json.JsonDocument.Parse(detalle).RootElement.TryGetProperty("error", out var e)) msg = e.GetString(); } catch { }
+                _inlineMsgU = !string.IsNullOrWhiteSpace(msg) ? msg
+                    : (string.IsNullOrWhiteSpace(detalle) ? "No se pudo crear la unidad." : $"No se pudo crear: {detalle}");
             }
         }
         catch (Exception ex) { _inlineMsgU = "Error al crear la unidad: " + ex.Message; }
         finally { _creandoUnidad = false; }
-    }
-
-    // Infiere el piso desde el numero de apartamento (convencion: 202 -> piso 2, 1502 -> piso 15).
-    // Solo cuando el apto es numerico y tiene 3+ digitos; si no, devuelve null (no se fuerza el piso).
-    private static int? InferirPiso(string apto)
-    {
-        apto = (apto ?? "").Trim();
-        if (apto.Length >= 3 && apto.All(char.IsDigit))
-        {
-            var floorPart = apto[..^2];
-            if (int.TryParse(floorPart, out var f) && f > 0) return f;
-        }
-        return null;
-    }
-
-    // Resuelve la torre por token del codigo (nombre exacto, "Torre X" o ultima palabra); si no existe, la crea.
-    private async Task<Guid?> ResolverOCrearTorreAsync(string token)
-    {
-        token = token.Trim();
-        var existe = _torres.FirstOrDefault(t =>
-            t.Nombre.Equals(token, StringComparison.OrdinalIgnoreCase)
-            || t.Nombre.Equals($"{LabelAgrupacionSingular} {token}", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), token, StringComparison.OrdinalIgnoreCase));
-        if (existe is not null) return existe.Id;
-
-        var nombre = token.Length <= 4 ? $"{LabelAgrupacionSingular} {token}" : token;
-        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, null, null));
-        if (!resp.IsSuccessStatusCode) return null;
-        var nueva = await resp.Content.ReadFromJsonAsync<TorreDto>();
-        if (nueva is null) return null;
-        _torres.Add(nueva);
-        return nueva.Id;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -2570,7 +2506,6 @@ else
         return k switch
         {
             "num" => u.Numero ?? "",
-            "torre" => _torres.FirstOrDefault(t => t.Id == u.TorreId)?.Nombre ?? "",
             "piso" => u.Piso?.ToString(ci) ?? "",
             "tipo" => EtiquetaU(u),
             "estado" => u.Estado ?? "",
@@ -2747,7 +2682,6 @@ else
             resp.EnsureSuccessStatusCode();
             _resumen = await resp.Content.ReadFromJsonAsync<ResumenMiCopropiedadDto>();
 
-            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             _uniRecienCreados.Clear();   // tras un refresco real, las recien creadas vuelven a su orden natural (sin verde)
             try { _camposDef = await http.GetFromJsonAsync<List<UnidadCampoDefinicionDto>>("/api/mi-copropiedad/unidades-campos") ?? new(); } catch { _camposDef = new(); }
@@ -2912,15 +2846,17 @@ else
     }
 
 
-    // Plantilla CSV generada en cliente (formato que espera importar-csv: crea torres por nombre).
+    // Plantilla CSV generada en cliente (formato que espera importar-csv). El 'identificador' es el
+    // codigo de la unidad (texto libre). 'agrupacion' es opcional: si viene, se antepone como prefijo
+    // del codigo ("<agrupacion>-<identificador>").
     private async Task DescargarPlantillaUnidadesAsync()
     {
         var csv = "identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2\n"
-                + "101,Apartamento,Torre A,1,0.023400,72\n"
-                + "102,Apartamento,Torre A,1,0.023400,72\n"
-                + "201,Apartamento,Torre B,2,0.023400,72\n"
-                + "L-1,Local,Torre A,0,0.010000,40\n"
-                + "P-101,Parqueadero,Torre A,-1,0.001000,12\n";
+                + "A1-101,Apartamento,,1,0.023400,72\n"
+                + "A1-102,Apartamento,,1,0.023400,72\n"
+                + "A2-201,Apartamento,,2,0.023400,72\n"
+                + "L-1,Local,,0,0.010000,40\n"
+                + "P-101,Parqueadero,,-1,0.001000,12\n";
         try
         {
             var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(csv));

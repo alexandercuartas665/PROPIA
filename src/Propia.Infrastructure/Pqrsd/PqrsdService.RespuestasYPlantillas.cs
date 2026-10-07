@@ -379,11 +379,13 @@ public partial class PqrsdService
         var (_, gestorNombre) = ActorActual();
         var esCO = new System.Globalization.CultureInfo("es-CO");
 
+        // 'unidadTorre' queda siempre vacio: ya no existe la entidad Torre. La variable de plantilla
+        // {unidad.torre} sigue declarada por compatibilidad, pero resuelve a cadena vacia.
         string unidadNum = "", unidadTorre = "", propietario = "";
         if (exp.UnidadPrivadaId is { } uid)
         {
-            var unidad = await _db.UnidadesPrivadas.AsNoTracking().Include(u => u.Torre).FirstOrDefaultAsync(u => u.Id == uid, ct);
-            if (unidad is not null) { unidadNum = unidad.Numero; unidadTorre = unidad.Torre?.Nombre ?? ""; }
+            var unidad = await _db.UnidadesPrivadas.AsNoTracking().FirstOrDefaultAsync(u => u.Id == uid, ct);
+            if (unidad is not null) { unidadNum = unidad.Numero; }
             var propId = await _db.UnidadPersonas.AsNoTracking()
                 .Where(up => up.UnidadId == uid && up.Rol == Domain.Enums.RolUnidadPersona.Propietario && up.PersonaId != null)
                 .Select(up => up.PersonaId).FirstOrDefaultAsync(ct);
@@ -558,18 +560,12 @@ public partial class PqrsdService
             if (cambio) await _db.SaveChangesAsync(ct);
         }
 
-        // --- Unidad: match EXACTO por numero (+ torre opcional). Sin busqueda: el residente conoce su unidad. ---
+        // --- Unidad: match EXACTO por numero (el codigo de la unidad ES su Numero). El campo de texto
+        // 'TorreTexto' del formulario publico se conserva solo para el encabezado del radicado externo. ---
         var unidadTxt = req.UnidadTexto.Trim();
         var torreTxt = req.TorreTexto?.Trim();
         var unidadTxtLower = unidadTxt.ToLower();
         var qUnidad = _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Numero.ToLower() == unidadTxtLower);
-        if (!string.IsNullOrWhiteSpace(torreTxt))
-        {
-            var torreTxtLower = torreTxt.ToLower();
-            var torreId = await _db.Torres.AsNoTracking()
-                .Where(t => t.Nombre.ToLower() == torreTxtLower).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
-            if (torreId is not null) qUnidad = qUnidad.Where(u => u.TorreId == torreId);
-        }
         var unidadId = await qUnidad.Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct);
 
         // Si no se pudo enlazar la unidad, conservamos el dato escrito al inicio de la descripcion (no se pierde).

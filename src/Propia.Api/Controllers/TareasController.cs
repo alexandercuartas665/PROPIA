@@ -43,12 +43,14 @@ public class TareasController : ControllerBase
         if (!Guid.TryParse(User.FindFirstValue("persona_id"), out var personaId))
             return Ok(new PermisosTareasDto(false, false, false, false, false));
 
-        // Mismo criterio que RequierePermisoFilter, para que la UI y el backend no se contradigan.
-        var rol = await _roles.GetRolActorAsync(personaId, ct);
+        // Mismo criterio que RequierePermisoFilter, para que la UI y el backend no se contradigan
+        // (incluye el rol ACTIVO por sesion, claim rol_id, 2.5 v2.0 multi-rol).
+        var rolActivo = Guid.TryParse(User.FindFirstValue("rol_id"), out var rid) ? rid : (Guid?)null;
+        var rol = await _roles.GetRolActorAsync(personaId, ct, rolActivo);
         if (string.Equals(rol, "Administrador", StringComparison.OrdinalIgnoreCase))
             return Ok(new PermisosTareasDto(true, true, true, true, true));
 
-        var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct);
+        var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct, rolActivo);
         bool Tiene(AccionPermiso a) =>
             permisos.Any(p => p.ModuloCodigo == ModuloCodigo.Tareas && p.Accion == a && p.Habilitado);
         return Ok(new PermisosTareasDto(

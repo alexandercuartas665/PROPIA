@@ -20,7 +20,6 @@ public partial class MiCopropiedadService
         var t = await _db.Tenants.FirstOrDefaultAsync(x => x.Id == tenantId, ct);
         if (t is null) return null;
 
-        var torres = await _db.Torres.CountAsync(ct);
         var unidades = await _db.UnidadesPrivadas.CountAsync(ct);
         var coefSum = await _db.UnidadesPrivadas.SumAsync(u => (decimal?)u.CoeficientePropiedad, ct) ?? 0;
         var zonas = await _db.ZonasComunes.CountAsync(ct);
@@ -38,7 +37,7 @@ public partial class MiCopropiedadService
                             && !string.IsNullOrWhiteSpace(t.Nit)
                             && !string.IsNullOrWhiteSpace(t.Direccion)
                             && t.TipoCopropiedad.HasValue,
-            ["Distribucion"] = torres > 0 && unidades > 0 && Math.Abs(coefSum - 100m) <= 1m,
+            ["Distribucion"] = unidades > 0 && Math.Abs(coefSum - 100m) <= 1m,
             ["EquipoTrabajo"] = miembrosEquipoActivos > 0,
             // Gobierno completo: consejo con minimo 3 activos + revisor fiscal (si la PH lo requiere) + al menos un comite
             ["Gobierno"] = miembros >= 3
@@ -53,7 +52,7 @@ public partial class MiCopropiedadService
 
         return new ResumenMiCopropiedadDto(
             ToIdentidadDto(t),
-            torres, unidades, coefSum, zonas, equipos, contratos, miembros,
+            unidades, coefSum, zonas, equipos, contratos, miembros,
             pct, completas);
     }
 
@@ -110,39 +109,6 @@ public partial class MiCopropiedadService
 
     // ----------------------------- Seccion 2: Distribucion -----------------------------
 
-    public async Task<IReadOnlyList<TorreDto>> ListTorresAsync(CancellationToken ct)
-    {
-        return await _db.Torres
-            .AsNoTracking()
-            .OrderBy(t => t.Nombre)
-            .Select(t => new TorreDto(t.Id, t.Nombre, t.CantidadPisos, t.Descripcion,
-                _db.UnidadesPrivadas.Count(u => u.TorreId == t.Id)))
-            .ToListAsync(ct);
-    }
-
-    public async Task<TorreDto> CrearTorreAsync(CrearTorreRequest req, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(req.Nombre))
-            throw new InvalidOperationException("El nombre de la torre es obligatorio.");
-        var torre = new Torre { Nombre = req.Nombre, CantidadPisos = req.CantidadPisos, Descripcion = req.Descripcion };
-        _db.Torres.Add(torre);
-        await _db.SaveChangesAsync(ct);
-        return new TorreDto(torre.Id, torre.Nombre, torre.CantidadPisos, torre.Descripcion, 0);
-    }
-
-    public async Task<bool> EliminarTorreAsync(Guid torreId, CancellationToken ct)
-    {
-        var t = await _db.Torres.FirstOrDefaultAsync(x => x.Id == torreId, ct);
-        if (t is null) return false;
-        // Guarda: no eliminar una torre/bloque que aun tiene unidades (evita orfanarlas via SetNull).
-        var nUnidades = await _db.UnidadesPrivadas.CountAsync(u => u.TorreId == torreId, ct);
-        if (nUnidades > 0)
-            throw new InvalidOperationException($"No se puede eliminar: tiene {nUnidades} unidad(es) asignada(s). Elimina o reasigna las unidades primero.");
-        _db.Torres.Remove(t);
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
     public async Task<IReadOnlyList<UnidadDto>> ListUnidadesAsync(CancellationToken ct)
     {
         // El propietario se resuelve con subconsultas dentro del mismo query (no con una llamada a
@@ -151,11 +117,10 @@ public partial class MiCopropiedadService
         // primero + el conteo, y la UI decide como mostrarlo.
         return await _db.UnidadesPrivadas
             .AsNoTracking()
-            .Include(u => u.Torre)
-            .OrderBy(u => u.Torre!.Nombre).ThenBy(u => u.Numero)
+            .OrderBy(u => u.Numero)
             .Select(u => new UnidadDto(
                 u.Id, u.Numero, u.Tipo,
-                u.TorreId, u.Torre != null ? u.Torre.Nombre : null, u.Piso,
+                u.Piso,
                 u.CoeficientePropiedad, u.AreaM2,
                 u.Habitaciones, u.Banos, u.Parqueaderos,
                 u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
@@ -186,6 +151,34 @@ public partial class MiCopropiedadService
     private static bool EsUniqueViolation(DbUpdateException ex)
         => ex.InnerException is PostgresException { SqlState: "23505" };
 
+    // Normaliza un codigo de unidad (Numero) para comparar duplicados: trim -> minusculas (invariant)
+    // -> sin diacriticos (NFD + descarte de marcas sin espaciado). Asi "A1-102" y "a1-102" o "Á" y "a"
+    // colisionan. Es la clave de comparacion, no el valor que se guarda (el Numero conserva el original).
+    private static string NormalizarCodigo(string? s)
+    {
+        var t = (s ?? "").Trim().ToLowerInvariant();
+        if (t.Length == 0) return t;
+        var nfd = t.Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(nfd.Length);
+        foreach (var ch in nfd)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
+    }
+
+    // Verifica que el codigo (Numero) no exista ya en el tenant, comparando sin acentos ni mayusculas.
+    // 'excluirId' deja fuera la propia unidad en el update. Lanza InvalidOperationException si choca.
+    private async Task ValidarCodigoUnicoAsync(string numero, Guid? excluirId, CancellationToken ct)
+    {
+        var clave = NormalizarCodigo(numero);
+        var existentes = await _db.UnidadesPrivadas.AsNoTracking()
+            .Where(u => excluirId == null || u.Id != excluirId)
+            .Select(u => new { u.Id, u.Numero })
+            .ToListAsync(ct);
+        if (existentes.Any(u => NormalizarCodigo(u.Numero) == clave))
+            throw new InvalidOperationException($"Ya existe la unidad '{numero}' en esta copropiedad.");
+    }
+
     public async Task<UnidadDto> CrearUnidadAsync(CrearUnidadRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Numero))
@@ -193,12 +186,16 @@ public partial class MiCopropiedadService
         if (req.CoeficientePropiedad < 0 || req.CoeficientePropiedad > 100)
             throw new InvalidOperationException("Coeficiente debe estar entre 0 y 100.");
 
+        var numero = req.Numero.Trim();
+        // Rechazo de codigo duplicado (case- y acento-insensible). El indice unico (TenantId, Numero)
+        // queda como respaldo (atrapa el caso de dos altas concurrentes con el mismo codigo).
+        await ValidarCodigoUnicoAsync(numero, null, ct);
+
         var unidad = new UnidadPrivada
         {
-            Numero = req.Numero,
+            Numero = numero,
             Tipo = req.Tipo,
             TipoCustomId = req.TipoCustomId,
-            TorreId = req.TorreId,
             Piso = req.Piso,
             CoeficientePropiedad = req.CoeficientePropiedad,
             AreaM2 = req.AreaM2,
@@ -225,12 +222,9 @@ public partial class MiCopropiedadService
             // en vez de dejar la excepcion sin controlar (500 generico en prod, stack en Development).
             throw new InvalidOperationException($"Ya existe una unidad con el numero '{req.Numero}' en esta copropiedad.");
         }
-        var torreNombre = unidad.TorreId.HasValue
-            ? await _db.Torres.Where(t => t.Id == unidad.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
-            : null;
         await RegistrarBitacoraAsync("Unidad", $"Unidad '{unidad.Numero}' creada ({unidad.Tipo}, coef {unidad.CoeficientePropiedad}%).", ct, unidad.Id);
         return new UnidadDto(unidad.Id, unidad.Numero, unidad.Tipo,
-            unidad.TorreId, torreNombre, unidad.Piso,
+            unidad.Piso,
             unidad.CoeficientePropiedad, unidad.AreaM2,
             unidad.Habitaciones, unidad.Banos, unidad.Parqueaderos,
             unidad.Estado, unidad.Observaciones, unidad.MatriculaInmobiliaria, unidad.PagaAdministracion, unidad.CuotaMensual,
@@ -250,6 +244,12 @@ public partial class MiCopropiedadService
         var u = await _db.UnidadesPrivadas.FirstOrDefaultAsync(x => x.Id == unidadId, ct);
         if (u is null) return null;
 
+        var numeroTrim = req.Numero.Trim();
+        // Al renombrar el codigo (Numero), rechaza colision con otra unidad del tenant (case- y
+        // acento-insensible), excluyendose a si misma. El indice unico (TenantId, Numero) respalda.
+        if (NormalizarCodigo(u.Numero) != NormalizarCodigo(numeroTrim))
+            await ValidarCodigoUnicoAsync(numeroTrim, u.Id, ct);
+
         // Diff en lenguaje natural para la bitacora (RN-06): que cambio de esta unidad.
         var cambios = new List<string>();
         void Dif(string campo, string? antes, string? ahora)
@@ -257,14 +257,9 @@ public partial class MiCopropiedadService
             var a = antes ?? "-"; var b = ahora ?? "-";
             if (!string.Equals(a, b, StringComparison.Ordinal)) cambios.Add($"{campo}: {a} -> {b}");
         }
-        string? torreNombreDe(Guid? id) => id.HasValue
-            ? _db.Torres.Where(t => t.Id == id).Select(t => t.Nombre).FirstOrDefault()
-            : null;
 
-        var numeroTrim = req.Numero.Trim();
         Dif("Numero", u.Numero, numeroTrim);
         Dif("Tipo", u.Tipo.ToString(), req.Tipo.ToString());
-        if (u.TorreId != req.TorreId) Dif("Torre", torreNombreDe(u.TorreId), torreNombreDe(req.TorreId));
         Dif("Piso", u.Piso?.ToString(), req.Piso?.ToString());
         Dif("Coeficiente", u.CoeficientePropiedad.ToString("0.####"), req.CoeficientePropiedad.ToString("0.####"));
         Dif("Area", u.AreaM2?.ToString("0.##"), req.AreaM2?.ToString("0.##"));
@@ -284,7 +279,6 @@ public partial class MiCopropiedadService
         u.Numero = numeroTrim;
         u.Tipo = req.Tipo;
         u.TipoCustomId = req.TipoCustomId;
-        u.TorreId = req.TorreId;
         u.Piso = req.Piso;
         u.CoeficientePropiedad = req.CoeficientePropiedad;
         u.AreaM2 = req.AreaM2;
@@ -308,15 +302,11 @@ public partial class MiCopropiedadService
 
         await _db.SaveChangesAsync(ct);
 
-        var torreNombre = u.TorreId.HasValue
-            ? await _db.Torres.Where(t => t.Id == u.TorreId).Select(t => t.Nombre).FirstOrDefaultAsync(ct)
-            : null;
-
         if (cambios.Count > 0)
             await RegistrarBitacoraAsync("Unidad", $"Unidad '{u.Numero}': {string.Join("; ", cambios)}.", ct, u.Id);
 
         return new UnidadDto(u.Id, u.Numero, u.Tipo,
-            u.TorreId, torreNombre, u.Piso,
+            u.Piso,
             u.CoeficientePropiedad, u.AreaM2,
             u.Habitaciones, u.Banos, u.Parqueaderos,
             u.Estado, u.Observaciones, u.MatriculaInmobiliaria, u.PagaAdministracion, u.CuotaMensual,
@@ -412,8 +402,8 @@ public partial class MiCopropiedadService
         return rows
             .Select(v =>
             {
-                var (numero, codigo, torre, propietario) = datos.GetValueOrDefault(v.UnidadId);
-                return new VehiculoResumenDto(v.Id, v.UnidadId, numero, codigo, torre,
+                var (numero, codigo, propietario) = datos.GetValueOrDefault(v.UnidadId);
+                return new VehiculoResumenDto(v.Id, v.UnidadId, numero, codigo,
                     v.Placa, v.TipoVehiculo, propietario);
             })
             .OrderBy(v => v.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(v => v.Placa)
@@ -430,8 +420,8 @@ public partial class MiCopropiedadService
         return rows
             .Select(m =>
             {
-                var (numero, codigo, torre, propietario) = datos.GetValueOrDefault(m.UnidadId);
-                return new MascotaResumenDto(m.Id, m.UnidadId, numero, codigo, torre,
+                var (numero, codigo, propietario) = datos.GetValueOrDefault(m.UnidadId);
+                return new MascotaResumenDto(m.Id, m.UnidadId, numero, codigo,
                     m.Nombre, m.Tipo, m.Raza, propietario);
             })
             .OrderBy(m => m.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(m => m.Nombre)
@@ -439,11 +429,11 @@ public partial class MiCopropiedadService
     }
 
     /// <summary>
-    /// Numero, codigo TORRE-NUMERO, torre y primer propietario de cada unidad pedida, en UNA consulta.
-    /// Lo comparten las vistas agregadas para no repetir el join por fila (hay copropiedades de 500+
-    /// unidades). El propietario contempla dueno persona O empresa, igual que ListUnidadesAsync.
+    /// Numero (= codigo) y primer propietario de cada unidad pedida, en UNA consulta. Lo comparten las
+    /// vistas agregadas para no repetir el join por fila (hay copropiedades de 500+ unidades). El
+    /// propietario contempla dueno persona O empresa, igual que ListUnidadesAsync.
     /// </summary>
-    private async Task<Dictionary<Guid, (string Numero, string Codigo, string? Torre, string? Propietario)>>
+    private async Task<Dictionary<Guid, (string Numero, string Codigo, string? Propietario)>>
         DatosDeUnidadesAsync(IEnumerable<Guid> unidadIds, CancellationToken ct)
     {
         var ids = unidadIds.Distinct().ToList();
@@ -453,7 +443,6 @@ public partial class MiCopropiedadService
             {
                 u.Id,
                 u.Numero,
-                TorreNombre = u.Torre != null ? u.Torre.Nombre : null,
                 Propietario = (from up in _db.UnidadPersonas
                                where up.UnidadId == u.Id && up.Rol == RolUnidadPersona.Propietario
                                orderby up.EntidadTipo, up.Id
@@ -464,14 +453,10 @@ public partial class MiCopropiedadService
             })
             .ToListAsync(ct);
 
-        var res = new Dictionary<Guid, (string, string, string?, string?)>(filas.Count);
+        var res = new Dictionary<Guid, (string, string, string?)>(filas.Count);
         foreach (var u in filas)
-        {
-            // Mismo codigo TORRE-NUMERO que arma ListResidentesAsync: ultima palabra de la torre.
-            var torreShort = string.IsNullOrWhiteSpace(u.TorreNombre) ? "" : u.TorreNombre!.Split(' ').Last();
-            var codigo = torreShort.Length > 0 ? $"{torreShort}-{u.Numero}" : u.Numero;
-            res[u.Id] = (u.Numero, codigo, u.TorreNombre, u.Propietario);
-        }
+            // El codigo de la unidad ES su Numero (texto libre, ej. A1-102).
+            res[u.Id] = (u.Numero, u.Numero, u.Propietario);
         return res;
     }
 
@@ -483,9 +468,9 @@ public partial class MiCopropiedadService
         var (personas, empresas) = await ResolverEntidadesAsync(rows, ct);
 
         var unidadIds = rows.Select(r => r.UnidadId).Distinct().ToList();
-        var unidades = await _db.UnidadesPrivadas.AsNoTracking().Include(u => u.Torre)
+        var unidades = await _db.UnidadesPrivadas.AsNoTracking()
             .Where(u => unidadIds.Contains(u.Id))
-            .Select(u => new { u.Id, u.Numero, TorreNombre = u.Torre != null ? u.Torre.Nombre : null })
+            .Select(u => new { u.Id, u.Numero })
             .ToDictionaryAsync(u => u.Id, ct);
 
         var lista = new List<ResidenteResumenDto>(rows.Count);
@@ -493,9 +478,8 @@ public partial class MiCopropiedadService
         {
             unidades.TryGetValue(up.UnidadId, out var u);
             var numero = u?.Numero ?? "";
-            var torre = u?.TorreNombre;
-            var torreShort = string.IsNullOrWhiteSpace(torre) ? "" : torre!.Split(' ').Last();
-            var codigo = torreShort.Length > 0 ? $"{torreShort}-{numero}" : numero;
+            // El codigo de la unidad ES su Numero (texto libre).
+            var codigo = numero;
 
             string nombre, documento; string? email, tel; Guid? personaId = null, empresaId = null;
             if (up.EntidadTipo == EntidadDirectorio.Empresa && up.EmpresaId is Guid eid && empresas.TryGetValue(eid, out var e))
@@ -509,7 +493,7 @@ public partial class MiCopropiedadService
             else { nombre = "(desconocido)"; documento = ""; email = null; tel = null; }
 
             lista.Add(new ResidenteResumenDto(
-                up.Id, up.UnidadId, numero, codigo, torre,
+                up.Id, up.UnidadId, numero, codigo,
                 up.EntidadTipo, personaId, empresaId,
                 nombre, documento, email, tel,
                 up.Rol, up.Habita, up.Parentesco, up.Activo));

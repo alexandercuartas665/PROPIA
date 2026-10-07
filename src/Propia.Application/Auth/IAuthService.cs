@@ -10,8 +10,15 @@ public interface IAuthService
 {
     /// <summary>Login de copropiedad. `ip`/`userAgent` se guardan en el registro de ingresos (auditoria).</summary>
     Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct, string? ip = null, string? userAgent = null);
-    Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct);
+    Task<MeResponse?> GetMeAsync(Guid userId, Guid? activeTenantId, CancellationToken ct, Guid? activeRolId = null);
     Task<LoginResponse?> SwitchTenantAsync(Guid userId, Guid newTenantId, CancellationToken ct);
+
+    /// <summary>
+    /// 2.5 v2.0 multi-rol: fija el rol ACTIVO de la sesion. Reemite el JWT (mismo tenant) con el claim
+    /// rol_id tras validar que <paramref name="rolId"/> es uno de los roles del usuario en la copropiedad
+    /// activa. Corre en contexto autenticado con tenant (RLS); devuelve null si el rol no le pertenece.
+    /// </summary>
+    Task<LoginResponse?> SwitchRolAsync(Guid userId, Guid activeTenantId, Guid rolId, CancellationToken ct);
     /// <summary>
     /// Sliding refresh: recibe un JWT que puede estar recien expirado (dentro de RefreshSlidingHours)
     /// y emite uno nuevo con la misma identidad y tenant. Devuelve null si firma invalida o vencido fuera de ventana.

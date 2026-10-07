@@ -306,7 +306,7 @@ public class RolesService : IRolesService
         return true;
     }
 
-    public async Task<IReadOnlyList<PermisoMatrizDto>> GetPermisosEfectivosAsync(Guid personaId, CancellationToken ct)
+    public async Task<IReadOnlyList<PermisoMatrizDto>> GetPermisosEfectivosAsync(Guid personaId, CancellationToken ct, Guid? rolActivoId = null)
     {
         var tenantId = _tenantContext.CurrentTenantId;
         if (tenantId is null) return Array.Empty<PermisoMatrizDto>();
@@ -314,9 +314,12 @@ public class RolesService : IRolesService
         var ut = await _db.UsuariosTenant
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.Estado == EstadoUsuarioTenant.Activo, ct);
-        if (ut?.RolId is null) return Array.Empty<PermisoMatrizDto>();
+        if (ut is null) return Array.Empty<PermisoMatrizDto>();
 
-        var rol = await _db.RolesCopropiedad.AsNoTracking().FirstOrDefaultAsync(r => r.Id == ut.RolId, ct);
+        var rolId = await ResolverRolActivoIdAsync(ut, rolActivoId, ct);
+        if (rolId is null) return Array.Empty<PermisoMatrizDto>();
+
+        var rol = await _db.RolesCopropiedad.AsNoTracking().FirstOrDefaultAsync(r => r.Id == rolId, ct);
         if (rol is null) return Array.Empty<PermisoMatrizDto>();
 
         // Permisos EFECTIVOS = matriz efectiva (default global + override del tenant para roles
@@ -329,13 +332,35 @@ public class RolesService : IRolesService
             .ToList();
     }
 
-    public async Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct)
+    public async Task<string?> GetRolActorAsync(Guid personaId, CancellationToken ct, Guid? rolActivoId = null)
     {
         // El query filter / RLS limitan a la copropiedad activa.
         var ut = await _db.UsuariosTenant
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.PersonaId == personaId && u.Estado == EstadoUsuarioTenant.Activo, ct);
-        return ut?.Rol;
+        if (ut is null) return null;
+
+        var rolId = await ResolverRolActivoIdAsync(ut, rolActivoId, ct);
+        if (rolId is null) return ut.Rol;  // sin rol activo valido -> nombre del principal (compat)
+
+        return await _db.RolesCopropiedad.AsNoTracking()
+            .Where(r => r.Id == rolId).Select(r => r.Nombre).FirstOrDefaultAsync(ct) ?? ut.Rol;
+    }
+
+    /// <summary>
+    /// Resuelve el RolId con el que autorizar (2.5 v2.0 rol activo por sesion):
+    /// - Si <paramref name="rolActivoId"/> viene y pertenece al usuario en esta copropiedad (via
+    ///   usuario_tenant_roles, o es el rol principal) -> ese rol.
+    /// - Si viene pero NO le pertenece -> null (deniega; no se cae al principal para no escalar).
+    /// - Si no viene -> el rol principal del vinculo (compat tokens viejos / usuarios mono-rol).
+    /// </summary>
+    private async Task<Guid?> ResolverRolActivoIdAsync(UsuarioTenant ut, Guid? rolActivoId, CancellationToken ct)
+    {
+        if (rolActivoId is not Guid pedido) return ut.RolId;
+        if (ut.RolId == pedido) return pedido;
+        var pertenece = await _db.UsuarioTenantRoles.AsNoTracking()
+            .AnyAsync(utr => utr.UsuarioTenantId == ut.Id && utr.RolId == pedido, ct);
+        return pertenece ? pedido : (Guid?)null;
     }
 
     // Nombres canonicos del catalogo de roles base (sembrado por la migracion

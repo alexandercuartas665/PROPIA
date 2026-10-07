@@ -35,7 +35,7 @@
                     </span>
                     <div class="cpe-idwrap">
                         <input class="cpe-title" @bind="_edit.Codigo" @bind:event="oninput" placeholder="Ej. A1-202" />
-                        <div class="cpe-sub">Nueva unidad - la @(AgrupacionLabelSingular.ToLower()) sale del codigo y el @(PisoLabelSingular.ToLower()) se infiere del numero</div>
+                        <div class="cpe-sub">Nueva unidad - escribe su codigo (texto libre, ej. A1-202). Debe ser unico en la copropiedad.</div>
                     </div>
                     <div class="cpe-head-acts">
                         <button class="cpe-hact" type="button" @onclick="GuardarUnidad" disabled="@_busy" title="@(_busy ? "Creando..." : "Crear unidad")">
@@ -105,10 +105,10 @@
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M10 21v-4h4v4"/></svg>
                     </span>
                     <div class="cpe-idwrap">
-                        @* El codigo (TORRE-NUMERO) de una unidad existente no se edita desde la ficha: se muestra como titulo. *@
+                        @* El codigo de la unidad (su Numero) no se edita desde la ficha: se muestra como titulo. *@
                         <input class="cpe-title" value="@IdUnidad" disabled title="@($"{LabelU(_selected)} {_selected.Numero}")" />
                         <div class="cpe-sub">
-                            @(_selected.TorreNombre ?? "Sin torre")@(_selected.Piso.HasValue ? $" - {PisoLabelSingular} {_selected.Piso}" : "") - @LabelU(_selected)@(_selected.AreaM2.HasValue ? $" - {_selected.AreaM2.Value:0.##} m2" : "")
+                            @(_selected.Piso.HasValue ? $"{PisoLabelSingular} {_selected.Piso} - " : "")@LabelU(_selected)@(_selected.AreaM2.HasValue ? $" - {_selected.AreaM2.Value:0.##} m2" : "")
                         </div>
                     </div>
                     <div class="cpe-head-acts">
@@ -308,13 +308,6 @@
                                     </select>
                                 </div>
                                 <div class="cpe-field">
-                                    <label class="cpe-flabel"><i class="fi fi-rr-building"></i> @AgrupacionLabelSingular</label>
-                                    <select class="cpe-fin" @bind="_anx.TorreId">
-                                        <option value="@Guid.Empty">- elegir -</option>
-                                        @foreach (var t in _torres) { <option value="@t.Id">@t.Nombre</option> }
-                                    </select>
-                                </div>
-                                <div class="cpe-field">
                                     <label class="cpe-flabel"><i class="fi fi-rr-layers"></i> @PisoLabelSingular</label>
                                     <input type="number" class="cpe-fin" @bind="_anx.Piso" />
                                 </div>
@@ -432,7 +425,7 @@
             </div>
             <div class="gum-cdel-title">Eliminar unidad</div>
             <div class="gum-cdel-sub">
-                Vas a eliminar <b>@LabelU(_selected) @_selected.Numero</b>@(string.IsNullOrWhiteSpace(_selected.TorreNombre) ? "" : $" ({_selected.TorreNombre})").
+                Vas a eliminar <b>@LabelU(_selected) @_selected.Numero</b>.
                 Esta accion es <b>permanente y no se puede deshacer</b>. Se perderan sus datos de ficha,
                 registros y documentos de esta unidad.
             </div>
@@ -501,12 +494,10 @@
     /// </summary>
     [Parameter] public bool OcultarArbol { get; set; }
 
-    private List<TorreDto> _torres = new();
     private List<UnidadDto> _unidades = new();
     private UnidadDto? _selected;
     private List<UnidadVinculoDto> _vinculos = new();
     private CuotaConsolidadaDto? _cuota;
-    private HashSet<Guid> _torresAbiertas = new();
     private bool _editMode;
     private bool _nuevaUnidad;   // ficha en modo alta (crear = editar, misma ficha)
     private EditUnidadForm _edit = new();
@@ -547,8 +538,8 @@
 
     // ===== Ficha por tabs =====
     private string _fichaTab = "detalle";
-    private string IdUnidad => _selected is null ? "" :
-        ((_selected.TorreNombre is { Length: > 0 } tn ? tn.Split(' ').Last() + "-" : "") + _selected.Numero);
+    // El codigo de la unidad ES su Numero (texto libre).
+    private string IdUnidad => _selected?.Numero ?? "";
 
     private List<BitacoraEntradaDto> _bitacora = new();
 
@@ -578,7 +569,6 @@
                 else { TipoCustomId = null; if (value?.StartsWith("e:") == true && Enum.TryParse<TipoUnidad>(value[2..], out var t)) Tipo = t; }
             }
         }
-        public Guid? TorreId { get; set; }
         public int? Piso { get; set; }
         public decimal CoeficientePropiedad { get; set; }
         public decimal? AreaM2 { get; set; }
@@ -599,44 +589,6 @@
     private string _confirmText = ""; // texto tecleado; debe coincidir con el numero de la unidad
 
     private string AgrupacionLabelPlural => AgrupacionLabelSingular + "s";
-
-    // Modes
-    private string? _mode;
-
-    // Manual
-    private Guid _manTorreId;
-    private int? _manPiso;
-    private string _manNumero = "";
-    private TipoUnidad _manTipo = TipoUnidad.Apartamento;
-    private bool _manNuevaTorre;              // modo "crear torre nueva" desde el mismo selector
-    private string _manNuevaTorreNombre = "";
-
-    // Binding del <select> de torre: ademas de las torres existentes soporta la opcion
-    // "+ Nueva torre..." (sentinel), que activa el input inline para crearla al agregar.
-    private string ManTorreSel
-    {
-        get => _manNuevaTorre ? "__nueva__" : (_manTorreId == Guid.Empty ? "" : _manTorreId.ToString());
-        set
-        {
-            if (value == "__nueva__") _manNuevaTorre = true;
-            else if (Guid.TryParse(value, out var g)) { _manNuevaTorre = false; _manTorreId = g; }
-            else { _manNuevaTorre = false; _manTorreId = Guid.Empty; }
-        }
-    }
-
-    // Generador
-    private int _genN = 2;
-    private List<string> _genNombres = new() { "Torre A", "Torre B" };
-    private int _genPisos = 5;
-    private int _genPorPiso = 4;
-    private int GenTotal => _genN * _genPisos * _genPorPiso;
-    private int _genToast;
-
-    // Import
-    private string _csv = "";
-    private int CsvCount => string.IsNullOrWhiteSpace(_csv) ? 0 : _csv.Split('\n').Count(l => !string.IsNullOrWhiteSpace(l));
-
-    private decimal CoefTotal => _unidades.Sum(u => u.CoeficientePropiedad);
 
     protected override async Task OnInitializedAsync()
     {
@@ -677,38 +629,13 @@
         try
         {
             var http = Auth();
-            _torres = await http.GetFromJsonAsync<List<TorreDto>>("/api/mi-copropiedad/torres") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave); } catch { _camposConfig = new(); }
             AplicarOrdenTiposCustom();   // mismo orden de tipos propios que en la tabla (config del campo 'tipo')
-            if (_torres.Count > 0 && _torresAbiertas.Count == 0)
-                _torresAbiertas.Add(_torres[0].Id);
-            if (_manTorreId == Guid.Empty && _torres.Count > 0)
-                _manTorreId = _torres[0].Id;
-            // Sin torres: el selector arranca en "+ Nueva torre..." para no dejar al usuario atascado.
-            if (_torres.Count == 0) _manNuevaTorre = true;
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
     }
-
-    private void SetMode(string? m) { _mode = (_mode == m) ? null : m; _genToast = 0; }
-    // Tope 26: los nombres de la secuencia van de la A a la Z.
-    private const int GenTopeAgrupaciones = 26;
-    private int GenMaxChip => Math.Max(6, _genN);
-
-    private void SetGenN(int n)
-    {
-        _genN = Math.Clamp(n, 1, GenTopeAgrupaciones);
-        while (_genNombres.Count < _genN) _genNombres.Add($"{AgrupacionLabelSingular} {(char)('A' + _genNombres.Count)}");
-        while (_genNombres.Count > _genN) _genNombres.RemoveAt(_genNombres.Count - 1);
-    }
-
-    private void ToggleTorre(Guid id)
-    {
-        if (!_torresAbiertas.Add(id)) _torresAbiertas.Remove(id);
-    }
-    private bool IsOpen(Guid id) => _torresAbiertas.Contains(id);
 
     private async Task SeleccionarUnidad(UnidadDto u)
     {
@@ -801,7 +728,6 @@
             Numero = _selected.Numero,
             Tipo = _selected.Tipo,
             TipoCustomId = _selected.TipoCustomId,
-            TorreId = _selected.TorreId,
             Piso = _selected.Piso,
             CoeficientePropiedad = _selected.CoeficientePropiedad,
             AreaM2 = _selected.AreaM2,
@@ -832,7 +758,7 @@
         if (string.IsNullOrWhiteSpace(_edit.Numero)) { ShowMsg("Número obligatorio.", true); return; }
         _busy = true;
         var req = new ActualizarUnidadRequest(
-            _edit.Numero.Trim(), _edit.Tipo, _edit.TorreId, _edit.Piso,
+            _edit.Numero.Trim(), _edit.Tipo, _edit.Piso,
             _edit.CoeficientePropiedad, _edit.AreaM2,
             _edit.Habitaciones, _edit.Banos, _edit.Parqueaderos,
             string.IsNullOrWhiteSpace(_edit.Estado) ? null : _edit.Estado,
@@ -860,50 +786,29 @@
         _busy = false;
     }
 
-    // Crea la unidad desde la ficha (modo alta). El codigo mascara TORRE-APARTAMENTO (A1-202)
-    // resuelve/crea la torre y el piso se infiere del numero; luego se crea con los campos de la ficha.
+    // Crea la unidad desde la ficha (modo alta). El codigo de la unidad ES su Numero (texto libre):
+    // se guarda tal cual lo escribio el usuario, con la validacion de duplicados en el backend.
     private async Task CrearUnidadDesdeFichaAsync()
     {
-        var raw = (_edit.Codigo ?? "").Trim();
-        if (raw.Length == 0) { ShowMsg($"Escribe el codigo {AgrupacionLabelSingular.ToUpperInvariant()}-APARTAMENTO (ej. A1-202).", true); return; }
-
-        var parts = raw.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 2) { ShowMsg("Usa el formato TORRE-APARTAMENTO, por ejemplo A1-202.", true); return; }
-        var torreToken = parts[0];
-        var numero = string.Join("-", parts.Skip(1)).Trim();
-        if (numero.Length == 0) { ShowMsg("Falta el número del apartamento. Ejemplo: A1-202.", true); return; }
-        // El piso se infiere del numero de apto (202 -> 2, 1502 -> 15) cuando es numerico de 3+ digitos.
-        int? piso = (numero.Length >= 3 && numero.All(char.IsDigit) && int.TryParse(numero[..^2], out var f) && f > 0) ? f : (int?)null;
+        var numero = (_edit.Codigo ?? "").Trim();
+        if (numero.Length == 0) { ShowMsg("Escribe el codigo de la unidad (ej. A1-202).", true); return; }
 
         _busy = true;
-        // Resolver torre por nombre exacto, por "Torre X" o por la ultima palabra del nombre; si no existe, crearla.
-        var existe = _torres.FirstOrDefault(t =>
-            t.Nombre.Equals(torreToken, StringComparison.OrdinalIgnoreCase)
-            || t.Nombre.Equals($"{AgrupacionLabelSingular} {torreToken}", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), torreToken, StringComparison.OrdinalIgnoreCase));
-        Guid torreId;
-        if (existe is not null) { torreId = existe.Id; }
-        else
-        {
-            var nombreTorre = torreToken.Length <= 4 ? $"{AgrupacionLabelSingular} {torreToken}" : torreToken;
-            var respTorre = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombreTorre, null, null));
-            if (!respTorre.IsSuccessStatusCode) { ShowMsg($"Error al crear {AgrupacionLabelSingular.ToLower()}: " + await respTorre.Content.ReadAsStringAsync(), true); _busy = false; return; }
-            var nuevaTorre = await respTorre.Content.ReadFromJsonAsync<TorreDto>();
-            if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return; }
-            _torres.Add(nuevaTorre);
-            torreId = nuevaTorre.Id;
-            _huboCambios = true;
-        }
-
         var req = new CrearUnidadRequest(
-            numero, _edit.Tipo, torreId, piso,
+            numero, _edit.Tipo, _edit.Piso,
             _edit.CoeficientePropiedad, _edit.AreaM2,
             null, null, null,
             string.IsNullOrWhiteSpace(_edit.Estado) ? null : _edit.Estado, null,
             string.IsNullOrWhiteSpace(_edit.MatriculaInmobiliaria) ? null : _edit.MatriculaInmobiliaria,
             TipoCustomId: _edit.TipoCustomId);
         var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-        if (!resp.IsSuccessStatusCode) { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); _busy = false; return; }
+        if (!resp.IsSuccessStatusCode)
+        {
+            string msg;
+            try { var e = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); msg = e != null && e.TryGetValue("error", out var m) ? m : "No se pudo crear."; }
+            catch { msg = "No se pudo crear."; }
+            ShowMsg(msg, true); _busy = false; return;
+        }
         var creada = await resp.Content.ReadFromJsonAsync<UnidadDto>();
         _huboCambios = true;
         await CargarAsync();
@@ -913,206 +818,6 @@
             await SeleccionarUnidad(creada);   // pasa a la ficha completa de la unidad creada
             ShowMsg($"Unidad {creada.Numero} creada.", false);
         }
-    }
-
-    // Alta por codigo unico TORRE-PISO-UNIDAD (ej. A-3-101). Si la torre no existe, se crea.
-    private string _manCodigo = "";
-
-    private async Task AgregarUnidadPorCodigoAsync()
-    {
-        var raw = (_manCodigo ?? "").Trim();
-        if (raw.Length == 0) return;
-
-        var parts = raw.Split(new[] { '-', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 2)
-        {
-            ShowMsg("Usa el formato TORRE-APARTAMENTO, por ejemplo A1-202.", true);
-            return;
-        }
-        var torreToken = parts[0];
-        var numero = string.Join("-", parts.Skip(1)).Trim();
-        if (numero.Length == 0) { ShowMsg("Falta el número del apartamento. Ejemplo: A1-202.", true); return; }
-        // El piso se infiere del numero de apto (202 -> 2, 1502 -> 15) cuando es numerico de 3+ digitos.
-        int? piso = (numero.Length >= 3 && numero.All(char.IsDigit) && int.TryParse(numero[..^2], out var f) && f > 0) ? f : (int?)null;
-
-        // Resolver torre por nombre exacto, por "Torre X" o por la ultima palabra del nombre.
-        var existe = _torres.FirstOrDefault(t =>
-            t.Nombre.Equals(torreToken, StringComparison.OrdinalIgnoreCase)
-            || t.Nombre.Equals($"{AgrupacionLabelSingular} {torreToken}", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(t.Nombre.Split(' ').LastOrDefault(), torreToken, StringComparison.OrdinalIgnoreCase));
-        if (existe is not null)
-        {
-            _manNuevaTorre = false;
-            _manTorreId = existe.Id;
-        }
-        else
-        {
-            _manNuevaTorre = true;
-            _manNuevaTorreNombre = torreToken.Length <= 4 ? $"{AgrupacionLabelSingular} {torreToken}" : torreToken;
-        }
-        _manPiso = piso;
-        _manNumero = numero;
-
-        if (await AgregarUnidadManualCore()) _manCodigo = "";
-    }
-
-    private async Task<bool> AgregarUnidadManualCore()
-    {
-        if (string.IsNullOrWhiteSpace(_manNumero)) return false;
-
-        // Si el usuario eligio "+ Nueva torre...", la creamos primero y usamos su Id.
-        if (_manNuevaTorre)
-        {
-            var nombre = _manNuevaTorreNombre.Trim();
-            if (string.IsNullOrWhiteSpace(nombre))
-            {
-                ShowMsg($"Escribe el nombre de la nueva {AgrupacionLabelSingular.ToLower()}.", true);
-                return false;
-            }
-            _busy = true;
-            var existe = _torres.FirstOrDefault(t => t.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
-            if (existe is not null)
-            {
-                _manTorreId = existe.Id;
-            }
-            else
-            {
-                var respTorre = await Auth().PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, null, null));
-                if (!respTorre.IsSuccessStatusCode)
-                {
-                    ShowMsg($"Error al crear {AgrupacionLabelSingular.ToLower()}: " + await respTorre.Content.ReadAsStringAsync(), true);
-                    _busy = false;
-                    return false;
-                }
-                var nuevaTorre = await respTorre.Content.ReadFromJsonAsync<TorreDto>();
-                if (nuevaTorre is null) { ShowMsg($"Respuesta inesperada al crear {AgrupacionLabelSingular.ToLower()}.", true); _busy = false; return false; }
-                _torres.Add(nuevaTorre);
-                _manTorreId = nuevaTorre.Id;
-                _huboCambios = true;
-            }
-            _manNuevaTorre = false;
-            _manNuevaTorreNombre = "";
-            _busy = false;
-        }
-
-        if (_manTorreId == Guid.Empty) { ShowMsg($"Selecciona {AgrupacionLabelSingular.ToLower()}.", true); return false; }
-        _busy = true;
-        var req = new CrearUnidadRequest(_manNumero.Trim(), _manTipo, _manTorreId, _manPiso, 0m, null, null, null, null, null, null);
-        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-        var ok = resp.IsSuccessStatusCode;
-        if (ok)
-        {
-            _manNumero = "";
-            _huboCambios = true;
-            await CargarAsync();
-            ShowMsg("Unidad agregada", false);
-        }
-        else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
-        _busy = false;
-        return ok;
-    }
-
-    private async Task EjecutarGenerador()
-    {
-        _busy = true;
-        var http = Auth();
-        // 1) crear torres
-        var creadas = new List<TorreDto>();
-        foreach (var nombre in _genNombres.Where(n => !string.IsNullOrWhiteSpace(n)))
-        {
-            var exist = _torres.FirstOrDefault(t => t.Nombre.Equals(nombre, StringComparison.OrdinalIgnoreCase));
-            if (exist is not null) { creadas.Add(exist); continue; }
-            var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/torres", new CrearTorreRequest(nombre, _genPisos, null));
-            if (resp.IsSuccessStatusCode)
-            {
-                var nueva = await resp.Content.ReadFromJsonAsync<TorreDto>();
-                if (nueva is not null) creadas.Add(nueva);
-            }
-        }
-        // 2) crear unidades por torre
-        int totalCreadas = 0;
-        foreach (var t in creadas)
-        {
-            for (int piso = 1; piso <= _genPisos; piso++)
-            {
-                for (int u = 1; u <= _genPorPiso; u++)
-                {
-                    var num = $"{piso}{u:00}";
-                    if (_unidades.Any(x => x.TorreId == t.Id && x.Numero == num)) continue;
-                    var req = new CrearUnidadRequest(num, TipoUnidad.Apartamento, t.Id, piso, 0m, null, null, null, null, null, null);
-                    var resp = await http.PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-                    if (resp.IsSuccessStatusCode) totalCreadas++;
-                }
-            }
-        }
-        _genToast = totalCreadas;
-        _huboCambios = true;
-        await CargarAsync();
-        SetMode(null);
-        _busy = false;
-    }
-
-    private bool _impBusy;
-    private ImportarDistribucionResultado? _impResult;
-
-    private async Task DescargarPlantilla()
-    {
-        _impBusy = true;
-        try
-        {
-            var bytes = await Auth().GetByteArrayAsync("/api/mi-copropiedad/distribucion/plantilla");
-            var b64 = Convert.ToBase64String(bytes);
-            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-distribucion-propia.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b64);
-        }
-        catch (Exception ex) { ShowMsg("No se pudo descargar la plantilla: " + ex.Message, true); }
-        finally { _impBusy = false; }
-    }
-
-    private async Task OnArchivoImport(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
-    {
-        var file = e.File;
-        if (file is null) return;
-        _impBusy = true; _impResult = null; StateHasChanged();
-        try
-        {
-            using var content = new MultipartFormDataContent();
-            content.Add(new StreamContent(file.OpenReadStream(10 * 1024 * 1024)), "file", file.Name);
-            var resp = await Auth().PostAsync("/api/mi-copropiedad/distribucion/importar", content);
-            if (resp.IsSuccessStatusCode)
-            {
-                _impResult = await resp.Content.ReadFromJsonAsync<ImportarDistribucionResultado>();
-                _huboCambios = true;
-                await CargarAsync();
-                ShowMsg($"Importacion completa: {_impResult?.UnidadesCreadas} unidades, {_impResult?.TorresCreadas} torres, {_impResult?.PersonasVinculadas} personas, {_impResult?.VinculosCreados} inmuebles vinculados.", false);
-            }
-            else
-            {
-                ShowMsg("Error al importar: " + await resp.Content.ReadAsStringAsync(), true);
-            }
-        }
-        catch (Exception ex) { ShowMsg("Error al importar: " + ex.Message, true); }
-        finally { _impBusy = false; StateHasChanged(); }
-    }
-
-    private async Task ImportarCsv()
-    {
-        if (CsvCount == 0) return;
-        if (_torres.Count == 0) { ShowMsg($"Crea un {AgrupacionLabelSingular.ToLower()} primero.", true); return; }
-        var torre = _torres[0];
-        var lineas = _csv.Split('\n').Select(l => l.Trim()).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
-        int ok = 0;
-        foreach (var num in lineas)
-        {
-            if (_unidades.Any(u => u.TorreId == torre.Id && u.Numero == num)) continue;
-            var req = new CrearUnidadRequest(num, TipoUnidad.Apartamento, torre.Id, null, 0m, null, null, null, null, null, null);
-            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
-            if (resp.IsSuccessStatusCode) ok++;
-        }
-        _csv = "";
-        _huboCambios = true;
-        await CargarAsync();
-        ShowMsg($"{ok} unidades importadas a {torre.Nombre}", false);
     }
 
     // Unidades que pueden vincularse como anexo de la actual: otra unidad, que no sea ya anexo de nadie
@@ -1167,7 +872,6 @@
     private string AnexSubtitulo(UnidadVinculoDto v, UnidadDto? u)
     {
         var parts = new List<string> { TipoLabel(v.AsociadaTipo) };
-        if (!string.IsNullOrWhiteSpace(u?.TorreNombre)) parts.Add(u!.TorreNombre!);
         if (u?.Piso is int p) parts.Add($"{PisoLabelSingular.ToLower()} {p}");
         if (u?.AreaM2 is decimal a) parts.Add($"{a:0.##} m2");
         if (u is not null) parts.Add($"coef {u.CoeficientePropiedad:0.####}");
@@ -1189,7 +893,7 @@
     private void AbrirAltaAnexa()
     {
         _anxEditId = null;
-        _anx = new EditUnidadForm { Tipo = TipoUnidad.Parqueadero, TipoKey = "e:Parqueadero", TorreId = _selected?.TorreId };
+        _anx = new EditUnidadForm { Tipo = TipoUnidad.Parqueadero, TipoKey = "e:Parqueadero" };
         _anxFormOpen = true; _anxMenu = null; _anxFocusPending = true;
     }
 
@@ -1203,7 +907,6 @@
             Tipo = u?.Tipo ?? v.AsociadaTipo,
             TipoCustomId = u?.TipoCustomId,
             TipoKey = u?.TipoCustomId is Guid cg ? $"c:{cg}" : $"e:{(u?.Tipo ?? v.AsociadaTipo)}",
-            TorreId = u?.TorreId,
             Piso = u?.Piso,
             AreaM2 = u?.AreaM2,
             CoeficientePropiedad = u?.CoeficientePropiedad ?? 0m,
@@ -1232,11 +935,10 @@
         {
             var tipo = _anx.Tipo;
             var custom = _anx.TipoCustomId;
-            Guid? torreId = (_anx.TorreId is Guid g && g != Guid.Empty) ? g : null;
             if (_anxEditId is Guid editId)
             {
                 var req = new ActualizarUnidadRequest(
-                    _anx.Numero.Trim(), tipo, torreId, _anx.Piso,
+                    _anx.Numero.Trim(), tipo, _anx.Piso,
                     _anx.CoeficientePropiedad, _anx.AreaM2,
                     null, null, null, null, null, null, true, null, null, custom);
                 var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{editId}", req);
@@ -1248,7 +950,7 @@
             else
             {
                 var req = new CrearUnidadRequest(
-                    _anx.Numero.Trim(), tipo, torreId, _anx.Piso,
+                    _anx.Numero.Trim(), tipo, _anx.Piso,
                     _anx.CoeficientePropiedad, _anx.AreaM2,
                     null, null, null, null, null, null, TipoCustomId: custom);
                 var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/unidades", req);
@@ -1495,33 +1197,6 @@
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
         finally { _busy = false; }
-    }
-
-    // Elimina una torre/bloque. El backend bloquea si aun tiene unidades (guarda) y devuelve el motivo.
-    private async Task EliminarTorre(TorreDto t)
-    {
-        var ok = await Modals.ConfirmAsync($"Eliminar {AgrupacionLabelSingular.ToLower()} \"{t.Nombre}\"?", "Eliminar");
-        if (!ok) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/torres/{t.Id}");
-            if (resp.IsSuccessStatusCode)
-            {
-                _huboCambios = true;
-                ShowMsg($"{AgrupacionLabelSingular} eliminada.", false);
-                await CargarAsync();
-            }
-            else
-            {
-                string msg;
-                try { var e = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); msg = e != null && e.TryGetValue("error", out var m) ? m : "No se pudo eliminar."; }
-                catch { msg = "No se pudo eliminar."; }
-                ShowMsg(msg, true);
-            }
-        }
-        catch (Exception ex) { ShowMsg(ex.Message, true); }
-        _busy = false;
     }
 
     private void ShowMsg(string text, bool isError) { _msg = text; _msgError = isError; }

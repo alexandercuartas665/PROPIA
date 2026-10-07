@@ -80,25 +80,8 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
-    // ---------- Seccion 2: Distribucion - Torres ----------
-    [HttpGet("torres")] public async Task<IActionResult> ListTorres(CancellationToken ct) => Ok(await _svc.ListTorresAsync(ct));
-    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
-    [HttpPost("torres")]
-    public async Task<IActionResult> CrearTorre([FromBody] CrearTorreRequest req, CancellationToken ct)
-    {
-        try { return Created("", await _svc.CrearTorreAsync(req, ct)); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
-    }
-    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
-    [HttpDelete("torres/{id:guid}")]
-    public async Task<IActionResult> EliminarTorre(Guid id, CancellationToken ct)
-    {
-        try { return await _svc.EliminarTorreAsync(id, ct) ? NoContent() : NotFound(); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
-    }
-
     // ---------- Seccion 2: Distribucion - Carga masiva por plantilla Excel ----------
-    /// <summary>Descarga la plantilla .xlsx (Instrucciones + Unidades + Torres + Catalogos) con un ejemplo cargable.</summary>
+    /// <summary>Descarga la plantilla .xlsx (Instrucciones + Unidades + Catalogos) con un ejemplo cargable.</summary>
     [HttpGet("distribucion/plantilla")]
     public IActionResult DescargarPlantillaDistribucion()
     {
@@ -139,7 +122,7 @@ public class MiCopropiedadController : ControllerBase
         catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
-    /// <summary>Procesa la plantilla subida: crea torres y unidades del tenant. Devuelve el resumen + errores por fila.</summary>
+    /// <summary>Procesa la plantilla subida: crea las unidades del tenant. Devuelve el resumen + errores por fila.</summary>
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("distribucion/importar")]
     [RequestSizeLimit(10 * 1024 * 1024)]

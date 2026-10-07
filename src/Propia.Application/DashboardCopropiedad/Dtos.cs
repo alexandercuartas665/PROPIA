@@ -46,7 +46,6 @@ public record DashboardResumenDto(
     IReadOnlyList<TareaResumenDto> TareasUrgentes,
     // Resumen copropiedad
     int TotalUnidades,
-    int TorresTotal,
     int ZonasComunesTotal,
     // Feed
     IReadOnlyList<ActividadFeedDto> Feed,

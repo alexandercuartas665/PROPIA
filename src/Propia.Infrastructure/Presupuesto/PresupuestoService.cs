@@ -315,7 +315,6 @@ public class PresupuestoService : IPresupuestoService
 
         var unidades = await _db.UnidadesPrivadas
             .AsNoTracking()
-            .Include(u => u.Torre)
             .ToListAsync(ct);
         if (unidades.Count == 0)
             throw new InvalidOperationException("No hay unidades configuradas. Crea unidades en Mi Copropiedad antes de liquidar.");
@@ -418,13 +417,13 @@ public class PresupuestoService : IPresupuestoService
     {
         var lu = await _db.LiquidacionUnidades
             .AsNoTracking()
-            .Include(x => x.UnidadPrivada).ThenInclude(u => u!.Torre)
+            .Include(x => x.UnidadPrivada)
             .Include(x => x.Liquidacion)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (lu is null) return null;
         var desglose = JsonSerializer.Deserialize<List<RenglonDesgloseDto>>(lu.Desglose) ?? new();
         return new LiquidacionUnidadDto(lu.Id, lu.LiquidacionId, lu.Liquidacion!.Periodo,
-            lu.UnidadPrivadaId, lu.UnidadPrivada!.Numero, lu.UnidadPrivada.Torre?.Nombre,
+            lu.UnidadPrivadaId, lu.UnidadPrivada!.Numero,
             lu.Monto, lu.EstadoPago, desglose);
     }
 
@@ -457,14 +456,14 @@ public class PresupuestoService : IPresupuestoService
         var q = _db.LiquidacionUnidades
             .AsNoTracking()
             .Include(lu => lu.Liquidacion)
-            .Include(lu => lu.UnidadPrivada).ThenInclude(u => u!.Torre)
+            .Include(lu => lu.UnidadPrivada)
             .Where(lu => lu.Liquidacion!.Periodo == primerDia);
         if (estado.HasValue) q = q.Where(lu => lu.EstadoPago == estado.Value);
-        var lista = await q.OrderBy(lu => lu.UnidadPrivada!.Torre!.Nombre).ThenBy(lu => lu.UnidadPrivada!.Numero).ToListAsync(ct);
+        var lista = await q.OrderBy(lu => lu.UnidadPrivada!.Numero).ToListAsync(ct);
 
         return lista.Select(lu => new UnidadRecaudoDto(
             lu.UnidadPrivadaId, lu.UnidadPrivada!.Numero,
-            lu.UnidadPrivada.Torre?.Nombre, null,  // PropietarioNombre se llena cuando exista 2.4 vinculo
+            null,  // PropietarioNombre se llena cuando exista 2.4 vinculo
             lu.Monto, lu.EstadoPago, lu.Id)).ToList();
     }
 
@@ -581,7 +580,7 @@ public class PresupuestoService : IPresupuestoService
 
     public async Task<MiCuotaDto?> GetMiCuotaAsync(Guid unidadId, DateOnly? periodo, CancellationToken ct)
     {
-        var unidad = await _db.UnidadesPrivadas.AsNoTracking().Include(u => u.Torre).FirstOrDefaultAsync(u => u.Id == unidadId, ct);
+        var unidad = await _db.UnidadesPrivadas.AsNoTracking().FirstOrDefaultAsync(u => u.Id == unidadId, ct);
         if (unidad is null) return null;
 
         var p = periodo.HasValue ? new DateOnly(periodo.Value.Year, periodo.Value.Month, 1) : default;
@@ -610,7 +609,7 @@ public class PresupuestoService : IPresupuestoService
 
         return new MiCuotaDto(
             lu?.Id, lu?.Liquidacion?.Periodo,
-            unidad.Id, unidad.Numero, unidad.Torre?.Nombre,
+            unidad.Id, unidad.Numero,
             lu?.Monto ?? 0m, lu?.EstadoPago,
             lu?.Liquidacion?.Periodo.AddMonths(1),  // Vence ultimo dia del mes liquidado, aprox
             desglose, extrasDto);

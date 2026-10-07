@@ -1,5 +1,6 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Auth
+@using System.Net.Http.Json
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -61,6 +62,34 @@
                         <span>Mi perfil</span>
                     </a>
 
+                    @* Cambiar rol activo (2.5 v2.0): solo si el usuario tiene mas de un rol en la copropiedad activa. *@
+                    @if ((_me.AvailableRoles?.Count ?? 0) > 1)
+                    {
+                        <button class="um-item" type="button" @onclick="ToggleRolPicker" title="Cambiar el rol con el que operas esta sesion">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+                            <span>Cambiar rol</span>
+                            <span class="um-thememode">@(RolActivo ?? "Elegir")</span>
+                        </button>
+                        @if (_rolPickerOpen)
+                        {
+                            <div class="um-rolist">
+                                @foreach (var r in _me.AvailableRoles!)
+                                {
+                                    var esActivo = r.RolId == _me.ActiveRolId;
+                                    <button class="um-rolopt @(esActivo ? "on" : "")" type="button"
+                                            @onclick="() => CambiarRolAsync(r.RolId)" disabled="@(_busyRol || esActivo)">
+                                        <span class="um-rolopt-dot"></span>
+                                        <span class="um-rolopt-nom">@r.Nombre</span>
+                                        @if (esActivo)
+                                        {
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+
                     @* Tema: cicla Automatico -> Claro -> Oscuro *@
                     <button class="um-item" type="button" @onclick="CicloTema" title="Cambiar tema (Automático / Claro / Oscuro)">
                         @switch (_temaPref)
@@ -119,7 +148,39 @@
     }
     private string NombreCompleto => $"{_me?.PersonaNombres} {_me?.PersonaApellidos}".Trim() is { Length: > 0 } s ? s : (_me?.Email ?? "Usuario");
     private string NombreCorto => _me?.PersonaNombres?.Trim() is { Length: > 0 } n ? n : (_me?.Email ?? "Cuenta");
-    private string? RolActivo => _me?.AvailableTenants.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId)?.Rol;
+
+    // Rol ACTIVO por sesion (2.5 v2.0): nombre del rol elegido (claim rol_id) si existe; si no, el rol
+    // principal de la copropiedad activa (compat mono-rol / tokens viejos).
+    private string? RolActivo
+    {
+        get
+        {
+            var activo = _me?.AvailableRoles?.FirstOrDefault(r => r.RolId == _me.ActiveRolId)?.Nombre;
+            if (!string.IsNullOrEmpty(activo)) return activo;
+            return _me?.AvailableTenants.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId)?.Rol;
+        }
+    }
+
+    private bool _rolPickerOpen;
+    private bool _busyRol;
+    private void ToggleRolPicker() => _rolPickerOpen = !_rolPickerOpen;
+
+    private async Task CambiarRolAsync(Guid rolId)
+    {
+        _busyRol = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-rol", new { rolId });
+            if (!resp.IsSuccessStatusCode) return;
+            var dto = await resp.Content.ReadFromJsonAsync<LoginResponse>();
+            if (dto is null) return;
+            var activa = _me?.AvailableTenants.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId);
+            await Js.InvokeVoidAsync("propiaAuth.save", dto.AccessToken, _me?.ActiveTenantId?.ToString(), activa?.Nombre);
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        }
+        catch { /* error de red: el menu queda abierto para reintentar */ }
+        finally { _busyRol = false; }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -237,6 +298,21 @@
     .um-item--danger:hover svg { color: #dc3545; }
 
     .um-thememode { margin-left: auto; flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--propia-brand-text-on-soft); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 999px; padding: 2px 9px; }
+
+    /* Lista de roles (Cambiar rol): sangrada bajo el item, resalta el rol activo. */
+    .um-rolist { display: flex; flex-direction: column; gap: 2px; padding: 2px 6px 4px 34px; }
+    .um-rolopt {
+        display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+        padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
+        color: var(--bs-heading-color); font-size: .82rem; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .um-rolopt:hover:not(:disabled) { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .um-rolopt:disabled { cursor: default; }
+    .um-rolopt.on { color: var(--propia-brand); font-weight: 800; }
+    .um-rolopt-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--propia-brand); opacity: .55; }
+    .um-rolopt.on .um-rolopt-dot { opacity: 1; }
+    .um-rolopt-nom { flex: 1; min-width: 0; }
+    .um-rolopt svg { color: var(--propia-brand); flex: 0 0 auto; }
     .um-switch { margin-left: auto; width: 34px; height: 19px; border-radius: 11px; background: var(--bs-border-color); position: relative; transition: background .15s; flex: 0 0 auto; }
     .um-switch.on { background: var(--propia-primary, var(--propia-brand)); }
     .um-switch-knob { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--propia-bg-card); transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }

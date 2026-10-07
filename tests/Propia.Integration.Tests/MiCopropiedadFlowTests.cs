@@ -60,37 +60,16 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
-    public async Task Crear_torre_asigna_tenant_id_y_aparece_en_lista()
-    {
-        var tenantId = await SeedTenantAsync("CP Torres");
-        var (svc, _, _) = BuildService(tenantId);
-
-        var torre = await svc.CrearTorreAsync(new CrearTorreRequest("Torre A", 12, null), CancellationToken.None);
-        Assert.Equal("Torre A", torre.Nombre);
-        Assert.Equal(12, torre.CantidadPisos);
-
-        var lista = await svc.ListTorresAsync(CancellationToken.None);
-        Assert.Single(lista);
-        Assert.Equal("Torre A", lista[0].Nombre);
-
-        // Verificacion directa en BD: la fila lleva tenant_id correcto
-        var tenantIdEnBd = await GetTorreTenantIdAsync(torre.Id);
-        Assert.Equal(tenantId, tenantIdEnBd);
-
-        await CleanupTenantAsync(tenantId);
-    }
-
-    [Fact]
     public async Task Crear_unidad_calcula_suma_coeficientes_en_resumen()
     {
         var tenantId = await SeedTenantAsync("CP Unidades");
         var (svc, _, _) = BuildService(tenantId);
 
-        var torre = await svc.CrearTorreAsync(new CrearTorreRequest("Torre B", 5, null), CancellationToken.None);
-        await svc.CrearUnidadAsync(new CrearUnidadRequest("101", TipoUnidad.Apartamento, torre.Id, 1, 25.0m, 60m, 2, 1, 1, null, null), CancellationToken.None);
-        await svc.CrearUnidadAsync(new CrearUnidadRequest("102", TipoUnidad.Apartamento, torre.Id, 1, 25.0m, 60m, 2, 1, 1, null, null), CancellationToken.None);
-        await svc.CrearUnidadAsync(new CrearUnidadRequest("201", TipoUnidad.Apartamento, torre.Id, 2, 25.0m, 70m, 3, 2, 1, null, null), CancellationToken.None);
-        await svc.CrearUnidadAsync(new CrearUnidadRequest("202", TipoUnidad.Apartamento, torre.Id, 2, 25.0m, 70m, 3, 2, 1, null, null), CancellationToken.None);
+        // El codigo de la unidad ES su Numero (texto libre): ya no hay Torre.
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A-101", TipoUnidad.Apartamento, 1, 25.0m, 60m, 2, 1, 1, null, null), CancellationToken.None);
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A-102", TipoUnidad.Apartamento, 1, 25.0m, 60m, 2, 1, 1, null, null), CancellationToken.None);
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A-201", TipoUnidad.Apartamento, 2, 25.0m, 70m, 3, 2, 1, null, null), CancellationToken.None);
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A-202", TipoUnidad.Apartamento, 2, 25.0m, 70m, 3, 2, 1, null, null), CancellationToken.None);
 
         var resumen = await svc.GetResumenAsync(tenantId, CancellationToken.None);
         Assert.NotNull(resumen);
@@ -102,15 +81,20 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
-    public async Task Eliminar_torre_la_quita_del_listado()
+    public async Task Crear_unidad_rechaza_codigo_duplicado_insensible_a_acentos_y_mayusculas()
     {
-        var tenantId = await SeedTenantAsync("CP DelTorre");
+        var tenantId = await SeedTenantAsync("CP DupCodigo");
         var (svc, _, _) = BuildService(tenantId);
 
-        var torre = await svc.CrearTorreAsync(new CrearTorreRequest("Torre Bye", null, null), CancellationToken.None);
-        var ok = await svc.EliminarTorreAsync(torre.Id, CancellationToken.None);
-        Assert.True(ok);
-        Assert.Empty(await svc.ListTorresAsync(CancellationToken.None));
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A1-102", TipoUnidad.Apartamento, 1, 1m, null, null, null, null, null, null), CancellationToken.None);
+
+        // Mismo codigo con distinta caja/acento debe rechazarse (trim + lower + sin diacriticos).
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.CrearUnidadAsync(new CrearUnidadRequest(" a1-102 ", TipoUnidad.Local, null, 1m, null, null, null, null, null, null), CancellationToken.None));
+        Assert.Contains("Ya existe la unidad", ex.Message);
+
+        var lista = await svc.ListUnidadesAsync(CancellationToken.None);
+        Assert.Single(lista);
 
         await CleanupTenantAsync(tenantId);
     }
@@ -188,16 +172,17 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
-    public async Task Generador_inteligente_crea_torres_y_unidades_en_transaccion()
+    public async Task Generador_inteligente_crea_unidades_en_transaccion_con_prefijo()
     {
         var tenantId = await SeedTenantAsync("CP Generador");
         var (svc, _, _) = BuildService(tenantId);
 
+        // El "Nombre" de cada spec es ahora un PREFIJO del codigo (ya no crea Torres).
         var req = new GenerarUnidadesRequest(
             new[]
             {
-                new GeneradorTorreDto("Torre A", 3, 4),
-                new GeneradorTorreDto("Torre B", 2, 4)
+                new GeneradorTorreDto("A", 3, 4),
+                new GeneradorTorreDto("B", 2, 4)
             },
             PatronNumeracion.PisoNumero,
             TipoUnidad.Apartamento,
@@ -205,17 +190,16 @@ public class MiCopropiedadFlowTests
 
         var resp = await svc.GenerarUnidadesAsync(req, CancellationToken.None);
 
-        Assert.Equal(2, resp.TorresCreadas);
         Assert.Equal(20, resp.UnidadesCreadas);  // (3*4) + (2*4)
 
         var unidades = await svc.ListUnidadesAsync(CancellationToken.None);
         Assert.Equal(20, unidades.Count);
 
-        // Patron PisoNumero con multiples torres prefija con index: 1101..1304 (Torre A) y 2101..2204 (Torre B)
-        Assert.Contains(unidades, u => u.Numero == "1101");
-        Assert.Contains(unidades, u => u.Numero == "1304");
-        Assert.Contains(unidades, u => u.Numero == "2101");
-        Assert.Contains(unidades, u => u.Numero == "2204");
+        // PisoNumero: baseCode = piso + numero (101..104, 201..204, 301..304), con prefijo "A-"/"B-".
+        Assert.Contains(unidades, u => u.Numero == "A-101");
+        Assert.Contains(unidades, u => u.Numero == "A-304");
+        Assert.Contains(unidades, u => u.Numero == "B-101");
+        Assert.Contains(unidades, u => u.Numero == "B-204");
 
         var resumen = await svc.GetResumenAsync(tenantId, CancellationToken.None);
         Assert.Equal(100m, resumen!.CoeficientesTotalPct);
@@ -225,36 +209,36 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
-    public async Task Generador_con_nombre_torre_duplicado_aborta_todo()
+    public async Task Generador_con_codigo_colisionante_aborta_todo()
     {
         var tenantId = await SeedTenantAsync("CP Gen Dup");
         var (svc, _, _) = BuildService(tenantId);
 
-        await svc.CrearTorreAsync(new CrearTorreRequest("Torre A", 3, null), CancellationToken.None);
+        // Unidad pre-existente con el codigo que el generador produciria (prefijo "A" + 101).
+        await svc.CrearUnidadAsync(new CrearUnidadRequest("A-101", TipoUnidad.Apartamento, 1, 1m, null, null, null, null, null, null), CancellationToken.None);
 
         var req = new GenerarUnidadesRequest(
-            new[] { new GeneradorTorreDto("Torre A", 2, 2) },
-            PatronNumeracion.Corrido,
+            new[] { new GeneradorTorreDto("A", 1, 1) },
+            PatronNumeracion.PisoNumero,
             TipoUnidad.Apartamento,
             1m);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.GenerarUnidadesAsync(req, CancellationToken.None));
 
-        // La torre previa sigue ahi, pero no se crearon unidades de la torre duplicada
-        var torres = await svc.ListTorresAsync(CancellationToken.None);
-        Assert.Single(torres);
+        // La unidad previa sigue ahi, pero no se crearon las del generador (transaccion).
         var unidades = await svc.ListUnidadesAsync(CancellationToken.None);
-        Assert.Empty(unidades);
+        Assert.Single(unidades);
 
         await CleanupTenantAsync(tenantId);
     }
 
     [Fact]
-    public async Task Importar_csv_valido_crea_unidades_y_torre_nueva()
+    public async Task Importar_csv_valido_crea_unidades_con_prefijo_de_agrupacion()
     {
         var tenantId = await SeedTenantAsync("CP CSV");
         var (svc, _, _) = BuildService(tenantId);
 
+        // La columna 'agrupacion' ya no crea Torres: se hornea como prefijo del codigo.
         var csv = "identificador,tipo_unidad,agrupacion,piso,coeficiente,area_m2\n" +
                   "101,Apartamento,Torre Este,1,25.0,60\n" +
                   "102,Apartamento,Torre Este,1,25.0,60\n" +
@@ -267,9 +251,10 @@ public class MiCopropiedadFlowTests
         Assert.Equal(4, resp.UnidadesCreadas);
         Assert.Equal(100m, resp.SumaCoeficientes);
 
-        var torres = await svc.ListTorresAsync(CancellationToken.None);
-        Assert.Single(torres);
-        Assert.Equal("Torre Este", torres[0].Nombre);
+        var unidades = await svc.ListUnidadesAsync(CancellationToken.None);
+        Assert.Equal(4, unidades.Count);
+        Assert.Contains(unidades, u => u.Numero == "Torre Este-101");
+        Assert.Contains(unidades, u => u.Numero == "Torre Este-202");
 
         await CleanupTenantAsync(tenantId);
     }
@@ -374,8 +359,7 @@ public class MiCopropiedadFlowTests
         var (svc, _, _) = BuildService(tenantId);
 
         // Crea unidad con un coef. Esto siembra el tipo "Propiedad" via ListTiposCoeficienteAsync.
-        var torre = await svc.CrearTorreAsync(new CrearTorreRequest("Torre A", 5, null), CancellationToken.None);
-        var unidad = await svc.CrearUnidadAsync(new CrearUnidadRequest("101", TipoUnidad.Apartamento, torre.Id, 1, 50m, null, 2, 1, 1, null, null), CancellationToken.None);
+        var unidad = await svc.CrearUnidadAsync(new CrearUnidadRequest("A-101", TipoUnidad.Apartamento, 1, 50m, null, 2, 1, 1, null, null), CancellationToken.None);
 
         // Lista tipos: sembrara "Propiedad" como principal
         var tipos = await svc.ListTiposCoeficienteAsync(CancellationToken.None);
@@ -505,7 +489,7 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
-    public async Task Tenant_no_ve_torres_de_otro_tenant_via_RLS()
+    public async Task Tenant_no_ve_unidades_de_otro_tenant_via_RLS()
     {
         var tA = await SeedTenantAsync("CP A");
         var tB = await SeedTenantAsync("CP B");
@@ -513,17 +497,17 @@ public class MiCopropiedadFlowTests
         var (svcA, _, _) = BuildService(tA);
         var (svcB, _, _) = BuildService(tB);
 
-        // A crea una torre, B crea otra.
-        await svcA.CrearTorreAsync(new CrearTorreRequest("Torre Solo A", 3, null), CancellationToken.None);
-        await svcB.CrearTorreAsync(new CrearTorreRequest("Torre Solo B", 4, null), CancellationToken.None);
+        // A crea una unidad, B crea otra.
+        await svcA.CrearUnidadAsync(new CrearUnidadRequest("Solo-A", TipoUnidad.Apartamento, 1, 1m, null, null, null, null, null, null), CancellationToken.None);
+        await svcB.CrearUnidadAsync(new CrearUnidadRequest("Solo-B", TipoUnidad.Apartamento, 1, 1m, null, null, null, null, null, null), CancellationToken.None);
 
-        var listaA = await svcA.ListTorresAsync(CancellationToken.None);
-        var listaB = await svcB.ListTorresAsync(CancellationToken.None);
+        var listaA = await svcA.ListUnidadesAsync(CancellationToken.None);
+        var listaB = await svcB.ListUnidadesAsync(CancellationToken.None);
 
         Assert.Single(listaA);
         Assert.Single(listaB);
-        Assert.Equal("Torre Solo A", listaA[0].Nombre);
-        Assert.Equal("Torre Solo B", listaB[0].Nombre);
+        Assert.Equal("Solo-A", listaA[0].Numero);
+        Assert.Equal("Solo-B", listaB[0].Numero);
 
         await CleanupTenantAsync(tA);
         await CleanupTenantAsync(tB);
@@ -578,16 +562,6 @@ public class MiCopropiedadFlowTests
         return t.Id;
     }
 
-    private async Task<Guid> GetTorreTenantIdAsync(Guid torreId)
-    {
-        var options = new DbContextOptionsBuilder<PropiaDbContext>()
-            .UseNpgsql(_fx.OwnerConnectionString)
-            .Options;
-        await using var ctx = new PropiaDbContext(options, new TenantContext());
-        var t = await ctx.Torres.IgnoreQueryFilters().FirstAsync(x => x.Id == torreId);
-        return t.TenantId;
-    }
-
     private async Task CleanupTenantAsync(Guid tenantId, Guid[]? personaIds = null)
     {
         var options = new DbContextOptionsBuilder<PropiaDbContext>()
@@ -599,7 +573,6 @@ public class MiCopropiedadFlowTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_coeficientes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_coeficiente WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
-        await ctx.Database.ExecuteSqlAsync($"DELETE FROM torres WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM miembros_consejo WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM comite_miembros WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM comites WHERE tenant_id = {tenantId}");

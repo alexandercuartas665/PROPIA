@@ -1,0 +1,136 @@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Shared.Auth
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+@* Gate "elegir rol antes de entrar" (2.5 v2.0 rol activo por sesion). Isla interactiva del MainLayout.
+   Al cargar llama /connect/me; si el usuario tiene MAS DE UN rol en la copropiedad activa y aun no eligio
+   rol activo (ActiveRolId null), bloquea la app con un modal obligatorio hasta que elija con cual opera la
+   sesion (POST /connect/switch-rol reemite el JWT con el claim rol_id). Cubre login, cambio de copropiedad
+   y sesiones viejas por igual. Si solo tiene un rol, no bloquea (el RBAC usa ese rol por defecto). *@
+
+@if (_mostrar && _me is not null)
+{
+    <div class="rg-backdrop" role="dialog" aria-modal="true">
+        <div class="rg-modal">
+            <div class="rg-head">
+                <div class="rg-icon" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                </div>
+                <div>
+                    <div class="rg-title">Elige tu rol para esta sesion</div>
+                    <div class="rg-sub">Tienes varios roles en @(_tenantNombre ?? "esta copropiedad"). Elige con cual quieres trabajar; podras cambiarlo luego desde tu menu de cuenta.</div>
+                </div>
+            </div>
+
+            <div class="rg-body">
+                @foreach (var r in _me.AvailableRoles!)
+                {
+                    <button class="rg-opt" type="button" @onclick="() => ElegirAsync(r.RolId)" disabled="@_busy">
+                        <span class="rg-opt-dot" aria-hidden="true"></span>
+                        <span class="rg-opt-nom">@r.Nombre</span>
+                        <svg class="rg-opt-go" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                    </button>
+                }
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="rg-err">@_error</div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private MeResponseDto? _me;
+    private bool _mostrar;
+    private bool _busy;
+    private string? _error;
+    private string? _tenantNombre;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) return;
+            _jwt = jwt;
+            _me = await Auth().GetFromJsonAsync<MeResponseDto>("/connect/me");
+            // Bloquea SOLO si: hay copropiedad activa, el usuario tiene >1 rol en ella, y aun no eligio.
+            if (_me is { ActiveTenantId: not null, ActiveRolId: null } && (_me.AvailableRoles?.Count ?? 0) > 1)
+            {
+                _tenantNombre = _me.AvailableTenants?.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId)?.Nombre;
+                _mostrar = true;
+                StateHasChanged();
+            }
+        }
+        catch { /* sin sesion o API caida: no bloquea */ }
+    }
+
+    private async Task ElegirAsync(Guid rolId)
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/connect/switch-rol", new SwitchRolRequestDto(rolId));
+            if (!resp.IsSuccessStatusCode) { _error = "No se pudo activar ese rol. Intenta de nuevo."; return; }
+            var dto = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
+            if (dto is null) { _error = "Respuesta inesperada del servidor."; return; }
+            // Persistir el nuevo JWT (con rol_id) y recargar para que el RBAC y los modulos usen el rol elegido.
+            var activa = _me!.AvailableTenants?.FirstOrDefault(t => t.TenantId == _me.ActiveTenantId);
+            await Js.InvokeVoidAsync("propiaAuth.save", dto.AccessToken, _me.ActiveTenantId?.ToString(), activa?.Nombre);
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+}
+
+<style>
+    .rg-backdrop {
+        position: fixed; inset: 0; z-index: 2000;
+        background: var(--propia-bg-overlay);
+        display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .rg-modal {
+        width: 100%; max-width: 440px;
+        background: var(--propia-bg-card); border: 1px solid var(--propia-border-card);
+        border-radius: 14px; box-shadow: var(--propia-shadow-modal); overflow: hidden;
+    }
+    .rg-head { display: flex; align-items: flex-start; gap: 13px; padding: 20px 22px 14px; }
+    .rg-icon {
+        width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px;
+        background: var(--propia-brand-soft); color: var(--propia-brand);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .rg-title { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .rg-sub { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 3px; line-height: 1.45; }
+    .rg-body { padding: 6px 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+    .rg-opt {
+        display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+        padding: 13px 14px; border: 1px solid var(--propia-border-card); border-radius: 11px;
+        background: var(--propia-bg-card); color: var(--propia-text-h1);
+        font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+        transition: border-color .12s, background .12s, box-shadow .12s;
+    }
+    .rg-opt:hover:not(:disabled) { border-color: var(--propia-brand); background: var(--propia-brand-soft); box-shadow: 0 0 0 1px var(--propia-brand) inset; }
+    .rg-opt:disabled { opacity: .55; cursor: default; }
+    .rg-opt-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: var(--propia-brand); }
+    .rg-opt-nom { flex: 1; min-width: 0; }
+    .rg-opt-go { color: var(--propia-text-faint); flex: 0 0 auto; }
+    .rg-err {
+        margin-top: 4px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px;
+        color: var(--propia-error-text); background: var(--propia-error-bg); border: 1px solid var(--propia-error-border);
+    }
+</style>

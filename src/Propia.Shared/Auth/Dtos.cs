@@ -13,7 +13,9 @@ public record LoginResponseDto(
     Guid UserId,
     string Email,
     Guid? ActiveTenantId,
-    IReadOnlyList<TenantInfoDto> AvailableTenants);
+    IReadOnlyList<TenantInfoDto> AvailableTenants,
+    Guid? ActiveRolId = null,
+    IReadOnlyList<RolInfoDto>? AvailableRoles = null);
 
 public record MeResponseDto(
     Guid UserId,
@@ -22,8 +24,15 @@ public record MeResponseDto(
     string? PersonaNombres,
     string? PersonaApellidos,
     Guid? ActiveTenantId,
-    IReadOnlyList<TenantInfoDto> AvailableTenants);
+    IReadOnlyList<TenantInfoDto> AvailableTenants,
+    Guid? ActiveRolId = null,
+    IReadOnlyList<RolInfoDto>? AvailableRoles = null);
 
 public record TenantInfoDto(Guid TenantId, string Nombre, string Rol, string? LogoUrl = null, string? CodigoCorto = null);
 
+/// <summary>Un rol del usuario en la copropiedad activa (2.5 v2.0 multi-rol / rol activo por sesion).</summary>
+public record RolInfoDto(Guid RolId, string Nombre);
+
 public record SwitchTenantRequestDto(Guid TenantId);
+
+public record SwitchRolRequestDto(Guid RolId);

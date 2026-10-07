@@ -72,7 +72,6 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
 
         // 4. Resumen copropiedad
         var totalUnidades = await _db.UnidadesPrivadas.CountAsync(ct);
-        var torresTotal = await _db.Torres.CountAsync(ct);
         var zonasTotal = await _db.ZonasComunes.CountAsync(ct);
 
         // 5. Feed
@@ -218,7 +217,7 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             alertas,
             recaudoPct, unidadesEnMora, null,
             tareasActivas, tareasVencidas, tareasUrgentes,
-            totalUnidades, torresTotal, zonasTotal,
+            totalUnidades, zonasTotal,
             feed,
             moduloPresupuestoConfig,
             contratosPorVencer,
