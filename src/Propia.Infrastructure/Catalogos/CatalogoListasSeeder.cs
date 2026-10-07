@@ -99,6 +99,17 @@ public static class CatalogoListasSeeder
                 .Select((g, i) => new SemillaOpcion("e:" + g, g.ToString(), i))
                 .ToList()));
 
+        // Usuarios (2.5 v2.0): Cargo (descriptivo, seleccion multiple, NO otorga permisos). Lista "libre":
+        // la clave ES la etiqueta. Editable por A&D; el usuario guarda las etiquetas elegidas.
+        reg.Add(("usuario.cargo", new List<SemillaOpcion>
+        {
+            new("Administrador", "Administrador", 0),
+            new("Portero", "Portero", 1),
+            new("Aseador", "Aseador", 2),
+            new("Coordinador de zonas", "Coordinador de zonas", 3),
+            new("Recepcionista", "Recepcionista", 4),
+        }));
+
         return reg;
     }
 

@@ -131,6 +131,29 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Multi-rol (2.5 v2.0): N:N usuario <-> rol. Mismo patron puente que las etiquetas.
+        modelBuilder.Entity<UsuarioTenantRol>(b =>
+        {
+            b.ToTable("usuario_tenant_roles");
+            b.HasOne(x => x.UsuarioTenant).WithMany().HasForeignKey(x => x.UsuarioTenantId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Rol).WithMany().HasForeignKey(x => x.RolId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.UsuarioTenantId, x.RolId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        // Cargo(s) de usuario (2.5 v2.0): N:N descriptivo (no otorga permisos). El valor es la etiqueta/clave
+        // del catalogo "usuario.cargo". Unico por (usuario, cargo).
+        modelBuilder.Entity<UsuarioTenantCargo>(b =>
+        {
+            b.ToTable("usuario_tenant_cargos");
+            b.Property(x => x.Cargo).IsRequired().HasMaxLength(100);
+            b.HasOne(x => x.UsuarioTenant).WithMany().HasForeignKey(x => x.UsuarioTenantId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.UsuarioTenantId, x.Cargo }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // SuperAdminUsuario
         modelBuilder.Entity<SuperAdminUsuario>(b =>
         {

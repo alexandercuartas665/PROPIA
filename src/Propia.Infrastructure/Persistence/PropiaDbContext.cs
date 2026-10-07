@@ -142,6 +142,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<AccesoAuditoria> AccesoAuditorias => Set<AccesoAuditoria>();
     public DbSet<EtiquetaUsuario> EtiquetasUsuario => Set<EtiquetaUsuario>();
     public DbSet<UsuarioTenantEtiqueta> UsuarioTenantEtiquetas => Set<UsuarioTenantEtiqueta>();
+    public DbSet<UsuarioTenantRol> UsuarioTenantRoles => Set<UsuarioTenantRol>();
+    public DbSet<UsuarioTenantCargo> UsuarioTenantCargos => Set<UsuarioTenantCargo>();
 
     // Modulo 2.6 Presupuesto, Cuotas y Pagos
     public DbSet<Domain.Entities.Presupuesto> Presupuestos => Set<Domain.Entities.Presupuesto>();
