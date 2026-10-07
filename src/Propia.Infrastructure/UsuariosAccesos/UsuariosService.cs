@@ -159,7 +159,8 @@ public class UsuariosService : IUsuariosService
             etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>(),
             GruposDe(u.PersonaId),
             rolesPorUsuario.TryGetValue(u.Id, out var rls) ? rls : new List<RolChipDto>(),
-            cargosPorUsuario.TryGetValue(u.Id, out var cgs) ? cgs : new List<string>()
+            cargosPorUsuario.TryGetValue(u.Id, out var cgs) ? cgs : new List<string>(),
+            u.FechaActivacion ?? u.FechaInvitacion
         )).ToList();
     }
 

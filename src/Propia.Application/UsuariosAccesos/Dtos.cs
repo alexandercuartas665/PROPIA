@@ -47,7 +47,8 @@ public record UsuarioListaDto(
     IReadOnlyList<string> GruposGobierno,  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
     // 2.5 v2.0 multi-rol/cargo: TODOS los roles asignados (chips) y los cargos (descriptivos).
     IReadOnlyList<RolChipDto> Roles,
-    IReadOnlyList<string> Cargos);
+    IReadOnlyList<string> Cargos,
+    DateTimeOffset? FechaVinculacion);  // activacion, o invitacion si aun pendiente
 
 /// <summary>Rol como chip (id + nombre) para pintar la selección múltiple en la tabla de Usuarios.</summary>
 public record RolChipDto(Guid Id, string Nombre);
