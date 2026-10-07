@@ -307,17 +307,32 @@ else
             }
             else
             {
+                @* Barra de acciones masivas (aparece al seleccionar filas con el checkbox). *@
+                @if (_selC.Count > 0)
+                {
+                    <div class="ctr-selbar">
+                        <span class="ctr-selbar-n">@_selC.Count seleccionado@(_selC.Count == 1 ? "" : "s")</span>
+                        <div style="flex:1"></div>
+                        <button type="button" class="ctr-selbar-del" @onclick="BulkEliminarC" disabled="@_busy">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                            Eliminar (@_selC.Count)
+                        </button>
+                        <button type="button" class="ctr-selbar-x" @onclick="LimpiarSelC" disabled="@_busy">Deseleccionar</button>
+                    </div>
+                }
                 <div class="ctr-topscroll" id="ctrTopScroll"><div class="ctr-topscroll-in"></div></div>
                 <div class="ctr-tablebox">
                 <div class="ctr-table-wrap ctr-scroll" id="ctrTableWrap">
                     <table class="ctr-table">
                         <colgroup>
+                            <col style="width:38px" />
                             <col style="width:34px" />
                             @foreach (var k in ColsVisibles()) { <col style="@AnchoColC(k)" /> }
                             <col style="width:74px" />
                         </colgroup>
                         <thead>
                             <tr>
+                                <th class="ctr-sel tbl-hdcell tbl-hdcell--plain"><input type="checkbox" class="ctr-chk" title="Seleccionar todo" checked="@TodosSelC" @onchange="e => ToggleSelAllC((bool)(e.Value ?? false))" /></th>
                                 <th class="ctr-exp-col tbl-hdcell tbl-hdcell--plain"></th>
                                 @foreach (var k in ColsVisibles()) { var kDin = Guid.TryParse(k, out _); <th class="tbl-hdcell @ColThClass(k)" data-clave="@k" title="@ColDesc(k)" @onmousedown="e => IniciarReorderC(e, k)">@ColLabel(k)@ChevCol(k, ColLabel(k), kDin)<span class="ctr-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeC(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeC(k)" @ondblclick:stopPropagation="true"></span></th> }
                                 <th class="ctr-w2 tbl-hdcell tbl-hdcell--plain"><button type="button" class="ctr-addcol-btn" title="Agregar campo (columna)" @onclick="() => _showColsMenu = true"><i class="fi fi-rr-plus"></i></button></th>
@@ -332,7 +347,7 @@ else
                                 @if (el.Grupo is { } g)
                                 {
                                     <tr class="tgrt-hd tgrt-l@(g.Nivel > 2 ? 2 : g.Nivel)">
-                                        <td colspan="@(ColsVisibles().Count() + 2)">
+                                        <td colspan="@(ColsVisibles().Count() + 3)">
                                             <span class="tgrt-lead" style="padding-left:@(14 + g.Nivel * 16)px;">
                                                 @if (g.Color is not null) { <span class="tgrt-dot" style="background:@g.Color"></span> }
                                                 <span class="tgrt-tit">@g.Titulo</span> <span class="tgrt-cnt">@g.Conteo</span>
@@ -344,8 +359,11 @@ else
                                 {
                                     var c = el.Fila!;
                                     var cc = c;
-                                    <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "")"
+                                    <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "") @(_selC.Contains(c.Id) ? "ctr-row-sel" : "")"
                                         @oncontextmenu="e => AbrirCtxContrato(e, cc)" @oncontextmenu:preventDefault="true">
+                                        <td class="ctr-sel" @onclick:stopPropagation="true">
+                                            <input type="checkbox" class="ctr-chk" checked="@_selC.Contains(cc.Id)" @onchange="e => ToggleSelC(cc.Id, (bool)(e.Value ?? false))" />
+                                        </td>
                                         <td class="ctr-exp-col">
                                             <button type="button" class="ctr-exp" title="Abrir la ficha" @onclick="() => AbrirModal(cc)">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -550,6 +568,7 @@ else
                             }
                             @* Fila de alta inline (crear desde la tabla): captura los campos como listas. *@
                             <tr class="ctr-row ctr-newrow">
+                                <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col">
                                     <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear el contrato" @onclick="CrearDesdeAltaAsync" disabled="@_busy">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -1376,6 +1395,31 @@ else
     {
         try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}contratos#contrato-{c.Id}"); }
         catch { }
+    }
+
+    // ===== Seleccion multiple + acciones masivas (canon Unidades/Roles) =====
+    private readonly HashSet<Guid> _selC = new();
+    private IEnumerable<Guid> IdsSeleccionablesC() => ContratosFiltrados().Select(c => c.Id);
+    private bool TodosSelC { get { var ids = IdsSeleccionablesC().ToList(); return ids.Count > 0 && ids.All(_selC.Contains); } }
+    private void ToggleSelC(Guid id, bool on) { if (on) _selC.Add(id); else _selC.Remove(id); }
+    private void ToggleSelAllC(bool on) { _selC.Clear(); if (on) foreach (var id in IdsSeleccionablesC()) _selC.Add(id); }
+    private void LimpiarSelC() => _selC.Clear();
+    private async Task BulkEliminarC()
+    {
+        if (_selC.Count == 0) return;
+        var n = _selC.Count;
+        if (!await Modals.ConfirmAsync($"Eliminar {n} contrato{(n == 1 ? "" : "s")}? Esta accion no se puede deshacer.", "Eliminar contratos")) return;
+        _busy = true;
+        try
+        {
+            foreach (var id in _selC.ToList())
+            {
+                try { await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/{id}"); } catch { }
+            }
+            _selC.Clear();
+            await CargarAsync();
+        }
+        finally { _busy = false; }
     }
 
     private string? _jwt;
