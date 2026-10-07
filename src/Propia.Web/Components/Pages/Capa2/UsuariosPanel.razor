@@ -61,6 +61,25 @@
         <div class="alert @_msgClass py-2 small">@_msg</div>
     }
 
+    @* KPIs (2.5 v2.0): Usuarios (total) / Activos / Invitacion pendiente. *@
+    @if (_usuarios is not null)
+    {
+        <div class="usr-kpis">
+            <div class="usr-kpi">
+                <div class="usr-kpi-n">@_usuarios.Count</div>
+                <div class="usr-kpi-l">Usuarios</div>
+            </div>
+            <div class="usr-kpi">
+                <div class="usr-kpi-n">@_usuarios.Count(u => u.Estado == EstadoUsuarioTenant.Activo)</div>
+                <div class="usr-kpi-l">Activos</div>
+            </div>
+            <div class="usr-kpi">
+                <div class="usr-kpi-n">@_usuarios.Count(u => u.Estado == EstadoUsuarioTenant.Pendiente)</div>
+                <div class="usr-kpi-l">Invitación pendiente</div>
+            </div>
+        </div>
+    }
+
     @* Tabs Activos / Pendientes / Inactivos (sin tarjetas indicador). *@
     <div class="usr-tabs">
         <button type="button" class="usr-tab @(_tab == EstadoUsuarioTenant.Activo ? "active" : "")" @onclick="() => SetTab(EstadoUsuarioTenant.Activo)">Activos</button>
@@ -908,10 +927,16 @@
 
     // Lista filtrada (tab + reglas dinamicas), sin ordenar; se reusa en la vista y para saber
     // que ids son seleccionables. El orden por columna se aplica aparte, en la rama Tabla.
+    // 2.5 v2.0: el tab "Pendientes" agrupa DOS estados (Invitacion pendiente + Pendiente de contacto).
+    private static bool EnTab(EstadoUsuarioTenant estado, EstadoUsuarioTenant tab)
+        => tab == EstadoUsuarioTenant.Pendiente
+            ? (estado == EstadoUsuarioTenant.Pendiente || estado == EstadoUsuarioTenant.PendienteContacto)
+            : estado == tab;
+
     private IEnumerable<UsuarioListaDto> UsuariosFiltrados()
     {
         if (_usuarios is null) return Enumerable.Empty<UsuarioListaDto>();
-        return _usuarios.Where(u => u.Estado == _tab)
+        return _usuarios.Where(u => EnTab(u.Estado, _tab))
             .Where(u => _fd?.Pasa(campo => campo switch
             {
                 "nombre" => u.NombreCompleto,
