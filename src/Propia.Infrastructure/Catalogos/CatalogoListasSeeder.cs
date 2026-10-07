@@ -108,6 +108,20 @@ public static class CatalogoListasSeeder
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<PropiaDbContext>>();
 
+        var insertadas = await SembrarAsync(db);
+        if (insertadas > 0)
+            logger.LogInformation("CatalogoListasSeeder: {N} opciones semilla insertadas.", insertadas);
+    }
+
+    /// <summary>
+    /// Siembra las opciones de fabrica que FALTAN (por Lista+Clave) sobre el <paramref name="db"/> dado y
+    /// devuelve cuantas inserto. IDEMPOTENTE: nunca pisa lo que A&D edito; una opcion semilla que A&D
+    /// desactivo o renombro ya existe (misma clave), asi que no se re-crea. Reutilizable desde el arranque
+    /// (<see cref="EnsureAsync"/>) y desde la consola A&D ("Re-sembrar listas base"). NO invalida el cache
+    /// del lector: eso lo hace quien la invoca (el admin service).
+    /// </summary>
+    public static async Task<int> SembrarAsync(PropiaDbContext db, CancellationToken ct = default)
+    {
         var now = DateTimeOffset.UtcNow;
         var insertadas = 0;
 
@@ -116,7 +130,7 @@ public static class CatalogoListasSeeder
             var existentes = await db.CatalogoOpciones
                 .Where(x => x.Lista == lista)
                 .Select(x => x.Clave)
-                .ToListAsync();
+                .ToListAsync(ct);
             var set = new HashSet<string>(existentes, StringComparer.OrdinalIgnoreCase);
 
             foreach (var op in opciones)
@@ -138,10 +152,7 @@ public static class CatalogoListasSeeder
             }
         }
 
-        if (insertadas > 0)
-        {
-            await db.SaveChangesAsync();
-            logger.LogInformation("CatalogoListasSeeder: {N} opciones semilla insertadas.", insertadas);
-        }
+        if (insertadas > 0) await db.SaveChangesAsync(ct);
+        return insertadas;
     }
 }

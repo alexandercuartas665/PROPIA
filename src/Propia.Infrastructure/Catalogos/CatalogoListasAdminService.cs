@@ -111,6 +111,13 @@ public sealed class CatalogoListasAdminService : ICatalogoListasAdmin
         _lector.InvalidarCache(lista);
     }
 
+    public async Task<int> ResembrarAsync(CancellationToken ct = default)
+    {
+        var insertadas = await CatalogoListasSeeder.SembrarAsync(_db, ct);
+        _lector.InvalidarCache();   // limpia TODAS las listas (en este proceso)
+        return insertadas;
+    }
+
     // Clave estable para opciones nuevas: slug ASCII del label, unico dentro de la lista.
     private static string ClaveUnica(string label, HashSet<string> usadas)
     {

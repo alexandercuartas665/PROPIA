@@ -32,4 +32,11 @@ public interface ICatalogoListasAdmin
 
     /// <summary>Fija el orden de la lista segun la secuencia de ids recibida.</summary>
     Task ReordenarAsync(string lista, IReadOnlyList<Guid> ordenIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-siembra las opciones de fabrica que FALTEN en TODAS las listas conocidas (idempotente: no pisa
+    /// lo que A&D edito) e invalida el cache del lector. Devuelve cuantas opciones se insertaron. Util
+    /// para restaurar una opcion base borrada o registrar listas nuevas sin reiniciar el proceso.
+    /// </summary>
+    Task<int> ResembrarAsync(CancellationToken ct = default);
 }

@@ -8,12 +8,23 @@
 
 <PageTitle>Catalogos de listas - Plataforma</PageTitle>
 
-<h1 class="h3 mb-1">Catalogos de listas</h1>
-<p class="text-muted mb-4">
-    Opciones "de fabrica" de las listas de seleccion del producto (Tipo de unidad, Estado, etc.).
-    Editar aqui aplica a TODAS las copropiedades; cada una puede, por encima, ocultar/renombrar/agregar
-    en su propia configuracion.
-</p>
+<div class="d-flex justify-content-between align-items-start mb-4 gap-3">
+    <div>
+        <h1 class="h3 mb-1">Catalogos de listas</h1>
+        <p class="text-muted mb-0">
+            Opciones "de fabrica" de las listas de seleccion del producto (Tipo de unidad, Estado, etc.).
+            Editar aqui aplica a TODAS las copropiedades; cada una puede, por encima, ocultar/renombrar/agregar
+            en su propia configuracion.
+        </p>
+    </div>
+    <button type="button" class="btn btn-outline-dark flex-shrink-0" disabled="@(_busy || _jwt is null)"
+            @onclick="ResembrarAsync"
+            title="Inserta las opciones de fabrica que falten en todas las listas. No pisa lo que ya editaste; solo restaura las que falten.">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1" style="vertical-align:-2px"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        Re-sembrar listas base
+    </button>
+</div>
+@if (!string.IsNullOrEmpty(_msg) && _listaSel is null) { <div class="alert @_msgCls py-2">@_msg</div> }
 
 @if (_jwt is null || _cargando)
 {
@@ -237,6 +248,32 @@ else
 
     private void NuevoKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     { if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_nuevoLabel)) _ = AgregarAsync(); }
+
+    // Re-sembrar: restaura las opciones de fabrica que falten en TODAS las listas (idempotente; no pisa lo
+    // editado) e invalida el cache del lector en este proceso. Devuelve cuantas se insertaron.
+    private async Task ResembrarAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync("/api/admin/catalogos/resembrar", null);
+            if (resp.IsSuccessStatusCode)
+            {
+                var n = 0;
+                try { n = (await resp.Content.ReadFromJsonAsync<ResembrarResp>())?.Insertadas ?? 0; } catch { }
+                Ok(n == 0
+                    ? "Listas base al dia: no faltaba ninguna opcion de fabrica."
+                    : $"Re-sembrado: {n} opcion(es) de fabrica restaurada(s).");
+                await CargarListasAsync();
+                if (_listaSel is not null) await CargarOpcionesAsync();
+            }
+            else Err(await LeerError(resp));
+        }
+        catch (Exception ex) { Err(ex.Message); }
+        finally { _busy = false; }
+    }
+
+    private sealed record ResembrarResp(int Insertadas);
 
     private void Ok(string m) { _msg = m; _msgCls = "alert-success"; }
     private void Err(string m) { _msg = m; _msgCls = "alert-danger"; }

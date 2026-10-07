@@ -2057,7 +2057,7 @@ else
     /// de la semilla mas las que la copropiedad haya agregado (que viven en lo guardado).</summary>
     private List<string> UniversoOpciones(string clave, List<OpcionLista> guardadas)
         => clave == "tipo"
-            ? TiposUnidadSel.Select(t => "e:" + t).Concat(_tiposCustom.Select(t => "c:" + t.Id)).ToList()
+            ? TiposBaseUniverso.Select(t => "e:" + t).Concat(_tiposCustom.Select(t => "c:" + t.Id)).ToList()
             : EstadoUniverso.Concat(guardadas.Select(g => g.K)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     private List<OpcionLista> LeerOpciones(string clave)
@@ -2140,7 +2140,7 @@ else
         => LeerOpciones("tipo").Where(o => o.Oculta).Select(o => o.K).ToHashSet(StringComparer.OrdinalIgnoreCase);
     private IEnumerable<TipoUnidad> TiposBaseVisibles
     {
-        get { var oc = OcultasTipo(); return TiposUnidadSel.Where(t => !oc.Contains("e:" + t)); }
+        get { var oc = OcultasTipo(); return TiposBaseUniverso.Where(t => !oc.Contains("e:" + t)); }
     }
     private List<TipoUnidadCustomDto> TiposCustomVisibles
     {
@@ -2980,6 +2980,14 @@ else
     // Tipos de unidad ofrecidos en los selectores (se excluye ZonaComun: las zonas comunes son otro modulo).
     // El valor del enum se conserva por compatibilidad de datos historicos.
     private static IEnumerable<TipoUnidad> TiposUnidadSel => Enum.GetValues<TipoUnidad>().Where(t => t != TipoUnidad.ZonaComun);
+
+    // Universo de tipos base que la copropiedad puede ELEGIR: respeta el 'activo' del catalogo global
+    // (A&D, unidad.tipo), igual que Estado usa _catEstado. Si el catalogo no cargo (_catTipo vacio) cae
+    // al enum completo (fallback). Las unidades que ya usan un tipo desactivado lo conservan via
+    // TiposBaseConVigente. NOTA: la validacion de nombre de tipo propio (al crear) sigue usando el enum
+    // completo (TiposUnidadSel) para no permitir colisiones con un tipo base aunque este desactivado.
+    private IEnumerable<TipoUnidad> TiposBaseUniverso
+        => _catTipo.Count > 0 ? TiposUnidadSel.Where(t => _catTipo.ContainsKey("e:" + t)) : TiposUnidadSel;
 
     // Del catalogo compartido: la plantilla de carga ofrece estas MISMAS etiquetas y el importador
     // las resuelve, asi que lo que el usuario ve aqui es lo que puede escribir en el Excel.

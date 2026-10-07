@@ -57,4 +57,9 @@ public sealed class AdminCatalogosController : ControllerBase
         await _svc.ReordenarAsync(lista, ordenIds ?? new(), ct);
         return NoContent();
     }
+
+    /// <summary>Re-siembra las opciones de fabrica que falten (idempotente) e invalida el cache.</summary>
+    [HttpPost("resembrar")]
+    public async Task<IActionResult> Resembrar(CancellationToken ct)
+        => Ok(new { insertadas = await _svc.ResembrarAsync(ct) });
 }
