@@ -177,9 +177,22 @@
         }
         else if (_vista == "tabla")
         {
+            @if (_selS.Count > 0)
+            {
+                <div class="seg-selbar">
+                    <span class="seg-selbar-n">@_selS.Count seleccionado@(_selS.Count == 1 ? "" : "s")</span>
+                    <div style="flex:1"></div>
+                    <button type="button" class="seg-selbar-del" @onclick="BulkEliminarS" disabled="@_eliminandoP">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        Eliminar (@_selS.Count)
+                    </button>
+                    <button type="button" class="seg-selbar-x" @onclick="LimpiarSelS" disabled="@_eliminandoP">Deseleccionar</button>
+                </div>
+            }
             <div class="seg-table">
                 <div class="seg-scroll">
                     <div class="seg-head seg-grid" style="@GridStyle()">
+                        <div class="seg-sel"><input type="checkbox" class="seg-chk" title="Seleccionar todo" checked="@TodosSelS" @onchange="e => ToggleSelAllS((bool)(e.Value ?? false))" /></div>
                         <div></div>
                         @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))</div> }
                         <div class="seg-addcol-h"><button type="button" class="seg-addcol-btn" title="Agregar campo (columna)" @onclick="() => _showCampos = true"><i class="fi fi-rr-plus"></i></button></div>
@@ -196,8 +209,11 @@
                         }
                         var p = item.Poliza!;
                         var pp = p;
-                        <div class="seg-row seg-grid @(_segRecienCreados.Contains(p.Id) ? "seg-row-nuevo" : "")" style="@GridStyle()"
+                        <div class="seg-row seg-grid @(_segRecienCreados.Contains(p.Id) ? "seg-row-nuevo" : "") @(_selS.Contains(p.Id) ? "seg-row-sel" : "")" style="@GridStyle()"
                              @oncontextmenu="e => AbrirCtxSeguro(e, pp)" @oncontextmenu:preventDefault="true">
+                            <div class="seg-sel" @onclick:stopPropagation="true">
+                                <input type="checkbox" class="seg-chk" checked="@_selS.Contains(pp.Id)" @onchange="e => ToggleSelS(pp.Id, (bool)(e.Value ?? false))" />
+                            </div>
                             <div class="seg-exp-col">
                                 <button type="button" class="seg-exp" title="Abrir la ficha" @onclick="() => AbrirModal(pp.Id)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -215,6 +231,7 @@
                     }
                     @* Fila de alta inline: crear poliza desde la tabla (como Zonas Comunes). *@
                     <div class="seg-row seg-newrow seg-grid" style="@GridStyle()">
+                        <div class="seg-sel"></div>
                         <div class="seg-exp-col">
                             <button type="button" class="seg-exp seg-exp-fijo" title="Crear la póliza" @onclick="CrearPolizaDesdeAltaAsync" disabled="@_creandoInline">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -610,6 +627,17 @@
     .seg-row-add:hover:not(:disabled) { background: var(--propia-brand-soft); }
     .seg-row-add:disabled { opacity: .5; cursor: default; }
     .seg-row-nuevo { background: var(--propia-ok-soft) !important; box-shadow: inset 3px 0 0 var(--propia-success); }
+    /* Seleccion multiple + barra de acciones masivas (canon Unidades/Roles). */
+    .seg-sel { display: flex; align-items: center; justify-content: center; }
+    .seg-chk { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
+    .seg-row-sel { background: var(--propia-brand-soft) !important; }
+    .seg-selbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 10px; }
+    .seg-selbar-n { font-size: 12.5px; font-weight: 700; color: var(--propia-brand); }
+    .seg-selbar-del { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid #F3C9CB; background: var(--propia-bg-card); color: var(--propia-error-strong); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .seg-selbar-del:hover:not(:disabled) { background: #FBEBEC; }
+    .seg-selbar-del:disabled { opacity: .6; cursor: default; }
+    .seg-selbar-x { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+    .seg-selbar-x:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
     .seg-toast { position: sticky; bottom: 10px; margin: 10px auto 0; width: fit-content; background: var(--propia-success-hover); color: var(--propia-text-inverse); font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 9px; cursor: pointer; box-shadow: 0 6px 18px rgba(21,112,63,.28); }
     /* la variante de error va DESPUES de .seg-toast: misma especificidad, gana la ultima */
     .seg-toast--error { background: var(--propia-danger); box-shadow: 0 6px 18px rgba(215,38,61,.28); }
@@ -736,6 +764,34 @@
     {
         try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}seguros#poliza-{p.Id}"); }
         catch { }
+    }
+
+    // ===== Seleccion multiple + acciones masivas (canon Unidades/Roles) =====
+    private readonly HashSet<Guid> _selS = new();
+    private IEnumerable<Guid> IdsSeleccionablesS() => Filtradas.Select(p => p.Id);
+    private bool TodosSelS { get { var ids = IdsSeleccionablesS().ToList(); return ids.Count > 0 && ids.All(_selS.Contains); } }
+    private void ToggleSelS(Guid id, bool on) { if (on) _selS.Add(id); else _selS.Remove(id); }
+    private void ToggleSelAllS(bool on) { _selS.Clear(); if (on) foreach (var id in IdsSeleccionablesS()) _selS.Add(id); }
+    private void LimpiarSelS() => _selS.Clear();
+    private async Task BulkEliminarS()
+    {
+        if (_selS.Count == 0) return;
+        var n = _selS.Count;
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"Eliminar {n} poliza{(n == 1 ? "" : "s")}? Esta accion no se puede deshacer."); }
+        catch { ok = false; }
+        if (!ok) return;
+        _eliminandoP = true;
+        try
+        {
+            foreach (var id in _selS.ToList())
+            {
+                try { await Auth().DeleteAsync($"/api/seguros/polizas/{id}"); } catch { }
+            }
+            _selS.Clear();
+            await CargarAsync();
+        }
+        finally { _eliminandoP = false; }
     }
 
     private string? _jwt;
@@ -1052,8 +1108,8 @@
     private string GridStyle()
     {
         var visibles = ColsVisibles().ToList();
-        var cols = "34px" + string.Concat(visibles.Select(k => " " + ColWidth(k))) + " 44px";
-        var min = 244 + visibles.Count * 130;
+        var cols = "38px 34px" + string.Concat(visibles.Select(k => " " + ColWidth(k))) + " 44px";
+        var min = 282 + visibles.Count * 130;
         return $"grid-template-columns:{cols};min-width:{min}px";
     }
     private static string ColWidth(string clave) => clave switch

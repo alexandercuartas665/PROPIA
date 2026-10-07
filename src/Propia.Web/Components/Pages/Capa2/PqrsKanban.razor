@@ -308,18 +308,33 @@
             {
                 <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
             }
+            @* Barra de acciones masivas (aparece al seleccionar). PQRSD son registros legales: no se
+               borran; la accion segura es Archivar (en Activos) / Reabrir (en Cerrados), reversible. *@
+            @if (_selP.Count > 0)
+            {
+                <div class="pk-selbar">
+                    <span class="pk-selbar-n">@_selP.Count seleccionada@(_selP.Count == 1 ? "" : "s")</span>
+                    <div style="flex:1"></div>
+                    <button type="button" class="pk-selbar-act" @onclick="BulkArchivarP" disabled="@_bulkBusyP">
+                        @(_verArchivados ? "Reabrir" : "Archivar") (@_selP.Count)
+                    </button>
+                    <button type="button" class="pk-selbar-x" @onclick="LimpiarSelP" disabled="@_bulkBusyP">Deseleccionar</button>
+                </div>
+            }
             @* Doble scroll horizontal: barra superior espejo, sincronizada por JS con la tabla (igual que Tareas). *@
             <div class="pk-topscroll" id="pkTopScroll"><div id="pkTopScrollInner"></div></div>
             <div class="pk-tablebox">
             <div class="pk-table-wrap" id="pkTableWrap">
                 <table class="pk-table @(_pin ? "pk-table--pin" : "")">
                     <colgroup>
+                        <col style="width:38px" />
                         <col style="width:34px" />
                         @foreach (var col in ColumnasVisibles) { <col style="@AnchoColP(col.Key)" /> }
                         <col />
                     </colgroup>
                     <thead>
                         <tr>
+                            <th class="pk-sel tbl-hdcell tbl-hdcell--plain"><input type="checkbox" class="pk-chk" title="Seleccionar todo" checked="@TodosSelP" @onchange="e => ToggleSelAllP((bool)(e.Value ?? false))" /></th>
                             <th class="pk-th-exp tbl-hdcell tbl-hdcell--plain"></th>
                             @foreach (var col in ColumnasVisibles)
                             {
@@ -827,6 +842,39 @@
         catch { }
     }
 
+    // ===== Seleccion multiple + accion masiva (canon Unidades/Roles). PQRSD no se borra (registros
+    // legales): la accion segura en lote es Archivar (Activos) / Reabrir (Cerrados), reversible. =====
+    private readonly HashSet<Guid> _selP = new();
+    private bool _bulkBusyP;
+    private IEnumerable<Guid> IdsSeleccionablesP() => ItemsFiltrados.Select(i => i.Id);
+    private bool TodosSelP { get { var ids = IdsSeleccionablesP().ToList(); return ids.Count > 0 && ids.All(_selP.Contains); } }
+    private void ToggleSelP(Guid id, bool on) { if (on) _selP.Add(id); else _selP.Remove(id); }
+    private void ToggleSelAllP(bool on) { _selP.Clear(); if (on) foreach (var id in IdsSeleccionablesP()) _selP.Add(id); }
+    private void LimpiarSelP() => _selP.Clear();
+    private async Task BulkArchivarP()
+    {
+        if (_selP.Count == 0) return;
+        var n = _selP.Count;
+        var archivar = !_verArchivados;
+        var verbo = archivar ? "Archivar" : "Reabrir";
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"{verbo} {n} PQRSD seleccionada{(n == 1 ? "" : "s")}?"); }
+        catch { ok = false; }
+        if (!ok) return;
+        _bulkBusyP = true;
+        try
+        {
+            foreach (var id in _selP.ToList())
+            {
+                try { await Auth().PutAsync($"/api/pqrsd/{id}/archivar?archivar={(archivar ? "true" : "false")}", null); } catch { }
+            }
+            _selP.Clear();
+            await CargarAsync();
+            Toast(archivar ? $"{n} PQRSD archivada(s)." : $"{n} PQRSD reabierta(s).", false);
+        }
+        finally { _bulkBusyP = false; }
+    }
+
     private string? _jwt;
     private bool _authChecked;
     private PqrsdBandejaDto? _bandeja;
@@ -1030,8 +1078,11 @@
     private List<PqrsdBandejaItemDto> RaicesOrdenadasPqr() => AplicarSortPqr(ItemsFiltrados).ToList();
     // Fila hoja de la tabla PQRSD (la aporta este modulo; el render de grupos <tr> la reutiliza).
     private RenderFragment<PqrsdBandejaItemDto> FilaPqrTpl => it =>
-    @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)"
+    @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "") @(_selP.Contains(it.Id) ? "pk-tr-sel" : "")" @onclick="() => IrA(it.Id)"
          @oncontextmenu="e => AbrirCtxPqr(e, it)" @oncontextmenu:preventDefault="true">
+        <td class="pk-sel" @onclick:stopPropagation="true">
+            <input type="checkbox" class="pk-chk" checked="@_selP.Contains(it.Id)" @onchange="e => ToggleSelP(it.Id, (bool)(e.Value ?? false))" />
+        </td>
         <td class="pk-td-exp" @onclick:stopPropagation="true">
             <button type="button" class="pk-exp" title="Abrir la ficha" @onclick="() => IrA(it.Id)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
