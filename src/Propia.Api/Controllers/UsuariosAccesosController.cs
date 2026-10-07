@@ -132,6 +132,14 @@ public class UsuariosAccesosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // 2.5 v2.0: alta -> crea el UsuarioTenant en Pendiente con todos sus roles/cargos.
+    [HttpPost("alta")]
+    public async Task<IActionResult> CrearEnAlta([FromBody] CrearUsuarioAltaRequest req, CancellationToken ct)
+    {
+        try { return Ok(new { id = await _svc.CrearUsuarioEnAltaAsync(req, ct) }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("{id:guid}/revocar")]
     public async Task<IActionResult> Revocar(Guid id, [FromBody] RevocarAccesoRequest req, CancellationToken ct)
     {

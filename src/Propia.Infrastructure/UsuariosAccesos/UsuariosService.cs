@@ -784,6 +784,58 @@ public class UsuariosService : IUsuariosService
         return true;
     }
 
+    /// <summary>2.5 v2.0: crea (o reactiva) el UsuarioTenant en estado Pendiente con TODOS sus roles/cargos.
+    /// La persona ya existe en el Directorio; la invitacion/envio la crea el flujo de invitacion aparte.
+    /// Devuelve el id del UsuarioTenant.</summary>
+    public async Task<Guid> CrearUsuarioEnAltaAsync(CrearUsuarioAltaRequest req, CancellationToken ct)
+    {
+        var rolIds = (req.RolIds ?? Array.Empty<Guid>()).Distinct().ToList();
+        var roles = await _db.RolesCopropiedad.Where(r => rolIds.Contains(r.Id)).ToListAsync(ct);
+        roles = rolIds.Select(id => roles.FirstOrDefault(r => r.Id == id)).Where(r => r is not null).Select(r => r!).ToList();
+        if (roles.Count == 0)
+        {
+            var portal = await _db.RolesCopropiedad.FirstOrDefaultAsync(r => r.Nombre == "Portal Residente", ct);
+            if (portal is not null) roles.Add(portal);
+            if (roles.Count == 0) throw new InvalidOperationException("No hay rol por defecto (Portal Residente).");
+        }
+        var principal = roles[0];
+
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.PersonaId == req.PersonaId, ct);
+        if (ut is not null && ut.Estado == EstadoUsuarioTenant.Activo)
+            throw new InvalidOperationException("Esta persona ya tiene acceso activo en la copropiedad.");
+        if (ut is null)
+        {
+            ut = new UsuarioTenant
+            {
+                PersonaId = req.PersonaId, RolId = principal.Id, Rol = principal.Nombre,
+                Estado = EstadoUsuarioTenant.Pendiente, FechaInvitacion = DateTimeOffset.UtcNow
+            };
+            _db.UsuariosTenant.Add(ut);
+        }
+        else
+        {
+            ut.RolId = principal.Id; ut.Rol = principal.Nombre;
+            ut.Estado = EstadoUsuarioTenant.Pendiente; ut.FechaInvitacion = DateTimeOffset.UtcNow;
+            ut.MotivoRevocacion = null; ut.FechaRevocacion = null;
+        }
+        await _db.SaveChangesAsync(ct);   // el interceptor asigna tenant_id
+
+        var existRoles = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId == ut.Id).ToListAsync(ct);
+        _db.UsuarioTenantRoles.RemoveRange(existRoles);
+        foreach (var r in roles)
+            _db.UsuarioTenantRoles.Add(new UsuarioTenantRol { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, RolId = r.Id });
+
+        var cargos = (req.Cargos ?? Array.Empty<string>()).Select(c => (c ?? string.Empty).Trim())
+            .Where(c => c.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var existCargos = await _db.UsuarioTenantCargos.Where(x => x.UsuarioTenantId == ut.Id).ToListAsync(ct);
+        _db.UsuarioTenantCargos.RemoveRange(existCargos);
+        foreach (var c in cargos)
+            _db.UsuarioTenantCargos.Add(new UsuarioTenantCargo { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, Cargo = c });
+
+        await _db.SaveChangesAsync(ct);
+        return ut.Id;
+    }
+
     /// <summary>Reemplaza el conjunto de Cargos (descriptivos, no dan permisos) de un usuario. Vacio es valido.</summary>
     public async Task<bool> ActualizarCargosAsync(Guid usuarioTenantId, ActualizarCargosUsuarioRequest req, CancellationToken ct)
     {

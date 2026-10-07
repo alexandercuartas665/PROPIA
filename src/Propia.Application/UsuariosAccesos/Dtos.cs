@@ -82,6 +82,10 @@ public record CambiarRolUsuarioRequest(Guid RolId);
 public record ActualizarRolesUsuarioRequest(IReadOnlyList<Guid> RolIds);
 public record ActualizarCargosUsuarioRequest(IReadOnlyList<string> Cargos);
 
+// 2.5 v2.0 alta: crea el UsuarioTenant en "Invitacion pendiente" con TODOS sus roles/cargos (la persona
+// ya existe en el Directorio; la invitacion/envio la dispara el flujo de invitacion aparte).
+public record CrearUsuarioAltaRequest(Guid PersonaId, IReadOnlyList<Guid> RolIds, IReadOnlyList<string> Cargos);
+
 public record RevocarAccesoRequest(string? Motivo);
 
 // ====================== Etiquetas de usuario (2.5) ======================

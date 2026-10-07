@@ -32,6 +32,8 @@ public interface IUsuariosService
     // 2.5 v2.0 multi-rol/cargo: reemplazan el conjunto completo de roles/cargos del usuario.
     Task<bool> ActualizarRolesAsync(Guid usuarioTenantId, ActualizarRolesUsuarioRequest req, CancellationToken ct);
     Task<bool> ActualizarCargosAsync(Guid usuarioTenantId, ActualizarCargosUsuarioRequest req, CancellationToken ct);
+    // 2.5 v2.0 alta: crea el UsuarioTenant en Pendiente con todos sus roles/cargos. Devuelve su id.
+    Task<Guid> CrearUsuarioEnAltaAsync(CrearUsuarioAltaRequest req, CancellationToken ct);
     Task<bool> RevocarAccesoAsync(Guid usuarioTenantId, RevocarAccesoRequest req, CancellationToken ct);
     Task<bool> ReactivarUsuarioAsync(Guid usuarioTenantId, CancellationToken ct);
 

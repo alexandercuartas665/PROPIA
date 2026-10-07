@@ -7,5 +7,5 @@ namespace Propia.Web.Components.Pages.Capa2;
 public record NuevoUsuarioInvitar(
     TipoDocumento TipoDocumento, string Documento,
     string Nombres, string Apellidos, Guid RolId, string? Email = null, string? Telefono = null,
-    // 2.5 v2.0: TODOS los roles elegidos (multi-rol). RolId es el principal (primero).
-    IReadOnlyList<Guid>? RolIds = null);
+    // 2.5 v2.0: TODOS los roles elegidos (multi-rol). RolId es el principal (primero). Cargos = descriptivos.
+    IReadOnlyList<Guid>? RolIds = null, IReadOnlyList<string>? Cargos = null);

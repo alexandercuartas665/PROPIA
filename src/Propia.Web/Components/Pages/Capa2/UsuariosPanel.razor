@@ -90,7 +90,7 @@
     @* ===================== Buscador + filtros + vista ===================== *@
     <div class="mod-filtros">
         @* Boton "Filtros" PRIMERO (reglas dinamicas, patron Tareas) y luego el buscador. *@
-        @if (_tab != EstadoUsuarioTenant.Pendiente)
+        @if (!_verInvitaciones || _tab != EstadoUsuarioTenant.Pendiente)
         {
             <FiltroDinamico @ref="_fd" Campos="CamposFiltroUsr" OnChanged="StateHasChanged" />
         }
@@ -98,7 +98,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="mod-search-inp" style="width:280px;" placeholder="Buscar por nombre, documento, email o rol..." @bind="_query" @bind:event="oninput" @onkeyup="CargarAsync" />
         </div>
-        @if (_tab != EstadoUsuarioTenant.Pendiente)
+        @if (!_verInvitaciones || _tab != EstadoUsuarioTenant.Pendiente)
         {
             <div class="usr-bar-right">
                 @* "Columnas" (solo en vista Tabla): orden, visibilidad. Usuarios NO tiene campos
@@ -185,8 +185,10 @@
         }
     </div>
 
-    @* ===================== Tabla Pendientes (invitaciones) ===================== *@
-    @if (_tab == EstadoUsuarioTenant.Pendiente)
+    @* 2.5 v2.0: las 3 pestanas (Activos/Pendientes/Inactivos) usan la MISMA tabla principal, filtrada por
+       estado (Pendientes agrupa Invitacion pendiente + Pendiente de contacto). La vista separada de
+       invitaciones queda deshabilitada (_verInvitaciones=false); se conserva por si se requiere. *@
+    @if (_verInvitaciones && _tab == EstadoUsuarioTenant.Pendiente)
     {
         @if (_pendientes is null)
         {
@@ -317,7 +319,7 @@
                 }
                 @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
                    muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
-                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles"
+                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones"
                                     Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     SortKey="@_sortKeyU" SortDir="_sortDirU" OnOrdenar="OrdenarPorColumnaU"
@@ -826,6 +828,8 @@
     private string? _jwt;
     private bool _authChecked;
     private EstadoUsuarioTenant _tab = EstadoUsuarioTenant.Activo;
+    // 2.5 v2.0: las 3 pestanas usan la tabla principal; la vista separada de invitaciones queda apagada.
+    private const bool _verInvitaciones = false;
     private string _query = "";
     private bool _busy;
     private bool _sinPermiso;
@@ -1569,9 +1573,19 @@
         {
             var http = Auth();
             _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
+            // 2.5 v2.0: opciones de Cargo (catalogo global usuario.cargo, editable por A&D) para el alta.
+            try
+            {
+                _cargoOpciones = (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>("/api/catalogos?lista=usuario.cargo") ?? new())
+                    .Select(o => o.Label).ToList();
+            }
+            catch { }
         }
         catch { /* sin roles no podemos invitar pero el resto funciona */ }
     }
+
+    // 2.5 v2.0: opciones de Cargo (del catalogo), para el control multi-select del alta.
+    private List<string> _cargoOpciones = new();
 
     // E1b: crear un rol basico inline desde el alta de Usuarios (reusa el endpoint del modulo Roles con
     // la matriz por defecto). Recarga el catalogo y devuelve el id del rol creado para seleccionarlo.
@@ -1641,12 +1655,19 @@
             personaId = nueva.Id;
         }
 
-        // 2) Enviar la invitacion (queda en Pendientes hasta que la persona la acepte).
+        // 2) 2.5 v2.0: crear el UsuarioTenant en "Invitacion pendiente" con TODOS sus roles/cargos
+        //    (modelo elegido: el usuario nace pendiente; el multi-rol vive en el UsuarioTenant).
+        var rolIds = d.RolIds is { Count: > 0 } ? d.RolIds.ToList() : (d.RolId != Guid.Empty ? new List<Guid> { d.RolId } : new List<Guid>());
+        var cargos = d.Cargos?.ToList() ?? new List<string>();
+        var alta = await http.PostAsJsonAsync("/api/usuarios/alta", new CrearUsuarioAltaRequest(personaId, rolIds, cargos));
+        if (!alta.IsSuccessStatusCode) { _msg = "No se pudo crear el usuario: " + await alta.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+
+        // 3) Enviar la invitacion (link de aceptacion / fijar password).
         var inv = await http.PostAsJsonAsync("/api/usuarios/invitaciones",
             new CrearInvitacionRequest(personaId, d.RolId, CanalEnvioInvitacion.Email));
-        if (!inv.IsSuccessStatusCode) { _msg = "No se pudo invitar: " + await inv.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+        if (!inv.IsSuccessStatusCode) { _msg = "Usuario creado, pero no se pudo enviar la invitacion: " + await inv.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; await CargarAsync(); return; }
 
-        _msg = $"Invitacion enviada a {d.Nombres} {d.Apellidos}. Aparece en Pendientes."; _msgClass = "alert-success";
+        _msg = $"Usuario {d.Nombres} {d.Apellidos} creado (Invitación pendiente)."; _msgClass = "alert-success";
         await CargarAsync();
     }
 

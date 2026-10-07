@@ -111,7 +111,7 @@
                                 <span class="usr-mchip usr-mchip--rol">@rn<button type="button" class="usr-mchip-x" title="Quitar" @onclick="() => QuitarRol(rr)">&times;</button></span>
                             }
                             @if (_d.RolIds.Count == 0) { <span class="usr-mph">Agregar rol</span> }
-                            <button type="button" class="usr-madd" title="Agregar rol" @onclick="() => _rolMenuOpen = !_rolMenuOpen">+</button>
+                            <button type="button" class="usr-madd usr-madd--rol" title="Agregar rol" @onclick="() => { _rolMenuOpen = !_rolMenuOpen; _cargoMenuOpen = false; }">+</button>
                             @if (_rolMenuOpen)
                             {
                                 <div class="usr-mback" @onclick="() => _rolMenuOpen = false"></div>
@@ -137,6 +137,32 @@
                         @* Telefono editable (opcional): queda en la persona del Directorio al crearla. *@
                         <input class="utb-inp" type="tel" placeholder="Telefono (opcional)"
                                @oninput="@(e => _d.Telefono = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
+                        break;
+                    case "cargo":
+                        @* 2.5 v2.0: Cargo MULTI-SELECT (mismo control que Rol; descriptivo, no da permisos). *@
+                        <div class="usr-multi">
+                            @foreach (var cg in _d.Cargos)
+                            {
+                                var c0 = cg;
+                                <span class="usr-mchip usr-mchip--cargo">@c0<button type="button" class="usr-mchip-x" title="Quitar" @onclick="() => QuitarCargo(c0)">&times;</button></span>
+                            }
+                            @if (_d.Cargos.Count == 0) { <span class="usr-mph">Agregar cargo</span> }
+                            <button type="button" class="usr-madd usr-madd--cargo" title="Agregar cargo" @onclick="() => { _cargoMenuOpen = !_cargoMenuOpen; _rolMenuOpen = false; }">+</button>
+                            @if (_cargoMenuOpen)
+                            {
+                                <div class="usr-mback" @onclick="() => _cargoMenuOpen = false"></div>
+                                <div class="usr-mmenu">
+                                    @foreach (var op in CargoOpciones)
+                                    {
+                                        var o0 = op; var on = _d.Cargos.Contains(o0, StringComparer.OrdinalIgnoreCase);
+                                        <button type="button" class="usr-mopt @(on ? "on" : "")" @onclick="() => ToggleCargo(o0)">
+                                            <span class="usr-mcheck">@(on ? (MarkupString)"&#10003;" : (MarkupString)"")</span>@o0
+                                        </button>
+                                    }
+                                    @if (CargoOpciones.Count == 0) { <div class="usr-mph" style="padding:8px">Sin cargos configurados</div> }
+                                </div>
+                            }
+                        </div>
                         break;
                     case "estado":
                         <div class="utb-nf-mut">Pendiente</div>
@@ -482,9 +508,12 @@
         }
         else { _fabSig = null; }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".utb-scroll"); } catch { } }
-        // Anclar el menu flotante de rol (fixed) al boton "+", para que no lo recorte el scroll de la tabla.
-        if (_rolMenuOpen && !_rolMenuAnclado) { _rolMenuAnclado = true; try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", ".utb-newrow .usr-madd", ".utb-newrow .usr-mmenu"); } catch { } }
+        // Anclar los menus flotantes (fixed) a su boton "+", para que no los recorte el scroll de la tabla.
+        // Solo uno abre a la vez (se excluyen), asi que .usr-mmenu es unico.
+        if (_rolMenuOpen && !_rolMenuAnclado) { _rolMenuAnclado = true; try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", ".utb-newrow .usr-madd--rol", ".utb-newrow .usr-mmenu"); } catch { } }
         if (!_rolMenuOpen) _rolMenuAnclado = false;
+        if (_cargoMenuOpen && !_cargoMenuAnclado) { _cargoMenuAnclado = true; try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", ".utb-newrow .usr-madd--cargo", ".utb-newrow .usr-mmenu"); } catch { } }
+        if (!_cargoMenuOpen) _cargoMenuAnclado = false;
     }
 
     // Valido (spec 2.5 v2.0): documento + nombre completo (>=2 palabras) + canal de invitacion (Correo O
@@ -508,9 +537,10 @@
         public string Documento = "";
         public string NombreCompleto = "";
         public List<Guid> RolIds = new();
+        public List<string> Cargos = new();
         public string Email = "";
         public string Telefono = "";
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolIds = new(); Email = ""; Telefono = ""; }
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolIds = new(); Cargos = new(); Email = ""; Telefono = ""; }
     }
 
     private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -564,18 +594,28 @@
                 _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, primarioId,
                 string.IsNullOrWhiteSpace(_d.Email) ? null : _d.Email.Trim(),
                 string.IsNullOrWhiteSpace(_d.Telefono) ? null : _d.Telefono.Trim(),
-                _d.RolIds.Count > 0 ? _d.RolIds.ToList() : null));
+                _d.RolIds.Count > 0 ? _d.RolIds.ToList() : null,
+                _d.Cargos.Count > 0 ? _d.Cargos.ToList() : null));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
-            _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false;
+            _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false; _cargoMenuOpen = false;
         }
         finally { _busy = false; }
     }
 
-    // ===== Control multi-select de Rol (chips + menu toggle) =====
+    // ===== Controles multi-select de Rol y Cargo (chips + menu toggle) =====
+    [Parameter] public IReadOnlyList<string> CargoOpciones { get; set; } = Array.Empty<string>();
     private bool _rolMenuOpen;
     private bool _rolMenuAnclado;
+    private bool _cargoMenuOpen;
+    private bool _cargoMenuAnclado;
     private void ToggleRol(Guid id) { if (!_d.RolIds.Remove(id)) _d.RolIds.Add(id); }   // toggle; el menu queda abierto
     private void QuitarRol(Guid id) => _d.RolIds.Remove(id);
+    private void ToggleCargo(string c)
+    {
+        var i = _d.Cargos.FindIndex(x => string.Equals(x, c, StringComparison.OrdinalIgnoreCase));
+        if (i >= 0) _d.Cargos.RemoveAt(i); else _d.Cargos.Add(c);
+    }
+    private void QuitarCargo(string c) => _d.Cargos.RemoveAll(x => string.Equals(x, c, StringComparison.OrdinalIgnoreCase));
 }
 
 @* Estilos EXCLUSIVOS de la vista Tabla (columnas dinamicas): celda editable inline, cabecera con
