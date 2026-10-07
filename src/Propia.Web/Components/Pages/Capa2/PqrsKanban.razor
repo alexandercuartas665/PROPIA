@@ -800,10 +800,33 @@
     }
 </div>
 
+@* Menu contextual de la fila (clic derecho), canon vista-tabla (reusa TablaCtxMenu). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
 <ModalHost />
 
 
 @code {
+    // ===== Menu contextual de la fila (clic derecho): abrir ficha / copiar enlace (canon vista-tabla) =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxPqr(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, PqrsdBandejaItemDto it)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => IrA(it.Id)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlacePqr(it)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlacePqr(PqrsdBandejaItemDto it)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}pqrs#pqrsd-{it.Id}"); }
+        catch { }
+    }
+
     private string? _jwt;
     private bool _authChecked;
     private PqrsdBandejaDto? _bandeja;
@@ -1007,7 +1030,8 @@
     private List<PqrsdBandejaItemDto> RaicesOrdenadasPqr() => AplicarSortPqr(ItemsFiltrados).ToList();
     // Fila hoja de la tabla PQRSD (la aporta este modulo; el render de grupos <tr> la reutiliza).
     private RenderFragment<PqrsdBandejaItemDto> FilaPqrTpl => it =>
-    @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)">
+    @<tr class="pk-tr @(_recienCreados.Contains(it.Id) ? "pk-tr-nuevo" : "")" @onclick="() => IrA(it.Id)"
+         @oncontextmenu="e => AbrirCtxPqr(e, it)" @oncontextmenu:preventDefault="true">
         <td class="pk-td-exp" @onclick:stopPropagation="true">
             <button type="button" class="pk-exp" title="Abrir la ficha" @onclick="() => IrA(it.Id)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
