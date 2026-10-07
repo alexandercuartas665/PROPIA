@@ -101,39 +101,31 @@
                         <input class="utb-inp" placeholder="Nombre completo" @oninput="@(e => _d.NombreCompleto = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
                         break;
                     case "rol":
-                        @if (_creandoRol)
-                        {
-                            @* E1b: crear rol basico inline (como "agregar tipo" en Unidades). *@
-                            <div class="utb-nf-first">
-                                <input class="utb-inp" placeholder="Nombre del rol nuevo" value="@_nuevoRolNombre" @oninput="@(e => _nuevoRolNombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="RolKey" />
-                                <button type="button" class="utb-nf-ok" title="Crear rol" @onclick="ConfirmarNuevoRol" disabled="@_rolBusy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg></button>
-                                <button type="button" class="utb-nf-cancel" title="Cancelar" @onclick="() => _creandoRol = false" disabled="@_rolBusy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
-                            </div>
-                        }
-                        else if (_d.RolId != Guid.Empty)
-                        {
-                            @* Rol elegido = pildora/chip con "x" para cambiarlo (un solo rol por usuario). *@
-                            var rolNom = Roles.FirstOrDefault(r => r.Id == _d.RolId)?.Nombre ?? "Rol";
-                            <span class="utb-rol-pill">
-                                @rolNom
-                                <button type="button" class="utb-rol-pill-x" title="Cambiar rol" @onclick="() => _d.RolId = Guid.Empty">
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                                </button>
-                            </span>
-                        }
-                        else
-                        {
-                            <div class="utb-nf-first">
-                                <select class="utb-inp" @bind="_d.RolId">
-                                    <option value="@Guid.Empty">Rol...</option>
+                        @* 2.5 v2.0: Rol MULTI-SELECT inline. Chips de los roles elegidos (cada uno con "x") +
+                           boton "+" que abre un MENU toggle con todos los roles; se pueden marcar varios y el
+                           menu NO se cierra al elegir. Default al guardar: si queda vacio -> Portal Residente. *@
+                        <div class="usr-multi">
+                            @foreach (var rid in _d.RolIds)
+                            {
+                                var rr = rid; var rn = Roles.FirstOrDefault(r => r.Id == rr)?.Nombre ?? "Rol";
+                                <span class="usr-mchip usr-mchip--rol">@rn<button type="button" class="usr-mchip-x" title="Quitar" @onclick="() => QuitarRol(rr)">&times;</button></span>
+                            }
+                            @if (_d.RolIds.Count == 0) { <span class="usr-mph">Agregar rol</span> }
+                            <button type="button" class="usr-madd" title="Agregar rol" @onclick="() => _rolMenuOpen = !_rolMenuOpen">+</button>
+                            @if (_rolMenuOpen)
+                            {
+                                <div class="usr-mback" @onclick="() => _rolMenuOpen = false"></div>
+                                <div class="usr-mmenu">
                                     @foreach (var r in Roles.Where(r => r.Activo))
                                     {
-                                        <option value="@r.Id">@r.Nombre</option>
+                                        var rid2 = r.Id; var on = _d.RolIds.Contains(rid2);
+                                        <button type="button" class="usr-mopt @(on ? "on" : "")" @onclick="() => ToggleRol(rid2)">
+                                            <span class="usr-mcheck">@(on ? (MarkupString)"&#10003;" : (MarkupString)"")</span>@r.Nombre
+                                        </button>
                                     }
-                                </select>
-                                <button type="button" class="utb-rol-add" title="Nuevo rol" @onclick="AbrirNuevoRol">+</button>
-                            </div>
-                        }
+                                </div>
+                            }
+                        </div>
                         break;
                     case "email":
                         @* Correo editable: si se escribe, la invitacion se envia a el y queda en la persona
@@ -490,13 +482,17 @@
         }
         else { _fabSig = null; }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".utb-scroll"); } catch { } }
+        // Anclar el menu flotante de rol (fixed) al boton "+", para que no lo recorte el scroll de la tabla.
+        if (_rolMenuOpen && !_rolMenuAnclado) { _rolMenuAnclado = true; try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", ".utb-newrow .usr-madd", ".utb-newrow .usr-mmenu"); } catch { } }
+        if (!_rolMenuOpen) _rolMenuAnclado = false;
     }
 
-    // Valido: el nombre completo debe tener al menos 2 palabras (nombres + apellidos, ambos obligatorios en BD).
+    // Valido (spec 2.5 v2.0): documento + nombre completo (>=2 palabras) + canal de invitacion (Correo O
+    // Celular). El Rol NO es obligatorio: si queda vacio se guarda "Portal Residente" por defecto.
     private bool Valido =>
         !string.IsNullOrWhiteSpace(_d.Documento) &&
         _d.NombreCompleto.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2 &&
-        _d.RolId != Guid.Empty;
+        (!string.IsNullOrWhiteSpace(_d.Email) || !string.IsNullOrWhiteSpace(_d.Telefono));
 
     // Divide "Nombre completo" en nombres (primera palabra) y apellidos (el resto).
     private static (string Nombres, string Apellidos) PartirNombre(string completo)
@@ -511,10 +507,10 @@
         public TipoDocumento TipoDocumento = TipoDocumento.CC;
         public string Documento = "";
         public string NombreCompleto = "";
-        public Guid RolId = Guid.Empty;
+        public List<Guid> RolIds = new();
         public string Email = "";
         public string Telefono = "";
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolId = Guid.Empty; Email = ""; Telefono = ""; }
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolIds = new(); Email = ""; Telefono = ""; }
     }
 
     private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -541,7 +537,7 @@
         try
         {
             var id = await CrearRolInline(nombre);
-            if (id is Guid g && g != Guid.Empty) _d.RolId = g;
+            if (id is Guid g && g != Guid.Empty && !_d.RolIds.Contains(g)) _d.RolIds.Add(g);
             _creandoRol = false;
         }
         finally { _rolBusy = false; }
@@ -553,22 +549,33 @@
     {
         if (!Valido)
         {
-            await OnMensaje.InvokeAsync("Completa documento, nombre completo (nombres y apellidos) y rol para invitar.");
+            await OnMensaje.InvokeAsync("Completa documento, nombre completo (nombres y apellidos) y un correo o celular.");
             return;
         }
         _busy = true;
         try
         {
             var (nombres, apellidos) = PartirNombre(_d.NombreCompleto);
+            // Rol principal: el primero elegido; si no eligieron ninguno, "Portal Residente" por defecto (spec).
+            var primarioId = _d.RolIds.Count > 0
+                ? _d.RolIds[0]
+                : (Roles.FirstOrDefault(r => r.Nombre == "Portal Residente")?.Id ?? _d.RolIds.FirstOrDefault());
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
-                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, _d.RolId,
+                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, primarioId,
                 string.IsNullOrWhiteSpace(_d.Email) ? null : _d.Email.Trim(),
-                string.IsNullOrWhiteSpace(_d.Telefono) ? null : _d.Telefono.Trim()));
+                string.IsNullOrWhiteSpace(_d.Telefono) ? null : _d.Telefono.Trim(),
+                _d.RolIds.Count > 0 ? _d.RolIds.ToList() : null));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
-            _d.Reset(); _nonce++; _altaAbierta = false;
+            _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false;
         }
         finally { _busy = false; }
     }
+
+    // ===== Control multi-select de Rol (chips + menu toggle) =====
+    private bool _rolMenuOpen;
+    private bool _rolMenuAnclado;
+    private void ToggleRol(Guid id) { if (!_d.RolIds.Remove(id)) _d.RolIds.Add(id); }   // toggle; el menu queda abierto
+    private void QuitarRol(Guid id) => _d.RolIds.Remove(id);
 }
 
 @* Estilos EXCLUSIVOS de la vista Tabla (columnas dinamicas): celda editable inline, cabecera con
@@ -601,4 +608,21 @@
     .utb-rol-pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 6px 4px 11px; border-radius: 999px; background: var(--propia-brand-soft); color: var(--propia-brand-text-2, var(--propia-brand)); border: 1px solid var(--propia-brand-border); font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .utb-rol-pill-x { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; opacity: .7; }
     .utb-rol-pill-x:hover { opacity: 1; background: var(--propia-brand-soft-2, rgba(109,79,227,.14)); }
+    /* 2.5 v2.0: control multi-select inline (Rol/Cargo) = chips + "+" con menu toggle. */
+    .usr-multi { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 3px 2px; min-width: 0; }
+    .usr-mchip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+    .usr-mchip--rol { background: var(--propia-brand-soft); color: var(--propia-brand-text-2, var(--propia-brand)); }
+    .usr-mchip--cargo { background: var(--propia-border-divider); color: var(--propia-text-body); }
+    .usr-mchip-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 13px; line-height: 1; }
+    .usr-mchip-x:hover { opacity: 1; background: rgba(0,0,0,.08); }
+    .usr-mph { font-size: 12.5px; color: var(--propia-text-faint); }
+    .usr-madd { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border: 1px dashed var(--propia-border-input); background: transparent; color: var(--propia-text-muted); border-radius: 6px; font-size: 15px; line-height: 1; cursor: pointer; font-family: inherit; }
+    .usr-madd:hover { border-style: solid; border-color: var(--propia-brand); color: var(--propia-brand); }
+    .usr-mback { position: fixed; inset: 0; z-index: 40; background: transparent; }
+    .usr-mmenu { position: fixed; z-index: 4000; min-width: 200px; max-height: 280px; overflow: auto; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: var(--propia-shadow-modal, 0 10px 30px rgba(27,42,58,.18)); padding: 5px; }
+    .usr-mopt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 9px; border: 0; background: transparent; border-radius: 7px; font-size: 13px; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
+    .usr-mopt:hover { background: var(--propia-bg-card-soft); }
+    .usr-mopt.on { color: var(--propia-brand); font-weight: 700; }
+    .usr-mcheck { flex: 0 0 auto; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--propia-border-input); border-radius: 4px; font-size: 11px; color: var(--propia-brand); }
+    .usr-mopt.on .usr-mcheck { border-color: var(--propia-brand); background: var(--propia-brand-soft); }
 </style>

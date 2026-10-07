@@ -143,6 +143,23 @@
     };
     window.propiaUI.syncThemeFromServer = pullThemeFromServer;
 
+    // Ancla un menu flotante (position:fixed) al boton indicado, escapando del overflow de la tabla
+    // (mismo problema que SelectorPersona Flotante). Flip arriba si no cabe abajo; clamp al viewport.
+    window.propiaUI.anchorFloatMenu = function (btnSel, menuSel) {
+        try {
+            var btn = document.querySelector(btnSel), menu = document.querySelector(menuSel);
+            if (!btn || !menu) return;
+            var b = btn.getBoundingClientRect();
+            menu.style.position = 'fixed';
+            var mh = menu.offsetHeight || 280, mw = menu.offsetWidth || 210;
+            var top = b.bottom + 4, left = b.left;
+            if (top + mh > window.innerHeight - 8) top = Math.max(8, b.top - mh - 4);
+            if (left + mw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - mw - 8);
+            menu.style.top = top + 'px';
+            menu.style.left = left + 'px';
+        } catch (e) { }
+    };
+
     // ---------- Sidebar toggle (mobile/responsive) ----------
 
     // Aplica el "hueco" que el contenido y el header dejan para el sidebar de columna unica.

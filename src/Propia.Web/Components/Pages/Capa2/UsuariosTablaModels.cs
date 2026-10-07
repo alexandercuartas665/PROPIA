@@ -6,4 +6,6 @@ namespace Propia.Web.Components.Pages.Capa2;
 // la pagina Usuarios encuentra/crea la persona en el Directorio y envia la invitacion.
 public record NuevoUsuarioInvitar(
     TipoDocumento TipoDocumento, string Documento,
-    string Nombres, string Apellidos, Guid RolId, string? Email = null, string? Telefono = null);
+    string Nombres, string Apellidos, Guid RolId, string? Email = null, string? Telefono = null,
+    // 2.5 v2.0: TODOS los roles elegidos (multi-rol). RolId es el principal (primero).
+    IReadOnlyList<Guid>? RolIds = null);
