@@ -344,7 +344,8 @@ else
                                 {
                                     var c = el.Fila!;
                                     var cc = c;
-                                    <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "")">
+                                    <tr class="ctr-row @(_ctrRecienCreados.Contains(c.Id) ? "ctr-row-nuevo" : "")"
+                                        @oncontextmenu="e => AbrirCtxContrato(e, cc)" @oncontextmenu:preventDefault="true">
                                         <td class="ctr-exp-col">
                                             <button type="button" class="ctr-exp" title="Abrir la ficha" @onclick="() => AbrirModal(cc)">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -1347,11 +1348,36 @@ else
 }
 }
 
+@* Menu contextual de la fila (clic derecho), canon vista-tabla (reusa TablaCtxMenu). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
 @* Host de modales globales (programador de tareas). Vive aqui por boundary de render mode. *@
 <ModalHost />
 
 
 @code {
+    // ===== Menu contextual de la fila (clic derecho): abrir ficha / copiar enlace / eliminar =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxContrato(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, ContratoServicioDto c)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirModal(c)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceContrato(c)),
+            new(Sep: true),
+            new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => EliminarAsync(c.Id)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlaceContrato(ContratoServicioDto c)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}contratos#contrato-{c.Id}"); }
+        catch { }
+    }
+
     private string? _jwt;
     private bool _authChecked;
     private bool _busy;

@@ -196,7 +196,8 @@
                         }
                         var p = item.Poliza!;
                         var pp = p;
-                        <div class="seg-row seg-grid @(_segRecienCreados.Contains(p.Id) ? "seg-row-nuevo" : "")" style="@GridStyle()">
+                        <div class="seg-row seg-grid @(_segRecienCreados.Contains(p.Id) ? "seg-row-nuevo" : "")" style="@GridStyle()"
+                             @oncontextmenu="e => AbrirCtxSeguro(e, pp)" @oncontextmenu:preventDefault="true">
                             <div class="seg-exp-col">
                                 <button type="button" class="seg-exp" title="Abrir la ficha" @onclick="() => AbrirModal(pp.Id)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -504,6 +505,9 @@
     }
 }
 
+@* Menu contextual de la fila (clic derecho), canon vista-tabla (reusa TablaCtxMenu). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
 <style>
     .mod-pagehead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
     .mod-pagetitle { font-size: 30px; font-weight: 800; color: var(--propia-text-h1); margin: 0 0 4px; letter-spacing: -.5px; }
@@ -714,6 +718,26 @@
 </style>
 
 @code {
+    // ===== Menu contextual de la fila (clic derecho): abrir ficha / copiar enlace (canon vista-tabla) =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxSeguro(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, PolizaDto p)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirModal(p.Id)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlaceSeguro(p)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlaceSeguro(PolizaDto p)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}seguros#poliza-{p.Id}"); }
+        catch { }
+    }
+
     private string? _jwt;
     private bool _authChecked;
     private string? _loadError;
