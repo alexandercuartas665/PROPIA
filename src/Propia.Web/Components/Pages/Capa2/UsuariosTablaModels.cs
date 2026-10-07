@@ -6,4 +6,4 @@ namespace Propia.Web.Components.Pages.Capa2;
 // la pagina Usuarios encuentra/crea la persona en el Directorio y envia la invitacion.
 public record NuevoUsuarioInvitar(
     TipoDocumento TipoDocumento, string Documento,
-    string Nombres, string Apellidos, Guid RolId);
+    string Nombres, string Apellidos, Guid RolId, string? Email = null);

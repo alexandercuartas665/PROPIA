@@ -179,43 +179,48 @@
         }
         else
         {
+            @* Misma vista TABLA canon que Activos/Inactivos (.utb-head/.utb-row/.utb-grid): header sticky
+               con separadores, filas limpias. Columnas: avatar / Persona / Rol / Estado / Acciones. *@
+            var pendGrid = "grid-template-columns:42px minmax(220px,1.6fr) minmax(150px,1fr) minmax(190px,1.1fr) 264px; min-width:0";
             <div class="usr-table">
-                <div class="usr-th">
-                    <div style="width:42px;flex-shrink:0"></div>
-                    <div style="width:280px;flex-shrink:0">PERSONA</div>
-                    <div style="flex:1">ROL</div>
-                    <div style="width:170px;flex-shrink:0">ESTADO</div>
-                    <div style="width:240px;flex-shrink:0;text-align:right">ACCIONES</div>
-                </div>
-                @foreach (var i in _pendientes)
-                {
-                    var iid = i.Id;
-                    var vencida = i.ExpiraAt < DateTimeOffset.UtcNow;
-                    <div class="usr-row">
-                        <div class="usr-av">@Iniciales(i.PersonaNombre)</div>
-                        <div style="width:280px;flex-shrink:0;min-width:0">
-                            <div class="usr-name">@i.PersonaNombre</div>
-                            <div class="usr-email">@i.PersonaDocumento</div>
-                        </div>
-                        <div style="flex:1"><span class="usr-rol">@i.RolNombre</span></div>
-                        <div style="width:170px;flex-shrink:0">
-                            @if (vencida)
-                            {
-                                <span class="usr-badge-inact">Invitacion vencida</span>
-                            }
-                            else
-                            {
-                                <span class="usr-badge-pend">Invitacion enviada</span>
-                            }
-                            <div class="usr-email mt-1">Expira @i.ExpiraAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
-                        </div>
-                        <div style="width:240px;flex-shrink:0;text-align:right" class="d-flex gap-1 justify-content-end">
-                            <button class="usr-rowbtn" @onclick="() => CopiarLink(i)">Copiar link</button>
-                            <button class="usr-rowbtn" @onclick="() => Reenviar(iid)">Reenviar</button>
-                            <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => Cancelar(iid)">Cancelar</button>
-                        </div>
+                <div class="utb-scroll">
+                    <div class="utb-head utb-grid" style="@pendGrid">
+                        <div></div>
+                        <div>PERSONA</div>
+                        <div>ROL</div>
+                        <div>ESTADO</div>
+                        <div style="justify-content:flex-end">ACCIONES</div>
                     </div>
-                }
+                    @foreach (var i in _pendientes)
+                    {
+                        var iid = i.Id;
+                        var vencida = i.ExpiraAt < DateTimeOffset.UtcNow;
+                        <div class="utb-row utb-grid" style="@pendGrid">
+                            <div class="utb-exp-col"><div class="usr-av">@Iniciales(i.PersonaNombre)</div></div>
+                            <div style="min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start">
+                                <div class="usr-name">@i.PersonaNombre</div>
+                                <div class="usr-email">@i.PersonaDocumento</div>
+                            </div>
+                            <div><span class="usr-rol">@i.RolNombre</span></div>
+                            <div style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start">
+                                @if (vencida)
+                                {
+                                    <span class="usr-badge-inact">Invitacion vencida</span>
+                                }
+                                else
+                                {
+                                    <span class="usr-badge-pend">Invitacion enviada</span>
+                                }
+                                <div class="usr-email mt-1">Expira @i.ExpiraAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</div>
+                            </div>
+                            <div class="d-flex gap-1 justify-content-end align-items-center" style="flex-wrap:wrap">
+                                <button class="usr-rowbtn" @onclick="() => CopiarLink(i)">Copiar link</button>
+                                <button class="usr-rowbtn" @onclick="() => Reenviar(iid)">Reenviar</button>
+                                <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => Cancelar(iid)">Cancelar</button>
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         }
     }
@@ -1588,7 +1593,8 @@
         else
         {
             var crear = await http.PostAsJsonAsync("/api/directorio/personas",
-                new CrearPersonaRequest(d.TipoDocumento, d.Documento, d.Nombres, d.Apellidos, null, null, null, null));
+                new CrearPersonaRequest(d.TipoDocumento, d.Documento, d.Nombres, d.Apellidos,
+                    string.IsNullOrWhiteSpace(d.Email) ? null : d.Email!.Trim(), null, null, null));
             if (!crear.IsSuccessStatusCode) { _msg = "No se pudo crear la persona: " + await crear.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
             var nueva = await crear.Content.ReadFromJsonAsync<PersonaDetalleDto>();
             if (nueva is null) { _msg = "No se pudo crear la persona."; _msgClass = "alert-danger"; return; }

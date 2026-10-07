@@ -110,6 +110,17 @@
                                 <button type="button" class="utb-nf-cancel" title="Cancelar" @onclick="() => _creandoRol = false" disabled="@_rolBusy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
                             </div>
                         }
+                        else if (_d.RolId != Guid.Empty)
+                        {
+                            @* Rol elegido = pildora/chip con "x" para cambiarlo (un solo rol por usuario). *@
+                            var rolNom = Roles.FirstOrDefault(r => r.Id == _d.RolId)?.Nombre ?? "Rol";
+                            <span class="utb-rol-pill">
+                                @rolNom
+                                <button type="button" class="utb-rol-pill-x" title="Cambiar rol" @onclick="() => _d.RolId = Guid.Empty">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                                </button>
+                            </span>
+                        }
                         else
                         {
                             <div class="utb-nf-first">
@@ -125,7 +136,10 @@
                         }
                         break;
                     case "email":
-                        <div class="utb-nf-mut">Al aceptar</div>
+                        @* Correo editable: si se escribe, la invitacion se envia a el y queda en la persona
+                           del Directorio. Opcional: vacio = se completa al aceptar (comportamiento anterior). *@
+                        <input class="utb-inp" type="email" placeholder="Correo (opcional)"
+                               @oninput="@(e => _d.Email = e.Value?.ToString() ?? string.Empty)" @onkeydown="Key" />
                         break;
                     case "estado":
                         <div class="utb-nf-mut">Pendiente</div>
@@ -468,7 +482,8 @@
         public string Documento = "";
         public string NombreCompleto = "";
         public Guid RolId = Guid.Empty;
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolId = Guid.Empty; }
+        public string Email = "";
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; NombreCompleto = ""; RolId = Guid.Empty; Email = ""; }
     }
 
     private async Task Key(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -515,7 +530,8 @@
         {
             var (nombres, apellidos) = PartirNombre(_d.NombreCompleto);
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
-                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, _d.RolId));
+                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, _d.RolId,
+                string.IsNullOrWhiteSpace(_d.Email) ? null : _d.Email.Trim()));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
             _d.Reset(); _nonce++; _altaAbierta = false;
         }
@@ -549,4 +565,8 @@
     .utb-exp:hover { background: var(--propia-brand-soft); }
     .utb-exp:disabled { opacity: 0; cursor: default; }
     .utb-newrow:hover .utb-exp:disabled, .utb-newrow:focus-within .utb-exp:disabled { opacity: .35; }
+    /* Rol elegido en la fila de alta como PILDORA (chip violeta con "x" para cambiarlo). Un rol por usuario. */
+    .utb-rol-pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 6px 4px 11px; border-radius: 999px; background: var(--propia-brand-soft); color: var(--propia-brand-text-2, var(--propia-brand)); border: 1px solid var(--propia-brand-border); font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .utb-rol-pill-x { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; opacity: .7; }
+    .utb-rol-pill-x:hover { opacity: 1; background: var(--propia-brand-soft-2, rgba(109,79,227,.14)); }
 </style>
