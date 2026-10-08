@@ -25,6 +25,8 @@ Detalle completo en **`deploy/DEPLOY_HANDOFF_2026-10-07_v0.0.112.md`** (leer ese
 - **Unidades: eliminado el concepto Torre** (1 MIGRACION DESTRUCTIVA): la unidad se identifica solo por su
   codigo (`numero`); se quitaron entidad/tabla/columna/FK `Torre`, CRUD `/torres`, tools MCP de torres, y
   `TorreNombre`/`TorreId` de los DTOs. **+ validacion de codigo duplicado** (sin mayus/tildes, con mensaje).
+- **Cosmetico**: codigo de unidad en violeta de marca en todos los modulos (CSS/markup, sin migracion).
+  Cache-bust en `App.razor`: `pqrs.css?v=17`, `porteria.css?v=2`.
 
 ### 1 MIGRACION NUEVA — DESTRUCTIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
 - `20261007214045_RemoveTorreDeUnidades` — **hornea** el codigo en `numero` (`<torreShort>-<numero>`,

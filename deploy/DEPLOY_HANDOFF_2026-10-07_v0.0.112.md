@@ -60,6 +60,14 @@ cd src/Propia.Api
    En Railway el flujo normal (build+release del nuevo artefacto, luego migracion) respeta esto.
 3. Idealmente, aviso al equipo antes de aplicarla en cualquier BD compartida.
 
+**3) Cosmetico - codigo de unidad en violeta (`f2cb9892`) [SIN migracion]**
+- El codigo de unidad se muestra en violeta de marca (`var(--propia-brand-text)`, peso 700, igual que el
+  modulo Residentes) en TODOS los modulos que lo muestran: Unidades (tabla+lista), Mascotas, Vehiculos,
+  Cartera + ficha, Presupuesto, PQRSD, Reservas, Porteria, Asamblea y el selector de unidad compartido.
+- Solo CSS/markup (sin hex, usa el token). **Cache-bust:** `App.razor` sube `pqrs.css?v=17` y
+  `porteria.css?v=2` (se editaron esos 2 CSS de modulo). Verificado en runtime: color computado
+  `rgb(75,43,176)` = `--propia-brand-text`.
+
 ## Config / arranque
 - Sin configuracion nueva. El seeder del catalogo (`usuario.cargo`) ya venia de v0.0.111.
 - No hay variables de entorno nuevas.
