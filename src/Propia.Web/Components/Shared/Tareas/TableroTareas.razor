@@ -496,6 +496,18 @@ else
 
             @ColumnColorCss
             @ColumnOrderCss
+            @* Barra de accion masiva (canon): aparece al seleccionar tareas. Accion = Eliminar. *@
+            @if (_selTareas.Count > 0)
+            {
+                <div class="tb-selbar">
+                    <span class="tb-selbar-n">@_selTareas.Count seleccionada@(_selTareas.Count == 1 ? "" : "s")</span>
+                    <button type="button" class="tb-selbar-del" @onclick="EliminarTareasSeleccionadasAsync" disabled="@_selTareasBusy">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                        @(_selTareasBusy ? "Eliminando..." : "Eliminar")
+                    </button>
+                    <button type="button" class="tb-selbar-x" @onclick="() => _selTareas.Clear()">Deseleccionar</button>
+                </div>
+            }
             @* Scroll horizontal SUPERIOR (espejo del de abajo), sincronizado por JS con la tabla. *@
             <div class="tb-topscroll" id="tbTopScroll"><div id="tbTopScrollInner"></div></div>
 
@@ -507,6 +519,8 @@ else
                     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
                 }
                 <div class="tb-list-hdr">
+                    @* Columna de seleccion (canon 38px): seleccionar todo (raices visibles). *@
+                    <div class="tb-lc tb-lc-sel"><label class="tb-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasTareasSel" @onchange="ToggleSelAllTareas" /></label></div>
                     @* Columna del expansor (primera, fija): abre el modal; se ve al pasar el mouse. *@
                     <div class="tb-lc tb-lc-exp"></div>
                     @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
@@ -551,6 +565,7 @@ else
                 @* CTA de alta canon (.row-add--sm): lleva el foco/scroll a la fila de alta inline
                    (NuevaFilaFlat), que se confirma con su propio expansor o con Enter. *@
                 <div class="tb-newrow tb-cta-row">
+                    <div class="tb-row-selc"></div>
                     <div class="tb-row-exp"></div>
                     <div class="tb-nf-ctacell">
                         <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
@@ -2224,6 +2239,7 @@ else
         var pid = padre.Id;
         var val = _subInline.GetValueOrDefault(pid, "");
         <div class="tb-newrow tb-subadd-row">
+            <div class="tb-row-selc"></div>
             <div class="tb-row-exp"></div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
@@ -2484,6 +2500,7 @@ else
                 <button class="tb-group-add" @onclick="() => AbrirCardDraft(null, estadoId.Value)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
             }
         </div>
+        <div class="tb-lc tb-lc-sel"></div>
         <div class="tb-lc tb-lc-exp"></div>
         @if (_colDesc) { <div class="tb-lc tb-lc-desc"></div> }
         @if (_colCodigo) { <div class="tb-lc tb-lc-cod"></div> }
@@ -2886,6 +2903,7 @@ else
         get
         {
             var sb = new System.Text.StringBuilder("<style>");
+            sb.Append(".tb-list .tb-lc-sel,.tb-list .tb-row-selc{order:-2 !important;}");
             sb.Append(".tb-list .tb-lc-exp,.tb-list .tb-row-exp{order:-1 !important;}");
             sb.Append(".tb-list .tb-lc-tit,.tb-list .tb-row-tit{order:0 !important;}");
             int i = 1;
@@ -4028,7 +4046,9 @@ else
     {
         var tarea = t;
         var esHija = depth > 0;
-        <div class="tb-row @(esHija ? "tb-row-child" : "")" style="border-left-color:@(t.Color ?? (esHija ? "var(--propia-border-card)" : "transparent"))" @oncontextmenu="e => AbrirCtxTarea(e, tarea)" @oncontextmenu:preventDefault="true">
+        <div class="tb-row @(esHija ? "tb-row-child" : "") @(_selTareas.Contains(tarea.Id) ? "tb-row-ischk" : "")" style="border-left-color:@(t.Color ?? (esHija ? "var(--propia-border-card)" : "transparent"))" @oncontextmenu="e => AbrirCtxTarea(e, tarea)" @oncontextmenu:preventDefault="true">
+            @* ---- SELECCION (canon 38px) ---- *@
+            <div class="tb-row-selc"><label class="tb-chk"><input type="checkbox" checked="@_selTareas.Contains(tarea.Id)" @onclick:stopPropagation="true" @onchange="e => ToggleSelTarea(tarea.Id, (bool)(e.Value ?? false))" /></label></div>
             @* ---- EXPANSOR (primera columna, se ve al pasar el mouse): abre el modal ---- *@
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" title="Abrir la tarea" @onclick="() => AbrirCardDraft(tarea, null)">
@@ -4437,6 +4457,41 @@ else
         if (resp.IsSuccessStatusCode) _tareas.RemoveAll(t => t.Id == id);
     }
 
+    // ===== Seleccion multiple + accion masiva de tareas (canon): Eliminar =====
+    // Seleccionar todo abarca las tareas RAIZ visibles (las que pasan filtros); los checkbox por fila
+    // tambien permiten marcar subtareas individualmente. El borrado masivo repite el DELETE individual.
+    private readonly HashSet<Guid> _selTareas = new();
+    private bool _selTareasBusy;
+    private List<Guid> RaicesVisiblesIds() => _tareas.Where(x => x.PadreId == null).Where(PasaFiltros).Select(x => x.Id).ToList();
+    private void ToggleSelTarea(Guid id, bool on) { if (on) _selTareas.Add(id); else _selTareas.Remove(id); }
+    private bool TodasTareasSel
+    {
+        get { var ids = RaicesVisiblesIds(); return ids.Count > 0 && ids.All(_selTareas.Contains); }
+    }
+    private void ToggleSelAllTareas(ChangeEventArgs e)
+    {
+        _selTareas.Clear();
+        if ((bool)(e.Value ?? false)) foreach (var id in RaicesVisiblesIds()) _selTareas.Add(id);
+    }
+    private async Task EliminarTareasSeleccionadasAsync()
+    {
+        if (_selTareas.Count == 0) return;
+        var n = _selTareas.Count;
+        if (!await Modals.ConfirmAsync(
+            $"Eliminar {n} tarea(s) seleccionada(s)? Sus subtareas tambien se eliminan. Esta accion no se puede deshacer.",
+            "Eliminar tareas")) return;
+        _selTareasBusy = true;
+        int done = 0, fail = 0;
+        foreach (var id in _selTareas.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/tareas/{id}"); if (r.IsSuccessStatusCode) { done++; _tareas.RemoveAll(t => t.Id == id); } else fail++; }
+            catch { fail++; }
+        }
+        _selTareas.Clear(); _selTareasBusy = false;
+        await RecargarBoard();
+        StateHasChanged();
+    }
+
     // ---- Fila "nueva tarea" inline tipo Excel: Tab entre campos, Enter crea con todo lo lleno ----
     private class NuevaFilaDraft
     {
@@ -4519,6 +4574,7 @@ else
         var estadoId = _board.Estados[0].Id;
         var nf = NuevaFilaDe(estadoId);
         <div class="tb-newrow" @key="nf">
+            <div class="tb-row-selc"></div>
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
