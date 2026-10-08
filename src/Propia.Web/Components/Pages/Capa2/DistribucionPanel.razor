@@ -526,18 +526,52 @@ else
                             {
                                 if (it.EsCustom)
                                 {
-                                    var _cv = MostrarCampoCelda(uu.Id, it.Campo!);
-                                    var _cc = ColorCampoCelda(uu.Id, it.Campo!);
-                                    <td title="@it.Campo!.Label">
-                                        @if (_cc is not null)
-                                        {
-                                            <span class="tbl-chip" style="background:@_cc">@_cv</span>
-                                        }
-                                        else
-                                        {
-                                            @_cv
-                                        }
-                                    </td>
+                                    var cdd = it.Campo!;
+                                    var raw = ValorCampo(uu.Id, cdd.Id);
+                                    switch (cdd.Tipo)
+                                    {
+                                        case TipoCampoTablero.Seleccion:
+                                            <td title="@cdd.Label"><select class="tbl-cell" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
+                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
+                                                @foreach (var o in OpcionCampo.Parse(cdd.Opciones).Where(x => !x.Oculta))
+                                                {
+                                                    <option value="@o.K" selected="@(string.Equals(raw, o.K, StringComparison.OrdinalIgnoreCase))">@o.K</option>
+                                                }
+                                            </select></td>
+                                            break;
+                                        case TipoCampoTablero.Numero:
+                                        case TipoCampoTablero.Moneda:
+                                            <td title="@cdd.Label"><input class="tbl-cell tbl-cell-num" type="number" step="any" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            break;
+                                        case TipoCampoTablero.Fecha:
+                                            <td title="@cdd.Label"><input class="tbl-cell" type="date" value="@raw" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            break;
+                                        case TipoCampoTablero.Booleano:
+                                            <td title="@cdd.Label"><select class="tbl-cell" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
+                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
+                                                <option value="Si" selected="@(raw == "Si")">Si</option>
+                                                <option value="No" selected="@(raw == "No")">No</option>
+                                            </select></td>
+                                            break;
+                                        case TipoCampoTablero.Formula:
+                                            @* Calculado y de solo lectura: se computa en el backend. *@
+                                            <td class="nf-mut" title="Se calcula automaticamente">@MostrarCampoCelda(uu.Id, cdd)</td>
+                                            break;
+                                        case TipoCampoTablero.Usuario:
+                                            <td title="@cdd.Label"><select class="tbl-cell" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
+                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
+                                                @foreach (var us in _usuariosTenant) { <option value="@us.PersonaId" selected="@(raw == us.PersonaId.ToString())">@us.NombreCompleto</option> }
+                                            </select></td>
+                                            break;
+                                        case TipoCampoTablero.Directorio:
+                                            @* El tipo Directorio (persona) se edita desde la ficha: un SelectorPersona por fila
+                                               (x279) seria pesado. Aqui se muestra el nombre resuelto. *@
+                                            <td class="nf-mut" title="@cdd.Label - Editar desde la ficha">@MostrarCampoCelda(uu.Id, cdd)</td>
+                                            break;
+                                        default:
+                                            <td title="@cdd.Label"><input class="tbl-cell" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            break;
+                                    }
                                     continue;
                                 }
                                 switch (it.Def!.Key)
@@ -770,13 +804,21 @@ else
                                     break;
                             }
                         }
-                        <td class="tbl-addcol dst-act-nf">
-                            <button type="button" class="dst-nf-ok" title="Guardar registro (Enter)" @onclick="() => CrearUnidadDesdeAltaAsync(false)" disabled="@_creandoUnidad">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                            </button>
-                            <button type="button" class="dst-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_creandoUnidad">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                            </button>
+                        @* Guardado invisible: sin ✓/×. Se guarda al salir de la fila (clic fuera) o al terminar
+                           el tabulado (Tab tras el ultimo campo); Enter tambien guarda, Esc cancela. Celda de
+                           acciones vacia para conservar la alineacion. *@
+                        <td class="tbl-addcol"></td>
+                    </tr>
+                    @* Fila-aviso bajo la fila de alta: recuerda como guardar ahora que no hay boton. *@
+                    <tr class="newrow dst-nf-hint">
+                        <td class="tbl-sel"></td>
+                        <td class="tbl-exp"></td>
+                        <td class="dst-nf-hint-cell" colspan="@(ColSpanTotal - 2)">
+                            <span class="dst-nf-hint-txt">
+                                <kbd class="dst-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                <span class="dst-nf-hint-sep">&middot;</span>
+                                <kbd class="dst-kbd">Esc</kbd> para cancelar
+                            </span>
                         </td>
                     </tr>
                     }
@@ -983,6 +1025,25 @@ else
         _usuarioNombre[c.PersonaId] = c.NombreCompleto;
     }
 
+    // Edicion inline de un campo custom en una fila YA creada: guarda el valor (PUT) y refresca el cache
+    // local para que la celda muestre el valor sin recargar. Mismo endpoint que usa el alta.
+    private async Task InlineCampoAsync(UnidadDto u, UnidadCampoDefinicionDto def, string? valor)
+    {
+        var v = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}/campos/{def.Id}", new SetCampoValorRequest(v));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_camposValores.TryGetValue(u.Id, out var m)) { m = new(); _camposValores[u.Id] = m; }
+                m[def.Id] = v;
+            }
+            else { _inlineMsgU = "No se pudo guardar el campo."; }
+        }
+        catch (Exception ex) { _inlineMsgU = "Error al guardar el campo: " + ex.Message; }
+        StateHasChanged();
+    }
+
     // Propietario inline: asigna la persona elegida (SelectorPersona) como Propietario de la unidad.
     // Reusa la API de miembros de unidad (PersonaId ya resuelto -> no exige documento). Refresca al terminar.
     private async Task AsignarPropietarioAsync(UnidadDto u, Propia.Application.Directorio.PersonaCandidatoDto? c)
@@ -1064,6 +1125,16 @@ else
     {
         if (e.Key == "Escape") CerrarAlta();
         else if (e.Key == "Enter") await CrearUnidadDesdeAltaAsync(false);
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave cuando el foco/clic SALE de la fila de alta
+    // (Tab tras el ultimo campo o clic fuera). Con codigo -> crea; vacia -> descarta sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _creandoUnidad) return;
+        if (string.IsNullOrWhiteSpace(_nuNum)) { CerrarAlta(); StateHasChanged(); return; }
+        await CrearUnidadDesdeAltaAsync(false);
+        StateHasChanged();
     }
 
     // ===== Menu "Columnas" inline (orden/visibilidad + borrar DIN). Crear campo = "+" del header (gestor completo). =====
@@ -1902,6 +1973,10 @@ else
                 _wiredSig = sig;
                 _self ??= DotNetObjectReference.Create(this);
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
+                // Guardado invisible de la fila de alta (sin ✓/×): activa/desactiva el auto-guardado robusto
+                // (clic fuera + Tab fuera; ignora pickers nativos y el panel flotante del selector de persona).
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
 
@@ -3193,6 +3268,13 @@ else
     .dst-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-card); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .dst-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-brand-soft); }
     .dst-act-nf { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+    /* Fila-aviso del alta invisible: recuerda como se guarda. Tenue, no interactiva. */
+    .dst-nf-hint { background: var(--propia-brand-soft-2, var(--propia-bg-subtle)); }
+    .dst-nf-hint:hover { background: var(--propia-brand-soft-2, var(--propia-bg-subtle)); }
+    .dst-nf-hint > td { border-bottom: 1px solid var(--propia-border-divider); padding: 5px 16px; }
+    .dst-nf-hint-txt { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--propia-text-faint); letter-spacing: .2px; }
+    .dst-nf-hint-sep { opacity: .5; }
+    .dst-kbd { display: inline-flex; align-items: center; min-width: 20px; justify-content: center; padding: 1px 6px; border: 1px solid var(--propia-border-card); border-bottom-width: 2px; border-radius: 5px; background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 10.5px; font-weight: 700; font-family: inherit; }
     .dst-row-add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--propia-brand-border); background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
     .dst-row-add:hover:not(:disabled) { background: var(--propia-brand-soft); }
     .dst-row-add:disabled { opacity: .5; cursor: default; }
