@@ -39,13 +39,8 @@
                     <InputFile OnChange="OnPlantillaImport" accept=".xlsx" style="display:none" disabled="@_impBusy" />
                 </label>
             }
-            @if (_authChecked && !string.IsNullOrEmpty(_jwt))
-            {
-                <button class="dir-btn-ghost" type="button" @onclick="AbrirCfgEtiquetas" title="Configurar etiquetas del directorio">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                    Etiquetas
-                </button>
-            }
+            @* La lista de etiquetas se gestiona desde el menu de columna "Etiquetas" (chevron) de la
+               vista tabla, como las demas listas de catalogo (estado/tipo). Ya no hay boton propio. *@
             <button class="dir-btn-brand" type="button" @onclick="AbrirCrear">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar
@@ -176,7 +171,7 @@
         @if (_tab == "personas")
         {
             <DirectorioPersonasVista Personas="PersonasParaVista()" Recien="_recienP" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
-                                     Etiquetas="_etiquetasTodas"
+                                     Etiquetas="EtiquetasOpciones()"
                                      ColsWidth="_widthPersonas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
@@ -253,19 +248,19 @@
                         {
                             var vinc0 = vincs[0];
                             <div class="dir-dt-tags">
-                                @foreach (var et in vincs.SelectMany(v => v.Etiquetas).GroupBy(e => e.EtiquetaId).Select(g => g.First()))
+                                @{ var asignadas = vincs.SelectMany(v => v.Etiquetas).GroupBy(e => NormalizarEt(e.Valor)).Select(g => g.First()).ToList(); }
+                                @foreach (var et in asignadas)
                                 {
-                                    <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">
-                                        @EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span>
+                                    <span class="dir-tag dir-tag--et">
+                                        <span>@et.Valor</span>
                                         <button type="button" class="dir-tag-x" title="Quitar" @onclick="() => QuitarEtiquetaContacto(et.Id)">&times;</button>
                                     </span>
                                 }
                                 <select class="dir-tag-add" @onchange="@(e => AsignarEtiquetaContacto(vinc0.Id, e.Value?.ToString()))" disabled="@_detalleBusy">
                                     <option value="">+ etiqueta</option>
-                                    @foreach (var op in _etiquetasTodas.Where(c => (esEmpresa ? c.AplicaA != AplicaEtiqueta.Persona : c.AplicaA != AplicaEtiqueta.Empresa)
-                                                                                    && !vincs.SelectMany(v => v.Etiquetas).Any(a => a.EtiquetaId == c.Id)))
+                                    @foreach (var op in EtiquetasOpciones().Where(v => !asignadas.Any(a => NormalizarEt(a.Valor) == NormalizarEt(v))))
                                     {
-                                        <option value="@op.Id">@op.Nombre</option>
+                                        <option value="@op">@op</option>
                                     }
                                 </select>
                             </div>
@@ -494,7 +489,7 @@
                                             <span class="dir-tag @(v.Estado == EstadoVinculo.Activo ? "dir-tag--ok" : "dir-tag--mute")">@v.Estado</span>
                                             @foreach (var et in v.Etiquetas)
                                             {
-                                                <span class="dir-tag @(et.Grupo == GrupoEtiqueta.Identidad ? "dir-tag--brand" : "dir-tag--mute")">@et.Nombre</span>
+                                                <span class="dir-tag dir-tag--et">@et.Valor</span>
                                             }
                                         </div>
                                     </div>
@@ -649,7 +644,7 @@
                                 <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
                                     <select @bind="_etiquetaPersonaSel">
                                         <option value="">- Sin etiqueta -</option>
-                                        @foreach (var et in _etiquetasIdentidadPersona) { <option value="@et.Id">@et.Nombre</option> }
+                                        @foreach (var et in EtiquetasOpciones()) { <option value="@et">@et</option> }
                                     </select>
                                 </div>
                             </div>
@@ -679,7 +674,7 @@
                         <div class="dir-field dir-field--wide"><label>Etiqueta de identidad</label>
                             <select @bind="_etiquetaEmpresaSel">
                                 <option value="">- Sin etiqueta -</option>
-                                @foreach (var et in _etiquetasIdentidadEmpresa) { <option value="@et.Id">@et.Nombre</option> }
+                                @foreach (var et in EtiquetasOpciones()) { <option value="@et">@et</option> }
                             </select>
                         </div>
                     </div>
@@ -690,86 +685,6 @@
                 }
             </div>
 
-        </div>
-    </div>
-}
-
-@* ===================== CONFIGURAR ETIQUETAS ===================== *@
-@if (_cfgOpen)
-{
-    <div class="dir-modal-backdrop" @onclick="() => _cfgOpen = false">
-        <div class="dir-cfg" @onclick:stopPropagation="true">
-            <div class="dir-cfg-head">
-                <div>
-                    <div class="dir-cfg-title">Configurar etiquetas</div>
-                    <div class="dir-cfg-sub">Crea etiquetas con icono para marcar y filtrar contactos del directorio.</div>
-                </div>
-                <button class="dir-x" @onclick="() => _cfgOpen = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>
-            <div class="dir-cfg-body">
-                @* Crear / editar *@
-                <div class="dir-cfg-form">
-                    <div class="dir-cfg-formtitle">@(_cfgEditId is null ? "Nueva etiqueta" : "Editar etiqueta")</div>
-                    <div class="dir-cfg-row">
-                        <div class="dir-cfg-emoji" style="color:@_cfgColor;">@EtiquetaIconos.Svg(string.IsNullOrEmpty(_cfgIcono) ? "tag" : _cfgIcono, 22)</div>
-                        <input class="dir-cfg-inp" @bind="_cfgNombre" @bind:event="oninput" placeholder="Nombre (ej. Contratista)" maxlength="40" />
-                        <input class="dir-cfg-color" type="color" @bind="_cfgColor" title="Color" />
-                    </div>
-                    <label class="gpq-mini-lbl" style="font-size:10px;color:var(--propia-text-muted);">Icono</label>
-                    <div class="dir-cfg-iconos">
-                        @foreach (var ic in EtiquetaIconos.Catalogo)
-                        {
-                            <button type="button" class="dir-cfg-iconbtn @(_cfgIcono == ic.Key ? "on" : "")" title="@ic.Label" @onclick="() => _cfgIcono = ic.Key">
-                                @EtiquetaIconos.Svg(ic.Key, 17)
-                            </button>
-                        }
-                    </div>
-                    @if (_cfgEditId is null)
-                    {
-                        <div class="dir-cfg-row">
-                            <select class="dir-cfg-inp" @bind="_cfgGrupo">
-                                <option value="@GrupoEtiqueta.Identidad">Grupo: Identidad</option>
-                                <option value="@GrupoEtiqueta.Cargo">Grupo: Cargo / rol</option>
-                            </select>
-                            <select class="dir-cfg-inp" @bind="_cfgAplica">
-                                <option value="@AplicaEtiqueta.Persona">Aplica a: Personas</option>
-                                <option value="@AplicaEtiqueta.Empresa">Aplica a: Empresas</option>
-                                <option value="@AplicaEtiqueta.Ambos">Aplica a: Ambos</option>
-                            </select>
-                        </div>
-                    }
-                    <div class="dir-cfg-formfoot">
-                        @if (_cfgEditId is not null)
-                        {
-                            <button class="dir-btn-ghost" type="button" @onclick="ResetCfgForm">Cancelar</button>
-                        }
-                        <button class="dir-btn-brand" type="button" @onclick="GuardarEtiqueta" disabled="@(_cfgBusy || string.IsNullOrWhiteSpace(_cfgNombre))">
-                            @(_cfgEditId is null ? "Crear etiqueta" : "Guardar")
-                        </button>
-                    </div>
-                    @if (_cfgMsg is not null) { <div class="dir-cfg-msg @(_cfgErr ? "err" : "ok")">@_cfgMsg</div> }
-                </div>
-
-                @* Listado del catalogo *@
-                <div class="dir-cfg-list">
-                    @foreach (var et in _etiquetasTodas)
-                    {
-                        <div class="dir-cfg-item">
-                            <span class="dir-cfg-itemchip" style="@ChipStyle(et.Color)">@EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span></span>
-                            <span class="dir-cfg-itemmeta">@GrupoLabel(et.Grupo) · @AplicaLabel(et.AplicaA)</span>
-                            @if (et.EsBase)
-                            {
-                                <span class="dir-cfg-basebadge">predefinida</span>
-                            }
-                            else
-                            {
-                                <button class="dir-cfg-mini" title="Editar" @onclick="() => EditarEtiqueta(et)">Editar</button>
-                                <button class="dir-cfg-mini dir-cfg-mini--del" title="Eliminar" @onclick="() => EliminarEtiqueta(et.Id)">Eliminar</button>
-                            }
-                        </div>
-                    }
-                </div>
-            </div>
         </div>
     </div>
 }
@@ -792,7 +707,10 @@
 @if (_editSisClave is not null)
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Requerido="_editSisReq"
+                             Tipo="@(_editSisClave == "etiquetas" ? TipoCampoTablero.Seleccion : null)"
                              EntidadConfig="personas" TituloSingular="registro del directorio" Jwt="@_jwt"
+                             OpcionesLista="@(_editSisClave == "etiquetas" ? EtiquetasOpcionesVista() : null)"
+                             OnAgregarOpcion="AgregarEtiquetaOpcionAsync"
                              Guardado="RecargarCamposDir" Cerrado="() => _editSisClave = null" />
 }
 
@@ -856,21 +774,44 @@
     private string? _msgPersona; private string _msgPersonaClass = "alert-info";
     private string? _msgEmpresa; private string _msgEmpresaClass = "alert-info";
 
-    private List<EtiquetaCatalogoDto> _etiquetasIdentidadPersona = new();
-    private List<EtiquetaCatalogoDto> _etiquetasIdentidadEmpresa = new();
-
-    // ----- Etiquetas: catalogo completo, filtro y panel de configuracion -----
-    private List<EtiquetaCatalogoDto> _etiquetasTodas = new();
+    // ----- Etiquetas (lista de catalogo global directorio.etiqueta + custom por copropiedad) -----
+    // Las opciones base salen del catalogo (editable por A&D en /admin/catalogos); los custom del
+    // tenant viven en la config del campo (unidades-config, entidad=personas, campo=etiquetas), igual
+    // que las listas de sistema de Unidades (Estado). La asignacion por contacto es un texto (chip).
+    private List<string> _catEtiqueta = new();          // labels activos del catalogo directorio.etiqueta
+    private List<string> _etiquetaCustom = new();        // valores custom del tenant (de la config del campo)
+    private UnidadCampoConfigDto? _etiquetaCfgRow;       // fila de config del campo "etiquetas" (para preservar alias/oculto)
     // Filtro dinamico unico (componente compartido): mismos campos para personas y empresas.
     private FiltroDinamico? _fd;
-    private bool _cfgOpen;
-    private Guid? _cfgEditId;
-    private string _cfgNombre = "";
-    private string _cfgIcono = "";
-    private string _cfgColor = "#6D4FE3";
-    private GrupoEtiqueta _cfgGrupo = GrupoEtiqueta.Identidad;
-    private AplicaEtiqueta _cfgAplica = AplicaEtiqueta.Persona;
-    private string? _cfgMsg; private bool _cfgErr; private bool _cfgBusy;
+
+    // Opciones de etiqueta ofrecidas (catalogo + custom), dedup case/acento-insensible, catalogo primero.
+    private List<string> EtiquetasOpciones()
+    {
+        var res = new List<string>();
+        var vistos = new HashSet<string>();
+        foreach (var v in _catEtiqueta.Concat(_etiquetaCustom))
+        {
+            var val = (v ?? "").Trim();
+            if (val.Length == 0) continue;
+            if (vistos.Add(NormalizarEt(val))) res.Add(val);
+        }
+        return res;
+    }
+
+    // Vista de las opciones para EditarCampoSistemaModal (solo texto, sin color).
+    private List<EditarCampoSistemaModal.OpcionVista> EtiquetasOpcionesVista()
+        => EtiquetasOpciones().Select(v => new EditarCampoSistemaModal.OpcionVista(v, null)).ToList();
+
+    // Normaliza un valor de etiqueta para comparar/deduplicar sin acentos ni mayusculas.
+    private static string NormalizarEt(string s)
+    {
+        var t = (s ?? "").Trim().ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(t.Length);
+        foreach (var ch in t)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
+    }
 
     private List<FiltroDinamico.CampoDef> CamposFiltroDir => new()
     {
@@ -881,7 +822,7 @@
         new() { Key = "estado", Label = "Estado", Kind = "sel",
                 Opciones = Enum.GetValues<EstadoDirectorio>().Select(s => (s.ToString(), s.ToString())).ToList() },
         new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
-                Opciones = _etiquetasTodas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
+                Opciones = EtiquetasOpciones().Select(v => (v, v)).ToList() },
     };
 
     // Paginacion (footer canonico) de la vista Tabla. Sin agrupar; con agrupacion se ven todos.
@@ -919,7 +860,7 @@
                 "email" => p.Email ?? "",
                 "telefono" => p.Telefono ?? "",
                 "estado" => p.Estado.ToString(),
-                "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.EtiquetaId)),
+                "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Valor)),
                 _ => ""
             }) ?? true).ToList();
             if (list is not null && _sortsDir.Count > 0)
@@ -949,7 +890,7 @@
                 "email" => em.Email ?? "",
                 "telefono" => em.Telefono ?? "",
                 "estado" => em.Estado.ToString(),
-                "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.EtiquetaId)),
+                "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.Valor)),
                 _ => ""
             }) ?? true).ToList();
             if (list is not null && _sortsDir.Count > 0)
@@ -984,14 +925,14 @@
     private static IEnumerable<ValorGrupo> ValorGrupoPersona(PersonaResumenDto p, string clave)
     {
         if (p.Etiquetas is null) yield break;
-        foreach (var e in p.Etiquetas.DistinctBy(x => x.EtiquetaId))
-            yield return new ValorGrupo(e.EtiquetaId.ToString(), e.Nombre, e.Color, e.Icono);
+        foreach (var e in p.Etiquetas.DistinctBy(x => x.Valor))
+            yield return new ValorGrupo(e.Valor, e.Valor, null, null);
     }
     private static IEnumerable<ValorGrupo> ValorGrupoEmpresa(EmpresaResumenDto em, string clave)
     {
         if (em.Etiquetas is null) yield break;
-        foreach (var e in em.Etiquetas.DistinctBy(x => x.EtiquetaId))
-            yield return new ValorGrupo(e.EtiquetaId.ToString(), e.Nombre, e.Color, e.Icono);
+        foreach (var e in em.Etiquetas.DistinctBy(x => x.Valor))
+            yield return new ValorGrupo(e.Valor, e.Valor, null, null);
     }
 
     private List<DirectorioPersonasVista.Grupo>? GruposPersonas()
@@ -1277,7 +1218,7 @@
         "email" => p.Email ?? "",
         "telefono" => p.Telefono ?? "",
         "estado" => p.Estado.ToString(),
-        "etiquetas" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Nombre)),
+        "etiquetas" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Valor)),
         _ => ""
     };
 
@@ -1724,97 +1665,83 @@
         catch (Exception ex) { _loadError = ex.Message; }
     }
 
+    // Carga las opciones de etiqueta: base del catalogo global (directorio.etiqueta, editable por A&D) +
+    // custom del tenant (config del campo, igual que las listas de sistema de Unidades).
     private async Task CargarEtiquetasAsync()
     {
         var http = Auth();
-        _etiquetasIdentidadPersona = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Persona&grupo=Identidad") ?? new();
-        _etiquetasIdentidadEmpresa = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas?aplicaA=Empresa&grupo=Identidad") ?? new();
-        _etiquetasTodas = await http.GetFromJsonAsync<List<EtiquetaCatalogoDto>>("/api/directorio/etiquetas") ?? new();
-    }
-
-    // ===================== Etiquetas: configuracion =====================
-    private void AbrirCfgEtiquetas() { _cfgOpen = true; ResetCfgForm(); }
-
-    private void ResetCfgForm()
-    {
-        _cfgEditId = null; _cfgNombre = ""; _cfgIcono = ""; _cfgColor = "#6D4FE3";
-        _cfgGrupo = GrupoEtiqueta.Identidad; _cfgAplica = AplicaEtiqueta.Persona; _cfgMsg = null;
-    }
-
-    private void EditarEtiqueta(EtiquetaCatalogoDto et)
-    {
-        _cfgEditId = et.Id; _cfgNombre = et.Nombre; _cfgIcono = et.Icono ?? "";
-        _cfgColor = string.IsNullOrEmpty(et.Color) ? "#6D4FE3" : et.Color!;
-        _cfgGrupo = et.Grupo; _cfgAplica = et.AplicaA; _cfgMsg = null;
-    }
-
-    private async Task GuardarEtiqueta()
-    {
-        if (string.IsNullOrWhiteSpace(_cfgNombre)) return;
-        _cfgBusy = true; _cfgMsg = null;
+        try { _catEtiqueta = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=directorio.etiqueta") ?? new()).Select(o => o.Label).ToList(); }
+        catch { _catEtiqueta = new(); }
         try
         {
-            var http = Auth();
-            HttpResponseMessage resp;
-            if (_cfgEditId is null)
-            {
-                resp = await http.PostAsJsonAsync("/api/directorio/etiquetas",
-                    new CrearEtiquetaCustomRequest(_cfgNombre.Trim(), _cfgGrupo, _cfgAplica,
-                        string.IsNullOrWhiteSpace(_cfgIcono) ? null : _cfgIcono, _cfgColor));
-            }
-            else
-            {
-                resp = await http.PutAsJsonAsync($"/api/directorio/etiquetas/{_cfgEditId}",
-                    new EditarEtiquetaRequest(_cfgNombre.Trim(),
-                        string.IsNullOrWhiteSpace(_cfgIcono) ? null : _cfgIcono, _cfgColor));
-            }
-            if (resp.IsSuccessStatusCode)
-            {
-                await CargarEtiquetasAsync();
-                await CargarAsync();          // refresca chips en las tarjetas
-                ResetCfgForm();
-                _cfgMsg = "Etiqueta guardada."; _cfgErr = false;
-            }
-            else { _cfgMsg = await ErrTxt(resp); _cfgErr = true; }
+            var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=personas") ?? new();
+            _etiquetaCfgRow = cfg.FirstOrDefault(c => string.Equals(c.CampoClave, "etiquetas", StringComparison.OrdinalIgnoreCase));
+            _etiquetaCustom = ParseEtiquetaCustom(_etiquetaCfgRow?.Opciones);
         }
-        catch (Exception ex) { _cfgMsg = ex.Message; _cfgErr = true; }
-        finally { _cfgBusy = false; }
+        catch { _etiquetaCfgRow = null; _etiquetaCustom = new(); }
     }
 
-    private async Task EliminarEtiqueta(Guid id)
+    // Las opciones custom se guardan como JSON array de strings en Opciones de la config del campo.
+    private static List<string> ParseEtiquetaCustom(string? raw)
     {
-        _cfgBusy = true; _cfgMsg = null;
+        if (string.IsNullOrWhiteSpace(raw)) return new();
         try
         {
-            var resp = await Auth().DeleteAsync($"/api/directorio/etiquetas/{id}");
-            if (resp.IsSuccessStatusCode)
-            {
-                if (_cfgEditId == id) ResetCfgForm();
-                await CargarEtiquetasAsync();
-                await CargarAsync();
-                _cfgMsg = "Etiqueta eliminada."; _cfgErr = false;
-            }
-            else { _cfgMsg = await ErrTxt(resp); _cfgErr = true; }
+            var t = raw.TrimStart();
+            if (t.StartsWith('[')) return System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw) ?? new();
+            // Formato legado (una por linea): se tolera.
+            return raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         }
-        catch (Exception ex) { _cfgMsg = ex.Message; _cfgErr = true; }
-        finally { _cfgBusy = false; }
+        catch { return new(); }
     }
 
-    private static async Task<string> ErrTxt(HttpResponseMessage resp)
+    // Agregar una opcion propia desde EditarCampoSistemaModal (menu de columna "Etiquetas"): dedup
+    // case/acento-insensible contra catalogo + custom; persiste en la config del campo (entidad=personas).
+    private async Task AgregarEtiquetaOpcionAsync(string texto)
     {
-        try { var e = await resp.Content.ReadFromJsonAsync<ErrResp>(); return e?.error ?? "No se pudo completar la accion."; }
-        catch { return "No se pudo completar la accion."; }
+        if (_editSisClave != "etiquetas") return;
+        var val = (texto ?? "").Trim();
+        if (val.Length == 0) return;
+        var norm = NormalizarEt(val);
+        if (EtiquetasOpciones().Any(v => NormalizarEt(v) == norm)) return;   // ya existe (catalogo o custom)
+        _etiquetaCustom.Add(val);
+        await GuardarEtiquetaCustomAsync();
+        StateHasChanged();
     }
-    private sealed class ErrResp { public string? error { get; set; } }
+
+    // Persiste la lista de custom en la config del campo "etiquetas" (entidad=personas), preservando
+    // alias/visibilidad existentes. El PUT de unidades-config es un merge por (entidad, campoClave).
+    private async Task GuardarEtiquetaCustomAsync()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(_etiquetaCustom);
+        var req = new GuardarUnidadCampoConfigRequest(
+            CampoClave: "etiquetas",
+            Alias: _etiquetaCfgRow?.Alias,
+            Opciones: json,
+            Tipo: _etiquetaCfgRow?.Tipo,
+            Formato: _etiquetaCfgRow?.Formato,
+            Oculto: _etiquetaCfgRow?.Oculto ?? false,
+            Orden: _etiquetaCfgRow?.Orden,
+            Entidad: "personas",
+            Descripcion: _etiquetaCfgRow?.Descripcion);
+        try
+        {
+            var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req);
+            if (r.IsSuccessStatusCode)
+                _etiquetaCfgRow = (_etiquetaCfgRow ?? new UnidadCampoConfigDto("etiquetas", null, json, Entidad: "personas")) with { Opciones = json };
+        }
+        catch { }
+    }
 
     // Marcar / desmarcar etiquetas de un contacto (ficha 360) via su vinculo con la copropiedad.
-    private async Task AsignarEtiquetaContacto(Guid vinculoId, string? etiquetaIdStr)
+    private async Task AsignarEtiquetaContacto(Guid vinculoId, string? valor)
     {
-        if (!Guid.TryParse(etiquetaIdStr, out var etiquetaId)) return;
+        var val = (valor ?? "").Trim();
+        if (val.Length == 0) return;
         _detalleBusy = true;
         try
         {
-            await Auth().PostAsJsonAsync("/api/directorio/vinculos/etiquetas", new AsignarEtiquetaRequest(vinculoId, etiquetaId));
+            await Auth().PostAsJsonAsync("/api/directorio/vinculos/etiquetas", new AsignarEtiquetaRequest(vinculoId, val));
             await RecargarDetalleYLista();
         }
         catch (Exception ex) { _detalleError = ex.Message; }
@@ -1839,11 +1766,6 @@
         else await AbrirPersona(_detalleId);
         await CargarAsync();   // refresca chips en el listado
     }
-
-    private static string ChipStyle(string? color)
-        => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";
-    private static string GrupoLabel(GrupoEtiqueta g) => g == GrupoEtiqueta.Identidad ? "Identidad" : "Cargo";
-    private static string AplicaLabel(AplicaEtiqueta a) => a switch { AplicaEtiqueta.Persona => "Personas", AplicaEtiqueta.Empresa => "Empresas", _ => "Ambos" };
 
     // ===================== Detalle 360 =====================
     private async Task AbrirPersona(Guid id)
@@ -1963,10 +1885,10 @@
         _busquedaHecha = true;
     }
 
-    private List<Guid> EtiquetasPersonaSel()
-        => string.IsNullOrEmpty(_etiquetaPersonaSel) ? new() : new() { Guid.Parse(_etiquetaPersonaSel) };
-    private List<Guid> EtiquetasEmpresaSel()
-        => string.IsNullOrEmpty(_etiquetaEmpresaSel) ? new() : new() { Guid.Parse(_etiquetaEmpresaSel) };
+    private List<string> EtiquetasPersonaSel()
+        => string.IsNullOrWhiteSpace(_etiquetaPersonaSel) ? new() : new() { _etiquetaPersonaSel.Trim() };
+    private List<string> EtiquetasEmpresaSel()
+        => string.IsNullOrWhiteSpace(_etiquetaEmpresaSel) ? new() : new() { _etiquetaEmpresaSel.Trim() };
 
     private async Task VincularPersonaExistente()
     {
@@ -2042,7 +1964,7 @@
         if (nueva is not null)
         {
             // Si en el alta inline se eligio una etiqueta, se asigna al crear el vinculo.
-            var etiquetas = d.EtiquetaId is Guid et ? new List<Guid> { et } : new List<Guid>();
+            var etiquetas = string.IsNullOrWhiteSpace(d.Etiqueta) ? new List<string>() : new List<string> { d.Etiqueta.Trim() };
             await http.PostAsJsonAsync("/api/directorio/vinculos",
                 new CrearVinculoRequest(EntidadDirectorio.Persona, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), etiquetas));
             _recienP.Add(nueva.Id); _suppressRecienClear = true;   // verde + al final hasta el proximo refresco
@@ -2111,7 +2033,7 @@
         if (nueva is not null)
         {
             await http.PostAsJsonAsync("/api/directorio/vinculos",
-                new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<Guid>()));
+                new CrearVinculoRequest(EntidadDirectorio.Empresa, nueva.Id, DateOnly.FromDateTime(DateTime.UtcNow), new List<string>()));
             _recienE.Add(nueva.Id); _suppressRecienClear = true;   // verde + al final hasta el proximo refresco
         }
         await CargarAsync();

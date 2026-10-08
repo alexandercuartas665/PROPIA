@@ -34,7 +34,7 @@ else if (Vista == "lista")
                 {
                     var g = item.Grupo!;
                     <div class="dtab-group">
-                        <span class="dir-tag dir-tag--et dtab-group-chip" style="@ChipStyle(g.Color)">@EtiquetaIconos.Svg(g.Icono)<span>@g.Titulo</span></span>
+                        <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
                         <span class="dtab-group-n">@g.Items.Count</span>
                     </div>
                     continue;
@@ -52,7 +52,7 @@ else if (Vista == "lista")
                         {
                             @foreach (var et in p.Etiquetas)
                             {
-                                <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">@EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span></span>
+                                <span class="dir-tag dir-tag--et">@et.Valor</span>
                             }
                         }
                         @if (p.PerfilIncompleto) { <span class="dir-tag dir-tag--warn">Incompleto</span> }
@@ -149,7 +149,7 @@ else
                 {
                     var g = item.Grupo!;
                     <div class="dtab-group dtab-group--row">
-                        <span class="dir-tag dir-tag--et dtab-group-chip" style="@ChipStyle(g.Color)">@EtiquetaIconos.Svg(g.Icono)<span>@g.Titulo</span></span>
+                        <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
                         <span class="dtab-group-n">@g.Items.Count</span>
                     </div>
                     continue;
@@ -193,7 +193,7 @@ else
                                 break;
                             case "etiquetas":
                                 <div class="dtab-c dtab-tags-cell">
-                                    @if (p.Etiquetas is not null) { @foreach (var et in p.Etiquetas) { <span class="dir-tag dir-tag--et" style="@ChipStyle(et.Color)">@EtiquetaIconos.Svg(et.Icono)<span>@et.Nombre</span></span> } }
+                                    @if (p.Etiquetas is not null) { @foreach (var et in p.Etiquetas) { <span class="dir-tag dir-tag--et">@et.Valor</span> } }
                                 </div>
                                 break;
                         }
@@ -299,11 +299,11 @@ else
                         case "etiquetas":
                             @if (EtiquetasPersona.Count > 0)
                             {
-                                <select class="dtab-inp" @bind="_draft.EtiquetaId">
+                                <select class="dtab-inp" @bind="_draft.Etiqueta">
                                     <option value="">- Etiqueta -</option>
                                     @foreach (var et in EtiquetasPersona)
                                     {
-                                        <option value="@et.Id">@et.Nombre</option>
+                                        <option value="@et">@et</option>
                                     }
                                 </select>
                             }
@@ -366,13 +366,11 @@ else
     /// <summary>Edicion inline de una celda: la pagina persiste (tiene el DTO completo y Auth).</summary>
     [Parameter] public EventCallback<EdicionCampoDir> OnEditarCampo { get; set; }
 
-    /// <summary>Catalogo de etiquetas del directorio; se ofrece un select en el alta inline para
-    /// asignarle una etiqueta a la persona al crearla (ej. Propietario).</summary>
-    [Parameter] public List<EtiquetaCatalogoDto>? Etiquetas { get; set; }
+    /// <summary>Opciones de etiqueta del directorio (valores de texto: catalogo directorio.etiqueta +
+    /// custom del tenant); se ofrece un select en el alta inline para etiquetar la persona al crearla.</summary>
+    [Parameter] public List<string>? Etiquetas { get; set; }
 
-    // Etiquetas aplicables a personas (Persona o Ambos), activas, para el select del alta.
-    private List<EtiquetaCatalogoDto> EtiquetasPersona =>
-        Etiquetas?.Where(e => e.Activo && e.AplicaA != AplicaEtiqueta.Empresa).ToList() ?? new();
+    private List<string> EtiquetasPersona => Etiquetas ?? new();
 
     /// <summary>Edicion inline emitida al padre (Id de la persona, campo y nuevo valor).</summary>
     public sealed record EdicionCampoDir(Guid Id, string Campo, string? Valor);
@@ -565,8 +563,8 @@ else
         public string Apellidos = "";
         public string? Email;
         public string? Telefono;
-        public string EtiquetaId = "";   // id de la etiqueta seleccionada en el alta (vacio = sin etiqueta)
-        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; Email = null; Telefono = null; EtiquetaId = ""; }
+        public string Etiqueta = "";   // valor de la etiqueta elegida en el alta (vacio = sin etiqueta)
+        public void Reset() { TipoDocumento = TipoDocumento.CC; Documento = ""; Nombres = ""; Apellidos = ""; Email = null; Telefono = null; Etiqueta = ""; }
     }
 
     private async Task RowKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -608,7 +606,7 @@ else
         _draft.Nombres.Trim(), _draft.Apellidos.Trim(),
         string.IsNullOrWhiteSpace(_draft.Email) ? null : _draft.Email.Trim(),
         string.IsNullOrWhiteSpace(_draft.Telefono) ? null : _draft.Telefono.Trim(),
-        Guid.TryParse(_draft.EtiquetaId, out var etId) ? etId : null);
+        string.IsNullOrWhiteSpace(_draft.Etiqueta) ? null : _draft.Etiqueta.Trim());
 
     // ===== Interacciones de tabla: el orden lo aplica la pagina (antes de paginar); aqui reordenar
     // por arrastre, redimensionar por puntero (JS compartido) y el menu contextual del clic derecho. =====
@@ -696,9 +694,6 @@ else
     }
 
     public void Dispose() { _self?.Dispose(); _toastCts?.Cancel(); }
-
-    private static string ChipStyle(string? color)
-        => string.IsNullOrWhiteSpace(color) ? "" : $"background:{color}1A;color:{color};border-color:{color}55;";
 
     private static string Iniciales(string? nombres, string? apellidos)
     {

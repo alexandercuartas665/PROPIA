@@ -68,8 +68,10 @@ public partial class PropiaDbContext
         modelBuilder.Entity<DirectorioEtiqueta>(b =>
         {
             b.HasOne(x => x.Vinculo).WithMany().HasForeignKey(x => x.VinculoId).OnDelete(DeleteBehavior.Cascade);
-            b.HasOne(x => x.Etiqueta).WithMany().HasForeignKey(x => x.EtiquetaId).OnDelete(DeleteBehavior.Restrict);
-            b.HasIndex(x => new { x.VinculoId, x.EtiquetaId }).IsUnique();
+            b.Property(x => x.Valor).IsRequired().HasMaxLength(100);
+            // Etiqueta como texto (valor de la lista directorio.etiqueta + custom del tenant): sin FK al
+            // catalogo rico. La tabla etiquetas_catalogo se conserva (cleanup aparte).
+            b.HasIndex(x => new { x.VinculoId, x.Valor }).IsUnique();
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });

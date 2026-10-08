@@ -65,20 +65,16 @@ public interface IDirectorioService
     // --- Vinculos con copropiedad ---
     Task<VinculoDto> CrearVinculoAsync(CrearVinculoRequest req, CancellationToken ct);
     Task<bool> InactivarVinculoAsync(Guid vinculoId, string? motivo, CancellationToken ct);
+    /// <summary>Asigna una etiqueta (valor de texto) al vinculo. Idempotente por valor (case/acento-insensible).</summary>
     Task<VinculoDto> AsignarEtiquetaAsync(AsignarEtiquetaRequest req, CancellationToken ct);
+    /// <summary>Quita una asignacion de etiqueta por su id de fila (directorio_etiqueta).</summary>
     Task<bool> QuitarEtiquetaAsync(Guid asignacionId, CancellationToken ct);
-    /// <summary>Asegura (idempotente, solo agrega) la etiqueta base del Directorio que corresponde al rol con que se vinculo la persona/empresa a una unidad. Respeta AplicaA. Best-effort.</summary>
+    /// <summary>Asegura (idempotente, solo agrega) la etiqueta de texto que corresponde al rol con que se vinculo la persona/empresa a una unidad. Best-effort.</summary>
     Task AsegurarEtiquetaPorRolAsync(EntidadDirectorio tipo, Guid entidadId, RolUnidadPersona rol, CancellationToken ct);
 
     // --- Contactos ---
     Task<ContactoDto> AgregarContactoAsync(AgregarContactoRequest req, CancellationToken ct);
     Task<bool> EliminarContactoAsync(Guid contactoId, CancellationToken ct);
-
-    // --- Catalogo de etiquetas (base + custom) ---
-    Task<IReadOnlyList<EtiquetaCatalogoDto>> ListarEtiquetasAsync(AplicaEtiqueta? aplicaA, GrupoEtiqueta? grupo, CancellationToken ct);
-    Task<EtiquetaCatalogoDto> CrearEtiquetaCustomAsync(CrearEtiquetaCustomRequest req, CancellationToken ct);
-    Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, EditarEtiquetaRequest req, CancellationToken ct);
-    Task<bool> EliminarEtiquetaCustomAsync(Guid etiquetaId, CancellationToken ct);
 
     // --- Adjuntos (documentos de la identidad: RUT, camara de comercio, certificados) ---
     Task<IReadOnlyList<DirectorioAdjuntoDto>> ListarAdjuntosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct);

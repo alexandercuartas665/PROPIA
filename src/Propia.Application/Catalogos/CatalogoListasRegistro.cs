@@ -29,6 +29,7 @@ public static class CatalogoListasRegistro
         new("zona.categoria",       "Zonas comunes · Categoría",            false),
         new("zona.estado",          "Zonas comunes · Estado",               false),
         new("persona.sexo",         "Personas · Sexo",                      false),
+        new("directorio.etiqueta",  "Directorio · Etiquetas",               false),
         new("usuario.cargo",        "Usuarios · Cargo (descriptivo)",       false),
     };
 

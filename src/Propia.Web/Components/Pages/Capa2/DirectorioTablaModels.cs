@@ -7,7 +7,7 @@ namespace Propia.Web.Components.Pages.Capa2;
 public record NuevaPersonaDir(
     TipoDocumento TipoDocumento, string Documento,
     string Nombres, string Apellidos, string? Email, string? Telefono,
-    Guid? EtiquetaId = null);
+    string? Etiqueta = null);
 
 public record NuevaEmpresaDir(
     string Nit, string? Dv, string RazonSocial,
