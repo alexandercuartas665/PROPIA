@@ -319,13 +319,20 @@ else
                     @foreach (var d in Defs) { <div class="dtab-c dtab-ro" title="Los campos propios se completan tras vincular a una unidad">-</div> }
                 }
                 <div class="dtab-addcol-cell"></div>
-                <div class="dtab-act dtab-act-nf">
-                    <button type="button" class="dtab-nf-ok" title="Agregar (Enter)" @onclick="CrearPersonaInline" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                    </button>
-                    <button type="button" class="dtab-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                    </button>
+                @* Guardado invisible: sin OK/cancelar. Se guarda al salir de la fila (clic fuera) o al
+                   terminar el tabulado (Tab); Enter guarda, Esc cancela. Celda de acciones vacia (alineacion). *@
+                <div class="dtab-act dtab-act-nf"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*; estructura de la fila CTA). *@
+            <div class="dtab-cta-row tbl-nf-hintrow dvp-grid" style="grid-template-columns:@GridCols">
+                <div class="dtab-sel-cell"></div>
+                <div class="dtab-exp-col"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
                 </div>
             </div>
             }
@@ -540,11 +547,14 @@ else
         if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
         if (Grupos is null)
         {
-            var sig = $"{Personas?.Count ?? 0}";
+            var sig = $"{_altaAbierta}|{Personas?.Count ?? 0}";
             if (sig != _wiredSig)
             {
                 _wiredSig = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", Self, ".dtab-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y el flotante .sp-pop).
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".dtab-newrow", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPending)
@@ -575,6 +585,16 @@ else
     {
         if (e.Key == "Enter" && DraftValido) await CrearPersonaInline();
         else if (e.Key == "Escape") CerrarAlta();
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con borrador valido crea; incompleto descarta sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _busy) return;
+        if (!DraftValido) { CerrarAlta(); StateHasChanged(); return; }
+        await CrearPersonaInline();
+        StateHasChanged();
     }
 
     // El componente solo emite los datos; la pagina Directorio hace el POST con su propio Auth().
