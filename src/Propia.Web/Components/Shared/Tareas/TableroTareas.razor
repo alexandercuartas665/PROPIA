@@ -552,6 +552,7 @@ else
                         @RenderArbol(t, 0)
                     }
                     @NuevaFilaFlat
+                    @FilaAvisoAlta
                 }
                 else
                 {
@@ -561,6 +562,7 @@ else
                        completos). La fila de alta unica al pie crea en la etapa que se elija en la fila. *@
                     @RenderGruposLista(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList(), 0)
                     @NuevaFilaFlat
+                    @FilaAvisoAlta
                 }
                 @* CTA de alta canon (.row-add--sm): lleva el foco/scroll a la fila de alta inline
                    (NuevaFilaFlat), que se confirma con su propio expansor o con Enter. *@
@@ -2198,6 +2200,7 @@ else
     private bool _ctaVisible = true;                       // true = la fila de alta esta a la vista -> FAB oculto
     private DotNetObjectReference<TableroTareas>? _selfTbl;
     private string? _wiredSigTbl;
+    private bool _altaAutoSaveOnTbl;                        // true = altaAutoSave enganchado en la vista Tabla
     private bool _scrollCtaPendT;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
@@ -3234,13 +3237,33 @@ else
                     try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfTbl, "#tbList"); } catch { }
                 }
             }
-            // Alta inline sin boton: re-ancla el guardado-al-salir de la fila de alta (idempotente).
-            try { await Js.InvokeVoidAsync("propiaUI.rowBlurSave", _selfTbl, ".tb-newrow", "AltaBlurGuardar"); } catch { }
+            // Alta inline sin boton: guardado invisible ROBUSTO (altaAutoSave) al salir de la fila (clic
+            // fuera) o al terminar el tabulado (Tab). Reemplaza el fragil rowBlurSave (focusout, saltaba con
+            // los pickers nativos de fecha/select). La fila de alta (NuevaFilaFlat, .tb-newrow--alta) esta
+            // SIEMPRE presente en vista Tabla; .tb-newrow a secas la comparten la fila CTA y la de subtarea,
+            // de ahi el selector especifico. Ignora el pop del selector de persona (.sp-pop).
+            var altaPresenteTbl = _board is not null && _board.Estados.Count > 0;
+            if (altaPresenteTbl && !_altaAutoSaveOnTbl)
+            {
+                _altaAutoSaveOnTbl = true;
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfTbl, ".tb-newrow--alta", "AltaBlurGuardar", ".sp-pop"); } catch { }
+            }
+            else if (!altaPresenteTbl && _altaAutoSaveOnTbl)
+            {
+                _altaAutoSaveOnTbl = false;
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
+            }
             if (_scrollCtaPendT)
             {
                 _scrollCtaPendT = false;
                 try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", "#tbList"); } catch { }
             }
+        }
+        else if (_altaAutoSaveOnTbl)
+        {
+            // Se desmonto la vista Tabla (kanban u otro modo): soltar los listeners del guardado invisible.
+            _altaAutoSaveOnTbl = false;
+            try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
         }
         // Chat de actividad: al abrir la tarjeta o tras enviar un mensaje, dejarlo scrolleado abajo (ultimo mensaje visible).
         if (_scrollChatPend)
@@ -4573,7 +4596,9 @@ else
         if (_board is null || _board.Estados.Count == 0) { return; }
         var estadoId = _board.Estados[0].Id;
         var nf = NuevaFilaDe(estadoId);
-        <div class="tb-newrow" @key="nf">
+        @* .tb-newrow--alta: clase propia para que altaAutoSave observe SOLO esta fila de alta real.
+           La base .tb-newrow la comparten la fila CTA (tb-cta-row) y la de subtarea (tb-subadd-row). *@
+        <div class="tb-newrow tb-newrow--alta" @key="nf">
             <div class="tb-row-selc"></div>
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)" disabled="@string.IsNullOrWhiteSpace(nf.Titulo)">
@@ -4615,6 +4640,24 @@ else
             @foreach (var c in CamposVisibles) { <div class="tb-row-campo tb-cc-@c.Id"></div> }
             @* Sin boton +/x (A4): la fila de alta se guarda al salir de la fila (blur) o con Enter; Esc cancela. *@
             <div class="tb-row-acc"></div>
+        </div>
+    };
+
+    @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-*; definidas en tabla-base.css). Misma
+       estructura de celdas que la fila CTA de Tareas (tb-row-selc + tb-row-exp vacias + tb-nf-ctacell). *@
+    private RenderFragment FilaAvisoAlta => __builder =>
+    {
+        if (_board is null || _board.Estados.Count == 0) { return; }
+        <div class="tb-newrow tbl-nf-hintrow">
+            <div class="tb-row-selc"></div>
+            <div class="tb-row-exp"></div>
+            <div class="tb-nf-ctacell">
+                <span class="tbl-nf-hint-txt">
+                    <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                    <span class="tbl-nf-hint-sep">&middot;</span>
+                    <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                </span>
+            </div>
         </div>
     };
 

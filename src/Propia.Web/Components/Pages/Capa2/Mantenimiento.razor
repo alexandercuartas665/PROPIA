@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 
 <PageTitle>Mantenimiento y Activos - PROPIA</PageTitle>
 
@@ -144,17 +145,15 @@
                                     break;
                             }
                         }
-                        <div class="mtp-act">
-                            <button type="button" class="mtp-del" title="Eliminar" @onclick="() => EliminarProgAsync(pp)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                            </button>
-                        </div>
+                        @* Cesto por fila retirado: el borrado va por la barra de seleccion multiple (mtp-selbar). *@
+                        <div class="mtp-act"></div>
                     </div>
                 }
             }
-            @* Alta inline (canon regla 8): un control por columna; "+ Agregar" crea directo.
+            @* Alta inline (canon regla 8): un control por columna; guardado INVISIBLE (sin "+ Agregar"):
+               se crea al salir de la fila (clic fuera o Tab) via AltaBlurGuardar si hay activo+titulo+fecha.
                El expansor de la fila de alta abre el formulario completo (cron, responsables, correo). *@
-            <div class="mtp-newrow" style="@ProgGrid">
+            <div class="mtp-newrow mtp-newrow--prog" style="@ProgGrid">
                 <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col">
                     <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="AltaProgAsync">
@@ -242,8 +241,20 @@
                             break;
                     }
                 }
-                <div class="mtp-act">
-                    <button type="button" class="mtp-add" @onclick="AltaProgInlineAsync" disabled="@_busy">+ Agregar</button>
+                @* Guardado invisible: sin "+ Agregar". Se guarda al salir de la fila (clic fuera) o al
+                   terminar el tabulado (Tab). Celda de acciones vacia (alineacion). *@
+                <div class="mtp-act"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta de Programaciones (clases compartidas .tbl-nf-hint*). *@
+            <div class="mtp-newrow tbl-nf-hintrow" style="@ProgGrid">
+                <div class="mtp-sel-col"></div>
+                <div class="mtp-exp-col"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
                 </div>
             </div>
             @* CTA de alta canon (.row-add--sm): lleva el foco a la fila de alta, que se confirma con
@@ -1106,6 +1117,12 @@ else if (_tab == "calendario")
     private string? _jwt;
     private bool _authChecked;
     private bool _busy;
+
+    // Referencia a este componente para los interop de JS (guardado invisible de la fila de alta).
+    private DotNetObjectReference<Mantenimiento>? _self;
+    private DotNetObjectReference<Mantenimiento> Self => _self ??= DotNetObjectReference.Create(this);
+    private string? _altaWiredSig;   // (re)instala el listener de guardado invisible solo cuando cambia el estado
+    public void Dispose() { _self?.Dispose(); }
     private string? _msg;
     private string _msgClass = "alert-info";
     private string _tab = "prog";
@@ -1368,6 +1385,20 @@ else if (_tab == "calendario")
         finally { _busy = false; }
     }
 
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila de alta de Programaciones
+    // (clic fuera o Tab tras el ultimo campo). La fila de alta siempre esta visible (no hay flag de apertura).
+    // Chequea EN SILENCIO el minimo (activo + titulo + fecha) antes de llamar a AltaProgInlineAsync, para no
+    // disparar los toasts de validacion de ese metodo al salir de una fila vacia o a medio llenar.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (_busy) return;
+        if (string.IsNullOrEmpty(_altaActivoId) || !Guid.TryParse(_altaActivoId, out _)) return;
+        if (string.IsNullOrWhiteSpace(_altaTitulo)) return;
+        if (_altaFecha is null) return;
+        await AltaProgInlineAsync();
+        StateHasChanged();
+    }
+
     // Alta por FORMULARIO COMPLETO: abre el modal "Programar tarea" ya apuntando al activo elegido
     // (para cron, responsables, correo, horizonte). Es el camino avanzado, complementa el alta inline.
     private async Task AltaProgAsync()
@@ -1455,19 +1486,8 @@ else if (_tab == "calendario")
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
-    private async Task EliminarProgAsync(ProgramacionTareaDto p)
-    {
-        var ok = await Modals.ConfirmAsync(
-            $"Eliminar la programacion \"{p.Titulo}\"? Las tareas ya generadas se conservan.", "Eliminar programacion");
-        if (!ok) return;
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/programaciones/{p.Id}");
-            if (r.IsSuccessStatusCode) { _msg = "Programacion eliminada."; _msgClass = "alert-success"; await CargarAsync(); }
-            else { _msg = "No se pudo eliminar la programacion."; _msgClass = "alert-danger"; }
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
+    // Nota: el borrado por fila (cesto .mtp-del + EliminarProgAsync) se retiro del canon de Programaciones;
+    // el unico camino de borrado es la barra de seleccion multiple (EliminarProgSeleccionadasAsync).
 
     // ===== Seleccion multiple + accion masiva de Programaciones (canon): Eliminar =====
     private readonly HashSet<Guid> _selProg = new();
@@ -1561,19 +1581,38 @@ else if (_tab == "calendario")
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored))
+            try
             {
-                _jwt = stored;
-                await CargarAsync();
-                StateHasChanged();
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    _jwt = stored;
+                    await CargarAsync();
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+
+        // Guardado invisible de la fila de alta de Programaciones (clic fuera + Tab; ignora el picker de
+        // persona .sp-pop). El selector es especifico de Prog (.mtp-newrow--prog) para no observar la CTA
+        // ni las filas de Planes, que comparten .mtp-newrow. (Re)instala solo cuando cambia el estado.
+        var altaSig = (_tab == "prog" && _progs is not null) ? "prog-on" : "off";
+        if (altaSig != _altaWiredSig)
+        {
+            _altaWiredSig = altaSig;
+            if (altaSig == "prog-on")
+            {
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--prog", "AltaBlurGuardar", ".sp-pop"); } catch { }
+            }
+            else
+            {
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
             }
         }
-        catch { }
     }
 
     private async Task SwitchTab(string tab)

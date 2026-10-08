@@ -560,14 +560,16 @@ else
                                                 }
                                             </td>
                                         }
-                                        <td class="ctr-w2">
-                                            <span class="srv-del" @onclick="() => EliminarAsync(cc.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
-                                        </td>
+                                        @* Canon vista-tabla: sin cesto por fila. El borrado va por el menu
+                                           contextual (clic derecho -> Eliminar) y la barra de seleccion multiple. *@
+                                        <td class="ctr-w2"></td>
                                     </tr>
                                 }
                             }
-                            @* Fila de alta inline (crear desde la tabla): captura los campos como listas. *@
-                            <tr class="ctr-row ctr-newrow">
+                            @* Fila de alta inline (crear desde la tabla): captura los campos como listas.
+                               Guardado invisible (canon vista-tabla): sin boton de confirmacion; se guarda al
+                               salir de la fila (clic fuera o Tab), Esc descarta. El expander sigue creando. *@
+                            <tr class="ctr-row ctr-newrow" @onkeydown="OnAltaKeydownC">
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col">
                                     <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear el contrato" @onclick="CrearDesdeAltaAsync" disabled="@_busy">
@@ -635,12 +637,23 @@ else
                                         }
                                     </td>
                                 }
-                                <td class="ctr-w2">
-                                    <button type="button" class="ctr-row-add" @onclick="CrearDesdeAltaAsync" disabled="@_busy">+ Agregar</button>
+                                @* Guardado invisible: sin "+ Agregar"; celda de acciones vacia (conserva la alineacion). *@
+                                <td class="ctr-w2"></td>
+                            </tr>
+                            @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-*): solo informa. *@
+                            <tr class="tbl-nf-hintrow">
+                                <td class="ctr-sel"></td>
+                                <td class="ctr-exp-col"></td>
+                                <td colspan="@(ColsVisibles().Count() + 1)">
+                                    <span class="tbl-nf-hint-txt">
+                                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                        <span class="tbl-nf-hint-sep">&middot;</span>
+                                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                                    </span>
                                 </td>
                             </tr>
                             @* CTA de alta canon (.row-add--sm): lleva el foco/scroll a la fila de alta.
-                               El alta se confirma con el boton de la propia fila (expansor o "+ Agregar"). *@
+                               El alta se confirma al salir de la fila (clic fuera / Tab) o con su expansor. *@
                             <tr class="ctr-row ctr-cta-row">
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col"></td>
@@ -1900,6 +1913,15 @@ else
             if (sig != _fabSig) { _fabSig = sig; try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, "#ctrTableWrap"); } catch { } }
         }
         else { _fabSig = null; }
+        // Guardado invisible de la fila de alta (.ctr-newrow, siempre presente en la vista tabla): se
+        // engancha mientras la tabla este visible y se desengancha al pasar a tarjetas. El listener es
+        // global y resuelve la fila por selector al disparar, asi que basta engancharlo una vez por vista.
+        if (EsContratos && _vistaC != "tarjetas" && _jwt is not null)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            if (_altaWiredSig != _vistaC) { _altaWiredSig = _vistaC; try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".ctr-newrow", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+        }
+        else if (_altaWiredSig is not null) { _altaWiredSig = null; try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", "#ctrTableWrap"); } catch { } }
     }
 
@@ -2060,6 +2082,7 @@ else
     private bool _ctaVisible = true;
     private bool _scrollCtaPend;
     private string? _fabSig;
+    private string? _altaWiredSig;   // engancha/desengancha altaAutoSave de la fila .ctr-newrow por vista
     private DotNetObjectReference<Servicios>? _self;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
@@ -2825,8 +2848,7 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 try { var creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); if (creado is not null) _ctrRecienCreados.Add(creado.Id); } catch { }
-                _ncProveedor = null; _ncTipoContrato = ""; _ncNumero = ""; _ncCategoria = ""; _ncAsociado = "";
-                _ncContacto = ""; _ncObs = ""; _ncFin = ""; _ncValor = ""; _ncDias = "30"; _ncInicio = DateTime.Today.ToString("yyyy-MM-dd");
+                LimpiarAlta();
                 _msg = "Contrato creado."; _msgEsError = false;
                 await CargarAsync();
             }
@@ -2835,6 +2857,33 @@ else
             else { _msg = await MensajeErrorAsync(resp); _msgEsError = true; }
         }
         finally { _busy = false; }
+    }
+
+    // Deja la fila de alta en blanco (descartar / tras crear). La fila .ctr-newrow esta siempre presente,
+    // asi que "cerrar" el alta equivale a limpiar sus campos.
+    private void LimpiarAlta()
+    {
+        _ncProveedor = null; _ncTipoContrato = ""; _ncNumero = ""; _ncCategoria = ""; _ncAsociado = "";
+        _ncContacto = ""; _ncObs = ""; _ncFin = ""; _ncValor = ""; _ncDias = "30";
+        _ncInicio = DateTime.Today.ToString("yyyy-MM-dd");
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila de alta (clic fuera o Tab
+    // tras el ultimo campo; ignora el picker de personas .sp-pop y los menus flotantes). Con contratista
+    // elegido crea; sin el, descarta el alta a medio llenar sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (_busy) return;
+        if (_ncProveedor is null) { LimpiarAlta(); StateHasChanged(); return; }
+        await CrearDesdeAltaAsync();
+        StateHasChanged();
+    }
+
+    // Esc en la fila de alta: cancela (limpia los campos). Enter sigue el flujo natural de cada control
+    // (no se fuerza aqui para no chocar con la seleccion de persona del SelectorPersona flotante).
+    private void OnAltaKeydownC(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { LimpiarAlta(); StateHasChanged(); }
     }
 
     private async Task AbrirModal(ContratoServicioDto? c)
