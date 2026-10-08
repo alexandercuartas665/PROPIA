@@ -382,15 +382,23 @@ else
                             break;
                     }
                 }
-                <div class="res-list-act res-nf-actbtns">
-                    <button type="button" class="res-nf-ok" title="Guardar (Enter)" @onclick="() => AgregarAsync(false)" disabled="@(_busy || !AltaValida)">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                    </button>
-                    <button type="button" class="res-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaR" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                    </button>
-                </div>
+                @* Guardado invisible: sin botones de confirmar/cancelar. Se guarda al salir de la fila
+                   (clic fuera) o al terminar el tabulado (Tab); Enter guarda, Esc cancela. Celda de
+                   acciones vacia (conserva la alineacion). *@
+                <div class="res-list-act"></div>
                 <div class="res-addcol-cell"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*). *@
+            <div class="res-listnew tbl-nf-hintrow res-listgrid" style="@PerGridStyle">
+                <div class="res-sel-cell"></div>
+                <div class="res-col-exp"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
+                </div>
             </div>
             }
             else
@@ -1040,6 +1048,16 @@ else
         else if (e.Key == "Enter" && AltaValida) await AgregarAsync(false);
     }
 
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con unidad+persona crea; sin los minimos descarta sin error (igual que Zonas).
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _busy) return;
+        if (!AltaValida) { CerrarAltaR(); StateHasChanged(); return; }
+        await AgregarAsync(false);
+        StateHasChanged();
+    }
+
     // ---------- Catalogo de columnas: catalogo/anchos hidratados en CargarCamposAsync ----------
 
     // ---------- Carga / auth ----------
@@ -1073,6 +1091,10 @@ else
             {
                 _wiredSigR = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfR, ".res-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes
+                // como el SelectorPersona via .sp-pop).
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfR, ".res-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPendingR)
@@ -1264,11 +1286,9 @@ else
                 case "habita": <div class="res-c-cell res-c">@(r.Habita ? "Si" : "No")</div>; break;
             }
         }
-        <div class="res-list-act">
-            <button type="button" class="res-row-del" @onclick="() => EliminarResidenteAsync(r.UnidadPersonaId, r.Nombre)" title="Eliminar">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-            </button>
-        </div>
+        @* Sin cesto por fila: el borrado vive en el menu contextual (clic derecho) + la barra de
+           seleccion multiple. Celda de acciones vacia (conserva la alineacion). *@
+        <div class="res-list-act"></div>
         <div class="res-addcol-cell"></div>
     </div>;
 

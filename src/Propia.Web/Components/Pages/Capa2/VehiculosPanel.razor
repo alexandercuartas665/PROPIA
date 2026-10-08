@@ -266,15 +266,22 @@ else
                                 break;
                         }
                     }
-                    <div class="veh-acts veh-nf-actbtns">
-                        <button type="button" class="veh-nf-ok" title="Guardar (Enter)" @onclick="AgregarAsync" disabled="@_busy">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                        </button>
-                        <button type="button" class="veh-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                        </button>
-                    </div>
+                    @* Guardado invisible: sin ✓/×. Se guarda al salir de la fila (clic fuera) o al terminar el
+                       tabulado (Tab); Enter guarda, Esc cancela. Celda de acciones vacia (alineacion). *@
+                    <div class="veh-acts"></div>
                     <div class="veh-addcol-cell"></div>
+                </div>
+                @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*). *@
+                <div class="veh-newrow tbl-nf-hintrow veh-grid" style="grid-template-columns:@GridCols">
+                    <div class="veh-sel-cell"></div>
+                    <div class="veh-col-exp"></div>
+                    <div style="grid-column: 3 / -1;">
+                        <span class="tbl-nf-hint-txt">
+                            <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                            <span class="tbl-nf-hint-sep">&middot;</span>
+                            <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                        </span>
+                    </div>
                 </div>
             }
             else
@@ -645,11 +652,8 @@ else
                     break;
             }
         }
-        <div class="veh-acts">
-            <button type="button" class="veh-del" title="Quitar el vehículo" @onclick="() => EliminarAsync(v)">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-            </button>
-        </div>
+        @* Sin cesto por fila: el borrado va por menu contextual (clic derecho) + barra de seleccion. *@
+        <div class="veh-acts"></div>
         <div class="veh-addcol-cell"></div>
     </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
@@ -685,6 +689,9 @@ else
             {
                 _wiredSigV = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".veh-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".veh-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPendingV)
@@ -796,6 +803,16 @@ else
     {
         if (e.Key == "Escape") CerrarAlta();
         else if (e.Key == "Enter") await AgregarAsync();
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con unidad y placa crea; incompleta descarta sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _busy) return;
+        if (_nuUnidadId is null || string.IsNullOrWhiteSpace(_nuPlaca)) { CerrarAlta(); StateHasChanged(); return; }
+        await AgregarAsync();
+        StateHasChanged();
     }
 
     private async Task AgregarAsync()
