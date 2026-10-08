@@ -384,15 +384,22 @@ else
                             break;
                     }
                 }
-                <div class="zc-list-act zc-nf-actbtns">
-                    <button type="button" class="zc-nf-ok" title="Guardar (Enter)" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                    </button>
-                    <button type="button" class="zc-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaZ" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                    </button>
-                </div>
+                @* Guardado invisible: sin ✓/×. Se guarda al salir de la fila (clic fuera) o al terminar el
+                   tabulado (Tab); Enter guarda, Esc cancela. Celda de acciones vacia (alineacion). *@
+                <div class="zc-list-act"></div>
                 <div class="zc-addcol-cell"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*). *@
+            <div class="zc-list-newrow tbl-nf-hintrow zc-grid" style="@ZcGridStyle">
+                <div class="zc-sel-cell"></div>
+                <div class="zc-col-exp"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
+                </div>
             </div>
             }
             else
@@ -981,6 +988,16 @@ else
         else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
     }
 
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con nombre crea; vacia descarta sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbiertaZ || _busy) return;
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) { CerrarAltaZ(); StateHasChanged(); return; }
+        await CrearDesdeDraftAsync();
+        StateHasChanged();
+    }
+
     // ===== FAB flotante + fila nueva verde/ultima + scroll-al-fondo (patron piloto Unidades) =====
     private readonly HashSet<Guid> _recienZ = new();   // zonas recien creadas: verde + al final hasta el proximo refresco
     private bool _suppressRecienClearZ;                 // la recarga post-creacion NO limpia el resaltado
@@ -1150,11 +1167,8 @@ else
                     break;
             }
         }
-        <div class="zc-list-act">
-            <button type="button" class="zc-row-del" @onclick="() => EliminarZonaAsync(zona.Id, zona.Nombre)" title="Eliminar">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-            </button>
-        </div>
+        @* Sin cesto por fila: el borrado va por menu contextual (clic derecho) + barra de seleccion. *@
+        <div class="zc-list-act"></div>
         <div class="zc-addcol-cell"></div>
     </div>;
 
@@ -1281,6 +1295,9 @@ else
             {
                 _wiredSigZ = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfZ, ".zc-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
+                if (_altaAbiertaZ) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfZ, ".zc-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPendingZ)
