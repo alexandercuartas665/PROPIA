@@ -290,7 +290,7 @@ else
                     }
                     @if (_creandoRol)
                     {
-                        <tr class="rol-tr rol-newrow">
+                        <tr class="rol-tr rol-newrow rol-newrow--edit">
                             <td class="tbl-sel"></td>
                             <td class="tbl-exp"></td>
                             @foreach (var col in ColsRoles)
@@ -299,7 +299,7 @@ else
                                 {
                                     case "nombre":
                                         <td class="rol-td-nom">
-                                            <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" />
+                                            <input class="rol-inp" placeholder="Nombre del nuevo rol..." @bind="_nuevoNombre" @bind:event="oninput" @onkeydown="OnAltaKeydownRol" />
                                         </td>
                                         break;
                                     case "categoria":
@@ -322,9 +322,15 @@ else
                                         break;
                                 }
                             }
-                            <td class="rol-td-acc">
-                                <button class="rol-actbtn rol-actbtn-add" @onclick="CrearRol" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoNombre))">Crear</button>
-                                <button class="rol-actbtn" @onclick="() => { _creandoRol = false; _nuevoNombre = string.Empty; _copiarDe = string.Empty; }">Cancelar</button>
+                            @* Guardado invisible (canon): sin botones Crear/Cancelar; guarda al salir
+                               (Tab/clic fuera) o con Enter, descarta con Esc o saliendo sin nombre. *@
+                            <td class="rol-td-acc"></td>
+                        </tr>
+                        <tr class="tbl-nf-hintrow">
+                            <td class="tbl-sel"></td>
+                            <td class="tbl-exp"></td>
+                            <td colspan="@(ColsRoles.Count() + 1)">
+                                <span class="tbl-nf-hint-txt"><span class="tbl-kbd">Tab</span> o clic fuera para guardar la fila <span class="tbl-nf-hint-sep">&middot;</span> <span class="tbl-kbd">Esc</span> para cancelar</span>
                             </td>
                         </tr>
                     }
@@ -562,10 +568,11 @@ else
     private DotNetObjectReference<RolesPanel>? _self;
     private string? _fabSig;
     private bool _scrollCtaPend;
+    private string? _altaSig;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
     private void FabNuevoRol() { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; _scrollCtaPend = true; }
-    public void Dispose() { _self?.Dispose(); }
+    public void Dispose() { try { _ = Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } _self?.Dispose(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -578,6 +585,20 @@ else
         }
         else { _fabSig = null; }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".rol-scroll"); } catch { } }
+
+        // Guardado invisible del alta (canon vista-tabla): engancha/desengancha segun _creandoRol.
+        var altaSig = _creandoRol ? "on" : "off";
+        if (altaSig != _altaSig)
+        {
+            _altaSig = altaSig;
+            _self ??= DotNetObjectReference.Create(this);
+            try
+            {
+                if (_creandoRol) await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".rol-newrow--edit", "AltaBlurGuardar", null);
+                else await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff");
+            }
+            catch { }
+        }
 
         if (!firstRender || _jwt is not null) return;
         try
@@ -780,6 +801,29 @@ else
             if (creado is not null) await EditarRol(creado.Id); // abre su ficha
         }
         finally { _busy = false; }
+    }
+
+    // Guardado invisible del alta (canon vista-tabla): se invoca desde JS al salir de la fila (Tab/clic
+    // fuera). Con nombre -> crea (y abre la ficha para configurar permisos); sin nombre -> descarta en silencio.
+    [JSInvokable]
+    public async Task AltaBlurGuardar()
+    {
+        if (!_creandoRol || _busy) return;
+        if (string.IsNullOrWhiteSpace(_nuevoNombre))
+        {
+            _creandoRol = false; _nuevoNombre = ""; _copiarDe = "";
+            StateHasChanged();
+            return;
+        }
+        await CrearRol();
+        StateHasChanged();
+    }
+
+    // Enter en el nombre guarda; Esc cancela el alta.
+    private async Task OnAltaKeydownRol(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { await CrearRol(); }
+        else if (e.Key == "Escape") { _creandoRol = false; _nuevoNombre = ""; _copiarDe = ""; }
     }
 
     // Duplicar: crea un personalizado copiando la matriz EFECTIVA del origen (RP-02) y abre su ficha.
