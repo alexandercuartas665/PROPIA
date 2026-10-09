@@ -204,21 +204,34 @@ public class DirectorioService : IDirectorioService
                   .First().Id);
     }
 
-    /// <summary>Etiquetas asignadas (chips con icono/color) por entidad, para pintarlas en el listado y filtrar.</summary>
+    /// <summary>Etiquetas asignadas (chips de texto neutro) por entidad, para pintarlas en el listado y filtrar.</summary>
     private async Task<Dictionary<Guid, List<EtiquetaChipDto>>> CargarChipsPorEntidadAsync(
         EntidadDirectorio tipo, List<Guid> entidadIds, CancellationToken ct)
     {
         if (entidadIds.Count == 0) return new();
         var rows = await (from de in _db.DirectorioEtiquetas
                           join v in _db.DirectorioVinculos on de.VinculoId equals v.Id
-                          join et in _db.EtiquetasCatalogo.IgnoreQueryFilters() on de.EtiquetaId equals et.Id
                           where v.EntidadTipo == tipo && entidadIds.Contains(v.EntidadId)
-                          select new { v.EntidadId, et.Id, et.Nombre, et.Grupo, et.Icono, et.Color })
+                          select new { v.EntidadId, de.Valor })
                          .ToListAsync(ct);
         return rows.GroupBy(r => r.EntidadId).ToDictionary(
             g => g.Key,
-            g => g.GroupBy(x => x.Id).Select(gg => gg.First())
-                  .Select(x => new EtiquetaChipDto(x.Id, x.Nombre, x.Grupo, x.Icono, x.Color)).ToList());
+            g => g.Select(x => x.Valor)
+                  .Where(v => !string.IsNullOrWhiteSpace(v))
+                  .GroupBy(Normalizar).Select(gg => gg.First())   // dedupe case/acento-insensible
+                  .OrderBy(v => v, StringComparer.CurrentCultureIgnoreCase)
+                  .Select(v => new EtiquetaChipDto(v)).ToList());
+    }
+
+    /// <summary>Normaliza un valor de etiqueta para comparar/deduplicar sin acentos ni mayusculas.</summary>
+    private static string Normalizar(string s)
+    {
+        var t = (s ?? "").Trim().ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(t.Length);
+        foreach (var ch in t)
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
     }
 
     // S-08: la Persona/Empresa es global (sin RLS), pero solo debe verse su ficha completa (PII: documento,
@@ -418,16 +431,7 @@ public class DirectorioService : IDirectorioService
         {
             // El vinculo ya existe (ej. el alta de persona lo creo). Aun asi aseguramos las
             // etiquetas solicitadas: pedir "vincular con X" debe dejar X aplicada, no ignorarla.
-            if (req.EtiquetaIds is { Count: > 0 })
-            {
-                var actuales = await _db.DirectorioEtiquetas
-                    .Where(e => e.VinculoId == vinculoExistente.Id)
-                    .Select(e => e.EtiquetaId).ToListAsync(ct);
-                var nuevas = req.EtiquetaIds.Distinct().Where(id => !actuales.Contains(id)).ToList();
-                foreach (var eid in nuevas)
-                    _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = vinculoExistente.Id, EtiquetaId = eid });
-                if (nuevas.Count > 0) await _db.SaveChangesAsync(ct);
-            }
+            await AgregarEtiquetasAsync(vinculoExistente.Id, req.Etiquetas, ct);
             return await GetVinculoConEtiquetasAsync(vinculoExistente.Id, ct);
         }
 
@@ -441,16 +445,30 @@ public class DirectorioService : IDirectorioService
         _db.DirectorioVinculos.Add(v);
         await _db.SaveChangesAsync(ct);
 
-        if (req.EtiquetaIds is { Count: > 0 })
-        {
-            foreach (var eid in req.EtiquetaIds.Distinct())
-            {
-                _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = v.Id, EtiquetaId = eid });
-            }
-            await _db.SaveChangesAsync(ct);
-        }
+        await AgregarEtiquetasAsync(v.Id, req.Etiquetas, ct);
 
         return await GetVinculoConEtiquetasAsync(v.Id, ct);
+    }
+
+    /// <summary>Agrega al vinculo las etiquetas de texto que falten (dedupe case/acento-insensible). Solo agrega.</summary>
+    private async Task AgregarEtiquetasAsync(Guid vinculoId, IReadOnlyList<string>? valores, CancellationToken ct)
+    {
+        if (valores is null || valores.Count == 0) return;
+        var actuales = (await _db.DirectorioEtiquetas
+                .Where(e => e.VinculoId == vinculoId)
+                .Select(e => e.Valor).ToListAsync(ct))
+            .Select(Normalizar).ToHashSet();
+        var agregadas = 0;
+        foreach (var raw in valores)
+        {
+            var val = (raw ?? "").Trim();
+            if (val.Length == 0) continue;
+            var norm = Normalizar(val);
+            if (!actuales.Add(norm)) continue;
+            _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = vinculoId, Valor = val });
+            agregadas++;
+        }
+        if (agregadas > 0) await _db.SaveChangesAsync(ct);
     }
 
     public async Task<bool> InactivarVinculoAsync(Guid vinculoId, string? motivo, CancellationToken ct)
@@ -468,15 +486,16 @@ public class DirectorioService : IDirectorioService
     {
         var v = await _db.DirectorioVinculos.FirstOrDefaultAsync(x => x.Id == req.VinculoId, ct)
             ?? throw new InvalidOperationException("Vinculo no encontrado.");
-        var existe = await _db.DirectorioEtiquetas
-            .AnyAsync(de => de.VinculoId == req.VinculoId && de.EtiquetaId == req.EtiquetaId, ct);
-        if (existe) throw new InvalidOperationException("Ya esta asignada esa etiqueta.");
+        var val = (req.Valor ?? "").Trim();
+        if (val.Length == 0) throw new InvalidOperationException("Etiqueta vacia.");
+        var norm = Normalizar(val);
+        var existentes = await _db.DirectorioEtiquetas
+            .Where(de => de.VinculoId == req.VinculoId)
+            .Select(de => de.Valor).ToListAsync(ct);
+        if (existentes.Any(e => Normalizar(e) == norm))
+            throw new InvalidOperationException("Ya esta asignada esa etiqueta.");
 
-        var etiqueta = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(e => e.Id == req.EtiquetaId, ct)
-            ?? throw new InvalidOperationException("Etiqueta no existe.");
-
-        _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = req.VinculoId, EtiquetaId = req.EtiquetaId });
+        _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = req.VinculoId, Valor = val });
         await _db.SaveChangesAsync(ct);
         return await GetVinculoConEtiquetasAsync(req.VinculoId, ct);
     }
@@ -514,32 +533,13 @@ public class DirectorioService : IDirectorioService
         if (entidadId == Guid.Empty) return;
         if (!RolEtiquetaNombre.TryGetValue(rol, out var nombre)) return;
 
-        // Garantiza que existan las etiquetas base globales (incluida la del rol).
-        await AsegurarEtiquetasBaseAsync(ct);
-
         // Vinculo persona/empresa <-> copropiedad actual: es la fila que alimenta el Directorio.
         var vinculo = await _db.DirectorioVinculos.FirstOrDefaultAsync(v =>
             v.EntidadTipo == tipo && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct);
         if (vinculo is null) return;
 
-        // Casa por nombre (no por codigo): puede haber bases pre-sembradas con codigos legacy distintos.
-        var nombreLower = nombre.ToLower();
-        var etiqueta = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
-            .Where(e => e.EsBase && e.Nombre.ToLower() == nombreLower)
-            .OrderBy(e => e.Orden).FirstOrDefaultAsync(ct);
-        if (etiqueta is null) return;
-
-        // Respeta AplicaA: no asignes una etiqueta de solo-persona a una empresa (o viceversa).
-        var esPersona = tipo == EntidadDirectorio.Persona;
-        if (etiqueta.AplicaA == AplicaEtiqueta.Persona && !esPersona) return;
-        if (etiqueta.AplicaA == AplicaEtiqueta.Empresa && esPersona) return;
-
-        var ya = await _db.DirectorioEtiquetas.AnyAsync(de =>
-            de.VinculoId == vinculo.Id && de.EtiquetaId == etiqueta.Id, ct);
-        if (ya) return;
-
-        _db.DirectorioEtiquetas.Add(new DirectorioEtiqueta { VinculoId = vinculo.Id, EtiquetaId = etiqueta.Id });
-        await _db.SaveChangesAsync(ct);
+        // Etiqueta de texto = nombre del rol. Solo AGREGA si falta (dedupe case/acento-insensible).
+        await AgregarEtiquetasAsync(vinculo.Id, new[] { nombre }, ct);
     }
 
     // ============================ Contactos ============================
@@ -571,152 +571,6 @@ public class DirectorioService : IDirectorioService
         var c = await _db.DirectorioContactos.FirstOrDefaultAsync(x => x.Id == contactoId, ct);
         if (c is null) return false;
         _db.DirectorioContactos.Remove(c);
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    // ============================ Catalogo de etiquetas ============================
-
-    /// <summary>Etiquetas base predefinidas: (Codigo, Nombre, Grupo, AplicaA, IconoKey, Color, Orden). El icono es una CLAVE del set SVG (no emoji).</summary>
-    private static readonly (string Codigo, string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta Aplica, string Icono, string Color, int Orden)[] EtiquetasBase = new[]
-    {
-        ("BASE_PROPIETARIO",   "Propietario",       GrupoEtiqueta.Identidad, AplicaEtiqueta.Ambos,   "key",        "#6D4FE3", 1),
-        ("BASE_RESIDENTE",     "Residente",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "home",       "#0EA5E9", 2),
-        ("BASE_ARRENDATARIO",  "Arrendatario",      GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "file-text",  "#F59E0B", 3),
-        ("BASE_FAMILIAR",      "Familiar",          GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "users",      "#EC4899", 4),
-        ("BASE_APODERADO",     "Apoderado",         GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona, "briefcase",  "#475569", 5),
-        ("BASE_PERSONAL",      "Personal de apoyo", GrupoEtiqueta.Cargo,     AplicaEtiqueta.Persona, "paintbrush", "#14B8A6", 6),
-        ("BASE_CONTRATISTA",   "Contratista",       GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "hard-hat",   "#F97316", 7),
-        ("BASE_PROVEEDOR",     "Proveedor",         GrupoEtiqueta.Cargo,     AplicaEtiqueta.Ambos,   "package",    "#8B5CF6", 8),
-    };
-
-    /// <summary>Claves de icono validas (set SVG). Sirve para migrar valores viejos (emojis) a un icono generico.</summary>
-    private static readonly HashSet<string> IconoKeysValidas = new()
-    {
-        "tag","home","key","user","users","briefcase","hard-hat","wrench","paintbrush","package",
-        "file-text","shield","truck","building","car","award","phone","bell","star","heart"
-    };
-
-    /// <summary>
-    /// Idempotente: para cada etiqueta base deseada, si ya existe una base con ese NOMBRE le fija su
-    /// icono (clave SVG) y color; si no existe, la crea. Ademas, cualquier icono viejo que no sea una
-    /// clave valida (ej. emojis previos) se normaliza a "tag" para que el render SVG no falle.
-    /// </summary>
-    private async Task AsegurarEtiquetasBaseAsync(CancellationToken ct)
-    {
-        var bases = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
-            .Where(e => e.EsBase).ToListAsync(ct);
-        var cambios = false;
-        foreach (var b in EtiquetasBase)
-        {
-            var existente = bases.FirstOrDefault(x => x.Nombre.ToLower() == b.Nombre.ToLower());
-            if (existente is not null)
-            {
-                // Fija la clave de icono correcta (sobreescribe emojis o iconos vacios).
-                if (existente.Icono != b.Icono) { existente.Icono = b.Icono; cambios = true; }
-                if (string.IsNullOrEmpty(existente.Color)) { existente.Color = b.Color; cambios = true; }
-            }
-            else
-            {
-                _db.EtiquetasCatalogo.Add(new EtiquetaCatalogo
-                {
-                    Codigo = b.Codigo,
-                    Nombre = b.Nombre,
-                    Grupo = b.Grupo,
-                    AplicaA = b.Aplica,
-                    EsBase = true,
-                    TieneLogicaEspecial = false,
-                    Icono = b.Icono,
-                    Color = b.Color,
-                    Orden = b.Orden,
-                    TenantId = null,
-                    Activo = true
-                });
-                cambios = true;
-            }
-        }
-        // Normaliza cualquier etiqueta (base o custom) cuyo icono ya no sea una clave valida (ej. emojis previos).
-        var conIconoInvalido = await _db.EtiquetasCatalogo.IgnoreQueryFilters()
-            .Where(e => e.Icono != null && e.Icono != "").ToListAsync(ct);
-        foreach (var e in conIconoInvalido.Where(e => !IconoKeysValidas.Contains(e.Icono!)))
-        {
-            e.Icono = "tag"; cambios = true;
-        }
-        if (cambios) await _db.SaveChangesAsync(ct);
-    }
-
-    public async Task<IReadOnlyList<EtiquetaCatalogoDto>> ListarEtiquetasAsync(AplicaEtiqueta? aplicaA, GrupoEtiqueta? grupo, CancellationToken ct)
-    {
-        await AsegurarEtiquetasBaseAsync(ct);
-        var q = _db.EtiquetasCatalogo.AsNoTracking().Where(e => e.Activo);
-        if (aplicaA.HasValue)
-            q = q.Where(e => e.AplicaA == aplicaA.Value || e.AplicaA == AplicaEtiqueta.Ambos);
-        if (grupo.HasValue) q = q.Where(e => e.Grupo == grupo.Value);
-        return await q
-            .OrderByDescending(e => e.EsBase).ThenBy(e => e.Orden).ThenBy(e => e.Nombre)
-            .Select(e => new EtiquetaCatalogoDto(e.Id, e.Codigo, e.Nombre, e.Grupo, e.AplicaA,
-                e.EsBase, e.TieneLogicaEspecial, e.Activo, e.Icono, e.Color, e.Orden))
-            .ToListAsync(ct);
-    }
-
-    public async Task<EtiquetaCatalogoDto> CrearEtiquetaCustomAsync(CrearEtiquetaCustomRequest req, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
-        var tenantId = _tenantContext.CurrentTenantId
-            ?? throw new InvalidOperationException("Sin tenant activo.");
-        var nombre = req.Nombre.Trim();
-        var codigo = "CUSTOM_" + new string(nombre.ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
-
-        if (await _db.EtiquetasCatalogo.AnyAsync(e => e.Nombre == nombre, ct))
-            throw new InvalidOperationException($"Ya existe etiqueta '{nombre}'.");
-
-        var maxOrden = await _db.EtiquetasCatalogo.AnyAsync(e => e.TenantId == tenantId, ct)
-            ? await _db.EtiquetasCatalogo.Where(e => e.TenantId == tenantId).MaxAsync(e => e.Orden, ct) : 100;
-        var e = new EtiquetaCatalogo
-        {
-            Codigo = codigo,
-            Nombre = nombre,
-            Grupo = req.Grupo,
-            AplicaA = req.AplicaA,
-            EsBase = false,
-            TieneLogicaEspecial = false,
-            Icono = string.IsNullOrWhiteSpace(req.Icono) ? null : req.Icono.Trim(),
-            Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim(),
-            Orden = maxOrden + 1,
-            TenantId = tenantId,
-            Activo = true
-        };
-        _db.EtiquetasCatalogo.Add(e);
-        await _db.SaveChangesAsync(ct);
-        return new EtiquetaCatalogoDto(e.Id, e.Codigo, e.Nombre, e.Grupo, e.AplicaA, e.EsBase, e.TieneLogicaEspecial, e.Activo, e.Icono, e.Color, e.Orden);
-    }
-
-    public async Task<bool> ActualizarEtiquetaAsync(Guid etiquetaId, EditarEtiquetaRequest req, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(req.Nombre)) throw new InvalidOperationException("Nombre obligatorio.");
-        var e = await _db.EtiquetasCatalogo.FirstOrDefaultAsync(x => x.Id == etiquetaId, ct);
-        if (e is null) return false;
-        if (e.EsBase) throw new InvalidOperationException("Las etiquetas base no se editan (solo las personalizadas).");
-        var nombre = req.Nombre.Trim();
-        if (await _db.EtiquetasCatalogo.AnyAsync(x => x.Id != etiquetaId && x.Nombre == nombre, ct))
-            throw new InvalidOperationException($"Ya existe etiqueta '{nombre}'.");
-        e.Nombre = nombre;
-        e.Icono = string.IsNullOrWhiteSpace(req.Icono) ? null : req.Icono.Trim();
-        e.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim();
-        e.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    public async Task<bool> EliminarEtiquetaCustomAsync(Guid etiquetaId, CancellationToken ct)
-    {
-        var e = await _db.EtiquetasCatalogo.FirstOrDefaultAsync(x => x.Id == etiquetaId, ct);
-        if (e is null) return false;
-        if (e.EsBase) throw new InvalidOperationException("No se puede eliminar una etiqueta base. Solo se puede desactivar.");
-        var enUso = await _db.DirectorioEtiquetas.AnyAsync(de => de.EtiquetaId == etiquetaId, ct);
-        if (enUso) throw new InvalidOperationException("La etiqueta esta en uso. Inactivala en lugar de eliminar.");
-
-        _db.EtiquetasCatalogo.Remove(e);
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -775,10 +629,9 @@ public class DirectorioService : IDirectorioService
     {
         var v = await _db.DirectorioVinculos.FirstAsync(x => x.Id == vinculoId, ct);
         var etiquetas = await _db.DirectorioEtiquetas
-            .Include(de => de.Etiqueta)
             .Where(de => de.VinculoId == vinculoId)
-            .Select(de => new EtiquetaAsignadaDto(de.Id, de.EtiquetaId,
-                de.Etiqueta!.Codigo, de.Etiqueta.Nombre, de.Etiqueta.Grupo, de.Etiqueta.Icono, de.Etiqueta.Color))
+            .OrderBy(de => de.Valor)
+            .Select(de => new EtiquetaAsignadaDto(de.Id, de.Valor))
             .ToListAsync(ct);
 
         string nombre = "(desconocido)";

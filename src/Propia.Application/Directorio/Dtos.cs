@@ -2,8 +2,10 @@ using Propia.Domain.Enums;
 
 namespace Propia.Application.Directorio;
 
-// ----- Etiqueta (chip liviano para tarjetas + filtro en el listado) -----
-public record EtiquetaChipDto(Guid EtiquetaId, string Nombre, GrupoEtiqueta Grupo, string? Icono, string? Color);
+// ----- Etiqueta (chip de texto neutro para tarjetas + filtro en el listado) -----
+// La etiqueta es ahora un VALOR de texto de la lista de catalogo global directorio.etiqueta
+// (+ custom por copropiedad). Sin grupo/icono/color: chip neutro uniforme.
+public record EtiquetaChipDto(string Valor);
 
 // ----- Persona -----
 public record PersonaResumenDto(
@@ -89,27 +91,13 @@ public record VinculoDto(
     DateOnly FechaDesde, DateOnly? FechaHasta,
     EstadoVinculo Estado, IReadOnlyList<EtiquetaAsignadaDto> Etiquetas);
 
-public record EtiquetaAsignadaDto(Guid Id, Guid EtiquetaId, string Codigo, string Nombre, GrupoEtiqueta Grupo, string? Icono = null, string? Color = null);
+public record EtiquetaAsignadaDto(Guid Id, string Valor);
 
 public record CrearVinculoRequest(
     EntidadDirectorio EntidadTipo, Guid EntidadId,
-    DateOnly FechaDesde, IReadOnlyList<Guid>? EtiquetaIds);
+    DateOnly FechaDesde, IReadOnlyList<string>? Etiquetas);
 
-public record AsignarEtiquetaRequest(Guid VinculoId, Guid EtiquetaId);
-
-// ----- Catalogo de etiquetas -----
-public record EtiquetaCatalogoDto(
-    Guid Id, string Codigo, string Nombre,
-    GrupoEtiqueta Grupo, AplicaEtiqueta AplicaA,
-    bool EsBase, bool TieneLogicaEspecial, bool Activo,
-    string? Icono = null, string? Color = null, int Orden = 0);
-
-public record CrearEtiquetaCustomRequest(
-    string Nombre, GrupoEtiqueta Grupo, AplicaEtiqueta AplicaA,
-    string? Icono = null, string? Color = null);
-
-/// <summary>Edita una etiqueta custom (nombre, icono, color). Las base no se editan.</summary>
-public record EditarEtiquetaRequest(string Nombre, string? Icono, string? Color);
+public record AsignarEtiquetaRequest(Guid VinculoId, string Valor);
 
 // ----- Contactos -----
 public record ContactoDto(

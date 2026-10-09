@@ -27,18 +27,21 @@ public class DirectorioFlowTests
     public DirectorioFlowTests(PostgresFixture fx) => _fx = fx;
 
     [Fact]
-    public async Task Catalogo_base_de_etiquetas_existe_tras_migracion()
+    public async Task Catalogo_base_de_etiquetas_existe_en_lista_global()
     {
-        var (svc, _, _) = BuildService(await SeedTenantAsync("CP Etiquetas"));
+        // Las etiquetas del Directorio son ahora una lista del catalogo global (directorio.etiqueta),
+        // sembrada por CatalogoListasSeeder (8 semillas). Editable por A&D; sin color/icono/grupo.
+        var (_, db, _) = BuildService(await SeedTenantAsync("CP Etiquetas"));
+        await Propia.Infrastructure.Catalogos.CatalogoListasSeeder.SembrarAsync(db);
 
-        var personas = await svc.ListarEtiquetasAsync(AplicaEtiqueta.Persona, null, CancellationToken.None);
-        var empresas = await svc.ListarEtiquetasAsync(AplicaEtiqueta.Empresa, null, CancellationToken.None);
+        var labels = await db.CatalogoOpciones
+            .Where(o => o.Lista == "directorio.etiqueta")
+            .Select(o => o.Label).ToListAsync();
 
-        // 36 base totales (22 persona identidad + cargo + 11 empresa). Validamos algunas clave:
-        Assert.Contains(personas, e => e.Codigo == "PROPIETARIO" && e.EsBase);
-        Assert.Contains(personas, e => e.Codigo == "REVISOR_FISCAL" && e.EsBase && e.TieneLogicaEspecial);
-        Assert.Contains(empresas, e => e.Codigo == "PROVEEDOR" && e.EsBase);
-        Assert.Contains(empresas, e => e.Codigo == "EMPRESA_ADMIN" && e.EsBase);
+        Assert.Contains("Propietario", labels);
+        Assert.Contains("Residente", labels);
+        Assert.Contains("Contratista", labels);
+        Assert.Contains("Proveedor", labels);
     }
 
     [Fact]
@@ -83,17 +86,14 @@ public class DirectorioFlowTests
             TipoDocumento.CC, $"DOC{Guid.NewGuid():N}".Substring(0, 18),
             "Diana", "Propietaria", "diana@test.co", "300 111 2222", null, null), CancellationToken.None);
 
-        // Tomo la etiqueta PROPIETARIO del catalogo base
-        var etiquetas = await svc.ListarEtiquetasAsync(AplicaEtiqueta.Persona, GrupoEtiqueta.Identidad, CancellationToken.None);
-        var propietarioId = etiquetas.First(e => e.Codigo == "PROPIETARIO").Id;
-
+        // Etiqueta de texto (valor de la lista directorio.etiqueta).
         var vinculo = await svc.CrearVinculoAsync(new CrearVinculoRequest(
             EntidadDirectorio.Persona, persona.Id,
             DateOnly.FromDateTime(DateTime.UtcNow),
-            new[] { propietarioId }), CancellationToken.None);
+            new[] { "Propietario" }), CancellationToken.None);
 
         Assert.Equal(EstadoVinculo.Activo, vinculo.Estado);
-        Assert.Contains(vinculo.Etiquetas, e => e.Codigo == "PROPIETARIO");
+        Assert.Contains(vinculo.Etiquetas, e => e.Valor == "Propietario");
 
         // Aparece en bandeja del tenant
         var bandeja = await svc.ListarPersonasDelTenantAsync(null, CancellationToken.None);
@@ -103,7 +103,7 @@ public class DirectorioFlowTests
         var p360 = await svc.GetPersona360Async(persona.Id, CancellationToken.None);
         Assert.NotNull(p360);
         Assert.Single(p360!.VinculosEnCopropiedad);
-        Assert.Contains(p360.VinculosEnCopropiedad[0].Etiquetas, e => e.Codigo == "PROPIETARIO");
+        Assert.Contains(p360.VinculosEnCopropiedad[0].Etiquetas, e => e.Valor == "Propietario");
     }
 
     [Fact]
@@ -197,39 +197,26 @@ public class DirectorioFlowTests
     }
 
     [Fact]
-    public async Task No_se_puede_eliminar_etiqueta_base()
+    public async Task Asignar_etiqueta_texto_a_vinculo_y_dedupe_acento_insensible()
     {
-        var (svc, _, _) = BuildService(await SeedTenantAsync("CP Etiqueta Base"));
-
-        var etiquetas = await svc.ListarEtiquetasAsync(AplicaEtiqueta.Persona, null, CancellationToken.None);
-        var basePropietario = etiquetas.First(e => e.Codigo == "PROPIETARIO");
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.EliminarEtiquetaCustomAsync(basePropietario.Id, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Crear_etiqueta_custom_y_asignar_a_vinculo()
-    {
-        var tenantId = await SeedTenantAsync("CP Etiqueta Custom");
+        var tenantId = await SeedTenantAsync("CP Etiqueta Texto");
         var (svc, _, _) = BuildService(tenantId);
 
         // Creo persona y vinculo
         var p = await svc.CrearPersonaAsync(new CrearPersonaRequest(
             TipoDocumento.CC, $"DOC{Guid.NewGuid():N}".Substring(0, 18),
-            "Con", "Custom", null, null, null, null), CancellationToken.None);
+            "Con", "Etiqueta", null, null, null, null), CancellationToken.None);
         var v = await svc.CrearVinculoAsync(new CrearVinculoRequest(
             EntidadDirectorio.Persona, p.Id,
             DateOnly.FromDateTime(DateTime.UtcNow), null), CancellationToken.None);
 
-        // Etiqueta custom solo para este tenant
-        var custom = await svc.CrearEtiquetaCustomAsync(new CrearEtiquetaCustomRequest(
-            "VIP", GrupoEtiqueta.Identidad, AplicaEtiqueta.Persona), CancellationToken.None);
+        // Etiqueta de texto (valor custom del tenant).
+        var asign = await svc.AsignarEtiquetaAsync(new AsignarEtiquetaRequest(v.Id, "VIP"), CancellationToken.None);
+        Assert.Contains(asign.Etiquetas, e => e.Valor == "VIP");
 
-        Assert.False(custom.EsBase);
-
-        var asign = await svc.AsignarEtiquetaAsync(new AsignarEtiquetaRequest(v.Id, custom.Id), CancellationToken.None);
-        Assert.Contains(asign.Etiquetas, e => e.Codigo == custom.Codigo);
+        // Re-asignar la misma etiqueta (variante de acento/mayusculas) falla: dedupe normalizado.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.AsignarEtiquetaAsync(new AsignarEtiquetaRequest(v.Id, "vip"), CancellationToken.None));
     }
 
     // ---------------- Helpers ----------------

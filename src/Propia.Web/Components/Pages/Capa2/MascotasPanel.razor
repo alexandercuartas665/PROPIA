@@ -266,15 +266,22 @@ else
                                 break;
                         }
                     }
-                    <div class="mas-acts mas-nf-actbtns">
-                        <button type="button" class="mas-nf-ok" title="Guardar (Enter)" @onclick="AgregarAsync" disabled="@_busy">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                        </button>
-                        <button type="button" class="mas-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                        </button>
-                    </div>
+                    @* Guardado invisible: sin checkmark/x. Se guarda al salir de la fila (clic fuera) o al
+                       terminar el tabulado (Tab); Enter guarda, Esc cancela. Celda de acciones vacia (alineacion). *@
+                    <div class="mas-acts"></div>
                     <div class="mas-addcol-cell"></div>
+                </div>
+                @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*). *@
+                <div class="mas-newrow tbl-nf-hintrow mas-grid" style="grid-template-columns:@GridCols">
+                    <div class="mas-sel-cell"></div>
+                    <div class="mas-col-exp"></div>
+                    <div style="grid-column: 3 / -1;">
+                        <span class="tbl-nf-hint-txt">
+                            <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                            <span class="tbl-nf-hint-sep">&middot;</span>
+                            <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                        </span>
+                    </div>
                 </div>
             }
             else
@@ -283,7 +290,7 @@ else
                     <div class="mas-sel-cell"></div>
                     <div class="mas-col-exp"></div>
                     <div class="mas-nf-ctacell" style="grid-column: 3 / -1;">
-                        <button type="button" class="mas-nf-cta" @onclick="AbrirAlta">
+                        <button type="button" class="row-add--sm" @onclick="AbrirAlta">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                             Agregar registro
                         </button>
@@ -643,11 +650,8 @@ else
                     break;
             }
         }
-        <div class="mas-acts">
-            <button type="button" class="mas-del" title="Quitar la mascota" @onclick="() => EliminarAsync(v)">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-            </button>
-        </div>
+        @* Sin cesto por fila: el borrado va por menu contextual (clic derecho) + barra de seleccion. *@
+        <div class="mas-acts"></div>
         <div class="mas-addcol-cell"></div>
     </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
@@ -684,6 +688,9 @@ else
             {
                 _wiredSigM = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".mas-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".mas-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPendingM)
@@ -796,6 +803,16 @@ else
     {
         if (e.Key == "Escape") CerrarAlta();
         else if (e.Key == "Enter") await AgregarAsync();
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con unidad + nombre crea; incompleta descarta sin error.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _busy) return;
+        if (_nuUnidadId is null || string.IsNullOrWhiteSpace(_nuNombre)) { CerrarAlta(); StateHasChanged(); return; }
+        await AgregarAsync();
+        StateHasChanged();
     }
 
     private async Task AgregarAsync()
@@ -1362,27 +1379,34 @@ else
     .mas-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); position: relative; }
     .mas-scroll { overflow: auto; max-height: calc(100vh - 260px); overflow-anchor: none; }
     .mas-table .tbl-fab { bottom: 54px; }
-    .mas-grid { display: grid; align-items: center; gap: 12px; padding: 10px 18px; min-width: max-content; }
+    /* padding-left:0: la 1a columna (checkbox) arranca pegada al borde como Unidades. */
+    .mas-grid { display: grid; align-items: center; gap: 12px; padding: 10px 18px 10px 0; min-width: max-content; }
     /* Header tratamiento canonico (F2 Ola B): 11.5/text-secondary/border-card/z6. SIN separadores
        verticales: el grid usa min-width:max-content (header y cuerpo con anchos distintos), un
        border-right quedaria huerfano; decision de Alex (2026-10-01): homogeneo en todo salvo los
        separadores, sin tocar la geometria del cuerpo. */
     .mas-head { position: sticky; top: 0; z-index: 6; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-card); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-secondary); text-transform: uppercase; }
+    /* Divisor controles->datos (homogeneo, Alex 2026-10-08): el expander del header (2do hijo, 34px fijo)
+       lleva un separador full-height que aisla el bloque checkbox+expander de la 1a columna de datos. El
+       margen negativo compensa el padding vertical del grid (.mas-grid 10px) para que la linea llegue a los
+       bordes del header. Solo header (el cuerpo sigue sin separadores, por el min-width:max-content). */
+    .mas-head > div:nth-child(2) { align-self: stretch; margin-top: -10px; margin-bottom: -10px; border-right: 1px solid var(--propia-border-card); box-shadow: inset -1px 0 0 var(--propia-border-card); }
     .mas-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
     .mas-row:hover { background: var(--propia-bg-hover); }
     .mas-row-nuevo { background: var(--propia-ok-soft); box-shadow: inset 3px 0 0 var(--propia-ok); }
     .mas-row-sel { background: var(--propia-brand-soft) !important; }
     .mas-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .mas-cod { font-weight: 700; color: var(--propia-brand-text); }
+    .mas-cod { font-weight: 700; color: var(--propia-brand-text); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
     .mas-prop { color: var(--propia-text-muted); }
     .mas-auto { color: var(--propia-text-faint); font-style: italic; font-size: 12px; }
 
     /* Seleccion / expansor / addcol. */
-    .mas-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .mas-sel-cell { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
     .mas-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
     .mas-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
     .mas-col-exp { display: flex; align-items: center; justify-content: center; }
-    .mas-exp-fijo { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; padding: 2px; border-radius: 6px; opacity: 0; display: inline-flex; align-items: center; justify-content: center; transition: opacity .12s, background .12s, color .12s; }
+    /* expander 26x26 (= .tbl-exp-btn de Unidades): padding 6, radius 7, color muted. */
+    .mas-exp-fijo { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; padding: 6px; border-radius: 7px; opacity: 0; display: inline-flex; align-items: center; justify-content: center; transition: opacity .12s, background .12s, color .12s; }
     .mas-row:hover .mas-exp-fijo { opacity: 1; }
     .mas-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .mas-exp-mut { opacity: 1; color: var(--propia-text-faint); cursor: default; display: inline-flex; align-items: center; justify-content: center; }
@@ -1423,8 +1447,7 @@ else
     .mas-newrow--cta { cursor: default; }
     .mas-newrow--edit { background: var(--propia-brand-soft-2); }
     .mas-nf-ctacell { display: flex; align-items: center; }
-    .mas-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
-    .mas-nf-cta:hover { background: var(--propia-brand-soft-3); border-color: var(--propia-brand); }
+    /* Boton de alta normalizado a la clase canon .row-add--sm (tabla-base.css). */
     .mas-nf-unidad { position: relative; }
     .mas-row-inp { border: 1px dashed var(--propia-border-input); background: var(--propia-bg-card); border-radius: 8px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; box-sizing: border-box; }
     .mas-newrow--edit .mas-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }

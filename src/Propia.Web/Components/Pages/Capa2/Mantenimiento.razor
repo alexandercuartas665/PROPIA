@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@implements IDisposable
 
 <PageTitle>Mantenimiento y Activos - PROPIA</PageTitle>
 
@@ -84,8 +85,22 @@
     }
     else
     {
+        @* Barra de accion masiva (canon): aparece al seleccionar filas. Programaciones = Eliminar. *@
+        @if (_selProg.Count > 0)
+        {
+            <div class="mtp-selbar">
+                <span class="mtp-selbar-n">@_selProg.Count seleccionada@(_selProg.Count == 1 ? "" : "s")</span>
+                <button type="button" class="mtp-selbar-del" @onclick="EliminarProgSeleccionadasAsync" disabled="@_selProgBusy">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                    @(_selProgBusy ? "Eliminando..." : "Eliminar")
+                </button>
+                <button type="button" class="mtp-selbar-x" @onclick="() => _selProg.Clear()">Deseleccionar</button>
+            </div>
+        }
+        <div class="mtp-tablebox">
         <div class="mtp-table mtp-table--wide">
             <div class="mtp-head" style="@ProgGrid">
+                <div class="mtp-sel-col"><label class="mtp-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasProgSel" @onchange="ToggleSelAllProg" /></label></div>
                 <div></div>
                 @foreach (var c in ProgColsVis) { <div>@c.Label</div> }
                 <div></div>
@@ -99,7 +114,8 @@
                 @foreach (var p in grupo)
                 {
                     var pp = p;
-                    <div class="mtp-row" style="@ProgGrid">
+                    <div class="mtp-row @(_selProg.Contains(pp.Id) ? "mtp-row-sel" : "")" style="@ProgGrid">
+                        <div class="mtp-sel-col"><label class="mtp-chk"><input type="checkbox" checked="@_selProg.Contains(pp.Id)" @onclick:stopPropagation="true" @onchange="e => ToggleSelProg(pp.Id, (bool)(e.Value ?? false))" /></label></div>
                         <div class="mtp-exp-col">
                             <button type="button" class="mtp-exp" title="Abrir la programación completa" @onclick="() => AbrirEditarProgAsync(pp)">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -129,17 +145,16 @@
                                     break;
                             }
                         }
-                        <div class="mtp-act">
-                            <button type="button" class="mtp-del" title="Eliminar" @onclick="() => EliminarProgAsync(pp)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                            </button>
-                        </div>
+                        @* Cesto por fila retirado: el borrado va por la barra de seleccion multiple (mtp-selbar). *@
+                        <div class="mtp-act"></div>
                     </div>
                 }
             }
-            @* Alta inline (canon regla 8): un control por columna; "+ Agregar" crea directo.
+            @* Alta inline (canon regla 8): un control por columna; guardado INVISIBLE (sin "+ Agregar"):
+               se crea al salir de la fila (clic fuera o Tab) via AltaBlurGuardar si hay activo+titulo+fecha.
                El expansor de la fila de alta abre el formulario completo (cron, responsables, correo). *@
-            <div class="mtp-newrow" style="@ProgGrid">
+            <div class="mtp-newrow mtp-newrow--prog" style="@ProgGrid">
+                <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col">
                     <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="AltaProgAsync">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -151,7 +166,7 @@
                     {
                         case "tipo":
                             <div>
-                                <select class="mtp-nf-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
+                                <select id="mtpAltaProgFirst" class="mtp-nf-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
                                     <option value="Equipo">Equipo</option>
                                     <option value="ZonaComun">Zona común</option>
                                 </select>
@@ -226,11 +241,40 @@
                             break;
                     }
                 }
-                <div class="mtp-act">
-                    <button type="button" class="mtp-add" @onclick="AltaProgInlineAsync" disabled="@_busy">+ Agregar</button>
+                @* Guardado invisible: sin "+ Agregar". Se guarda al salir de la fila (clic fuera) o al
+                   terminar el tabulado (Tab). Celda de acciones vacia (alineacion). *@
+                <div class="mtp-act"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta de Programaciones (clases compartidas .tbl-nf-hint*). *@
+            <div class="mtp-newrow tbl-nf-hintrow" style="@ProgGrid">
+                <div class="mtp-sel-col"></div>
+                <div class="mtp-exp-col"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
+                </div>
+            </div>
+            @* CTA de alta canon (.row-add--sm): lleva el foco a la fila de alta, que se confirma con
+               su propio "+ Agregar" o el expansor. *@
+            <div class="mtp-newrow mtp-cta-row" style="@ProgGrid">
+                <div class="mtp-sel-col"></div>
+                <div class="mtp-exp-col"></div>
+                <div class="mtp-nf-ctacell" style="grid-column: 3 / -1;">
+                    <button type="button" class="row-add--sm" @onclick="FocusAltaProgAsync">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar programación
+                    </button>
                 </div>
             </div>
             <div class="mtp-footer">Mostrando @ProgFiltradas().Count() de @(_progs.Count) programaciones</div>
+        </div>
+        <button type="button" class="tbl-fab mtp-fab" @onclick="FocusAltaProgAsync" title="Agregar programación">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar registro
+        </button>
         </div>
     }
 }
@@ -298,15 +342,31 @@ else if (_tab == "planes")
     {
         @* Planes preventivos en TABLA (patron vista-tabla): alta INLINE (sin modal) + edicion inline de la
            Frecuencia sobre filas existentes. El modal "+ Plan preventivo" del header queda como via alterna. *@
+        @* Barra de accion masiva (canon): Planes usa Desactivar (soft-delete), no borrado duro. Solo planes
+           activos se pueden seleccionar/desactivar. *@
+        @if (_selPlan.Count > 0)
+        {
+            <div class="mtp-selbar">
+                <span class="mtp-selbar-n">@_selPlan.Count seleccionado@(_selPlan.Count == 1 ? "" : "s")</span>
+                <button type="button" class="mtp-selbar-del" @onclick="DesactivarPlanesSeleccionadosAsync" disabled="@_selPlanBusy">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64M12 2v10"/></svg>
+                    @(_selPlanBusy ? "Desactivando..." : "Desactivar")
+                </button>
+                <button type="button" class="mtp-selbar-x" @onclick="() => _selPlan.Clear()">Deseleccionar</button>
+            </div>
+        }
+        <div class="mtp-tablebox">
         <div class="mtp-table">
             <div class="mtp-head" style="@PlanGrid">
+                <div class="mtp-sel-col"><label class="mtp-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodosPlanSel" @onchange="ToggleSelAllPlan" /></label></div>
                 <div>Activo</div><div>Plan</div><div>Frecuencia</div><div>Próxima ejecución</div>
                 <div>Disparo</div><div>Proveedor</div><div>Estado</div><div></div>
             </div>
             @foreach (var p in _planes)
             {
                 var pp = p;
-                <div class="mtp-row @(p.Id == _planRecienCreado ? "mtp-row--nuevo" : "")" style="@PlanGrid">
+                <div class="mtp-row @(p.Id == _planRecienCreado ? "mtp-row--nuevo" : "") @(_selPlan.Contains(p.Id) ? "mtp-row-sel" : "")" style="@PlanGrid">
+                    <div class="mtp-sel-col"><label class="mtp-chk"><input type="checkbox" checked="@_selPlan.Contains(p.Id)" disabled="@(!p.Activo)" @onclick:stopPropagation="true" @onchange="e => ToggleSelPlan(pp.Id, (bool)(e.Value ?? false))" /></label></div>
                     <div class="mtp-nom" title="@p.ActivoNombre">@p.ActivoNombre <span class="mtp-tag">@ActivoTipoLabel(p.ActivoTipo)</span></div>
                     <div title="@p.Nombre">@p.Nombre</div>
                     <div>
@@ -343,8 +403,9 @@ else if (_tab == "planes")
             }
             @* Fila de alta inline: captura todos los campos del plan; "+ Agregar" lo crea sin modal. *@
             <div class="mtp-newrow" style="@PlanGrid">
+                <div class="mtp-sel-col"></div>
                 <div style="display:flex; flex-direction:column; gap:4px;">
-                    <select class="mtp-nf-inp" @bind="_planActivoTipo">
+                    <select id="mtpAltaPlanFirst" class="mtp-nf-inp" @bind="_planActivoTipo">
                         <option value="Equipo">Equipo</option>
                         <option value="ZonaComun">Zona común</option>
                     </select>
@@ -386,7 +447,23 @@ else if (_tab == "planes")
                     <button type="button" class="mtp-add" @onclick="AltaPlanInlineAsync" disabled="@_busy">+ Agregar</button>
                 </div>
             </div>
+            @* CTA de alta canon (.row-add--sm): lleva el foco a la fila de alta, que se confirma con
+               su propio "+ Agregar". *@
+            <div class="mtp-newrow mtp-cta-row" style="@PlanGrid">
+                <div class="mtp-sel-col"></div>
+                <div class="mtp-nf-ctacell" style="grid-column: 2 / -1;">
+                    <button type="button" class="row-add--sm" @onclick="FocusAltaPlanAsync">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar plan
+                    </button>
+                </div>
+            </div>
             <div class="mtp-footer">Mostrando @_planes.Count de @_planes.Count planes</div>
+        </div>
+        <button type="button" class="tbl-fab mtp-fab" @onclick="FocusAltaPlanAsync" title="Agregar plan">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar registro
+        </button>
         </div>
     }
 }
@@ -952,14 +1029,34 @@ else if (_tab == "calendario")
     .mtp-menu-chk { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--propia-text-secondary); cursor: pointer; }
 
     .mtp-table { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
-    .mtp-head { display: grid; padding: 10px 14px; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); position: sticky; top: 0; z-index: 8; }
+    /* altura 47px (= Unidades); antes padding 10px -> 55px. */
+    .mtp-head { display: grid; align-items: center; height: 47px; box-sizing: border-box; padding: 0 14px 0 0; background: var(--propia-bg-app); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; border-bottom: 1px solid var(--propia-border-divider); position: sticky; top: 0; z-index: 8; }
+    /* Divisor controles->datos (homogeneo, Alex 2026-10-08): el expander del header (2do hijo, 34px fijo)
+       lleva separador full-height. Solo Programaciones (.mtp-table--wide): Planes no tiene expander (su 2do
+       hijo es dato) y ademas es vista inactiva. Margen negativo compensa el padding vertical del head (10px). */
+    .mtp-table--wide .mtp-head > div:nth-child(2) { align-self: stretch; margin-top: -10px; margin-bottom: -10px; border-right: 1px solid var(--propia-border-divider); box-shadow: inset -1px 0 0 var(--propia-border-divider); }
     .mtp-group { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--propia-bg-app); border-bottom: 1px solid var(--propia-border-divider); font-size: 12px; font-weight: 700; color: var(--propia-text-secondary); }
     .mtp-group-n { font-size: 10.5px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border-radius: 20px; padding: 1px 8px; }
-    .mtp-row { display: grid; padding: 8px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
+    .mtp-row { display: grid; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
     .mtp-row:last-child { border-bottom: none; }
-    .mtp-exp-col { width: 34px; display: flex; align-items: center; justify-content: center; }
-    .mtp-exp { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-faint); cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .mtp-exp:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .mtp-exp-col { width: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+    /* Columna de seleccion (canon 38px) + barra de accion masiva. */
+    .mtp-sel-col { width: 38px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+    .mtp-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin: 0; }
+    .mtp-chk input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--propia-brand); }
+    .mtp-chk input:disabled { cursor: default; opacity: .4; }
+    .mtp-row-sel { background: var(--propia-brand-soft); }
+    .mtp-selbar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border, var(--propia-border-card)); border-radius: 10px; margin-bottom: 10px; }
+    .mtp-selbar-n { font-size: 12.5px; font-weight: 800; color: var(--propia-brand); }
+    .mtp-selbar-del { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-danger-soft); background: var(--propia-bg-card); color: var(--propia-danger); font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; padding: 5px 11px; font-family: inherit; margin-left: auto; }
+    .mtp-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
+    .mtp-selbar-del:disabled { opacity: .6; cursor: default; }
+    .mtp-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    /* expander 26x26 bare (= .tbl-exp-btn de Unidades): padding 6, radius 7, transparente, color muted; oculto hasta hover de fila. */
+    .mtp-exp { border: 0; padding: 6px; border-radius: 7px; background: transparent; color: var(--propia-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity .12s, background .12s, color .12s; }
+    .mtp-row .mtp-exp { opacity: 0; }
+    .mtp-row:hover .mtp-exp { opacity: 1; }
+    .mtp-exp:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .mtp-exp:disabled { opacity: .4; cursor: default; }
     .mtp-exp-fijo { color: var(--propia-brand); border-color: var(--propia-brand-soft); background: var(--propia-brand-soft); }
     .mtp-nom { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -972,7 +1069,7 @@ else if (_tab == "calendario")
     .mtp-toggle-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--propia-bg-card); transition: left .15s; }
     .mtp-toggle.on .mtp-toggle-knob { left: 15px; }
     /* Fila de alta: input "fantasma" punteado (canon regla 9-A), boton "+ Programar" violeta suave. */
-    .mtp-newrow { display: grid; padding: 9px 14px; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-app); }
+    .mtp-newrow { display: grid; padding: 9px 14px 9px 0; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-app); }
     .mtp-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-input); border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .mtp-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .mtp-nf-num { text-align: right; }
@@ -981,6 +1078,10 @@ else if (_tab == "calendario")
     .mtp-add:hover { filter: brightness(.97); }
     .mtp-add:disabled { opacity: .5; cursor: default; }
     .mtp-footer { display: flex; align-items: center; padding: 10px 16px; background: var(--propia-bg-app); border-top: 1px solid var(--propia-border-divider); font-size: 12.5px; color: var(--propia-text-muted); }
+    /* Caja de tabla con FAB flotante (canon vista-tabla): reserva una franja inferior para el FAB. */
+    .mtp-tablebox { position: relative; padding-bottom: 56px; }
+    .mtp-cta-row { cursor: default; }
+    .mtp-nf-ctacell { display: flex; align-items: center; }
     @@media (max-width: 1000px) { .mtp-table { overflow-x: auto; } .mtp-head, .mtp-row, .mtp-newrow { min-width: 920px; } }
     /* La tabla de Programacion tiene mas columnas (tipo/tercero/contrato): scroll horizontal propio. */
     .mtp-table--wide { overflow-x: auto; }
@@ -1020,6 +1121,12 @@ else if (_tab == "calendario")
     private string? _jwt;
     private bool _authChecked;
     private bool _busy;
+
+    // Referencia a este componente para los interop de JS (guardado invisible de la fila de alta).
+    private DotNetObjectReference<Mantenimiento>? _self;
+    private DotNetObjectReference<Mantenimiento> Self => _self ??= DotNetObjectReference.Create(this);
+    private string? _altaWiredSig;   // (re)instala el listener de guardado invisible solo cuando cambia el estado
+    public void Dispose() { _self?.Dispose(); }
     private string? _msg;
     private string _msgClass = "alert-info";
     private string _tab = "prog";
@@ -1125,7 +1232,7 @@ else if (_tab == "calendario")
     {
         get
         {
-            var cols = new List<string> { "34px" };
+            var cols = new List<string> { "38px", "34px" };
             foreach (var c in ProgColsVis)
             {
                 cols.Add(c.Key switch
@@ -1240,6 +1347,17 @@ else if (_tab == "calendario")
     private string NombreTercero(Guid? id) => id is { } g ? (_personas.FirstOrDefault(p => p.Id == g)?.Nombre ?? "Tercero") : "-";
     private string NombreContrato(Guid? id) => id is { } g ? (_contratos.FirstOrDefault(c => c.Id == g)?.Nombre ?? "Contrato") : "-";
 
+    // CTA/FAB de alta canon: llevan el foco a la fila de alta inline (el alta se confirma con su
+    // propio "+ Agregar" o expansor). No crean por si mismos.
+    private async Task FocusAltaProgAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", "#mtpAltaProgFirst"); } catch { }
+    }
+    private async Task FocusAltaPlanAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", "#mtpAltaPlanFirst"); } catch { }
+    }
+
     // Alta inline directa (sin modal): crea la programacion con lo capturado por columna.
     private async Task AltaProgInlineAsync()
     {
@@ -1269,6 +1387,20 @@ else if (_tab == "calendario")
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
         finally { _busy = false; }
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila de alta de Programaciones
+    // (clic fuera o Tab tras el ultimo campo). La fila de alta siempre esta visible (no hay flag de apertura).
+    // Chequea EN SILENCIO el minimo (activo + titulo + fecha) antes de llamar a AltaProgInlineAsync, para no
+    // disparar los toasts de validacion de ese metodo al salir de una fila vacia o a medio llenar.
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (_busy) return;
+        if (string.IsNullOrEmpty(_altaActivoId) || !Guid.TryParse(_altaActivoId, out _)) return;
+        if (string.IsNullOrWhiteSpace(_altaTitulo)) return;
+        if (_altaFecha is null) return;
+        await AltaProgInlineAsync();
+        StateHasChanged();
     }
 
     // Alta por FORMULARIO COMPLETO: abre el modal "Programar tarea" ya apuntando al activo elegido
@@ -1358,18 +1490,42 @@ else if (_tab == "calendario")
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
-    private async Task EliminarProgAsync(ProgramacionTareaDto p)
+    // Nota: el borrado por fila (cesto .mtp-del + EliminarProgAsync) se retiro del canon de Programaciones;
+    // el unico camino de borrado es la barra de seleccion multiple (EliminarProgSeleccionadasAsync).
+
+    // ===== Seleccion multiple + accion masiva de Programaciones (canon): Eliminar =====
+    private readonly HashSet<Guid> _selProg = new();
+    private bool _selProgBusy;
+    private void ToggleSelProg(Guid id, bool on) { if (on) _selProg.Add(id); else _selProg.Remove(id); }
+    private bool TodasProgSel
     {
+        get { var ids = ProgFiltradas().Select(p => p.Id).ToList(); return ids.Count > 0 && ids.All(_selProg.Contains); }
+    }
+    private void ToggleSelAllProg(ChangeEventArgs e)
+    {
+        _selProg.Clear();
+        if ((bool)(e.Value ?? false)) foreach (var p in ProgFiltradas()) _selProg.Add(p.Id);
+    }
+    private async Task EliminarProgSeleccionadasAsync()
+    {
+        if (_selProg.Count == 0) return;
+        var n = _selProg.Count;
         var ok = await Modals.ConfirmAsync(
-            $"Eliminar la programacion \"{p.Titulo}\"? Las tareas ya generadas se conservan.", "Eliminar programacion");
+            $"Eliminar {n} programacion(es) seleccionada(s)? Las tareas ya generadas se conservan. Esta accion no se puede deshacer.",
+            "Eliminar programaciones");
         if (!ok) return;
-        try
+        _selProgBusy = true;
+        int done = 0, fail = 0;
+        foreach (var id in _selProg.ToList())
         {
-            var r = await Auth().DeleteAsync($"/api/programaciones/{p.Id}");
-            if (r.IsSuccessStatusCode) { _msg = "Programacion eliminada."; _msgClass = "alert-success"; await CargarAsync(); }
-            else { _msg = "No se pudo eliminar la programacion."; _msgClass = "alert-danger"; }
+            try { var r = await Auth().DeleteAsync($"/api/programaciones/{id}"); if (r.IsSuccessStatusCode) done++; else fail++; }
+            catch { fail++; }
         }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        _selProg.Clear(); _selProgBusy = false;
+        _msg = fail == 0 ? $"{done} programacion(es) eliminada(s)." : $"{done} eliminada(s), {fail} con error.";
+        _msgClass = fail == 0 ? "alert-success" : "alert-danger";
+        await CargarAsync();
+        StateHasChanged();
     }
 
     private sealed record TableroApiMt(Guid Id, string Nombre);
@@ -1429,19 +1585,38 @@ else if (_tab == "calendario")
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored))
+            try
             {
-                _jwt = stored;
-                await CargarAsync();
-                StateHasChanged();
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    _jwt = stored;
+                    await CargarAsync();
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+
+        // Guardado invisible de la fila de alta de Programaciones (clic fuera + Tab; ignora el picker de
+        // persona .sp-pop). El selector es especifico de Prog (.mtp-newrow--prog) para no observar la CTA
+        // ni las filas de Planes, que comparten .mtp-newrow. (Re)instala solo cuando cambia el estado.
+        var altaSig = (_tab == "prog" && _progs is not null) ? "prog-on" : "off";
+        if (altaSig != _altaWiredSig)
+        {
+            _altaWiredSig = altaSig;
+            if (altaSig == "prog-on")
+            {
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--prog", "AltaBlurGuardar", ".sp-pop"); } catch { }
+            }
+            else
+            {
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
             }
         }
-        catch { }
     }
 
     private async Task SwitchTab(string tab)
@@ -1636,7 +1811,7 @@ else if (_tab == "calendario")
     }
 
     // ===== Planes preventivos en tabla (vista-tabla; alta inline + edicion inline de frecuencia) =====
-    private const string PlanGrid = "grid-template-columns: minmax(190px,1.6fr) minmax(150px,1.4fr) 150px minmax(150px,1.2fr) 130px minmax(110px,1fr) 116px 96px; gap: 10px; align-items: center;";
+    private const string PlanGrid = "grid-template-columns: 38px minmax(190px,1.6fr) minmax(150px,1.4fr) 150px minmax(150px,1.2fr) 130px minmax(110px,1fr) 116px 96px; gap: 10px; align-items: center;";
     private Guid? _planBusy;
     private Guid? _planRecienCreado;
     private static string ActivoTipoLabel(TipoActivoMantenimiento t) => t == TipoActivoMantenimiento.ZonaComun ? "Zona común" : "Equipo";
@@ -1783,6 +1958,41 @@ else if (_tab == "calendario")
     {
         var resp = await Auth().PostAsync($"/api/mantenimiento/planes/{id}/reactivar", null);
         if (resp.IsSuccessStatusCode) { _msg = "Plan reactivado."; _msgClass = "alert-success"; await CargarAsync(); }
+    }
+
+    // ===== Seleccion multiple + accion masiva de Planes (canon): Desactivar (soft-delete, reversible) =====
+    // Solo se pueden seleccionar planes ACTIVOS (desactivar un plan ya inactivo no aplica).
+    private readonly HashSet<Guid> _selPlan = new();
+    private bool _selPlanBusy;
+    private void ToggleSelPlan(Guid id, bool on) { if (on) _selPlan.Add(id); else _selPlan.Remove(id); }
+    private bool TodosPlanSel
+    {
+        get { var ids = (_planes ?? new()).Where(p => p.Activo).Select(p => p.Id).ToList(); return ids.Count > 0 && ids.All(_selPlan.Contains); }
+    }
+    private void ToggleSelAllPlan(ChangeEventArgs e)
+    {
+        _selPlan.Clear();
+        if ((bool)(e.Value ?? false)) foreach (var p in (_planes ?? new()).Where(p => p.Activo)) _selPlan.Add(p.Id);
+    }
+    private async Task DesactivarPlanesSeleccionadosAsync()
+    {
+        if (_selPlan.Count == 0) return;
+        var n = _selPlan.Count;
+        var ok = await Modals.ConfirmAsync(
+            $"Desactivar {n} plan(es) seleccionado(s)? Se pueden reactivar despues.", "Desactivar planes");
+        if (!ok) return;
+        _selPlanBusy = true;
+        int done = 0, fail = 0;
+        foreach (var id in _selPlan.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/mantenimiento/planes/{id}"); if (r.IsSuccessStatusCode) done++; else fail++; }
+            catch { fail++; }
+        }
+        _selPlan.Clear(); _selPlanBusy = false;
+        _msg = fail == 0 ? $"{done} plan(es) desactivado(s)." : $"{done} desactivado(s), {fail} con error.";
+        _msgClass = fail == 0 ? "alert-success" : "alert-danger";
+        await CargarAsync();
+        StateHasChanged();
     }
 
     private async Task CambiarEstado(Guid id, EstadoIntervencion nuevo)

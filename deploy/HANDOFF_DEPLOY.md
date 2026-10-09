@@ -15,6 +15,42 @@
 
 ---
 
+## ESTADO 2026-10-09 DEPLOY 0.0.113 (LEER PRIMERO)
+
+Rama `equipo/alex-header-zonas-equipos` -> mergear a `main` (ya en 0.0.112, HEAD `ff8e7502`).
+Version **0.0.113** (desde 0.0.112). **25 commits.** Detalle completo en
+**`deploy/DEPLOY_HANDOFF_2026-10-09_v0.0.113.md`** (leer ese). Resumen:
+
+- **Directorio: etiquetas como LISTA DE CATALOGO** (1 MIGRACION `20261008030714_DirectorioEtiquetasListaCatalogo`):
+  las etiquetas pasan de FK al catalogo rico `etiquetas_catalogo` a un VALOR de texto respaldado por la lista
+  global `directorio.etiqueta` + custom por copropiedad. La migracion AGREGA `valor`, hace BACKFILL desde el
+  nombre y luego DROPEA FK/columna `etiqueta_id` (parcialmente destructiva; `etiquetas_catalogo` se conserva).
+  `directorio_etiquetas` ya tiene RLS FORCE (sin cambio de RLS). `CatalogoListasSeeder` siembra la lista nueva.
+- **Homogenizacion vista-tabla (migration-free):** cierre completo con Unidades como referencia -- guardado
+  invisible + quitar cesto, CTA `.row-add--sm` + FAB, columna de seleccion/accion masiva, 1a columna rigurosa
+  (checkbox 38px pegado al borde, expander 26x26 icono pelado, padding sel/exp `0 4px`), header 47px, campos
+  custom inline en Unidades, codigo de unidad en violeta. Replicado a todos los modulos vista-tabla.
+- **Tareas (migration-free):** la vista Tabla ya NO lleva fila de alta predispuesta -> "Agregar tarea" ABRE la
+  fila (estilo Tablero); y se quitaron los mini indicadores (KPIs) de Tareas y Tableros.
+
+### 1 MIGRACION NUEVA — parcialmente destructiva — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261008030714_DirectorioEtiquetasListaCatalogo` — AGREGA `directorio_etiquetas.valor`, BACKFILL desde
+  `etiquetas_catalogo.nombre`, luego DROP FK + indices + columna `etiqueta_id`; nuevo indice unico
+  `(vinculo_id, valor)`. **Aplicada y verificada en dev.**
+- **ORDEN:** desplegar el codigo 0.0.113 PRIMERO y aplicar la migracion INMEDIATAMENTE despues. Es un rename de
+  columna (viejo lee `etiqueta_id`, nuevo lee `valor`): hay una ventana breve de desajuste cualquiera sea el
+  orden, pero afecta SOLO a las etiquetas del Directorio; el resto de la app no depende de esta migracion.
+
+### Cache-busting (ya en App.razor): servir
+`tabla-base.css?v=7`, `tareas.css?v=20`, `pqrs.css?v=21`, `servicios.css?v=15`, `directorio.css?v=11`,
+`usuarios.css?v=21`, `roles.css?v=14`, `porteria.css?v=3`, `propia-ui.js?v=23`.
+
+### Pendiente (NO en este deploy)
+Replicar el "boton abre la linea" (alta estilo Tablero) al resto de modulos vista-tabla, para no desalinear el
+canon (Tareas es la referencia). Decidir en proxima tanda.
+
+---
+
 ## ESTADO 2026-10-07 DEPLOY 0.0.112 (LEER PRIMERO)
 
 Rama `equipo/alex-header-zonas-equipos` -> mergear a `main`. Version **0.0.112** (desde 0.0.111).

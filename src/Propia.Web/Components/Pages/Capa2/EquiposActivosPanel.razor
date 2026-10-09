@@ -402,15 +402,22 @@ else
                             break;
                     }
                 }
-                <div class="ea-list-act ea-nf-actbtns">
-                    <button type="button" class="ea-nf-ok" title="Guardar (Enter)" @onclick="CrearDesdeDraftAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft.Nombre))">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-                    </button>
-                    <button type="button" class="ea-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAltaE" disabled="@_busy">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-                    </button>
-                </div>
+                @* Guardado invisible: sin ✓/×. Se guarda al salir de la fila (clic fuera) o al terminar el
+                   tabulado (Tab); Enter guarda, Esc cancela. Celda de acciones vacia (alineacion). *@
+                <div class="ea-list-act"></div>
                 <div class="ea-addcol-cell"></div>
+            </div>
+            @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-hint*). *@
+            <div class="ea-list-newrow tbl-nf-hintrow ea-listgrid" style="@EaGridStyle">
+                <div class="ea-sel-cell"></div>
+                <div class="ea-col-exp"></div>
+                <div style="grid-column: 3 / -1;">
+                    <span class="tbl-nf-hint-txt">
+                        <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                        <span class="tbl-nf-hint-sep">&middot;</span>
+                        <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    </span>
+                </div>
             </div>
             }
             else
@@ -419,7 +426,7 @@ else
                 <div class="ea-sel-cell"></div>
                 <div class="ea-col-exp"></div>
                 <div class="ea-nf-ctacell" style="grid-column: 3 / -1;">
-                    <button type="button" class="ea-nf-cta" @onclick="AbrirAltaE">
+                    <button type="button" class="row-add--sm" @onclick="AbrirAltaE">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                         Agregar registro
                     </button>
@@ -671,6 +678,9 @@ else
             {
                 _wiredSigE = sig;
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfE, ".ea-scroll"); } catch { }
+                // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
+                if (_altaAbiertaE) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfE, ".ea-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         if (_scrollBottomPendingE)
@@ -827,6 +837,16 @@ else
     {
         if (e.Key == "Escape") CerrarAltaE();
         else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+    }
+
+    // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
+    // ultimo campo). Con el nombre lleno -> crea; vacio -> descarta sin error (CerrarAltaE).
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbiertaE || _busy) return;
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) { CerrarAltaE(); StateHasChanged(); return; }
+        await CrearDesdeDraftAsync();
+        StateHasChanged();
     }
 
     // ===== FAB flotante + fila nueva verde/ultima + scroll-al-fondo (patron piloto Unidades) =====
@@ -1279,7 +1299,7 @@ else
                     <input class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
                     break;
                 case "serie":
-                    <input class="ea-cell" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
+                    <input class="ea-cell cod-key" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
                     break;
                 case "ubicacion":
                     <input class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
@@ -1316,11 +1336,9 @@ else
                     break;
             }
         }
-        <div class="ea-list-act">
-            <button type="button" class="ea-row-del" @onclick="() => EliminarEquipoAsync(eq.Id, eq.Nombre)" title="Eliminar">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-            </button>
-        </div>
+        @* Sin cesto por fila: el borrado va por menu contextual (clic derecho) + barra de seleccion.
+           Celda de acciones vacia (conserva la alineacion del grid). *@
+        <div class="ea-list-act"></div>
         <div class="ea-addcol-cell"></div>
     </div>;
 
@@ -1734,7 +1752,7 @@ else
     .ea-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
     .ea-col-rz:hover::after { background: var(--propia-brand); }
     /* Seleccion multiple: columna de checkbox + fila resaltada + barra de acciones. */
-    .ea-sel-cell { display: flex; align-items: center; justify-content: center; }
+    .ea-sel-cell { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
     .ea-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
     .ea-chk input { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; margin: 0; }
     .ea-row-sel { background: var(--propia-brand-soft) !important; }
@@ -1750,8 +1768,7 @@ else
     .ea-confirm-s { font-size: 12.5px; line-height: 1.55; color: var(--propia-text-secondary); margin-bottom: 16px; }
     .ea-confirm-acts { display: flex; justify-content: flex-end; gap: 8px; }
     /* Alta "nace fila": CTA morado + fila editable + foco redondeado + acciones ✓/×. */
-    .ea-nf-cta { display: inline-flex; align-items: center; gap: 5px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .14s, border-color .14s; }
-    .ea-nf-cta:hover { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
+    /* Boton de alta normalizado a la clase canon .row-add--sm (tabla-base.css). */
     .ea-newrow--cta { cursor: default; }
     .ea-nf-ctacell { display: flex; align-items: center; }
     .ea-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; display: inline-flex; align-items: center; justify-content: center; }
@@ -1820,7 +1837,9 @@ else
     .ea-listgrid { display: grid; grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; }
     /* Columna del expansor: se ve al pasar el mouse por la fila (o al escribir en la fila de alta). */
     .ea-col-exp { display: flex; align-items: center; justify-content: center; }
-    .ea-exp-fijo { width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    /* expander icono pelado (= .tbl-exp-btn de Unidades): transparente, pad 6, radius 7, color muted; fondo al hover. */
+    .ea-exp-fijo { border: 0; padding: 6px; border-radius: 7px; background: transparent; color: var(--propia-text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
+    .ea-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .ea-list-row:hover .ea-exp-fijo, .ea-list-newrow:hover .ea-exp-fijo, .ea-list-newrow:focus-within .ea-exp-fijo { opacity: 1; }
     .ea-exp-fijo:hover { background: var(--propia-brand-soft); }
     .ea-exp-fijo:disabled { opacity: 0; cursor: default; }
@@ -1832,11 +1851,14 @@ else
     .ea-cell-nom { font-weight: 700; color: var(--propia-text-body); }
     select.ea-cell { cursor: pointer; }
     /* Header 1:1 con Unidades (F2 Ola B): bg opaco bg-table-head (antes bg-app); padding vertical a la celda. */
-    .ea-list-head { padding: 0 14px; background: var(--propia-bg-table-head); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-secondary); border-bottom: 1px solid var(--propia-border-card); }
+    /* padding-left:0: la 1a columna (checkbox) arranca pegada al borde como Unidades. */
+    .ea-list-head { padding: 0 14px 0 0; background: var(--propia-bg-table-head); font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-secondary); border-bottom: 1px solid var(--propia-border-card); }
     /* Separadores full-height (stretch + padding en la celda) y color border-card (= Unidades). */
-    .ea-list-head.ea-listgrid > div { align-self: stretch; display: flex; align-items: center; padding-top: 14px; padding-bottom: 14px; border-right: 1px solid var(--propia-border-card); }
-    .ea-list-head.ea-listgrid > div:first-child, .ea-list-head.ea-listgrid > div:nth-child(2), .ea-list-head.ea-listgrid > div:nth-last-child(2), .ea-list-head.ea-listgrid > div:last-child { border-right: 0; }
-    .ea-list-row { padding: 10px 14px; border-bottom: 1px solid #F3F7FA; }
+    /* padding vertical 10px -> header 47px (= Unidades; antes 14px -> 55px). */
+    .ea-list-head.ea-listgrid > div { align-self: stretch; display: flex; align-items: center; padding-top: 10px; padding-bottom: 10px; border-right: 1px solid var(--propia-border-card); }
+    /* Expander (2do hijo) con divisor: aisla controles de la 1a columna de datos (homogeneo, Alex 2026-10-08). */
+    .ea-list-head.ea-listgrid > div:first-child, .ea-list-head.ea-listgrid > div:nth-last-child(2), .ea-list-head.ea-listgrid > div:last-child { border-right: 0; }
+    .ea-list-row { padding: 10px 14px 10px 0; border-bottom: 1px solid #F3F7FA; }
     .ea-list-row:hover { background: var(--propia-bg-card-soft); }
     .ea-list-link { font-size: 13px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
     .ea-list-c { font-size: 12.5px; color: var(--propia-text-secondary); }
@@ -1885,4 +1907,5 @@ else
     .ea-cfg-flbl { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: var(--propia-text-faint); text-transform: uppercase; }
     .ea-cfg-form-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
     .ea-cfg-msg { margin-top: 10px; font-size: 12.5px; color: var(--propia-danger, var(--propia-text-body)); }
+    .cod-key { font-weight: 700; color: var(--propia-brand-text); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
 </style>

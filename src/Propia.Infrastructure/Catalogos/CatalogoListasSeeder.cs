@@ -99,6 +99,22 @@ public static class CatalogoListasSeeder
                 .Select((g, i) => new SemillaOpcion("e:" + g, g.ToString(), i))
                 .ToList()));
 
+        // Directorio (2.4): Etiqueta. Lista "libre": la clave ES la etiqueta (label). Semilla = las 8
+        // etiquetas que antes vivian hardcoded en el catalogo rico (DirectorioService.EtiquetasBase).
+        // Editable por A&D (activar/ocultar/agregar) sin deploy; los custom por copropiedad viven en la
+        // config del campo (unidades-config, entidad=personas, campo=etiquetas).
+        reg.Add(("directorio.etiqueta", new List<SemillaOpcion>
+        {
+            new("Propietario", "Propietario", 0),
+            new("Residente", "Residente", 1),
+            new("Arrendatario", "Arrendatario", 2),
+            new("Familiar", "Familiar", 3),
+            new("Apoderado", "Apoderado", 4),
+            new("Personal de apoyo", "Personal de apoyo", 5),
+            new("Contratista", "Contratista", 6),
+            new("Proveedor", "Proveedor", 7),
+        }));
+
         // Usuarios (2.5 v2.0): Cargo (descriptivo, seleccion multiple, NO otorga permisos). Lista "libre":
         // la clave ES la etiqueta. Editable por A&D; el usuario guarda las etiquetas elegidas.
         reg.Add(("usuario.cargo", new List<SemillaOpcion>

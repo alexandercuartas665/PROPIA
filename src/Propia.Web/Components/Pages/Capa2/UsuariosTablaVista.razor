@@ -178,23 +178,34 @@
                 @foreach (var d in Defs) { <div class="utb-nf-mut">&mdash;</div> }
             }
             <div class="utb-addcol-cell"></div>
-            <div class="utb-act utb-act-nf">
-                <button type="button" class="utb-nf-ok" title="Agregar (Enter)" @onclick="Invitar" disabled="@_busy">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7" /></svg>
-                </button>
-                <button type="button" class="utb-nf-cancel" title="Cancelar (Esc)" @onclick="CerrarAlta" disabled="@_busy">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                </button>
+            @* Guardado invisible: sin ✓/×. Se crea al salir de la fila (clic fuera) o al terminar el
+               tabulado (Tab); Enter crea, Esc cancela. Celda de acciones vacia (conserva la alineacion). *@
+            <div class="utb-act utb-act-nf"></div>
+        </div>
+        @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-*). *@
+        <div class="utb-newrow tbl-nf-hintrow utb-grid" style="@GridStyle">
+            <div class="utb-sel-cell"></div>
+            <div class="utb-exp-col"></div>
+            <div style="grid-column: 3 / -1;">
+                <span class="tbl-nf-hint-txt">
+                    <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                    <span class="tbl-nf-hint-sep">&middot;</span>
+                    <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                </span>
             </div>
         </div>
         }
         else
         {
-            <div class="utb-cta-row">
-                <button type="button" class="row-add--sm" @onclick="AbrirAlta">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-                    Agregar registro
-                </button>
+            <div class="utb-cta-row utb-grid" style="@GridStyle">
+                <div class="utb-sel-cell"></div>
+                <div class="utb-exp-col"></div>
+                <div class="utb-cta-btncell">
+                    <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                        Agregar registro
+                    </button>
+                </div>
             </div>
         }
     </div>
@@ -293,7 +304,7 @@
                     <div class="utb-c">@u.TipoDocumento</div>
                     break;
                 case "documento":
-                    <div class="utb-c">@(string.IsNullOrWhiteSpace(u.Documento) ? "-" : u.Documento)</div>
+                    <div class="utb-c"><span class="cod-key">@(string.IsNullOrWhiteSpace(u.Documento) ? "-" : u.Documento)</span></div>
                     break;
                 case "usuario":
                     <button type="button" class="utb-link" title="Abrir usuario" @onclick="() => OnEditar.InvokeAsync(uu)">@u.NombreCompleto</button>
@@ -457,10 +468,23 @@
     // Clic del FAB: baja a la fila de alta y enfoca el primer campo (documento).
     // Ola C (canon Unidades): la fila de alta nace colapsada (CTA) y se abre al pulsar la CTA o el FAB.
     private bool _altaAbierta;
+    private bool _altaAutoSaveOn;
     private void AbrirAlta() { _altaAbierta = true; _focusPending = true; }
     private void CerrarAlta() { _altaAbierta = false; _d.Reset(); _nonce++; }
     // El FAB abre la fila (no solo baja el scroll) y luego baja al fondo + enfoca.
     private void FabNuevo() { _altaAbierta = true; _scrollCtaPend = true; _focusPending = true; }
+
+    // Guardado invisible (canon vista-tabla): al salir de la fila de alta (clic fuera o fin del tabulado,
+    // via propiaUI.altaAutoSave) se crea/invita si el borrador es valido; si no cumple el minimo
+    // (documento + nombre completo + correo o celular) se descarta la fila sin ruido, como Esc.
+    [JSInvokable]
+    public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _busy) return;
+        if (!Valido) { CerrarAlta(); StateHasChanged(); return; }
+        await Invitar();   // Invitar ya resetea, cierra la fila y pone _busy durante el POST
+        StateHasChanged();
+    }
 
     // ===== Menu contextual (clic derecho) =====
     private bool _ctxOpenU;
@@ -508,6 +532,20 @@
         }
         else { _fabSig = null; }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".utb-scroll"); } catch { } }
+        // Guardado invisible: engancha el auto-save al abrir la fila de alta, lo desengancha al cerrarla.
+        // Idempotente por _altaAutoSaveOn. floatSel = .usr-mmenu (menus multi-select de Rol/Cargo): clics en
+        // ellos no cuentan como "salir de la fila". (propiaUI ya ignora .sp-pop/.tbl-colmenu/.tbl-ctx.)
+        if (_altaAbierta && !_altaAutoSaveOn)
+        {
+            _altaAutoSaveOn = true;
+            _self ??= DotNetObjectReference.Create(this);
+            try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".utb-newrow--edit", "AltaBlurGuardar", ".usr-mmenu"); } catch { }
+        }
+        else if (!_altaAbierta && _altaAutoSaveOn)
+        {
+            _altaAutoSaveOn = false;
+            try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
+        }
         // Anclar los menus flotantes (fixed) a su boton "+", para que no los recorte el scroll de la tabla.
         // Solo uno abre a la vez (se excluyen), asi que .usr-mmenu es unico.
         if (_rolMenuOpen && !_rolMenuAnclado) { _rolMenuAnclado = true; try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", ".utb-newrow .usr-madd--rol", ".utb-newrow .usr-mmenu"); } catch { } }
@@ -638,10 +676,11 @@
     .utb-addcol-cell { }
     /* Columna expander (2a, ancho 34px del GridStyle): flecha diagonal que abre la ficha; se revela al hover
        de la fila (espejo de .dtab-exp del Directorio / .tbl-exp de Unidades). */
-    .utb-exp-col { display: flex; align-items: center; justify-content: center; }
-    .utb-exp { width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s; }
+    .utb-exp-col { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+    /* expander icono pelado (= .tbl-exp-btn de Unidades): transparente, pad 6, radius 7, color muted; fondo al hover. */
+    .utb-exp { border: 0; padding: 6px; border-radius: 7px; background: transparent; color: var(--propia-text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; }
     .utb-row:hover .utb-exp, .utb-newrow:hover .utb-exp, .utb-newrow:focus-within .utb-exp { opacity: 1; }
-    .utb-exp:hover { background: var(--propia-brand-soft); }
+    .utb-exp:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .utb-exp:disabled { opacity: 0; cursor: default; }
     .utb-newrow:hover .utb-exp:disabled, .utb-newrow:focus-within .utb-exp:disabled { opacity: .35; }
     /* Rol elegido en la fila de alta como PILDORA (chip violeta con "x" para cambiarlo). Un rol por usuario. */
@@ -665,4 +704,5 @@
     .usr-mopt.on { color: var(--propia-brand); font-weight: 700; }
     .usr-mcheck { flex: 0 0 auto; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--propia-border-input); border-radius: 4px; font-size: 11px; color: var(--propia-brand); }
     .usr-mopt.on .usr-mcheck { border-color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .cod-key { font-weight: 700; color: var(--propia-brand-text); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
 </style>

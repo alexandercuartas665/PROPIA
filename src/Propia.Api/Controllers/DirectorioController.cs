@@ -264,32 +264,8 @@ public class DirectorioController : ControllerBase
     public async Task<IActionResult> EliminarContacto(Guid id, CancellationToken ct)
         => await _svc.EliminarContactoAsync(id, ct) ? NoContent() : NotFound();
 
-    // ---------- Catalogo de etiquetas ----------
-    [HttpGet("etiquetas")]
-    public async Task<IActionResult> ListarEtiquetas([FromQuery] AplicaEtiqueta? aplicaA, [FromQuery] GrupoEtiqueta? grupo, CancellationToken ct)
-        => Ok(await _svc.ListarEtiquetasAsync(aplicaA, grupo, ct));
-
-    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
-    [HttpPost("etiquetas")]
-    public async Task<IActionResult> CrearEtiquetaCustom([FromBody] CrearEtiquetaCustomRequest req, CancellationToken ct)
-    {
-        try { return Created("", await _svc.CrearEtiquetaCustomAsync(req, ct)); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
-    }
-
-    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Editar)]
-    [HttpPut("etiquetas/{id:guid}")]
-    public async Task<IActionResult> ActualizarEtiqueta(Guid id, [FromBody] EditarEtiquetaRequest req, CancellationToken ct)
-    {
-        try { return await _svc.ActualizarEtiquetaAsync(id, req, ct) ? NoContent() : NotFound(); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
-    }
-
-    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Eliminar)]
-    [HttpDelete("etiquetas/{id:guid}")]
-    public async Task<IActionResult> EliminarEtiquetaCustom(Guid id, CancellationToken ct)
-    {
-        try { return await _svc.EliminarEtiquetaCustomAsync(id, ct) ? NoContent() : NotFound(); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
-    }
+    // La lista de etiquetas del Directorio vive ahora en el catalogo global (lista "directorio.etiqueta",
+    // editable desde la consola A&D en /admin/catalogos) + los custom por copropiedad en la config del
+    // campo. La UI las lee de /api/catalogos y de unidades-config (entidad=personas, campo=etiquetas); no
+    // hay endpoints de catalogo rico (color/icono/grupo) aqui.
 }

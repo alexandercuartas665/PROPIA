@@ -348,26 +348,33 @@ public class ComunicacionesService : IComunicacionesService
         var etiquetaSegmentos = segmentos.Where(s => s.TipoSegmento == TipoSegmento.Etiqueta).ToList();
         if (etiquetaSegmentos.Count > 0)
         {
-            var etiquetaIds = new HashSet<Guid>();
+            // La etiqueta del Directorio es ahora un VALOR de texto (no una FK). El segmento guarda el
+            // valor en "etiqueta" (o el legacy "etiquetaId" como texto). El match es por valor, insensible
+            // a mayusculas. Hoy la UI envia ValorJson "{}" (sin valor), asi que el filtro queda vacio.
+            var etiquetaValores = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var seg in etiquetaSegmentos)
             {
                 try
                 {
                     var json = JsonDocument.Parse(seg.ValorJson);
-                    if (json.RootElement.TryGetProperty("etiquetaId", out var idProp)
-                        && Guid.TryParse(idProp.GetString(), out var etId))
-                        etiquetaIds.Add(etId);
+                    if (json.RootElement.TryGetProperty("etiqueta", out var valProp)
+                        && valProp.GetString() is { Length: > 0 } val)
+                        etiquetaValores.Add(val.Trim());
+                    else if (json.RootElement.TryGetProperty("etiquetaId", out var idProp)
+                        && idProp.GetString() is { Length: > 0 } legacy)
+                        etiquetaValores.Add(legacy.Trim());
                 }
                 catch { /* segmento mal formado se ignora */ }
             }
-            if (etiquetaIds.Count > 0)
+            if (etiquetaValores.Count > 0)
             {
+                var valoresLower = etiquetaValores.Select(x => x.ToLower()).ToList();
                 // DirectorioEtiqueta apunta a Vinculo; resolvemos PersonaId via JOIN.
                 var personasConEtiqueta = await (from e in _db.DirectorioEtiquetas.AsNoTracking()
                                                  join v in _db.DirectorioVinculos.AsNoTracking()
                                                      on e.VinculoId equals v.Id
                                                  where e.TenantId == tenantId
-                                                       && etiquetaIds.Contains(e.EtiquetaId)
+                                                       && valoresLower.Contains(e.Valor.ToLower())
                                                        && v.EntidadTipo == EntidadDirectorio.Persona
                                                  select v.EntidadId).Distinct().ToListAsync(ct);
                 personaIdsConVinculo = personaIdsConVinculo.Intersect(personasConEtiqueta).ToList();

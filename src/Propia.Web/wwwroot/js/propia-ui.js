@@ -764,3 +764,48 @@ window.propiaUI.rowBlurSave = function (dotnetRef, rowSel, method) {
         row.addEventListener('focusout', h);
     } catch (e) { }
 };
+// Guardado invisible ROBUSTO para la fila de alta (sin botones ✓/×). A diferencia de rowBlurSave (focusout,
+// se dispara con pickers nativos de fecha/select y re-renders), este guarda SOLO en dos gestos reales:
+//   - focusin: el foco pasa de DENTRO de la fila a un elemento REAL fuera de ella (Tab tras el ultimo campo
+//     = "fin del tabulado"); usa relatedTarget para confirmar que venia de la fila.
+//   - mousedown: clic fuera de la fila ("al salir").
+// En ambos se IGNORA el foco/clic hacia paneles flotantes lanzados desde la fila (floatSel, ej. .sp-pop del
+// selector de persona) y hacia menus de columna. Idempotente: altaAutoSaveOff() quita los listeners previos.
+window.propiaUI.altaAutoSave = function (dotnetRef, rowSel, method, floatSel) {
+    try {
+        window.propiaUI.altaAutoSaveOff();
+        var esFlotante = function (el) {
+            if (!el || !el.closest) return false;
+            if (floatSel && el.closest(floatSel)) return true;
+            return !!el.closest('.sp-pop, .selu-pop, .tbl-colmenu, .dst-menu, .tbl-ctx, [data-row-float]');
+        };
+        var onFocusIn = function (e) {
+            try {
+                var row = document.querySelector(rowSel);
+                if (!row) return;
+                // Solo si el foco VENIA de dentro de la fila (tab-out real) y va a un elemento fuera, no flotante.
+                if (e.relatedTarget && row.contains(e.relatedTarget) && !row.contains(e.target) && !esFlotante(e.target)) {
+                    dotnetRef.invokeMethodAsync(method);
+                }
+            } catch (x) { }
+        };
+        var onMouseDown = function (e) {
+            try {
+                var row = document.querySelector(rowSel);
+                if (!row) return;
+                if (!row.contains(e.target) && !esFlotante(e.target)) { dotnetRef.invokeMethodAsync(method); }
+            } catch (x) { }
+        };
+        window.__altaFocusIn = onFocusIn;
+        window.__altaMouseDown = onMouseDown;
+        document.addEventListener('focusin', onFocusIn, true);
+        document.addEventListener('mousedown', onMouseDown, true);
+    } catch (e) { }
+};
+window.propiaUI.altaAutoSaveOff = function () {
+    try {
+        if (window.__altaFocusIn) document.removeEventListener('focusin', window.__altaFocusIn, true);
+        if (window.__altaMouseDown) document.removeEventListener('mousedown', window.__altaMouseDown, true);
+        window.__altaFocusIn = null; window.__altaMouseDown = null;
+    } catch (e) { }
+};
