@@ -50,24 +50,7 @@ else
             </div>
         </div>
 
-        @* ----- Indicadores (KPIs de todo el modulo, prototipo v2) ----- *@
-        @if (_resumen is not null)
-        {
-            <div class="tb-kpis">
-                @foreach (var k in TaskKpis())
-                {
-                    @* Tarjeta blanca estandar del sistema (misma familia que Zonas/Reservas). *@
-                    <div class="tb-kpi tb-kpi--@k.Acento">
-                        <div class="tb-kpi-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="@k.Icon"/></svg></div>
-                        <div class="tb-kpi-body">
-                            <div class="tb-kpi-n">@k.Valor</div>
-                            <div class="tb-kpi-label">@k.Label</div>
-                            <div class="tb-kpi-sub">@k.Sub</div>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
+        @* Indicadores (KPIs) retirados por decision de producto: la vista tabla/tablero no lleva tarjetas KPI. *@
 
         @if (_tableros is null)
         {
@@ -230,36 +213,7 @@ else
             @if (_boardMode is "calendario" or "gantt") { <input class="tb-search" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por título o número..." /> }
         </div>
 
-        @* === KPIs del tablero al estilo PQRSD: total + una tarjeta por etapa + por vencer + vencidas === *@
-        @if (!_verCerradas && _board.Tareas.Count > 0)
-        {
-            var hoyKpi = DateOnly.FromDateTime(DateTime.Today);
-            var porVencerKpi = _board.Tareas.Count(t => !t.Vencida && !t.EstadoEsTerminal && t.FechaVencimiento is DateOnly fv && fv >= hoyKpi && fv <= hoyKpi.AddDays(3));
-            var vencidasKpi = _board.Tareas.Count(t => t.Vencida && !t.EstadoEsTerminal);
-            @* Tarjetas KPI estandar del sistema (icono con fondo pastel + numero, como Contratos). *@
-            <div class="tb-bkpis">
-                <div class="tb-bkpi">
-                    <div class="tb-bkpi-ic tb-bkpi-ic--brand"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-                    <div><div class="tb-bkpi-val">@_board.Tareas.Count</div><div class="tb-bkpi-lbl">total</div></div>
-                </div>
-                @foreach (var es in _board.Estados)
-                {
-                    <div class="tb-bkpi">
-                        <div class="tb-bkpi-ic" style="background:var(--propia-bg-hover);color:@(es.Color ?? "var(--propia-text-secondary)")"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg></div>
-                        <div><div class="tb-bkpi-val">@_board.Tareas.Count(t => t.EstadoId == es.Id)</div><div class="tb-bkpi-lbl">@es.Nombre.ToLowerInvariant()</div></div>
-                    </div>
-                }
-                <div class="tb-bkpi @(porVencerKpi > 0 ? "tb-bkpi--warn" : "")">
-                    <div class="tb-bkpi-ic tb-bkpi-ic--warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div>
-                    <div><div class="tb-bkpi-val">@porVencerKpi</div><div class="tb-bkpi-lbl">por vencer</div></div>
-                </div>
-                <div class="tb-bkpi @(vencidasKpi > 0 ? "tb-bkpi--err" : "")">
-                    <div class="tb-bkpi-ic tb-bkpi-ic--err"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
-                    <div><div class="tb-bkpi-val">@vencidasKpi</div><div class="tb-bkpi-lbl">vencidas</div></div>
-                </div>
-            </div>
-        }
-
+        @* KPIs del tablero retirados por decision de producto (vista tabla/tablero sin tarjetas KPI). *@
 
         @* ========== CERRADOS: una sola tabla de consulta (sin diseno de tablero) ========== *@
         @if (_verCerradas)
@@ -2067,7 +2021,6 @@ else
     }
 
     private List<TableroDto>? _tableros;
-    private ResumenTareasDto? _resumen;   // KPIs globales del modulo (todos los tableros)
     private List<TenantInfoDto> _tenants = new();   // copropiedades a las que tiene acceso el usuario
     private Guid? _activeTenantId;
     private bool _coMenuOpen;
@@ -3346,7 +3299,6 @@ else
         {
             _tableros = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
             try { _invitaciones = await Auth().GetFromJsonAsync<List<InvitacionMini>>("/api/tablero-compartido/invitaciones") ?? new(); } catch { _invitaciones = new(); }
-            try { _resumen = await Auth().GetFromJsonAsync<ResumenTareasDto>("/api/tareas/resumen"); } catch { _resumen = null; }
             try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>("/api/tareas/etiquetas") ?? new(); } catch { _etiquetasCat = new(); }
             if (_tenants.Count == 0)
             {
@@ -3401,30 +3353,6 @@ else
             _busqEquipos = (e ?? new()).Select(x => new SelectorOrigenReferencia.OpcionBusqueda(x.Nombre, x.Nombre, null, x.Nombre)).ToList();
         }
         catch { _equipos = new(); _busqEquipos = new(); }
-    }
-
-    // Indicadores del modulo (prototipo v2): 4 tarjetas con gradiente sobre todos los tableros.
-    private record KpiVm(string Label, string Valor, string Sub, string Acento, string Icon);
-    private List<KpiVm> TaskKpis()
-    {
-        var r = _resumen!;
-        var hoyTxt = DateTime.Today.ToString("d 'de' MMMM", Es);
-        var vencAcc = r.Vencidas > 0 ? "err" : "ok";
-        return new()
-        {
-            new("Tareas pendientes", r.Activas.ToString(), $"de {r.Total} totales",
-                "brand",
-                "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"),
-            new("Tareas vencidas", r.Vencidas.ToString(), r.Vencidas > 0 ? "requieren atencion" : "todo al dia",
-                vencAcc,
-                "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"),
-            new("Vencen hoy", r.VencenHoy.ToString(), hoyTxt,
-                "warn",
-                "M3 4h18v18H3zM3 10h18M8 2v4M16 2v4"),
-            new("Avance global", r.AvancePct + "%", $"{r.Completadas} completadas",
-                "ok",
-                "M3 3v18h18M7 14l3-4 3 3 4-6"),
-        };
     }
 
     // ---- Selector de copropiedad (prototipo v2): cambia el tenant activo sin salir del modulo ----
