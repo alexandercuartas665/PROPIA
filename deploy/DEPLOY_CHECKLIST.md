@@ -1,5 +1,9 @@
 # PROPIA - Checklist de deploy
 
+> **DEPLOY VIGENTE: 0.0.113 (2026-10-09).** El detalle y el orden autoritativo viven en
+> `DEPLOY_HANDOFF_2026-10-09_v0.0.113.md` + `HANDOFF_DEPLOY.md` (seccion "ESTADO 2026-10-09 DEPLOY 0.0.113").
+> Lo de abajo es historico (snapshot 0.0.93) y NO refleja el estado actual.
+>
 > Actualizado **2026-09-15**. Version visible: **0.0.93** (`origin/main` @ `ab595f6`)
 > (`src/Propia.Web/Propia.Web.csproj` `<Version>`). Bumpear en cada deploy.
 >
