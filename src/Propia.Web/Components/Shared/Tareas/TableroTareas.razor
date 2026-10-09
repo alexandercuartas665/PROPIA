@@ -551,8 +551,8 @@ else
                     {
                         @RenderArbol(t, 0)
                     }
-                    @NuevaFilaFlat
-                    @FilaAvisoAlta
+                    @* La fila de alta NO esta predispuesta: se abre al pulsar "Agregar tarea" (estilo Tablero). *@
+                    @if (_altaTblOpen) { @NuevaFilaFlat @FilaAvisoAlta }
                 }
                 else
                 {
@@ -561,26 +561,28 @@ else
                        filas hoja como arbol (tarea + subtareas). SIN paginacion (se ven los grupos
                        completos). La fila de alta unica al pie crea en la etapa que se elija en la fila. *@
                     @RenderGruposLista(_tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList(), 0)
-                    @NuevaFilaFlat
-                    @FilaAvisoAlta
+                    @if (_altaTblOpen) { @NuevaFilaFlat @FilaAvisoAlta }
                 }
-                @* CTA de alta canon (.row-add--sm): lleva el foco/scroll a la fila de alta inline
-                   (NuevaFilaFlat), que se confirma con su propio expansor o con Enter. *@
-                <div class="tb-newrow tb-cta-row">
-                    <div class="tb-row-selc"></div>
-                    <div class="tb-row-exp"></div>
-                    <div class="tb-nf-ctacell">
-                        <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                            Agregar tarea
-                        </button>
+                @* CTA de alta (.row-add--sm): ABRE la fila de alta inline (estilo Tablero); mientras la fila
+                   esta abierta el boton se oculta (la propia fila + su hint quedan a la vista). *@
+                @if (!_altaTblOpen)
+                {
+                    <div class="tb-newrow tb-cta-row">
+                        <div class="tb-row-selc"></div>
+                        <div class="tb-row-exp"></div>
+                        <div class="tb-nf-ctacell">
+                            <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                Agregar tarea
+                            </button>
+                        </div>
                     </div>
-                </div>
+                }
                 @* La fila de TOTALES generales al pie se retiro a peticion del usuario;
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
             </div>
             @* FAB flotante: aparece al desplazar (cuando la fila de alta no esta a la vista); oculto si se agrupa. *@
-            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0)" @onclick="FabAgregarTarea" title="Agregar tarea">
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0 || _altaTblOpen)" @onclick="FabAgregarTarea" title="Agregar tarea">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
@@ -2201,14 +2203,31 @@ else
     private DotNetObjectReference<TableroTareas>? _selfTbl;
     private string? _wiredSigTbl;
     private bool _altaAutoSaveOnTbl;                        // true = altaAutoSave enganchado en la vista Tabla
+    private bool _altaTblOpen;                              // true = la fila de alta inline (vista Tabla) esta abierta
     private bool _scrollCtaPendT;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // render-all: no hay lotes que pedir
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
-    private void FabAgregarTarea() { _scrollCtaPendT = true; _nfFocusEstado = _board?.Estados.FirstOrDefault()?.Id; }
-    // Alta inline sin boton: al salir de la fila (blur) se crea si hay titulo; vacia se descarta (A4).
+    // "Agregar tarea" (CTA y FAB): ABRE una fila de alta nueva y vacia (estilo Tablero), le da el foco y hace
+    // scroll hacia ella. No hay fila predispuesta permanente: la fila solo existe mientras _altaTblOpen.
+    private void FabAgregarTarea()
+    {
+        _altaTblOpen = true;
+        if (_board?.Estados.FirstOrDefault()?.Id is Guid eid) _nuevaFilas[eid] = new NuevaFilaDraft { EstadoId = eid };
+        _nfFocusEstado = _board?.Estados.FirstOrDefault()?.Id;
+        _scrollCtaPendT = true;
+    }
+    // Al salir de la fila (clic fuera): si hay titulo se crea (guardado invisible, canon); en todo caso se
+    // cierra la fila (el usuario navego fuera). Para alta encadenada rapida se usa Enter, que la deja abierta.
     [JSInvokable] public async Task AltaBlurGuardar()
     {
-        if (_board?.Estados.FirstOrDefault()?.Id is Guid eid) await CrearDesdeNuevaFila(eid);
+        if (!_altaTblOpen) return;
+        if (_board?.Estados.FirstOrDefault()?.Id is Guid eid)
+        {
+            var d = NuevaFilaDe(eid);
+            if (!string.IsNullOrWhiteSpace(d.Titulo)) await CrearDesdeNuevaFila(eid);
+        }
+        _altaTblOpen = false;
+        StateHasChanged();
     }
     public void Dispose() { _selfTbl?.Dispose(); }
 
@@ -3242,7 +3261,7 @@ else
             // los pickers nativos de fecha/select). La fila de alta (NuevaFilaFlat, .tb-newrow--alta) esta
             // SIEMPRE presente en vista Tabla; .tb-newrow a secas la comparten la fila CTA y la de subtarea,
             // de ahi el selector especifico. Ignora el pop del selector de persona (.sp-pop).
-            var altaPresenteTbl = _board is not null && _board.Estados.Count > 0;
+            var altaPresenteTbl = _board is not null && _board.Estados.Count > 0 && _altaTblOpen;
             if (altaPresenteTbl && !_altaAutoSaveOnTbl)
             {
                 _altaAutoSaveOnTbl = true;
@@ -4542,7 +4561,7 @@ else
     private async Task NuevaFilaKeydown(KeyboardEventArgs e, Guid estadoId)
     {
         if (e.Key == "Enter") await CrearDesdeNuevaFila(estadoId);
-        else if (e.Key == "Escape") _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
+        else if (e.Key == "Escape") { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _altaTblOpen = false; }
     }
     private async Task CrearDesdeNuevaFila(Guid estadoId)
     {
@@ -4653,9 +4672,9 @@ else
             <div class="tb-row-exp"></div>
             <div class="tb-nf-ctacell">
                 <span class="tbl-nf-hint-txt">
-                    <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                    <kbd class="tbl-kbd">Enter</kbd> o clic fuera para guardar la fila
                     <span class="tbl-nf-hint-sep">&middot;</span>
-                    <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                    <kbd class="tbl-kbd">Esc</kbd> para cerrar
                 </span>
             </div>
         </div>
