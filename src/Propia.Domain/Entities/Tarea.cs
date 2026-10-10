@@ -25,7 +25,14 @@ public class Tarea : TenantEntity
     /// y en cada cambio de estado. Alimenta el indicador "tiempo en este estado" de la UI.</summary>
     public DateTimeOffset EstadoDesde { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>Prioridad base (enum). Fase 2: se conserva como respaldo/compatibilidad mientras se migra a
+    /// <see cref="PrioridadId"/> (la opcion configurable por tablero). Se deja de leer en Etapa 3.</summary>
     public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
+
+    /// <summary>Prioridad configurable del tablero (Fase 2). Null = tareas sin prioridad asignada (legacy,
+    /// o tableros sin prioridades sembradas). Referencia a <see cref="TareaPrioridad"/>.</summary>
+    public Guid? PrioridadId { get; set; }
+    public TareaPrioridad? PrioridadOpcion { get; set; }
 
     // ----- Campos de tarjeta del prototipo (2.10) -----
     /// <summary>Color hex de la tarjeta (borde/cabecera del modal).</summary>

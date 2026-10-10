@@ -1,7 +1,10 @@
 namespace Propia.Domain.Enums;
 
 /// <summary>
-/// Prioridades fijas de plataforma (no configurables). Spec 2.10 v1.0 seccion 5.
+/// Prioridades BASE de plataforma. Fase 2 (2.10): la prioridad pasa a ser una LISTA configurable por
+/// tablero (<see cref="Propia.Domain.Entities.TareaPrioridad"/>). Este enum se conserva como "selector de
+/// prioridad base" para los modulos/jobs que CREAN tareas (ContratosVencimiento, ProgramacionTareas,
+/// Mantenimiento...): la TareasService lo resuelve a la opcion base del tablero destino. Spec 2.10 v1.0 sec 5.
 /// </summary>
 public enum PrioridadTarea
 {
@@ -9,6 +12,23 @@ public enum PrioridadTarea
     Alta = 2,
     Normal = 3,
     Baja = 4
+}
+
+/// <summary>
+/// Prioridades BASE que se siembran por tablero (Fase 2: Prioridad configurable por tablero). Cada tablero
+/// arranca con estas 4; la copropiedad puede renombrar/recolorear/reordenar y agregar/quitar. El color es el
+/// acento (texto); el fondo del pill se deriva como una tinta clara de ese acento.
+/// </summary>
+public static class PrioridadTareaBase
+{
+    /// <summary>Catalogo base con (Enum, Nombre, Orden, Color acento). Orden 1=Urgente ... 4=Baja.</summary>
+    public static readonly (PrioridadTarea Enum, string Nombre, int Orden, string Color)[] Base = new[]
+    {
+        (PrioridadTarea.Urgente, "Urgente", 1, "#C0383C"),
+        (PrioridadTarea.Alta,    "Alta",    2, "#B45309"),
+        (PrioridadTarea.Normal,  "Normal",  3, "#2563EB"),
+        (PrioridadTarea.Baja,    "Baja",    4, "#516F90"),
+    };
 }
 
 /// <summary>

@@ -174,6 +174,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
 
     // Modulo 2.10 Tareas y Proyectos (TenantEntity con RLS)
     public DbSet<TareaEstado> TareasEstados => Set<TareaEstado>();
+    public DbSet<TareaPrioridad> TareasPrioridades => Set<TareaPrioridad>();
     public DbSet<TareaEtiqueta> TareaEtiquetas => Set<TareaEtiqueta>();
     public DbSet<TareaEtiquetaAsignacion> TareaEtiquetaAsignaciones => Set<TareaEtiquetaAsignacion>();
     public DbSet<Tarea> Tareas => Set<Tarea>();

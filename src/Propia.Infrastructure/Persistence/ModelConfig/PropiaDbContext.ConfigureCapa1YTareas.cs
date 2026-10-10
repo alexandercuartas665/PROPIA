@@ -161,6 +161,17 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Fase 2: prioridad configurable por tablero (espeja TareaEstado).
+        modelBuilder.Entity<TareaPrioridad>(b =>
+        {
+            b.ToTable("tarea_prioridades");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
+            b.Property(x => x.Color).HasMaxLength(20);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.TableroId, x.Nombre }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<TareaEtiqueta>(b =>
         {
             b.ToTable("tarea_etiquetas");
@@ -250,6 +261,8 @@ public partial class PropiaDbContext
             b.Property(x => x.ModuloOrigenCodigo).HasMaxLength(50);
             b.Property(x => x.MotivoCancelacion).HasMaxLength(500);
             b.HasOne(x => x.Estado).WithMany().HasForeignKey(x => x.EstadoId).OnDelete(DeleteBehavior.Restrict);
+            // Fase 2: prioridad configurable (opcional). SetNull si se borra la opcion (no deberia pasar con las base).
+            b.HasOne(x => x.PrioridadOpcion).WithMany().HasForeignKey(x => x.PrioridadId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(x => x.AsignadoPersona).WithMany().HasForeignKey(x => x.AsignadoPersonaId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(x => x.SolicitantePersona).WithMany().HasForeignKey(x => x.SolicitantePersonaId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne(x => x.Padre).WithMany(t => t.Subtareas).HasForeignKey(x => x.PadreId).OnDelete(DeleteBehavior.Restrict);

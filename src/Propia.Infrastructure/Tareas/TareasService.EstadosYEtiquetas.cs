@@ -17,8 +17,22 @@ public partial class TareasService
     // Seed lazy de estados, estados (columnas) y etiquetas.
     // ===================== Seed lazy de estados =====================
 
+    // Fase 2: asegura las 4 prioridades base (independiente de los estados). Idempotente: no re-siembra si
+    // ya hay prioridades (las existentes las siembra la migracion por tablero; las nuevas, aqui/SembrarPrioridades).
+    private async Task AsegurarPrioridadesBaseAsync(CancellationToken ct)
+    {
+        if (await _db.TareasPrioridades.AnyAsync(ct)) return;
+        foreach (var (enumV, nombre, orden, color) in PrioridadTareaBase.Base)
+            _db.TareasPrioridades.Add(new TareaPrioridad
+            {
+                Nombre = nombre, Orden = orden, Color = color, EsBase = true, BaseValor = (int)enumV, Activo = true
+            });
+        await _db.SaveChangesAsync(ct);
+    }
+
     private async Task AsegurarEstadosBaseAsync(CancellationToken ct)
     {
+        await AsegurarPrioridadesBaseAsync(ct);
         var hay = await _db.TareasEstados.AnyAsync(ct);
         if (hay) return;
         foreach (var (nombre, orden, esTerminal) in EstadoTareaBase.Base)

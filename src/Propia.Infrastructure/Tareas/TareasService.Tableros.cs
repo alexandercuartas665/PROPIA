@@ -53,6 +53,23 @@ public partial class TareasService
         await _db.SaveChangesAsync(ct);
     }
 
+    // Fase 2: siembra las 4 prioridades de fabrica en un tablero nuevo (espeja SembrarEstadosTableroAsync).
+    private async Task SembrarPrioridadesTableroAsync(Guid tableroId, CancellationToken ct)
+    {
+        foreach (var (enumV, nombre, orden, color) in PrioridadTareaBase.Base)
+            _db.TareasPrioridades.Add(new TareaPrioridad
+            {
+                TableroId = tableroId,
+                Nombre = nombre,
+                Orden = orden,
+                Color = color,
+                EsBase = true,
+                BaseValor = (int)enumV,
+                Activo = true
+            });
+        await _db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Crea el tablero "General" si no existe y migra estados/tareas legacy (TableroId null) a el.</summary>
     private async Task<Guid> AsegurarTableroDefaultAsync(CancellationToken ct)
     {
@@ -66,6 +83,9 @@ public partial class TareasService
         // Migrar estados y tareas legacy (sin tablero) al tablero por defecto.
         await _db.TareasEstados.Where(e => e.TableroId == null)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.TableroId, t.Id), ct);
+        // Fase 2: las prioridades base recien sembradas (sin tablero) tambien se enganchan al General.
+        await _db.TareasPrioridades.Where(p => p.TableroId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.TableroId, t.Id), ct);
         await _db.Tareas.Where(x => x.TableroId == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.TableroId, t.Id), ct);
         return t.Id;
@@ -390,6 +410,7 @@ public partial class TareasService
         await _db.SaveChangesAsync(ct);
         await SetTableroUsuariosAsync(t.Id, req.UsuarioPersonaIds, ct);
         await SembrarEstadosTableroAsync(t.Id, ct);
+        await SembrarPrioridadesTableroAsync(t.Id, ct);   // Fase 2: 4 prioridades de fabrica
         return (await GetTableroAsync(t.Id, ct))!;
     }
 
