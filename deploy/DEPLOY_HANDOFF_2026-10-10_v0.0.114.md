@@ -5,7 +5,7 @@
 
 ## Objetivo del deploy
 
-- **Rama a mergear:** `equipo/alex-header-zonas-equipos` -> `main` (39 commits sobre main).
+- **Rama a mergear:** `equipo/alex-header-zonas-equipos` -> `main` (40 commits sobre main).
 - **Version:** `0.0.114` (sube desde `0.0.113` del csproj; 0.0.113 nunca se desplego, su scope crecio).
 - **Repo:** https://github.com/alexandercuartas665/PROPIA (rama `main`)
 - **Mecanismo:** auto-deploy desde `main` (Railway).
@@ -13,7 +13,7 @@
   **=> BACKUP DE PROD OBLIGATORIO ANTES DE MIGRAR.** Ver seccion Migraciones.
 - Sin cambios de config/arranque ni de variables de entorno.
 
-## Que entra en esta tanda (39 commits; ver `COMMITS_INCLUIDOS.txt`)
+## Que entra en esta tanda (40 commits; ver `COMMITS_INCLUIDOS.txt`)
 
 Tres bloques grandes:
 
@@ -109,7 +109,7 @@ Las 3 nuevas de esta tanda (en orden):
 
 - `DEPLOY_HANDOFF_2026-10-10_v0.0.114.md`  (este documento)
 - `COMMITS_INCLUIDOS.txt`  (los 39 commits de la rama vs main)
-- `ARCHIVOS_CAMBIADOS.txt`  (git diff --stat main..HEAD; 78 archivos)
+- `ARCHIVOS_CAMBIADOS.txt`  (git diff --stat main..HEAD; 80 archivos)
 - `SQL_MIGRACIONES_v0.0.114.sql`  (el SQL que corren las 3 migraciones, para revisar/rollback)
 - `migraciones/`  (copias de los 3 archivos de migracion .cs)
 
