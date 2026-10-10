@@ -151,27 +151,10 @@ else
                         @foreach (var u in _board.Tablero.Usuarios.Take(4)) { <div class="tb-ava" title="@u.Nombre">@u.Iniciales</div> }
                     </div>
                     @* Selector de copropiedad retirado de la barra del tablero: se usa el switcher global de arriba (evita el duplicado). *@
-                    @* Ordenar (multi-criterio, componente compartido): antes de Agrupar, igual que la tabla de ejemplo. *@
-                    @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
-                    {
-                        <TablaOrdenarMenu Columnas="ColsOrdenablesT()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
-                    }
-                    @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel): solo aplica en Tablero/Lista;
-                       en Calendario/Gantt no se muestra. Comparte estado (_gruposT) con ambas vistas. *@
-                    @if (!_verCerradas && (_boardMode == "tablero" || _boardMode == "lista"))
-                    {
-                        <TablaAgruparMenu Columnas="ColsAgrupablesT()" Grupos="_gruposT" GruposChanged="OnGruposTChanged" />
-                    }
-                    @* "Columnas" (menu inline de orden/visibilidad, homogeneo con Unidades): reemplaza al boton
-                       "Campos" (modal). El creador COMPLETO de campo vive en el "+" del header de la tabla.
-                       Secuencia Agrupar.Columnas.Tarjetas.Tabla. Exige permiso de configurar. *@
-                    @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
-                    {
-                        <TablaColumnasMenu Columnas="ColsVisibilidadT()" OnMover="MoverColT" OnToggleVisible="ToggleVisibleColT"
-                                           OnEliminar="EliminarCampoColT" OnOcultarTodas="OcultarTodasColT"
-                                           OnMostrarTodas="MostrarTodasColT" OnRestablecer="RestablecerColT" />
-                    }
-                    @* Modos de vista despues de Campos. En "Cerrados" no hay diseno de tablero: solo tabla de consulta. *@
+                    @* Ordenar / Agrupar / Columnas se movieron a la barra de Filtros/Buscar (Tablero y Lista), para
+                       dejar UNA sola barra "Filtros Buscar ... Ordenar Agrupar Columnas" como en Unidades (@ControlesTabla).
+                       Aqui arriba quedan solo los extras de Tareas: modos de vista y Configurar. *@
+                    @* Modos de vista. En "Cerrados" no hay diseno de tablero: solo tabla de consulta. *@
                     @if (!_verCerradas)
                     {
                         <div class="tb-modeswitch">
@@ -267,12 +250,11 @@ else
         @if (_boardMode == "tablero")
         {
             <div class="tb-cardbar">
-                @* Patron estandar: boton Filtros + buscador al lado (igual que la vista Tabla). *@
+                @* Barra UNICA estilo Unidades: Filtros + Buscar a la izquierda; Ordenar/Agrupar/Columnas a la derecha. *@
                 @BloqueFiltros
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por título o número..." />
                 <div class="tb-flex"></div>
-                @* "Agrupar" y "Ordenar" se movieron a la barra superior (orden homogeneo
-                   Ordenar.Agrupar.Campos.Tarjetas.Tabla); "Ordenar" usa el componente compartido. *@
+                @ControlesTabla
             </div>
 
             @if (_gruposT.Count == 0 || _gruposT[0] == "estado")
@@ -441,13 +423,11 @@ else
         else if (_boardMode == "lista")
         {
             <div class="tb-filters">
-                @* Constructor de filtros (compartido con la vista Tablero via BloqueFiltros). *@
+                @* Barra UNICA estilo Unidades: Filtros + Buscar a la izquierda; Ordenar/Agrupar/Columnas a la derecha. *@
                 @BloqueFiltros
-                @* Buscador junto a "Filtros" (como en PQRSD). *@
                 <input class="tb-search tb-search--sm" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por título o número..." />
-                @* Igual que Unidades: Filtros + Buscar en esta barra. "Agrupar" se movio a la barra superior
-                   (orden Agrupar.Campos.Tarjetas.Tabla) y el orden/visibilidad/renombre de columnas se
-                   administra en el gestor unificado (boton "Campos" de la barra superior). *@
+                <div class="tb-flex"></div>
+                @ControlesTabla
             </div>
 
             @ColumnColorCss
@@ -3662,6 +3642,20 @@ else
     // ---- Constructor de filtros: reglas, operadores, edicion desde la UI y evaluacion ----
     // Boton "Filtros" + popover de reglas, compartido por las vistas Lista y Tablero
     // (mismo estado _reglas: el filtro se conserva intacto al cambiar de vista, como en PQRSD).
+    @* Controles de tabla (Ordenar/Agrupar/Columnas) a la DERECHA de la barra de Filtros/Buscar, en Tablero y
+       Lista (barra unica estilo Unidades). Mismo estado compartido (_sorts/_gruposT) entre ambas vistas. *@
+    private RenderFragment ControlesTabla => __builder =>
+    {
+        <TablaOrdenarMenu Columnas="ColsOrdenablesT()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+        <TablaAgruparMenu Columnas="ColsAgrupablesT()" Grupos="_gruposT" GruposChanged="OnGruposTChanged" />
+        @if (!EsBoardForaneo && !Compacto && PuedeConfigurar)
+        {
+            <TablaColumnasMenu Columnas="ColsVisibilidadT()" OnMover="MoverColT" OnToggleVisible="ToggleVisibleColT"
+                               OnEliminar="EliminarCampoColT" OnOcultarTodas="OcultarTodasColT"
+                               OnMostrarTodas="MostrarTodasColT" OnRestablecer="RestablecerColT" />
+        }
+    };
+
     private RenderFragment BloqueFiltros => __builder =>
     {
         <div class="tb-menuwrap">
