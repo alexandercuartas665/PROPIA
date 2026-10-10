@@ -91,6 +91,34 @@ public class TareasController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // --- Prioridades (Fase 2: lista configurable por tablero) ---
+    [HttpGet("prioridades")]
+    public async Task<IActionResult> ListarPrioridades([FromQuery] Guid? tableroId, CancellationToken ct) => Ok(await _svc.ListarPrioridadesAsync(tableroId, ct));
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPost("prioridades")]
+    public async Task<IActionResult> CrearPrioridad([FromBody] CrearPrioridadRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.CrearPrioridadAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("prioridades/{id:guid}")]
+    public async Task<IActionResult> ActualizarPrioridad(Guid id, [FromBody] ActualizarPrioridadRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarPrioridadAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpDelete("prioridades/{id:guid}")]
+    public async Task<IActionResult> EliminarPrioridad(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.EliminarPrioridadAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // --- Etiquetas ---
     [HttpGet("etiquetas")]
     public async Task<IActionResult> ListarEtiquetas([FromQuery] Guid? tableroId, CancellationToken ct) => Ok(await _svc.ListarEtiquetasAsync(tableroId, ct));

@@ -228,7 +228,7 @@ else
                                 <tr class="tb-cerr-row" @onclick="() => AbrirCardDraft(tarea, null)" title="Abrir">
                                     <td class="tb-cerr-num">@t.NumeroTarea</td>
                                     <td class="tb-cerr-tit">@t.Titulo</td>
-                                    <td>@if (Enum.IsDefined(t.Prioridad)) { <span class="tb-cerr-prio tb-cerr-prio-@t.Prioridad">@t.Prioridad</span> } else { <span class="tb-cerr-prio">-</span> }</td>
+                                    <td><span class="tb-cerr-prio" style="color:@PrioFgOf(t);background:@PrioBgOf(t)">@PrioNombreOf(t)</span></td>
                                     <td><span class="tb-cerr-est" style="background:@(t.EstadoColor ?? "#64748b")">@t.EstadoNombre</span></td>
                                     <td class="tb-cerr-mot">@(string.IsNullOrWhiteSpace(t.MotivoCierre) ? "-" : t.MotivoCierre)</td>
                                     <td class="tb-cerr-dt">@(t.CerradaAt is DateTimeOffset ca ? FechaHora(ca) : "-")</td>
@@ -1946,6 +1946,66 @@ else
     </div>
 }
 
+@* ===================== Editor de PRIORIDADES anclado al chevron de la columna PRIORIDAD (Fase 2) =====================
+   Lista configurable por tablero: crear/renombrar/color/reordenar/borrar (las 4 de fabrica no se borran). *@
+@if (_prioEditorOpen && _board is not null)
+{
+    <div class="tbfld-bd" @onclick="() => _prioEditorOpen = false"></div>
+    <div class="tbfld-pop tb-listpop @(_popUp ? "tbfld-pop-up" : "")" @onclick:stopPropagation="true" style="@PopStyle()">
+        <div class="tbfld-pop-h">
+            <span>Prioridades</span>
+            <button type="button" class="tbfld-x" @onclick="() => _prioEditorOpen = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="tbfld-pop-b">
+            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Las 4 de fabrica no se pueden borrar.</div>
+            <div class="tbcfg-list">
+                @{ var _prios = PrioridadesDelBoard.OrderBy(p => p.Orden).ToList(); }
+                @for (var iP = 0; iP < _prios.Count; iP++)
+                {
+                    var pr = _prios[iP]; var idxP = iP;
+                    <div class="tbcfg-est">
+                        <span style="position:relative;display:inline-flex;">
+                            <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(pr.Color ?? "#6D4FE3")" title="Cambiar color" @onclick="() => _prioColorId = _prioColorId == pr.Id ? null : pr.Id"></button>
+                            @if (_prioColorId == pr.Id)
+                            {
+                                <div class="tb-tagpop-bd" @onclick="() => _prioColorId = null"></div>
+                                <div class="tb-tag-colors" @onclick:stopPropagation="true">
+                                    @foreach (var c in _colores)
+                                    {
+                                        var cc = c;
+                                        <button type="button" class="tb-tag-copt @(string.Equals(pr.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarPrioColor(pr, cc)"></button>
+                                    }
+                                </div>
+                            }
+                        </span>
+                        @if (_prioEditId == pr.Id)
+                        {
+                            <input class="tbcfg-est-inp" @bind="_prioEditVal" @bind:event="oninput" @onblur="() => GuardarPrioNombre(pr)" @onkeydown="(e) => PrioKeydown(e, pr)" />
+                        }
+                        else
+                        {
+                            <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _prioEditId = pr.Id; _prioEditVal = pr.Nombre; }">@pr.Nombre</span>
+                        }
+                        <span class="tbcfg-est-cnt">@CountPrioridad(pr.Id) tareas</span>
+                        <span class="tbcfg-ord">
+                            <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxP == 0 || _busy)" @onclick="() => MoverPrioridad(idxP, -1)">&#9650;</button>
+                            <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxP == _prios.Count - 1 || _busy)" @onclick="() => MoverPrioridad(idxP, 1)">&#9660;</button>
+                        </span>
+                        @if (!pr.EsBase)
+                        {
+                            <button class="tbcfg-del" title="Eliminar prioridad" @onclick="() => EliminarPrioridadCfg(pr.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="tbcfg-add">
+                <input @bind="_nuevaPrioridad" @bind:event="oninput" placeholder="Nueva prioridad (ej. Critica)" />
+                <button class="tb-btn tb-btn-primary" @onclick="CrearPrioridadCfg" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaPrioridad))">Agregar</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* Ola B: editor FOCALIZADO de campo de SISTEMA (una sola puerta). Tipo bloqueado + alias + visibilidad;
    calca EditarCampoSistemaModal (como Unidades), persistiendo en columnas-config del tablero. *@
 @if (_editSisClave is not null && _board is not null)
@@ -2136,7 +2196,7 @@ else
         "numero" => t => t.NumeroTarea ?? "",
         "asignado" => t => t.AsignadoNombre ?? "",
         "progreso" => t => t.Progreso,
-        "prioridad" => t => (int)t.Prioridad,
+        "prioridad" => t => t.PrioridadOrden ?? (int)t.Prioridad,
         "vence" => t => t.FechaVencimiento ?? DateOnly.MaxValue,
         "valor" => t => t.Valor ?? 0m,
         "origen" => t => t.OrigenReferencia ?? "",
@@ -2298,6 +2358,7 @@ else
                 }
                 else if (col.Key == "est") { await AbrirEstadosEditor(); }     // Estados (columnas): su lista se edita aqui, anclada al header
                 else if (col.Key == "etiq") { await AbrirEtiquetasEditor(); }  // Etiquetas: su lista se edita aqui, anclada al header
+                else if (col.Key == "prioridad") { await AbrirPrioridadesEditor(); }  // Prioridad (Fase 2): lista configurable por tablero
                 else { AbrirEditorCampoSistema(col.Key, col.Label); }          // resto de sistema: editor focalizado (alias + tipo bloqueado + visibilidad)
                 break;
             case TablaColMenu.Accion.CopiarUrl:
@@ -2685,7 +2746,7 @@ else
             return t => { var v = CampoValor(t, gdef.Id); return string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!; };
         return clave switch
         {
-            "prioridad" => t => t.Prioridad.ToString(),
+            "prioridad" => t => PrioNombreOf(t),
             "responsable" => t => string.IsNullOrWhiteSpace(t.AsignadoNombre) ? "Sin responsable" : t.AsignadoNombre!,
             "torre" => t => TorreDeTarea(t),
             "unidad" => t => (t.OrigenTipo == "inmueble" && !string.IsNullOrWhiteSpace(t.OrigenReferencia)) ? t.OrigenReferencia! : "Sin unidad",
@@ -3823,7 +3884,7 @@ else
     {
         "estado" => t.EstadoId.ToString(),
         "resp" => t.AsignadoNombre ?? "",
-        "prio" => t.Prioridad.ToString(),
+        "prio" => PrioNombreOf(t),
         "titulo" => t.Titulo ?? "",
         "descripcion" => t.Descripcion ?? "",
         "valor" => t.Valor?.ToString(CultureInfo.InvariantCulture) ?? "",
@@ -3918,7 +3979,7 @@ else
                 Select((_board?.Estados ?? new List<EstadoTareaDto>()).Select(es => (es.Id.ToString(), es.Nombre)), "Elegir etapa...");
                 break;
             case "sel-prio":
-                Select(Enum.GetValues<PrioridadTarea>().Select(p => (p.ToString(), p.ToString())), "Elegir prioridad...");
+                Select(PrioridadesDelBoard.Select(p => (p.Nombre, p.Nombre)), "Elegir prioridad...");
                 break;
             case "resp":
                 Select(RespOptions().Select(x => (x, x)), "Elegir responsable...");
@@ -3983,7 +4044,7 @@ else
         var porDia = _tareas.AsEnumerable()
             .Where(t => t.FechaVencimiento.HasValue)
             .GroupBy(t => t.FechaVencimiento!.Value)
-            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.PrioridadOrden ?? (int)t.Prioridad).ToList());
         var dows = new[] { "LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM" };
         var res = new List<CalDia>(7);
         for (int i = 0; i < 7; i++)
@@ -4008,7 +4069,7 @@ else
         var porDia = _tareas.AsEnumerable()
             .Where(t => t.FechaVencimiento.HasValue)
             .GroupBy(t => t.FechaVencimiento!.Value)
-            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Prioridad).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.PrioridadOrden ?? (int)t.Prioridad).ToList());
         var celdas = new List<CalCelda>(total);
         for (int i = 0; i < total; i++)
         {
@@ -4281,8 +4342,8 @@ else
             @if (_colPrio)
             {
                 <div class="tb-row-prio">
-                    <select class="tb-prio-sel" style="color:@PrioFg(t.Prioridad);background:@PrioBg(t.Prioridad)" value="@t.Prioridad" @onchange="(e) => CambiarPrioridadFila(tarea.Id, e)">
-                        @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr</option> }
+                    <select class="tb-prio-sel" style="color:@PrioFgOf(t);background:@PrioBgOf(t)" value="@(t.PrioridadId?.ToString() ?? "")" @onchange="(e) => CambiarPrioridadFila(tarea.Id, e)">
+                        @foreach (var pr in PrioridadesDelBoard) { <option value="@pr.Id" selected="@(t.PrioridadId == pr.Id)" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr.Nombre</option> }
                     </select>
                 </div>
             }
@@ -4476,9 +4537,11 @@ else
     private async Task CambiarPrioridadFila(Guid id, ChangeEventArgs e)
     {
         if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
-        if (!Enum.TryParse<PrioridadTarea>(e.Value?.ToString(), out var pr)) return;
-        PatchLocal(id, t => t with { Prioridad = pr });
-        var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Texto = pr.ToString() });
+        if (!Guid.TryParse(e.Value?.ToString(), out var opId)) return;
+        var op = PrioridadesDelBoard.FirstOrDefault(p => p.Id == opId);
+        if (op is null) return;
+        PatchLocal(id, t => t with { PrioridadId = op.Id, PrioridadNombre = op.Nombre, PrioridadColor = op.Color, PrioridadOrden = op.Orden });
+        var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Guids = new[] { opId } });
         if (!resp.IsSuccessStatusCode) await RecargarBoard();
     }
 
@@ -5329,15 +5392,57 @@ else
 
     // ---- Fase 1: Estados y Etiquetas se editan desde el chevron de SU columna ("Editar campo"), en un
     //      popover anclado al header (no en el modal Configurar). Reusa la logica de estados/etiquetas. ----
-    private bool _estEditorOpen, _etiqEditorOpen;
-    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _estEditorOpen = true; }
-    private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = true; }
+    private bool _estEditorOpen, _etiqEditorOpen, _prioEditorOpen;
+    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; }
+    private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _prioEditorOpen = false; _etiqEditorOpen = true; }
+    private async Task AbrirPrioridadesEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = false; _prioEditorOpen = true; }
     private async Task PosicionarPopColMenu()
     {
         _popX = _colMenuX; _popY = _colMenuY;
         try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUp = vh > 0 && _colMenuY > vh * 0.55; }
         catch { _popUp = false; }
     }
+
+    // ---- Fase 2: editor de prioridades del tablero (crear/renombrar/color/reordenar/borrar), anclado al header ----
+    private Guid? _prioEditId; private string _prioEditVal = ""; private Guid? _prioColorId; private string _nuevaPrioridad = "";
+    private async Task CrearPrioridadCfg()
+    {
+        if (_board is null || string.IsNullOrWhiteSpace(_nuevaPrioridad)) return;
+        var resp = await Auth().PostAsJsonAsync("/api/tareas/prioridades", new { Nombre = _nuevaPrioridad.Trim(), Color = (string?)null, Orden = 0, TableroId = _board.Tablero.Id });
+        if (resp.IsSuccessStatusCode) { _nuevaPrioridad = ""; await RecargarBoard(); } else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+    }
+    private async Task GuardarPrioNombre(PrioridadTareaDto p)
+    {
+        _prioEditId = null;
+        var nom = (_prioEditVal ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(nom) || nom == p.Nombre) return;
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{p.Id}", new { Nombre = nom, p.Color, p.Orden, p.Activo });
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+    }
+    private void PrioKeydown(KeyboardEventArgs e, PrioridadTareaDto p) { if (e.Key == "Enter") _ = GuardarPrioNombre(p); else if (e.Key == "Escape") _prioEditId = null; }
+    private async Task GuardarPrioColor(PrioridadTareaDto p, string color)
+    {
+        _prioColorId = null;
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{p.Id}", new { p.Nombre, Color = color, p.Orden, p.Activo });
+        if (resp.IsSuccessStatusCode) await RecargarBoard();
+    }
+    private async Task MoverPrioridad(int idx, int dir)
+    {
+        var list = PrioridadesDelBoard.OrderBy(p => p.Orden).ToList();
+        int j = idx + dir;
+        if (idx < 0 || j < 0 || j >= list.Count) return;
+        var a = list[idx]; var b = list[j];
+        // Intercambia el Orden de las dos opciones adyacentes.
+        await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{a.Id}", new { a.Nombre, a.Color, Orden = b.Orden, a.Activo });
+        await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{b.Id}", new { b.Nombre, b.Color, Orden = a.Orden, b.Activo });
+        await RecargarBoard();
+    }
+    private async Task EliminarPrioridadCfg(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/tareas/prioridades/{id}");
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+    }
+    private int CountPrioridad(Guid id) => _tareas.Count(t => t.PrioridadId == id && t.PadreId == null);
 
     // ---- Config de motivos de cierre (modulo tareas) ----
     private string _nuevoMotivoTareaNombre = "";
@@ -6050,4 +6155,21 @@ else
     // matices no calzan 1:1 con tokens (no son brand/success/danger), asi que se dejan como hex a proposito.
     private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
     private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
+
+    // Fase 2: prioridades configurables del tablero. El pill usa el color-acento de la opcion (texto) + una
+    // tinta clara (fondo). Si la tarea aun no tiene opcion (legacy), cae al color por enum.
+    private IReadOnlyList<PrioridadTareaDto> PrioridadesDelBoard => _board?.Prioridades ?? (IReadOnlyList<PrioridadTareaDto>)Array.Empty<PrioridadTareaDto>();
+    private static string Tinte(string? hex, double alpha = 0.14)
+    {
+        if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith("#") || hex.Length < 7) return "var(--propia-bg-card-soft)";
+        try
+        {
+            int r = Convert.ToInt32(hex.Substring(1, 2), 16), g = Convert.ToInt32(hex.Substring(3, 2), 16), b = Convert.ToInt32(hex.Substring(5, 2), 16);
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha})");
+        }
+        catch { return "var(--propia-bg-card-soft)"; }
+    }
+    private string PrioFgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? t.PrioridadColor! : PrioFg(t.Prioridad);
+    private string PrioBgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? Tinte(t.PrioridadColor) : PrioBg(t.Prioridad);
+    private string PrioNombreOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadNombre) ? t.PrioridadNombre! : t.Prioridad.ToString();
 }

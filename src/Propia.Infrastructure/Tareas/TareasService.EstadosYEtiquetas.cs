@@ -131,6 +131,92 @@ public partial class TareasService
         return true;
     }
 
+    // ===================== Prioridades (Fase 2: lista configurable por tablero) =====================
+
+    public async Task<IReadOnlyList<PrioridadTareaDto>> ListarPrioridadesAsync(Guid? tableroId, CancellationToken ct)
+    {
+        await AsegurarPrioridadesBaseAsync(ct);
+        var q = _db.TareasPrioridades.AsNoTracking().AsQueryable();
+        if (tableroId.HasValue) q = q.Where(p => p.TableroId == tableroId.Value);
+        return await q.OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
+            .Select(p => new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, p.EsBase, p.Activo))
+            .ToListAsync(ct);
+    }
+
+    private static readonly string[] _prioridadPalette = { "#6D4FE3", "#0EA5E9", "#EC4899", "#14B8A6", "#A855F7", "#F97316" };
+
+    public async Task<PrioridadTareaDto> CrearPrioridadAsync(CrearPrioridadRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Nombre) || req.Nombre.Trim().Length < 2)
+            throw new InvalidOperationException("Nombre minimo 2 caracteres.");
+        var nom = req.Nombre.Trim();
+        var tableroId = req.TableroId ?? await AsegurarTableroDefaultAsync(ct);
+        if (await _db.TareasPrioridades.AnyAsync(p => p.TableroId == tableroId && p.Nombre == nom, ct))
+            throw new InvalidOperationException("Ya existe una prioridad con este nombre en el tablero.");
+        var enBoard = await _db.TareasPrioridades.Where(p => p.TableroId == tableroId).ToListAsync(ct);
+        int orden = req.Orden > 0 ? req.Orden : (enBoard.Count > 0 ? enBoard.Max(p => p.Orden) : 0) + 1;
+        var color = string.IsNullOrWhiteSpace(req.Color)
+            ? _prioridadPalette[enBoard.Count(p => !p.EsBase) % _prioridadPalette.Length]
+            : req.Color;
+        var p = new TareaPrioridad { TableroId = tableroId, Nombre = nom, Color = color, Orden = orden, EsBase = false, BaseValor = null, Activo = true };
+        _db.TareasPrioridades.Add(p);
+        await _db.SaveChangesAsync(ct);
+        return new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, false, true);
+    }
+
+    public async Task<bool> ActualizarPrioridadAsync(Guid id, ActualizarPrioridadRequest req, CancellationToken ct)
+    {
+        var p = await _db.TareasPrioridades.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return false;
+        var nom = req.Nombre.Trim();
+        if (string.IsNullOrWhiteSpace(nom) || nom.Length < 2) throw new InvalidOperationException("Nombre minimo 2 caracteres.");
+        if (p.Nombre != nom && await _db.TareasPrioridades.AnyAsync(x => x.TableroId == p.TableroId && x.Nombre == nom && x.Id != id, ct))
+            throw new InvalidOperationException("Ya existe una prioridad con este nombre.");
+        p.Nombre = nom;
+        p.Color = req.Color;
+        p.Orden = req.Orden;
+        p.Activo = req.Activo;
+        p.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarPrioridadAsync(Guid id, CancellationToken ct)
+    {
+        var p = await _db.TareasPrioridades.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return false;
+        if (p.EsBase) throw new InvalidOperationException("Las prioridades base (Urgente/Alta/Normal/Baja) no se pueden eliminar.");
+        // Reasigna las tareas que la usan a la prioridad base Normal del mismo tablero (o null si no hay).
+        var fallback = await _db.TareasPrioridades
+            .Where(x => x.TableroId == p.TableroId && x.EsBase && x.BaseValor == (int)PrioridadTarea.Normal)
+            .Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
+        await _db.Tareas.Where(t => t.PrioridadId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.PrioridadId, fallback), ct);
+        _db.TareasPrioridades.Remove(p);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Resuelve la opcion de prioridad al crear/editar: si viene PrioridadId valido del tablero, ese; si no,
+    // la prioridad BASE del tablero que corresponde al enum (creaciones desde modulos/jobs por enum).
+    // Devuelve (Id de opcion o null, enum "equivalente" para mantener Tarea.Prioridad en sync/respaldo).
+    private async Task<(Guid? Id, PrioridadTarea Enum)> ResolverPrioridadAsync(Guid? tableroId, Guid? prioridadId, PrioridadTarea enumV, CancellationToken ct)
+    {
+        if (prioridadId is Guid pid)
+        {
+            var op = await _db.TareasPrioridades.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pid, ct);
+            if (op is not null && (tableroId is null || op.TableroId == tableroId))
+                return (op.Id, op.EsBase && op.BaseValor is int bv ? (PrioridadTarea)bv : enumV);
+        }
+        if (tableroId is Guid tid)
+        {
+            var baseOp = await _db.TareasPrioridades.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.TableroId == tid && x.EsBase && x.BaseValor == (int)enumV, ct);
+            if (baseOp is not null) return (baseOp.Id, enumV);
+        }
+        return (null, enumV);
+    }
+
     // ===================== Etiquetas =====================
 
     public async Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(Guid? tableroId, CancellationToken ct)

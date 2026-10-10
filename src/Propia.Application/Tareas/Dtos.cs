@@ -4,6 +4,11 @@ namespace Propia.Application.Tareas;
 
 public record EstadoTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal, bool EsBase, bool Activo);
 
+// Fase 2: prioridad configurable por tablero (lista editable). Color = acento del pill.
+public record PrioridadTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsBase, bool Activo);
+public record CrearPrioridadRequest(string Nombre, string? Color, int Orden, Guid? TableroId = null);
+public record ActualizarPrioridadRequest(string Nombre, string? Color, int Orden, bool Activo);
+
 /// <summary>Resultado de invitar al tablero un usuario del sistema por correo exacto.</summary>
 public record AgregarPorCorreoResultado(bool Ok, string? Error, string? Nombre, bool YaEstaba);
 public record EtiquetaTareaDto(Guid Id, string Nombre, string? Color, bool Activo, int CantidadTareas, Guid? TableroId = null);
@@ -44,7 +49,13 @@ public record TareaListaDto(
     string? TenantNombre = null,
     // ----- Origen: modulo que emitio la tarea (PQRSD/Contratos/Seguros/Mantenimiento) o null = Propia.
     // Inmutable; alimenta la columna "Origen" del tablero General. -----
-    string? ModuloOrigenCodigo = null);
+    string? ModuloOrigenCodigo = null,
+    // ----- Fase 2: prioridad configurable del tablero (la opcion elegida). Prioridad (enum) se conserva
+    // como respaldo; la UI usa estos campos para el pill/orden/filtro/agrupacion. -----
+    Guid? PrioridadId = null,
+    string? PrioridadNombre = null,
+    string? PrioridadColor = null,
+    int? PrioridadOrden = null);
 
 // Responsable de una tarea (asignado principal + colaboradores) con foto para la vista tabla.
 public record ResponsableMiniDto(Guid PersonaId, string Nombre, string? FotoUrl);
@@ -99,7 +110,12 @@ public record TareaDetalleDto(
     string? CopiadaDeTitulo = null,
     IReadOnlyList<TareaListaDto>? Copias = null,
     Guid? SolicitantePersonaId = null,
-    string? SolicitanteNombre = null);
+    string? SolicitanteNombre = null,
+    // Fase 2: prioridad configurable del tablero (la opcion elegida).
+    Guid? PrioridadId = null,
+    string? PrioridadNombre = null,
+    string? PrioridadColor = null,
+    int? PrioridadOrden = null);
 
 /// <summary>Opciones para copiar una tarea (mini-modal). La copia es independiente, no subtarea.</summary>
 public record CopiarTareaRequest(
@@ -146,7 +162,10 @@ public record CrearTareaRequest(
     // Vinculo de modulo (ej. tarea creada DESDE un PQRSD): cuando vienen, la tarea nace vinculada
     // (Origen = ModuloExterno) y se lista con el filtro por origen del board.
     string? ModuloOrigenCodigo = null,
-    Guid? ModuloOrigenEntidadId = null);
+    Guid? ModuloOrigenEntidadId = null,
+    // Fase 2: opcion de prioridad del tablero. Si viene, manda sobre el enum Prioridad; si no, se resuelve
+    // el enum a la prioridad base del tablero destino.
+    Guid? PrioridadId = null);
 
 public record ActualizarTareaRequest(
     string Titulo,
@@ -168,7 +187,9 @@ public record ActualizarTareaRequest(
     IReadOnlyList<SubtareaCheckItem>? Checklist = null,
     IReadOnlyList<TareaCampoValorDto>? CamposValores = null,
     Guid? SolicitantePersonaId = null,
-    Guid? OrigenEntidadId = null);
+    Guid? OrigenEntidadId = null,
+    // Fase 2: opcion de prioridad del tablero (si viene, manda sobre el enum).
+    Guid? PrioridadId = null);
 
 public record CambiarEstadoRequest(Guid EstadoId, string? MotivoCancelacion, Guid? MotivoCierreId = null);
 
@@ -295,6 +316,7 @@ public record ActualizarCampoAvanzadoRequest(
 public record TableroBoardDto(
     TableroDto Tablero,
     IReadOnlyList<EstadoTareaDto> Estados,
-    IReadOnlyList<TareaListaDto> Tareas);
+    IReadOnlyList<TareaListaDto> Tareas,
+    IReadOnlyList<PrioridadTareaDto> Prioridades);
 
 public record ActualizarProgresoRequest(int Progreso);

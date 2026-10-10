@@ -120,7 +120,8 @@ public class TableroCompartidoService : ITableroCompartidoService
             "Espejo de las tareas reales de las copropiedades que administras.",
             "#5955D1", 999, tareas.Count,
             Array.Empty<TableroUsuarioDto>(), null);
-        return new Propia.Application.Tareas.TableroBoardDto(tablero, estados, tareas);
+        // El board espejo agrega tareas de varias copropiedades: no tiene prioridades propias (la UI cae al enum).
+        return new Propia.Application.Tareas.TableroBoardDto(tablero, estados, tareas, Array.Empty<Propia.Application.Tareas.PrioridadTareaDto>());
     }
 
     /// <summary>Guid determinista por nombre de etapa (MD5): estable entre requests y tenants.</summary>

@@ -12,6 +12,12 @@ public interface ITareasService
     Task<bool> ActualizarEstadoAsync(Guid id, ActualizarEstadoRequest req, CancellationToken ct);
     Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct);
 
+    // Prioridades (Fase 2: lista configurable por tablero)
+    Task<IReadOnlyList<PrioridadTareaDto>> ListarPrioridadesAsync(Guid? tableroId, CancellationToken ct);
+    Task<PrioridadTareaDto> CrearPrioridadAsync(CrearPrioridadRequest req, CancellationToken ct);
+    Task<bool> ActualizarPrioridadAsync(Guid id, ActualizarPrioridadRequest req, CancellationToken ct);
+    Task<bool> EliminarPrioridadAsync(Guid id, CancellationToken ct);
+
     // Etiquetas
     Task<IReadOnlyList<EtiquetaTareaDto>> ListarEtiquetasAsync(Guid? tableroId, CancellationToken ct);
     Task<EtiquetaTareaDto> CrearEtiquetaAsync(CrearEtiquetaRequest req, CancellationToken ct);
