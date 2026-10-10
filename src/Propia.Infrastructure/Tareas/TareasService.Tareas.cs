@@ -30,7 +30,8 @@ public partial class TareasService
         if (!string.IsNullOrWhiteSpace(origenCodigo)) q = q.Where(t => t.ModuloOrigenCodigo == origenCodigo);
         if (origenEntidadId.HasValue) q = q.Where(t => t.ModuloOrigenEntidadId == origenEntidadId.Value);
         if (estadoId.HasValue) q = q.Where(t => t.EstadoId == estadoId.Value);
-        if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
+        // Fase 3: el filtro por enum se resuelve contra el BaseValor de la opcion (solo matchea las de fabrica).
+        if (prioridad.HasValue) q = q.Where(t => t.PrioridadOpcion != null && t.PrioridadOpcion.BaseValor == (int)prioridad.Value);
         if (asignadoPersonaId.HasValue) q = q.Where(t => t.AsignadoPersonaId == asignadoPersonaId.Value);
         if (padreId.HasValue) q = q.Where(t => t.PadreId == padreId.Value);
         if (soloRaiz == true) q = q.Where(t => t.PadreId == null);
@@ -47,13 +48,13 @@ public partial class TareasService
             from p in pj.DefaultIfEmpty()
             join pr in _db.TareasPrioridades on t.PrioridadId equals pr.Id into prj
             from pr in prj.DefaultIfEmpty()
-            orderby (pr != null ? pr.Orden : (int)t.Prioridad), t.FechaVencimiento, t.CreatedAt descending
+            orderby (pr != null ? pr.Orden : 999), t.FechaVencimiento, t.CreatedAt descending
             select new
             {
                 t.Id,
                 t.NumeroTarea,
                 t.Titulo,
-                t.Prioridad,
+                PrioridadBaseValor = pr == null ? (int?)null : pr.BaseValor,
                 t.PrioridadId,
                 PrioridadNombre = pr == null ? null : pr.Nombre,
                 PrioridadColor = pr == null ? null : pr.Color,
@@ -115,7 +116,7 @@ public partial class TareasService
             if (r.AsignadoPersonaId is Guid ap) resp.Add(new ResponsableMiniDto(ap, r.AsigNombre ?? "", null));
             if (colabsMap.TryGetValue(r.Id, out var cs)) resp.AddRange(cs.Select(c => new ResponsableMiniDto(c.PersonaId, c.Nombre, null)));
             return new TareaListaDto(
-                r.Id, r.NumeroTarea, r.Titulo, r.Prioridad, r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoEsTerminal,
+                r.Id, r.NumeroTarea, r.Titulo, EnumDeBaseValor(r.PrioridadBaseValor), r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoEsTerminal,
                 r.AsignadoPersonaId, r.AsigNombre,
                 r.FechaVencimiento,
                 !r.EstadoEsTerminal && r.FechaVencimiento.HasValue && r.FechaVencimiento.Value < hoy,
@@ -239,17 +240,32 @@ public partial class TareasService
             .ToListAsync(ct);
 
         // Traza: copias hechas a partir de esta tarea (copias independientes, no subtareas).
-        var copias = await (
+        // Fase 3: se materializa a anonimo (con la opcion de prioridad unida) y se mapea en memoria para
+        // derivar el enum legacy y poblar nombre/color/orden de la opcion (antes iban null).
+        var copiasRows = await (
             from c in _db.Tareas.AsNoTracking().Where(c => c.CopiaDeTareaId == id && !c.Eliminada)
             join e in _db.TareasEstados on c.EstadoId equals e.Id
+            join pr in _db.TareasPrioridades on c.PrioridadId equals pr.Id into prj
+            from pr in prj.DefaultIfEmpty()
             orderby c.CreatedAt
-            select new TareaListaDto(
-                c.Id, c.NumeroTarea, c.Titulo, c.Prioridad, c.EstadoId, e.Nombre, e.Color, e.EsTerminal,
+            select new
+            {
+                c.Id, c.NumeroTarea, c.Titulo, PrioridadBaseValor = pr == null ? (int?)null : pr.BaseValor,
+                c.EstadoId, EstadoNombre = e.Nombre, EstadoColor = e.Color, EstadoEsTerminal = e.EsTerminal,
+                c.AsignadoPersonaId, c.FechaVencimiento, c.PadreId, c.Progreso, c.Color, c.EsProyecto, c.Valor,
+                c.FechaInicio, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt,
+                c.ModuloOrigenCodigo, c.PrioridadId,
+                PrioridadNombre = pr == null ? null : pr.Nombre, PrioridadColor = pr == null ? null : pr.Color,
+                PrioridadOrden = pr == null ? (int?)null : pr.Orden
+            }
+        ).ToListAsync(ct);
+        var copias = copiasRows.Select(c => new TareaListaDto(
+                c.Id, c.NumeroTarea, c.Titulo, EnumDeBaseValor(c.PrioridadBaseValor), c.EstadoId, c.EstadoNombre, c.EstadoColor, c.EstadoEsTerminal,
                 c.AsignadoPersonaId, null, c.FechaVencimiento, false, c.PadreId, 0, 0,
                 new List<EtiquetaTareaDto>(), c.Progreso, c.Color, c.EsProyecto, c.Valor, c.FechaInicio,
                 null, null, null, c.OrigenTipo, c.OrigenReferencia, c.EstadoDesde, c.MotivoCancelacion, c.CerradaAt,
-                null, null, c.ModuloOrigenCodigo, c.PrioridadId, null, null, null)
-        ).ToListAsync(ct);
+                null, null, c.ModuloOrigenCodigo, c.PrioridadId, c.PrioridadNombre, c.PrioridadColor, c.PrioridadOrden))
+            .ToList();
 
         var asigNombre = t.AsignadoPersona is null ? null
             : ((t.AsignadoPersona.Nombres ?? "") + " " + (t.AsignadoPersona.Apellidos ?? "")).Trim();
@@ -258,7 +274,7 @@ public partial class TareasService
         var estadoDto = new EstadoTareaDto(t.Estado!.Id, t.Estado.Nombre, t.Estado.Color, t.Estado.Orden, t.Estado.EsTerminal, t.Estado.EsBase, t.Estado.Activo);
 
         return new TareaDetalleDto(
-            t.Id, t.NumeroTarea, t.Titulo, t.Descripcion, t.Prioridad,
+            t.Id, t.NumeroTarea, t.Titulo, t.Descripcion, EnumDeOpcion(t.PrioridadOpcion),
             estadoDto, t.AsignadoPersonaId, asigNombre,
             t.FechaInicio, t.FechaVencimiento, t.FechaCompletada,
             t.PadreId, t.Padre?.Titulo, t.Origen, t.ModuloOrigenCodigo, t.ModuloOrigenEntidadId,
@@ -326,6 +342,13 @@ public partial class TareasService
             throw new InvalidOperationException("Prioridad invalida.");
     }
 
+    // Fase 3: la prioridad vive en la opcion del tablero. Para los contratos que aun exponen el enum
+    // (TareaListaDto/TareaDetalleDto.Prioridad, MCP, tests) se deriva un enum "equivalente" desde el
+    // BaseValor de la opcion: las 4 de fabrica mapean a su enum; una prioridad personalizada cae a Normal.
+    private static PrioridadTarea EnumDeBaseValor(int? baseValor)
+        => baseValor is int bv && Enum.IsDefined(typeof(PrioridadTarea), bv) ? (PrioridadTarea)bv : PrioridadTarea.Normal;
+    private static PrioridadTarea EnumDeOpcion(TareaPrioridad? op) => EnumDeBaseValor(op?.BaseValor);
+
     public async Task<TareaDetalleDto> CrearTareaAsync(CrearTareaRequest req, CancellationToken ct)
     {
         ValidarTarea(req.Titulo, req.Descripcion, req.FechaInicio, req.FechaVencimiento, req.Prioridad);
@@ -382,15 +405,14 @@ public partial class TareasService
         // asi generar el numero e insertar la tarea quedan serializados por (tenant, anio).
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var numero = await GenerarNumeroAsync(ct);
-        // Fase 2: resuelve la opcion de prioridad del tablero (PrioridadId explicito, o el enum -> base).
-        var (prioOpId, prioEnum) = await ResolverPrioridadAsync(tableroId, req.PrioridadId, req.Prioridad, ct);
+        // Fase 2/3: resuelve la opcion de prioridad del tablero (PrioridadId explicito, o el enum -> base).
+        var (prioOpId, _) = await ResolverPrioridadAsync(tableroId, req.PrioridadId, req.Prioridad, ct);
         var t = new Tarea
         {
             NumeroTarea = numero,
             TableroId = tableroId,
             Titulo = req.Titulo.Trim(),
             Descripcion = req.Descripcion?.Trim(),
-            Prioridad = prioEnum,
             PrioridadId = prioOpId,
             EstadoId = estadoId,
             AsignadoPersonaId = asignado,
@@ -490,7 +512,7 @@ public partial class TareasService
 
         var prevAsig = t.AsignadoPersonaId;
         var prevFv = t.FechaVencimiento;
-        var prevPri = t.Prioridad;
+        var prevPrioId = t.PrioridadId;
         var prevProyecto = t.EsProyecto;
 
         // Responsables: el primero es el asignado principal; el resto son colaboradores.
@@ -507,9 +529,8 @@ public partial class TareasService
 
         t.Titulo = req.Titulo.Trim();
         t.Descripcion = req.Descripcion?.Trim();
-        // Fase 2: resuelve la opcion de prioridad del tablero (PrioridadId explicito, o el enum -> base).
-        var (prioOpIdU, prioEnumU) = await ResolverPrioridadAsync(t.TableroId, req.PrioridadId, req.Prioridad, ct);
-        t.Prioridad = prioEnumU;
+        // Fase 2/3: resuelve la opcion de prioridad del tablero (PrioridadId explicito, o el enum -> base).
+        var (prioOpIdU, _) = await ResolverPrioridadAsync(t.TableroId, req.PrioridadId, req.Prioridad, ct);
         t.PrioridadId = prioOpIdU;
         t.AsignadoPersonaId = asignado;
         t.FechaInicio = req.FechaInicio;
@@ -529,10 +550,10 @@ public partial class TareasService
             t.SolicitantePersonaId = spid;
         t.UpdatedAt = DateTimeOffset.UtcNow;
 
-        if (prevPri != req.Prioridad)
+        if (prevPrioId != prioOpIdU)
         {
-            await RegistrarHistorial(t.Id, TipoEventoTarea.PrioridadCambiada, $"Prioridad cambiada a {req.Prioridad}",
-                new { prev = prevPri.ToString() }, new { nuevo = req.Prioridad.ToString() }, ct);
+            await RegistrarHistorial(t.Id, TipoEventoTarea.PrioridadCambiada, "Prioridad cambiada",
+                new { prev = prevPrioId }, new { nuevo = prioOpIdU }, ct);
         }
         if (prevAsig != asignado)
         {
@@ -619,17 +640,16 @@ public partial class TareasService
                     var op = await _db.TareasPrioridades.FirstOrDefaultAsync(x => x.Id == pOpId, ct);
                     if (op is null || (t.TableroId is Guid tb && op.TableroId != tb)) throw new InvalidOperationException("Prioridad invalida.");
                     t.PrioridadId = op.Id;
-                    if (op.EsBase && op.BaseValor is int bvv) t.Prioridad = (PrioridadTarea)bvv;   // enum en sync cuando es base
                 }
                 else if (req.Numero is decimal pn && Enum.IsDefined(typeof(PrioridadTarea), (int)pn))
                 {
-                    var (rid, renum) = await ResolverPrioridadAsync(t.TableroId, null, (PrioridadTarea)(int)pn, ct);
-                    t.Prioridad = renum; t.PrioridadId = rid;
+                    var (rid, _) = await ResolverPrioridadAsync(t.TableroId, null, (PrioridadTarea)(int)pn, ct);
+                    t.PrioridadId = rid;
                 }
                 else if (Enum.TryParse<PrioridadTarea>(req.Texto, true, out var pp))
                 {
-                    var (rid, renum) = await ResolverPrioridadAsync(t.TableroId, null, pp, ct);
-                    t.Prioridad = renum; t.PrioridadId = rid;
+                    var (rid, _) = await ResolverPrioridadAsync(t.TableroId, null, pp, ct);
+                    t.PrioridadId = rid;
                 }
                 else throw new InvalidOperationException("Prioridad invalida.");
                 break;
@@ -704,7 +724,7 @@ public partial class TareasService
             TableroId = src.TableroId,
             Titulo = (src.Titulo + " (copia)").Trim(),
             Descripcion = src.Descripcion,
-            Prioridad = src.Prioridad,
+            PrioridadId = src.PrioridadId,
             EstadoId = estadoCopia,
             AsignadoPersonaId = src.AsignadoPersonaId,
             FechaInicio = src.FechaInicio,
@@ -782,7 +802,7 @@ public partial class TareasService
                 TableroId = src.TableroId,
                 Titulo = titulo,
                 Descripcion = src.Descripcion,
-                Prioridad = src.Prioridad,
+                PrioridadId = src.PrioridadId,
                 EstadoId = estadoId,
                 AsignadoPersonaId = req.ConservarResponsables ? src.AsignadoPersonaId : null,
                 FechaInicio = src.FechaInicio,

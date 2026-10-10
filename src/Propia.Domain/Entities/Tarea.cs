@@ -25,12 +25,10 @@ public class Tarea : TenantEntity
     /// y en cada cambio de estado. Alimenta el indicador "tiempo en este estado" de la UI.</summary>
     public DateTimeOffset EstadoDesde { get; set; } = DateTimeOffset.UtcNow;
 
-    /// <summary>Prioridad base (enum). Fase 2: se conserva como respaldo/compatibilidad mientras se migra a
-    /// <see cref="PrioridadId"/> (la opcion configurable por tablero). Se deja de leer en Etapa 3.</summary>
-    public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
-
-    /// <summary>Prioridad configurable del tablero (Fase 2). Null = tareas sin prioridad asignada (legacy,
-    /// o tableros sin prioridades sembradas). Referencia a <see cref="TareaPrioridad"/>.</summary>
+    /// <summary>Prioridad configurable del tablero (Fase 3). La prioridad de la tarea vive SOLO aqui (la
+    /// columna/enum `prioridad` se elimino en Etapa 3). El "enum equivalente" para contratos externos se
+    /// deriva de <see cref="TareaPrioridad.BaseValor"/> de la opcion. Null = tarea sin prioridad (no deberia
+    /// pasar tras el backfill). Referencia a <see cref="TareaPrioridad"/>.</summary>
     public Guid? PrioridadId { get; set; }
     public TareaPrioridad? PrioridadOpcion { get; set; }
 

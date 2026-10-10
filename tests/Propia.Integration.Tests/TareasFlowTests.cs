@@ -379,9 +379,10 @@ public class TareasFlowTests : IAsyncLifetime
             new BulkCambiarPrioridadRequest(new[] { t1.Id, t2.Id }, PrioridadTarea.Urgente),
             CancellationToken.None);
         Assert.Equal(2, res.Aplicados);
-        var actualizadas = await db.Tareas.AsNoTracking()
+        var actualizadas = await db.Tareas.AsNoTracking().Include(t => t.PrioridadOpcion)
             .Where(t => t.Id == t1.Id || t.Id == t2.Id).ToListAsync();
-        Assert.All(actualizadas, t => Assert.Equal(PrioridadTarea.Urgente, t.Prioridad));
+        // Fase 3: la prioridad vive en la opcion del tablero; se verifica por su BaseValor (enum equivalente).
+        Assert.All(actualizadas, t => Assert.Equal((int)PrioridadTarea.Urgente, t.PrioridadOpcion!.BaseValor));
         await CleanTenant(tenantId);
     }
 

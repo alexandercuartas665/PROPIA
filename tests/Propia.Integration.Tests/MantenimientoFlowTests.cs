@@ -160,13 +160,14 @@ public class MantenimientoFlowTests : IAsyncLifetime
         Assert.StartsWith("MNT-", det.Codigo);
         Assert.StartsWith("T-", det.TareaNumero);
 
-        var tarea = await db.Tareas.AsNoTracking().FirstOrDefaultAsync(t => t.Id == det.TareaId);
+        var tarea = await db.Tareas.AsNoTracking().Include(t => t.PrioridadOpcion).FirstOrDefaultAsync(t => t.Id == det.TareaId);
         Assert.NotNull(tarea);
         Assert.Equal(OrigenTarea.ModuloExterno, tarea!.Origen);
         Assert.Equal(OrigenModulo.Mantenimiento, tarea.ModuloOrigenCodigo);
         Assert.Equal(det.Id, tarea.ModuloOrigenEntidadId);
         Assert.Contains("[CORRECTIVO]", tarea.Titulo);
-        Assert.Equal(PrioridadTarea.Alta, tarea.Prioridad);
+        // Fase 3: la prioridad de la tarea generada vive en la opcion del tablero (BaseValor = enum equivalente).
+        Assert.Equal((int)PrioridadTarea.Alta, tarea.PrioridadOpcion!.BaseValor);
 
         await CleanTenant(tenantId);
     }
@@ -524,7 +525,7 @@ public class MantenimientoFlowTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
-        return (new MantenimientoService(db, ctx, http, noti), db, scope);
+        return (new MantenimientoService(db, ctx, http, noti, new Propia.Infrastructure.Tareas.TareasService(db, ctx, http, noti)), db, scope);
     }
 
     private static HttpContext BuildFakeHttpContext(Guid userId, Guid personaId)
@@ -636,7 +637,7 @@ public class MantenimientoFlowTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         var noti = scope.ServiceProvider.GetRequiredService<Propia.Application.Notificaciones.INotificacionDispatcher>();
-        var svc = new MantenimientoService(db, ctx, http, noti);
+        var svc = new MantenimientoService(db, ctx, http, noti, new Propia.Infrastructure.Tareas.TareasService(db, ctx, http, noti));
         return (new Propia.Infrastructure.Jobs.MantenimientoPreventivoJob(db, ctx, svc), db, scope);
     }
 

@@ -256,7 +256,10 @@ public record BulkCambiarEstadoRequest(
 
 public record BulkCambiarPrioridadRequest(
     IReadOnlyList<Guid> TareaIds,
-    PrioridadTarea Prioridad);
+    PrioridadTarea Prioridad,
+    // Fase 3: opcion de prioridad del tablero. Si viene, manda sobre el enum; si no, se resuelve el enum
+    // a la opcion base del tablero de cada tarea.
+    Guid? PrioridadId = null);
 
 public record BulkAsignarPersonaRequest(
     IReadOnlyList<Guid> TareaIds,

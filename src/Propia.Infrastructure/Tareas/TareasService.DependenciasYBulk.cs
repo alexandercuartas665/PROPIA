@@ -196,13 +196,15 @@ public partial class TareasService
         int aplicados = 0;
         foreach (var t in tareas)
         {
-            if (t.Prioridad == req.Prioridad) continue;
-            var anterior = t.Prioridad;
-            t.Prioridad = req.Prioridad;
+            // Fase 3: la prioridad vive en PrioridadId. Se resuelve por tablero de cada tarea (opcion explicita o enum->base).
+            var (opId, _) = await ResolverPrioridadAsync(t.TableroId, req.PrioridadId, req.Prioridad, ct);
+            if (t.PrioridadId == opId) continue;
+            var anterior = t.PrioridadId;
+            t.PrioridadId = opId;
             t.UpdatedAt = DateTimeOffset.UtcNow;
             await RegistrarHistorial(t.Id, TipoEventoTarea.PrioridadCambiada,
-                $"Bulk: prioridad {anterior} -> {req.Prioridad}",
-                new { anterior }, new { req.Prioridad }, ct);
+                "Bulk: prioridad cambiada",
+                new { anterior }, new { nuevo = opId }, ct);
             aplicados++;
         }
         await _db.SaveChangesAsync(ct);
@@ -219,6 +221,7 @@ public partial class TareasService
         // que salvar, asi que falla el lote entero antes de modificar ninguna tarea.
         await ValidarPersonaDelTenantAsync(req.AsignadoPersonaId, "asignado", ct);
         var tareas = await _db.Tareas
+            .Include(t => t.PrioridadOpcion)   // Fase 3: para derivar la prioridad de la notificacion
             .Where(t => req.TareaIds.Contains(t.Id)).ToListAsync(ct);
         var personaNombre = req.AsignadoPersonaId is { } pid
             ? await _db.Personas.Where(p => p.Id == pid)
@@ -246,7 +249,7 @@ public partial class TareasService
                     TenantId: _tenantContext.CurrentTenantId,
                     PersonaDestinatariaId: nuevoPid,
                     Asunto: $"Nueva tarea asignada: {t.NumeroTarea}",
-                    Prioridad: t.Prioridad == PrioridadTarea.Urgente
+                    Prioridad: (t.PrioridadOpcion != null && t.PrioridadOpcion.BaseValor == (int)PrioridadTarea.Urgente)
                         ? PrioridadNotificacion.Alta : PrioridadNotificacion.Normal,
                     ModuloOrigenCodigo: "2.10",
                     EntidadOrigenId: t.Id));

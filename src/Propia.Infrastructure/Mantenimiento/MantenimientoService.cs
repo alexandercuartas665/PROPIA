@@ -20,17 +20,20 @@ public class MantenimientoService : IMantenimientoService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
+    private readonly Propia.Application.Tareas.ITareasService _tareas;
 
     public MantenimientoService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
-        Propia.Application.Notificaciones.INotificacionDispatcher noti)
+        Propia.Application.Notificaciones.INotificacionDispatcher noti,
+        Propia.Application.Tareas.ITareasService tareas)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _noti = noti;
+        _tareas = tareas;
     }
 
     // M-09: "hoy" en hora local de Colombia, no UTC. Mismo criterio que MantenimientoPreventivoJob
@@ -782,8 +785,14 @@ public class MantenimientoService : IMantenimientoService
 
         // Tablero destino: el GENERAL (donde caen las tareas de todos los modulos). Antes quedaba sin
         // tablero (TableroId null) y la tarea no aparecia en ningun board.
-        var tableroGeneralId = await _db.Tableros.Where(t => t.EsGeneral).OrderBy(t => t.Orden).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct)
-            ?? await _db.Tableros.OrderBy(t => t.Orden).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+        // Fase 3: asegura el tablero GENERAL (lo crea sembrado con estados+prioridades si no existe) para que la
+        // tarea nazca con tablero y se pueda resolver su prioridad por la opcion del tablero.
+        var tgId = await _tareas.AsegurarTableroGeneralAsync(ct);
+        Guid? tableroGeneralId = tgId;
+        // Mantenimiento crea la Tarea directamente (no via el servicio de Tareas): resuelve el enum mapeado a la
+        // opcion BASE equivalente del tablero general.
+        var prioridadOpId = await _db.TareasPrioridades.Where(p => p.TableroId == tgId && p.EsBase && p.BaseValor == (int)prioridadTarea)
+            .Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct);
         var tarea = new Tarea
         {
             NumeroTarea = numero,
@@ -791,7 +800,7 @@ public class MantenimientoService : IMantenimientoService
             Titulo = $"[{i.Tipo.ToString().ToUpperInvariant()}] {nombreActivo ?? "Activo"} - {i.Titulo}",
             Descripcion = i.Descripcion,
             EstadoId = estadoPendienteId,
-            Prioridad = prioridadTarea,
+            PrioridadId = prioridadOpId,
             AsignadoPersonaId = i.ProveedorId ?? i.ResponsableInternoId,
             FechaVencimiento = i.FechaProgramada,
             Origen = OrigenTarea.ModuloExterno,

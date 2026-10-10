@@ -121,14 +121,14 @@ public partial class TareasService
     public async Task<ResumenTareasDto> GetResumenAsync(CancellationToken ct)
     {
         await AsegurarEstadosBaseAsync(ct);
-        var tareas = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada).Include(t => t.Estado).ToListAsync(ct);
+        var tareas = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada).Include(t => t.Estado).Include(t => t.PrioridadOpcion).ToListAsync(ct);
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var mesAtras = DateTime.UtcNow.AddMonths(-1);
         var pendienteId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.Pendiente).Select(e => e.Id).FirstAsync(ct);
         var enProgresoId = await _db.TareasEstados.Where(e => e.Nombre == EstadoTareaBase.EnProgreso).Select(e => e.Id).FirstAsync(ct);
 
         var porEstado = tareas.GroupBy(t => t.Estado!.Nombre).Select(g => (g.Key, g.Count())).ToList();
-        var porPri = tareas.GroupBy(t => t.Prioridad.ToString()).Select(g => (g.Key, g.Count())).ToList();
+        var porPri = tareas.GroupBy(t => t.PrioridadOpcion != null ? t.PrioridadOpcion.Nombre : "Sin prioridad").Select(g => (g.Key, g.Count())).ToList();
 
         // KPIs del tablero (prototipo v2). "Completada" = estado Completada o progreso 100%.
         bool EstaCompletada(Tarea t) => t.Estado!.Nombre == EstadoTareaBase.Completada || t.Progreso >= 100;

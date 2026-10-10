@@ -12,6 +12,11 @@ public interface ITareasService
     Task<bool> ActualizarEstadoAsync(Guid id, ActualizarEstadoRequest req, CancellationToken ct);
     Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct);
 
+    // Tableros: asegura (get-or-create) el tablero GENERAL de la copropiedad, ya sembrado con estados y
+    // prioridades de fabrica. Lo usan los modulos que generan tareas (Mantenimiento) para no crear tareas
+    // sin tablero ni poder resolver su prioridad.
+    Task<Guid> AsegurarTableroGeneralAsync(CancellationToken ct);
+
     // Prioridades (Fase 2: lista configurable por tablero)
     Task<IReadOnlyList<PrioridadTareaDto>> ListarPrioridadesAsync(Guid? tableroId, CancellationToken ct);
     Task<PrioridadTareaDto> CrearPrioridadAsync(CrearPrioridadRequest req, CancellationToken ct);

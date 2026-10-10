@@ -88,6 +88,11 @@ public partial class TareasService
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.TableroId, t.Id), ct);
         await _db.Tareas.Where(x => x.TableroId == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.TableroId, t.Id), ct);
+        // Fase 3: en una instalacion nueva no hay prioridades legacy que enganchar; sembrar las 4 de fabrica
+        // AQUI garantiza que CrearTareaAsync (que resuelve la prioridad por la opcion del tablero) siempre
+        // encuentre la base, sin depender de que antes se haya abierto el board.
+        if (!await _db.TareasPrioridades.AnyAsync(p => p.TableroId == t.Id, ct))
+            await SembrarPrioridadesTableroAsync(t.Id, ct);
         return t.Id;
     }
 

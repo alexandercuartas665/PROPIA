@@ -46,9 +46,11 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
         var tareasUrgentes = await (
             from t in _db.Tareas.AsNoTracking().Where(t => !t.Estado!.EsTerminal)
             join e in _db.TareasEstados on t.EstadoId equals e.Id
-            orderby (t.FechaVencimiento ?? new DateOnly(9999, 1, 1)), t.Prioridad, t.CreatedAt
+            join pr in _db.TareasPrioridades on t.PrioridadId equals pr.Id into prj
+            from pr in prj.DefaultIfEmpty()
+            orderby (t.FechaVencimiento ?? new DateOnly(9999, 1, 1)), (pr != null ? pr.Orden : 999), t.CreatedAt
             select new TareaResumenDto(
-                t.Id, t.NumeroTarea, t.Titulo, e.Nombre, t.Prioridad.ToString(),
+                t.Id, t.NumeroTarea, t.Titulo, e.Nombre, pr != null ? pr.Nombre : "Sin prioridad",
                 t.FechaVencimiento,
                 t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy)
         ).Take(5).ToListAsync(ct);

@@ -172,7 +172,7 @@ public class TableroCompartidoService : ITableroCompartidoService
                             Responsable = t.AsignadoPersona != null ? (t.AsignadoPersona.Nombres + " " + t.AsignadoPersona.Apellidos) : null,
                             t.FechaVencimiento,
                             t.Progreso,
-                            t.Prioridad,
+                            PrioridadNombre = t.PrioridadOpcion != null ? t.PrioridadOpcion.Nombre : null,
                             t.EsProyecto
                         })
                         .ToListAsync(ct);
@@ -186,7 +186,7 @@ public class TableroCompartidoService : ITableroCompartidoService
                         r.EstadoId, r.EstadoNombre, r.EstadoColor, r.EstadoOrden,
                         r.TableroId is Guid tb && tableros.TryGetValue(tb, out var tn) ? tn : null,
                         string.IsNullOrWhiteSpace(r.Responsable) ? null : r.Responsable!.Trim(),
-                        r.FechaVencimiento, r.Progreso, r.Prioridad.ToString(), r.EsProyecto)));
+                        r.FechaVencimiento, r.Progreso, r.PrioridadNombre ?? "Normal", r.EsProyecto)));
                 }
                 catch (Exception ex)
                 {
