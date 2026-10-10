@@ -510,7 +510,7 @@ public partial class TareasService
             await SembrarPrioridadesTableroAsync(tableroId, ct);
         var prioridades = await _db.TareasPrioridades.AsNoTracking().Where(p => p.TableroId == tableroId)
             .OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
-            .Select(p => new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, p.EsBase, p.Activo))
+            .Select(p => new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, p.EsBase, p.Activo, p.BaseValor))
             .ToListAsync(ct);
         var tareas = await ListarTareasAsync(null, null, null, null, null, null, ct, tableroId, verCerradas, origenCodigo, origenEntidadId);
         return new TableroBoardDto(dto, estados, tareas, prioridades);

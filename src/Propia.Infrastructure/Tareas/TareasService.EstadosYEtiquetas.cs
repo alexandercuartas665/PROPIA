@@ -139,7 +139,7 @@ public partial class TareasService
         var q = _db.TareasPrioridades.AsNoTracking().AsQueryable();
         if (tableroId.HasValue) q = q.Where(p => p.TableroId == tableroId.Value);
         return await q.OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
-            .Select(p => new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, p.EsBase, p.Activo))
+            .Select(p => new PrioridadTareaDto(p.Id, p.Nombre, p.Color, p.Orden, p.EsBase, p.Activo, p.BaseValor))
             .ToListAsync(ct);
     }
 

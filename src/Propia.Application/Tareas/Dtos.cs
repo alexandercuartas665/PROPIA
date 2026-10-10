@@ -5,7 +5,9 @@ namespace Propia.Application.Tareas;
 public record EstadoTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsTerminal, bool EsBase, bool Activo);
 
 // Fase 2: prioridad configurable por tablero (lista editable). Color = acento del pill.
-public record PrioridadTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsBase, bool Activo);
+// BaseValor: enum PrioridadTarea de origen de una prioridad de fabrica (null en las personalizadas). La UI
+// lo usa para elegir el default de creacion (la opcion equivalente a Normal) sin depender del nombre.
+public record PrioridadTareaDto(Guid Id, string Nombre, string? Color, int Orden, bool EsBase, bool Activo, int? BaseValor = null);
 public record CrearPrioridadRequest(string Nombre, string? Color, int Orden, Guid? TableroId = null);
 public record ActualizarPrioridadRequest(string Nombre, string? Color, int Orden, bool Activo);
 
