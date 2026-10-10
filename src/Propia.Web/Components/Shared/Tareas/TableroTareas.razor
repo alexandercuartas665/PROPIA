@@ -162,11 +162,14 @@ else
                     {
                         <TablaAgruparMenu Columnas="ColsAgrupablesT()" Grupos="_gruposT" GruposChanged="OnGruposTChanged" />
                     }
-                    @* Campos (gestor unificado, adopcion Selector opcion A): antes de los modos para la secuencia
-                       Agrupar.Campos.Tarjetas.Tabla. Exige el permiso Aprobar (configurar, no basta con trabajar). *@
+                    @* "Columnas" (menu inline de orden/visibilidad, homogeneo con Unidades): reemplaza al boton
+                       "Campos" (modal). El creador COMPLETO de campo vive en el "+" del header de la tabla.
+                       Secuencia Agrupar.Columnas.Tarjetas.Tabla. Exige permiso de configurar. *@
                     @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
                     {
-                        <button class="tb-btn tb-btn-soft" @onclick="AbrirGestorCampos" title="Configurar los campos del tablero"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos</button>
+                        <TablaColumnasMenu Columnas="ColsVisibilidadT()" OnMover="MoverColT" OnToggleVisible="ToggleVisibleColT"
+                                           OnEliminar="EliminarCampoColT" OnOcultarTodas="OcultarTodasColT"
+                                           OnMostrarTodas="MostrarTodasColT" OnRestablecer="RestablecerColT" />
                     }
                     @* Modos de vista despues de Campos. En "Cerrados" no hay diseno de tablero: solo tabla de consulta. *@
                     @if (!_verCerradas)
@@ -492,7 +495,7 @@ else
                     @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "ORIGEN")</span>@SortInd("origen")@ChevCol("origen", "ORIGEN", false)@ColorDot("orig")</div> }
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)@ChevCol(cid, campo.Label, true)@ColorDot(cid)</div> }
                     @* Agregar columna = "+" pelado (homogeneo con Unidades: el "+" del header crea el campo). *@
-                    <div class="tb-lc tb-lc-acc"><button type="button" class="tbl-addcol-btn" @onclick="AbrirEditorCampo" title="Crear campo nuevo (columna)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button></div>
+                    <div class="tb-lc tb-lc-acc"><button type="button" class="tbl-addcol-btn" @onclick="AbrirGestorCampos" title="Crear campo nuevo (columna)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button></div>
                 </div>
                 @if (_gruposT.Count == 0)
                 {
@@ -2849,6 +2852,97 @@ else
                 .OrderBy(x => x.ord).Select(x => x.k).ToList();
         }
         catch { _colCfg = new(StringComparer.Ordinal); ColsReset(); }
+    }
+
+    // ===== "Columnas" (menu inline, homogeneo con Unidades): lista para TablaColumnasMenu + orden/visibilidad =====
+    // Lista en el ORDEN actual: titulo (fija) + las reordenables (_colOrden). Etapa/Progreso se ven pero no se ocultan.
+    private List<TablaColumnasMenu.Col> ColsVisibilidadT()
+    {
+        var list = new List<TablaColumnasMenu.Col>
+        {
+            new("titulo", MenuLabelT("titulo", "Titulo"), false, true, Movible: false, Ocultable: false)
+        };
+        foreach (var k in _colOrden)
+        {
+            if (Guid.TryParse(k, out var gid))
+            {
+                var campo = CamposDelTablero.FirstOrDefault(c => c.Id == gid);
+                if (campo is null) continue;
+                list.Add(new(k, campo.Label, true, !_colsCampoOcultos.Contains(gid), Movible: true, Ocultable: true));
+            }
+            else
+            {
+                bool ocultable = k != "est" && k != "prog";   // Etapa y Progreso no se ocultan
+                list.Add(new(k, MenuLabelT(k, DefaultLabelFija(k)), false, VisibleFija(k), Movible: true, Ocultable: ocultable));
+            }
+        }
+        return list;
+    }
+    private static string DefaultLabelFija(string k) => k switch
+    {
+        "titulo" => "Titulo", "desc" => "Descripcion", "cod" => "Codigo", "est" => "Etapa", "resp" => "Asignado",
+        "prog" => "Progreso", "etiq" => "Etiquetas", "prio" => "Prioridad", "due" => "Vence", "valor" => "Valor",
+        "orig" => "Origen", _ => k
+    };
+    // Etiqueta para el menu: alias del tablero si existe (tal cual), si no el default legible.
+    private string MenuLabelT(string k, string defTitle)
+        => _colCfg.TryGetValue(ConfigClaveDe(k), out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : defTitle;
+    private bool VisibleFija(string k) => k switch
+    {
+        "est" => true, "prog" => true,
+        "desc" => _colDesc, "cod" => _colCodigo, "resp" => _colResp, "etiq" => _colEtiq,
+        "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen, _ => true
+    };
+    private async Task MoverColT((string Key, int Dir) a)
+    {
+        var keys = new List<string>(_colOrden);
+        var i = keys.IndexOf(a.Key); var j = i + a.Dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        _colOrden = keys;   // optimista; el CSS de orden se recomputa en el re-render
+        for (int k = 0; k < keys.Count; k++) await GuardarColCfgT(keys[k], orden: k, oculto: null);
+        await RestaurarColsAsync();
+    }
+    private async Task ToggleVisibleColT(string key)
+    {
+        bool visible = Guid.TryParse(key, out var gid) ? !_colsCampoOcultos.Contains(gid) : VisibleFija(key);
+        await GuardarColCfgT(key, orden: null, oculto: visible);   // si esta visible -> ocultar, y viceversa
+        await RestaurarColsAsync();
+    }
+    private async Task EliminarCampoColT(string key)
+    {
+        if (Guid.TryParse(key, out var gid)) { await CfgRemoveCampo(gid); await RestaurarColsAsync(); }
+    }
+    private async Task OcultarTodasColT()
+    {
+        foreach (var k in _colOrden)
+        {
+            if (!Guid.TryParse(k, out _) && (k == "est" || k == "prog")) continue;
+            await GuardarColCfgT(k, orden: null, oculto: true);
+        }
+        await RestaurarColsAsync();
+    }
+    private async Task MostrarTodasColT()
+    {
+        foreach (var k in _colOrden) await GuardarColCfgT(k, orden: null, oculto: false);
+        await RestaurarColsAsync();
+    }
+    private async Task RestablecerColT()
+    {
+        var canon = ClavesReordenables();
+        for (int i = 0; i < canon.Count; i++) await GuardarColCfgT(canon[i], orden: i, oculto: false);
+        await RestaurarColsAsync();
+    }
+    // Persiste una fila de columnas-config del tablero, preservando lo que no se cambia (alias; orden/oculto si van null).
+    private async Task GuardarColCfgT(string colKey, int? orden, bool? oculto)
+    {
+        if (_board is null) return;
+        var cc = ConfigClaveDe(colKey);
+        _colCfg.TryGetValue(cc, out var ex);
+        bool ocultoVal = oculto ?? (ex?.Oculto ?? false);
+        int? ordenVal = orden ?? ex?.Orden;
+        await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config",
+            new GuardarUnidadCampoConfigRequest(cc, ex?.Alias, null, Oculto: ocultoVal, Orden: ordenVal));
     }
 
     // ---- Orden de columnas (vista Lista): reordenable via flechas; se aplica por CSS `order`, sin tocar el markup ----

@@ -1,0 +1,102 @@
+@* Boton "Columnas" + menu inline de ORDEN y VISIBILIDAD de columnas (+ borrar campo dinamico).
+   Fuente UNICA del diseno (calca el menu "Columnas" de Unidades, .dst-colmenu). El modulo pasa la
+   lista de columnas (en su orden actual, con visibilidad) y reacciona a los callbacks. Crear campo
+   nuevo = "+" del header del modulo (no va aqui). Mismo patron que TablaOrdenarMenu / TablaAgruparMenu.
+   Uso:
+     <TablaColumnasMenu Columnas="ColsVisibilidad()" OnMover="MoverCol" OnToggleVisible="ToggleVisibleCol"
+                        OnEliminar="EliminarCampoCol" OnOcultarTodas="OcultarTodasCol"
+                        OnMostrarTodas="MostrarTodasCol" OnRestablecer="RestablecerCol" /> *@
+
+<div class="tcol-wrap">
+    <button type="button" class="tcol-btn @(_open ? "on" : "")" title="Columnas: orden y visibilidad" @onclick="() => _open = !_open">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+        <span>Columnas</span>
+    </button>
+    @if (_open)
+    {
+        <div class="tcol-bd" @onclick="() => _open = false"></div>
+        <div class="tcol-menu">
+            <div class="tcol-search">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input placeholder="Buscar columna..." value="@_q" @oninput="@(e => _q = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <div class="tcol-list">
+                @{ var cols = Columnas.ToList(); var first = PrimeraMovible(cols); var last = UltimaMovible(cols); }
+                @for (int i = 0; i < cols.Count; i++)
+                {
+                    var it = cols[i]; var idx = i;
+                    if (!string.IsNullOrWhiteSpace(_q) && !it.Label.Contains(_q, StringComparison.OrdinalIgnoreCase)) { continue; }
+                    <div class="tcol-it">
+                        <button class="tcol-mv" disabled="@(!it.Movible || idx <= first)" title="Subir" @onclick="() => OnMover.InvokeAsync((it.Key, -1))">&#9650;</button>
+                        <button class="tcol-mv" disabled="@(!it.Movible || idx >= last)" title="Bajar" @onclick="() => OnMover.InvokeAsync((it.Key, 1))">&#9660;</button>
+                        <span class="tcol-name">@it.Label @if (it.EsDinamico) { <span class="tcol-dyn" title="Campo personalizado">din</span> }</span>
+                        @if (!it.Ocultable && !it.Movible) { <span class="tcol-fija">fija</span> }
+                        else if (it.Ocultable) { <button class="tcol-eye @(it.Visible ? "on" : "")" title="@(it.Visible ? "Ocultar" : "Mostrar")" @onclick="() => OnToggleVisible.InvokeAsync(it.Key)"><i class="fi @(it.Visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button> }
+                        @if (it.EsDinamico) { <button class="tcol-del" title="Eliminar campo (definicion y valores)" @onclick="() => OnEliminar.InvokeAsync(it.Key)"><i class="fi fi-rr-trash"></i></button> }
+                    </div>
+                }
+            </div>
+            <div class="tcol-massacts">
+                <button type="button" class="tcol-mass" @onclick="() => OnOcultarTodas.InvokeAsync()"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                <button type="button" class="tcol-mass" @onclick="() => OnMostrarTodas.InvokeAsync()"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                <button type="button" class="tcol-reset" @onclick="() => OnRestablecer.InvokeAsync()">Restablecer</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Una columna del menu: clave estable, etiqueta, si es campo propio, visible, y si se puede mover/ocultar.</summary>
+    public sealed record Col(string Key, string Label, bool EsDinamico, bool Visible, bool Movible, bool Ocultable);
+
+    /// <summary>Columnas en su ORDEN actual (las fijas, p.ej. la 1a, van primero con Movible=false).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Col> Columnas { get; set; } = Array.Empty<Col>();
+    /// <summary>Mover una columna: (clave, direccion) con direccion -1 (subir) / +1 (bajar).</summary>
+    [Parameter] public EventCallback<(string Key, int Dir)> OnMover { get; set; }
+    /// <summary>Alternar visibilidad de una columna (solo las Ocultable).</summary>
+    [Parameter] public EventCallback<string> OnToggleVisible { get; set; }
+    /// <summary>Eliminar un campo propio (solo EsDinamico).</summary>
+    [Parameter] public EventCallback<string> OnEliminar { get; set; }
+    [Parameter] public EventCallback OnOcultarTodas { get; set; }
+    [Parameter] public EventCallback OnMostrarTodas { get; set; }
+    [Parameter] public EventCallback OnRestablecer { get; set; }
+
+    private bool _open;
+    private string _q = "";
+
+    // Indices de la primera / ultima columna movible: deshabilitan el ▲ del primer movible y el ▼ del ultimo.
+    private static int PrimeraMovible(List<Col> cols) { for (int i = 0; i < cols.Count; i++) if (cols[i].Movible) return i; return 0; }
+    private static int UltimaMovible(List<Col> cols) { for (int i = cols.Count - 1; i >= 0; i--) if (cols[i].Movible) return i; return cols.Count - 1; }
+}
+
+<style>
+    /* Boton de la barra (identico a .dst-fbtn / .tord-btn de la vista tabla canonica). */
+    .tcol-wrap { position: relative; }
+    .tcol-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); font-size: 12.5px; font-weight: 700; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
+    .tcol-btn:hover { border-color: var(--propia-brand); }
+    .tcol-btn.on { border-color: var(--propia-brand); background: var(--propia-brand-soft); color: var(--propia-brand); }
+    /* Menu (calca .dst-menu + .dst-colmenu). */
+    .tcol-bd { position: fixed; inset: 0; z-index: 40; }
+    .tcol-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 252px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
+    .tcol-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 0 9px; background: var(--propia-bg-card); margin-bottom: 6px; }
+    .tcol-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
+    .tcol-search input { border: 0; outline: none; background: transparent; padding: 7px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 100%; }
+    .tcol-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+    .tcol-it { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 7px; }
+    .tcol-it:hover { background: var(--propia-brand-soft-2); }
+    .tcol-mv { width: 22px; height: 22px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-muted); font-size: 10px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .tcol-mv:hover:not(:disabled) { color: var(--propia-brand); border-color: var(--propia-brand); }
+    .tcol-mv:disabled { opacity: .35; cursor: default; }
+    .tcol-name { flex: 1; font-size: 13px; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tcol-dyn { font-size: 9px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 5px; padding: 1px 5px; margin-left: 4px; }
+    .tcol-fija { font-size: 10.5px; color: var(--propia-text-faint); background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; }
+    .tcol-eye { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; }
+    .tcol-eye.on { color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .tcol-del { width: 26px; height: 24px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; cursor: pointer; color: var(--propia-text-faint); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .tcol-del:hover { color: var(--propia-danger); border-color: var(--propia-danger-soft); background: var(--propia-danger-soft); }
+    .tcol-massacts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--propia-border-divider); }
+    .tcol-mass { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--propia-text-secondary); font-family: inherit; white-space: nowrap; }
+    .tcol-mass:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .tcol-reset { flex: 1 1 100%; padding: 8px; border: 1px dashed var(--propia-border-card-2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); font-family: inherit; }
+    .tcol-reset:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+</style>
