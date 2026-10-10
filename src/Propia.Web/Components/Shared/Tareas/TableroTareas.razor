@@ -314,9 +314,9 @@ else
                                     }
                                     @if (_composerReveal >= 3)
                                     {
-                                        <select class="tb-composer-sel tb-composer-appear" @bind="_composerDraft.Prioridad"
+                                        <select class="tb-composer-sel tb-composer-appear" value="@(_composerDraft.PrioridadId ?? PrioridadBaseId)" @onchange="@(e => _composerDraft.PrioridadId = ParsePrio(e))"
                                                 @onfocus="@(() => RevealComposerNext(3))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, 3))">
-                                            @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr">@pr</option> }
+                                            @foreach (var pr in PrioridadesDelBoard) { <option value="@pr.Id" selected="@((_composerDraft.PrioridadId ?? PrioridadBaseId) == pr.Id)">@pr.Nombre</option> }
                                         </select>
                                     }
                                     @if (_composerReveal >= 4)
@@ -1156,10 +1156,10 @@ else
                         </div>
                         <div class="tbc-fld tbc-grow">
                             <label>Prioridad</label>
-                            <select @bind="d.Prioridad">
-                                @foreach (var p in Enum.GetValues<PrioridadTarea>())
+                            <select value="@(d.PrioridadId ?? PrioridadBaseId)" @onchange="@(e => d.PrioridadId = ParsePrio(e))">
+                                @foreach (var pr in PrioridadesDelBoard)
                                 {
-                                    <option value="@p">@p</option>
+                                    <option value="@pr.Id" selected="@((d.PrioridadId ?? PrioridadBaseId) == pr.Id)">@pr.Nombre</option>
                                 }
                             </select>
                         </div>
@@ -2304,7 +2304,8 @@ else
         if (EsBoardForaneo || _board is null) return;
         var titulo = _subInline.GetValueOrDefault(padre.Id, "").Trim();
         if (string.IsNullOrWhiteSpace(titulo)) return;
-        var req = new CrearTareaRequest(titulo, null, PrioridadTarea.Normal, padre.EstadoId, null, null, null, padre.Id, new List<Guid>(), _board.Tablero.Id);
+        var req = new CrearTareaRequest(titulo, null, PrioridadTarea.Normal, padre.EstadoId, null, null, null, padre.Id, new List<Guid>(), _board.Tablero.Id,
+            PrioridadId: padre.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _subInline[padre.Id] = ""; _expandidas.Add(padre.Id); await RecargarBoard(); }
         else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
@@ -3161,7 +3162,8 @@ else
                 titulo, null, _cardDraft.Prioridad, _cardDraft.EstadoId,
                 null, null, null, padreId, new List<Guid>(), _board.Tablero.Id,
                 null, false, null, null, null, null, null,
-                new List<Guid>(), new List<SubtareaCheckItem>(), new List<TareaCampoValorDto>());
+                new List<Guid>(), new List<SubtareaCheckItem>(), new List<TareaCampoValorDto>(),
+                PrioridadId: _cardDraft.PrioridadId ?? PrioridadBaseId);
             var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
             if (resp.IsSuccessStatusCode)
             {
@@ -3251,6 +3253,7 @@ else
         public string Titulo { get; set; } = "";
         public string? Descripcion { get; set; }
         public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Normal;
+        public Guid? PrioridadId { get; set; }   // Fase 2: opcion de prioridad del tablero (manda sobre el enum)
         public Guid EstadoId { get; set; }
         public string Color { get; set; } = "#6D4FE3";
         public bool EsProyecto { get; set; }
@@ -4649,6 +4652,7 @@ else
         public string Descripcion = "";
         public Guid EstadoId;
         public PrioridadTarea Prioridad = PrioridadTarea.Normal;
+        public Guid? PrioridadId;   // Fase 2: opcion de prioridad del tablero (manda sobre el enum)
         public DateOnly? FechaVencimiento;
         public decimal? Valor;
         public List<Guid> Asignados = new();
@@ -4682,7 +4686,8 @@ else
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
-            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
+            PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard(); }
         else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
@@ -4702,7 +4707,8 @@ else
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
-            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
+            PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
         _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
@@ -4756,8 +4762,9 @@ else
             @if (_colPrio)
             {
                 <div class="tb-row-prio">
-                    <select class="tb-prio-sel" style="color:@PrioFg(nf.Prioridad);background:@PrioBg(nf.Prioridad)" @bind="nf.Prioridad">
-                        @foreach (var pr in Enum.GetValues<PrioridadTarea>()) { <option value="@pr" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr</option> }
+                    @{ var _nfPrioId = nf.PrioridadId ?? PrioridadBaseId; var _nfPrio = PrioridadesDelBoard.FirstOrDefault(p => p.Id == _nfPrioId); }
+                    <select class="tb-prio-sel" style="color:@PrioFgById(_nfPrioId);background:@PrioBgById(_nfPrioId)" value="@_nfPrioId" @onchange="@(e => nf.PrioridadId = ParsePrio(e))">
+                        @foreach (var pr in PrioridadesDelBoard) { <option value="@pr.Id" selected="@(_nfPrioId == pr.Id)" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr.Nombre</option> }
                     </select>
                 </div>
             }
@@ -4823,7 +4830,8 @@ else
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
             d.Prioridad, estadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
-            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores);
+            null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
+            PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; await RecargarBoard(); }
         else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
@@ -5763,6 +5771,7 @@ else
                 Titulo = det.Titulo,
                 Descripcion = det.Descripcion,
                 Prioridad = det.Prioridad,
+                PrioridadId = det.PrioridadId,
                 EstadoId = det.Estado.Id,
                 Color = det.Color ?? t.Color ?? "#6D4FE3",
                 EsProyecto = det.EsProyecto,
@@ -5828,7 +5837,8 @@ else
                     d.Titulo.Trim(), d.Descripcion, d.Prioridad, d.EstadoId,
                     null, ini, venc, d.PadreId, d.EtiquetaIds.ToList(), _board.Tablero.Id,
                     d.Color, d.EsProyecto, d.Valor, d.HoraInicio, d.HoraFin,
-                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
+                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId,
+                    PrioridadId: d.PrioridadId ?? PrioridadBaseId);
                 resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
             }
             else
@@ -5836,7 +5846,8 @@ else
                 var req = new ActualizarTareaRequest(
                     d.Titulo.Trim(), d.Descripcion, d.Prioridad, null, ini, venc,
                     d.EstadoId, d.Color, d.EsProyecto, d.Valor, d.Progreso, d.HoraInicio, d.HoraFin,
-                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId);
+                    origenTipo, origenRef, responsables, checklist, camposValores, d.SolicitantePersonaId,
+                    PrioridadId: d.PrioridadId ?? PrioridadBaseId);
                 resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
             if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
@@ -6159,6 +6170,11 @@ else
     // Fase 2: prioridades configurables del tablero. El pill usa el color-acento de la opcion (texto) + una
     // tinta clara (fondo). Si la tarea aun no tiene opcion (legacy), cae al color por enum.
     private IReadOnlyList<PrioridadTareaDto> PrioridadesDelBoard => _board?.Prioridades ?? (IReadOnlyList<PrioridadTareaDto>)Array.Empty<PrioridadTareaDto>();
+    // Fase 2 (Etapa 2b): la prioridad por defecto al crear es la opcion base del tablero (o la primera por orden).
+    // Los drafts arrancan con este Id para que el select muestre lo que se va a guardar; si el board aun no tiene
+    // opciones (board foraneo/legacy), queda null y el servicio resuelve el enum a la prioridad base.
+    private Guid? PrioridadBaseId => (PrioridadesDelBoard.FirstOrDefault(p => p.EsBase) ?? PrioridadesDelBoard.OrderBy(p => p.Orden).FirstOrDefault())?.Id;
+    private static Guid? ParsePrio(ChangeEventArgs e) => Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? g : (Guid?)null;
     private static string Tinte(string? hex, double alpha = 0.14)
     {
         if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith("#") || hex.Length < 7) return "var(--propia-bg-card-soft)";
@@ -6168,6 +6184,18 @@ else
             return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha})");
         }
         catch { return "var(--propia-bg-card-soft)"; }
+    }
+    // Color del pill en los selects de CREACION (resuelve por Id de opcion del tablero). Si no hay color en la
+    // opcion (o la opcion no existe), cae a un gris neutro del canon.
+    private string PrioFgById(Guid? id)
+    {
+        var op = PrioridadesDelBoard.FirstOrDefault(p => p.Id == id);
+        return !string.IsNullOrWhiteSpace(op?.Color) ? op!.Color! : "#516F90";
+    }
+    private string PrioBgById(Guid? id)
+    {
+        var op = PrioridadesDelBoard.FirstOrDefault(p => p.Id == id);
+        return !string.IsNullOrWhiteSpace(op?.Color) ? Tinte(op!.Color) : "#EEF3F8";
     }
     private string PrioFgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? t.PrioridadColor! : PrioFg(t.Prioridad);
     private string PrioBgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? Tinte(t.PrioridadColor) : PrioBg(t.Prioridad);
