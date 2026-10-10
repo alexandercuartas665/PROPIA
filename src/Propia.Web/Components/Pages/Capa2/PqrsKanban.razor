@@ -170,13 +170,12 @@
 
             @if (VistaEfectiva == "tabla")
             {
-                @* Selector de Campos estandar (opcion B): el mismo gestor de Unidades. Abre el panel
-                   ConfigCamposEntidad para los campos del expediente (sistema + propios), con alias,
-                   visibilidad, orden, tipo/formato y listas propias con color. *@
-                <button class="pk-input-btn" @onclick="() => _cfgCamposOpen = true" title="Configurar los campos del expediente">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-                    Campos
-                </button>
+                @* "Columnas" (menu inline de orden/visibilidad, homogeneo con Unidades/Tareas): reemplaza al
+                   boton "Campos" (modal). El creador COMPLETO de campo vive en el "+" del header (gestor
+                   ConfigCamposEntidad, _cfgCamposOpen). *@
+                <TablaColumnasMenu Columnas="ColsVisibilidadPqr()" OnMover="MoverColPqr" OnToggleVisible="ToggleVisibleColPqr"
+                                   OnEliminar="EliminarCampoColPqr" OnOcultarTodas="OcultarTodasColPqr"
+                                   OnMostrarTodas="MostrarTodasColPqr" OnRestablecer="RestablecerColPqr" />
             }
 
         </div>
@@ -1028,6 +1027,75 @@
                 .Select((it, idx) => (it, ord: OrdenDeCol(it.Key, idx)))
                 .OrderBy(x => x.ord).Select(x => x.it);
         }
+    }
+
+    // ===== "Columnas" (menu inline, homogeneo con Unidades/Tareas): TODAS las columnas + orden/visibilidad =====
+    // Como ColumnasVisibles pero SIN filtrar por visibilidad (el menu muestra visibles y ocultas), en su orden.
+    private List<ColItem> ColsTodasOrdenadasPqr()
+    {
+        var items = new List<ColItem>();
+        foreach (var c in PqrsdCamposSistema.Todos)
+            items.Add(new ColItem(c.Clave, AliasDeCol(c.Clave, c.Label), false, Guid.Empty));
+        foreach (var d in _campos)
+            items.Add(new ColItem(CampoColKey(d.Id), d.Label, true, d.Id));
+        return items.Select((it, idx) => (it, ord: OrdenDeCol(it.Key, idx)))
+                    .OrderBy(x => x.ord).Select(x => x.it).ToList();
+    }
+    private List<TablaColumnasMenu.Col> ColsVisibilidadPqr()
+    {
+        var list = new List<TablaColumnasMenu.Col>();
+        foreach (var it in ColsTodasOrdenadasPqr())
+        {
+            bool fija = !it.EsCustom && (PqrsdCamposSistema.Por(it.Key)?.Fija ?? false);  // solo 'radicado'
+            bool visible = fija || VisibleDeCol(it.Key);
+            list.Add(new(it.Key, it.Label, it.EsCustom, visible, Movible: !fija, Ocultable: !fija));
+        }
+        return list;
+    }
+    private async Task MoverColPqr((string Key, int Dir) a)
+    {
+        var keys = ColsTodasOrdenadasPqr().Select(c => c.Key).ToList();
+        var i = keys.IndexOf(a.Key); var j = i + a.Dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgP(FilaConfigP(keys[k]) with { Orden = k });
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    private async Task ToggleVisibleColPqr(string key)
+    {
+        bool fija = !key.StartsWith("cd:", StringComparison.Ordinal) && (PqrsdCamposSistema.Por(key)?.Fija ?? false);
+        if (fija) return;
+        bool visible = VisibleDeCol(key);
+        await GuardarCfgP(FilaConfigP(key) with { Oculto = visible });   // visible -> ocultar, y viceversa
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoColPqr(string key)
+    {
+        if (!key.StartsWith("cd:", StringComparison.Ordinal) || !Guid.TryParse(key.AsSpan(3), out var gid)) return;
+        var r = await Auth().DeleteAsync($"/api/pqrsd/campos/{gid}");
+        if (r.IsSuccessStatusCode) await RecargarCamposAsync();
+    }
+    private async Task OcultarTodasColPqr()
+    {
+        foreach (var it in ColsTodasOrdenadasPqr())
+        {
+            bool fija = !it.EsCustom && (PqrsdCamposSistema.Por(it.Key)?.Fija ?? false);
+            if (fija) continue;
+            await GuardarCfgP(FilaConfigP(it.Key) with { Oculto = true });
+        }
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColPqr()
+    {
+        foreach (var it in ColsTodasOrdenadasPqr()) await GuardarCfgP(FilaConfigP(it.Key) with { Oculto = false });
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColPqr()
+    {
+        int i = 0;
+        foreach (var c in PqrsdCamposSistema.Todos) await GuardarCfgP(FilaConfigP(c.Clave) with { Orden = i++, Oculto = !c.VisiblePorDefecto });
+        foreach (var d in _campos) await GuardarCfgP(FilaConfigP(CampoColKey(d.Id)) with { Orden = i++, Oculto = false });
+        await RecargarConfigPqrsdAsync(); StateHasChanged();
     }
 
     private void TogglePop(string p) { _pop = _pop == p ? null : p; }
