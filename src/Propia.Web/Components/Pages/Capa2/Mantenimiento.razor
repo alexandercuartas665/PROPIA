@@ -37,6 +37,7 @@
 @* Tabs estilo prototipo (pills brand) *@
 <div class="mt-tabs">
     <button class="mt-tab @(_tab == "prog" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("prog")'>Programación</button>
+    <button class="mt-tab @(_tab == "intervenciones" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
     <button class="mt-tab @(_tab == "calendario" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("calendario")'>Calendario</button>
 </div>
 
@@ -325,54 +326,189 @@
 
 @if (_tab == "intervenciones")
 {
+    @* Intervenciones en TABLA canon (Ola 3): expansor -> ficha; Filtros / Agrupar / Campos (sistema + propios);
+       alta inline (crea intervencion + tarea vinculada); paginador. *@
+    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+        <FiltroDinamico @ref="_fdInterv" Campos="CamposFiltroInterv" OnChanged="StateHasChanged" />
+        <div class="mod-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="mod-search-inp" placeholder="Buscar intervención..." @bind="_intervQuery" @bind:event="oninput" />
+        </div>
+        <div style="flex:1;"></div>
+        <div class="mtp-menuwrap">
+            <button type="button" class="mtp-fbtn @(_intervAgrupar != "" ? "on" : "")" @onclick='() => _intervMenu = _intervMenu == "agr" ? "" : "agr"'>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                <span>Agrupar@(_intervAgrupar != "" ? ": " + IntervAgruparLabel(_intervAgrupar) : "")</span>
+            </button>
+            @if (_intervMenu == "agr")
+            {
+                <div class="mtp-menu-bd" @onclick='() => _intervMenu = ""'></div>
+                <div class="mtp-menu">
+                    @foreach (var g in IntervAgruparOpciones())
+                    {
+                        var gk = g.Item1;
+                        <button class="mtp-menu-it @(_intervAgrupar == gk ? "on" : "")" @onclick='() => { _intervAgrupar = gk; _intervMenu = ""; }'>@g.Item2</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="mtp-menuwrap">
+            <button type="button" class="mtp-fbtn @(_selIntervAbierto ? "on" : "")" @onclick="() => _selIntervAbierto = true" title="Campos de la intervención: orden, visibilidad, nombre y campos propios">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
+                <span>Campos</span>
+            </button>
+        </div>
+    </div>
+
     @if (_intervenciones is null)
     {
         <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
     }
-    else if (_intervenciones.Count == 0)
-    {
-        <div class="card p-4 text-center text-muted">Sin intervenciones registradas.</div>
-    }
     else
     {
-        <div class="card table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="bg-light small text-muted">
-                    <tr>
-                        <th>Código</th><th>Activo</th><th>Tipo</th><th>Título</th>
-                        <th>Estado</th><th>Prioridad</th><th>Proveedor</th><th>Programada</th><th>Tarea</th>
-                    </tr>
-                </thead>
-                <tbody class="small">
-                    @foreach (var i in _intervenciones)
+        <div class="mtp-tablebox">
+        <div class="mtp-table mtp-table--wide">
+            <div class="mtp-head" style="@IntervGrid">
+                <div></div>
+                @foreach (var c in IntervColsVis) { <div>@c.Label</div> }
+                <div></div>
+            </div>
+            @foreach (var grupo in IntervGruposRender())
+            {
+                @if (_intervAgrupar != "")
+                {
+                    <div class="mtp-group"><span>@grupo.Key</span><span class="mtp-group-n">@grupo.Count()</span></div>
+                }
+                @foreach (var i in grupo)
+                {
+                    var iid = i.Id;
+                    <div class="mtp-row" style="@IntervGrid">
+                        <div class="mtp-exp-col">
+                            <button type="button" class="mtp-exp" title="Abrir la ficha de la intervención" @onclick="() => MostrarFicha(iid)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            </button>
+                        </div>
+                        @foreach (var c in IntervColsVis)
+                        {
+                            switch (c.Key)
+                            {
+                                case "codigo": <div class="mtp-muted">@i.Codigo</div> break;
+                                case "activo": <div class="mtp-nom" title="@i.ActivoNombre">@i.ActivoNombre</div> break;
+                                case "tipo": <div>@RenderTipoBadge(i.Tipo)</div> break;
+                                case "titulo": <div>@i.Titulo</div> break;
+                                case "estado": <div>@RenderEstadoBadge(i.Estado)</div> break;
+                                case "prioridad": <div>@RenderPrioridadBadge(i.Prioridad)</div> break;
+                                case "proveedor": <div class="mtp-muted">@(i.ProveedorNombre ?? "-")</div> break;
+                                case "programada":
+                                    <div>@(i.FechaProgramada is { } fp ? (MarkupString)($"<span class=\"{(i.Vencida ? "text-danger fw-bold" : "")}\">{fp:yyyy-MM-dd}</span>") : (MarkupString)"<span class=\"mtp-muted\">-</span>")</div>
+                                    break;
+                                case "cierre": <div class="mtp-muted">@(i.FechaCierre?.ToString("yyyy-MM-dd") ?? "-")</div> break;
+                                case "tarea":
+                                    <div>@(i.TareaId is { } tid ? (MarkupString)($"<a class=\"small\" href=\"/tareas/{tid}\">{i.TareaNumero}</a>") : (MarkupString)"<span class=\"mtp-muted\">-</span>")</div>
+                                    break;
+                                default:
+                                    @if (CampoCustomInterv(c.Key) is { } cdef)
+                                    {
+                                        <div>
+                                            @if (cdef.Tipo == TipoCampoTablero.Seleccion)
+                                            {
+                                                <select class="mtp-nf-inp" value="@(ValorCampoInterv(iid, cdef.Id) ?? "")" @onchange="e => GuardarCampoValorInterv(iid, cdef, e.Value?.ToString())">
+                                                    <option value="">-</option>
+                                                    @foreach (var o in OpcionesDe(cdef.Opciones) ?? new()) { <option value="@o.Item1" selected="@((ValorCampoInterv(iid, cdef.Id) ?? "") == o.Item1)">@o.Item2</option> }
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                <input class="mtp-nf-inp" value="@(ValorCampoInterv(iid, cdef.Id) ?? "")" @onchange="e => GuardarCampoValorInterv(iid, cdef, e.Value?.ToString())" />
+                                            }
+                                        </div>
+                                    }
+                                    break;
+                            }
+                        }
+                        <div class="mtp-act"></div>
+                    </div>
+                }
+            }
+            @* Alta inline: crea intervencion (+ tarea vinculada). Guardado con el boton "+ Agregar". *@
+            <div class="mtp-newrow mtp-newrow--prog" style="@IntervGrid">
+                <div class="mtp-exp-col"></div>
+                @foreach (var c in IntervColsVis)
+                {
+                    switch (c.Key)
                     {
-                        var iid = i.Id;
-                        <tr style="cursor:pointer;" @onclick="() => MostrarFicha(iid)">
-                            <td class="text-muted">@i.Codigo</td>
-                            <td><strong>@i.ActivoNombre</strong></td>
-                            <td>@RenderTipoBadge(i.Tipo)</td>
-                            <td>@i.Titulo</td>
-                            <td>@RenderEstadoBadge(i.Estado)</td>
-                            <td>@RenderPrioridadBadge(i.Prioridad)</td>
-                            <td>@(i.ProveedorNombre ?? "-")</td>
-                            <td>
-                                @if (i.FechaProgramada.HasValue)
-                                {
-                                    <span class="@(i.Vencida ? "text-danger fw-bold" : "")">@i.FechaProgramada.Value.ToString("yyyy-MM-dd")</span>
-                                }
-                                else { <span class="text-muted">-</span> }
-                            </td>
-                            <td>
-                                @if (i.TareaId.HasValue)
-                                {
-                                    <a class="small" href="@($"/tareas/{i.TareaId}")">@i.TareaNumero</a>
-                                }
-                                else { <span class="text-muted">-</span> }
-                            </td>
-                        </tr>
+                        case "codigo": <div class="mtp-muted" style="font-size:11px;">(auto)</div> break;
+                        case "activo":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_iaActivoId">
+                                    <option value="">Activo o zona...</option>
+                                    @foreach (var a in _activos ?? new()) { <option value="@a.ActivoId">@a.Nombre</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "tipo":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_iaTipo">
+                                    @foreach (var t in Enum.GetValues<TipoIntervencionMantenimiento>()) { <option value="@t">@t</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "titulo": <div><input class="mtp-nf-inp" placeholder="Título" @bind="_iaTitulo" @bind:event="oninput" /></div> break;
+                        case "estado": <div class="mtp-muted" style="font-size:11px;">Programada</div> break;
+                        case "prioridad":
+                            <div>
+                                <select class="mtp-nf-inp" @bind="_iaPrioridad">
+                                    @foreach (var p in Enum.GetValues<PrioridadIntervencion>()) { <option value="@p">@p</option> }
+                                </select>
+                            </div>
+                            break;
+                        case "proveedor": <div class="mtp-muted" style="font-size:11px;">en la ficha</div> break;
+                        case "programada":
+                            <div><input type="date" class="mtp-nf-inp" value="@(_iaFecha?.ToString("yyyy-MM-dd"))" @onchange="(e) => _iaFecha = string.IsNullOrEmpty(e.Value?.ToString()) ? null : DateOnly.Parse(e.Value!.ToString()!)" /></div>
+                            break;
+                        case "cierre": <div class="mtp-muted" style="font-size:11px;">-</div> break;
+                        case "tarea": <div class="mtp-muted" style="font-size:11px;">(auto)</div> break;
+                        default:
+                            @if (CampoCustomInterv(c.Key) is { } cdefA)
+                            {
+                                <div>
+                                    @if (cdefA.Tipo == TipoCampoTablero.Seleccion)
+                                    {
+                                        <select class="mtp-nf-inp" value="@(_nuCamposInterv.GetValueOrDefault(cdefA.Id))" @onchange="e => _nuCamposInterv[cdefA.Id] = e.Value?.ToString()">
+                                            <option value="">@cdefA.Label</option>
+                                            @foreach (var o in OpcionesDe(cdefA.Opciones) ?? new()) { <option value="@o.Item1">@o.Item2</option> }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <input class="mtp-nf-inp" placeholder="@cdefA.Label" value="@(_nuCamposInterv.GetValueOrDefault(cdefA.Id))" @oninput="e => _nuCamposInterv[cdefA.Id] = e.Value?.ToString()" />
+                                    }
+                                </div>
+                            }
+                            break;
                     }
-                </tbody>
-            </table>
+                }
+                <div class="mtp-act"></div>
+            </div>
+            <div class="mtp-newrow mtp-cta-row" style="@IntervGrid">
+                <div class="mtp-exp-col"></div>
+                <div class="mtp-nf-ctacell" style="grid-column: 2 / -1;">
+                    <button type="button" class="row-add--sm" @onclick="AltaIntervInlineAsync" disabled="@_busy">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar intervención
+                    </button>
+                </div>
+            </div>
+            @if (_intervAgrupar == "")
+            {
+                <TablaPager Total="IntervFiltradas().Count()" Pagina="_intervPagina" PorPagina="_intervPorPagina" Entidad="intervenciones"
+                            PaginaChanged="v => _intervPagina = v" PorPaginaChanged="v => { _intervPorPagina = v; _intervPagina = 1; }" />
+            }
+            else
+            {
+                <div class="mtp-footer">Mostrando @IntervFiltradas().Count() de @(_intervenciones.Count) intervenciones</div>
+            }
+        </div>
         </div>
     }
 }
@@ -945,6 +1081,34 @@ else if (_tab == "calendario")
     </div>
 }
 
+@* Campos de la INTERVENCION: sistema + campos propios (EAV). Config en unidades-config (entidad 'intervencion'). *@
+@if (_selIntervAbierto)
+{
+    <div class="mtp-selcfg-back" @onclick="() => _selIntervAbierto = false">
+        <div class="mtp-selcfg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="mtp-selcfg-head">
+                <div>
+                    <div class="mtp-selcfg-title">Campos de la intervención</div>
+                    <div class="mtp-selcfg-sub">Orden, visibilidad, nombre y campos propios de las intervenciones.</div>
+                </div>
+                <button class="mtp-selcfg-x" type="button" @onclick="() => _selIntervAbierto = false" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="mtp-selcfg-body">
+                <ConfigCamposEntidad Prefijo="intervencion"
+                                     EntidadConfig="intervencion"
+                                     RutaCatalogo="/api/mi-copropiedad/intervencion-campos"
+                                     Catalogo="@IntervCatalogo"
+                                     TituloSingular="intervencion"
+                                     TituloPlural="Intervenciones"
+                                     Ejemplo="Ej. Garantia, Costo real"
+                                     TiposAvanzados="true"
+                                     Jwt="@_jwt"
+                                     Cambiado="RecargarCamposYConfigIntervAsync" />
+            </div>
+        </div>
+    </div>
+}
+
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
 <ModalHost />
 
@@ -1447,6 +1611,230 @@ else if (_tab == "calendario")
     };
     private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
 
+    // ============================================================================================
+    // INTERVENCIONES - tabla canon (Ola 3): columnas sistema + campos propios (EAV), filtros, agrupar, pager.
+    // Espejo de la tabla de Programacion. La prioridad usa PrioridadIntervencion (enum propio).
+    // ============================================================================================
+    private sealed record IntervCol(string Key, string Label);
+    private bool _selIntervAbierto;
+    private Dictionary<string, Propia.Application.MiCopropiedad.UnidadCampoConfigDto> _cfgInterv = new(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyList<CampoSistemaDef> IntervCatalogo =
+        IntervencionCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+
+    // Campos propios (EAV) de Intervencion.
+    private List<Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto> _camposDefInterv = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _camposValInterv = new();
+    private readonly Dictionary<Guid, string?> _nuCamposInterv = new();
+    private static string ClaveCustomInterv(Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto c) => "cd:" + c.Id;
+    private static bool EsCustomInterv(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto? CampoCustomInterv(string clave)
+        => EsCustomInterv(clave) && Guid.TryParse(clave[3..], out var g) ? _camposDefInterv.FirstOrDefault(c => c.Id == g) : null;
+    private string? ValorCampoInterv(Guid intId, Guid defId) => _camposValInterv.TryGetValue(intId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+
+    private async Task CargarConfigIntervAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadCampoConfigDto>>(
+                "/api/mi-copropiedad/unidades-config?entidad=intervencion") ?? new();
+            _cfgInterv = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfgInterv = new(StringComparer.Ordinal); }
+    }
+    private async Task CargarCamposIntervAsync()
+    {
+        try { _camposDefInterv = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto>>("/api/mi-copropiedad/intervencion-campos") ?? new(); } catch { _camposDefInterv = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.IntervencionCampoValorFlatDto>>("/api/mi-copropiedad/intervencion-campos-valores") ?? new();
+            _camposValInterv = flat.GroupBy(v => v.MantenimientoIntervencionId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _camposValInterv = new(); }
+    }
+    private async Task RecargarCamposYConfigIntervAsync() { await CargarConfigIntervAsync(); await CargarCamposIntervAsync(); StateHasChanged(); }
+    private async Task GuardarCampoValorInterv(Guid intId, Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto cd, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/intervenciones/{intId}/campos/{cd.Id}", new Propia.Application.MiCopropiedad.SetCampoValorRequest(valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_camposValInterv.TryGetValue(intId, out var m)) { m = new(); _camposValInterv[intId] = m; }
+                m[cd.Id] = string.IsNullOrWhiteSpace(valor) ? null : valor;
+            }
+        }
+        catch { }
+    }
+
+    private bool VisibleColInterv(string clave)
+        => _cfgInterv.TryGetValue(clave, out var c) ? !c.Oculto
+            : (EsCustomInterv(clave) || (IntervencionCamposSistema.Por(clave)?.VisiblePorDefecto ?? true));
+    private int OrdenColInterv(string clave, int fallback)
+        => _cfgInterv.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private string LabelColInterv(string clave)
+        => _cfgInterv.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
+            ? c.Alias! : (CampoCustomInterv(clave)?.Label ?? IntervencionCamposSistema.Por(clave)?.Label ?? clave);
+    private IEnumerable<IntervCol> IntervColsVis
+        => IntervencionCamposSistema.Todos.Select(c => c.Clave)
+            .Concat(_camposDefInterv.OrderBy(d => d.Orden).Select(ClaveCustomInterv))
+            .Select((clave, i) => (clave, ord: OrdenColInterv(clave, i)))
+            .OrderBy(x => x.ord)
+            .Where(x => VisibleColInterv(x.clave))
+            .Select(x => new IntervCol(x.clave, LabelColInterv(x.clave)));
+
+    private string IntervGrid
+    {
+        get
+        {
+            var cols = new List<string> { "34px" };
+            foreach (var c in IntervColsVis)
+                cols.Add(c.Key switch
+                {
+                    "codigo" => "minmax(110px,.9fr)", "activo" => "minmax(140px,1.3fr)", "tipo" => "minmax(100px,.8fr)",
+                    "titulo" => "minmax(160px,1.5fr)", "estado" => "minmax(120px,1fr)", "prioridad" => "minmax(95px,.8fr)",
+                    "proveedor" => "minmax(130px,1.1fr)", "programada" => "minmax(110px,1fr)", "cierre" => "minmax(110px,1fr)",
+                    "tarea" => "minmax(90px,.8fr)", _ => "minmax(130px,1fr)"
+                });
+            cols.Add("60px");
+            return $"grid-template-columns: {string.Join(' ', cols)}; gap: 10px; align-items: center;";
+        }
+    }
+
+    private FiltroDinamico? _fdInterv;
+    private string _intervQuery = "";
+    private List<FiltroDinamico.CampoDef> CamposFiltroInterv
+    {
+        get
+        {
+            var list = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "codigo", Label = "Codigo", Kind = "texto" },
+                new() { Key = "activo", Label = "Activo", Kind = "texto" },
+                new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
+                new() { Key = "tipo", Label = "Tipo", Kind = "sel", Opciones = Enum.GetValues<TipoIntervencionMantenimiento>().Select(t => (t.ToString(), t.ToString())).ToList() },
+                new() { Key = "estado", Label = "Estado", Kind = "sel", Opciones = Enum.GetValues<EstadoIntervencion>().Select(e => (e.ToString(), e.ToString())).ToList() },
+                new() { Key = "prioridad", Label = "Prioridad", Kind = "sel", Opciones = Enum.GetValues<PrioridadIntervencion>().Select(p => (p.ToString(), p.ToString())).ToList() },
+                new() { Key = "proveedor", Label = "Proveedor", Kind = "texto" },
+            };
+            foreach (var d in _camposDefInterv.OrderBy(d => d.Orden))
+                list.Add(new() { Key = ClaveCustomInterv(d), Label = d.Label, Kind = KindDeTipo(d.Tipo),
+                                 Opciones = d.Tipo == TipoCampoTablero.Seleccion ? OpcionesDe(d.Opciones) : null });
+            return list;
+        }
+    }
+
+    private IEnumerable<IntervencionListaDto> IntervFiltradas()
+    {
+        var q = (_intervenciones ?? new()).AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_intervQuery))
+        {
+            var t = _intervQuery.Trim();
+            q = q.Where(i => (i.Titulo ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                          || (i.Codigo ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
+                          || (i.ActivoNombre ?? "").Contains(t, StringComparison.OrdinalIgnoreCase));
+        }
+        return q.Where(i => _fdInterv?.Pasa(campo => campo switch
+        {
+            "codigo" => i.Codigo ?? "",
+            "activo" => i.ActivoNombre ?? "",
+            "titulo" => i.Titulo ?? "",
+            "tipo" => i.Tipo.ToString(),
+            "estado" => i.Estado.ToString(),
+            "prioridad" => i.Prioridad.ToString(),
+            "proveedor" => i.ProveedorNombre ?? "",
+            _ when CampoCustomInterv(campo) is { } cd => ValorCampoInterv(i.Id, cd.Id) ?? "",
+            _ => ""
+        }) ?? true);
+    }
+
+    private string _intervAgrupar = "";
+    private string _intervMenu = "";
+    private IEnumerable<IGrouping<string, IntervencionListaDto>> IntervAgrupadas()
+    {
+        Func<IntervencionListaDto, string> key;
+        if (CampoCustomInterv(_intervAgrupar) is { } cdAgr)
+            key = i => { var v = ValorCampoInterv(i.Id, cdAgr.Id); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; };
+        else key = _intervAgrupar switch
+        {
+            "activo" => i => string.IsNullOrWhiteSpace(i.ActivoNombre) ? "(sin activo)" : i.ActivoNombre,
+            "tipo" => i => i.Tipo.ToString(),
+            "estado" => i => i.Estado.ToString(),
+            "prioridad" => i => i.Prioridad.ToString(),
+            _ => _ => ""
+        };
+        return IntervFiltradas().GroupBy(key);
+    }
+    private IEnumerable<(string, string)> IntervAgruparOpciones()
+        => new[] { ("", "Sin agrupar"), ("activo", "Activo"), ("tipo", "Tipo"), ("estado", "Estado"), ("prioridad", "Prioridad") }
+            .Concat(_camposDefInterv.OrderBy(d => d.Orden).Select(d => (ClaveCustomInterv(d), d.Label)));
+    private string IntervAgruparLabel(string k) => k switch
+    {
+        "activo" => "Activo", "tipo" => "Tipo", "estado" => "Estado", "prioridad" => "Prioridad",
+        _ => CampoCustomInterv(k)?.Label ?? ""
+    };
+
+    private int _intervPagina = 1;
+    private int _intervPorPagina = 25;
+    private IEnumerable<IntervencionListaDto> IntervPagina()
+    {
+        var filt = IntervFiltradas().ToList();
+        var totalPag = Math.Max(1, (int)Math.Ceiling(filt.Count / (double)_intervPorPagina));
+        if (_intervPagina > totalPag) _intervPagina = totalPag;
+        if (_intervPagina < 1) _intervPagina = 1;
+        return filt.Skip((_intervPagina - 1) * _intervPorPagina).Take(_intervPorPagina);
+    }
+    private IEnumerable<IGrouping<string, IntervencionListaDto>> IntervGruposRender()
+        => _intervAgrupar == "" ? IntervPagina().GroupBy(_ => "") : IntervAgrupadas();
+
+    // Alta inline de intervencion (crea + tarea vinculada). Guarda los campos propios sobre la recien creada.
+    private string _iaTipo = "Preventivo";
+    private string _iaActivoId = "";
+    private string _iaTitulo = "";
+    private PrioridadIntervencion _iaPrioridad = PrioridadIntervencion.Normal;
+    private DateOnly? _iaFecha = DateOnly.FromDateTime(DateTime.Today);
+    private async Task AltaIntervInlineAsync()
+    {
+        if (string.IsNullOrEmpty(_iaActivoId) || !Guid.TryParse(_iaActivoId, out var activoId)) { _msg = "Elige un activo o zona."; _msgClass = "alert-danger"; return; }
+        if (string.IsNullOrWhiteSpace(_iaTitulo)) { _msg = "La intervencion necesita un titulo."; _msgClass = "alert-danger"; return; }
+        // El tipo de activo (Equipo/ZonaComun) se deriva del activo elegido (el select lista ambos).
+        var activoTipo = _activos?.FirstOrDefault(a => a.ActivoId == activoId)?.ActivoTipo ?? TipoActivoMantenimiento.Equipo;
+        _busy = true; _msg = null;
+        try
+        {
+            var req = new CrearIntervencionRequest(
+                Enum.Parse<TipoIntervencionMantenimiento>(_iaTipo),
+                activoTipo,
+                activoId, null, OrigenIntervencion.Manual, null,
+                _iaTitulo!.Trim(), null, _iaPrioridad, null, null, _iaFecha, false);
+            var resp = await Auth().PostAsJsonAsync("/api/mantenimiento/intervenciones", req);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (_nuCamposInterv.Any(x => !string.IsNullOrWhiteSpace(x.Value)))
+            {
+                try
+                {
+                    var creada = await resp.Content.ReadFromJsonAsync<IntervencionDetalleDto>();
+                    if (creada is not null)
+                        foreach (var kv in _nuCamposInterv.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                        {
+                            var cd = _camposDefInterv.FirstOrDefault(d => d.Id == kv.Key);
+                            if (cd is not null) await GuardarCampoValorInterv(creada.Id, cd, kv.Value);
+                        }
+                }
+                catch { }
+            }
+            _nuCamposInterv.Clear();
+            _msg = "Intervencion creada con tarea vinculada."; _msgClass = "alert-success";
+            _iaActivoId = ""; _iaTitulo = "";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
     // Tableros/personas solo se piden una vez y al abrir el primer modal (igual que ProgramacionesPanel).
     private async Task CargarOpcionesProgAsync()
     {
@@ -1941,7 +2329,12 @@ else if (_tab == "calendario")
             // Los tabs Intervenciones/Planes se retiraron del modulo; su codigo queda pero sin
             // boton. Se cargan solo si por algun flujo se activara ese tab (defensivo).
             if (_tab == "intervenciones")
+            {
                 _intervenciones = await http.GetFromJsonAsync<List<IntervencionListaDto>>("/api/mantenimiento/intervenciones") ?? new();
+                // Config de columnas (alias/orden/visibilidad) + campos propios (EAV) de la tabla de intervenciones.
+                await CargarConfigIntervAsync();
+                await CargarCamposIntervAsync();
+            }
             if (_tab == "planes")
                 _planes = await http.GetFromJsonAsync<List<PlanDto>>("/api/mantenimiento/planes") ?? new();
 
