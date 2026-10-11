@@ -30,14 +30,15 @@ public sealed record MantenimientoCampoSistema(
     bool OpcionesEditables = false);
 
 /// <summary>
-/// Catalogo UNICO de los campos de sistema de la PROGRAMACION de mantenimiento. Preparacion de la Fase 1
-/// del Selector de Campos (doc 5.4/5.5). El ORDEN coincide con <c>_progColsAll</c> de
-/// <c>Mantenimiento.razor</c> (el gestor propio a reemplazar en la adopcion).
+/// Catalogo UNICO de los campos de sistema de la PROGRAMACION de mantenimiento. El ORDEN coincide con
+/// <c>_progColsAll</c> de <c>Mantenimiento.razor</c>.
 ///
-/// NOTA: la programacion/intervencion NO tiene campos propios (EAV): no hay tablas
-/// <c>programacion_campos*</c> ni endpoints <c>mantenimiento-campos*</c>. Este catalogo cubre solo los
-/// campos del SISTEMA. Si Alex decide que la programacion debe soportar campos propios, es tarea aparte
-/// con migracion. Los campos son enums/referencias/booleanos fijos; ninguno es lista configurable.
+/// NOTA: desde la normalizacion al canon (Olas 1-3, 2026-10-11) la programacion y la intervencion SI
+/// soportan campos propios (EAV): tablas <c>programacion_campos_definiciones/valores</c> e
+/// <c>intervencion_campos_definiciones/valores</c>, con endpoints <c>programacion-campos*</c> /
+/// <c>intervencion-campos*</c> en <c>MiCopropiedadController</c>. Este catalogo cubre solo los campos
+/// del SISTEMA; los propios se agregan por copropiedad via <c>ConfigCamposEntidad</c>. Los campos de
+/// sistema son enums/referencias/booleanos fijos; ninguno es lista configurable.
 /// </summary>
 public static class MantenimientoCamposSistema
 {
