@@ -375,6 +375,12 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<UsuarioCampoDefinicion> UsuarioCamposDefiniciones => Set<UsuarioCampoDefinicion>();
     public DbSet<UsuarioCampoValor> UsuarioCamposValores => Set<UsuarioCampoValor>();
 
+    // Campos dinamicos de Mantenimiento (Programacion / Intervencion)
+    public DbSet<ProgramacionCampoDefinicion> ProgramacionCamposDefiniciones => Set<ProgramacionCampoDefinicion>();
+    public DbSet<ProgramacionCampoValor> ProgramacionCamposValores => Set<ProgramacionCampoValor>();
+    public DbSet<IntervencionCampoDefinicion> IntervencionCamposDefiniciones => Set<IntervencionCampoDefinicion>();
+    public DbSet<IntervencionCampoValor> IntervencionCamposValores => Set<IntervencionCampoValor>();
+
     // Campos dinamicos tipados (catalogo + valor) de las entidades vinculadas a una unidad:
     // personas, vehiculos (placas), mascotas y terceros (empleadas). Mismo patron que equipos/zonas.
     public DbSet<PersonaCampoDefinicion> PersonaCamposDefiniciones => Set<PersonaCampoDefinicion>();

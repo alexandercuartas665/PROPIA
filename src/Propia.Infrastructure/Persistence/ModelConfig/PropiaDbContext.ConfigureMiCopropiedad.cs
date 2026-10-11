@@ -173,6 +173,35 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.DefinicionId, x.ZonaComunId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        // Campos dinamicos tipados (catalogo + valor) de Mantenimiento: Programacion e Intervencion (espejo de Equipo/Zona).
+        modelBuilder.Entity<ProgramacionCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ProgramacionCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.ProgramacionTareaId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<IntervencionCampoDefinicion>(b =>
+        {
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<IntervencionCampoValor>(b =>
+        {
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.MantenimientoIntervencionId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
         modelBuilder.Entity<UsuarioCampoDefinicion>(b =>
         {
             b.Property(x => x.Label).IsRequired().HasMaxLength(80);

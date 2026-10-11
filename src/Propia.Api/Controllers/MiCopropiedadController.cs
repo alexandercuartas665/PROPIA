@@ -388,6 +388,66 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> SetCampoValorZona(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
     { try { await _svc.SetCampoValorZonaDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
 
+    // ---------- Campos dinamicos tipados de MANTENIMIENTO: PROGRAMACION ----------
+    [HttpGet("programacion-campos")]
+    public async Task<IActionResult> ListCamposDefProgramacion(CancellationToken ct) => Ok(await _svc.ListCamposDefProgramacionAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("programacion-campos")]
+    public async Task<IActionResult> CrearCampoDefProgramacion([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    { try { return Created("", await _svc.CrearCampoDefProgramacionAsync(req, ct)); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("programacion-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefProgramacion(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    { try { return await _svc.ActualizarCampoDefProgramacionAsync(definicionId, req, ct) ? NoContent() : NotFound(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("programacion-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefProgramacion(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefProgramacionAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("programacion-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresProgramacion(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresProgramacionAsync(ct));
+
+    [HttpGet("programaciones/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinProgramacion(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinProgramacionAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("programaciones/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValorProgramacion(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    { try { await _svc.SetCampoValorProgramacionDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    // ---------- Campos dinamicos tipados de MANTENIMIENTO: INTERVENCION ----------
+    [HttpGet("intervencion-campos")]
+    public async Task<IActionResult> ListCamposDefIntervencion(CancellationToken ct) => Ok(await _svc.ListCamposDefIntervencionAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("intervencion-campos")]
+    public async Task<IActionResult> CrearCampoDefIntervencion([FromBody] CrearCampoDefinicionRequest req, CancellationToken ct)
+    { try { return Created("", await _svc.CrearCampoDefIntervencionAsync(req, ct)); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("intervencion-campos/{definicionId:guid}")]
+    public async Task<IActionResult> ActualizarCampoDefIntervencion(Guid definicionId, [FromBody] ActualizarCampoDefinicionRequest req, CancellationToken ct)
+    { try { return await _svc.ActualizarCampoDefIntervencionAsync(definicionId, req, ct) ? NoContent() : NotFound(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("intervencion-campos/{definicionId:guid}")]
+    public async Task<IActionResult> EliminarCampoDefIntervencion(Guid definicionId, CancellationToken ct)
+        => await _svc.EliminarCampoDefIntervencionAsync(definicionId, ct) ? NoContent() : NotFound();
+
+    [HttpGet("intervencion-campos-valores")]
+    public async Task<IActionResult> ListTodosCamposValoresIntervencion(CancellationToken ct) => Ok(await _svc.ListTodosCamposValoresIntervencionAsync(ct));
+
+    [HttpGet("intervenciones/{id:guid}/campos-din")]
+    public async Task<IActionResult> ListCamposDinIntervencion(Guid id, CancellationToken ct) => Ok(await _svc.ListCamposDinIntervencionAsync(id, ct));
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("intervenciones/{id:guid}/campos/{definicionId:guid}")]
+    public async Task<IActionResult> SetCampoValorIntervencion(Guid id, Guid definicionId, [FromBody] SetCampoValorRequest req, CancellationToken ct)
+    { try { await _svc.SetCampoValorIntervencionDefAsync(id, definicionId, req, ct); return NoContent(); } catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); } }
+
     // ---------- Campos dinamicos tipados de los USUARIOS del tenant ----------
     // El registro del valor es el UsuarioTenant.Id. Rutas planas usuarios-campos / usuarios-campos-valores.
     [HttpGet("usuarios-campos")]

@@ -234,6 +234,23 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<ZonaCampoValorFlatDto>> ListTodosCamposValoresZonaAsync(CancellationToken ct);
     Task<IReadOnlyList<ZonaCampoDinDto>> ListCamposDinZonaAsync(Guid zonaId, CancellationToken ct);
 
+    // Campos dinamicos tipados de Mantenimiento: Programacion (cronograma) e Intervencion.
+    Task<IReadOnlyList<ProgramacionCampoDefinicionDto>> ListCamposDefProgramacionAsync(CancellationToken ct);
+    Task<ProgramacionCampoDefinicionDto> CrearCampoDefProgramacionAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefProgramacionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefProgramacionAsync(Guid definicionId, CancellationToken ct);
+    Task SetCampoValorProgramacionDefAsync(Guid programacionId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+    Task<IReadOnlyList<ProgramacionCampoValorFlatDto>> ListTodosCamposValoresProgramacionAsync(CancellationToken ct);
+    Task<IReadOnlyList<ProgramacionCampoDinDto>> ListCamposDinProgramacionAsync(Guid programacionId, CancellationToken ct);
+
+    Task<IReadOnlyList<IntervencionCampoDefinicionDto>> ListCamposDefIntervencionAsync(CancellationToken ct);
+    Task<IntervencionCampoDefinicionDto> CrearCampoDefIntervencionAsync(CrearCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> ActualizarCampoDefIntervencionAsync(Guid definicionId, ActualizarCampoDefinicionRequest req, CancellationToken ct);
+    Task<bool> EliminarCampoDefIntervencionAsync(Guid definicionId, CancellationToken ct);
+    Task SetCampoValorIntervencionDefAsync(Guid intervencionId, Guid definicionId, SetCampoValorRequest req, CancellationToken ct);
+    Task<IReadOnlyList<IntervencionCampoValorFlatDto>> ListTodosCamposValoresIntervencionAsync(CancellationToken ct);
+    Task<IReadOnlyList<IntervencionCampoDinDto>> ListCamposDinIntervencionAsync(Guid intervencionId, CancellationToken ct);
+
     // Campos dinamicos tipados (catalogo + valor) de los USUARIOS del tenant. El registro del valor
     // es el UsuarioTenant.Id (membresia del usuario en la copropiedad).
     Task<IReadOnlyList<UsuarioCampoDefinicionDto>> ListCamposDefUsuarioAsync(CancellationToken ct);

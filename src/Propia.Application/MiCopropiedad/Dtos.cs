@@ -166,6 +166,13 @@ public record EquipoCampoValorFlatDto(Guid EquipoActivoId, Guid DefinicionId, st
 public record ZonaCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
 public record ZonaCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
 public record ZonaCampoValorFlatDto(Guid ZonaComunId, Guid DefinicionId, string? Valor);
+// Campos dinamicos de Mantenimiento: Programacion (cronograma) e Intervencion (mismo patron; requests genericos reutilizados).
+public record ProgramacionCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
+public record ProgramacionCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
+public record ProgramacionCampoValorFlatDto(Guid ProgramacionTareaId, Guid DefinicionId, string? Valor);
+public record IntervencionCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
+public record IntervencionCampoDinDto(Guid DefinicionId, string Label, int Orden, string? Valor, TipoCampoTablero Tipo, string? Opciones);
+public record IntervencionCampoValorFlatDto(Guid MantenimientoIntervencionId, Guid DefinicionId, string? Valor);
 // Campos dinamicos propios de los USUARIOS del tenant (mismo patron que zonas/equipos; el registro
 // del valor es el UsuarioTenant.Id).
 public record UsuarioCampoDefinicionDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
