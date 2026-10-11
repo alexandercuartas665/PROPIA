@@ -62,7 +62,7 @@
             {
                 <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
                 <div class="mtp-menu">
-                    @foreach (var g in new[] { ("", "Sin agrupar"), ("activo", "Activo"), ("tablero", "Tablero"), ("periodicidad", "Periodicidad"), ("prioridad", "Prioridad") })
+                    @foreach (var g in ProgAgruparOpciones())
                     {
                         var gk = g.Item1;
                         <button class="mtp-menu-it @(_progAgrupar == gk ? "on" : "")" @onclick='() => { _progAgrupar = gk; _progMenu = ""; }'>@g.Item2</button>
@@ -105,7 +105,7 @@
                 @foreach (var c in ProgColsVis) { <div>@c.Label</div> }
                 <div></div>
             </div>
-            @foreach (var grupo in ProgAgrupadas())
+            @foreach (var grupo in ProgGruposRender())
             {
                 @if (_progAgrupar != "")
                 {
@@ -142,6 +142,24 @@
                                 case "responsables": <div title="@string.Join(", ", p.Responsables.Select(r => r.Nombre))">@(p.Responsables.Count == 0 ? "-" : $"{p.Responsables.Count} resp.")</div> break;
                                 case "activa":
                                     <div><button type="button" class="mtp-toggle @(p.Activa ? "on" : "")" title="@(p.Activa ? "Activa" : "Pausada")" @onclick="() => ToggleActivaProgAsync(pp)"><span class="mtp-toggle-knob"></span></button></div>
+                                    break;
+                                default:
+                                    @if (CampoCustomProg(c.Key) is { } cdef)
+                                    {
+                                        <div>
+                                            @if (cdef.Tipo == TipoCampoTablero.Seleccion)
+                                            {
+                                                <select class="mtp-nf-inp" value="@(ValorCampoProg(pp.Id, cdef.Id) ?? "")" @onchange="e => GuardarCampoValorProg(pp.Id, cdef, e.Value?.ToString())">
+                                                    <option value="">-</option>
+                                                    @foreach (var o in OpcionesDe(cdef.Opciones) ?? new()) { <option value="@o.Item1" selected="@((ValorCampoProg(pp.Id, cdef.Id) ?? "") == o.Item1)">@o.Item2</option> }
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                <input class="mtp-nf-inp" value="@(ValorCampoProg(pp.Id, cdef.Id) ?? "")" @onchange="e => GuardarCampoValorProg(pp.Id, cdef, e.Value?.ToString())" />
+                                            }
+                                        </div>
+                                    }
                                     break;
                             }
                         }
@@ -239,6 +257,24 @@
                         case "activa":
                             <div class="mtp-muted" style="font-size:11px;">(auto)</div>
                             break;
+                        default:
+                            @if (CampoCustomProg(c.Key) is { } cdefA)
+                            {
+                                <div>
+                                    @if (cdefA.Tipo == TipoCampoTablero.Seleccion)
+                                    {
+                                        <select class="mtp-nf-inp" value="@(_nuCamposProg.GetValueOrDefault(cdefA.Id))" @onchange="e => _nuCamposProg[cdefA.Id] = e.Value?.ToString()">
+                                            <option value="">@cdefA.Label</option>
+                                            @foreach (var o in OpcionesDe(cdefA.Opciones) ?? new()) { <option value="@o.Item1">@o.Item2</option> }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <input class="mtp-nf-inp" placeholder="@cdefA.Label" value="@(_nuCamposProg.GetValueOrDefault(cdefA.Id))" @oninput="e => _nuCamposProg[cdefA.Id] = e.Value?.ToString()" />
+                                    }
+                                </div>
+                            }
+                            break;
                     }
                 }
                 @* Guardado invisible: sin "+ Agregar". Se guarda al salir de la fila (clic fuera) o al
@@ -269,7 +305,15 @@
                     </button>
                 </div>
             </div>
-            <div class="mtp-footer">Mostrando @ProgFiltradas().Count() de @(_progs.Count) programaciones</div>
+            @if (_progAgrupar == "")
+            {
+                <TablaPager Total="ProgFiltradas().Count()" Pagina="_progPagina" PorPagina="_progPorPagina" Entidad="programaciones"
+                            PaginaChanged="v => _progPagina = v" PorPaginaChanged="v => { _progPorPagina = v; _progPagina = 1; }" />
+            }
+            else
+            {
+                <div class="mtp-footer">Mostrando @ProgFiltradas().Count() de @(_progs.Count) programaciones</div>
+            }
         </div>
         <button type="button" class="tbl-fab mtp-fab" @onclick="FocusAltaProgAsync" title="Agregar programación">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -881,19 +925,21 @@ else if (_tab == "calendario")
             <div class="mtp-selcfg-head">
                 <div>
                     <div class="mtp-selcfg-title">Campos de la programación</div>
-                    <div class="mtp-selcfg-sub">Orden, visibilidad y nombre de las columnas del cronograma.</div>
+                    <div class="mtp-selcfg-sub">Orden, visibilidad, nombre y campos propios del cronograma.</div>
                 </div>
                 <button class="mtp-selcfg-x" type="button" @onclick="() => _selProgAbierto = false" aria-label="Cerrar">&times;</button>
             </div>
             <div class="mtp-selcfg-body">
                 <ConfigCamposEntidad Prefijo="programacion"
                                      EntidadConfig="programacion"
-                                     SinCamposPropios="true"
+                                     RutaCatalogo="/api/mi-copropiedad/programacion-campos"
                                      Catalogo="@ProgramacionCatalogo"
                                      TituloSingular="programacion"
                                      TituloPlural="Programaciones"
+                                     Ejemplo="Ej. Garantia, Responsable externo"
+                                     TiposAvanzados="true"
                                      Jwt="@_jwt"
-                                     Cambiado="RecargarConfigProgAsync" />
+                                     Cambiado="RecargarCamposYConfigProgAsync" />
             </div>
         </div>
     </div>
@@ -1122,6 +1168,21 @@ else if (_tab == "calendario")
     private bool _authChecked;
     private bool _busy;
 
+    // Paginacion de la tabla de Programacion (canon TablaPager; sin pager cuando hay agrupacion activa).
+    private int _progPagina = 1;
+    private int _progPorPagina = 25;
+    private IEnumerable<ProgramacionTareaDto> ProgPagina()
+    {
+        var filt = ProgFiltradas().ToList();
+        var totalPag = Math.Max(1, (int)Math.Ceiling(filt.Count / (double)_progPorPagina));
+        if (_progPagina > totalPag) _progPagina = totalPag;
+        if (_progPagina < 1) _progPagina = 1;
+        return filt.Skip((_progPagina - 1) * _progPorPagina).Take(_progPorPagina);
+    }
+    // Filas a renderizar: sin agrupar -> un grupo vacio ya PAGINADO; agrupado -> los grupos completos (sin pager).
+    private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgGruposRender()
+        => _progAgrupar == "" ? ProgPagina().GroupBy(_ => "") : ProgAgrupadas();
+
     // Referencia a este componente para los interop de JS (guardado invisible de la fila de alta).
     private DotNetObjectReference<Mantenimiento>? _self;
     private DotNetObjectReference<Mantenimiento> Self => _self ??= DotNetObjectReference.Create(this);
@@ -1195,20 +1256,64 @@ else if (_tab == "calendario")
             OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
             TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
 
+    // ===== Campos dinamicos (EAV) de Programacion: catalogo + valores + helpers (molde EquiposActivosPanel) =====
+    private List<Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto> _camposDefProg = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _camposValProg = new();
+    private readonly Dictionary<Guid, string?> _nuCamposProg = new();   // valores de la fila de alta
+    private static string ClaveCustomProg(Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto c) => "cd:" + c.Id;
+    private static bool EsCustomProg(string clave) => clave.StartsWith("cd:", StringComparison.Ordinal);
+    private Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto? CampoCustomProg(string clave)
+        => EsCustomProg(clave) && Guid.TryParse(clave[3..], out var g) ? _camposDefProg.FirstOrDefault(c => c.Id == g) : null;
+    private string? ValorCampoProg(Guid progId, Guid defId) => _camposValProg.TryGetValue(progId, out var m) && m.TryGetValue(defId, out var v) ? v : null;
+
+    private async Task CargarCamposProgAsync()
+    {
+        try { _camposDefProg = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto>>("/api/mi-copropiedad/programacion-campos") ?? new(); } catch { _camposDefProg = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.ProgramacionCampoValorFlatDto>>("/api/mi-copropiedad/programacion-campos-valores") ?? new();
+            _camposValProg = flat.GroupBy(v => v.ProgramacionTareaId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+        }
+        catch { _camposValProg = new(); }
+    }
+
+    private async Task GuardarCampoValorProg(Guid progId, Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto cd, string? valor)
+    {
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/programaciones/{progId}/campos/{cd.Id}", new Propia.Application.MiCopropiedad.SetCampoValorRequest(valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                if (!_camposValProg.TryGetValue(progId, out var m)) { m = new(); _camposValProg[progId] = m; }
+                m[cd.Id] = string.IsNullOrWhiteSpace(valor) ? null : valor;
+            }
+        }
+        catch { }
+    }
+
+    // El gestor compartido cambio algo (alias/orden/visibilidad o campos propios): refresca config + catalogo EAV.
+    private async Task RecargarCamposYConfigProgAsync()
+    {
+        await CargarConfigProgAsync();
+        await CargarCamposProgAsync();
+        StateHasChanged();
+    }
+
     private bool VisibleColProg(string clave)
         => _cfgProg.TryGetValue(clave, out var c) ? !c.Oculto
-            : (MantenimientoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+            : (EsCustomProg(clave) || (MantenimientoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true));
     private int OrdenColProg(string clave, int fallback)
         => _cfgProg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
     private string LabelColProg(string clave)
         => _cfgProg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)
-            ? c.Alias! : (MantenimientoCamposSistema.Por(clave)?.Label ?? clave);
+            ? c.Alias! : (CampoCustomProg(clave)?.Label ?? MantenimientoCamposSistema.Por(clave)?.Label ?? clave);
     private IEnumerable<ProgCol> ProgColsVis
-        => MantenimientoCamposSistema.Todos
-            .Select((c, i) => (c.Clave, ord: OrdenColProg(c.Clave, i)))
+        => MantenimientoCamposSistema.Todos.Select(c => c.Clave)
+            .Concat(_camposDefProg.OrderBy(d => d.Orden).Select(ClaveCustomProg))
+            .Select((clave, i) => (clave, ord: OrdenColProg(clave, i)))
             .OrderBy(x => x.ord)
-            .Where(x => VisibleColProg(x.Clave))
-            .Select(x => new ProgCol(x.Clave, LabelColProg(x.Clave)));
+            .Where(x => VisibleColProg(x.clave))
+            .Select(x => new ProgCol(x.clave, LabelColProg(x.clave)));
 
     private async Task CargarConfigProgAsync()
     {
@@ -1248,7 +1353,7 @@ else if (_tab == "calendario")
                     "proxima" => "minmax(120px,1fr)",
                     "responsables" => "minmax(90px,.8fr)",
                     "activa" => "70px",
-                    _ => "1fr"
+                    _ => "minmax(130px,1fr)"   // columnas de campos propios (cd:{id})
                 });
             }
             cols.Add("60px");
@@ -1256,18 +1361,40 @@ else if (_tab == "calendario")
         }
     }
 
-    private List<FiltroDinamico.CampoDef> CamposFiltroProg => new()
+    // Kind de FiltroDinamico segun el tipo del campo propio.
+    private static string KindDeTipo(TipoCampoTablero t) => t switch
     {
-        new() { Key = "activo", Label = "Activo", Kind = "texto" },
-        new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
-        new() { Key = "tablero", Label = "Tablero", Kind = "texto" },
-        new() { Key = "prioridad", Label = "Prioridad", Kind = "sel",
-                Opciones = Enum.GetValues<PrioridadTarea>().Select(p => (p.ToString(), p.ToString())).ToList() },
-        new() { Key = "periodicidad", Label = "Periodicidad", Kind = "sel",
-                Opciones = Enum.GetValues<PeriodicidadProgramacion>().Select(p => (p.ToString(), p.ToString())).ToList() },
-        new() { Key = "activa", Label = "Activa", Kind = "sel",
-                Opciones = new() { ("true", "Activa"), ("false", "Pausada") } },
+        TipoCampoTablero.Seleccion => "sel",
+        TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje => "num",
+        TipoCampoTablero.Fecha or TipoCampoTablero.FechaHora => "fecha",
+        _ => "texto"
     };
+    private static List<(string, string)>? OpcionesDe(string? opciones)
+        => string.IsNullOrWhiteSpace(opciones) ? null
+            : opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(o => (o, o)).ToList();
+
+    private List<FiltroDinamico.CampoDef> CamposFiltroProg
+    {
+        get
+        {
+            var list = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "activo", Label = "Activo", Kind = "texto" },
+                new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
+                new() { Key = "tablero", Label = "Tablero", Kind = "texto" },
+                new() { Key = "prioridad", Label = "Prioridad", Kind = "sel",
+                        Opciones = Enum.GetValues<PrioridadTarea>().Select(p => (p.ToString(), p.ToString())).ToList() },
+                new() { Key = "periodicidad", Label = "Periodicidad", Kind = "sel",
+                        Opciones = Enum.GetValues<PeriodicidadProgramacion>().Select(p => (p.ToString(), p.ToString())).ToList() },
+                new() { Key = "activa", Label = "Activa", Kind = "sel",
+                        Opciones = new() { ("true", "Activa"), ("false", "Pausada") } },
+            };
+            foreach (var d in _camposDefProg.OrderBy(d => d.Orden))
+                list.Add(new() { Key = ClaveCustomProg(d), Label = d.Label, Kind = KindDeTipo(d.Tipo),
+                                 Opciones = d.Tipo == TipoCampoTablero.Seleccion ? OpcionesDe(d.Opciones) : null });
+            return list;
+        }
+    }
 
     private IEnumerable<ProgramacionTareaDto> ProgFiltradas()
     {
@@ -1286,13 +1413,17 @@ else if (_tab == "calendario")
             "prioridad" => p.Prioridad.ToString(),
             "periodicidad" => p.Periodicidad.ToString(),
             "activa" => p.Activa.ToString().ToLower(),
+            _ when CampoCustomProg(campo) is { } cd => ValorCampoProg(p.Id, cd.Id) ?? "",
             _ => ""
         }) ?? true);
     }
 
     private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgAgrupadas()
     {
-        Func<ProgramacionTareaDto, string> key = _progAgrupar switch
+        Func<ProgramacionTareaDto, string> key;
+        if (CampoCustomProg(_progAgrupar) is { } cdAgr)
+            key = p => { var v = ValorCampoProg(p.Id, cdAgr.Id); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; };
+        else key = _progAgrupar switch
         {
             "activo" => p => string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "(sin activo)" : p.OrigenReferencia!,
             "tablero" => p => string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre!,
@@ -1303,10 +1434,16 @@ else if (_tab == "calendario")
         return ProgFiltradas().GroupBy(key);
     }
 
-    private static string ProgAgruparLabel(string k) => k switch
+    // Opciones del menu Agrupar: sistema + campos propios.
+    private IEnumerable<(string, string)> ProgAgruparOpciones()
+        => new[] { ("", "Sin agrupar"), ("activo", "Activo"), ("tablero", "Tablero"), ("periodicidad", "Periodicidad"), ("prioridad", "Prioridad") }
+            .Concat(_camposDefProg.OrderBy(d => d.Orden).Select(d => (ClaveCustomProg(d), d.Label)));
+
+    private string ProgAgruparLabel(string k) => k switch
     {
         "activo" => "Activo", "tablero" => "Tablero",
-        "periodicidad" => "Periodicidad", "prioridad" => "Prioridad", _ => ""
+        "periodicidad" => "Periodicidad", "prioridad" => "Prioridad",
+        _ => CampoCustomProg(k)?.Label ?? ""
     };
     private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
 
@@ -1379,6 +1516,22 @@ else if (_tab == "calendario")
                 CostoEstimado: _altaCosto);
             var r = await Auth().PostAsJsonAsync("/api/programaciones", req);
             if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            // Campos propios (EAV) de la fila de alta: se guardan sobre la programacion recien creada.
+            if (_nuCamposProg.Any(x => !string.IsNullOrWhiteSpace(x.Value)))
+            {
+                try
+                {
+                    var creada = await r.Content.ReadFromJsonAsync<ProgramacionTareaDto>();
+                    if (creada is not null)
+                        foreach (var kv in _nuCamposProg.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                        {
+                            var cd = _camposDefProg.FirstOrDefault(d => d.Id == kv.Key);
+                            if (cd is not null) await GuardarCampoValorProg(creada.Id, cd, kv.Value);
+                        }
+                }
+                catch { }
+            }
+            _nuCamposProg.Clear();
             _msg = "Programacion creada."; _msgClass = "alert-success";
             // Limpiar activo/titulo/tercero/contrato/costo; se conservan tipo/prioridad/periodicidad/fecha para altas seguidas.
             _altaTitulo = ""; _altaActivoId = ""; _altaTableroKey = ""; _altaContratoKey = ""; _altaCosto = null;
@@ -1797,8 +1950,9 @@ else if (_tab == "calendario")
             {
                 // Tableros/personas/contratos para los dropdowns inline y el modal (se cargan una vez).
                 await CargarOpcionesProgAsync();
-                // Config de columnas del Selector de Campos (alias/orden/visibilidad por copropiedad).
+                // Config de columnas del Selector de Campos (alias/orden/visibilidad por copropiedad) + campos propios (EAV).
                 await CargarConfigProgAsync();
+                await CargarCamposProgAsync();
                 var eq = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=equipo") ?? new();
                 var zn = await http.GetFromJsonAsync<List<ProgramacionTareaDto>>("/api/programaciones?moduloOrigen=zona") ?? new();
                 _progs = eq.Concat(zn)
