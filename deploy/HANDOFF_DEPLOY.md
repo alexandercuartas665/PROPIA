@@ -15,28 +15,34 @@
 
 ---
 
-## ESTADO 2026-10-12 PQRSD: plazos (tipo) al catalogo A&D — global + override (LEER PRIMERO)
+## ESTADO 2026-10-12 PQRSD: tipo (plazo) + estado (columnas Kanban) al catalogo A&D — global + override (LEER PRIMERO)
 
-Rama `equipo/alex-header-zonas-equipos`. Primer tramo del traslado de las listas PQRSD al catalogo A&D:
-el **tipo** (plazo legal Ley 1755). Diseno SEGURO: el motor de plazos NO se toca; A&D manda el plazo base
-global y se propaga a cada copropiedad por el seeder, salvo override por copropiedad.
+Rama `equipo/alex-header-zonas-equipos`. E2 COMPLETO: las listas PQRSD **tipo** (plazo legal Ley 1755) y
+**estado** (columnas del tablero) pasan al catalogo global A&D. Diseno SEGURO: **el motor de plazos/workflow
+NO se toca** (sigue leyendo el enum + las tablas por copropiedad); A&D manda el valor base global (plazo del
+tipo; nombre/color del estado) y se PROPAGA a cada copropiedad por el seeder, salvo override.
 
-### 1 MIGRACION NUEVA — ADITIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
-- `20261012182837_PqrsdTipoOverridePlazo`: agrega `pqrsd_tipos.override_plazo` (bool, default false) +
+### 2 MIGRACIONES NUEVAS — ADITIVAS — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261012182837_PqrsdTipoOverridePlazo`: `pqrsd_tipos` += `override_plazo` (bool, default false) +
   **backfill** que marca override=true los tipos base cuyo `dias_habiles` difiere del plazo de fabrica
-  (PqrsdCatalogo.PlazosBase) de su `legal`, para NO pisar personalizaciones existentes. No destructiva.
+  (PqrsdCatalogo.PlazosBase) de su `legal`. No destructiva.
+- `20261012195911_PqrsdEstadoOverrideVisual`: `pqrsd_estados` += `override_visual` (bool, default false) +
+  **backfill** que marca override=true las columnas base cuyo nombre/color difiere del de fabrica. No destructiva.
 
 ### CONFIG/ARRANQUE — seeder de catalogo (idempotente)
-- `CatalogoListasSeeder` siembra la lista global `pqrsd.tipo` (clave `e:<TipoPqrsd>`, Meta JSON con
-  `plazoDias/diasInconformidad/nivelUrgencia/legal`), paridad con PlazosBase.
-- `PqrsdService.AsegurarCatalogoBaseAsync` ahora PROPAGA el plazo del catalogo a los tipos base sin
-  override (perezoso, idempotente). Comportamiento inicial identico (catalogo = PlazosBase).
+- `CatalogoListasSeeder` siembra 2 listas globales nuevas: `pqrsd.tipo` (clave `e:<TipoPqrsd>`, Meta
+  `{plazoDias,diasInconformidad,nivelUrgencia,legal}`) y `pqrsd.estado` (clave `e:<EstadoPqrsd>`, color +
+  Meta `{semanticaLegal,terminal,orden}`), paridad con PlazosBase / EstadosBase.
+- `PqrsdService.AsegurarCatalogoBaseAsync` / `AsegurarTableroBaseAsync` PROPAGAN (perezoso) el plazo del tipo
+  y el nombre/color de la columna base desde el catalogo a las copropiedades sin override. Inicio identico.
 
 ### Que cambia para el usuario
-- Nada visible aun (el plazo arranca igual). Cuando A&D edite el plazo base de un tipo en el catalogo,
-  aplica a todas las copropiedades que no lo hayan personalizado. (La UI de A&D para editar el plazo y el
-  "Editar campo" de tipo en el header llegan en el siguiente tramo; luego los estados/columnas Kanban.)
-- Verificado en dev: propagacion A&D->copropiedad OK; override respetado; integracion PQRSD+Calendario 28/28.
+- A&D ya puede editar en `/admin/catalogos`: el **plazo** de los tipos (columna "Plazo (dias)" en `pqrsd.tipo`)
+  y el **nombre/color** de las columnas base (`pqrsd.estado`). Al guardar, aplica a las copropiedades que no
+  lo hayan personalizado. La **semantica legal/terminal** de las columnas es backbone (no editable).
+- En `/pqrsd`, el "Editar campo" de las columnas **Tipo** y **Etapa** ya muestra la lista + agregar.
+- Verificado en dev: propagacion A&D->copropiedad OK (plazo y color); override respetado; "Editar campo"
+  muestra y agrega; integracion PQRSD+Calendario 28/28 (motor legal sin regresion).
 
 ---
 
