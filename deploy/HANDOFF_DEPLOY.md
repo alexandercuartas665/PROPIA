@@ -15,7 +15,28 @@
 
 ---
 
-## ESTADO 2026-10-12 E1b/Usuarios/Tareas/Mantenimiento: editores de lista + Mantenimiento al catalogo (LEER PRIMERO)
+## ESTADO 2026-10-12 E5.1 Mascotas·tipo: agregar tipos por copropiedad (LEER PRIMERO)
+
+Version 0.0.125. Rama `equipo/alex-header-zonas-equipos`.
+
+### 1 MIGRACION NUEVA — ADITIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261012230340_AddMascotaTipoCustom`: agrega 1 columna NULLABLE a `unidad_mascotas`:
+  `tipo_custom text null`. **Sin backfill** (las filas existentes siguen usando el enum `tipo`).
+  **Sin tabla nueva** (la RLS existente de `unidad_mascotas` ya cubre la columna). Reversible (DropColumn).
+
+Qué habilita: la copropiedad puede AGREGAR tipos de mascota propios (igual que `tipos_unidad_custom`).
+El select de Tipo muestra las semillas A&D (`mascota.tipo`) + las propias (guardadas en `unidad_campos_config`
+entidad=`mascotas`, clave=`tipo`, que escribe el modal canónico AutoServido). Una fila con tipo propio guarda
+`tipo = Otro (4)` + `tipo_custom = <etiqueta>`; al volver a una semilla, `tipo_custom` se limpia. El enum sigue
+intacto como semilla/respaldo, así que Portería/reservas/reportes que leen el enum NO cambian. La plantilla
+Excel ofrece las propias en el desplegable (export) y el import resuelve una etiqueta no-semilla como tipo
+propio (en vez de colapsar a Perro). Sin catálogo nuevo (reusa `mascota.tipo`). Rollback: redeploy del
+artefacto previo + `database update` a la migración anterior si se desea quitar la columna (no es necesario,
+es aditiva e inerte para el código viejo). Es la primera ola del enum-agregar (E5.1); E5.2–E5.4 pendientes.
+
+---
+
+## ESTADO 2026-10-12 E1b/Usuarios/Tareas/Mantenimiento: editores de lista + Mantenimiento al catalogo
 
 Version 0.0.124. **Sin migraciones nuevas** (todo UI + seeding de catalogo). El `CatalogoListasSeeder`
 (arranque) siembra 5 listas nuevas de Mantenimiento: `mantenimiento.periodicidad` (9), `mantenimiento.prioridad`

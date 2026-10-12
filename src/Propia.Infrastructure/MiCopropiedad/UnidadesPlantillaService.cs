@@ -326,7 +326,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
 
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
-        Dropdown(ws, Indice(cols, "TIPO MASCOTA"), listas.Definir("TIPO_MASCOTA", EnumNombres<Domain.Enums.TipoMascota>()));
+        Dropdown(ws, Indice(cols, "TIPO MASCOTA"), listas.Definir("TIPO_MASCOTA",
+            cfg.OpcionesMascotaTipo(EnumNombres<Domain.Enums.TipoMascota>())));
         Ejemplo(ws, cols,
             ("NOMBRE", EjemploMarca),
             ("TIPO MASCOTA", "Perro"), ("RAZA", "Labrador"));
@@ -588,6 +589,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             var raw = _filas.TryGetValue("estado", out var f) ? f.Opciones : null;
             var guardadas = LeerOpciones(raw);
             return guardadas.Count == 0 ? UnidadCamposSistema.EstadosSemilla : guardadas;
+        }
+
+        /// <summary>Opciones del campo TIPO MASCOTA para esta copropiedad: las que personalizo (semillas +
+        /// propias agregadas por la copropiedad, guardadas como etiquetas) o, si no personalizo, las de
+        /// fabrica (el enum). Es lo que ofrece el desplegable de la plantilla; el importador resuelve una
+        /// etiqueta que no es semilla como tipo propio.</summary>
+        public IEnumerable<string> OpcionesMascotaTipo(IEnumerable<string> fabrica)
+        {
+            var raw = _filas.TryGetValue("tipo", out var f) ? f.Opciones : null;
+            var guardadas = LeerOpciones(raw);
+            return guardadas.Count == 0 ? fabrica : guardadas;
         }
 
         /// <summary>

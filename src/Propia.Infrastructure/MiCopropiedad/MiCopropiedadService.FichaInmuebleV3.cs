@@ -102,7 +102,7 @@ public partial class MiCopropiedadService
         => await _db.UnidadMascotas.AsNoTracking()
             .Where(m => m.UnidadId == unidadId)
             .OrderBy(m => m.Nombre)
-            .Select(m => new UnidadMascotaDto(m.Id, m.Nombre, m.Tipo, m.Raza))
+            .Select(m => new UnidadMascotaDto(m.Id, m.Nombre, m.Tipo, m.Raza, m.TipoCustom))
             .ToListAsync(ct);
 
     public async Task<UnidadMascotaDto?> AgregarMascotaUnidadAsync(Guid unidadId, CrearUnidadMascotaRequest req, CancellationToken ct)
@@ -113,11 +113,12 @@ public partial class MiCopropiedadService
         if (string.IsNullOrWhiteSpace(nombre)) throw new InvalidOperationException("El nombre de la mascota es obligatorio.");
         if (nombre.Length > 80) nombre = nombre[..80];
         var raza = string.IsNullOrWhiteSpace(req.Raza) ? null : req.Raza.Trim();
-        var e = new UnidadMascota { TenantId = tid, UnidadId = unidadId, Nombre = nombre, Tipo = req.Tipo, Raza = raza };
+        var tipoCustom = string.IsNullOrWhiteSpace(req.TipoCustom) ? null : req.TipoCustom.Trim();
+        var e = new UnidadMascota { TenantId = tid, UnidadId = unidadId, Nombre = nombre, Tipo = req.Tipo, Raza = raza, TipoCustom = tipoCustom };
         _db.UnidadMascotas.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Mascota '{nombre}' registrada en la unidad.", ct, unidadId);
-        return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza);
+        return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza, e.TipoCustom);
     }
 
     public async Task<UnidadMascotaDto?> ActualizarMascotaUnidadAsync(Guid mascotaId, ActualizarUnidadMascotaRequest req, CancellationToken ct)
@@ -132,9 +133,11 @@ public partial class MiCopropiedadService
         }
         if (req.Tipo is { } t) e.Tipo = t;
         if (req.Raza is not null) e.Raza = string.IsNullOrWhiteSpace(req.Raza) ? null : req.Raza.Trim();
+        // MERGE: null = no tocar; "" = limpiar (vuelve al enum); texto = tipo propio del tenant.
+        if (req.TipoCustom is not null) e.TipoCustom = string.IsNullOrWhiteSpace(req.TipoCustom) ? null : req.TipoCustom.Trim();
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Mascota '{e.Nombre}' actualizada.", ct, e.UnidadId);
-        return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza);
+        return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza, e.TipoCustom);
     }
 
     public async Task<bool> EliminarMascotaUnidadAsync(Guid mascotaId, CancellationToken ct)

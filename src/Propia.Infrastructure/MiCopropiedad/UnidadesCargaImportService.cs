@@ -416,8 +416,9 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                     if (uid == Guid.Empty) { errores.Add(new("MASCOTAS", fila, $"Unidad '{Val(row, "UNIDAD PRIVADA")}' no encontrada")); continue; }
                     var nom = NullIfEmpty(Val(row, "NOMBRE")) ?? "Mascota";
                     // Antes se descartaba el DTO devuelto; su Id es la clave de los campos dinamicos.
+                    var (tipoMas, tipoMasCustom) = ResolverTipoMascota(Val(row, "TIPO MASCOTA"));
                     var creadaMas = await _mi.AgregarMascotaUnidadAsync(uid, new CrearUnidadMascotaRequest(
-                        nom, ParseEnum(Val(row, "TIPO MASCOTA"), TipoMascota.Perro), NullIfEmpty(Val(row, "RAZA"))), ct);
+                        nom, tipoMas, NullIfEmpty(Val(row, "RAZA")), tipoMasCustom), ct);
                     nMas++;
                     if (creadaMas is not null)
                         await EscribirDinamicosAsync("MASCOTAS", row, defsMas,
@@ -953,6 +954,18 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         foreach (var name in Enum.GetNames<TEnum>())
             if (string.Equals(name, s, StringComparison.OrdinalIgnoreCase)) return Enum.Parse<TEnum>(name);
         return fallback;
+    }
+
+    // Resuelve la celda TIPO MASCOTA: vacio => Perro; una semilla del enum (por nombre) => ese enum;
+    // cualquier otra etiqueta => tipo PROPIO de la copropiedad (enum Otro + TipoCustom con la etiqueta),
+    // asi un tipo agregado por la copropiedad viaja en la plantilla en vez de colapsar silenciosamente.
+    private static (TipoMascota Tipo, string? Custom) ResolverTipoMascota(string? texto)
+    {
+        var s = (texto ?? "").Trim();
+        if (s.Length == 0) return (TipoMascota.Perro, null);
+        foreach (var name in Enum.GetNames<TipoMascota>())
+            if (string.Equals(name, s, StringComparison.OrdinalIgnoreCase)) return (Enum.Parse<TipoMascota>(name), null);
+        return (TipoMascota.Otro, s);
     }
 
     // Registra el fallo de una fila: descarta la entidad fallida del ChangeTracker para NO contaminar

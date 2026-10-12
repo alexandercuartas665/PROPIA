@@ -18298,6 +18298,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("tipo");
 
+                    b.Property<string>("TipoCustom")
+                        .HasColumnType("text")
+                        .HasColumnName("tipo_custom");
+
                     b.Property<Guid>("UnidadId")
                         .HasColumnType("uuid")
                         .HasColumnName("unidad_id");

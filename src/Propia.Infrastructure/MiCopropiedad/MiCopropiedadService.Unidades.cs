@@ -413,7 +413,7 @@ public partial class MiCopropiedadService
     public async Task<IReadOnlyList<MascotaResumenDto>> ListMascotasAsync(CancellationToken ct)
     {
         var rows = await _db.UnidadMascotas.AsNoTracking()
-            .Select(m => new { m.Id, m.UnidadId, m.Nombre, m.Tipo, m.Raza }).ToListAsync(ct);
+            .Select(m => new { m.Id, m.UnidadId, m.Nombre, m.Tipo, m.Raza, m.TipoCustom }).ToListAsync(ct);
         if (rows.Count == 0) return Array.Empty<MascotaResumenDto>();
 
         var datos = await DatosDeUnidadesAsync(rows.Select(r => r.UnidadId), ct);
@@ -422,7 +422,7 @@ public partial class MiCopropiedadService
             {
                 var (numero, codigo, propietario) = datos.GetValueOrDefault(m.UnidadId);
                 return new MascotaResumenDto(m.Id, m.UnidadId, numero, codigo,
-                    m.Nombre, m.Tipo, m.Raza, propietario);
+                    m.Nombre, m.Tipo, m.Raza, propietario, m.TipoCustom);
             })
             .OrderBy(m => m.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(m => m.Nombre)
             .ToList();

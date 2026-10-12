@@ -258,6 +258,10 @@ public class UnidadMascota : TenantEntity
 
     public string Nombre { get; set; } = string.Empty;
     public TipoMascota Tipo { get; set; } = TipoMascota.Perro;
+    /// <summary>Etiqueta de tipo PROPIA del tenant (agregada por la copropiedad) cuando el tipo no es una
+    /// de las semillas del enum. No null => prevalece sobre <see cref="Tipo"/> para mostrar/filtrar/agrupar;
+    /// el enum queda en <see cref="TipoMascota.Otro"/> como respaldo neutro. Opcional.</summary>
+    public string? TipoCustom { get; set; }
     public string? Raza { get; set; }
 }
 

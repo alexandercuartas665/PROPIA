@@ -214,16 +214,17 @@ public record ActualizarUnidadPlacaRequest(string? Placa = null, TipoVehiculo? T
 public record UnidadArriendoDto(Guid Id, string Concepto, decimal ValorMensual, string? Referencia);
 public record CrearUnidadArriendoRequest(string Concepto, decimal ValorMensual, string? Referencia);
 
-// Mascotas registradas en la unidad.
-public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string? Raza);
+// Mascotas registradas en la unidad. TipoCustom = etiqueta propia del tenant (null = usa el enum Tipo).
+public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string? Raza, string? TipoCustom = null);
 
 // Vista agregada de TODAS las mascotas de la copropiedad (modulo /mascotas). Ver VehiculoResumenDto.
 public record MascotaResumenDto(
     Guid MascotaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     string Nombre, TipoMascota Tipo, string? Raza,
-    string? PropietarioNombre);
-public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza);
-public record ActualizarUnidadMascotaRequest(string? Nombre = null, TipoMascota? Tipo = null, string? Raza = null);
+    string? PropietarioNombre, string? TipoCustom = null);
+public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza, string? TipoCustom = null);
+// TipoCustom: null = no tocar (MERGE); "" = limpiar (vuelve al enum); texto = tipo propio.
+public record ActualizarUnidadMascotaRequest(string? Nombre = null, TipoMascota? Tipo = null, string? Raza = null, string? TipoCustom = null);
 
 // Empleada(s) de servicio de la unidad.
 public record UnidadEmpleadaDto(Guid Id, string Nombre, string? Documento, string? Celular, string? Horario, Guid? PersonaId = null);
