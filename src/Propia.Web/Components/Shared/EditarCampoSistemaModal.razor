@@ -9,6 +9,7 @@
 @inject IHttpClientFactory HttpFactory
 @using Propia.Domain.Enums
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
 
 <div class="ecs-back" @onclick="Cerrar">
     <div class="ecs-shell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
@@ -38,19 +39,20 @@
             </div>
 
             @* Campo del sistema tipo LISTA: opciones existentes en SOLO LECTURA (no se quitan ni editan;
-               pueden estar en uso) + agregar opciones propias. Solo si el padre pasa OpcionesLista. *@
-            @if (OpcionesLista is not null)
+               pueden estar en uso) + agregar opciones propias. Se muestra si el padre pasa OpcionesLista
+               (modo clasico) o si el modal auto-sirve la lista (ListaCatalogo/SemillaFallback, modo E0). *@
+            @if (EfectivasOpciones is not null)
             {
                 <div class="ecs-fld">
                     <label>Opciones de la lista</label>
                     <div class="ecs-opts">
-                        @if (OpcionesLista.Count == 0)
+                        @if (EfectivasOpciones.Count == 0)
                         {
                             <div class="ecs-opt-empty">Esta lista aun no tiene opciones.</div>
                         }
                         else
                         {
-                            @foreach (var o in OpcionesLista)
+                            @foreach (var o in EfectivasOpciones)
                             {
                                 <div class="ecs-opt ecs-opt--ro" title="Opcion existente (no se puede quitar)">
                                     <span class="ecs-opt-color" style="background:@(string.IsNullOrWhiteSpace(o.Color) ? "var(--propia-border-divider)" : o.Color)"></span>
@@ -121,6 +123,16 @@
     /// <summary>Agregar una opcion propia: el padre la persiste (field-specific) y refresca OpcionesLista.</summary>
     [Parameter] public EventCallback<string> OnAgregarOpcion { get; set; }
 
+    // ===== Modo E0 (auto-servir la lista): si el padre NO pasa OpcionesLista pero da ListaCatalogo,
+    // el modal arma solo la lista (semilla del catalogo global + override por copropiedad) y "agregar"
+    // escribe al override del tenant (config Opciones). Asi cada modulo cablea el modal con ~2 lineas
+    // y la opcion nueva aparece tambien en el <select> de la celda (que lee esa misma config). =====
+    /// <summary>Clave de lista del catalogo global (ej. "contrato.tipocontrato"). Si se da (y el padre
+    /// no pasa OpcionesLista), el modal auto-sirve las opciones desde el catalogo + override del tenant.</summary>
+    [Parameter] public string? ListaCatalogo { get; set; }
+    /// <summary>Opciones de fabrica de respaldo (labels) si el catalogo no cargo o esta vacio.</summary>
+    [Parameter] public string[]? SemillaFallback { get; set; }
+
     /// <summary>Opcion de lista para mostrar en solo lectura (texto + color opcional).</summary>
     public sealed record OpcionVista(string Texto, string? Color = null);
 
@@ -131,6 +143,14 @@
     private UnidadCampoConfigDto? _actual;   // fila actual (para preservar opciones/tipo/formato/orden)
     private bool _busy;
     private string? _msg;
+
+    // Modo E0: lista que arma el propio modal (null = no auto-servido) + JSON de override vigente.
+    private List<OpcionVista>? _opcionesSelf;
+    private string? _opcionesJson;
+    private bool AutoServido => OpcionesLista is null && Tipo == TipoCampoTablero.Seleccion
+                                 && (!string.IsNullOrWhiteSpace(ListaCatalogo) || (SemillaFallback is { Length: > 0 }));
+    // Lista efectiva a mostrar: la del padre (modo clasico) o la auto-servida (modo E0).
+    private List<OpcionVista>? EfectivasOpciones => OpcionesLista ?? _opcionesSelf;
 
     private string CfgUrl => RutaConfig.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
         ? RutaConfig : $"/api/mi-copropiedad/{RutaConfig}";
@@ -154,6 +174,36 @@
         _alias = _actual?.Alias ?? "";
         _descripcion = _actual?.Descripcion ?? "";
         _oculto = _actual?.Oculto ?? false;
+        _opcionesJson = _actual?.Opciones;
+
+        if (AutoServido) await ConstruirOpcionesSelfAsync();
+    }
+
+    // Arma la lista auto-servida: si la copropiedad ya personalizo (config Opciones no vacia) esa es la
+    // fuente visible (el <select> de la celda lee lo mismo); si no, las semillas del catalogo global
+    // (o SemillaFallback). Solo las visibles (no ocultas); el ocultar/reordenar se hace en otra parte.
+    private async Task ConstruirOpcionesSelfAsync()
+    {
+        // Override del tenant (lo que realmente ve la celda hoy).
+        var delTenant = OpcionCampo.Parse(_opcionesJson).Where(o => !o.Oculta)
+            .Select(o => new OpcionVista(o.K, o.Color)).ToList();
+        if (delTenant.Count > 0) { _opcionesSelf = delTenant; return; }
+
+        // Sin override: semillas del catalogo global (fallback a SemillaFallback).
+        var sem = new List<OpcionVista>();
+        if (!string.IsNullOrWhiteSpace(ListaCatalogo))
+        {
+            try
+            {
+                var cat = await Auth().GetFromJsonAsync<List<CatalogoOpcionDto>>(
+                    $"/api/catalogos?lista={Uri.EscapeDataString(ListaCatalogo!)}") ?? new();
+                sem = cat.Select(o => new OpcionVista(o.Label, o.Color)).ToList();
+            }
+            catch { sem = new(); }
+        }
+        if (sem.Count == 0 && SemillaFallback is { Length: > 0 })
+            sem = SemillaFallback.Select(s => new OpcionVista(s)).ToList();
+        _opcionesSelf = sem;
     }
 
     private async Task Cerrar() => await Cerrado.InvokeAsync();
@@ -166,28 +216,55 @@
     {
         var v = (_nuevaOpcion ?? "").Trim();
         if (string.IsNullOrWhiteSpace(v)) return;
-        if (OpcionesLista is not null && OpcionesLista.Any(o => string.Equals(o.Texto, v, StringComparison.OrdinalIgnoreCase)))
+        if (EfectivasOpciones is not null && EfectivasOpciones.Any(o => string.Equals(o.Texto, v, StringComparison.OrdinalIgnoreCase)))
         { _msg = "Esa opcion ya existe."; return; }
         _msg = null; _nuevaOpcion = "";
-        await OnAgregarOpcion.InvokeAsync(v);
+        if (AutoServido) await AgregarOpcionSelfAsync(v);
+        else await OnAgregarOpcion.InvokeAsync(v);
     }
+
+    // Modo E0: persiste la opcion nueva en el override del tenant (config Opciones = semillas+propias) para
+    // que aparezca tanto aqui como en el <select> de la celda. Preserva alias/descr/oculto/tipo/formato/orden.
+    private async Task AgregarOpcionSelfAsync(string v)
+    {
+        _busy = true;
+        try
+        {
+            var lista = (_opcionesSelf ?? new()).Select(o => new OpcionCampo(o.Texto, false, o.Color)).ToList();
+            lista.Add(new OpcionCampo(v));
+            var json = OpcionCampo.Serializar(lista);
+            var r = await Auth().PutAsJsonAsync(CfgUrl, FilaRequest(json));
+            if (r.IsSuccessStatusCode)
+            {
+                _opcionesJson = json;
+                (_opcionesSelf ??= new()).Add(new OpcionVista(v));
+                await Guardado.InvokeAsync();   // el padre recarga su config -> la celda ofrece la opcion nueva
+            }
+            else { _msg = "No se pudo agregar la opcion."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // Request de config con los valores vigentes del formulario + las opciones dadas (preserva lo no editado).
+    private GuardarUnidadCampoConfigRequest FilaRequest(string? opcionesJson)
+        => new(
+            CampoClave: Clave,
+            Alias: string.IsNullOrWhiteSpace(_alias) ? null : _alias.Trim(),
+            Opciones: opcionesJson,
+            Tipo: _actual?.Tipo,
+            Formato: _actual?.Formato,
+            Oculto: _oculto,
+            Orden: _actual?.Orden,
+            Entidad: EntidadConfig,
+            Descripcion: string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim());
 
     private async Task GuardarAsync()
     {
         _busy = true; _msg = null;
         try
         {
-            var req = new GuardarUnidadCampoConfigRequest(
-                CampoClave: Clave,
-                Alias: string.IsNullOrWhiteSpace(_alias) ? null : _alias.Trim(),
-                Opciones: _actual?.Opciones,
-                Tipo: _actual?.Tipo,
-                Formato: _actual?.Formato,
-                Oculto: _oculto,
-                Orden: _actual?.Orden,
-                Entidad: EntidadConfig,
-                Descripcion: string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim());
-            var r = await Auth().PutAsJsonAsync(CfgUrl, req);
+            var r = await Auth().PutAsJsonAsync(CfgUrl, FilaRequest(_opcionesJson));
             if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
             else { _msg = "No se pudo guardar el campo."; }
         }
