@@ -96,6 +96,17 @@ else
                 </div>
             }
         </div>
+        @* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). *@
+        <div class="veh-viewtoggle">
+            <button type="button" class="veh-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="veh-vt @(_view == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
+                Tabla
+            </button>
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="veh-msg @(_msgError ? "err" : "ok")">@_msg</div> }
@@ -138,6 +149,8 @@ else
         </div>
     }
 
+    @if (_view == "tabla")
+    {
     @* ===== Tabla ===== *@
     <div class="veh-table">
         <div class="veh-scroll">
@@ -308,6 +321,30 @@ else
             <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Filtradas.Count</div>
         }
     </div>
+    }
+    @if (_view == "cards")
+    {
+        <div class="veh-acards">
+            @foreach (var v in Filtradas)
+            {
+                var vv = v;
+                <div class="veh-acard" @onclick="() => AbrirUnidad(vv)" title="Ver la unidad del vehículo">
+                    <div class="veh-acard-ic">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5h14l2 5M5 13h14v4H5zM7 17v2M17 17v2"/><circle cx="7.5" cy="15" r="1"/><circle cx="16.5" cy="15" r="1"/></svg>
+                    </div>
+                    <div class="veh-acard-body">
+                        <div class="veh-acard-name">@(string.IsNullOrWhiteSpace(v.Placa) ? "(sin placa)" : v.Placa)</div>
+                        <div class="veh-acard-meta">@TipoLabel(v.TipoVehiculo)</div>
+                        <div class="veh-acard-sub">@(string.IsNullOrWhiteSpace(v.UnidadCodigo) ? "Sin unidad" : v.UnidadCodigo)@(string.IsNullOrWhiteSpace(v.PropietarioNombre) ? "" : " · " + v.PropietarioNombre)</div>
+                    </div>
+                </div>
+            }
+            @if (!Filtradas.Any())
+            {
+                <div class="veh-empty" style="grid-column:1/-1;">No hay vehículos que coincidan.</div>
+            }
+        </div>
+    }
 }
 
 @* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
@@ -657,6 +694,16 @@ else
         <div class="veh-addcol-cell"></div>
     </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+
+    // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
+    private string _view = "tabla";
+    private const string VistaKeyV = "propia_view_vehiculos";
+    private async Task SetVista(string v)
+    {
+        _view = v;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKeyV, v); } catch { }
+        StateHasChanged();
+    }
     private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
     private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
@@ -672,6 +719,7 @@ else
             try { _jwt = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_jwt"); } catch { }
             if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fvehiculos", true); return; }
             _authChecked = true;
+            try { var _vv = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKeyV); if (_vv == "cards" || _vv == "tabla") _view = _vv; } catch { }
             await CargarAsync();
             StateHasChanged();
             return;
@@ -1356,6 +1404,20 @@ else
     .veh-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
     .veh-selbar-del:disabled { opacity: .6; cursor: default; }
     .veh-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+
+    /* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). */
+    .veh-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; }
+    .veh-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
+    .veh-vt.on { background: var(--propia-bg-card); color: var(--propia-brand); box-shadow: 0 1px 2px rgba(20,30,50,.08); }
+    /* Vista Tarjetas. */
+    .veh-acards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .veh-acard { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+    .veh-acard:hover { border-color: var(--propia-brand); box-shadow: 0 2px 8px rgba(20,30,50,.06); }
+    .veh-acard-ic { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .veh-acard-body { flex: 1; min-width: 0; }
+    .veh-acard-name { font-size: 13.5px; font-weight: 700; color: var(--propia-text-h1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .veh-acard-meta { font-size: 11.5px; color: var(--propia-text-secondary); margin-top: 1px; }
+    .veh-acard-sub { font-size: 11px; color: var(--propia-text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Dialogo de confirmacion. */
     .veh-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }

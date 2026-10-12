@@ -93,6 +93,17 @@ else
                 </div>
             }
         </div>
+        @* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). *@
+        <div class="mas-viewtoggle">
+            <button type="button" class="mas-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="mas-vt @(_view == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
+                Tabla
+            </button>
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="mas-msg @(_msgError ? "err" : "ok")">@_msg</div> }
@@ -135,6 +146,8 @@ else
         </div>
     }
 
+    @if (_view == "tabla")
+    {
     @* ===== Tabla ===== *@
     <div class="mas-table">
         <div class="mas-scroll">
@@ -308,6 +321,30 @@ else
             <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Filtradas.Count</div>
         }
     </div>
+    }
+    @if (_view == "cards")
+    {
+        <div class="mas-acards">
+            @foreach (var m in Filtradas)
+            {
+                var mm = m;
+                <div class="mas-acard" @onclick="() => AbrirUnidad(mm)" title="Ver la unidad de la mascota">
+                    <div class="mas-acard-ic">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="9" r="2"/><circle cx="19" cy="9" r="2"/><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><path d="M12 11c-2.5 0-4.5 2-4.5 4.5 0 1.9 1.6 2.5 4.5 2.5s4.5-.6 4.5-2.5C16.5 13 14.5 11 12 11Z"/></svg>
+                    </div>
+                    <div class="mas-acard-body">
+                        <div class="mas-acard-name">@(string.IsNullOrWhiteSpace(m.Nombre) ? "(sin nombre)" : m.Nombre)</div>
+                        <div class="mas-acard-meta">@TipoLabel(m.Tipo)@(string.IsNullOrWhiteSpace(m.Raza) ? "" : " · " + m.Raza)</div>
+                        <div class="mas-acard-sub">@(string.IsNullOrWhiteSpace(m.UnidadCodigo) ? "Sin unidad" : m.UnidadCodigo)@(string.IsNullOrWhiteSpace(m.PropietarioNombre) ? "" : " · " + m.PropietarioNombre)</div>
+                    </div>
+                </div>
+            }
+            @if (!Filtradas.Any())
+            {
+                <div class="mas-empty" style="grid-column:1/-1;">No hay mascotas que coincidan.</div>
+            }
+        </div>
+    }
 }
 
 @* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
@@ -655,6 +692,16 @@ else
         <div class="mas-addcol-cell"></div>
     </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+
+    // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
+    private string _view = "tabla";
+    private const string VistaKeyM = "propia_view_mascotas";
+    private async Task SetVista(string v)
+    {
+        _view = v;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKeyM, v); } catch { }
+        StateHasChanged();
+    }
     private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
     private void AbrirUnidad(MascotaResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnNombreNuevo(ChangeEventArgs e) => _nuNombre = e.Value?.ToString() ?? string.Empty;
@@ -671,6 +718,7 @@ else
             try { _jwt = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_jwt"); } catch { }
             if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fmascotas", true); return; }
             _authChecked = true;
+            try { var _vv = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKeyM); if (_vv == "cards" || _vv == "tabla") _view = _vv; } catch { }
             await CargarAsync();
             StateHasChanged();
             return;
@@ -1367,6 +1415,20 @@ else
     .mas-selbar-del:hover:not(:disabled) { background: var(--propia-danger-soft); }
     .mas-selbar-del:disabled { opacity: .6; cursor: default; }
     .mas-selbar-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; }
+
+    /* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). */
+    .mas-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; }
+    .mas-vt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--propia-text-muted); cursor: pointer; font-family: inherit; }
+    .mas-vt.on { background: var(--propia-bg-card); color: var(--propia-brand); box-shadow: 0 1px 2px rgba(20,30,50,.08); }
+    /* Vista Tarjetas. */
+    .mas-acards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .mas-acard { display: flex; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+    .mas-acard:hover { border-color: var(--propia-brand); box-shadow: 0 2px 8px rgba(20,30,50,.06); }
+    .mas-acard-ic { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .mas-acard-body { flex: 1; min-width: 0; }
+    .mas-acard-name { font-size: 13.5px; font-weight: 700; color: var(--propia-text-h1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mas-acard-meta { font-size: 11.5px; color: var(--propia-text-secondary); margin-top: 1px; }
+    .mas-acard-sub { font-size: 11px; color: var(--propia-text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Dialogo de confirmacion. */
     .mas-cfg-back { position: fixed; inset: 0; background: rgba(20,26,38,.45); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
