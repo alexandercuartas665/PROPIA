@@ -15,6 +15,34 @@
 
 ---
 
+## ESTADO 2026-10-12 CONTRATOS: edicion completa + listas Forma de pago / Tipo de servicio (LEER PRIMERO)
+
+Rama `equipo/alex-header-zonas-equipos`. En /contratos: todos los campos editables (celda + fila de
+alta), y **Forma de pago** y **Tipo de servicio** pasan a ser LISTAS del catalogo global A&D.
+
+### 1 MIGRACION NUEVA — ADITIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261012165334_ContratosFormaPagoYTipoServicio`: agrega 2 columnas nullable a `contratos_servicio`
+  (`forma_pago` text, `tipo_servicio_texto` text) + **backfill** de `tipo_servicio_texto` desde el enum
+  `tipo` (etiquetas: 1=Aseo ... 13=Otros). Sin RLS nueva (la tabla ya tiene RLS). No destructiva: el
+  codigo viejo ignora las columnas. `forma_pago` queda NULL (concepto nuevo = metodo de pago); el N de
+  cuotas sigue en `forma_pago_cuotas`.
+- Aplicada en **dev** (OK de Alex 2026-10-12).
+
+### CONFIG/ARRANQUE — seeder de catalogo (idempotente, ya existente)
+El `CatalogoListasSeeder` (corre al arrancar) ahora siembra 2 listas globales nuevas: `contrato.formapago`
+(Efectivo/Transferencia/PSE/Cheque/Tarjeta/Debito automatico/Otro) y `contrato.tiposervicio` (paridad con
+el enum). Idempotente: solo inserta lo que falta; A&D las edita en `/admin/catalogos`.
+
+### Que cambia para el usuario
+- "Forma de pago" ya no es "N de cuotas": es un metodo de pago (lista editable). El N de cuotas queda como
+  columna aparte "N de cuotas" (no visible por defecto).
+- "Tipo de servicio" es editable desde A&D (antes enum fijo).
+- Valor, Pago mensual, Forma de pago, Tipo de servicio, N de cuotas: editables en la celda y en el alta
+  (antes salian "-"). La fila de alta captura TODOS los campos visibles (sistema + propios + Etapa).
+- "Vencimiento" sigue automatico (derivado por fecha), por decision.
+
+---
+
 ## ESTADO 2026-10-09 DEPLOY 0.0.113 (LEER PRIMERO)
 
 Rama `equipo/alex-header-zonas-equipos` -> mergear a `main` (ya en 0.0.112, HEAD `ff8e7502`).
