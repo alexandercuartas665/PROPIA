@@ -12438,6 +12438,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("orden");
 
+                    b.Property<bool>("OverridePlazo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("override_plazo");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");

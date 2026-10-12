@@ -130,6 +130,33 @@ public partial class PqrsdService
             if (expSinTipo.Count > 0) await _db.SaveChangesAsync(ct);
         }
 
+        // Propagacion A&D -> copropiedad (perezosa, idempotente): el plazo base de cada tipo legal lo manda
+        // el catalogo GLOBAL (pqrsd.tipo, Meta.plazoDias), SALVO que la copropiedad lo haya overrideado
+        // (OverridePlazo=true). El calculo legal sigue leyendo pqrsd_tipos.DiasHabiles (motor intacto): aqui
+        // solo se alinea ese valor con el catalogo para los tipos base no-overrideados.
+        var catPqrsdTipo = await _db.CatalogoOpciones.AsNoTracking()
+            .Where(x => x.Lista == "pqrsd.tipo" && x.Activo)
+            .Select(x => new { x.Clave, x.Meta })
+            .ToListAsync(ct);
+        if (catPqrsdTipo.Count > 0)
+        {
+            var plazoGlobal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in catPqrsdTipo)
+                if (PlazoDiasDeMeta(c.Meta) is { } d) plazoGlobal[c.Clave] = d;
+
+            var basesSinOverride = await _db.PqrsdTipos.Where(t => t.EsBase && !t.OverridePlazo).ToListAsync(ct);
+            var huboCambio = false;
+            foreach (var tb in basesSinOverride)
+                if (plazoGlobal.TryGetValue("e:" + tb.Legal, out var dias) && tb.DiasHabiles != dias)
+                {
+                    tb.DiasHabiles = dias;
+                    var mir = await _db.PqrsdConfiguracionPlazos.FirstOrDefaultAsync(p => p.Tipo == tb.Legal, ct);
+                    if (mir is not null) mir.DiasHabiles = dias;
+                    huboCambio = true;
+                }
+            if (huboCambio) await _db.SaveChangesAsync(ct);
+        }
+
         // Backfill de tildes en los nombres BASE sembrados antes con ASCII (convencion nueva: el texto
         // de cara al usuario lleva acentos). Idempotente y tenant-scoped: tras el rename el WHERE deja de
         // matchear, asi que en llamadas siguientes es un UPDATE de 0 filas.
@@ -145,6 +172,20 @@ public partial class PqrsdService
         // nombre, asi que solo renombra la columna base que sigue con el nombre ASCII por defecto).
         await _db.PqrsdEstados.Where(e => e.EsBase && e.SemanticaLegal == EstadoPqrsd.EnGestion && e.Nombre == "En gestion")
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.Nombre, "En gestión"), ct);
+    }
+
+    // Lee "plazoDias" del Meta JSON de una opcion del catalogo pqrsd.tipo (null si falta/invalido).
+    private static int? PlazoDiasDeMeta(string? meta)
+    {
+        if (string.IsNullOrWhiteSpace(meta)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(meta);
+            if (doc.RootElement.TryGetProperty("plazoDias", out var p) && p.TryGetInt32(out var d) && d > 0)
+                return d;
+        }
+        catch { /* Meta corrupto: sin plazo global */ }
+        return null;
     }
 
     private static string TipoNombreBase(TipoPqrsd t) => t switch
@@ -327,6 +368,7 @@ public partial class PqrsdService
             tb.DiasHabiles = req.DiasHabiles;
             tb.DiasInconformidad = req.DiasInconformidad;
             tb.NivelUrgencia = req.NivelUrgencia;
+            tb.OverridePlazo = true;   // la copropiedad fijo su plazo: el catalogo A&D ya no lo pisa.
         }
         await _db.SaveChangesAsync(ct);
         return true;
@@ -389,6 +431,7 @@ public partial class PqrsdService
         // Mantener el plazo legacy en sync para los tipos base (misma fuente que el semaforo/urgencia).
         if (t.EsBase)
         {
+            t.OverridePlazo = true;   // la copropiedad fijo su plazo: el catalogo A&D ya no lo pisa.
             var plazo = await _db.PqrsdConfiguracionPlazos.FirstOrDefaultAsync(p => p.Tipo == t.Legal, ct);
             if (plazo is not null)
             {

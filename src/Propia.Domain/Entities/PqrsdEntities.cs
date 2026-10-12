@@ -299,6 +299,11 @@ public class PqrsdTipo : TenantEntity
     public bool Activo { get; set; } = true;
 
     public int Orden { get; set; }
+
+    /// <summary>Solo tipos base: true = la copropiedad fijo su propio plazo (override) y el plazo global
+    /// del catalogo A&D (pqrsd.tipo) NO lo pisa. false = el plazo base lo manda el catalogo global (se
+    /// propaga perezosamente en el seeder). Los tipos custom (EsBase=false) siempre usan su propio plazo.</summary>
+    public bool OverridePlazo { get; set; }
 }
 
 /// <summary>
