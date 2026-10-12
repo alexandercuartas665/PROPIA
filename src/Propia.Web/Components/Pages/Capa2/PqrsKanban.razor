@@ -1320,17 +1320,36 @@
         if (resp.IsSuccessStatusCode) await CargarTiposCatAsync();
     }
 
-    // Router por clave para el modal "Editar campo" de PQRSD (categoria / tipo).
+    // Lista de ETAPAS/estados (columnas del tablero) para el modal "Editar campo" de la columna Etapa.
+    // El nombre/color de las columnas base los gobierna A&D (catalogo pqrsd.estado); aqui se muestran y se
+    // pueden agregar columnas propias. La semantica legal/terminal no se toca desde aqui.
+    private List<EditarCampoSistemaModal.OpcionVista> EstadosVistaPqrsd()
+        => _estados.Where(e => e.Activo).OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
+            .Select(e => new EditarCampoSistemaModal.OpcionVista(e.Nombre, e.Color)).ToList();
+
+    // Agregar una columna propia (custom, no terminal, sin semantica legal) desde el modal.
+    private async Task AgregarEstadoDesdeCampoAsync(string texto)
+    {
+        var nombre = (texto ?? "").Trim();
+        if (nombre.Length == 0) return;
+        if (_estados.Any(e => string.Equals(e.Nombre, nombre, StringComparison.OrdinalIgnoreCase))) return;
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(nombre, null));
+        if (resp.IsSuccessStatusCode) await CargarEstadosAsync();
+    }
+
+    // Router por clave para el modal "Editar campo" de PQRSD (categoria / tipo / estado).
     private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaPqrsd(string? clave) => clave switch
     {
         "categoria" => CategoriasVistaPqrsd(),
         "tipo" => TiposVistaPqrsd(),
+        "estado" => EstadosVistaPqrsd(),
         _ => null
     };
     private async Task AgregarOpcionPqrsdAsync(string? clave, string texto)
     {
         if (clave == "categoria") await AgregarCategoriaDesdeCampoAsync(texto);
         else if (clave == "tipo") await AgregarTipoDesdeCampoAsync(texto);
+        else if (clave == "estado") await AgregarEstadoDesdeCampoAsync(texto);
     }
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {

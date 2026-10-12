@@ -20,7 +20,7 @@ namespace Propia.Infrastructure.Catalogos;
 public static class CatalogoListasSeeder
 {
     /// <summary>Una opcion semilla de una lista (clave estable + label de fabrica + orden + metadata opcional).</summary>
-    public sealed record SemillaOpcion(string Clave, string Label, int Orden, string? Meta = null);
+    public sealed record SemillaOpcion(string Clave, string Label, int Orden, string? Meta = null, string? Color = null);
 
     /// <summary>Registro de las listas del catalogo con sus semillas de fabrica (fuente de la paridad).</summary>
     public static IReadOnlyList<(string Lista, IReadOnlyList<SemillaOpcion> Opciones)> Registro()
@@ -177,6 +177,28 @@ public static class CatalogoListasSeeder
                     })))
                 .ToList()));
 
+        // PQRSD · Etapa (columnas base del tablero): clave estable "e:<EstadoPqrsd>", color de fabrica, y
+        // Meta con la semantica legal + terminal + orden. A&D edita label/color (global); la copropiedad
+        // overridea (pqrsd_estados.override_visual). La SEMANTICA/TERMINAL son backbone legal (no se editan).
+        reg.Add(("pqrsd.estado", new List<(string, string, bool, int)>
+        {
+            ("Recibida", "#94A3B8", false, (int)Propia.Domain.Enums.EstadoPqrsd.Recibida),
+            ("En gestión", "#6D4FE3", false, (int)Propia.Domain.Enums.EstadoPqrsd.EnGestion),
+            ("Respondida", "#0EA5E9", false, (int)Propia.Domain.Enums.EstadoPqrsd.Respondida),
+            ("Cerrada", "#16A34A", true, (int)Propia.Domain.Enums.EstadoPqrsd.Cerrada),
+            ("Via interna agotada", "#DC2626", true, (int)Propia.Domain.Enums.EstadoPqrsd.ViaInternaAgotada),
+        }.Select((e, i) =>
+        {
+            var sem = (Propia.Domain.Enums.EstadoPqrsd)e.Item4;
+            var meta = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                semanticaLegal = sem.ToString(),
+                terminal = e.Item3,
+                orden = i + 1
+            });
+            return new SemillaOpcion("e:" + sem, e.Item1, i, meta, e.Item2);
+        }).ToList()));
+
         return reg;
     }
 
@@ -234,7 +256,7 @@ public static class CatalogoListasSeeder
                     Clave = op.Clave,
                     Label = op.Label,
                     Orden = op.Orden,
-                    Color = null,
+                    Color = op.Color,
                     Activo = true,
                     EsSemilla = true,
                     Meta = op.Meta,

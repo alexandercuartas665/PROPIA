@@ -266,6 +266,11 @@ public class PqrsdEstado : TenantEntity
     /// sincroniza el enum Estado del expediente (y por ende los plazos). null = columna custom.
     /// </summary>
     public EstadoPqrsd? SemanticaLegal { get; set; }
+
+    /// <summary>Solo columnas base: true = la copropiedad personalizo su nombre/color (override) y el
+    /// catalogo global A&D (pqrsd.estado) NO lo pisa. false = nombre/color los manda el catalogo (se
+    /// propaga perezosamente en el seeder). La semantica legal/terminal NO se tocan (backbone).</summary>
+    public bool OverrideVisual { get; set; }
 }
 
 /// <summary>

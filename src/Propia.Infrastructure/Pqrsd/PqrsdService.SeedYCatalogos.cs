@@ -32,31 +32,56 @@ public partial class PqrsdService
         var tenantId = _tenantContext.CurrentTenantId
             ?? throw new InvalidOperationException("No hay copropiedad activa.");
 
-        if (await _db.PqrsdEstados.AnyAsync(ct)) return;
-
-        foreach (var (nombre, color, orden, terminal, semantica) in EstadosBase)
+        if (!await _db.PqrsdEstados.AnyAsync(ct))
         {
-            _db.PqrsdEstados.Add(new PqrsdEstado
+            foreach (var (nombre, color, orden, terminal, semantica) in EstadosBase)
             {
-                TenantId = tenantId,
-                Nombre = nombre,
-                Color = color,
-                Orden = orden,
-                EsTerminal = terminal,
-                EsBase = true,
-                Activo = true,
-                SemanticaLegal = semantica
-            });
-        }
-        await _db.SaveChangesAsync(ct);
+                _db.PqrsdEstados.Add(new PqrsdEstado
+                {
+                    TenantId = tenantId,
+                    Nombre = nombre,
+                    Color = color,
+                    Orden = orden,
+                    EsTerminal = terminal,
+                    EsBase = true,
+                    Activo = true,
+                    SemanticaLegal = semantica
+                });
+            }
+            await _db.SaveChangesAsync(ct);
 
-        // Backfill EstadoId por semantica legal para expedientes ya existentes.
-        var mapa = await _db.PqrsdEstados.Where(e => e.SemanticaLegal != null)
-            .ToDictionaryAsync(e => e.SemanticaLegal!.Value, e => e.Id, ct);
-        var pendientes = await _db.PqrsdExpedientes.Where(x => x.EstadoId == null).ToListAsync(ct);
-        foreach (var x in pendientes)
-            if (mapa.TryGetValue(x.Estado, out var eid)) x.EstadoId = eid;
-        if (pendientes.Count > 0) await _db.SaveChangesAsync(ct);
+            // Backfill EstadoId por semantica legal para expedientes ya existentes.
+            var mapa = await _db.PqrsdEstados.Where(e => e.SemanticaLegal != null)
+                .ToDictionaryAsync(e => e.SemanticaLegal!.Value, e => e.Id, ct);
+            var pendientes = await _db.PqrsdExpedientes.Where(x => x.EstadoId == null).ToListAsync(ct);
+            foreach (var x in pendientes)
+                if (mapa.TryGetValue(x.Estado, out var eid)) x.EstadoId = eid;
+            if (pendientes.Count > 0) await _db.SaveChangesAsync(ct);
+        }
+
+        // Propagacion A&D -> copropiedad (perezosa, idempotente): el NOMBRE y COLOR de las columnas base
+        // los manda el catalogo global (pqrsd.estado), salvo override por copropiedad. La SEMANTICA legal y
+        // TERMINAL NO se tocan (backbone del motor). El calculo legal sigue leyendo el enum Estado.
+        var catEstado = await _db.CatalogoOpciones.AsNoTracking()
+            .Where(x => x.Lista == "pqrsd.estado" && x.Activo)
+            .Select(x => new { x.Clave, x.Label, x.Color })
+            .ToListAsync(ct);
+        if (catEstado.Count > 0)
+        {
+            var porSem = new Dictionary<string, (string Label, string? Color)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in catEstado) porSem[c.Clave] = (c.Label, c.Color);
+
+            var basesSinOverride = await _db.PqrsdEstados
+                .Where(e => e.EsBase && !e.OverrideVisual && e.SemanticaLegal != null).ToListAsync(ct);
+            var huboCambio = false;
+            foreach (var eb in basesSinOverride)
+                if (porSem.TryGetValue("e:" + eb.SemanticaLegal, out var cat))
+                {
+                    if (!string.IsNullOrWhiteSpace(cat.Label) && eb.Nombre != cat.Label) { eb.Nombre = cat.Label; huboCambio = true; }
+                    if (!string.IsNullOrWhiteSpace(cat.Color) && eb.Color != cat.Color) { eb.Color = cat.Color; huboCambio = true; }
+                }
+            if (huboCambio) await _db.SaveChangesAsync(ct);
+        }
     }
 
     private async Task AsegurarCatalogoBaseAsync(CancellationToken ct)

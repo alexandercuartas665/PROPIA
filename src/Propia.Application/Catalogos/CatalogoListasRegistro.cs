@@ -34,6 +34,7 @@ public static class CatalogoListasRegistro
         new("directorio.etiqueta",  "Directorio · Etiquetas",               false),
         new("usuario.cargo",        "Usuarios · Cargo (descriptivo)",       false),
         new("pqrsd.tipo",           "PQRSD · Tipo (plazo legal Ley 1755)",  true),
+        new("pqrsd.estado",         "PQRSD · Etapa (columnas del tablero)", true),
     };
 
     public static ListaInfo Info(string lista)

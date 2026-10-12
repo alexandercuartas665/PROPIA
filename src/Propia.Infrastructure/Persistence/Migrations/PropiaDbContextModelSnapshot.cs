@@ -11683,6 +11683,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("orden");
 
+                    b.Property<bool>("OverrideVisual")
+                        .HasColumnType("boolean")
+                        .HasColumnName("override_visual");
+
                     b.Property<int?>("SemanticaLegal")
                         .HasColumnType("integer")
                         .HasColumnName("semantica_legal");

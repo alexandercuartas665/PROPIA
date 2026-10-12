@@ -62,6 +62,7 @@ public partial class PqrsdService
         e.Nombre = nom;
         if (!string.IsNullOrWhiteSpace(req.Color)) e.Color = req.Color!.Trim();
         e.Orden = req.Orden;
+        if (e.EsBase) e.OverrideVisual = true;   // la copropiedad personalizo la columna base: A&D ya no la pisa.
         e.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
