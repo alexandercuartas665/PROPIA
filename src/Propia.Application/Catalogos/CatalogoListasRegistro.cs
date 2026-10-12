@@ -35,6 +35,11 @@ public static class CatalogoListasRegistro
         new("usuario.cargo",        "Usuarios · Cargo (descriptivo)",       false),
         new("pqrsd.tipo",           "PQRSD · Tipo (plazo legal Ley 1755)",  true),
         new("pqrsd.estado",         "PQRSD · Etapa (columnas del tablero)", true),
+        new("mantenimiento.periodicidad",   "Mantenimiento · Periodicidad",        true),
+        new("mantenimiento.prioridad",       "Mantenimiento · Prioridad (programación)", false),
+        new("mantenimiento.intervtipo",      "Mantenimiento · Tipo de intervención", false),
+        new("mantenimiento.intervestado",    "Mantenimiento · Estado de intervención", true),
+        new("mantenimiento.intervprioridad", "Mantenimiento · Prioridad (intervención)", false),
     };
 
     public static ListaInfo Info(string lista)

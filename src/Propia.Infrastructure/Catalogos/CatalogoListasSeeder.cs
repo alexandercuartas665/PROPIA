@@ -199,6 +199,32 @@ public static class CatalogoListasSeeder
             return new SemillaOpcion("e:" + sem, e.Item1, i, meta, e.Item2);
         }).ToList()));
 
+        // ===== Mantenimiento (enums puros; el scheduler/workflow lee el VALOR enum, no el label). A&D
+        // renombra el label; el valor estable es "e:<Enum>". Meta guarda la semantica (informativa). =====
+        reg.Add(("mantenimiento.periodicidad",
+            Enum.GetValues<Propia.Domain.Enums.PeriodicidadProgramacion>()
+                .Select((p, i) => new SemillaOpcion("e:" + p, p.ToString(), i,
+                    System.Text.Json.JsonSerializer.Serialize(new { semantica = p.ToString() })))
+                .ToList()));
+        reg.Add(("mantenimiento.prioridad",
+            Enum.GetValues<Propia.Domain.Enums.PrioridadTarea>()
+                .Select((p, i) => new SemillaOpcion("e:" + p, p.ToString(), i)).ToList()));
+        reg.Add(("mantenimiento.intervtipo",
+            Enum.GetValues<Propia.Domain.Enums.TipoIntervencionMantenimiento>()
+                .Select((t, i) => new SemillaOpcion("e:" + t, t.ToString(), i)).ToList()));
+        reg.Add(("mantenimiento.intervestado",
+            Enum.GetValues<Propia.Domain.Enums.EstadoIntervencion>()
+                .Select((s, i) => new SemillaOpcion("e:" + s, s.ToString(), i,
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        semantica = s.ToString(),
+                        terminal = s is Propia.Domain.Enums.EstadoIntervencion.Completada or Propia.Domain.Enums.EstadoIntervencion.Cancelada
+                    })))
+                .ToList()));
+        reg.Add(("mantenimiento.intervprioridad",
+            Enum.GetValues<Propia.Domain.Enums.PrioridadIntervencion>()
+                .Select((p, i) => new SemillaOpcion("e:" + p, p.ToString(), i)).ToList()));
+
         return reg;
     }
 
