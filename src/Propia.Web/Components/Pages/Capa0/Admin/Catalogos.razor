@@ -70,6 +70,7 @@ else
                                 <tr>
                                     <th style="width:70px">Orden</th>
                                     <th>Nombre visible</th>
+                                    @if (MostrarPlazo) { <th style="width:130px" title="Plazo legal en días hábiles (Ley 1755)">Plazo (días)</th> }
                                     <th style="width:120px">Color</th>
                                     <th style="width:90px" class="text-center">Activo</th>
                                     <th style="width:180px">Clave</th>
@@ -89,6 +90,11 @@ else
                                                     disabled="@(idx == _ops.Count - 1 || _busy)" @onclick="() => MoverAsync(idx, 1)">&darr;</button>
                                         </td>
                                         <td><input class="form-control form-control-sm" @bind="op.Label" /></td>
+                                        @if (MostrarPlazo)
+                                        {
+                                            <td><input type="number" min="1" class="form-control form-control-sm" value="@PlazoDe(op)"
+                                                       @onchange="e => SetPlazo(op, int.TryParse(e.Value?.ToString(), out var v) ? v : (int?)null)" /></td>
+                                        }
                                         <td><input class="form-control form-control-sm" placeholder="(sin color)" @bind="op.Color" /></td>
                                         <td class="text-center">
                                             <div class="form-check form-switch d-inline-block">
@@ -109,6 +115,7 @@ else
                                 <tr class="table-light">
                                     <td></td>
                                     <td><input class="form-control form-control-sm" placeholder="Nueva opcion..." @bind="_nuevoLabel" @onkeyup="NuevoKeyUp" /></td>
+                                    @if (MostrarPlazo) { <td class="text-muted small">(por defecto)</td> }
                                     <td><input class="form-control form-control-sm" placeholder="(color)" @bind="_nuevoColor" /></td>
                                     <td></td>
                                     <td class="text-muted small">se genera la clave</td>
@@ -158,6 +165,32 @@ else
         var http = HttpFactory.CreateClient("PropiaApi");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
+    }
+
+    // Listas con plazo legal editable (hoy solo pqrsd.tipo): se muestra la columna "Plazo (dias)" que
+    // edita Meta.plazoDias. Las copropiedades que no lo overridearon lo toman del catalogo (propagacion).
+    private bool MostrarPlazo => string.Equals(_listaSel, "pqrsd.tipo", StringComparison.OrdinalIgnoreCase);
+
+    private static int? PlazoDe(OpcionRow op)
+    {
+        if (string.IsNullOrWhiteSpace(op.Meta)) return null;
+        try
+        {
+            using var d = System.Text.Json.JsonDocument.Parse(op.Meta);
+            if (d.RootElement.TryGetProperty("plazoDias", out var p) && p.TryGetInt32(out var v)) return v;
+        }
+        catch { }
+        return null;
+    }
+
+    // Mezcla plazoDias en el Meta JSON conservando las demas claves (diasInconformidad/nivelUrgencia/legal).
+    private static void SetPlazo(OpcionRow op, int? val)
+    {
+        System.Text.Json.Nodes.JsonObject obj;
+        try { obj = System.Text.Json.Nodes.JsonNode.Parse(string.IsNullOrWhiteSpace(op.Meta) ? "{}" : op.Meta!) as System.Text.Json.Nodes.JsonObject ?? new(); }
+        catch { obj = new(); }
+        if (val is { } v && v > 0) obj["plazoDias"] = v;
+        op.Meta = obj.ToJsonString();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

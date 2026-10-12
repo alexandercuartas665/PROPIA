@@ -451,8 +451,8 @@
     {
         <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                                  EntidadConfig="pqrsd" TituloSingular="campo" Jwt="@_jwt"
-                                 OpcionesLista="@(_editSisClave == "categoria" ? CategoriasVistaPqrsd() : null)"
-                                 OnAgregarOpcion="@((t) => AgregarCategoriaDesdeCampoAsync(t))"
+                                 OpcionesLista="@OpcionesVistaPqrsd(_editSisClave)"
+                                 OnAgregarOpcion="@((t) => AgregarOpcionPqrsdAsync(_editSisClave, t))"
                                  Guardado="CargarAsync" Cerrado="() => _editSisClave = null" />
     }
 
@@ -1301,6 +1301,37 @@
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/categorias", new CrearCategoriaRequest(nombre, _categorias.Count));
         if (resp.IsSuccessStatusCode) await CargarTiposCatAsync();
     }
+
+    // Lista de TIPOS (activos) para el modal "Editar campo" de la columna Tipo. El plazo legal (Meta) se
+    // edita en la consola A&D (/admin/catalogos) y en el editor de tipos; aqui se muestran y se agregan.
+    private List<EditarCampoSistemaModal.OpcionVista> TiposVistaPqrsd()
+        => _tipos.Where(t => t.Activo).OrderBy(t => t.Orden).ThenBy(t => t.Nombre)
+            .Select(t => new EditarCampoSistemaModal.OpcionVista(t.Nombre, null)).ToList();
+
+    // Agregar un tipo propio de la copropiedad desde el modal (plazo por defecto 15 dias habiles, conducta
+    // legal Peticion); el plazo se afina luego en A&D o en el editor de tipos.
+    private async Task AgregarTipoDesdeCampoAsync(string texto)
+    {
+        var nombre = (texto ?? "").Trim();
+        if (nombre.Length == 0) return;
+        if (_tipos.Any(t => string.Equals(t.Nombre, nombre, StringComparison.OrdinalIgnoreCase))) return;
+        var req = new GuardarTipoPqrsdRequest(nombre, 15, 3, NivelUrgenciaPqrsd.Media, TipoPqrsd.Peticion);
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/tipos", req);
+        if (resp.IsSuccessStatusCode) await CargarTiposCatAsync();
+    }
+
+    // Router por clave para el modal "Editar campo" de PQRSD (categoria / tipo).
+    private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaPqrsd(string? clave) => clave switch
+    {
+        "categoria" => CategoriasVistaPqrsd(),
+        "tipo" => TiposVistaPqrsd(),
+        _ => null
+    };
+    private async Task AgregarOpcionPqrsdAsync(string? clave, string texto)
+    {
+        if (clave == "categoria") await AgregarCategoriaDesdeCampoAsync(texto);
+        else if (clave == "tipo") await AgregarTipoDesdeCampoAsync(texto);
+    }
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
         var (accion, col) = a;
@@ -1777,6 +1808,8 @@
             catch { _camposConfig = new(StringComparer.Ordinal); }
             HidratarAnchosP();
             _categorias = (await http.GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? new();
+            // Tipos: para el modal "Editar campo" de la columna Tipo (antes solo se cargaban al abrir el panel).
+            try { _tipos = (await http.GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos?incluirInactivos=true")) ?? new(); } catch { }
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             if (string.IsNullOrEmpty(_compCategoria)) _compCategoria = _categorias.FirstOrDefault(c => c.Activa)?.Id.ToString() ?? "";
         }
