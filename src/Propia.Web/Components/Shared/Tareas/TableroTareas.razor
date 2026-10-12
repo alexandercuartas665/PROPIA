@@ -2018,6 +2018,9 @@ else
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
                              EntidadConfig="tablero" TituloSingular="tarjeta" Jwt="@_jwt"
+                             OpcionesLista="@OpcionesVistaTb(_editSisClave)"
+                             OnAgregarOpcion="@((t) => AgregarOpcionTbAsync(_editSisClave, t))"
+                             AbrirGestorAvanzado="@(EsListaTb(_editSisClave) ? EventCallback.Factory.Create(this, () => AbrirGestorListaTb(_editSisClave)) : default)"
                              Guardado="RecargarTrasCambioCampos" Cerrado="() => _editSisClave = null" />
 }
 
@@ -2362,10 +2365,9 @@ else
                     var campo = CamposDelTablero.FirstOrDefault(c => c.Id == cid1);
                     if (campo is not null) { CfgEditCampo(campo); await AbrirPopEn(new MouseEventArgs { ClientX = _colMenuX, ClientY = _colMenuY }); }
                 }
-                else if (col.Key == "est") { await AbrirEstadosEditor(); }     // Estados (columnas): su lista se edita aqui, anclada al header
-                else if (col.Key == "etiq") { await AbrirEtiquetasEditor(); }  // Etiquetas: su lista se edita aqui, anclada al header
-                else if (col.Key == "prioridad") { await AbrirPrioridadesEditor(); }  // Prioridad (Fase 2): lista configurable por tablero
-                else { AbrirEditorCampoSistema(col.Key, col.Label); }          // resto de sistema: editor focalizado (alias + tipo bloqueado + visibilidad)
+                // E3: Estados/Etiquetas/Prioridad abren el modal canonico (muestra la lista del tablero +
+                // agregar); el color/orden se gestiona en su editor anclado via "Gestionar colores y orden".
+                else { AbrirEditorCampoSistema(col.Key, col.Label); }
                 break;
             case TablaColMenu.Accion.CopiarUrl:
                 try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}tareas#campo-{col.Key}"); ColToast("Enlace del campo copiado."); }
@@ -5430,6 +5432,45 @@ else
     private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; }
     private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _prioEditorOpen = false; _etiqEditorOpen = true; }
     private async Task AbrirPrioridadesEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = false; _prioEditorOpen = true; }
+
+    // E3: las 3 listas por-tablero (estados/etiquetas/prioridad) se MUESTRAN y AGREGAN desde el modal
+    // canonico; el color/orden se gestiona en su editor anclado (AbrirGestorListaTb).
+    private static bool EsListaTb(string? clave) => clave is "est" or "etiq" or "prio";
+
+    private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaTb(string? clave)
+    {
+        if (_board is null) return null;
+        return clave switch
+        {
+            "est" => _board.Estados.Select(e => new EditarCampoSistemaModal.OpcionVista(e.Nombre, e.Color)).ToList(),
+            "prio" => PrioridadesDelBoard.OrderBy(p => p.Orden).Select(p => new EditarCampoSistemaModal.OpcionVista(p.Nombre, p.Color)).ToList(),
+            "etiq" => _etiquetasCat.Where(e => e.Activo && (e.TableroId is null || e.TableroId == _board.Tablero.Id))
+                        .Select(e => new EditarCampoSistemaModal.OpcionVista(e.Nombre, e.Color)).ToList(),
+            _ => null
+        };
+    }
+
+    private async Task AgregarOpcionTbAsync(string? clave, string texto)
+    {
+        var nom = (texto ?? "").Trim();
+        if (nom.Length == 0 || _board is null) return;
+        switch (clave)
+        {
+            case "est": _cfgEstadoNew = nom; await CfgAddEstado(); break;
+            case "prio": _nuevaPrioridad = nom; await CrearPrioridadCfg(); break;
+            case "etiq": _nuevaEtiqueta = nom; await CrearEtiquetaCfg(); break;
+        }
+    }
+
+    private async Task AbrirGestorListaTb(string? clave)
+    {
+        switch (clave)
+        {
+            case "est": await AbrirEstadosEditor(); break;
+            case "prio": await AbrirPrioridadesEditor(); break;
+            case "etiq": await AbrirEtiquetasEditor(); break;
+        }
+    }
     private async Task PosicionarPopColMenu()
     {
         _popX = _colMenuX; _popY = _colMenuY;
