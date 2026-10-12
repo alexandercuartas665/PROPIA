@@ -818,6 +818,16 @@
     </div>
 }
 
+@* "Editar campo" de la columna Cargo: modal canonico mostrando la lista (semillas del catalogo A&D) +
+   agregar opciones propias de la copropiedad (se guardan en unidades-config entidad=usuario). *@
+@if (_editSisClave == "cargo")
+{
+    <EditarCampoSistemaModal Clave="cargo" DefLabel="@_editSisLabel" Tipo="Propia.Domain.Enums.TipoCampoTablero.Seleccion" Requerido="false"
+                             EntidadConfig="usuario" TituloSingular="usuario" Jwt="@_jwt"
+                             ListaCatalogo="usuario.cargo" SemillaFallback="@_cargoOpciones.ToArray()"
+                             Guardado="OnCargoListaGuardada" Cerrado="() => _editSisClave = null" />
+}
+
 
 <ModalHost />
 
@@ -840,6 +850,10 @@
     private bool _crearCampoAbierto;
     private CampoDinDef? _campoAEditar;
     private bool _gestorCamposAbierto;
+    // "Editar campo" de una columna de sistema tipo lista (hoy "cargo") -> modal canonico.
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private async Task OnCargoListaGuardada() { await RecargarCargoOpciones(); StateHasChanged(); }
 
     // Filtros y vista (2.5.C)
     // Filtro dinamico unico (componente compartido): rol y etiqueta como reglas.
@@ -1332,7 +1346,8 @@
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
                 if (campo is not null) AbrirEditarCampoU(campo);
-                else _gestorCamposAbierto = true;   // sistema: se edita en el gestor (alias/descripcion/visibilidad)
+                else if (col.Key == "cargo") { _editSisClave = "cargo"; _editSisLabel = col.Label; }  // lista: modal canonico
+                else _gestorCamposAbierto = true;   // otros de sistema: gestor (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Eliminar:
                 if (campo is not null) await EliminarCampoUAsync(campo);
@@ -1573,19 +1588,35 @@
         {
             var http = Auth();
             _roles = await http.GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
-            // 2.5 v2.0: opciones de Cargo (catalogo global usuario.cargo, editable por A&D) para el alta.
-            try
-            {
-                _cargoOpciones = (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>("/api/catalogos?lista=usuario.cargo") ?? new())
-                    .Select(o => o.Label).ToList();
-            }
-            catch { }
+            await RecargarCargoOpciones();
         }
         catch { /* sin roles no podemos invitar pero el resto funciona */ }
     }
 
-    // 2.5 v2.0: opciones de Cargo (del catalogo), para el control multi-select del alta.
+    // 2.5 v2.0: opciones de Cargo para el multi-select del alta/celda. Semillas del catalogo global A&D
+    // (usuario.cargo) + opciones propias de la copropiedad (unidades-config entidad=usuario, clave=cargo):
+    // si la copropiedad ya personalizo, esa lista YA incluye semillas+propias (la escribe el modal E0).
     private List<string> _cargoOpciones = new();
+    private async Task RecargarCargoOpciones()
+    {
+        var http = Auth();
+        try
+        {
+            string? cfgRaw = null;
+            try
+            {
+                var cfg = await http.GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=usuario") ?? new();
+                cfgRaw = cfg.FirstOrDefault(c => string.Equals(c.CampoClave, "cargo", StringComparison.OrdinalIgnoreCase))?.Opciones;
+            }
+            catch { }
+            if (!string.IsNullOrWhiteSpace(cfgRaw))
+                _cargoOpciones = OpcionCampo.VisiblesK(cfgRaw).ToList();
+            else
+                _cargoOpciones = (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>("/api/catalogos?lista=usuario.cargo") ?? new())
+                    .Select(o => o.Label).ToList();
+        }
+        catch { }
+    }
 
     // E1b: crear un rol basico inline desde el alta de Usuarios (reusa el endpoint del modulo Roles con
     // la matriz por defecto). Recarga el catalogo y devuelve el id del rol creado para seleccionarlo.
