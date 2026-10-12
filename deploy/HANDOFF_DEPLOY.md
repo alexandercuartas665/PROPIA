@@ -15,6 +15,21 @@
 
 ---
 
+## ESTADO 2026-10-12 E1b/Usuarios/Tareas/Mantenimiento: editores de lista + Mantenimiento al catalogo (LEER PRIMERO)
+
+Version 0.0.124. **Sin migraciones nuevas** (todo UI + seeding de catalogo). El `CatalogoListasSeeder`
+(arranque) siembra 5 listas nuevas de Mantenimiento: `mantenimiento.periodicidad` (9), `mantenimiento.prioridad`
+(4), `mantenimiento.intervtipo` (2), `mantenimiento.intervestado` (5), `mantenimiento.intervprioridad` (4).
+Son ENUMS PUROS: A&D renombra los labels en /admin/catalogos y se reflejan en Mantenimiento; el VALOR sigue
+siendo el enum, asi que el scheduler (periodicidad) y el workflow (estado) NO cambian.
+
+UI (sin migracion ni catalogo nuevo): "Editar campo" muestra la lista en Vehiculos/Mascotas/Equipos/Zonas/
+Directorio(sexo); Usuarios(cargo) agrega opciones por copropiedad (texto, sin migracion); Tareas
+(etapa/prioridad/etiquetas) usa el modal canonico por-tablero (lista del tablero + agregar + gestor de
+color/orden). Rollback: redeploy del artefacto previo; el seeder es idempotente y no destructivo.
+
+---
+
 ## ESTADO 2026-10-12 PQRSD: tipo (plazo) + estado (columnas Kanban) al catalogo A&D — global + override (LEER PRIMERO)
 
 Rama `equipo/alex-header-zonas-equipos`. E2 COMPLETO: las listas PQRSD **tipo** (plazo legal Ley 1755) y
