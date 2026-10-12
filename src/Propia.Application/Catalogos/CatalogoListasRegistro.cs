@@ -33,6 +33,7 @@ public static class CatalogoListasRegistro
         new("persona.sexo",         "Personas · Sexo",                      false),
         new("directorio.etiqueta",  "Directorio · Etiquetas",               false),
         new("usuario.cargo",        "Usuarios · Cargo (descriptivo)",       false),
+        new("pqrsd.tipo",           "PQRSD · Tipo (plazo legal Ley 1755)",  true),
     };
 
     public static ListaInfo Info(string lista)

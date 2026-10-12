@@ -159,8 +159,40 @@ public static class CatalogoListasSeeder
             new("Recepcionista", "Recepcionista", 4),
         }));
 
+        // PQRSD · Tipo (con-logica, Ley 1755): clave estable "e:<Enum>", Meta con el plazo legal. La clase
+        // legal (TipoPqrsd) es la clave; A&D edita el plazo base (global) y la copropiedad lo puede overridear
+        // (pqrsd_tipos.override_plazo). Paridad con PqrsdCatalogo.PlazosBase + TipoNombreBase.
+        reg.Add(("pqrsd.tipo",
+            Propia.Domain.Enums.PqrsdCatalogo.PlazosBase
+                .Select((p, i) => new SemillaOpcion(
+                    "e:" + p.Tipo,
+                    TipoNombrePqrsd(p.Tipo),
+                    i,
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        plazoDias = p.DiasHabiles,
+                        diasInconformidad = p.DiasInconformidad,
+                        nivelUrgencia = p.Urgencia.ToString(),
+                        legal = p.Tipo.ToString()
+                    })))
+                .ToList()));
+
         return reg;
     }
+
+    // Nombre de fabrica de un tipo PQRSD (paridad con PqrsdService.TipoNombreBase).
+    private static string TipoNombrePqrsd(Propia.Domain.Enums.TipoPqrsd t) => t switch
+    {
+        Propia.Domain.Enums.TipoPqrsd.Peticion => "Petición",
+        Propia.Domain.Enums.TipoPqrsd.SolicitudDocumentos => "Solicitud de documentos",
+        Propia.Domain.Enums.TipoPqrsd.Consulta => "Consulta",
+        Propia.Domain.Enums.TipoPqrsd.Queja => "Queja",
+        Propia.Domain.Enums.TipoPqrsd.Reclamo => "Reclamo",
+        Propia.Domain.Enums.TipoPqrsd.Sugerencia => "Sugerencia",
+        Propia.Domain.Enums.TipoPqrsd.Denuncia => "Denuncia",
+        Propia.Domain.Enums.TipoPqrsd.Felicitacion => "Felicitación",
+        _ => t.ToString()
+    };
 
     public static async Task EnsureAsync(IServiceProvider services)
     {
