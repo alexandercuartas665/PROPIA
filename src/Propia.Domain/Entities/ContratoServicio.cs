@@ -53,11 +53,22 @@ public class ContratoServicio : TenantEntity
     /// <summary>Valor total del contrato (COP).</summary>
     public decimal? ValorTotal { get; set; }
 
-    /// <summary>Forma de pago: cantidad de cuotas.</summary>
+    /// <summary>Forma de pago: METODO (Efectivo, Transferencia, PSE, Cheque, Tarjeta, ...). Texto
+    /// configurable por copropiedad (lista del catalogo global 'contrato.formapago' + override por
+    /// tenant en unidades-config). Antes "Forma de pago" era el numero de cuotas; eso ahora vive en
+    /// FormaPagoCuotas (columna "N de cuotas").</summary>
+    public string? FormaPago { get; set; }
+
+    /// <summary>Numero de cuotas del contrato (columna "N de cuotas").</summary>
     public int? FormaPagoCuotas { get; set; }
 
     /// <summary>Si el contrato se paga mensualmente (Si/No).</summary>
     public bool PagoMensual { get; set; }
+
+    /// <summary>Tipo de servicio como TEXTO (lista del catalogo global 'contrato.tiposervicio' + override
+    /// por tenant). Reemplaza en la tabla de contratos al enum <see cref="Tipo"/> (que sigue vivo para el
+    /// modulo Servicios). Se backfillea desde la etiqueta del enum en la migracion.</summary>
+    public string? TipoServicioTexto { get; set; }
 
     /// <summary>"Asociado a": amarra el contrato a un Equipo o una Zona comun. Reusa el discriminador
     /// polimorfico de Mantenimiento (Equipo/ZonaComun). Null = sin asociacion.</summary>

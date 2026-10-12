@@ -21,6 +21,8 @@ public static class CatalogoListasRegistro
         new("unidad.estado",        "Unidades · Estado de la propiedad",  false),
         new("contrato.tipocontrato","Contratos · Tipo de contrato",        false),
         new("contrato.categoria",   "Contratos · Categoría",               false),
+        new("contrato.formapago",   "Contratos · Forma de pago",           false),
+        new("contrato.tiposervicio","Contratos · Tipo de servicio",        false),
         new("vehiculo.tipovehiculo","Vehículos · Tipo de vehículo",        false),
         new("mascota.tipo",         "Mascotas · Tipo de mascota",          false),
         new("equipo.categoria",     "Equipos · Categoría",                  false),

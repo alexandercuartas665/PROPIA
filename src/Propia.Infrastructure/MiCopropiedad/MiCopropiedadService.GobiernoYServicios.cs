@@ -186,8 +186,10 @@ public partial class MiCopropiedadService
             TipoContrato = string.IsNullOrWhiteSpace(req.TipoContrato) ? null : req.TipoContrato.Trim(),
             Categoria = string.IsNullOrWhiteSpace(req.Categoria) ? null : req.Categoria.Trim(),
             ValorTotal = req.ValorTotal,
+            FormaPago = string.IsNullOrWhiteSpace(req.FormaPago) ? null : req.FormaPago.Trim(),
             FormaPagoCuotas = req.FormaPagoCuotas,
             PagoMensual = req.PagoMensual,
+            TipoServicioTexto = string.IsNullOrWhiteSpace(req.TipoServicioTexto) ? null : req.TipoServicioTexto.Trim(),
             AsociadoTipo = req.AsociadoTipo,
             AsociadoId = req.AsociadoId
         };
@@ -263,8 +265,10 @@ public partial class MiCopropiedadService
         if (req.TipoContrato is not null) c.TipoContrato = string.IsNullOrWhiteSpace(req.TipoContrato) ? null : req.TipoContrato.Trim();
         if (req.Categoria is not null) c.Categoria = string.IsNullOrWhiteSpace(req.Categoria) ? null : req.Categoria.Trim();
         if (req.ValorTotal.HasValue) c.ValorTotal = req.ValorTotal.Value;
+        if (req.FormaPago is not null) c.FormaPago = string.IsNullOrWhiteSpace(req.FormaPago) ? null : req.FormaPago.Trim();
         if (req.FormaPagoCuotas.HasValue) c.FormaPagoCuotas = req.FormaPagoCuotas.Value;
         if (req.PagoMensual.HasValue) c.PagoMensual = req.PagoMensual.Value;
+        if (req.TipoServicioTexto is not null) c.TipoServicioTexto = string.IsNullOrWhiteSpace(req.TipoServicioTexto) ? null : req.TipoServicioTexto.Trim();
         if (req.LimpiarAsociado) { c.AsociadoTipo = null; c.AsociadoId = null; }
         else if (req.AsociadoTipo.HasValue && req.AsociadoId.HasValue) { c.AsociadoTipo = req.AsociadoTipo.Value; c.AsociadoId = req.AsociadoId.Value; }
         // Vinculos: solo el editor de la pagina los toca (ActualizarVinculos=true). La tool MCP no.
@@ -350,7 +354,8 @@ public partial class MiCopropiedadService
             c.NumeroContrato, c.TipoContrato, c.Categoria, c.ValorTotal, c.FormaPagoCuotas, c.PagoMensual,
             c.AsociadoTipo, c.AsociadoId, asociadoNombre,
             c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo,
-            c.TelefonoContratista, c.CorreoContratista, c.DireccionContratista);
+            c.TelefonoContratista, c.CorreoContratista, c.DireccionContratista,
+            c.FormaPago, c.TipoServicioTexto);
     }
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)

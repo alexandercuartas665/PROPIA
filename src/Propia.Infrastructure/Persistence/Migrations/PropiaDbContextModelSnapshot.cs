@@ -3527,6 +3527,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("fecha_inicio");
 
+                    b.Property<string>("FormaPago")
+                        .HasColumnType("text")
+                        .HasColumnName("forma_pago");
+
                     b.Property<int?>("FormaPagoCuotas")
                         .HasColumnType("integer")
                         .HasColumnName("forma_pago_cuotas");
@@ -3591,6 +3595,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<string>("TipoContrato")
                         .HasColumnType("text")
                         .HasColumnName("tipo_contrato");
+
+                    b.Property<string>("TipoServicioTexto")
+                        .HasColumnType("text")
+                        .HasColumnName("tipo_servicio_texto");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

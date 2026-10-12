@@ -315,7 +315,9 @@ public record ContratoServicioDto(
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
     SemaforoContrato SemaforoVencimiento = SemaforoContrato.Ninguno,
     // Contacto del contratista (snapshot). El "Contacto" unico se retira del modal; estos 3 lo reemplazan en la UI.
-    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null);
+    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
+    // Forma de pago (metodo, lista) + Tipo de servicio como texto (lista del catalogo).
+    string? FormaPago = null, string? TipoServicioTexto = null);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
 public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color);
@@ -356,7 +358,8 @@ public record CrearContratoServicioRequest(
     string? NumeroContrato = null, string? TipoContrato = null, string? Categoria = null,
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null,
-    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null);
+    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
+    string? FormaPago = null, string? TipoServicioTexto = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
@@ -377,7 +380,8 @@ public record ActualizarContratoRequest(
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool? PagoMensual = null,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, bool LimpiarAsociado = false,
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
-    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null);
+    string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
+    string? FormaPago = null, string? TipoServicioTexto = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

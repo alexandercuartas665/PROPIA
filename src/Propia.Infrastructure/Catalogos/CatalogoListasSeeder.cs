@@ -51,6 +51,39 @@ public static class CatalogoListasSeeder
                 .Select((s, i) => new SemillaOpcion(s, s, i))
                 .ToList()));
 
+        // Contratos · Forma de pago (metodo): lista libre nueva (antes "Forma de pago" era el N de cuotas).
+        // La clave ES el texto; A&D edita/agrega. Semilla = metodos comunes en Colombia.
+        reg.Add(("contrato.formapago", new List<SemillaOpcion>
+        {
+            new("Efectivo", "Efectivo", 0),
+            new("Transferencia", "Transferencia", 1),
+            new("PSE", "PSE", 2),
+            new("Cheque", "Cheque", 3),
+            new("Tarjeta", "Tarjeta", 4),
+            new("Debito automatico", "Debito automatico", 5),
+            new("Otro", "Otro", 6),
+        }));
+
+        // Contratos · Tipo de servicio: paridad con el enum TipoServicio (labels que muestra la UI). Lista
+        // libre (clave = texto): el contrato guarda el texto (TipoServicioTexto); A&D edita/agrega sin tocar
+        // el enum, que sigue vivo para el modulo Servicios.
+        reg.Add(("contrato.tiposervicio", new List<SemillaOpcion>
+        {
+            new("Aseo", "Aseo", 0),
+            new("Seguridad", "Seguridad", 1),
+            new("Mantenimiento", "Mantenimiento", 2),
+            new("Jardineria", "Jardineria", 3),
+            new("Mantenimiento piscina", "Mantenimiento piscina", 4),
+            new("Ascensores", "Ascensores", 5),
+            new("Plagas", "Plagas", 6),
+            new("Seguro PH", "Seguro PH", 7),
+            new("Internet / WiFi", "Internet / WiFi", 8),
+            new("Energia", "Energia", 9),
+            new("Agua", "Agua", 10),
+            new("Gas", "Gas", 11),
+            new("Otros", "Otros", 12),
+        }));
+
         // Listas enum "patron B" (Ola 4 tranche A): clave estable "e:<Enum>", label = el que muestra hoy
         // el panel (switch bespoke). Se replica aqui SOLO para la semilla de paridad; luego manda el catalogo.
         reg.Add(("vehiculo.tipovehiculo", new List<SemillaOpcion>

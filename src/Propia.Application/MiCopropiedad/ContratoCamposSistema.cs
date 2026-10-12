@@ -52,6 +52,17 @@ public static class ContratoCamposSistema
     public static readonly string[] CategoriasSemilla =
         { "Administracion", "Contabilidad", "Asesoria", "Aseo", "Seguridad", "Mantenimiento", "Jardineria", "Servicios publicos", "Seguros" };
 
+    /// <summary>Semilla de fabrica de "Forma de pago" (metodo). Lista editable por copropiedad; las de
+    /// fabrica viven en el catalogo global 'contrato.formapago'.</summary>
+    public static readonly string[] FormasPagoSemilla =
+        { "Efectivo", "Transferencia", "PSE", "Cheque", "Tarjeta", "Debito automatico", "Otro" };
+
+    /// <summary>Semilla de fabrica de "Tipo de servicio" (paridad con el enum TipoServicio). Lista editable
+    /// por copropiedad; las de fabrica viven en el catalogo global 'contrato.tiposervicio'.</summary>
+    public static readonly string[] TiposServicioSemilla =
+        { "Aseo", "Seguridad", "Mantenimiento", "Jardineria", "Mantenimiento piscina", "Ascensores",
+          "Plagas", "Seguro PH", "Internet / WiFi", "Energia", "Agua", "Gas", "Otros" };
+
     // Las CLAVES son las que usa la tabla de /contratos (Servicios.razor, switch de columnas), en MINUSCULA:
     // el endpoint compartido unidades-config normaliza la clave con ToLowerInvariant() al guardar, asi que una
     // clave camelCase no round-tripearia y la config (orden/visibilidad/alias) no se encontraria. Config
@@ -72,11 +83,15 @@ public static class ContratoCamposSistema
         // (EstadosSemilla) de solo lectura, derivada por fecha para el semaforo.
         new ContratoCampoSistema("estado", "Vencimiento", TipoCampoTablero.Seleccion, VisiblePorDefecto: true),
         new ContratoCampoSistema("valortotal", "Valor", TipoCampoTablero.Moneda, VisiblePorDefecto: true),
-        new ContratoCampoSistema("formapago", "Forma de pago", TipoCampoTablero.Numero, VisiblePorDefecto: true),
+        // Forma de pago = metodo (lista editable, catalogo contrato.formapago). Antes era el N de cuotas.
+        new ContratoCampoSistema("formapago", "Forma de pago", TipoCampoTablero.Seleccion, VisiblePorDefecto: true, OpcionesEditables: true),
         new ContratoCampoSistema("pagomensual", "Pago mensual", TipoCampoTablero.Booleano, VisiblePorDefecto: true),
         new ContratoCampoSistema("obs", "Observaciones", TipoCampoTablero.AreaTexto, VisiblePorDefecto: true),
         // No visibles por defecto (legacy / avanzadas):
-        new ContratoCampoSistema("tipo", "Tipo de servicio", TipoCampoTablero.Seleccion, VisiblePorDefecto: false),
+        // N de cuotas (lo que antes mostraba "Forma de pago"); numero editable.
+        new ContratoCampoSistema("cuotas", "N de cuotas", TipoCampoTablero.Numero, VisiblePorDefecto: false),
+        // Tipo de servicio = lista editable (catalogo contrato.tiposervicio).
+        new ContratoCampoSistema("tipo", "Tipo de servicio", TipoCampoTablero.Seleccion, VisiblePorDefecto: false, OpcionesEditables: true),
         new ContratoCampoSistema("valor", "$/mes", TipoCampoTablero.Moneda, VisiblePorDefecto: false),
         new ContratoCampoSistema("etapa", "Etapa", TipoCampoTablero.Texto, VisiblePorDefecto: false),
         new ContratoCampoSistema("contacto", "Contacto", TipoCampoTablero.Texto, VisiblePorDefecto: false),
