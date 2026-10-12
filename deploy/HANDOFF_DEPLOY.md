@@ -15,6 +15,31 @@
 
 ---
 
+## ESTADO 2026-10-12 PQRSD: plazos (tipo) al catalogo A&D — global + override (LEER PRIMERO)
+
+Rama `equipo/alex-header-zonas-equipos`. Primer tramo del traslado de las listas PQRSD al catalogo A&D:
+el **tipo** (plazo legal Ley 1755). Diseno SEGURO: el motor de plazos NO se toca; A&D manda el plazo base
+global y se propaga a cada copropiedad por el seeder, salvo override por copropiedad.
+
+### 1 MIGRACION NUEVA — ADITIVA — APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- `20261012182837_PqrsdTipoOverridePlazo`: agrega `pqrsd_tipos.override_plazo` (bool, default false) +
+  **backfill** que marca override=true los tipos base cuyo `dias_habiles` difiere del plazo de fabrica
+  (PqrsdCatalogo.PlazosBase) de su `legal`, para NO pisar personalizaciones existentes. No destructiva.
+
+### CONFIG/ARRANQUE — seeder de catalogo (idempotente)
+- `CatalogoListasSeeder` siembra la lista global `pqrsd.tipo` (clave `e:<TipoPqrsd>`, Meta JSON con
+  `plazoDias/diasInconformidad/nivelUrgencia/legal`), paridad con PlazosBase.
+- `PqrsdService.AsegurarCatalogoBaseAsync` ahora PROPAGA el plazo del catalogo a los tipos base sin
+  override (perezoso, idempotente). Comportamiento inicial identico (catalogo = PlazosBase).
+
+### Que cambia para el usuario
+- Nada visible aun (el plazo arranca igual). Cuando A&D edite el plazo base de un tipo en el catalogo,
+  aplica a todas las copropiedades que no lo hayan personalizado. (La UI de A&D para editar el plazo y el
+  "Editar campo" de tipo en el header llegan en el siguiente tramo; luego los estados/columnas Kanban.)
+- Verificado en dev: propagacion A&D->copropiedad OK; override respetado; integracion PQRSD+Calendario 28/28.
+
+---
+
 ## ESTADO 2026-10-12 CONTRATOS: edicion completa + listas Forma de pago / Tipo de servicio (LEER PRIMERO)
 
 Rama `equipo/alex-header-zonas-equipos`. En /contratos: todos los campos editables (celda + fila de
