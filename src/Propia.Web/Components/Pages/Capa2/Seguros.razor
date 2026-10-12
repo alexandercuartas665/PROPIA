@@ -125,6 +125,24 @@
             <TablaOrdenarMenu Columnas="ColsOrdenablesS()" Sorts="_sortsS" SortsChanged="OnSortsSChanged" />
             @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
             <TablaAgruparMenu Columnas="ColsAgrupablesS()" Grupos="_gruposS" GruposChanged="OnGruposSChanged" />
+            @* Columnas (menu compartido, canon = Unidades): orden, visibilidad y borrar campo propio. *@
+            <TablaColumnasMenu Columnas="ColsVisibilidadS()" OnMover="MoverColSMenu" OnToggleVisible="ToggleVisibleColSMenu"
+                               OnEliminar="PedirEliminarColS" OnOcultarTodas="OcultarTodasColSMenu"
+                               OnMostrarTodas="MostrarTodasColSMenu" OnRestablecer="RestablecerColSMenu" />
+            @if (_campoAEliminarSMenu is not null)
+            {
+                <div class="seg-menu-bd" style="z-index:3000;background:rgba(20,26,38,.45);display:flex;align-items:center;justify-content:center;" @onclick="() => _campoAEliminarSMenu = null">
+                    <div @onclick:stopPropagation="true" style="background:var(--propia-bg-card);border-radius:14px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 20px 60px rgba(20,30,50,.3);padding:18px 20px;">
+                        <div style="font-size:16px;font-weight:700;color:var(--propia-text-h1);">Eliminar campo</div>
+                        <div style="font-size:12.5px;color:var(--propia-text-muted);margin:2px 0 14px;">Se borran la definición y todos sus valores. No se puede deshacer.</div>
+                        ¿Eliminar el campo "<strong>@_campoAEliminarSMenu.Label</strong>"?
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                            <button type="button" class="seg-fsel" @onclick="() => _campoAEliminarSMenu = null" disabled="@_colBusySMenu">Cancelar</button>
+                            <button type="button" class="seg-fsel" style="color:var(--propia-danger);border-color:var(--propia-danger-soft);" @onclick="EliminarColSConfirm" disabled="@_colBusySMenu">@(_colBusySMenu ? "Eliminando..." : "Eliminar")</button>
+                        </div>
+                    </div>
+                </div>
+            }
             <div class="seg-menu-wrap">
                 <button type="button" class="seg-fsel @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos: orden, visibilidad y campos personalizados">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
@@ -950,6 +968,49 @@
     {
         if (_cfgPoliza.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
         return CampoCustom(clave)?.Label ?? PolizaCamposSistema.Por(clave)?.Label ?? clave;
+    }
+
+    // ===== Menu "Columnas" (componente compartido TablaColumnasMenu; canon = Unidades): orden,
+    // visibilidad y borrar campo propio. El gestor completo (crear/alias) sigue en el panel de Campos. =====
+    private Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest FilaConfigS(string clave)
+    {
+        _cfgPoliza.TryGetValue(clave, out var c);
+        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "poliza");
+    }
+    private async Task GuardarCfgS(Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private bool EsFijaS(string k) => PolizaCamposSistema.Por(k)?.Fija ?? false;
+    private List<TablaColumnasMenu.Col> ColsVisibilidadS()
+        => ClavesOrdenadas().Select(k => new TablaColumnasMenu.Col(
+            k, ColLabel(k), EsDinamico: k.StartsWith("cd:", StringComparison.Ordinal), Visible: VisibleCol(k),
+            Movible: !EsFijaS(k), Ocultable: !EsFijaS(k))).ToList();
+    private async Task MoverColSMenu((string Key, int Dir) a)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(a.Key); var j = i + a.Dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgS(FilaConfigS(keys[k]) with { Orden = k });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private async Task ToggleVisibleColSMenu(string k)
+    { if (EsFijaS(k)) return; await GuardarCfgS(FilaConfigS(k) with { Oculto = VisibleCol(k) }); await CargarConfigAsync(); StateHasChanged(); }
+    private async Task OcultarTodasColSMenu()
+    { foreach (var k in ClavesOrdenadas()) { if (EsFijaS(k)) continue; await GuardarCfgS(FilaConfigS(k) with { Oculto = true }); } await CargarConfigAsync(); StateHasChanged(); }
+    private async Task MostrarTodasColSMenu()
+    { foreach (var k in ClavesOrdenadas()) await GuardarCfgS(FilaConfigS(k) with { Oculto = false }); await CargarConfigAsync(); StateHasChanged(); }
+    private async Task RestablecerColSMenu()
+    { foreach (var k in ClavesOrdenadas()) await GuardarCfgS(FilaConfigS(k) with { Oculto = false, Orden = null }); await CargarConfigAsync(); StateHasChanged(); }
+    private PolizaCampoDto? _campoAEliminarSMenu;
+    private bool _colBusySMenu;
+    private void PedirEliminarColS(string k) { if (CampoCustom(k) is { } cd) _campoAEliminarSMenu = cd; }
+    private async Task EliminarColSConfirm()
+    {
+        if (_campoAEliminarSMenu is null) return;
+        _colBusySMenu = true;
+        try { var r = await Auth().DeleteAsync($"/api/seguros/polizas-campos/{_campoAEliminarSMenu.Id}"); if (r.IsSuccessStatusCode) await RecargarCamposYConfigAsync(); }
+        catch { }
+        _campoAEliminarSMenu = null; _colBusySMenu = false; StateHasChanged();
     }
 
     // ===================== Orden multi-criterio (boton "Ordenar") =====================

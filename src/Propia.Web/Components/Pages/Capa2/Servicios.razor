@@ -199,6 +199,24 @@ else
                     <TablaOrdenarMenu Columnas="ColsOrdenablesC()" Sorts="_sortsC" SortsChanged="OnSortsCChanged" />
                     @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
                     <TablaAgruparMenu Columnas="ColsAgrupablesC()" Grupos="_gruposC" GruposChanged="OnGruposCChanged" />
+                    @* Columnas (menu compartido, canon = Unidades): orden, visibilidad y borrar campo propio. *@
+                    <TablaColumnasMenu Columnas="ColsVisibilidadC()" OnMover="MoverColCMenu" OnToggleVisible="ToggleVisibleColCMenu"
+                                       OnEliminar="PedirEliminarColC" OnOcultarTodas="OcultarTodasColCMenu"
+                                       OnMostrarTodas="MostrarTodasColCMenu" OnRestablecer="RestablecerColCMenu" />
+                    @if (_campoAEliminarCMenu is not null)
+                    {
+                        <div class="ctr-fpop-bd" style="z-index:3000;background:rgba(20,26,38,.45);display:flex;align-items:center;justify-content:center;" @onclick="() => _campoAEliminarCMenu = null">
+                            <div @onclick:stopPropagation="true" style="background:var(--propia-bg-card);border-radius:14px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 20px 60px rgba(20,30,50,.3);padding:18px 20px;">
+                                <div style="font-size:16px;font-weight:700;color:var(--propia-text-h1);">Eliminar campo</div>
+                                <div style="font-size:12.5px;color:var(--propia-text-muted);margin:2px 0 14px;">Se borran la definición y todos sus valores. No se puede deshacer.</div>
+                                ¿Eliminar el campo "<strong>@_campoAEliminarCMenu.Label</strong>"?
+                                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                                    <button type="button" class="ctr-fbtn" @onclick="() => _campoAEliminarCMenu = null" disabled="@_colBusyCMenu">Cancelar</button>
+                                    <button type="button" class="ctr-fbtn" style="color:var(--propia-danger);border-color:var(--propia-danger-soft);" @onclick="EliminarColCConfirm" disabled="@_colBusyCMenu">@(_colBusyCMenu ? "Eliminando..." : "Eliminar")</button>
+                                </div>
+                            </div>
+                        </div>
+                    }
                     <div class="ctr-cols-wrap">
                         <button class="ctr-fbtn @(_showColsMenu ? "on" : "")" @onclick="() => _showColsMenu = !_showColsMenu" title="Elegir y ordenar columnas">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
@@ -2326,6 +2344,51 @@ else
     }
     private async Task GuardarCfgC(GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+
+    // ===== Menu "Columnas" (componente compartido TablaColumnasMenu; canon = Unidades). "Campos" (popup)
+    // se conserva para crear/renombrar; aqui solo orden, visibilidad y borrar campo propio. =====
+    private bool EsFijaColC(string k) => k == "tercero";
+    private List<TablaColumnasMenu.Col> ColsVisibilidadC()
+        => ColsOrdenadas().Select(k => new TablaColumnasMenu.Col(
+            k, ColLabel(k), EsDinamico: Guid.TryParse(k, out _), Visible: ColVisible(k),
+            Movible: !EsFijaColC(k), Ocultable: !EsFijaColC(k))).ToList();
+    private async Task MoverColCMenu((string Key, int Dir) a)
+    {
+        var keys = ColsOrdenadas();
+        var i = keys.IndexOf(a.Key); var j = i + a.Dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgC(FilaConfigC(keys[k]) with { Orden = k });
+        await CargarConfigContratoAsync(); StateHasChanged();
+    }
+    private async Task ToggleVisibleColCMenu(string k)
+    {
+        if (EsFijaColC(k)) return;
+        await GuardarCfgC(FilaConfigC(k) with { Oculto = ColVisible(k) });
+        await CargarConfigContratoAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColCMenu()
+    { foreach (var k in ColsOrdenadas()) { if (EsFijaColC(k)) continue; await GuardarCfgC(FilaConfigC(k) with { Oculto = true }); } await CargarConfigContratoAsync(); StateHasChanged(); }
+    private async Task MostrarTodasColCMenu()
+    { foreach (var k in ColsOrdenadas()) await GuardarCfgC(FilaConfigC(k) with { Oculto = false }); await CargarConfigContratoAsync(); StateHasChanged(); }
+    private async Task RestablecerColCMenu()
+    { foreach (var k in ColsOrdenadas()) await GuardarCfgC(FilaConfigC(k) with { Oculto = false, Orden = null }); await CargarConfigContratoAsync(); StateHasChanged(); }
+    private ContratoCampoDto? _campoAEliminarCMenu;
+    private bool _colBusyCMenu;
+    private void PedirEliminarColC(string k) { if (CampoDinC(k) is { } cd) _campoAEliminarCMenu = cd; }
+    private async Task EliminarColCConfirm()
+    {
+        if (_campoAEliminarCMenu is null) return;
+        _colBusyCMenu = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/campos/{_campoAEliminarCMenu.Id}");
+            _msg = r.IsSuccessStatusCode ? "Campo eliminado." : "No se pudo eliminar el campo."; _msgEsError = !r.IsSuccessStatusCode;
+            if (r.IsSuccessStatusCode) await RecargarCamposYConfigContratoAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgEsError = true; }
+        _campoAEliminarCMenu = null; _colBusyCMenu = false; StateHasChanged();
+    }
     private async Task IniciarReorderC(MouseEventArgs e, string k)
     { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
     [JSInvokable] public async Task OnColReorder(string src, string dest)

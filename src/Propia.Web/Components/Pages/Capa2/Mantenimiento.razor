@@ -404,6 +404,8 @@
             <input class="mod-search-inp" placeholder="Buscar intervención..." @bind="_intervQuery" @bind:event="oninput" />
         </div>
         <div style="flex:1;"></div>
+        @* Ordenar (canon = Unidades/Equipos). *@
+        <TablaOrdenarMenu Columnas="ColsOrdenablesInterv()" Sorts="_sortsInterv" SortsChanged="OnSortsIntervChanged" />
         <div class="mtp-menuwrap">
             <button type="button" class="mtp-fbtn @(_intervAgrupar != "" ? "on" : "")" @onclick='() => _intervMenu = _intervMenu == "agr" ? "" : "agr"'>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -421,13 +423,78 @@
                 </div>
             }
         </div>
+        @* Columnas (inline, canon = Unidades/Equipos). *@
         <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_selIntervAbierto ? "on" : "")" @onclick="() => _selIntervAbierto = true" title="Campos de la intervención: orden, visibilidad, nombre y campos propios">
+            <button type="button" class="mtp-fbtn @(_showColMenuInterv ? "on" : "")" @onclick="() => _showColMenuInterv = !_showColMenuInterv" title="Columnas: orden y visibilidad">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showColMenuInterv)
+            {
+                <div class="mtp-menu-bd" @onclick="() => _showColMenuInterv = false"></div>
+                <div class="mtp-menu mtp-colmenu">
+                    <div class="mtp-col-search">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input placeholder="Buscar campo..." value="@_colQInterv" @oninput="@(e => _colQInterv = e.Value?.ToString() ?? string.Empty)" />
+                    </div>
+                    <div class="mtp-col-list">
+                        @{ var _colsI = ClavesOrdenadasInterv().ToList(); }
+                        @for (int _ci = 0; _ci < _colsI.Count; _ci++)
+                        {
+                            var k = _colsI[_ci];
+                            var idx = _ci;
+                            var label = LabelColInterv(k);
+                            if (!string.IsNullOrWhiteSpace(_colQInterv) && !label.Contains(_colQInterv, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            var fija = EsFijaInterv(k);
+                            var visible = VisibleColInterv(k);
+                            var custom = CampoCustomInterv(k);
+                            <div class="mtp-col-it">
+                                <button class="mtp-col-mv" disabled="@(idx == 0)" @onclick="() => MoverColumnaInterv(k, -1)">&#9650;</button>
+                                <button class="mtp-col-mv" disabled="@(idx == _colsI.Count - 1)" @onclick="() => MoverColumnaInterv(k, 1)">&#9660;</button>
+                                <span class="mtp-col-name">@label @if (custom is not null) { <span class="mtp-col-dyn" title="Campo personalizado">din</span> }</span>
+                                @if (fija) { <span class="mtp-col-fija">fija</span> }
+                                else
+                                {
+                                    <button class="mtp-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColInterv(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                }
+                                @if (custom is not null) { <button class="mtp-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarInterv = custom"><i class="fi fi-rr-trash"></i></button> }
+                            </div>
+                        }
+                    </div>
+                    <div class="mtp-col-massacts">
+                        <button type="button" class="mtp-col-mass" @onclick="OcultarTodasColInterv"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                        <button type="button" class="mtp-col-mass" @onclick="MostrarTodasColInterv"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                        <button type="button" class="mtp-col-reset" @onclick="RestablecerColInterv">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="mtp-menuwrap">
+            <button type="button" class="mtp-fbtn @(_selIntervAbierto ? "on" : "")" @onclick="() => _selIntervAbierto = true" title="Campos de la intervención: crear campo propio, alias y configuración">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
             </button>
         </div>
     </div>
+    @if (_campoAEliminarInterv is not null)
+    {
+        <div class="mtp-selcfg-back" @onclick="() => _campoAEliminarInterv = null">
+            <div class="mtp-selcfg-modal" style="width:440px" @onclick:stopPropagation="true">
+                <div class="mtp-selcfg-head">
+                    <div><div class="mtp-selcfg-title">Eliminar campo</div>
+                        <div class="mtp-selcfg-sub">Se borran la definición y todos sus valores. No se puede deshacer.</div></div>
+                    <button class="mtp-selcfg-x" @onclick="() => _campoAEliminarInterv = null">&times;</button>
+                </div>
+                <div class="mtp-selcfg-body">
+                    ¿Eliminar el campo "<strong>@_campoAEliminarInterv.Label</strong>"?
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="mtp-fbtn" @onclick="() => _campoAEliminarInterv = null" disabled="@_colBusyInterv">Cancelar</button>
+                        <button type="button" class="mtp-selbar-del" style="margin-left:0;" @onclick="EliminarCampoDinInterv" disabled="@_colBusyInterv">@(_colBusyInterv ? "Eliminando..." : "Eliminar")</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_intervenciones is null)
     {
@@ -1717,7 +1784,7 @@ else if (_tab == "calendario")
                           || (i.Codigo ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
                           || (i.ActivoNombre ?? "").Contains(t, StringComparison.OrdinalIgnoreCase));
         }
-        return q.Where(i => _fdInterv?.Pasa(campo => campo switch
+        var res = q.Where(i => _fdInterv?.Pasa(campo => campo switch
         {
             "codigo" => i.Codigo ?? "",
             "activo" => i.ActivoNombre ?? "",
@@ -1729,6 +1796,107 @@ else if (_tab == "calendario")
             _ when CampoCustomInterv(campo) is { } cd => ValorCampoInterv(i.Id, cd.Id) ?? "",
             _ => ""
         }) ?? true);
+        return OrdenarInterv(res);
+    }
+
+    // ===== Ordenar (Intervenciones; canon = Unidades/Equipos) =====
+    private List<TablaOrdenarMenu.Sort> _sortsInterv = new();
+    private void OnSortsIntervChanged() { _intervPagina = 1; StateHasChanged(); }
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesInterv()
+        => IntervColsVis.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
+    private IComparable ValorOrdenInterv(IntervencionListaDto i, string key) => key switch
+    {
+        "codigo" => i.Codigo ?? "",
+        "activo" => i.ActivoNombre ?? "",
+        "tipo" => (int)i.Tipo,
+        "titulo" => i.Titulo ?? "",
+        "estado" => (int)i.Estado,
+        "prioridad" => (int)i.Prioridad,
+        "proveedor" => i.ProveedorNombre ?? "",
+        "programada" => i.FechaProgramada ?? DateOnly.MaxValue,
+        "cierre" => i.FechaCierre ?? DateOnly.MaxValue,
+        "tarea" => i.TareaNumero ?? "",
+        _ when CampoCustomInterv(key) is { } cd => ValorCampoInterv(i.Id, cd.Id) ?? "",
+        _ => ""
+    };
+    private IEnumerable<IntervencionListaDto> OrdenarInterv(IEnumerable<IntervencionListaDto> src)
+    {
+        if (_sortsInterv.Count == 0) return src;
+        IOrderedEnumerable<IntervencionListaDto>? o = null;
+        foreach (var s in _sortsInterv)
+        {
+            Func<IntervencionListaDto, IComparable> sel = i => ValorOrdenInterv(i, s.Key);
+            o = o is null ? (s.Dir >= 0 ? src.OrderBy(sel) : src.OrderByDescending(sel))
+                          : (s.Dir >= 0 ? o.ThenBy(sel) : o.ThenByDescending(sel));
+        }
+        return o!;
+    }
+
+    // ===== Menu "Columnas" (Intervenciones; inline, canon = Unidades/Equipos) =====
+    private bool _showColMenuInterv;
+    private string _colQInterv = "";
+    private bool _colBusyInterv;
+    private Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto? _campoAEliminarInterv;
+    private bool EsFijaInterv(string clave) => IntervencionCamposSistema.Por(clave)?.Fija ?? false;
+    private bool VisibleColDefaultInterv(string clave)
+        => EsCustomInterv(clave) || (IntervencionCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private IEnumerable<string> ClavesOrdenadasInterv()
+        => IntervencionCamposSistema.Todos.Select(c => c.Clave)
+            .Concat(_camposDefInterv.OrderBy(d => d.Orden).Select(ClaveCustomInterv))
+            .Select((clave, i) => (clave, ord: OrdenColInterv(clave, i)))
+            .OrderBy(x => x.ord).Select(x => x.clave);
+    private Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest FilaConfigInterv(string clave)
+    {
+        _cfgInterv.TryGetValue(clave, out var c);
+        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefaultInterv(clave), Orden: c?.Orden, Entidad: "intervencion");
+    }
+    private async Task GuardarCfgIntervAsync(Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task ToggleVisibleColInterv(string clave)
+    {
+        if (EsFijaInterv(clave)) return;
+        var visible = VisibleColInterv(clave);
+        await GuardarCfgIntervAsync(FilaConfigInterv(clave) with { Oculto = visible });
+        await CargarConfigIntervAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaInterv(string clave, int dir)
+    {
+        var keys = ClavesOrdenadasInterv().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgIntervAsync(FilaConfigInterv(keys[k]) with { Orden = k });
+        await CargarConfigIntervAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColInterv()
+    {
+        foreach (var k in ClavesOrdenadasInterv()) { if (EsFijaInterv(k)) continue; await GuardarCfgIntervAsync(FilaConfigInterv(k) with { Oculto = true }); }
+        await CargarConfigIntervAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColInterv()
+    {
+        foreach (var k in ClavesOrdenadasInterv()) await GuardarCfgIntervAsync(FilaConfigInterv(k) with { Oculto = false });
+        await CargarConfigIntervAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColInterv()
+    {
+        foreach (var k in ClavesOrdenadasInterv()) await GuardarCfgIntervAsync(FilaConfigInterv(k) with { Oculto = !VisibleColDefaultInterv(k), Orden = null });
+        await CargarConfigIntervAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinInterv()
+    {
+        if (_campoAEliminarInterv is null) return;
+        _colBusyInterv = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/intervencion-campos/{_campoAEliminarInterv.Id}");
+            _msg = r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminarInterv.Label}\" eliminado." : "No se pudo eliminar el campo.";
+            _msgClass = r.IsSuccessStatusCode ? "alert-success" : "alert-danger";
+            if (r.IsSuccessStatusCode) await RecargarCamposYConfigIntervAsync();
+        }
+        catch (Exception ex) { _msg = "Error al eliminar el campo: " + ex.Message; _msgClass = "alert-danger"; }
+        _campoAEliminarInterv = null; _colBusyInterv = false; StateHasChanged();
     }
 
     private string _intervAgrupar = "";
