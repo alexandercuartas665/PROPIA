@@ -204,7 +204,7 @@
                                 case "contrato": <div class="mtp-muted" title="@NombreContrato(p.ContratoId)">@(p.ContratoId is null ? "-" : NombreContrato(p.ContratoId))</div> break;
                                 case "costo": <div class="mtp-num">@(p.CostoEstimado is { } ce ? ce.ToString("C0", _cultura) : "-")</div> break;
                                 case "tablero": <div>@(string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre)</div> break;
-                                case "prioridad": <div>@p.Prioridad</div> break;
+                                case "prioridad": <div>@LblPrioProg(p.Prioridad)</div> break;
                                 case "periodicidad": <div>@(p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad))</div> break;
                                 case "proxima": <div>@p.FechaProximaEjecucion.ToString("yyyy-MM-dd")</div> break;
                                 case "responsables": <div title="@string.Join(", ", p.Responsables.Select(r => r.Nombre))">@(p.Responsables.Count == 0 ? "-" : $"{p.Responsables.Count} resp.")</div> break;
@@ -308,7 +308,7 @@
                         case "prioridad":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_altaPrioridad">
-                                    @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@p</option> }
+                                    @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@LblPrioProg(p)</option> }
                                 </select>
                             </div>
                             break;
@@ -589,7 +589,7 @@
                         case "tipo":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_iaTipo">
-                                    @foreach (var t in Enum.GetValues<TipoIntervencionMantenimiento>()) { <option value="@t">@t</option> }
+                                    @foreach (var t in Enum.GetValues<TipoIntervencionMantenimiento>()) { <option value="@t">@LblIntTipo(t)</option> }
                                 </select>
                             </div>
                             break;
@@ -598,7 +598,7 @@
                         case "prioridad":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_iaPrioridad">
-                                    @foreach (var p in Enum.GetValues<PrioridadIntervencion>()) { <option value="@p">@p</option> }
+                                    @foreach (var p in Enum.GetValues<PrioridadIntervencion>()) { <option value="@p">@LblIntPrio(p)</option> }
                                 </select>
                             </div>
                             break;
@@ -1656,7 +1656,9 @@ else if (_tab == "calendario")
         "periodicidad" => "Periodicidad", "prioridad" => "Prioridad",
         _ => CampoCustomProg(k)?.Label ?? ""
     };
-    private static string PeriodicidadProgLabel(PeriodicidadProgramacion p) => p.ToString();
+    // Label de periodicidad: del catalogo global A&D (mantenimiento.periodicidad) si cargo; si no, el enum.
+    private string PeriodicidadProgLabel(PeriodicidadProgramacion p)
+        => _catMtPeriod.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
 
     // ============================================================================================
     // INTERVENCIONES - tabla canon (Ola 3): columnas sistema + campos propios (EAV), filtros, agrupar, pager.
@@ -2502,6 +2504,7 @@ else if (_tab == "calendario")
         try
         {
             var http = Auth();
+            await CargarCatalogosMantAsync();   // labels de las listas (periodicidad/tipo/estado/prioridad) del catalogo A&D
             _resumen = await http.GetFromJsonAsync<ResumenMantenimientoDto>("/api/mantenimiento/resumen");
 
             // Tipo/semaforo se filtran client-side (FiltroDinamico); al server solo va la busqueda.
@@ -2780,31 +2783,64 @@ else if (_tab == "calendario")
         finally { _busy = false; }
     }
 
-    private MarkupString RenderTipoBadge(TipoIntervencionMantenimiento t) => t switch
+    // Catalogo global A&D de las listas de Mantenimiento (e:<Enum> -> label). A&D renombra en /admin/catalogos;
+    // aqui se lee para pintar. El VALOR sigue siendo el enum (el scheduler/workflow no se tocan).
+    private Dictionary<string, string> _catMtPeriod = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catMtPrioProg = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catMtIntTipo = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catMtIntEstado = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _catMtIntPrio = new(StringComparer.Ordinal);
+    private async Task CargarCatalogosMantAsync()
     {
-        TipoIntervencionMantenimiento.Preventivo => new MarkupString("<span class='badge bg-info'>Preventivo</span>"),
-        TipoIntervencionMantenimiento.Correctivo => new MarkupString("<span class='badge bg-warning text-dark'>Correctivo</span>"),
-        _ => new MarkupString("")
-    };
+        var http = Auth();
+        async Task<Dictionary<string, string>> L(string lista)
+        {
+            try { return (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>($"/api/catalogos?lista={lista}") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); }
+            catch { return new(StringComparer.Ordinal); }
+        }
+        _catMtPeriod = await L("mantenimiento.periodicidad");
+        _catMtPrioProg = await L("mantenimiento.prioridad");
+        _catMtIntTipo = await L("mantenimiento.intervtipo");
+        _catMtIntEstado = await L("mantenimiento.intervestado");
+        _catMtIntPrio = await L("mantenimiento.intervprioridad");
+    }
+    private string LblPrioProg(PrioridadTarea p) => _catMtPrioProg.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
+    private string LblIntTipo(TipoIntervencionMantenimiento t) => _catMtIntTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString();
+    private string LblIntEstado(EstadoIntervencion e) => _catMtIntEstado.TryGetValue("e:" + e, out var l) && !string.IsNullOrWhiteSpace(l) ? l : e.ToString();
+    private string LblIntPrio(PrioridadIntervencion p) => _catMtIntPrio.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
 
-    private MarkupString RenderEstadoBadge(EstadoIntervencion e) => e switch
+    private MarkupString RenderTipoBadge(TipoIntervencionMantenimiento t)
     {
-        EstadoIntervencion.Programada => new MarkupString("<span class='badge bg-secondary'>Programada</span>"),
-        EstadoIntervencion.EnEjecucion => new MarkupString("<span class='badge bg-info'>En ejecucion</span>"),
-        EstadoIntervencion.EnRevision => new MarkupString("<span class='badge bg-warning text-dark'>En revision</span>"),
-        EstadoIntervencion.Completada => new MarkupString("<span class='badge bg-success'>Completada</span>"),
-        EstadoIntervencion.Cancelada => new MarkupString("<span class='badge bg-dark'>Cancelada</span>"),
-        _ => new MarkupString("")
-    };
+        var cls = t switch { TipoIntervencionMantenimiento.Preventivo => "bg-info", TipoIntervencionMantenimiento.Correctivo => "bg-warning text-dark", _ => "bg-light text-dark" };
+        return new MarkupString($"<span class='badge {cls}'>{System.Net.WebUtility.HtmlEncode(LblIntTipo(t))}</span>");
+    }
 
-    private MarkupString RenderPrioridadBadge(PrioridadIntervencion p) => p switch
+    private MarkupString RenderEstadoBadge(EstadoIntervencion e)
     {
-        PrioridadIntervencion.Urgente => new MarkupString("<span class='badge bg-danger'>Urgente</span>"),
-        PrioridadIntervencion.Alta => new MarkupString("<span class='badge bg-warning text-dark'>Alta</span>"),
-        PrioridadIntervencion.Normal => new MarkupString("<span class='badge bg-primary'>Normal</span>"),
-        PrioridadIntervencion.Baja => new MarkupString("<span class='badge bg-secondary'>Baja</span>"),
-        _ => new MarkupString("")
-    };
+        var cls = e switch
+        {
+            EstadoIntervencion.Programada => "bg-secondary",
+            EstadoIntervencion.EnEjecucion => "bg-info",
+            EstadoIntervencion.EnRevision => "bg-warning text-dark",
+            EstadoIntervencion.Completada => "bg-success",
+            EstadoIntervencion.Cancelada => "bg-dark",
+            _ => "bg-light text-dark"
+        };
+        return new MarkupString($"<span class='badge {cls}'>{System.Net.WebUtility.HtmlEncode(LblIntEstado(e))}</span>");
+    }
+
+    private MarkupString RenderPrioridadBadge(PrioridadIntervencion p)
+    {
+        var cls = p switch
+        {
+            PrioridadIntervencion.Urgente => "bg-danger",
+            PrioridadIntervencion.Alta => "bg-warning text-dark",
+            PrioridadIntervencion.Normal => "bg-primary",
+            PrioridadIntervencion.Baja => "bg-secondary",
+            _ => "bg-light text-dark"
+        };
+        return new MarkupString($"<span class='badge {cls}'>{System.Net.WebUtility.HtmlEncode(LblIntPrio(p))}</span>");
+    }
 
     private HttpClient Auth()
     {
