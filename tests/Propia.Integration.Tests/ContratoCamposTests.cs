@@ -39,8 +39,14 @@ public class ContratoCamposTests
         // tabla de /contratos (adopcion Fase 1): el contratista es "tercero", el valor visible "valorTotal".
         Assert.True(ContratoCamposSistema.Por("tercero")!.Fija);
         Assert.Equal(TipoCampoTablero.Seleccion, ContratoCamposSistema.Por("tipocontrato")!.Tipo);
-        // Las Seleccion de contrato salen de enums del dominio: lista fija, no editable.
-        Assert.All(todos.Where(c => c.Tipo == TipoCampoTablero.Seleccion), c => Assert.False(c.OpcionesEditables));
+        // Las Seleccion atadas a enums del dominio (tipo de contrato, categoria, vencimiento/estado) son
+        // listas fijas, no editables. 'formapago' (metodo de pago, catalogo contrato.formapago) y 'tipo'
+        // (tipo de servicio) SI son editables por copropiedad (E1a): su universo no es un enum.
+        Assert.False(ContratoCamposSistema.Por("tipocontrato")!.OpcionesEditables);
+        Assert.False(ContratoCamposSistema.Por("categoria")!.OpcionesEditables);
+        Assert.False(ContratoCamposSistema.Por("estado")!.OpcionesEditables);
+        Assert.True(ContratoCamposSistema.Por("formapago")!.OpcionesEditables);
+        Assert.True(ContratoCamposSistema.Por("tipo")!.OpcionesEditables);
         // Hay columnas visibles por defecto (las de la tabla de /contratos).
         Assert.Contains("tercero", ContratoCamposSistema.ClavesVisiblesPorDefecto);
         Assert.Equal(TipoCampoTablero.Moneda, ContratoCamposSistema.Por("valortotal")!.Tipo);
