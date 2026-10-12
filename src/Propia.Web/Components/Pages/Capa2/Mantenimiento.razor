@@ -54,6 +54,8 @@
             <input class="mod-search-inp" placeholder="Buscar programación..." @bind="_progQuery" @bind:event="oninput" />
         </div>
         <div style="flex:1;"></div>
+        @* Ordenar (canon = Unidades/Equipos): multi-criterio apilable, componente compartido. *@
+        <TablaOrdenarMenu Columnas="ColsOrdenablesProg()" Sorts="_sortsProg" SortsChanged="OnSortsProgChanged" />
         <div class="mtp-menuwrap">
             <button type="button" class="mtp-fbtn @(_progAgrupar != "" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "agr" ? "" : "agr"'>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -71,14 +73,79 @@
                 </div>
             }
         </div>
+        @* Columnas (inline, canon = Unidades/Equipos): orden, visibilidad y borrar campo propio. Crear/alias = "Campos". *@
         <div class="mtp-menuwrap">
-            @* Campos: abre el Selector de Campos compartido (reemplaza el menu de checkboxes en memoria). *@
-            <button type="button" class="mtp-fbtn @(_selProgAbierto ? "on" : "")" @onclick="() => _selProgAbierto = true" title="Campos de la programación: orden, visibilidad y nombre">
+            <button type="button" class="mtp-fbtn @(_showColMenuProg ? "on" : "")" @onclick="() => _showColMenuProg = !_showColMenuProg" title="Columnas: orden y visibilidad">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showColMenuProg)
+            {
+                <div class="mtp-menu-bd" @onclick="() => _showColMenuProg = false"></div>
+                <div class="mtp-menu mtp-colmenu">
+                    <div class="mtp-col-search">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input placeholder="Buscar campo..." value="@_colQProg" @oninput="@(e => _colQProg = e.Value?.ToString() ?? string.Empty)" />
+                    </div>
+                    <div class="mtp-col-list">
+                        @{ var _colsP = ClavesOrdenadasProg().ToList(); }
+                        @for (int _ci = 0; _ci < _colsP.Count; _ci++)
+                        {
+                            var k = _colsP[_ci];
+                            var idx = _ci;
+                            var label = LabelColProg(k);
+                            if (!string.IsNullOrWhiteSpace(_colQProg) && !label.Contains(_colQProg, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            var fija = EsFijaProg(k);
+                            var visible = VisibleColProg(k);
+                            var custom = CampoCustomProg(k);
+                            <div class="mtp-col-it">
+                                <button class="mtp-col-mv" disabled="@(idx == 0)" @onclick="() => MoverColumnaProg(k, -1)">&#9650;</button>
+                                <button class="mtp-col-mv" disabled="@(idx == _colsP.Count - 1)" @onclick="() => MoverColumnaProg(k, 1)">&#9660;</button>
+                                <span class="mtp-col-name">@label @if (custom is not null) { <span class="mtp-col-dyn" title="Campo personalizado">din</span> }</span>
+                                @if (fija) { <span class="mtp-col-fija">fija</span> }
+                                else
+                                {
+                                    <button class="mtp-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColProg(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                }
+                                @if (custom is not null) { <button class="mtp-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarProg = custom"><i class="fi fi-rr-trash"></i></button> }
+                            </div>
+                        }
+                    </div>
+                    <div class="mtp-col-massacts">
+                        <button type="button" class="mtp-col-mass" @onclick="OcultarTodasColProg"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                        <button type="button" class="mtp-col-mass" @onclick="MostrarTodasColProg"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                        <button type="button" class="mtp-col-reset" @onclick="RestablecerColProg">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="mtp-menuwrap">
+            @* Campos: abre el Selector de Campos compartido (crear campo propio, alias, config de sistema). *@
+            <button type="button" class="mtp-fbtn @(_selProgAbierto ? "on" : "")" @onclick="() => _selProgAbierto = true" title="Campos de la programación: crear campo propio, alias y configuración">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
             </button>
         </div>
     </div>
+    @if (_campoAEliminarProg is not null)
+    {
+        <div class="mtp-selcfg-back" @onclick="() => _campoAEliminarProg = null">
+            <div class="mtp-selcfg-modal" style="width:440px" @onclick:stopPropagation="true">
+                <div class="mtp-selcfg-head">
+                    <div><div class="mtp-selcfg-title">Eliminar campo</div>
+                        <div class="mtp-selcfg-sub">Se borran la definición y todos sus valores. No se puede deshacer.</div></div>
+                    <button class="mtp-selcfg-x" @onclick="() => _campoAEliminarProg = null">&times;</button>
+                </div>
+                <div class="mtp-selcfg-body">
+                    ¿Eliminar el campo "<strong>@_campoAEliminarProg.Label</strong>"?
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="mtp-fbtn" @onclick="() => _campoAEliminarProg = null" disabled="@_colBusyProg">Cancelar</button>
+                        <button type="button" class="mtp-selbar-del" style="margin-left:0;" @onclick="EliminarCampoDinProg" disabled="@_colBusyProg">@(_colBusyProg ? "Eliminando..." : "Eliminar")</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_progs is null)
     {
@@ -1286,6 +1353,76 @@ else if (_tab == "calendario")
             .Where(x => VisibleColProg(x.clave))
             .Select(x => new ProgCol(x.clave, LabelColProg(x.clave)));
 
+    // ===== Menu "Columnas" (inline, canon = Unidades/Equipos): orden, visibilidad y borrar campo propio.
+    // Orden/visibilidad persisten en unidades-config (entidad 'programacion'); crear/alias siguen en "Campos". =====
+    private bool _showColMenuProg;
+    private string _colQProg = "";
+    private bool _colBusyProg;
+    private Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto? _campoAEliminarProg;
+    private bool EsFijaProg(string clave) => MantenimientoCamposSistema.Por(clave)?.Fija ?? false;
+    private bool VisibleColDefaultProg(string clave)
+        => EsCustomProg(clave) || (MantenimientoCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private IEnumerable<string> ClavesOrdenadasProg()
+        => MantenimientoCamposSistema.Todos.Select(c => c.Clave)
+            .Concat(_camposDefProg.OrderBy(d => d.Orden).Select(ClaveCustomProg))
+            .Select((clave, i) => (clave, ord: OrdenColProg(clave, i)))
+            .OrderBy(x => x.ord).Select(x => x.clave);
+    private Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest FilaConfigProg(string clave)
+    {
+        _cfgProg.TryGetValue(clave, out var c);
+        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
+            Oculto: c?.Oculto ?? !VisibleColDefaultProg(clave), Orden: c?.Orden, Entidad: "programacion");
+    }
+    private async Task GuardarCfgProgAsync(Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest req)
+    {
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { }
+    }
+    private async Task ToggleVisibleColProg(string clave)
+    {
+        if (EsFijaProg(clave)) return;
+        var visible = VisibleColProg(clave);
+        await GuardarCfgProgAsync(FilaConfigProg(clave) with { Oculto = visible });
+        await CargarConfigProgAsync(); StateHasChanged();
+    }
+    private async Task MoverColumnaProg(string clave, int dir)
+    {
+        var keys = ClavesOrdenadasProg().ToList();
+        var i = keys.IndexOf(clave); var j = i + dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfgProgAsync(FilaConfigProg(keys[k]) with { Orden = k });
+        await CargarConfigProgAsync(); StateHasChanged();
+    }
+    private async Task OcultarTodasColProg()
+    {
+        foreach (var k in ClavesOrdenadasProg()) { if (EsFijaProg(k)) continue; await GuardarCfgProgAsync(FilaConfigProg(k) with { Oculto = true }); }
+        await CargarConfigProgAsync(); StateHasChanged();
+    }
+    private async Task MostrarTodasColProg()
+    {
+        foreach (var k in ClavesOrdenadasProg()) await GuardarCfgProgAsync(FilaConfigProg(k) with { Oculto = false });
+        await CargarConfigProgAsync(); StateHasChanged();
+    }
+    private async Task RestablecerColProg()
+    {
+        foreach (var k in ClavesOrdenadasProg()) await GuardarCfgProgAsync(FilaConfigProg(k) with { Oculto = !VisibleColDefaultProg(k), Orden = null });
+        await CargarConfigProgAsync(); StateHasChanged();
+    }
+    private async Task EliminarCampoDinProg()
+    {
+        if (_campoAEliminarProg is null) return;
+        _colBusyProg = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/programacion-campos/{_campoAEliminarProg.Id}");
+            _msg = r.IsSuccessStatusCode ? $"Campo \"{_campoAEliminarProg.Label}\" eliminado." : "No se pudo eliminar el campo.";
+            _msgClass = r.IsSuccessStatusCode ? "alert-success" : "alert-danger";
+            if (r.IsSuccessStatusCode) await RecargarCamposYConfigProgAsync();
+        }
+        catch (Exception ex) { _msg = "Error al eliminar el campo: " + ex.Message; _msgClass = "alert-danger"; }
+        _campoAEliminarProg = null; _colBusyProg = false; StateHasChanged();
+    }
+
     private async Task CargarConfigProgAsync()
     {
         try
@@ -1376,7 +1513,7 @@ else if (_tab == "calendario")
             q = q.Where(p => (p.Titulo ?? "").Contains(t, StringComparison.OrdinalIgnoreCase)
                           || (p.OrigenReferencia ?? "").Contains(t, StringComparison.OrdinalIgnoreCase));
         }
-        return q.Where(p => _fdProg?.Pasa(campo => campo switch
+        var res = q.Where(p => _fdProg?.Pasa(campo => campo switch
         {
             "activo" => p.OrigenReferencia ?? "",
             "titulo" => p.Titulo ?? "",
@@ -1387,6 +1524,42 @@ else if (_tab == "calendario")
             _ when CampoCustomProg(campo) is { } cd => ValorCampoProg(p.Id, cd.Id) ?? "",
             _ => ""
         }) ?? true);
+        return OrdenarProg(res);
+    }
+
+    // ===== Ordenar (boton "Ordenar" canon = Unidades/Equipos; TablaOrdenarMenu, multi-criterio) =====
+    private List<TablaOrdenarMenu.Sort> _sortsProg = new();
+    private void OnSortsProgChanged() { _progPagina = 1; StateHasChanged(); }
+    private List<TablaOrdenarMenu.Col> ColsOrdenablesProg()
+        => ProgColsVis.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
+    private IComparable ValorOrdenProg(ProgramacionTareaDto p, string key) => key switch
+    {
+        "tipo" => p.ModuloOrigenCodigo ?? "",
+        "activo" => p.OrigenReferencia ?? "",
+        "titulo" => p.Titulo ?? "",
+        "tercero" => p.ProveedorNombre ?? NombreTercero(p.ProveedorId),
+        "contrato" => NombreContrato(p.ContratoId),
+        "costo" => p.CostoEstimado ?? 0m,
+        "tablero" => p.TableroNombre ?? "",
+        "prioridad" => (int)p.Prioridad,
+        "periodicidad" => (int)p.Periodicidad,
+        "proxima" => p.FechaProximaEjecucion,
+        "responsables" => p.Responsables.Count,
+        "activa" => p.Activa ? 1 : 0,
+        _ when CampoCustomProg(key) is { } cd => ValorCampoProg(p.Id, cd.Id) ?? "",
+        _ => ""
+    };
+    private IEnumerable<ProgramacionTareaDto> OrdenarProg(IEnumerable<ProgramacionTareaDto> src)
+    {
+        if (_sortsProg.Count == 0) return src;
+        IOrderedEnumerable<ProgramacionTareaDto>? o = null;
+        foreach (var s in _sortsProg)
+        {
+            Func<ProgramacionTareaDto, IComparable> sel = p => ValorOrdenProg(p, s.Key);
+            o = o is null ? (s.Dir >= 0 ? src.OrderBy(sel) : src.OrderByDescending(sel))
+                          : (s.Dir >= 0 ? o.ThenBy(sel) : o.ThenByDescending(sel));
+        }
+        return o!;
     }
 
     private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgAgrupadas()
