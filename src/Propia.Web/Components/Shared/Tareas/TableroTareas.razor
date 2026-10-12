@@ -468,7 +468,7 @@ else
                     @if (_colOrigen) { <div class="tb-lc tb-lc-orig tb-lc-sort" @onclick='() => SortBy("origen")'><span>@ColLabel("orig", "ORIGEN")</span>@SortInd("origen")@ChevCol("origen", "ORIGEN", false)@ColorDot("orig")</div> }
                     @foreach (var c in CamposVisibles) { var cid = c.Id.ToString(); var campo = c; <div class="tb-lc tb-lc-campo tb-cc-@c.Id tb-lc-sort @(CampoEsNumerico(c) ? "tb-num" : "")" @onclick="() => SortBy(cid)"><span>@c.Label.ToUpperInvariant()</span>@SortInd(cid)@ChevCol(cid, campo.Label, true)@ColorDot(cid)</div> }
                     @* Agregar columna = "+" pelado (homogeneo con Unidades: el "+" del header crea el campo). *@
-                    <div class="tb-lc tb-lc-acc"><button type="button" class="tbl-addcol-btn" @onclick="AbrirEditorCampo" title="Crear campo nuevo (columna)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button></div>
+                    <div class="tb-lc tb-lc-acc"><button type="button" class="tbl-addcol-btn" @onclick="() => { if (_board is not null) _crearCampoTAbierto = true; }" title="Crear campo nuevo (columna)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button></div>
                 </div>
                 @if (_gruposT.Count == 0)
                 {
@@ -1824,6 +1824,18 @@ else
     </div>
 }
 
+@* Crear campo propio: modal focalizado CANONICO (igual que Unidades Privadas). El "+" del header lo abre;
+   el editor avanzado (requerido, valor por defecto, etc.) sigue en "Agregar campo" del gestor. *@
+@if (_crearCampoTAbierto && _board is not null)
+{
+    <CrearCampoModal Prefijo="tareas" RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
+                     TituloSingular="tarea" Ejemplo="Ej. Horas estimadas, Responsable externo"
+                     Jwt="@_jwt" TiposAvanzados="false"
+                     Guardado="async () => { await RecargarBoard(); }"
+                     Cerrado="() => _crearCampoTAbierto = false"
+                     AbrirGestorAvanzado="async () => { _crearCampoTAbierto = false; await AbrirEditorCampo(new MouseEventArgs()); }" />
+}
+
 @* ===================== Editor de ESTADOS (columnas) anclado al chevron de la columna ETAPA =====================
    Fase 1: la lista de estados se edita aqui (desde "Editar campo" del header), no en el modal Configurar.
    Los estados SIGUEN siendo las columnas del kanban; aqui solo se gestionan (nombre/color/orden/alta/baja). *@
@@ -3138,6 +3150,7 @@ else
         }
     }
     private bool _showCampoEditor; // editor de campo FLOTANTE (compartido: tarjeta + tabla)
+    private bool _crearCampoTAbierto; // modal canonico CrearCampoModal (header "+"); editor avanzado = _showCampoEditor
     private string _subNew = "";
     private string _subtareaNew = "";
 
