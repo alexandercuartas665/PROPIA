@@ -67,11 +67,14 @@ public class MisCopropiedadesService : IMisCopropiedadesService
 
         // Limite de copropiedades: PRIORIDAD override de la organizacion (fijado por A&D en la consola);
         // si no hay override, el limite del plan de la Suscripcion activa. Sin suscripcion -> 1.
-        // Limite null -> ilimitado.
-        var orgOverride = await _db.Organizaciones.AsNoTracking()
+        // Limite null -> ilimitado. Se trae el NOMBRE de la org para nombrarla en el error (y se loguea
+        // la org exacta + override + conteo, para poder diagnosticar "no me respeta el limite que amplie").
+        var orgInfo = await _db.Organizaciones.AsNoTracking()
             .Where(o => o.Id == organizacionId)
-            .Select(o => o.LimiteCopropiedades)
+            .Select(o => new { o.Nombre, o.LimiteCopropiedades })
             .FirstOrDefaultAsync(ct);
+        var orgNombre = orgInfo?.Nombre ?? "tu organizacion";
+        var orgOverride = orgInfo?.LimiteCopropiedades;
         var subOrg = await _db.Suscripciones.AsNoTracking()
             .Where(s => s.OrganizacionId == organizacionId
                         && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada)
@@ -82,10 +85,13 @@ public class MisCopropiedadesService : IMisCopropiedadesService
         if (limiteCopropiedades is int maxCopros)
         {
             var actuales = await _db.Tenants.AsNoTracking().CountAsync(t => t.OrganizacionId == organizacionId, ct);
+            _logger.LogInformation(
+                "CrearCopropiedad limite: tenantActivo={TenantActivo} orgDestino={OrgId} ('{OrgNombre}') override={Override} planLimite={PlanLimite} limiteEfectivo={Limite} actuales={Actuales}",
+                tenantActivo, organizacionId, orgNombre, orgOverride, subOrg?.LimiteCopropiedades, maxCopros, actuales);
             if (actuales >= maxCopros)
                 throw new InvalidOperationException(
-                    $"El limite permitido es {maxCopros} copropiedad(es) y ya tienes {actuales}. " +
-                    "Contacta a soporte para ampliarlo.");
+                    $"El limite de copropiedades de la organizacion '{orgNombre}' es {maxCopros} y ya tiene {actuales}. " +
+                    "Amplia el limite de ESA organizacion en la consola (Super Admin) o contacta a soporte.");
         }
 
         // La tabla tenants no tiene RLS: se puede insertar con otro tenant activo en la sesion.
