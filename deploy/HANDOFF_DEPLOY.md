@@ -1,5 +1,14 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.140** (`main` HEAD `8c9b6fff`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.133-0.0.140) es **100% UI/CSS:
+> SIN migraciones, SIN cambios de backend/servicio/config, SIN catalogos/seeds nuevos**. Deploy = redeploy
+> del artefacto de `main`; rollback = redeploy del artefacto previo. El detalle esta en la seccion
+> **ESTADO 2026-10-13 Homogeneidad alta inline + fila recien creada violeta + limpieza CSS** (justo debajo
+> de este encabezado). Todo lo anterior (hasta 0.0.132) sigue vigente en sus propias secciones; incluye
+> migraciones aditivas pendientes si prod aun no las aplico (ver secciones 2026-10-12 y anteriores). El
+> bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
+>
 > Generado 2026-09-10, actualizado **2026-09-28 (TANDA 2: carga masiva single-tenant + ficha unidad + AGRUPAR compartido + hubs)**.
 > Version a desplegar: **0.0.99** (csproj bumpeado). HEAD `main` (`0a9e147`) incluye ademas de la tanda 0.0.98:
 > carga masiva sin columna COPROPIEDAD (single-tenant), desplegable de UNIDAD PRIVADA en Residentes, la ficha
@@ -12,6 +21,53 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-13 Homogeneidad alta inline + fila recien creada VIOLETA + limpieza CSS
+
+Versiones **0.0.133 -> 0.0.140**. Rama `equipo/alex-header-zonas-equipos` (ya en `main`, HEAD `8c9b6fff`).
+**SIN migraciones. SIN cambios de backend/servicio. SIN config/seeds nuevos. 100% UI (.razor + .css).**
+Deploy: redeploy del artefacto de `main`. Rollback: redeploy del artefacto previo (no hay esquema que revertir).
+
+Que incluye (todas las vistas-tabla quedan homogeneas en el alta inline y en el resaltado de recien creado):
+
+1. **Roles - bandeja homogenizada (0.0.133, commit `e192630d`).** El modal/bandeja de Roles y Permisos usa
+   ahora los controles canonicos: `FiltroDinamico` + Ordenar + Agrupar + menu de columna (incl. ver/crear
+   categorias desde la columna Categoria). La matriz de permisos pasa de "." a checkbox deshabilitado
+   (simetrica). `roles.css ?v=15`.
+2. **Alta inline al canon VIOLETA (0.0.134-0.0.138).** El estilo de la fila de alta se unifico en TODOS los
+   modulos: input "fantasma" (`border:1px solid transparent` + fondo transparente, `padding:10px 12px`,
+   `font:13px`, radius 8) con borde+glow violeta al foco (`1.5px var(--propia-brand)` + `0 0 0 3px
+   rgba(109,79,227,.14)`); fila de alta abierta con fondo `brand-soft-2`; hint "Tab/Esc" presente.
+   - Corregidos: Vehiculos, Mascotas, Residentes, Contratos, Mantenimiento, Tareas, Seguros, Roles
+     (commit `fcfcfd66`), Zonas y Equipos -padding/font que faltaban- (`f368c88a`).
+   - Unidades: el foco pasa del anillo `::after` inset (recuadro flotante) a **borde sobre el input** como
+     el resto (`b45174de`), y la celda de alta gana aire vertical (`padding:7px 4px`) para que el glow no se
+     recorte (`a06cd16b`).
+3. **Fila recien creada VIOLETA en los 11 modulos vista-tabla (0.0.139, commit `790cd41a`).** El resaltado
+   de "recien creado" pasa de VERDE (`ok-soft`/`#34C759`) a VIOLETA (`var(--propia-brand-soft-2)` +
+   `inset 3px var(--propia-brand)`). Modulos: Unidades, Vehiculos, Mascotas, Residentes (fila+tarjeta),
+   Seguros, Equipos, Zonas, Directorio, Mantenimiento, PQRSD, Contratos. El verde queda SOLO para
+   toasts/mensajes de exito (po-flash.ok, ctr-toast), que NO se tocaron.
+4. **Limpieza CSS muerto en Unidades (0.0.140, commit `8c9b6fff`).** Se quitaron ~85 selectores `.dst-*`
+   muertos (144 lineas) del `<style>` inline de `DistribucionPanel.razor`, residuo de la migracion al canon
+   `.tbl`. Verificado sin uso en todo el repo; sin efecto funcional ni visual.
+
+**CSS cache-bust (en `App.razor`, viajan con el artefacto):** `tabla-base.css ?v=10`, `servicios.css ?v=19`,
+`mantenimiento.css ?v=5`, `directorio.css ?v=12`, `pqrs.css ?v=23`, `roles.css ?v=15`, `tareas.css ?v=28`.
+El resto del alta es inline en el `.razor` (sin `?v`). Al servir detras de CDN/proxy, purgar cache de esos CSS
+o confiar en el `?v` (recomendado: el `?v` ya fuerza la recarga).
+
+**Verificacion (hecha en dev, demo, Web 5105):** build sin errores; alta inline validada modulo por modulo
+(input transparente + glow violeta + hint); fila recien creada validada en los 11 modulos (escaneo de
+stylesheets -> todas en `brand-soft-2`+`brand`, 0 reglas verdes residuales; render real en Zonas
+`rgb(245,241,254)`+`rgb(109,79,227)`); Unidades tras la limpieza CSS renderiza igual (tabla+282 registros,
+menu Columnas, vista Tarjetas, alta+hint, footer). Llaves/comentarios del `<style>` balanceados.
+
+**Pendiente conocido, NO en esta tanda (diagnostico, no deploy):** en `DistribucionPanel.razor` queda un token
+CSS roto cosmetico (`.cg-row-warn td { background: var(--propia-bg-card)af2; }`) y codigo C# muerto (ruta de
+import CSV huerfana + banner `_impResult` inalcanzable). No afectan el deploy; se corrigen aparte.
 
 ---
 

@@ -1,7 +1,12 @@
 # PROPIA - Checklist de deploy
 
-> **DEPLOY VIGENTE: 0.0.113 (2026-10-09).** El detalle y el orden autoritativo viven en
-> `DEPLOY_HANDOFF_2026-10-09_v0.0.113.md` + `HANDOFF_DEPLOY.md` (seccion "ESTADO 2026-10-09 DEPLOY 0.0.113").
+> **DEPLOY VIGENTE: 0.0.140 (2026-10-13).** `main` HEAD `8c9b6fff`. Esta tanda (0.0.133-0.0.140) es
+> **100% UI/CSS: SIN migraciones, SIN backend, SIN config/seeds**. El orden autoritativo y el detalle viven
+> en `HANDOFF_DEPLOY.md` (encabezado + seccion "ESTADO 2026-10-13 Homogeneidad alta inline + fila recien
+> creada violeta + limpieza CSS"). Si prod viene de una version anterior a 0.0.132, revisar ademas las
+> secciones intermedias del HANDOFF por migraciones aditivas pendientes (p.ej. 0.0.125 AddMascotaTipoCustom).
+>
+> **Historico:** DEPLOY 0.0.113 (2026-10-09) en `DEPLOY_HANDOFF_2026-10-09_v0.0.113.md`.
 > Lo de abajo es historico (snapshot 0.0.93) y NO refleja el estado actual.
 >
 > Actualizado **2026-09-15**. Version visible: **0.0.93** (`origin/main` @ `ab595f6`)
