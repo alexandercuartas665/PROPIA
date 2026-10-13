@@ -34,7 +34,9 @@ public record TenantInfo(
     string Nombre,
     string Rol,
     string? LogoUrl = null,
-    string? CodigoCorto = null);
+    string? CodigoCorto = null,
+    bool Archivado = false,
+    DateTimeOffset? UltimoAcceso = null);
 
 /// <summary>Un rol que el usuario tiene asignado en la copropiedad activa (2.5 v2.0 multi-rol).</summary>
 public record RolInfo(Guid RolId, string Nombre);

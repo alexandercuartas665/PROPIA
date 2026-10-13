@@ -28,7 +28,8 @@ public record MeResponseDto(
     Guid? ActiveRolId = null,
     IReadOnlyList<RolInfoDto>? AvailableRoles = null);
 
-public record TenantInfoDto(Guid TenantId, string Nombre, string Rol, string? LogoUrl = null, string? CodigoCorto = null);
+public record TenantInfoDto(Guid TenantId, string Nombre, string Rol, string? LogoUrl = null, string? CodigoCorto = null,
+    bool Archivado = false, DateTimeOffset? UltimoAcceso = null);
 
 /// <summary>Un rol del usuario en la copropiedad activa (2.5 v2.0 multi-rol / rol activo por sesion).</summary>
 public record RolInfoDto(Guid RolId, string Nombre);

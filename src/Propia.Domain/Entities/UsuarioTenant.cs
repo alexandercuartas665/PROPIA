@@ -26,6 +26,14 @@ public class UsuarioTenant : TenantEntity
     public Rol? RolNavigation { get; set; }
 
     public EstadoUsuarioTenant Estado { get; set; } = EstadoUsuarioTenant.Pendiente;
+
+    /// <summary>
+    /// Archivado POR ESTE USUARIO en su selector "Mis copropiedades" (preferencia personal; no cambia el
+    /// estado global de la copropiedad ni afecta a otros usuarios). Las archivadas se ocultan de Galeria/Tabla
+    /// y solo aparecen en la vista "Archivadas", desde donde se pueden reactivar.
+    /// </summary>
+    public bool Archivado { get; set; }
+
     public DateTimeOffset? UltimoAcceso { get; set; }
     public DateTimeOffset? FechaInvitacion { get; set; }
     public DateTimeOffset? FechaActivacion { get; set; }

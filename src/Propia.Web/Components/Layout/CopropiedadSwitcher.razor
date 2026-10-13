@@ -72,53 +72,18 @@
                             <button class="cs-vt @(_selVista == "tabla" ? "on" : "")" type="button" @onclick='() => _selVista = "tabla"'>
                                 <i class="fi fi-rr-table-columns"></i> Tabla
                             </button>
+                            <button class="cs-vt @(_selVista == "archivadas" ? "on" : "")" type="button" @onclick='() => _selVista = "archivadas"'>
+                                <i class="fi fi-rr-box-open"></i> Archivadas
+                                @if (CuentaArchivadas > 0)
+                                {
+                                    <span class="cs-vt-count">@CuentaArchivadas</span>
+                                }
+                            </button>
                         </div>
                     </div>
 
                     <div class="cs-selbody">
-                        @if (_selVista == "tabla")
-                        {
-                            @if (PuedeCrear)
-                            {
-                                <div class="cs-crea-bar">
-                                    <button class="cs-btn-ghost" type="button" @onclick="AbrirCrear" disabled="@_busy"><i class="fi fi-rr-plus"></i> Nueva copropiedad</button>
-                                    <button class="cs-btn-ghost" type="button" @onclick="IrAlAsistente" disabled="@_busy"><i class="fi fi-rr-sparkles"></i> Crear con el asistente</button>
-                                </div>
-                            }
-                            <div class="cs-tblwrap">
-                                <table class="cs-tbl">
-                                    <thead>
-                                        <tr><th>Copropiedad</th><th>Código</th><th>Rol</th><th></th></tr>
-                                    </thead>
-                                    <tbody>
-                                        @{
-                                            var listaTabla = Filtradas();
-                                        }
-                                        @if (listaTabla.Count == 0)
-                                        {
-                                            <tr><td colspan="4" class="cs-td-empty">Sin resultados para la busqueda.</td></tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var t in listaTabla)
-                                            {
-                                                var esActiva = t.TenantId == _activa.TenantId;
-                                                <tr class="cs-trow @(esActiva ? "active" : "")" @onclick="() => SeleccionarAsync(t)">
-                                                    <td class="cs-td-nom">
-                                                        <span class="cs-avatar cs-avatar--sm" aria-hidden="true">@Inicial(t.Nombre)</span>
-                                                        <span class="cs-td-nomtx">@t.Nombre@if (esActiva){<span class="cs-badge-inline">Activa</span>}</span>
-                                                    </td>
-                                                    <td class="cs-td-cod">@t.CodigoCorto</td>
-                                                    <td>@t.Rol</td>
-                                                    <td class="cs-td-go"><i class="fi fi-rr-angle-small-right"></i></td>
-                                                </tr>
-                                            }
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        }
-                        else
+                        @if (_selVista == "galeria")
                         {
                             <div class="cs-gallery">
                                 @if (PuedeCrear)
@@ -136,12 +101,16 @@
                                 }
                                 @foreach (var t in Filtradas())
                                 {
-                                    var esActiva = t.TenantId == _activa.TenantId;
+                                    var esActiva = t.TenantId == _activa?.TenantId;
                                     <button class="cs-card @(esActiva ? "active" : "")" type="button" @onclick="() => SeleccionarAsync(t)" disabled="@_busy">
                                         @if (esActiva)
                                         {
                                             <span class="cs-card-badge">Activa</span>
                                         }
+                                        @* Icono archivar (esquina): saca la copropiedad del selector del usuario (preferencia personal). *@
+                                        <span class="cs-card-arch" role="button" title="Archivar esta copropiedad" @onclick:stopPropagation="true" @onclick="() => ArchivarAsync(t, true)">
+                                            <i class="fi fi-rr-box-open"></i>
+                                        </span>
                                         <span class="cs-card-thumb">
                                             @if (!string.IsNullOrWhiteSpace(t.LogoUrl))
                                             {
@@ -160,6 +129,59 @@
                                         <span class="cs-card-rol">@t.Rol</span>
                                     </button>
                                 }
+                            </div>
+                        }
+                        else
+                        {
+                            @* Tabla (vista "tabla" = activas; vista "archivadas" = solo archivadas, siempre en tabla).
+                               Sin columna Rol: Copropiedad | Codigo | Ultimo ingreso | accion (Archivar / Activar). *@
+                            var archivadasView = _selVista == "archivadas";
+                            var listaTabla = archivadasView ? FiltradasArchivadas() : Filtradas();
+                            @if (!archivadasView && PuedeCrear)
+                            {
+                                <div class="cs-crea-bar">
+                                    <button class="cs-btn-ghost" type="button" @onclick="AbrirCrear" disabled="@_busy"><i class="fi fi-rr-plus"></i> Nueva copropiedad</button>
+                                    <button class="cs-btn-ghost" type="button" @onclick="IrAlAsistente" disabled="@_busy"><i class="fi fi-rr-sparkles"></i> Crear con el asistente</button>
+                                </div>
+                            }
+                            <div class="cs-tblwrap">
+                                <table class="cs-tbl">
+                                    <thead>
+                                        <tr><th>Copropiedad</th><th>Código</th><th>Último ingreso</th><th></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (listaTabla.Count == 0)
+                                        {
+                                            <tr><td colspan="4" class="cs-td-empty">@(archivadasView ? "No tienes copropiedades archivadas." : "Sin resultados para la busqueda.")</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var t in listaTabla)
+                                            {
+                                                var esActiva = t.TenantId == _activa?.TenantId;
+                                                <tr class="cs-trow @(esActiva ? "active" : "") @(archivadasView ? "cs-trow--arch" : "")"
+                                                    @onclick="@(() => (archivadasView ? Task.CompletedTask : SeleccionarAsync(t)))">
+                                                    <td class="cs-td-nom">
+                                                        <span class="cs-avatar cs-avatar--sm" aria-hidden="true">@Inicial(t.Nombre)</span>
+                                                        <span class="cs-td-nomtx">@t.Nombre@if (esActiva){<span class="cs-badge-inline">Activa</span>}</span>
+                                                    </td>
+                                                    <td class="cs-td-cod">@t.CodigoCorto</td>
+                                                    <td class="cs-td-ult">@FmtUltimo(t.UltimoAcceso)</td>
+                                                    <td class="cs-td-act">
+                                                        @if (archivadasView)
+                                                        {
+                                                            <button class="cs-rowbtn cs-rowbtn--ok" type="button" title="Activar (quitar de archivadas)" @onclick:stopPropagation="true" @onclick="() => ArchivarAsync(t, false)" disabled="@_busy"><i class="fi fi-rr-refresh"></i> Activar</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="cs-rowbtn" type="button" title="Archivar esta copropiedad" @onclick:stopPropagation="true" @onclick="() => ArchivarAsync(t, true)" disabled="@_busy"><i class="fi fi-rr-box-open"></i> Archivar</button>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
                             </div>
                         }
                     </div>
@@ -352,14 +374,45 @@
         if (e.Key == "Escape") Cerrar();
     }
 
-    /// <summary>Copropiedades del usuario filtradas por el buscador (nombre / codigo / rol), sin distinguir mayus/acentos basicos.</summary>
-    private List<TenantInfoDto> Filtradas()
+    /// <summary>Copropiedades ACTIVAS (no archivadas) del usuario, filtradas por el buscador.</summary>
+    private List<TenantInfoDto> Filtradas() => FiltrarPorBusqueda(_tenants.Where(t => !t.Archivado));
+
+    /// <summary>Copropiedades ARCHIVADAS del usuario, filtradas por el buscador (vista "Archivadas").</summary>
+    private List<TenantInfoDto> FiltradasArchivadas() => FiltrarPorBusqueda(_tenants.Where(t => t.Archivado));
+
+    private List<TenantInfoDto> FiltrarPorBusqueda(IEnumerable<TenantInfoDto> fuente)
     {
         var q = _q?.Trim();
-        if (string.IsNullOrEmpty(q)) return _tenants;
-        return _tenants
+        if (string.IsNullOrEmpty(q)) return fuente.ToList();
+        return fuente
             .Where(t => $"{t.Nombre} {t.CodigoCorto} {t.Rol}".Contains(q, StringComparison.OrdinalIgnoreCase))
             .ToList();
+    }
+
+    private int CuentaArchivadas => _tenants.Count(t => t.Archivado);
+
+    /// <summary>Formato corto del ultimo ingreso del usuario a la copropiedad.</summary>
+    private static string FmtUltimo(DateTimeOffset? d) => d is null ? "—" : d.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    /// <summary>Archiva/activa la copropiedad en el selector del usuario (preferencia personal) y recarga.</summary>
+    private async Task ArchivarAsync(TenantInfoDto t, bool archivar)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var verbo = archivar ? "archivar" : "desarchivar";
+            var resp = await Auth().PutAsync($"/api/mis-copropiedades/{t.TenantId}/{verbo}", null);
+            if (resp.IsSuccessStatusCode) { await CargarAsync(); }
+            else
+            {
+                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                _error = err is not null && err.TryGetValue("error", out var m) ? m
+                    : $"No se pudo {(archivar ? "archivar" : "activar")} la copropiedad.";
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
     }
 
     /// <summary>Capacidad de organizacion: puede crear una copropiedad nueva si es Administrador en
@@ -648,6 +701,17 @@
         font-size: 9px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
         color: var(--propia-text-inverse); background: var(--propia-brand); border-radius: 20px; padding: 2px 9px;
     }
+    /* Icono archivar (esquina superior izquierda de la tarjeta; aparece al hover). */
+    .cs-card-arch {
+        position: absolute; top: 8px; left: 8px; z-index: 2;
+        width: 26px; height: 26px; border-radius: 8px;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--propia-text-faint); background: var(--propia-bg-card);
+        border: 1px solid var(--propia-border-card); cursor: pointer;
+        opacity: 0; transition: opacity .12s, color .12s, background .12s;
+    }
+    .cs-card:hover .cs-card-arch, .cs-card:focus-within .cs-card-arch { opacity: 1; }
+    .cs-card-arch:hover { color: var(--propia-brand); background: var(--propia-brand-soft); border-color: var(--propia-brand-border); }
     .cs-card-thumb { display: flex; align-items: center; justify-content: center; }
     .cs-modal .cs-avatar {
         width: 64px; height: 64px; border-radius: 16px;
@@ -704,7 +768,28 @@
     }
     .cs-td-cod { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--propia-brand); font-weight: 700; }
     .cs-td-go { text-align: right; color: var(--propia-text-faint); width: 32px; }
+    .cs-td-ult { color: var(--propia-text-muted); font-size: 12px; white-space: nowrap; }
+    .cs-td-act { text-align: right; white-space: nowrap; width: 130px; }
     .cs-td-empty { text-align: center; color: var(--propia-text-muted); padding: 24px 12px; }
+    /* Boton de accion por fila: Archivar (vista Tabla) / Activar (vista Archivadas). */
+    .cs-rowbtn {
+        display: inline-flex; align-items: center; gap: 5px;
+        border: 1px solid var(--propia-border-card); background: var(--propia-bg-card);
+        color: var(--propia-text-secondary); font-size: 11.5px; font-weight: 700;
+        border-radius: 7px; padding: 5px 10px; cursor: pointer; font-family: inherit;
+    }
+    .cs-rowbtn:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .cs-rowbtn:disabled { opacity: .5; cursor: default; }
+    .cs-rowbtn--ok:hover:not(:disabled) { border-color: var(--propia-success); color: var(--propia-success); background: var(--propia-ok-soft); }
+    /* En la vista Archivadas la fila no es clickeable (la accion es el boton Activar). */
+    .cs-trow--arch { cursor: default; }
+    .cs-trow--arch:hover > td { background: transparent; }
+    /* Contador de archivadas en el toggle. */
+    .cs-vt-count {
+        display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
+        font-size: 9.5px; font-weight: 800; border-radius: 10px; padding: 0 4px; margin-left: 4px;
+        background: var(--propia-brand-soft); color: var(--propia-brand);
+    }
 
     /* Formulario de creacion (un solo paso, sin wizard); contenido centrado dentro del frame ancho */
     .cs-form-body { padding: 18px 20px; overflow-y: auto; flex: 1; min-height: 0; }

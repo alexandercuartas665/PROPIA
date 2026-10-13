@@ -47,6 +47,9 @@ public interface IMisCopropiedadesService
 {
     Task<CopropiedadCreadaDto> CrearAsync(CrearCopropiedadRequest req, Guid userId, CancellationToken ct);
 
+    /// <summary>Archiva/desarchiva la copropiedad en el selector del usuario (preferencia personal por-usuario).</summary>
+    Task ArchivarAsync(Guid userId, Guid tenantId, bool archivar, CancellationToken ct);
+
     /// <summary>Alta desde /bienvenida: tolera sesion SIN tenant activo y crea organizacion si hace falta.</summary>
     Task<CopropiedadCreadaDto> CrearPrimeraAsync(CrearPrimeraCopropiedadRequest req, Guid userId, CancellationToken ct);
 }

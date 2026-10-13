@@ -289,6 +289,34 @@ public class MisCopropiedadesService : IMisCopropiedadesService
     /// funcion SECURITY DEFINER get_tenants_for_persona para saltar la RLS de usuarios_tenant (que
     /// solo deja ver el tenant activo). Habilita crear copropiedades desde cualquier contexto.
     /// </summary>
+    public async Task ArchivarAsync(Guid userId, Guid tenantId, bool archivar, CancellationToken ct)
+    {
+        var personaId = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+        if (personaId is not Guid pid)
+            throw new InvalidOperationException("El usuario no tiene una persona asociada.");
+
+        // usuarios_tenant tiene RLS FORCE y se puede archivar una copropiedad distinta a la activa, asi que
+        // se usa la funcion SECURITY DEFINER set_usuario_tenant_archivado (row_security off). Solo afecta el
+        // vinculo de ESTA persona con ESE tenant, asi que un usuario solo archiva lo suyo.
+        var conn = _db.Database.GetDbConnection();
+        var openedHere = conn.State != System.Data.ConnectionState.Open;
+        if (openedHere) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT set_usuario_tenant_archivado(@p_persona_id, @p_tenant_id, @p_archivado)";
+            void AddParam(string name, object value) { var pr = cmd.CreateParameter(); pr.ParameterName = name; pr.Value = value; cmd.Parameters.Add(pr); }
+            AddParam("@p_persona_id", pid);
+            AddParam("@p_tenant_id", tenantId);
+            AddParam("@p_archivado", archivar);
+            var affected = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct) ?? 0);
+            if (affected == 0)
+                throw new InvalidOperationException("No perteneces a esa copropiedad (o ya no esta disponible).");
+        }
+        finally { if (openedHere) await conn.CloseAsync(); }
+    }
+
     private async Task<List<Guid>> GetTenantsAdministradosAsync(Guid personaId, CancellationToken ct)
     {
         var ids = new List<Guid>();

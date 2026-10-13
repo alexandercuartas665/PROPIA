@@ -335,7 +335,7 @@ public class AuthService : IAuthService
         try
         {
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT tenant_id, nombre, rol, logo_url FROM get_tenants_for_persona(@p_persona_id)";
+            cmd.CommandText = "SELECT tenant_id, nombre, rol, logo_url, archivado, ultimo_acceso FROM get_tenants_for_persona(@p_persona_id)";
             var p = cmd.CreateParameter();
             p.ParameterName = "@p_persona_id";
             p.Value = personaId;
@@ -345,7 +345,10 @@ public class AuthService : IAuthService
             while (await reader.ReadAsync(ct))
             {
                 var logo = reader.IsDBNull(3) ? null : reader.GetString(3);
-                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), _blob.ResolveUrl(logo)));
+                var archivado = !reader.IsDBNull(4) && reader.GetBoolean(4);
+                DateTimeOffset? ultimoAcceso = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5);
+                rows.Add(new TenantInfo(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), _blob.ResolveUrl(logo),
+                    Archivado: archivado, UltimoAcceso: ultimoAcceso));
             }
         }
         finally

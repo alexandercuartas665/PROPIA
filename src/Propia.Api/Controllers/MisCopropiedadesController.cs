@@ -27,4 +27,20 @@ public class MisCopropiedadesController : ControllerBase
         try { return Ok(await _svc.CrearAsync(req, userId, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    /// <summary>Archiva la copropiedad en el selector del usuario actual (preferencia personal, no cambia el estado global).</summary>
+    [HttpPut("{tenantId:guid}/archivar")]
+    public async Task<IActionResult> Archivar(Guid tenantId, CancellationToken ct) => await SetArchivado(tenantId, true, ct);
+
+    /// <summary>Reactiva (desarchiva) la copropiedad en el selector del usuario actual.</summary>
+    [HttpPut("{tenantId:guid}/desarchivar")]
+    public async Task<IActionResult> Desarchivar(Guid tenantId, CancellationToken ct) => await SetArchivado(tenantId, false, ct);
+
+    private async Task<IActionResult> SetArchivado(Guid tenantId, bool archivar, CancellationToken ct)
+    {
+        var raw = User.FindFirstValue("user_id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(raw, out var userId)) return Unauthorized();
+        try { await _svc.ArchivarAsync(userId, tenantId, archivar, ct); return NoContent(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }
