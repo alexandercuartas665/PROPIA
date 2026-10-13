@@ -331,9 +331,10 @@ else
             <div class="ea-list-newrow ea-newrow--edit ea-listgrid" style="@EaGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownE">
                 <div class="ea-sel-cell"></div>
                 <div class="ea-col-exp">
-                    <span class="ea-exp-mut" title="Nuevo equipo o activo">
+                    @* Expander del alta (como Unidades): crea el equipo con lo escrito y abre su ficha para completar. *@
+                    <button type="button" class="ea-exp-fijo" tabindex="-1" title="Crear y abrir la ficha para completar" @onclick="CrearYAbrirFichaAsync" disabled="@_busy">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    </span>
+                    </button>
                 </div>
                 @foreach (var k in ColsVisibles())
                 {
@@ -1615,7 +1616,20 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 creado = await resp.Content.ReadFromJsonAsync<EquipoActivoDto>();
-                _draft.Reset(); _reveal = 0; _composerOpen = false; _nonce++;
+                // Persiste los campos dinamicos escritos en la fila de alta (igual que CrearDesdeDraftAsync),
+                // para que el expander del alta inline no los pierda.
+                if (creado is not null && _nuCampos.Count > 0)
+                {
+                    try
+                    {
+                        foreach (var kv in _nuCampos)
+                            if (!string.IsNullOrWhiteSpace(kv.Value))
+                                await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{creado.Id}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                    }
+                    catch { }
+                }
+                _nuCampos.Clear();
+                _draft.Reset(); _reveal = 0; _composerOpen = false; _altaAbiertaE = false; _nonce++;
                 await CargarAsync();
             }
             else Msg(await MensajeDeError(resp, "No se pudo crear el equipo."), false);
