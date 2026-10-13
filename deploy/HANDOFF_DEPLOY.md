@@ -15,17 +15,20 @@
 
 ---
 
-## ESTADO 2026-10-13 Columnas mover+ancho (Seguros/Tareas/Comunicaciones/Lista negra) + retiro PQRSD legacy
+## ESTADO 2026-10-13 Columnas mover+ancho (9 modulos) + retiro PQRSD legacy
 
-Versiones 0.0.126-0.0.129. **Sin migraciones.** Todo UI salvo UN cambio de backend (constante):
-- `MiCopropiedadService.Unidades.cs` -> `EntidadesCampoConfig` += `"comunicacion"`, `"listanegra"` (whitelist del
-  endpoint generico `unidades-config`; la tabla ya es generica, sin migracion). Sin esto, Comunicaciones y
-  Lista negra dan 400 al guardar orden/ancho de columnas.
-- UI: reorder-drag + resize de columnas en Seguros, Tareas (vista Tabla), Comunicaciones y Lista negra
-  (persisten en unidades-config: Seguros=poliza, Tareas=config del tablero, Comunicaciones=comunicacion,
-  Lista negra=listanegra). Tareas: fix de `GuardarColCfgT` que borraba el ancho al reordenar/ocultar.
+Versiones 0.0.126-0.0.131. **Sin migraciones.** Todo UI salvo UN cambio de backend (constante):
+- `MiCopropiedadService.Unidades.cs` -> `EntidadesCampoConfig` += `comunicacion, listanegra, asamblea,
+  lineawhatsapp, cartera, porteria_visitantes, porteria_movimientos, porteria_vehiculos,
+  porteria_correspondencia` (whitelist del endpoint generico `unidades-config`; la tabla ya es generica, sin
+  migracion). Sin esto, esos modulos dan 400 al guardar orden/ancho de columnas.
+- UI: reorder-drag + resize de columnas en Seguros, Tareas (vista Tabla), Comunicaciones, Lista negra,
+  Asambleas, Lineas WhatsApp, Cartera y Porteria (4 tablas). Persisten en unidades-config por entidad
+  (Seguros=poliza, Tareas=config del tablero, y las entidades nuevas de arriba). Porteria enruta sus 4 tablas
+  por prefijo del data-clave. Tareas: fix de `GuardarColCfgT` que borraba el ancho al reordenar/ocultar.
 - **Retirada** la lista PQRSD legacy (`Pqrs.razor`, rutas `/pqrs-list` y `/pqrsd-list`): estaba huerfana, la
   reemplaza `PqrsKanban.razor` (`/pqrs`,`/pqrsd`). Rollback: redeploy del artefacto previo.
+- **Pendiente** (no en este lote): Ola 8 Mantenimiento (requiere su normalizacion completa al `.tbl`).
 
 ---
 
