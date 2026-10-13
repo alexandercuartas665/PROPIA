@@ -86,22 +86,44 @@
         </div>
         <div class="pmm-field">
             <label class="pmm-label">Logo</label>
-            <input class="pmm-input" @bind="_form.LogoUrl" @bind:event="oninput" placeholder="URL del logo" />
-            <label class="pmm-upload">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                Subir archivo
-                <InputFile OnChange="SubirLogo" accept="image/jpeg,image/png,image/webp" hidden />
-            </label>
+            @* Tarjeta drag & drop: arrastra una imagen o haz clic. El <InputFile> cubre la zona (click + drop nativo). *@
+            <div class="pmm-drop @(_dragLogo ? "is-drag" : "")" @ondragenter="() => _dragLogo = true" @ondragleave="() => _dragLogo = false">
+                <InputFile class="pmm-drop-input" OnChange="SubirLogo" accept="image/jpeg,image/png,image/webp" title="Arrastra o haz clic para subir" />
+                @if (!string.IsNullOrWhiteSpace(_form.LogoUrl))
+                {
+                    <img class="pmm-drop-img" src="@_form.LogoUrl" alt="Logo" />
+                    <button type="button" class="pmm-drop-x" title="Quitar" @onclick="() => _form.LogoUrl = null">&times;</button>
+                }
+                else
+                {
+                    <div class="pmm-drop-cta">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        <span>Arrastra una imagen o haz clic</span>
+                        <small>JPG, PNG o WEBP &middot; max 5 MB</small>
+                    </div>
+                }
+            </div>
+            <input class="pmm-input pmm-url-inp" @bind="_form.LogoUrl" @bind:event="oninput" placeholder="…o pega una URL" />
         </div>
         <div class="pmm-field">
             <label class="pmm-label">Foto de fachada</label>
-            <input class="pmm-input" @bind="_form.FotoFachadaUrl" @bind:event="oninput" placeholder="URL de la foto" />
-            <label class="pmm-upload">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                Subir archivo
-                <InputFile OnChange="SubirFachada" accept="image/jpeg,image/png,image/webp" hidden />
-            </label>
-            <div class="pmm-help">se muestra como fondo del hero</div>
+            <div class="pmm-drop pmm-drop--wide @(_dragFachada ? "is-drag" : "")" @ondragenter="() => _dragFachada = true" @ondragleave="() => _dragFachada = false">
+                <InputFile class="pmm-drop-input" OnChange="SubirFachada" accept="image/jpeg,image/png,image/webp" title="Arrastra o haz clic para subir" />
+                @if (!string.IsNullOrWhiteSpace(_form.FotoFachadaUrl))
+                {
+                    <img class="pmm-drop-img" src="@_form.FotoFachadaUrl" alt="Foto de fachada" />
+                    <button type="button" class="pmm-drop-x" title="Quitar" @onclick="() => _form.FotoFachadaUrl = null">&times;</button>
+                }
+                else
+                {
+                    <div class="pmm-drop-cta">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        <span>Arrastra la foto de fachada o haz clic</span>
+                        <small>se muestra como fondo del hero &middot; max 5 MB</small>
+                    </div>
+                }
+            </div>
+            <input class="pmm-input pmm-url-inp" @bind="_form.FotoFachadaUrl" @bind:event="oninput" placeholder="…o pega una URL" />
         </div>
         <div class="pmm-field pmm-col-span-3">
             <label class="pmm-label">Descripción</label>
@@ -184,6 +206,8 @@
     private bool _regOpen;
     private bool _labelsOpen;
     private string? _uploadMsg;
+    private bool _dragLogo;
+    private bool _dragFachada;
 
     /// <summary>Solo el nombre es obligatorio. El contenedor consulta esto antes de guardar.</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(_form.Nombre);
@@ -226,25 +250,43 @@
 
     private async Task SubirImagen(InputFileChangeEventArgs e, string tipo)
     {
+        _dragLogo = false; _dragFachada = false;
         if (e.File is null) return;
-        if (e.File.Size > 5_000_000) { _uploadMsg = "Maximo 5 MB."; return; }
+        if (e.File.Size > 5_000_000) { _uploadMsg = "La imagen supera el maximo de 5 MB."; return; }
+        _uploadMsg = null;
         try
         {
+            // Bufferizar a bytes INMEDIATAMENTE: el stream de IBrowserFile (Blazor Server) no se puede
+            // reenviar directo via StreamContent (no es seekable / sin Content-Length) -> la subida fallaba.
+            // ByteArrayContent es seekable y con largo, asi que el POST al API sale bien.
+            byte[] bytes;
+            await using (var fs = e.File.OpenReadStream(5_000_000))
+            using (var ms = new MemoryStream())
+            {
+                await fs.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
             using var content = new MultipartFormDataContent();
-            await using var fs = e.File.OpenReadStream(5_000_000);
-            using var sc = new StreamContent(fs);
+            var sc = new ByteArrayContent(bytes);
             sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
             content.Add(sc, "file", e.File.Name);
 
             var resp = await Auth().PostAsync($"/api/uploads/imagen/{tipo}", content);
-            if (!resp.IsSuccessStatusCode) { _uploadMsg = "Subida fallo."; return; }
+            if (!resp.IsSuccessStatusCode)
+            {
+                string detalle = "";
+                try { var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>(); if (err is not null && err.TryGetValue("error", out var m)) detalle = ": " + m; } catch { }
+                _uploadMsg = $"No se pudo subir la imagen{detalle}";
+                return;
+            }
             var body = await resp.Content.ReadFromJsonAsync<UploadResp>();
             if (body is null) return;
             if (tipo == "logo") _form.LogoUrl = body.Url;
             else _form.FotoFachadaUrl = body.Url;
             _uploadMsg = null;
         }
-        catch (Exception ex) { _uploadMsg = ex.Message; }
+        catch (Exception ex) { _uploadMsg = "Error al subir: " + ex.Message; }
     }
     private record UploadResp(string Url);
 
