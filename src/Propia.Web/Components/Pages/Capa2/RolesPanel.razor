@@ -129,7 +129,9 @@ else
                             @* MP-04/MP-06: solo las acciones validas del modulo son editables; el resto = "." (no aplica). *@
                             if (!AccionAplica(mod, accion))
                             {
-                                <div class="usr-cell"><span class="usr-cell-na" title="No aplica en este modulo">&middot;</span></div>
+                                @* Simetria: en vez de un punto, una casilla DESHABILITADA (esta accion no se puede
+                                   otorgar en este modulo). Misma forma que la activa, pero apagada e inerte. *@
+                                <div class="usr-cell"><button class="usr-chk usr-chk--na" disabled title="Esta accion no se puede otorgar en este modulo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg></button></div>
                             }
                             else
                             {
@@ -161,37 +163,26 @@ else
     else
     {
         @* ================= BANDEJA (tabla) ================= *@
-        @* Barra de herramientas (objetivo visual Maqueta1 roles.html): Filtros + Buscar ... Ordenar + Agrupar. *@
+        @* Barra canonica (homogenea con Unidades): [Filtros] [Buscar] ... [Ordenar] [Agrupar], con menu de columna. *@
         <div class="rol-toolbar">
-            <button class="rol-tb-btn @(_filtrosOpen || _filtroCat is not null ? "on" : "")" @onclick="() => _filtrosOpen = !_filtrosOpen" title="Filtrar">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
-                Filtros
-            </button>
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="OnFiltroChanged" />
             <div class="rol-tb-search">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
                 <input placeholder="Buscar rol..." @bind="_busca" @bind:event="oninput" />
             </div>
             <div class="rol-tb-spacer"></div>
-            <button class="rol-tb-btn @(!_ordenAsc ? "on" : "")" @onclick="() => _ordenAsc = !_ordenAsc" title="Ordenar por nombre">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h8M3 18h5M17 7v12M17 19l3-3M17 19l-3-3"/></svg>
-                Ordenar
-            </button>
-            <button class="rol-tb-btn @(_agruparCat ? "on" : "")" @onclick="() => _agruparCat = !_agruparCat" title="Agrupar por categoria">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                Agrupar
-            </button>
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+            <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
         </div>
-        @if (_filtrosOpen)
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        @* "Editar campo" de la columna Categoria: modal canonico que muestra las categorias (semillas) y
+           permite agregar nuevas por copropiedad (se guardan en unidades-config entidad=rol, clave=categoria). *@
+        @if (_editSisClave == "categoria")
         {
-            <div class="rol-toolbar" style="margin-top:-6px">
-                <span style="font-size:12.5px;color:var(--propia-text-muted)">Categoria:</span>
-                <button class="rol-tb-btn @(_filtroCat is null ? "on" : "")" @onclick="() => _filtroCat = null">Todas</button>
-                @foreach (var c in Enum.GetValues<CategoriaRol>())
-                {
-                    var cc = c;
-                    <button class="rol-tb-btn @(_filtroCat == cc ? "on" : "")" @onclick="() => _filtroCat = cc">@LabelCategoria(cc)</button>
-                }
-            </div>
+            <EditarCampoSistemaModal Clave="categoria" DefLabel="Categoria" Tipo="Propia.Domain.Enums.TipoCampoTablero.Seleccion" Requerido="false"
+                                     EntidadConfig="rol" TituloSingular="rol" Jwt="@_jwt"
+                                     SemillaFallback="@CategoriasSemilla" PermiteAgregar="true"
+                                     Guardado="OnCategoriasGuardadas" Cerrado="() => _editSisClave = null" />
         }
         @* Barra de acciones masivas: aparece al seleccionar filas con el checkbox. Activar/Desactivar aplica
            solo a roles extendidos; Eliminar solo a personalizados (los base quedan protegidos). *@
@@ -224,21 +215,21 @@ else
                         {
                             var ck = col.Clave;
                             <th class="tbl-th--menu @(ck == "usuarios" ? "rol-th-num" : "")" data-clave="@ck" @onmousedown="e => IniciarReorder(e, ck)">
-                                <span class="tbl-th-lbl">@col.Label</span><span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(ck)" @ondblclick:stopPropagation="true"></span>
+                                <span class="tbl-th-lbl">@col.Label</span>@ChevCol(ck, col.Label, false)<span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(ck)" @ondblclick:stopPropagation="true"></span>
                             </th>
                         }
                         <th class="rol-th-acc"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @{ CategoriaRol? _lastCat = null; }
+                    @{ string? _lastGrp = null; var _gField = _grupos.FirstOrDefault(); }
                     @foreach (var r in RolesVista())
                     {
                         var rr = r;
-                        if (_agruparCat && r.Categoria != _lastCat)
+                        if (_gField is not null)
                         {
-                            _lastCat = r.Categoria;
-                            <tr class="rol-grouprow"><td colspan="7" class="rol-grouphdr">@LabelCategoria(r.Categoria)</td></tr>
+                            var _gv = GrupoValor(r, _gField);
+                            if (_gv != _lastGrp) { _lastGrp = _gv; <tr class="rol-grouprow"><td colspan="7" class="rol-grouphdr">@_gv</td></tr> }
                         }
                         <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)" @oncontextmenu="e => AbrirCtxRol(e, rr)" @oncontextmenu:preventDefault="true">
                             <td class="tbl-sel">
@@ -396,6 +387,13 @@ else
 </div>
 }
 
+<style>
+    /* Casilla DESHABILITADA de la matriz: misma forma que .usr-chk pero apagada e inerte (accion que no
+       aplica en ese modulo). Da simetria a la tabla en vez del punto suelto. */
+    .usr-chk--na { opacity: .45; cursor: default; background: var(--propia-bg-app); border-style: dashed; }
+    .usr-chk--na:hover { border-color: var(--propia-border-card); }
+</style>
+
 @code {
     private bool _authChecked;
     private string? _jwt;
@@ -407,18 +405,64 @@ else
     private Guid? _rolEditando;
     private RolDetalleDto? _detalleEdit;
 
-    // Barra de herramientas de la bandeja (objetivo visual Maqueta1): Filtros/Buscar/Ordenar/Agrupar.
+    // ===== Barra canonica (homogenea con Unidades): Filtro/Buscar + Ordenar/Agrupar (menus compartidos) =====
     private string _busca = "";
-    private bool _ordenAsc = true;
-    private bool _agruparCat;
-    private bool _filtrosOpen;
-    private CategoriaRol? _filtroCat;
+    private FiltroDinamico? _fd;
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private List<string> _grupos = new();
+    private TablaColMenu? _colMenu;
+    private string? _editSisClave;   // columna de sistema en edicion (por ahora solo "categoria")
+
+    private void OnFiltroChanged() => StateHasChanged();
+    private void OnSortsChanged() => StateHasChanged();
+    private void OnGruposChanged() => StateHasChanged();
+
+    // Campos del filtro dinamico (igual que el canon): nombre (texto), categoria/base (listas).
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "nombre", Label = "Rol", Kind = "texto" },
+        new() { Key = "categoria", Label = "Categoria", Kind = "sel",
+                Opciones = Enum.GetValues<CategoriaRol>().Select(c => (c.ToString(), LabelCategoria(c))).ToList() },
+        new() { Key = "base", Label = "Tipo", Kind = "sel",
+                Opciones = Enum.GetValues<TipoRol>().Where(t => t != TipoRol.Sistema).Select(t => (t.ToString(), LabelTipoRol(t))).ToList() },
+    };
+    private static string ValorCrudo(RolDto r, string key) => key switch
+    {
+        "nombre" => r.Nombre ?? "",
+        "categoria" => r.Categoria.ToString(),
+        "base" => r.Tipo.ToString(),
+        "usuarios" => r.CantidadUsuariosActivos.ToString(),
+        _ => "",
+    };
+    private static string LabelTipoRol(TipoRol t) => t switch
+    { TipoRol.Base => "Sistema", TipoRol.Extendido => "Extendido", _ => "Personalizado" };
+
+    private List<TablaOrdenarMenu.Col> ColsOrdenables()
+        => ColsRoles.Select(c => new TablaOrdenarMenu.Col(c.Clave, c.Label)).ToList();
+    private List<TablaAgruparMenu.Col> ColsAgrupables()
+        => new() { new("categoria", "Categoria"), new("base", "Tipo") };
+
+    // Valor de agrupacion legible por fila para el campo elegido.
+    private string GrupoValor(RolDto r, string field) => field switch
+    {
+        "categoria" => LabelCategoria(r.Categoria),
+        "base" => LabelTipoRol(r.Tipo),
+        _ => "",
+    };
+    // Valor ordenable por columna (numericos van rellenados para ordenar bien como texto).
+    private static string SortVal(RolDto r, string key) => key switch
+    {
+        "nombre" => r.Nombre ?? "",
+        "categoria" => r.Categoria.ToString(),
+        "base" => r.Tipo.ToString(),
+        "usuarios" => r.CantidadUsuariosActivos.ToString("D6"),
+        _ => "",
+    };
 
     private IEnumerable<RolDto> RolesVista()
     {
         if (_roles is null) return Enumerable.Empty<RolDto>();
         var q = _roles.Where(r => r.Tipo != TipoRol.Sistema);
-        if (_filtroCat is not null) q = q.Where(r => r.Categoria == _filtroCat);
         if (!string.IsNullOrWhiteSpace(_busca))
         {
             var t = _busca.Trim().ToLowerInvariant();
@@ -426,16 +470,58 @@ else
                 || (r.Descripcion ?? "").ToLowerInvariant().Contains(t)
                 || LabelCategoria(r.Categoria).ToLowerInvariant().Contains(t));
         }
-        // Los roles de sistema (base: no se pueden seleccionar ni borrar) van SIEMPRE primero; el orden
-        // por nombre (o por categoria al agrupar) se aplica dentro de cada grupo. clave base-first:
-        // !PuedeSeleccionar => 0 (arriba), seleccionables => 1.
-        q = _agruparCat
-            ? q.OrderBy(r => (int)r.Categoria).ThenBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenBy(r => r.Nombre)
-            : (_ordenAsc
-                ? q.OrderBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenBy(r => r.Nombre)
-                : q.OrderBy(r => PuedeSeleccionar(r) ? 1 : 0).ThenByDescending(r => r.Nombre));
-        return q;
+        if (_fd is not null) q = q.Where(r => _fd.Pasa(key => ValorCrudo(r, key)));
+
+        // Roles base (no seleccionables) SIEMPRE primero. Luego, si hay agrupacion, por el valor del grupo;
+        // luego los criterios de Ordenar; si no hay ninguno, por nombre ascendente.
+        var o = q.OrderBy(r => PuedeSeleccionar(r) ? 1 : 0);
+        if (_grupos.FirstOrDefault() is { } gf)
+            o = o.ThenBy(r => GrupoValor(r, gf), StringComparer.CurrentCultureIgnoreCase);
+        if (_sorts.Count > 0)
+            foreach (var s in _sorts)
+                o = s.Dir >= 0
+                    ? o.ThenBy(r => SortVal(r, s.Key), StringComparer.CurrentCultureIgnoreCase)
+                    : o.ThenByDescending(r => SortVal(r, s.Key), StringComparer.CurrentCultureIgnoreCase);
+        else
+            o = o.ThenBy(r => r.Nombre, StringComparer.CurrentCultureIgnoreCase);
+        return o;
     }
+
+    // ===== Menu de columna (ChevCol -> TablaColMenu): ordenar/filtrar + "Editar campo" (categoria) =====
+    private double _colMenuX, _colMenuY;
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+    {
+        _colMenuX = e.ClientX; _colMenuY = e.ClientY;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
+            case TablaColMenu.Accion.OrdenarDesc:
+                _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key)) await _fd.AgregarReglaCampo(col.Key);
+                break;
+            case TablaColMenu.Accion.Editar:
+            case TablaColMenu.Accion.Descripcion:
+                // Solo la columna Categoria tiene lista editable (ver/agregar categorias). El resto no aplica.
+                if (col.Key == "categoria") _editSisClave = "categoria";
+                break;
+            default:
+                break;
+        }
+        StateHasChanged();
+    }
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+
+    // Semillas de categoria (las del enum) para el modal "Editar campo" de la columna Categoria.
+    private static readonly string[] CategoriasSemilla =
+        Enum.GetValues<CategoriaRol>().Select(LabelCategoria).ToArray();
+    private async Task OnCategoriasGuardadas() { await RecargarConfigAsync(); StateHasChanged(); }
 
     // ===== Seleccion multiple + acciones masivas (checkbox de la bandeja) =====
     // Un rol es accionable en masa solo si se puede activar/desactivar (Extendido) o eliminar (personalizado);
