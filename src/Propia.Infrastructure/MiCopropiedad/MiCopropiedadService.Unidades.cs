@@ -926,7 +926,7 @@ public partial class MiCopropiedadService
     private static readonly string[] EntidadesCampoConfig =
         { "unidad", "personas", "vehiculos", "mascotas", "terceros", "pqrsd", "contrato", "poliza",
           "programacion", "zona", "equipo", "usuario", "rol", "comunicacion", "listanegra",
-          "asamblea", "lineawhatsapp", "cartera",
+          "asamblea", "lineawhatsapp", "cartera", "intervencion",
           "porteria_visitantes", "porteria_movimientos", "porteria_vehiculos", "porteria_correspondencia" };
 
     private static string NormalizarEntidadCampoConfig(string? entidad)

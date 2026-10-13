@@ -15,20 +15,22 @@
 
 ---
 
-## ESTADO 2026-10-13 Columnas mover+ancho (9 modulos) + retiro PQRSD legacy
+## ESTADO 2026-10-13 Columnas mover+ancho (10 modulos) + retiro PQRSD legacy
 
-Versiones 0.0.126-0.0.131. **Sin migraciones.** Todo UI salvo UN cambio de backend (constante):
+Versiones 0.0.126-0.0.132. **Sin migraciones.** Todo UI salvo UN cambio de backend (constante):
 - `MiCopropiedadService.Unidades.cs` -> `EntidadesCampoConfig` += `comunicacion, listanegra, asamblea,
-  lineawhatsapp, cartera, porteria_visitantes, porteria_movimientos, porteria_vehiculos,
+  lineawhatsapp, cartera, intervencion, porteria_visitantes, porteria_movimientos, porteria_vehiculos,
   porteria_correspondencia` (whitelist del endpoint generico `unidades-config`; la tabla ya es generica, sin
-  migracion). Sin esto, esos modulos dan 400 al guardar orden/ancho de columnas.
+  migracion). (`programacion` ya estaba.) Sin esto, esos modulos dan 400 al guardar orden/ancho de columnas.
 - UI: reorder-drag + resize de columnas en Seguros, Tareas (vista Tabla), Comunicaciones, Lista negra,
-  Asambleas, Lineas WhatsApp, Cartera y Porteria (4 tablas). Persisten en unidades-config por entidad
-  (Seguros=poliza, Tareas=config del tablero, y las entidades nuevas de arriba). Porteria enruta sus 4 tablas
-  por prefijo del data-clave. Tareas: fix de `GuardarColCfgT` que borraba el ancho al reordenar/ocultar.
+  Asambleas, Lineas WhatsApp, Cartera, Porteria (4 tablas) y Mantenimiento (Programacion + Intervenciones).
+  Persisten en unidades-config por entidad (Seguros=poliza, Tareas=config del tablero, y las entidades
+  nuevas de arriba). Porteria y Mantenimiento enrutan sus varias tablas por prefijo del data-clave. Tareas:
+  fix de `GuardarColCfgT` que borraba el ancho al reordenar/ocultar.
 - **Retirada** la lista PQRSD legacy (`Pqrs.razor`, rutas `/pqrs-list` y `/pqrsd-list`): estaba huerfana, la
   reemplaza `PqrsKanban.razor` (`/pqrs`,`/pqrsd`). Rollback: redeploy del artefacto previo.
-- **Pendiente** (no en este lote): Ola 8 Mantenimiento (requiere su normalizacion completa al `.tbl`).
+- **Programa COMPLETO:** toda vista-tabla de datos del tenant tiene mover-columna + ancho. (La tabla de
+  Planes/plantillas de Mantenimiento y la normalizacion grande al `.tbl` son otro plan, fuera de esto.)
 
 ---
 

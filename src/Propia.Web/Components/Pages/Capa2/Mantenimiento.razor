@@ -170,7 +170,7 @@
             <div class="mtp-head" style="@ProgGrid">
                 <div class="mtp-sel-col"><label class="mtp-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasProgSel" @onchange="ToggleSelAllProg" /></label></div>
                 <div></div>
-                @foreach (var c in ProgColsVis) { <div>@c.Label</div> }
+                @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @foreach (var grupo in ProgGruposRender())
@@ -506,7 +506,7 @@
         <div class="mtp-table mtp-table--wide">
             <div class="mtp-head" style="@IntervGrid">
                 <div></div>
-                @foreach (var c in IntervColsVis) { <div>@c.Label</div> }
+                @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @foreach (var grupo in IntervGruposRender())
@@ -1267,6 +1267,14 @@ else if (_tab == "calendario")
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
 <ModalHost />
 
+@* Handle de redimensionar columnas (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. El th
+   lleva position:relative; el cursor grab lo da [data-clave] (tabla-base.css). *@
+<style>
+    .mtp-head .mtp-th { position: relative; min-width: 0; }
+    .mtp-col-rz { position: absolute; top: 0; right: -5px; width: 10px; height: 100%; cursor: col-resize; z-index: 9; }
+    .mtp-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 4px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .mtp-col-rz:hover::after { background: var(--propia-brand); }
+</style>
 
 @code {
     private string? _jwt;
@@ -1293,6 +1301,81 @@ else if (_tab == "calendario")
     private DotNetObjectReference<Mantenimiento> Self => _self ??= DotNetObjectReference.Create(this);
     private string? _altaWiredSig;   // (re)instala el listener de guardado invisible solo cuando cambia el estado
     public void Dispose() { _self?.Dispose(); }
+
+    // ===== Mover columnas (drag) + ancho (resize) en las 2 tablas (Programacion/Intervenciones).
+    // Un solo OnColReorder/OnColResize enruta por el PREFIJO del data-clave ("prog:titulo"). El ancho se
+    // persiste en Formato "w" de la misma config (entidad programacion / intervencion). =====
+    private readonly Dictionary<string, int> _colWProg = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _colWInterv = new(StringComparer.Ordinal);
+    private void HidratarAnchosProg()
+    { _colWProg.Clear(); foreach (var kv in _cfgProg) { var w = AnchoDeFormatoM(kv.Value.Formato); if (w is > 0) _colWProg[kv.Key] = w.Value; } }
+    private void HidratarAnchosInterv()
+    { _colWInterv.Clear(); foreach (var kv in _cfgInterv) { var w = AnchoDeFormatoM(kv.Value.Formato); if (w is > 0) _colWInterv[kv.Key] = w.Value; } }
+    private static int? AnchoDeFormatoM(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAnchoM(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private async Task IniReorderM(MouseEventArgs e, string tbl, string k)
+    { try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", Self, $"{tbl}:{k}", e.ClientX, e.ClientY); } catch { } }
+    private async Task IniResizeM(MouseEventArgs e, string tbl, string k)
+    { try { await Js.InvokeVoidAsync("propiaTablaResize.start", Self, $"{tbl}:{k}", e.ClientX); } catch { } }
+    private Task ResetResizeM(string tbl, string k) => OnColResize($"{tbl}:{k}", 0);
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        var ps = src.Split(':', 2); var pd = dest.Split(':', 2);
+        if (ps.Length < 2 || pd.Length < 2 || ps[0] != pd[0]) return;
+        string tbl = ps[0], sk = ps[1], dk = pd[1];
+        if (sk == dk) return;
+        if (tbl == "prog")
+        {
+            var keys = ClavesOrdenadasProg().ToList();
+            var from = keys.IndexOf(sk); var to = keys.IndexOf(dk);
+            if (from < 0 || to < 0) return;
+            keys.RemoveAt(from); keys.Insert(to, sk);
+            for (int i = 0; i < keys.Count; i++) await GuardarCfgProgAsync(FilaConfigProg(keys[i]) with { Orden = i });
+            await CargarConfigProgAsync();
+        }
+        else if (tbl == "interv")
+        {
+            var keys = ClavesOrdenadasInterv().ToList();
+            var from = keys.IndexOf(sk); var to = keys.IndexOf(dk);
+            if (from < 0 || to < 0) return;
+            keys.RemoveAt(from); keys.Insert(to, sk);
+            for (int i = 0; i < keys.Count; i++) await GuardarCfgIntervAsync(FilaConfigInterv(keys[i]) with { Orden = i });
+            await CargarConfigIntervAsync();
+        }
+        StateHasChanged();
+    }
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        var p = clave.Split(':', 2); if (p.Length < 2) return;
+        string tbl = p[0], k = p[1];
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (tbl == "prog")
+        {
+            if (w is null) _colWProg.Remove(k); else _colWProg[k] = w.Value;
+            var fmt = _cfgProg.TryGetValue(k, out var c) ? c.Formato : null;
+            await GuardarCfgProgAsync(FilaConfigProg(k) with { Formato = ConAnchoM(fmt, w) });
+            await CargarConfigProgAsync();
+        }
+        else if (tbl == "interv")
+        {
+            if (w is null) _colWInterv.Remove(k); else _colWInterv[k] = w.Value;
+            var fmt = _cfgInterv.TryGetValue(k, out var c) ? c.Formato : null;
+            await GuardarCfgIntervAsync(FilaConfigInterv(k) with { Formato = ConAnchoM(fmt, w) });
+            await CargarConfigIntervAsync();
+        }
+        StateHasChanged();
+    }
+
     private string? _msg;
     private string _msgClass = "alert-info";
     private string _tab = "prog";
@@ -1499,6 +1582,7 @@ else if (_tab == "calendario")
             _cfgProg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
         catch { _cfgProg = new(StringComparer.Ordinal); }
+        HidratarAnchosProg();
     }
 
     // El gestor compartido cambio algo (alias/orden/visibilidad): refresca la config de columnas.
@@ -1515,7 +1599,7 @@ else if (_tab == "calendario")
             var cols = new List<string> { "38px", "34px" };
             foreach (var c in ProgColsVis)
             {
-                cols.Add(c.Key switch
+                cols.Add(_colWProg.TryGetValue(c.Key, out var wP) ? $"{wP}px" : c.Key switch
                 {
                     "tipo" => "minmax(96px,.8fr)",
                     "activo" => "minmax(150px,1.4fr)",
@@ -1693,6 +1777,7 @@ else if (_tab == "calendario")
             _cfgInterv = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
         catch { _cfgInterv = new(StringComparer.Ordinal); }
+        HidratarAnchosInterv();
     }
     private async Task CargarCamposIntervAsync()
     {
@@ -1741,7 +1826,7 @@ else if (_tab == "calendario")
         {
             var cols = new List<string> { "34px" };
             foreach (var c in IntervColsVis)
-                cols.Add(c.Key switch
+                cols.Add(_colWInterv.TryGetValue(c.Key, out var wI) ? $"{wI}px" : c.Key switch
                 {
                     "codigo" => "minmax(110px,.9fr)", "activo" => "minmax(140px,1.3fr)", "tipo" => "minmax(100px,.8fr)",
                     "titulo" => "minmax(160px,1.5fr)", "estado" => "minmax(120px,1fr)", "prioridad" => "minmax(95px,.8fr)",
