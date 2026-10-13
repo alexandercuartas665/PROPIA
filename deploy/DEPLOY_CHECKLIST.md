@@ -1,12 +1,13 @@
 # PROPIA - Checklist de deploy
 
-> **DEPLOY VIGENTE: 0.0.144 (2026-10-13).** `main` HEAD `12115655`. Esta tanda (0.0.142-0.0.144) es **UI +
-> servicio, SIN migraciones**: expander del alta que crea+abre ficha (Zonas/Equipos/Residentes/Seguros/Contratos)
-> + HOTFIX que hace que el error del limite de copropiedades NOMBRE la organizacion. Deploy = redeploy del
-> artefacto de `main`. Detalle en `DEPLOY_HANDOFF_2026-10-13_v0.0.144.md` + `HANDOFF_DEPLOY.md`.
-> **Prod ya esta en 0.0.141**, asi que la migracion `AddOrganizacionLimiteCopropiedades` YA se aplico; de 0.0.141
-> a 0.0.144 NO hay migracion. Si se despliega sobre prod anterior a 0.0.141, aplicar esa migracion (ver doc 0.0.141).
-> Si prod viene de antes de 0.0.132, revisar migraciones aditivas pendientes de tandas previas (p.ej. 0.0.125).
+> **DEPLOY VIGENTE: 0.0.145 (2026-10-13).** `main` HEAD `3c1e864a`. Esta tanda lleva **1 MIGRACION**
+> (`AddUsuarioTenantArchivado`: columna `archivado` en `usuarios_tenant` + recrea `get_tenants_for_persona` y
+> agrega `set_usuario_tenant_archivado`) + UI/servicio: vista "Archivadas" en el selector "Mis copropiedades"
+> (archivar/activar por usuario). **APLICAR la migracion** (codigo + migracion JUNTOS) y redeploy. Detalle en
+> `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md` + `HANDOFF_DEPLOY.md`.
+> **Prod ya esta en 0.0.141** (`AddOrganizacionLimiteCopropiedades` ya aplicada). De 0.0.141 a 0.0.145 la UNICA
+> migracion es `AddUsuarioTenantArchivado` (0.0.142-0.0.144 eran UI/servicio sin migracion). Si se despliega sobre
+> prod anterior a 0.0.141, aplicar ademas esa migracion (ver doc 0.0.141) y revisar pendientes previas (p.ej. 0.0.125).
 >
 > **Historico:** DEPLOY 0.0.113 (2026-10-09) en `DEPLOY_HANDOFF_2026-10-09_v0.0.113.md`.
 > Lo de abajo es historico (snapshot 0.0.93) y NO refleja el estado actual.

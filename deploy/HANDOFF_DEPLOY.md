@@ -1,17 +1,18 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.144** (`main` HEAD `12115655`, rama
-> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.142-0.0.144) es **UI + servicio,
-> SIN migraciones**: (1) el expander de la fila de alta ahora crea+abre ficha en Zonas, Equipos, Residentes,
-> Seguros y Contratos (como Unidades); (2) HOTFIX: el error del limite de copropiedades ahora NOMBRA la
-> organizacion + log de diagnostico (reporte de prod "amplie el limite pero sigue en 1"; el limite es por
-> organizacion y no se veia cual). **Deploy = redeploy del artefacto de `main`** (NO hay migracion nueva).
-> Detalle en la seccion **ESTADO 2026-10-13 Expander del alta + hotfix limite** y en el doc per-deploy
-> `DEPLOY_HANDOFF_2026-10-13_v0.0.144.md`.
+> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.145** (`main` HEAD `3c1e864a`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.145) tiene **1 MIGRACION** +
+> UI/servicio: vista **"Archivadas"** en el selector "Mis copropiedades" (archivar/activar copropiedades
+> POR USUARIO desde galeria y tabla; la tabla pierde la columna Rol y gana "Ultimo ingreso"). **APLICAR la
+> migracion** `AddUsuarioTenantArchivado` (columna `archivado` en `usuarios_tenant` + recrea la funcion SQL
+> `get_tenants_for_persona` y agrega `set_usuario_tenant_archivado`) y redeploy del artefacto de `main`.
+> Detalle en la seccion **ESTADO 2026-10-13 Selector: vista Archivadas** y en el doc per-deploy
+> `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md`.
 >
-> **OJO - prod ya esta en 0.0.141** (su error de limite dice "El limite permitido es..."), asi que la
-> MIGRACION `AddOrganizacionLimiteCopropiedades` (0.0.141) YA se aplico. Si por alguna razon se despliega sobre
-> una prod ANTERIOR a 0.0.141, aplicar esa migracion (ver doc 0.0.141). De 0.0.141 a 0.0.144 NO hay migracion.
+> **OJO - prod ya esta en 0.0.141** (la migracion `AddOrganizacionLimiteCopropiedades` ya se aplico). Las
+> tandas 0.0.142-0.0.144 (expander del alta + hotfix del limite) son UI/servicio SIN migracion. La UNICA
+> migracion pendiente de 0.0.141 a 0.0.145 es `AddUsuarioTenantArchivado` (esta tanda). Si se despliega sobre
+> una prod ANTERIOR a 0.0.141, aplicar ademas `AddOrganizacionLimiteCopropiedades` (ver doc 0.0.141).
 > Todo lo anterior a 0.0.132 sigue vigente. El bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
 >
 > Generado 2026-09-10, actualizado **2026-09-28 (TANDA 2: carga masiva single-tenant + ficha unidad + AGRUPAR compartido + hubs)**.
@@ -26,6 +27,51 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-13 Selector "Mis copropiedades": vista Archivadas (archivar/activar por usuario)
+
+Version **0.0.145**. Commit `3c1e864a`. Rama `equipo/alex-header-zonas-equipos` (ya en `main`).
+
+### 1 MIGRACION NUEVA - APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- **`20261013214928_AddUsuarioTenantArchivado`**:
+  - Agrega columna `archivado boolean not null default false` a `usuarios_tenant` (TenantEntity; la RLS existente
+    ya la cubre, no hay bloque RLS nuevo).
+  - **Recrea la funcion SQL `get_tenants_for_persona(uuid)`** para devolver ademas `archivado` y `ultimo_acceso`
+    (cambia la firma -> DROP + CREATE; SECURITY DEFINER, igual que antes).
+  - **Crea la funcion `set_usuario_tenant_archivado(persona, tenant, archivado)`** (SECURITY DEFINER, row_security
+    off) que archiva/activa el vinculo de UNA persona con UN tenant saltando la RLS de `usuarios_tenant`.
+  Reversible (Down restaura la firma vieja de la funcion y quita la columna).
+
+### Que habilita
+En el selector "Mis copropiedades" (`CopropiedadSwitcher`, el modal que abre al tocar el nombre de la copropiedad
+arriba):
+- 3ra vista **"Archivadas"** (siempre en tabla) con contador en el toggle.
+- **Icono de archivar** en las tarjetas (galeria) y **boton Archivar** en la vista Tabla; en Archivadas,
+  **boton Activar** (desarchivar). Las archivadas NO salen en Galeria ni Tabla.
+- Vista **Tabla**: quitada la columna **Rol**; ahora `Copropiedad | Codigo | Ultimo ingreso | accion`.
+- **Archivar es POR USUARIO** (preferencia personal del selector; NO cambia el estado global de la copropiedad
+  ni afecta a otros usuarios). "Ultimo ingreso" = `usuarios_tenant.ultimo_acceso` del propio usuario.
+
+### Cambios de codigo (sin seeds ni config)
+- `UsuarioTenant.cs` (+`Archivado`). Migracion arriba.
+- `TenantInfo` (Application) / `TenantInfoDto` (Shared) += `Archivado`, `UltimoAcceso`; `AuthService.cs` lee las
+  columnas nuevas de la funcion (GoogleSignInService solo lee 2 columnas -> no cambia).
+- `MisCopropiedadesController.cs` (`PUT ~/api/mis-copropiedades/{tenantId}/archivar` y `/desarchivar`) +
+  `IMisCopropiedadesService`/`MisCopropiedadesService.cs` (`ArchivarAsync`, via la funcion SECURITY DEFINER).
+- `CopropiedadSwitcher.razor` (3 vistas + iconos + columnas + CSS).
+
+### Verificacion (dev, demo admin con varias copropiedades, Web 5105)
+Archivar [YUNQUE] desde la tabla -> sale de Tabla y Galeria, "Archivadas" pasa a 1; en Archivadas -> Activar ->
+vuelve a la lista; galeria con icono de archivar en cada tarjeta; Tabla sin Rol y con Ultimo ingreso. Es por-usuario
+(la funcion solo toca el vinculo de la persona autenticada). Sin datos de prueba (0 `archivado=true` al cerrar).
+
+### Rollback
+Redeploy del artefacto previo. La columna es aditiva e inerte para el codigo viejo; opcionalmente `database update`
+a la migracion anterior (restaura la firma vieja de `get_tenants_for_persona`). OJO: el codigo viejo espera la
+funcion con 4 columnas, asi que si se hace rollback del CODIGO hay que revertir TAMBIEN la migracion (o la funcion
+devolveria 6 columnas y AuthService leeria por indice 0-3 sin romper, pero mejor revertir ambos juntos).
 
 ---
 
