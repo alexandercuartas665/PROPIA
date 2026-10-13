@@ -266,9 +266,10 @@
                         <div class="seg-row seg-newrow seg-newrow--edit seg-grid" style="@GridStyle()" @onkeydown="OnAltaKeydownS">
                             <div class="seg-sel"></div>
                             <div class="seg-exp-col">
-                                <span class="seg-exp seg-exp-fijo seg-exp-mut" title="Nueva póliza">
+                                @* Expander del alta (como Unidades): crea la poliza con lo escrito y abre su ficha para completar. *@
+                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Crear y abrir la ficha para completar" @onclick="() => CrearPolizaDesdeAltaAsync(true)" disabled="@_creandoInline">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                </span>
+                                </button>
                             </div>
                             @foreach (var clave in ColsVisibles())
                             {
@@ -1734,10 +1735,11 @@
     private bool _inlineMsgEsError;
     private readonly List<Guid> _segRecienCreados = new();
 
-    private async Task CrearPolizaDesdeAltaAsync()
+    private async Task CrearPolizaDesdeAltaAsync(bool abrir = false)
     {
         if (string.IsNullOrWhiteSpace(_npAseguradora)) { _inlineMsg = "Indica la aseguradora para crear la poliza."; _inlineMsgEsError = true; return; }
         _creandoInline = true;
+        PolizaDto? creada = null;
         try
         {
             DateOnly? ini = DateOnly.TryParse(_npInicio, out var di) ? di : (DateOnly?)null;
@@ -1750,7 +1752,7 @@
                 FechaInicio: ini, FechaFin: fin, ValorPoliza: valor));
             if (resp.IsSuccessStatusCode)
             {
-                try { var creada = await resp.Content.ReadFromJsonAsync<PolizaDto>(); if (creada is not null) _segRecienCreados.Add(creada.Id); } catch { }
+                try { creada = await resp.Content.ReadFromJsonAsync<PolizaDto>(); if (creada is not null) _segRecienCreados.Add(creada.Id); } catch { }
                 _npNumero = ""; _npAseguradora = ""; _npCorredor = ""; _npValor = ""; _npInicio = ""; _npFin = "";
                 _altaAbierta = false;   // tras crear, la fila se cierra y reaparece la CTA (canon)
                 _inlineMsg = "Poliza creada."; _inlineMsgEsError = false;
@@ -1760,6 +1762,8 @@
         }
         catch (Exception ex) { _inlineMsg = ex.Message; _inlineMsgEsError = true; }
         finally { _creandoInline = false; }
+        // Desde el expander: tras crear, abre la ficha/modal de la poliza para completarla (como Unidades).
+        if (abrir && creada is not null) await AbrirModal(creada.Id);
     }
 
     private async Task CargarAsync()

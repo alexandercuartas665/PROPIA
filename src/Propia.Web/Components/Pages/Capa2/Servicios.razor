@@ -632,7 +632,7 @@ else
                             <tr class="ctr-row ctr-newrow ctr-newrow--edit" @onkeydown="OnAltaKeydownC">
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col">
-                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear el contrato" @onclick="CrearDesdeAltaAsync" disabled="@_busy">
+                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear y abrir la ficha para completar" @onclick="() => CrearDesdeAltaAsync(true)" disabled="@_busy">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     </button>
                                 </td>
@@ -3022,10 +3022,11 @@ else
     // Contratos recien creados en esta pantalla: se resaltan hasta el proximo refresco.
     private readonly List<Guid> _ctrRecienCreados = new();
 
-    private async Task CrearDesdeAltaAsync()
+    private async Task CrearDesdeAltaAsync(bool abrir = false)
     {
         if (_ncProveedor is null) { _msg = "Elige el contratista para crear el contrato."; return; }
         _busy = true;
+        ContratoServicioDto? creado = null;
         try
         {
             Guid? ppid = _ncProveedor.EntidadTipo == EntidadDirectorio.Empresa ? null : _ncProveedor.PersonaId;
@@ -3063,7 +3064,7 @@ else
             if (resp.IsSuccessStatusCode)
             {
                 Guid? creadoId = null;
-                try { var creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); if (creado is not null) { creadoId = creado.Id; _ctrRecienCreados.Add(creado.Id); } } catch { }
+                try { creado = await resp.Content.ReadFromJsonAsync<ContratoServicioDto>(); if (creado is not null) { creadoId = creado.Id; _ctrRecienCreados.Add(creado.Id); } } catch { }
                 if (creadoId is { } cid)
                 {
                     // Etapa (FK a ContratoEtapa): se setea tras crear (el create no la recibe).
@@ -3083,6 +3084,8 @@ else
             else { _msg = await MensajeErrorAsync(resp); _msgEsError = true; }
         }
         finally { _busy = false; }
+        // Desde el expander: tras crear, abre la ficha/modal del contrato para completarlo (como Unidades).
+        if (abrir && creado is not null) await AbrirModal(creado);
     }
 
     // Deja la fila de alta en blanco Y la cierra (canon clic-para-abrir): se invoca tras crear, al descartar
