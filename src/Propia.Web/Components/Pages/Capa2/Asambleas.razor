@@ -1,10 +1,12 @@
 @page "/asambleas"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Asambleas
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 <PageTitle>Asambleas - PROPIA</PageTitle>
 
@@ -102,14 +104,20 @@
 <div class="asa-box">
     <div class="asa-table-wrap">
         <table class="asa-table">
+            <colgroup>
+                <col style="width:34px" />
+                @foreach (var key in ColsVisibles) { <col style="@ColStyle(key)" /> }
+                <col style="width:70px" />
+            </colgroup>
             <thead>
                 <tr>
                     <th class="asa-th-exp"></th>
                     @foreach (var key in ColsVisibles)
                     {
                         var k = key;
-                        <th class="@(EsNum(k) ? "asa-th-num" : "")" @onclick="() => Ordenar(k)" title="Ordenar">
+                        <th class="@(EsNum(k) ? "asa-th-num" : "")" data-clave="@k" title="Clic: ordenar | arrastra: mover columna" @onmousedown="e => IniciarReorder(e, k)" @onclick="() => Ordenar(k)">
                             <span class="asa-th-lbl">@ColLabel(k)@(_sortCol == k ? (_sortAsc ? " ▲" : " ▼") : "")</span>
+                            <span class="asa-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(k)" @ondblclick:stopPropagation="true"></span>
                         </th>
                     }
                     <th class="asa-th-act"></th>
@@ -188,6 +196,11 @@
     .asa-table thead th.asa-th-exp, .asa-table thead th.asa-th-act { cursor: default; }
     .asa-th-exp { width: 34px; }
     .asa-th-act { width: 70px; }
+    /* Handle de redimensionar (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. El th sticky
+       ya ancla el absolute; cursor grab via [data-clave]. */
+    .asa-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 9; }
+    .asa-col-rz::after { content: ""; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .asa-col-rz:hover::after { background: var(--propia-brand); }
     .asa-table tbody td { padding: 9px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); vertical-align: middle; }
     .asa-table tbody tr:hover td { background: var(--propia-bg-hover); }
     .asa-td-exp { width: 34px; text-align: center; padding: 0 4px; }
@@ -233,6 +246,12 @@
     };
     private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
     private readonly HashSet<string> _colHidden = new();
+
+    // Config de columnas por copropiedad (orden/visibilidad/ancho), entidad 'asamblea'.
+    private const string EntCfg = "asamblea";
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private DotNetObjectReference<Asambleas>? _self;
 
     private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
     private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
@@ -321,25 +340,97 @@
 
     private void SetAgrupar(string v) { _agruparPor = v; _showAgrupar = false; _pagina = 1; }
 
-    private void MoverCol(int idx, int delta)
+    private async Task MoverCol(int idx, int delta)
     {
         var j = idx + delta;
         if (j < 0 || j >= _colOrder.Count) return;
         (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+        for (int i = 0; i < _colOrder.Count; i++) await GuardarCfg(FilaConfig(_colOrder[i]) with { Orden = i });
+        await CargarConfigAsync();
     }
 
-    private void SetColVisible(string key, bool visible)
+    private async Task SetColVisible(string key, bool visible)
     {
         if (!Catalogo.First(c => c.Key == key).Hideable) return;
         if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
+        await GuardarCfg(FilaConfig(key) with { Oculto = !visible });
+        await CargarConfigAsync();
     }
 
-    private void MostrarTodo() => _colHidden.Clear();
-    private void OcultarTodo()
+    private async Task MostrarTodo()
+    { foreach (var c in Catalogo) await GuardarCfg(FilaConfig(c.Key) with { Oculto = false }); await CargarConfigAsync(); }
+    private async Task OcultarTodo()
+    { foreach (var c in Catalogo.Where(c => c.Hideable)) await GuardarCfg(FilaConfig(c.Key) with { Oculto = true }); await CargarConfigAsync(); }
+
+    // ===== Config de columnas (orden/visibilidad/ancho) por copropiedad, entidad 'asamblea' =====
+    private UnidadCampoConfigDto? CfgDe(string k) => _cfg.TryGetValue(k, out var c) ? c : null;
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
     {
-        _colHidden.Clear();
-        foreach (var c in Catalogo.Where(c => c.Hideable)) _colHidden.Add(c.Key);
+        var c = CfgDe(clave);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg);
     }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
+        _colOrder = Catalogo.Select((c, i) => (c.Key, ord: CfgDe(c.Key)?.Orden ?? (1000 + i)))
+                            .OrderBy(x => x.ord).Select(x => x.Key).ToList();
+        _colHidden.Clear();
+        foreach (var c in Catalogo) if (c.Hideable && (CfgDe(c.Key)?.Oculto ?? false)) _colHidden.Add(c.Key);
+        HidratarAnchos();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private string ColStyle(string k) => $"width:{(_colW.TryGetValue(k, out var w) ? w : AnchoDefault(k))}px";
+    private static int AnchoDefault(string k) => k switch
+    { "titulo" => 320, "fecha" => 160, "modalidad" => 150, "estado" => 140, "participantes" => 130, "puntos" => 100, _ => 140 };
+
+    // ===== Reordenar (drag) + redimensionar columnas (JS compartido) =====
+    private async Task IniciarReorder(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ColsVisibles.ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        var full = keys.Concat(_colOrder.Where(k => !keys.Contains(k))).ToList();
+        for (int i = 0; i < full.Count; i++) await GuardarCfg(FilaConfig(full[i]) with { Orden = i });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private async Task IniciarResize(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResize(string k) => OnColResize(k, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        await GuardarCfg(FilaConfig(clave) with { Formato = ConAncho(CfgDe(clave)?.Formato, w) });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    public void Dispose() { _self?.Dispose(); }
 
     // ===== Render de fila (columnas dinamicas segun orden/visibilidad) =====
     private RenderFragment RenderFila(SesionListaDto s) => builder =>
@@ -442,7 +533,7 @@
 
     private async Task CargarAsync()
     {
-        try { _b = await Auth().GetFromJsonAsync<SesionBandejaDto>("/api/asambleas"); }
+        try { _b = await Auth().GetFromJsonAsync<SesionBandejaDto>("/api/asambleas"); await CargarConfigAsync(); }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 

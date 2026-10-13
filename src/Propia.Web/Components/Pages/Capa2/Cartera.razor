@@ -2,9 +2,11 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.Globalization
 @using Propia.Application.Cartera
+@using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@implements IDisposable
 
 <PageTitle>Cartera - PROPIA</PageTitle>
 
@@ -73,13 +75,17 @@ else
         </div>
 
         <div class="ca-card">
+          <div class="ca-tscroll">
             <div class="ca-thead">
-                <div class="ca-c ca-c-uni">UNIDAD / PROPIETARIO</div>
-                <div class="ca-c ca-c-deuda">DEUDA TOTAL</div>
-                <div class="ca-c ca-c-dias">DÍAS MORA</div>
-                <div class="ca-c ca-c-est">ESTADO</div>
-                <div class="ca-c ca-c-acu">ACUERDO</div>
-                <div class="ca-c ca-c-fic"></div>
+                @foreach (var key in ColsVisibles)
+                {
+                    var ck = key;
+                    <div class="ca-c @ColCellClass(ck)" data-clave="@ck" title="Clic: arrastra para mover columna" style="@ColStyle(ck)" @onmousedown="e => IniciarReorder(e, ck)">
+                        @ColLabel(ck).ToUpperInvariant()
+                        <span class="ca-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(ck)" @ondblclick:stopPropagation="true"></span>
+                    </div>
+                }
+                <div class="ca-c ca-c-fic" style="flex:0 0 70px"></div>
             </div>
             @{ var filtradas = FiltrarUnidades(); }
             @if (filtradas.Count == 0)
@@ -92,18 +98,12 @@ else
                 {
                     var uni = u;
                     <div class="ca-row">
-                        <div class="ca-c ca-c-uni">
-                            <div class="ca-row-nom">@u.UnidadNumero</div>
-                            <div class="ca-row-sub">@(string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre)</div>
-                        </div>
-                        <div class="ca-c ca-c-deuda">@Money(u.SaldoTotal)</div>
-                        <div class="ca-c ca-c-dias">@u.DiasMora</div>
-                        <div class="ca-c ca-c-est">@if (!string.IsNullOrWhiteSpace(u.EstadoGestionNombre)) { <span class="ca-pill" style="color:@(u.EstadoGestionColor ?? "#516F90");background:@Tint(u.EstadoGestionColor)">@u.EstadoGestionNombre</span> }</div>
-                        <div class="ca-c ca-c-acu">@if (u.TieneAcuerdoVigente) { <span class="ca-acu">Acuerdo</span> }</div>
-                        <div class="ca-c ca-c-fic"><button class="ca-ficha-btn" @onclick="() => AbrirFicha(uni.UnidadPrivadaId)">Ficha</button></div>
+                        @foreach (var key in ColsVisibles) { <div class="ca-c @ColCellClass(key)" style="@ColStyle(key)">@CeldaContenido(uni, key)</div> }
+                        <div class="ca-c ca-c-fic" style="flex:0 0 70px"><button class="ca-ficha-btn" @onclick="() => AbrirFicha(uni.UnidadPrivadaId)">Ficha</button></div>
                     </div>
                 }
             }
+          </div>
         </div>
     }
 </div>
@@ -290,8 +290,14 @@ else
     .ca-view.on { border-color: var(--propia-brand); color: var(--propia-brand); background: var(--propia-brand-soft); }
 
     .ca-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
-    .ca-thead { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); }
-    .ca-thead .ca-c { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: var(--propia-text-faint); }
+    .ca-tscroll { overflow-x: auto; }
+    .ca-thead { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); min-width: max-content; }
+    .ca-row { min-width: max-content; }
+    .ca-thead .ca-c { position: relative; font-size: 10.5px; letter-spacing: .4px; font-weight: 700; color: var(--propia-text-faint); }
+    /* Handle de redimensionar (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. cursor grab via [data-clave]. */
+    .ca-col-rz { position: absolute; top: 0; right: -6px; width: 10px; height: 100%; cursor: col-resize; z-index: 3; }
+    .ca-col-rz::after { content: ""; position: absolute; top: 2px; bottom: 2px; left: 4px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .ca-col-rz:hover::after { background: var(--propia-brand); }
     .ca-row { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid var(--propia-border-divider); }
     .ca-row:hover { background: var(--propia-brand-soft-2); }
     .ca-c-uni { flex: 1; min-width: 0; }
@@ -413,6 +419,112 @@ else
         new("todas", "Todas"), new("acuerdo", "Con acuerdo"), new("sinacuerdo", "Sin acuerdo"), new("critico", "Mora +90")
     };
 
+    // ===== Columnas: catalogo + config (orden/ancho) por copropiedad, entidad 'cartera' =====
+    private sealed record ColDef(string Key, string Label, string CellClass);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("uni", "Unidad / Propietario", "ca-c-uni"),
+        new("deuda", "Deuda total", "ca-c-deuda"),
+        new("dias", "Días mora", "ca-c-dias"),
+        new("est", "Estado", "ca-c-est"),
+        new("acu", "Acuerdo", "ca-c-acu"),
+    };
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private const string EntCfg = "cartera";
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private DotNetObjectReference<Cartera>? _self;
+    private IEnumerable<string> ColsVisibles => _colOrder;
+    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
+    private static string ColCellClass(string k) => Catalogo.First(c => c.Key == k).CellClass;
+    private RenderFragment CeldaContenido(CarteraUnidadListaDto u, string key) => builder =>
+    {
+        switch (key)
+        {
+            case "uni":
+                builder.OpenElement(0, "div"); builder.AddAttribute(1, "class", "ca-row-nom"); builder.AddContent(2, u.UnidadNumero); builder.CloseElement();
+                builder.OpenElement(3, "div"); builder.AddAttribute(4, "class", "ca-row-sub"); builder.AddContent(5, string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre); builder.CloseElement();
+                break;
+            case "deuda": builder.AddContent(0, Money(u.SaldoTotal)); break;
+            case "dias": builder.AddContent(0, u.DiasMora); break;
+            case "est":
+                if (!string.IsNullOrWhiteSpace(u.EstadoGestionNombre))
+                {
+                    builder.OpenElement(0, "span"); builder.AddAttribute(1, "class", "ca-pill");
+                    builder.AddAttribute(2, "style", $"color:{u.EstadoGestionColor ?? "#516F90"};background:{Tint(u.EstadoGestionColor)}");
+                    builder.AddContent(3, u.EstadoGestionNombre); builder.CloseElement();
+                }
+                break;
+            case "acu":
+                if (u.TieneAcuerdoVigente) { builder.OpenElement(0, "span"); builder.AddAttribute(1, "class", "ca-acu"); builder.AddContent(2, "Acuerdo"); builder.CloseElement(); }
+                break;
+        }
+    };
+
+    private UnidadCampoConfigDto? CfgDe(string k) => _cfg.TryGetValue(k, out var c) ? c : null;
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        var c = CfgDe(clave);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg);
+    }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
+        _colOrder = Catalogo.Select((c, i) => (c.Key, ord: CfgDe(c.Key)?.Orden ?? (1000 + i)))
+                            .OrderBy(x => x.ord).Select(x => x.Key).ToList();
+        HidratarAnchos();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private string ColStyle(string k) { var w = _colW.TryGetValue(k, out var v) ? v : AnchoDefault(k); return $"flex:0 0 {w}px;width:{w}px"; }
+    private static int AnchoDefault(string k) => k switch { "uni" => 280, "deuda" => 130, "est" => 130, "dias" => 100, "acu" => 100, _ => 120 };
+
+    private async Task IniciarReorder(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = _colOrder.ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfg(FilaConfig(keys[i]) with { Orden = i });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private async Task IniciarResize(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResize(string k) => OnColResize(k, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        await GuardarCfg(FilaConfig(clave) with { Formato = ConAncho(CfgDe(clave)?.Formato, w) });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    public void Dispose() { _self?.Dispose(); }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _jwt is not null) return;
@@ -440,6 +552,7 @@ else
             var http = Auth();
             _tablero = await http.GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero");
             try { _estados = await http.GetFromJsonAsync<List<EstadoCarteraDto>>("/api/cartera/estados") ?? new(); } catch { }
+            await CargarConfigAsync();   // orden/ancho de columnas por copropiedad
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
