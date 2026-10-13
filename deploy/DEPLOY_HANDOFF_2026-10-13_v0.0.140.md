@@ -13,10 +13,25 @@ de verde a violeta en los 11 modulos vista-tabla + limpieza de CSS muerto en Uni
 - Repo: https://github.com/alexandercuartas665/PROPIA
 
 ## Migraciones / BD
-**NINGUNA en esta tanda.** No hay cambios de esquema, RLS, seeds ni catalogos.
+**NINGUNA migracion de esquema en esta tanda.** No hay cambios de tablas, RLS ni columnas.
 > OJO si prod viene de ANTES de 0.0.132: revisar las secciones intermedias de `HANDOFF_DEPLOY.md` por
 > migraciones ADITIVAS pendientes de tandas previas aun no aplicadas en prod (p.ej. 0.0.125
 > `20261012230340_AddMascotaTipoCustom`). Esta tanda NO agrega ninguna.
+
+## Catalogo de listas de Super Admin (DATA, no migracion) -> `catalogo_listas_superadmin_v0.0.140.sql`
+En esta carpeta queda **`catalogo_listas_superadmin_v0.0.140.sql`**: export de las 144 opciones del catalogo
+global de A&D (`catalogo_opciones`, tabla GLOBAL sin tenant) desde DEV.
+- **Las listas de FABRICA se auto-siembran en prod** al arrancar (`CatalogoListasSeeder.EnsureAsync`, idempotente):
+  si solo quieres el catalogo base, NO necesitas correr nada, arranca y listo.
+- **Este SQL ademas aplica las ediciones hechas en Super Admin** (label/orden/color/activo/meta) que el seeder
+  NO sobreescribe. En dev hay 5 opciones editadas, 1 desactivada (`unidad.tipo` / `e:Cama` oculta), 5 con color,
+  27 con meta. Correrlo deja el catalogo de prod IDENTICO al de dev.
+- **Es idempotente** (UPSERT por `(lista,clave)`, usa `gen_random_uuid()` para filas nuevas; no toca ids
+  existentes): seguro de re-ejecutar. Probado contra dev (144 filas, sin duplicar).
+- **Cuando correrlo:** despues del deploy, una vez la app arranco (para que el seeder cree las de fabrica) o
+  directo contra la BD. Owner `propia` o `propia_app` sirven (la tabla es global, sin RLS).
+  Ejemplo: `psql -h <host> -p <port> -U propia_app -d <bd_prod> -v ON_ERROR_STOP=1 -f catalogo_listas_superadmin_v0.0.140.sql`
+- **OJO:** si en prod A&D ya hizo ediciones PROPIAS distintas, este UPSERT las reemplaza por las de dev.
 
 ## Config / env / secrets
 **Sin cambios.** No hay variables de entorno, flags ni appsettings nuevos.
