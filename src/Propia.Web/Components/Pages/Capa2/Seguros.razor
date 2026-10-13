@@ -223,7 +223,7 @@
                     <div class="seg-head seg-grid" style="@GridStyle()">
                         <div class="seg-sel"><input type="checkbox" class="seg-chk" title="Seleccionar todo" checked="@TodosSelS" @onchange="e => ToggleSelAllS((bool)(e.Value ?? false))" /></div>
                         <div></div>
-                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))</div> }
+                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th" data-clave="@ck" title="Arrastra: mover columna" @onmousedown="e => IniciarReorderS(e, ck)"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))<span class="seg-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResizeS(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResizeS(ck)" @ondblclick:stopPropagation="true"></span></div> }
                         <div class="seg-addcol-h"><button type="button" class="seg-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => _crearCampoSAbierto = true"><i class="fi fi-rr-plus"></i></button></div>
                     </div>
                     @foreach (var item in FilasRender())
@@ -615,8 +615,13 @@
     /* padding vertical EN la celda (no en el contenedor grid): asi la celda, al estirarse
        (align-self:stretch), incluye ese alto y el separador border-right queda FULL-HEIGHT como
        en Unidades. horizontal 0 para no desalinear respecto a la columna del cuerpo. */
-    .seg-head .seg-th { display: inline-flex; align-items: center; gap: 3px; min-width: 0; align-self: stretch; padding: 0; border-right: 1px solid var(--propia-border-card); }
+    .seg-head .seg-th { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 0; align-self: stretch; padding: 0; border-right: 1px solid var(--propia-border-card); }
     .seg-head .seg-th:last-child { border-right: 0; }
+    /* Handle de redimensionar (= .mas-col-rz de Mascotas): franja invisible en el borde derecho del th;
+       la guia la pinta el JS compartido (propiaTablaResize). El cursor grab del th lo da [data-clave]. */
+    .seg-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .seg-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .seg-col-rz:hover::after { background: var(--propia-brand); }
     /* Divisor controles->datos: el expander del header (2do hijo, div vacio) lleva el separador full-height
        para aislar el bloque checkbox+expander de la 1a columna de datos (homogeneo, Alex 2026-10-08). */
     .seg-head > div:nth-child(2) { align-self: stretch; border-right: 1px solid var(--propia-border-card); box-shadow: inset -1px 0 0 var(--propia-border-card); }
@@ -1243,10 +1248,64 @@
     }
 
     // grid-template dinamico: 34px (expander) + una pista por columna visible (ancho por clave).
+    // ===== Reordenar columnas por ARRASTRE (JS compartido propiaTablaColReorder; persiste Orden) =====
+    private async Task IniciarReorderS(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfgS(FilaConfigS(keys[i]) with { Orden = i });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+
+    // ===== Redimensionar columnas (JS compartido propiaTablaResize; persiste en Formato JSON, clave "w") =====
+    private readonly Dictionary<string, int> _colWS = new(StringComparer.Ordinal);
+    private async Task IniciarResizeS(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    private Task ResetResizeS(string clave) => OnColResize(clave, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colWS.Remove(clave); else _colWS[clave] = w.Value;
+        var fila = FilaConfigS(clave);
+        await GuardarCfgS(fila with { Formato = ConAnchoTablaS(fila.Formato, w) });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private void HidratarAnchosS()
+    {
+        _colWS.Clear();
+        foreach (var kv in _cfgPoliza) { var w = AnchoDeFormatoTablaS(kv.Value.Formato); if (w is > 0) _colWS[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormatoTablaS(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAnchoTablaS(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+
     private string GridStyle()
     {
         var visibles = ColsVisibles().ToList();
-        var cols = "38px 34px" + string.Concat(visibles.Select(k => " " + ColWidth(k))) + " 44px";
+        var cols = "38px 34px" + string.Concat(visibles.Select(k => " " + (_colWS.TryGetValue(k, out var w) ? w + "px" : ColWidth(k)))) + " 44px";
         var min = 282 + visibles.Count * 130;
         return $"grid-template-columns:{cols};min-width:{min}px";
     }
@@ -1722,6 +1781,7 @@
         {
             var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=poliza") ?? new();
             _cfgPoliza = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchosS();
         }
         catch { _cfgPoliza = new(StringComparer.Ordinal); }
     }
