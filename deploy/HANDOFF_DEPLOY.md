@@ -1,13 +1,14 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.140** (`main` HEAD `8c9b6fff`, rama
-> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.133-0.0.140) es **100% UI/CSS:
-> SIN migraciones, SIN cambios de backend/servicio/config, SIN catalogos/seeds nuevos**. Deploy = redeploy
-> del artefacto de `main`; rollback = redeploy del artefacto previo. El detalle esta en la seccion
-> **ESTADO 2026-10-13 Homogeneidad alta inline + fila recien creada violeta + limpieza CSS** (justo debajo
-> de este encabezado). Todo lo anterior (hasta 0.0.132) sigue vigente en sus propias secciones; incluye
-> migraciones aditivas pendientes si prod aun no las aplico (ver secciones 2026-10-12 y anteriores). El
-> bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
+> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.141** (`main` HEAD `978950c2`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.141) tiene **1 MIGRACION ADITIVA**
+> (`AddOrganizacionLimiteCopropiedades`: 1 columna nullable en `organizaciones`, global sin RLS) + UI/servicio
+> del Super Admin para editar el limite de copropiedades por organizacion y ver su plan. **APLICAR la migracion
+> en prod** (`dotnet ef database update`, owner `propia`) y redeploy del artefacto de `main`. El detalle esta en
+> la seccion **ESTADO 2026-10-13 Super Admin: limite por organizacion + ver plan** y en el doc per-deploy
+> `DEPLOY_HANDOFF_2026-10-13_v0.0.141.md`. La tanda anterior (0.0.133-0.0.140, 100% UI/CSS sin migraciones)
+> esta en su propia seccion. Todo lo anterior a 0.0.132 sigue vigente; revisar migraciones aditivas pendientes
+> si prod viene de atras. El bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
 >
 > Generado 2026-09-10, actualizado **2026-09-28 (TANDA 2: carga masiva single-tenant + ficha unidad + AGRUPAR compartido + hubs)**.
 > Version a desplegar: **0.0.99** (csproj bumpeado). HEAD `main` (`0a9e147`) incluye ademas de la tanda 0.0.98:
@@ -21,6 +22,49 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-13 Super Admin: limite de copropiedades por organizacion + ver plan
+
+Version **0.0.141**. Commit `978950c2`. Rama `equipo/alex-header-zonas-equipos` (ya en `main`).
+
+### 1 MIGRACION NUEVA - ADITIVA - APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+- **`20261013194852_AddOrganizacionLimiteCopropiedades`**: agrega 1 columna NULLABLE a `organizaciones`:
+  `limite_copropiedades integer null`. **Sin backfill.** **Sin tabla nueva.** `organizaciones` es GLOBAL (sin
+  RLS), asi que no hay bloque RLS. Reversible (DropColumn). Inerte para el codigo viejo (null = comportamiento
+  actual).
+
+### Que habilita
+En `/admin/organizaciones` (consola A&D) el operador ahora puede:
+- **Editar el limite de copropiedades de UNA organizacion** (override): un numero propio que tiene prioridad
+  sobre el limite del plan; dejarlo vacio = usar el limite del plan (comportamiento de hoy). 0 = no puede crear mas.
+- **Ver el plan** de cada organizacion (nombre del plan de su suscripcion activa) y el limite efectivo junto al
+  conteo (`count / limite`, badge "propio" si hay override).
+
+Enforcement (al crear copropiedad por el flujo tenant-admin, `MisCopropiedadesService`):
+`limite = override de la org ?? limite del plan ?? (sin suscripcion -> 1)`. El override es el unico cambio de
+prioridad; el resto de la logica no cambia.
+
+### Cambios de codigo (todo backend + UI, sin seeds ni config)
+- `Organizacion.cs` (+`LimiteCopropiedades int?`). Migracion arriba.
+- `SuperAdmin/Dtos.cs`: `OrganizacionDto` += `LimiteOverride`, `PlanNombre`, `LimitePlan`, `LimiteEfectivo`
+  (params opcionales -> compatible con los clientes/tests que lo deserializan); nuevo `CambiarLimiteOrganizacionRequest`.
+- `ISuperAdminService`/`SuperAdminService.cs`: `ListOrganizacionesAsync` trae plan + limites; nuevo
+  `CambiarLimiteCopropiedadesAsync` (con log de auditoria `CHANGE_LIMITE_ORGANIZACION`).
+- `AdminController.cs`: `PUT ~/api/admin/organizaciones/{orgId}/limite` (policy SuperAdmin).
+- `MisCopropiedadesService.cs`: enforcement con override.
+- `Organizaciones.razor`: columna Plan + celda limite editable + modal.
+
+### Verificacion (hecha en dev, founder super-admin, Web 5105)
+GET organizaciones trae plan + limites; PUT override=10 persiste (BD) y efectivo=10 (gana sobre el plan),
+revertir a null vuelve al plan; **enforcement end-to-end**: override=1 en una org con 7 copropiedades ->
+el create por el flujo tenant-admin rechaza 400 "El limite permitido es 1 ... ya tienes 7"; UI muestra la
+columna Plan y, tras editar, la fila pasa a "0 / 5 propio". Datos de prueba borrados (0 overrides en BD).
+
+### Rollback
+Redeploy del artefacto previo. La migracion es aditiva e inerte para el codigo viejo; opcionalmente
+`database update` a la migracion anterior para quitar la columna (no necesario).
 
 ---
 
