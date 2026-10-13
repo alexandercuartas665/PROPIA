@@ -130,6 +130,20 @@ public class AdminController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.GetBaseException().Message }); }
     }
 
+    [HttpPut("~/api/admin/organizaciones/{orgId:guid}/limite")]
+    [Authorize(Policy = SuperAdminPolicy)]
+    public async Task<IActionResult> CambiarLimiteOrganizacion(Guid orgId, [FromBody] CambiarLimiteOrganizacionRequest req, CancellationToken ct)
+    {
+        var (id, email) = Actor();
+        try
+        {
+            var org = await _svc.CambiarLimiteCopropiedadesAsync(orgId, req, id, email, Ip(), ct);
+            return org is null ? NotFound() : Ok(org);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.GetBaseException().Message }); }
+    }
+
     [HttpPost("~/api/admin/organizaciones/{orgId:guid}/admin")]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> CrearAdminOrganizacion(Guid orgId, [FromBody] CrearAdminOrganizacionRequest req, CancellationToken ct)

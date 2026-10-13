@@ -21,6 +21,13 @@ public class Organizacion : BaseEntity
     /// <summary>Estado operativo (Activa por defecto). Inactiva/Archivada la sacan de la vista principal.</summary>
     public EstadoOrganizacion Estado { get; set; } = EstadoOrganizacion.Activa;
 
+    /// <summary>
+    /// Override del maximo de COPROPIEDADES para ESTA organizacion, fijado por el operador (A&D) desde la
+    /// consola. null = usar el limite del plan de su suscripcion (comportamiento por defecto). Un numero
+    /// tiene prioridad sobre el limite del plan. 0 = no puede crear mas (bloqueada).
+    /// </summary>
+    public int? LimiteCopropiedades { get; set; }
+
     // Navegacion - todas las Copropiedades que administra esta Organizacion
     public ICollection<Tenant> Copropiedades { get; set; } = new List<Tenant>();
 }

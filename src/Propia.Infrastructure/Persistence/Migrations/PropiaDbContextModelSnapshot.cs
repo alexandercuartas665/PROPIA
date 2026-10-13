@@ -9648,6 +9648,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_activacion");
 
+                    b.Property<int?>("LimiteCopropiedades")
+                        .HasColumnType("integer")
+                        .HasColumnName("limite_copropiedades");
+
                     b.Property<string>("Nit")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")

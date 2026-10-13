@@ -22,9 +22,15 @@ public record SuperAdminLoginResponse(
     DateTimeOffset? MfaTicketExpiresAt);
 
 // ----- Organizaciones -----
-public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt, EstadoOrganizacion Estado = EstadoOrganizacion.Activa);
+// LimiteOverride = limite propio de la org (null = usa el del plan). PlanNombre/LimitePlan = plan de la
+// suscripcion activa (null si no tiene). LimiteEfectivo = override ?? plan ?? (sin suscripcion -> 1).
+public record OrganizacionDto(Guid Id, string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, int CopropiedadesCount, DateTimeOffset CreatedAt, EstadoOrganizacion Estado = EstadoOrganizacion.Activa,
+    int? LimiteOverride = null, string? PlanNombre = null, int? LimitePlan = null, int? LimiteEfectivo = null);
 
 public record CambiarEstadoOrganizacionRequest(EstadoOrganizacion Estado);
+
+/// <summary>Fija el override del limite de copropiedades de la organizacion. null = usar el del plan.</summary>
+public record CambiarLimiteOrganizacionRequest(int? Limite);
 
 /// <summary>Crea el usuario administrador de una organizacion (login + acceso a sus copropiedades).</summary>
 public record CrearAdminOrganizacionRequest(

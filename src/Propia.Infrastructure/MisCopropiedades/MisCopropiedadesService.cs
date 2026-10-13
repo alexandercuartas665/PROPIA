@@ -65,22 +65,27 @@ public class MisCopropiedadesService : IMisCopropiedadesService
         if (duplicada)
             throw new InvalidOperationException($"Ya existe una copropiedad llamada '{nombre}' en tu organizacion.");
 
-        // Limite de copropiedades del plan de la ORGANIZACION (Suscripcion con OrganizacionId).
-        // Sin suscripcion activa -> limite por defecto 1. Plan con limite null -> ilimitado.
+        // Limite de copropiedades: PRIORIDAD override de la organizacion (fijado por A&D en la consola);
+        // si no hay override, el limite del plan de la Suscripcion activa. Sin suscripcion -> 1.
+        // Limite null -> ilimitado.
+        var orgOverride = await _db.Organizaciones.AsNoTracking()
+            .Where(o => o.Id == organizacionId)
+            .Select(o => o.LimiteCopropiedades)
+            .FirstOrDefaultAsync(ct);
         var subOrg = await _db.Suscripciones.AsNoTracking()
             .Where(s => s.OrganizacionId == organizacionId
                         && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada)
             .OrderByDescending(s => s.FechaInicio)
             .Select(s => new { s.Plan!.LimiteCopropiedades })
             .FirstOrDefaultAsync(ct);
-        int? limiteCopropiedades = subOrg is null ? 1 : subOrg.LimiteCopropiedades;
+        int? limiteCopropiedades = orgOverride ?? (subOrg is null ? 1 : subOrg.LimiteCopropiedades);
         if (limiteCopropiedades is int maxCopros)
         {
             var actuales = await _db.Tenants.AsNoTracking().CountAsync(t => t.OrganizacionId == organizacionId, ct);
             if (actuales >= maxCopros)
                 throw new InvalidOperationException(
-                    $"Tu plan permite {maxCopros} copropiedad(es) y ya tienes {actuales}. " +
-                    "Mejora tu plan para agregar mas (o contacta a soporte).");
+                    $"El limite permitido es {maxCopros} copropiedad(es) y ya tienes {actuales}. " +
+                    "Contacta a soporte para ampliarlo.");
         }
 
         // La tabla tenants no tiene RLS: se puede insertar con otro tenant activo en la sesion.

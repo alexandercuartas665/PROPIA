@@ -24,13 +24,33 @@ public class SuperAdminService : ISuperAdminService
 
     public async Task<IReadOnlyList<OrganizacionDto>> ListOrganizacionesAsync(CancellationToken ct)
     {
-        return await _db.Organizaciones
+        // Trae override + plan de la suscripcion activa (mas reciente no cancelada/archivada). El limite
+        // efectivo se calcula en memoria: override de la org ?? limite del plan ?? (sin suscripcion -> 1).
+        var rows = await _db.Organizaciones
             .AsNoTracking()
             .OrderBy(o => o.Nombre)
-            .Select(o => new OrganizacionDto(
+            .Select(o => new
+            {
                 o.Id, o.Nombre, o.Tipo, o.Nit, o.Email,
-                o.Copropiedades.Count, o.CreatedAt, o.Estado))
+                Count = o.Copropiedades.Count,
+                o.CreatedAt, o.Estado,
+                Override = o.LimiteCopropiedades,
+                Sub = _db.Suscripciones
+                    .Where(s => s.OrganizacionId == o.Id
+                                && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada)
+                    .OrderByDescending(s => s.FechaInicio)
+                    .Select(s => new { s.Plan!.Nombre, s.Plan!.LimiteCopropiedades })
+                    .FirstOrDefault()
+            })
             .ToListAsync(ct);
+
+        return rows.Select(r =>
+        {
+            int? limitePlan = r.Sub == null ? null : r.Sub.LimiteCopropiedades;
+            int? efectivo = r.Override ?? (r.Sub != null ? limitePlan : 1);
+            return new OrganizacionDto(r.Id, r.Nombre, r.Tipo, r.Nit, r.Email, r.Count, r.CreatedAt, r.Estado,
+                r.Override, r.Sub?.Nombre, limitePlan, efectivo);
+        }).ToList();
     }
 
     public async Task<OrganizacionDto> CrearOrganizacionAsync(CrearOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct)
@@ -70,6 +90,32 @@ public class SuperAdminService : ISuperAdminService
 
         var count = await _db.Tenants.CountAsync(t => t.OrganizacionId == org.Id, ct);
         return new OrganizacionDto(org.Id, org.Nombre, org.Tipo, org.Nit, org.Email, count, org.CreatedAt, org.Estado);
+    }
+
+    public async Task<OrganizacionDto?> CambiarLimiteCopropiedadesAsync(Guid orgId, CambiarLimiteOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct)
+    {
+        var org = await _db.Organizaciones.FirstOrDefaultAsync(o => o.Id == orgId, ct);
+        if (org is null) return null;
+
+        if (req.Limite is int n && n < 0)
+            throw new InvalidOperationException("El limite de copropiedades no puede ser negativo. Deja vacio para usar el del plan.");
+
+        org.LimiteCopropiedades = req.Limite;
+        _db.SuperAdminLogs.Add(NewLog(actorId, actorEmail, "CHANGE_LIMITE_ORGANIZACION", $"Organizacion:{org.Id}",
+            $"Limite={(req.Limite.HasValue ? req.Limite.Value.ToString() : "plan")}", ip));
+        await _db.SaveChangesAsync(ct);
+
+        var count = await _db.Tenants.CountAsync(t => t.OrganizacionId == org.Id, ct);
+        var sub = await _db.Suscripciones.AsNoTracking()
+            .Where(s => s.OrganizacionId == org.Id
+                        && s.Estado != EstadoSuscripcion.Cancelada && s.Estado != EstadoSuscripcion.Archivada)
+            .OrderByDescending(s => s.FechaInicio)
+            .Select(s => new { s.Plan!.Nombre, s.Plan!.LimiteCopropiedades })
+            .FirstOrDefaultAsync(ct);
+        int? limitePlan = sub == null ? null : sub.LimiteCopropiedades;
+        int? efectivo = org.LimiteCopropiedades ?? (sub != null ? limitePlan : 1);
+        return new OrganizacionDto(org.Id, org.Nombre, org.Tipo, org.Nit, org.Email, count, org.CreatedAt, org.Estado,
+            org.LimiteCopropiedades, sub?.Nombre, limitePlan, efectivo);
     }
 
     public async Task<AdminOrganizacionDto> CrearAdminOrganizacionAsync(Guid orgId, CrearAdminOrganizacionRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct)
