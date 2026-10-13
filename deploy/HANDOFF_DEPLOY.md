@@ -15,7 +15,21 @@
 
 ---
 
-## ESTADO 2026-10-12 E5.1 Mascotas·tipo: agregar tipos por copropiedad (LEER PRIMERO)
+## ESTADO 2026-10-13 Columnas mover+ancho (Seguros/Tareas/Comunicaciones/Lista negra) + retiro PQRSD legacy
+
+Versiones 0.0.126-0.0.129. **Sin migraciones.** Todo UI salvo UN cambio de backend (constante):
+- `MiCopropiedadService.Unidades.cs` -> `EntidadesCampoConfig` += `"comunicacion"`, `"listanegra"` (whitelist del
+  endpoint generico `unidades-config`; la tabla ya es generica, sin migracion). Sin esto, Comunicaciones y
+  Lista negra dan 400 al guardar orden/ancho de columnas.
+- UI: reorder-drag + resize de columnas en Seguros, Tareas (vista Tabla), Comunicaciones y Lista negra
+  (persisten en unidades-config: Seguros=poliza, Tareas=config del tablero, Comunicaciones=comunicacion,
+  Lista negra=listanegra). Tareas: fix de `GuardarColCfgT` que borraba el ancho al reordenar/ocultar.
+- **Retirada** la lista PQRSD legacy (`Pqrs.razor`, rutas `/pqrs-list` y `/pqrsd-list`): estaba huerfana, la
+  reemplaza `PqrsKanban.razor` (`/pqrs`,`/pqrsd`). Rollback: redeploy del artefacto previo.
+
+---
+
+## ESTADO 2026-10-12 E5.1 Mascotas·tipo: agregar tipos por copropiedad
 
 Version 0.0.125. Rama `equipo/alex-header-zonas-equipos`.
 

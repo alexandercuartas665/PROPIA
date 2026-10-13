@@ -1,9 +1,11 @@
 @page "/ia/lista-negra"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.InfraestructuraIa
+@using Propia.Application.MiCopropiedad
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Lista negra - PROPIA</PageTitle>
 
@@ -54,11 +56,20 @@
     {
         <div style="overflow-x:auto">
         <table class="ln-table">
+            <colgroup>
+                @foreach (var key in ColsVisibles) { <col style="@ColStyle(key)" /> }
+                <col style="width:130px" />
+            </colgroup>
             <thead>
                 <tr>
-                    <th>Teléfono</th>
-                    <th>Nota</th>
-                    <th>Bloqueado el</th>
+                    @foreach (var key in ColsVisibles)
+                    {
+                        var k = key;
+                        <th data-clave="@k" title="Arrastra: mover columna" @onmousedown="e => IniciarReorder(e, k)">
+                            @ColLabel(k)
+                            <span class="ln-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(k)" @ondblclick:stopPropagation="true"></span>
+                        </th>
+                    }
                     <th class="ln-th-right">Accion</th>
                 </tr>
             </thead>
@@ -67,9 +78,7 @@
                 {
                     var nn = n;
                     <tr>
-                        <td class="ln-cel-tel">@FormatoTelefono(n.Telefono)</td>
-                        <td>@(n.Nota ?? "-")</td>
-                        <td class="ln-cel-fecha">@n.CreatedAt.ToCo().ToString("dd MMM yyyy HH:mm")</td>
+                        @foreach (var key in ColsVisibles) { <td class="@CeldaClass(key)">@CeldaContenido(nn, key)</td> }
                         <td class="ln-cel-acc">
                             <button class="ln-btn-ghost-danger" type="button" @onclick="@(() => DesbloquearAsync(nn.Id))" disabled="@_busy">
                                 Desbloquear
@@ -112,7 +121,12 @@
 
     .ln-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--propia-bg-card); border: 1px solid var(--propia-border-divider); border-radius: 12px; overflow: hidden; }
     .ln-table thead { background: var(--propia-bg-hover); }
-    .ln-table th { font-size: 11px; font-weight: 800; color: var(--propia-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--propia-border-divider); }
+    .ln-table th { position: relative; font-size: 11px; font-weight: 800; color: var(--propia-text-muted); text-transform: uppercase; letter-spacing: .4px; padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--propia-border-divider); }
+    /* Handle de redimensionar (= .mas-col-rz del canon); la guia la pinta el JS compartido propiaTablaResize.
+       El cursor grab del th lo da [data-clave] (tabla-base.css). */
+    .ln-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+    .ln-col-rz::after { content: ""; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
+    .ln-col-rz:hover::after { background: var(--propia-brand); }
     .ln-table td { font-size: 13px; color: var(--propia-text-body); padding: 11px 16px; border-bottom: 1px solid var(--propia-border-divider); }
     .ln-table tbody tr:last-child td { border-bottom: 0; }
     .ln-th-right, .ln-cel-acc { text-align: right; }
@@ -137,6 +151,91 @@
     private bool _busy;
     private string? _msg;
     private bool _msgError;
+
+    // ===== Columnas: catalogo + config (orden/ancho) por copropiedad, entidad 'listanegra' =====
+    private sealed record ColDef(string Key, string Label);
+    private static readonly ColDef[] Catalogo = { new("tel", "Teléfono"), new("nota", "Nota"), new("fecha", "Bloqueado el") };
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private const string EntCfg = "listanegra";
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private DotNetObjectReference<IaListaNegra>? _self;
+    private IEnumerable<string> ColsVisibles => _colOrder;
+    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
+    private static string CeldaClass(string k) => k switch { "tel" => "ln-cel-tel", "fecha" => "ln-cel-fecha", _ => "" };
+    private RenderFragment CeldaContenido(NumeroEnListaNegraDto n, string key) => builder =>
+    {
+        switch (key)
+        {
+            case "tel": builder.AddContent(0, FormatoTelefono(n.Telefono)); break;
+            case "nota": builder.AddContent(0, n.Nota ?? "-"); break;
+            case "fecha": builder.AddContent(0, n.CreatedAt.ToCo().ToString("dd MMM yyyy HH:mm")); break;
+        }
+    };
+
+    private UnidadCampoConfigDto? CfgDe(string k) => _cfg.TryGetValue(k, out var c) ? c : null;
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        var c = CfgDe(clave);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg);
+    }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
+        _colOrder = Catalogo.Select((c, i) => (c.Key, ord: CfgDe(c.Key)?.Orden ?? (1000 + i)))
+                            .OrderBy(x => x.ord).Select(x => x.Key).ToList();
+        HidratarAnchos();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private string ColStyle(string k) => $"width:{(_colW.TryGetValue(k, out var w) ? w : AnchoDefault(k))}px";
+    private static int AnchoDefault(string k) => k switch { "nota" => 320, "fecha" => 190, _ => 200 };
+
+    private async Task IniciarReorder(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = _colOrder.ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfg(FilaConfig(keys[i]) with { Orden = i });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private async Task IniciarResize(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    private Task ResetResize(string k) => OnColResize(k, 0);
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        await GuardarCfg(FilaConfig(clave) with { Formato = ConAncho(CfgDe(clave)?.Formato, w) });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    public void Dispose() { _self?.Dispose(); }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -175,6 +274,7 @@
             }
             resp.EnsureSuccessStatusCode();
             _items = await resp.Content.ReadFromJsonAsync<List<NumeroEnListaNegraDto>>() ?? new();
+            await CargarConfigAsync();   // orden/ancho de columnas por copropiedad
         }
         catch (Exception ex) { Toast(ex.Message, true); }
     }
