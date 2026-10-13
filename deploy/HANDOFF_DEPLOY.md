@@ -1,14 +1,18 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.141** (`main` HEAD `978950c2`, rama
-> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.141) tiene **1 MIGRACION ADITIVA**
-> (`AddOrganizacionLimiteCopropiedades`: 1 columna nullable en `organizaciones`, global sin RLS) + UI/servicio
-> del Super Admin para editar el limite de copropiedades por organizacion y ver su plan. **APLICAR la migracion
-> en prod** (`dotnet ef database update`, owner `propia`) y redeploy del artefacto de `main`. El detalle esta en
-> la seccion **ESTADO 2026-10-13 Super Admin: limite por organizacion + ver plan** y en el doc per-deploy
-> `DEPLOY_HANDOFF_2026-10-13_v0.0.141.md`. La tanda anterior (0.0.133-0.0.140, 100% UI/CSS sin migraciones)
-> esta en su propia seccion. Todo lo anterior a 0.0.132 sigue vigente; revisar migraciones aditivas pendientes
-> si prod viene de atras. El bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
+> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.144** (`main` HEAD `12115655`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.142-0.0.144) es **UI + servicio,
+> SIN migraciones**: (1) el expander de la fila de alta ahora crea+abre ficha en Zonas, Equipos, Residentes,
+> Seguros y Contratos (como Unidades); (2) HOTFIX: el error del limite de copropiedades ahora NOMBRA la
+> organizacion + log de diagnostico (reporte de prod "amplie el limite pero sigue en 1"; el limite es por
+> organizacion y no se veia cual). **Deploy = redeploy del artefacto de `main`** (NO hay migracion nueva).
+> Detalle en la seccion **ESTADO 2026-10-13 Expander del alta + hotfix limite** y en el doc per-deploy
+> `DEPLOY_HANDOFF_2026-10-13_v0.0.144.md`.
+>
+> **OJO - prod ya esta en 0.0.141** (su error de limite dice "El limite permitido es..."), asi que la
+> MIGRACION `AddOrganizacionLimiteCopropiedades` (0.0.141) YA se aplico. Si por alguna razon se despliega sobre
+> una prod ANTERIOR a 0.0.141, aplicar esa migracion (ver doc 0.0.141). De 0.0.141 a 0.0.144 NO hay migracion.
+> Todo lo anterior a 0.0.132 sigue vigente. El bloque "> Generado..." de abajo es HISTORICO (describe 0.0.99).
 >
 > Generado 2026-09-10, actualizado **2026-09-28 (TANDA 2: carga masiva single-tenant + ficha unidad + AGRUPAR compartido + hubs)**.
 > Version a desplegar: **0.0.99** (csproj bumpeado). HEAD `main` (`0a9e147`) incluye ademas de la tanda 0.0.98:
@@ -22,6 +26,40 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-13 Expander del alta (crear+abrir ficha) + hotfix del limite de copropiedades
+
+Versiones **0.0.142 -> 0.0.144**. Commits `554195f5`, `4d99d7c1`, `12115655`. **UI + servicio, SIN migraciones.**
+Deploy = redeploy del artefacto de `main`. Rollback = redeploy del artefacto previo.
+
+### 1) Expander del alta: crear + abrir ficha (0.0.142/143)
+El icono de expandir de la fila de alta (vista Tabla) ahora crea el registro con lo escrito y abre su
+ficha/modal para completar, igual que Unidades. Modulos igualados: **Zonas Comunes, Equipos y Activos**
+(`554195f5`), **Residentes, Seguros, Contratos** (`4d99d7c1`). Detalle: `<span>` muteado -> `<button>` que
+llama al handler de crear-y-abrir (en Zonas/Equipos `CrearYAbrirFichaAsync` ahora tambien persiste los campos
+dinamicos del alta y cierra la fila; en Residentes reusa el `abrir` que ya tenia `AgregarAsync`; en Seguros y
+Contratos se agrego `bool abrir` que abre el modal tras crear). Pendientes (NO en esta tanda): Usuarios/Roles
+(decision de producto) y Vehiculos/Mascotas (no tienen ficha de registro aun).
+
+### 2) HOTFIX: el error del limite de copropiedades nombra la organizacion (0.0.144)
+Reporte de prod: "amplie el limite en Super Admin pero el tenant sigue pegado en 1". El limite de copropiedades
+es **por ORGANIZACION** y el mensaje no decia de cual, asi que no se sabia si se amplio la correcta (la
+copropiedad nueva cuelga de la organizacion de la copropiedad que el usuario ADMINISTRA; si sus copropiedades
+estan repartidas en varias orgs, puede ampliar una distinta a la que recibe la nueva). **No es un bug de
+logica** (el override se lee y aplica; verificado). Cambios (`MisCopropiedadesService.CrearAsync`):
+- El error ahora nombra la org: *"El limite de copropiedades de la organizacion 'X' es N y ya tiene M. Amplia
+  el limite de ESA organizacion en la consola (Super Admin) o contacta a soporte."*
+- Log (Information) con tenantActivo + orgDestino (id + nombre) + override + limite del plan + limite efectivo +
+  conteo, para rastrear que organizacion evalua el enforcement.
+Sin cambio de la regla (`override de la org ?? plan ?? 1`). **Sin migracion.**
+
+### Verificacion (dev, Web 5105)
+Expander: Seguros happy-path completo (crea poliza + abre modal, luego borrada); Zonas/Equipos crean + abren
+ficha; Residentes/Contratos: el expander dispara el handler (validacion de minimos visible). Hotfix: con
+override=1 en una org con 7 copropiedades, el create responde "...organizacion 'Administraciones del Valle SAS'
+es 1 y ya tiene 7...". Sin datos de prueba.
 
 ---
 

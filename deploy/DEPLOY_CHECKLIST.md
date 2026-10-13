@@ -1,10 +1,11 @@
 # PROPIA - Checklist de deploy
 
-> **DEPLOY VIGENTE: 0.0.141 (2026-10-13).** `main` HEAD `978950c2`. Esta tanda lleva **1 MIGRACION ADITIVA**
-> (`AddOrganizacionLimiteCopropiedades`: columna nullable en `organizaciones`) + UI/servicio del Super Admin
-> para editar el limite de copropiedades por organizacion y ver su plan. **APLICAR la migracion** y redeploy.
-> Detalle en `DEPLOY_HANDOFF_2026-10-13_v0.0.141.md` + `HANDOFF_DEPLOY.md` (seccion "ESTADO 2026-10-13 Super
-> Admin: limite por organizacion + ver plan"). La tanda anterior (0.0.133-0.0.140) era 100% UI/CSS sin migracion.
+> **DEPLOY VIGENTE: 0.0.144 (2026-10-13).** `main` HEAD `12115655`. Esta tanda (0.0.142-0.0.144) es **UI +
+> servicio, SIN migraciones**: expander del alta que crea+abre ficha (Zonas/Equipos/Residentes/Seguros/Contratos)
+> + HOTFIX que hace que el error del limite de copropiedades NOMBRE la organizacion. Deploy = redeploy del
+> artefacto de `main`. Detalle en `DEPLOY_HANDOFF_2026-10-13_v0.0.144.md` + `HANDOFF_DEPLOY.md`.
+> **Prod ya esta en 0.0.141**, asi que la migracion `AddOrganizacionLimiteCopropiedades` YA se aplico; de 0.0.141
+> a 0.0.144 NO hay migracion. Si se despliega sobre prod anterior a 0.0.141, aplicar esa migracion (ver doc 0.0.141).
 > Si prod viene de antes de 0.0.132, revisar migraciones aditivas pendientes de tandas previas (p.ej. 0.0.125).
 >
 > **Historico:** DEPLOY 0.0.113 (2026-10-09) en `DEPLOY_HANDOFF_2026-10-09_v0.0.113.md`.
