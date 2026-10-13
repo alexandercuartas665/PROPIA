@@ -128,27 +128,44 @@ boton plano con subrayado inferior en el activo), no por tarjetas KPI.
 - **La columna de acciones / "+ Agregar" NO es una columna FIJA (nada de position:sticky right).** Va al
   final y se alcanza con el scroll horizontal (barra superior espejo tipo Tareas). NO fijarla a la derecha.
 
-## 9. Bordes/colores del inline (referencia Tareas)
+## 9. Bordes/colores del inline (canon violeta; referencia Unidades/Zonas)
 
-- A. INPUTS/SELECTS de la FILA DE ALTA (`.tb-nf-inp`): reposo `1px dashed #D7E0EA` (punteado gris; NUNCA
-  violeta fijo). radius 7; padding 5px 8px; font 12.5px; color #33475B; background #fff; box-sizing border-box.
-  FOCUS: `border-style:solid; border-color:#6D4FE3; box-shadow:0 0 0 2px rgba(109,79,227,.12)`. Numeros: text-align right.
-  Dark: bg #232342; border #3a3a5a; color #D5D5E0.
-  - **Aplica a TODAS las clases de alta de cada modulo** (mismos valores exactos), no solo a `.tb-nf-inp`:
-    `.dst-nf-inp` (Unidades), `.dtab-inp` (Directorio), `.utb-inp` (Usuarios), `.zc-row-inp` (Zonas),
-    `.ea-row-inp` (Equipos), etc. Un alta con borde **SOLIDO** en reposo (o sin el glow al focus) es un BUG
-    de homogeneidad: se ve como caja de formulario maciza en vez del input "fantasma" punteado del canon.
+- A. INPUTS/SELECTS de la FILA DE ALTA (canon ACTUAL, violeta; ref Unidades/Usuarios/Zonas):
+  reposo **SIN borde visible**: `border:1px solid transparent; background:transparent` (input "fantasma";
+  el dashed gris de antes es LEGACY del editor de campos, NO el alta). radius 8; padding **10px 12px**;
+  font **13px**; color `var(--propia-text-body)`; box-sizing border-box; `transition:border-color .12s, box-shadow .12s`.
+  FOCUS: `border:1.5px solid var(--propia-brand); box-shadow:0 0 0 3px rgba(109,79,227,.14)` (glow 3px/.14).
+  Numeros: text-align right. Solo tokens var(--propia-*), nada de hex.
+  - **Fondo de la fila de alta ABIERTA**: `var(--propia-brand-soft-2)` PERMANENTE (violeta suave) mientras
+    esta abierta (es canon, intencional; el "morado" NO es bug). El verde solo en la fila recien creada (E).
+  - **Ayuda/hint**: fila `tbl-nf-hintrow` + texto `tbl-nf-hint-txt` (11px, color faint, gap 7px):
+    "Tab o clic fuera para guardar la fila . Esc para cancelar". Siempre presente con la fila abierta.
+  - **Aplica a TODAS las clases de alta** (mismos valores exactos): `.nf-in` (Unidades), `.dtab-inp` (Directorio),
+    `.utb-inp` (Usuarios), `.zc-row-inp` (Zonas), `.ea-row-inp` (Equipos), `.veh-row-inp`, `.mas-row-inp`,
+    `.res-nf-inp` (Residentes), `.seg-nf-inp` (Seguros), `.rol-inp` (Roles), `.mtp-nf-inp` (Mantenimiento),
+    `.tb-nf-inp` (Tareas), `.ctr-inp` (Contratos). Un alta con borde **DASHED o SOLIDO** en reposo (o sin el
+    glow 3px/.14 al focus) es un BUG de homogeneidad.
+  - **Caso `<table>` (solo Unidades, `td.nf-cell` + `.nf-in`)**: el borde del foco va SOBRE el input (NO un
+    anillo `::after` inset, que se veia mas chico/flotante). La celda lleva padding vertical (~7px) para que
+    la fila de alta respire y el glow 3px no se recorte contra el borde de la fila.
 - B. EDICION de celda existente (`.tb-cell-inp`): `1px solid #6D4FE3` + `box-shadow 0 0 0 2px rgba(109,79,227,.12)`
   (violeta = edicion activa). radius 6; padding 4px 7px; font 12.5px. Solo mientras la celda esta en edicion.
 - C. SELECTS: mismas reglas. `<optgroup>` cuando se agrupan opciones (ej "Asociado a" -> Equipos/Zonas).
 - D. BOTON "+ Agregar" (`zc-row-add`, violeta SUAVE): background #F1ECFD; color #6D4FE3; border 1px solid #DCD2F8;
   radius 7; font 11.5/700; padding 6px 10px. Hover #E4DBFB. Disabled opacity .5. AL FINAL, NO fijo.
-- E. FILA RECIEN CREADA: background #ECFBF2 + `box-shadow: inset 3px 0 0 #34C759` en la 1a celda; hasta refrescar.
-- F. El violeta SOLIDO es exclusivo de edicion activa; la alta va punteada gris y solo violeta al focus.
+- E. FILA RECIEN CREADA (canon ACTUAL, VIOLETA; unificado 2026-10-13 en los 11 modulos vista-tabla):
+  `background: var(--propia-brand-soft-2)` + `box-shadow: inset 3px 0 0 var(--propia-brand)` en la 1a celda;
+  hasta el proximo refresco. **Ya NO es verde** (#ECFBF2/#34C759 = LEGACY). El verde (`ok-soft`/`--propia-ok`)
+  queda SOLO para toasts/mensajes de exito, NUNCA para resaltar filas. Clases por modulo: `tbl-row-new`
+  (Unidades/compartida), `.veh-row-nuevo`, `.mas-row-nuevo`, `.res-row-nuevo`/`.res-card-nuevo`, `.seg-row-nuevo`,
+  `.ea-row-new`, `.zc-row-new`, `.dtab-row-new`, `.mtp-row--nuevo`, `.pk-tr-nuevo`, `.ctr-row-nuevo`.
+- F. El input de alta va "fantasma" (transparente) con borde+glow VIOLETA al focus (3px/.14); la EDICION de
+  una celda existente (B) usa borde violeta SOLIDO (2px/.12); la fila recien creada (E) es violeta suave.
+  Nada de dashed gris en el alta ni de verde en el resaltado de fila.
 
 ## 10. Al AGREGAR
 
-Crear por API; limpiar la fila; toast breve. Dejar el registro recien creado RESALTADO (verde, punto E) hasta
+Crear por API; limpiar la fila; toast breve. Dejar el registro recien creado RESALTADO (VIOLETA, punto E) hasta
 el proximo refresco (rastrear ids en `_recienCreados` y empujarlos al final con OrderBy ESTABLE si el orden
 natural los moveria; al recargar vuelve al orden natural). Comportamiento de abrir/no abrir modal segun pida
 el modulo (por defecto NO abrir modal salvo que se indique).
@@ -220,8 +237,11 @@ Referencia canonica: Distribucion.razor (Unidades) y ZonasComunes.razor.
 
 ## Protocolo de auditoria (obligatorio por cada punto)
 
-1. Medir con getComputedStyle/getBoundingClientRect y comparar contra Tareas/Zonas (KPI vs tb-bkpi; boton
-   bg rgb(241,236,253) color rgb(109,79,227); input alta borderStyle dashed color rgb(215,224,234)).
+1. Medir con getComputedStyle/getBoundingClientRect y comparar contra Unidades/Zonas (boton
+   bg rgb(241,236,253) color rgb(109,79,227); input alta reposo `border:1px solid transparent` + bg
+   transparente, padding 10px 12px, font 13px; al focus borde rgb(109,79,227) + box-shadow 0 0 0 3px
+   rgba(109,79,227,.14); fila de alta abierta bg rgb(245,241,254); fila recien creada bg rgb(245,241,254)
+   + barra inset rgb(109,79,227) -NO verde-).
 2. Alta: escribir (evento input real), confirmar boton habilitado, hacer CLIC REAL y verificar que el
    registro se crea, aparece resaltado y (si aplica) toast. VALIDAR VISIBILIDAD en viewport, no solo existencia.
 3. Persistencia: confirmar en BD/recarga que se guardaron listas/persona/unidad.
