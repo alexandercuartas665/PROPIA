@@ -92,3 +92,16 @@ edicion (usuario existente) la identidad es de solo lectura, con Estado (select)
 acceso, y boton "Guardar cambios". Al crear, el mismo modal pasa a modo edicion del recien creado.
 Archivo: `UsuariosPanel.razor`. Sin migracion. Verificado en runtime (crear -> edita el creado; editar existente
 sin cambios). Version visible **0.0.152**.
+
+---
+
+## Addendum v0.0.153 (2026-10-14) - Directorio/Terceros: el expander del alta abre el modal de creacion
+Alex: en Terceros/Directorio, al llenar el primer campo y tocar el expander, no abria nada. Se REUTILIZO el modal
+de creacion existente (el del boton "Nuevo", `_showCrear`): ahora el expander de la fila de alta (Personas y
+Empresas) va SIEMPRE habilitado y ABRE ese modal precargado con lo que haya en la fila. Para Persona, si hay
+documento auto-ejecuta la busqueda por documento (dedup) y muestra el formulario; si no, abre en la fase de
+busqueda. Para Empresa, abre con NIT/razon social precargados. Handlers nuevos `AbrirCrearDesdePersona`/
+`AbrirCrearDesdeEmpresa` (reemplazan `CrearPersonaTablaYAbrir`/`CrearEmpresaTablaYAbrir`); expanders siempre
+habilitados (quitado el gate por `DraftValido`). Archivos: `DirectorioPanel.razor`, `DirectorioPersonasVista.razor`,
+`DirectorioEmpresasVista.razor`. Sin migracion. Verificado en runtime (Personas y Empresas abren el modal con el
+primer campo). Version visible **0.0.153**.

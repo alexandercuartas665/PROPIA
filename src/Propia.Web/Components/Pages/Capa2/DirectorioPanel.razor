@@ -180,7 +180,7 @@
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
-                                     OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="CrearPersonaTablaYAbrir" OnEditarCampo="EditarPersonaInline" />
+                                     OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="AbrirCrearDesdePersona" OnEditarCampo="EditarPersonaInline" />
         }
         else
         {
@@ -195,7 +195,7 @@
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
-                                     OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="CrearEmpresaTablaYAbrir" OnEditarCampo="EditarEmpresaInline" />
+                                     OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="AbrirCrearDesdeEmpresa" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
@@ -1988,11 +1988,21 @@
         catch { }
     }
 
-    // Expander de la fila de alta: crea la persona y abre de una su ficha.
-    private async Task CrearPersonaTablaYAbrir(NuevaPersonaDir d)
+    // Expander de la fila de alta: ABRE el modal de creacion (el mismo del boton "Nuevo") precargado con lo que
+    // haya en la fila; el usuario completa/confirma ahi y guarda. Para persona auto-busca por documento (si lo hay)
+    // para mostrar el formulario sin un clic extra en "Buscar".
+    private async Task AbrirCrearDesdePersona(NuevaPersonaDir d)
     {
-        var id = await CrearPersonaTablaCoreAsync(d);
-        if (id is Guid g) await AbrirPersona(g);
+        AbrirCrear();  // resetea los forms y abre _showCrear (el _tab ya es "personas")
+        _persona.TipoDocumento = d.TipoDocumento;
+        _persona.Documento = d.Documento ?? "";
+        _persona.Nombres = d.Nombres ?? "";
+        _persona.Apellidos = d.Apellidos ?? "";
+        _persona.Email = d.Email;
+        _persona.Telefono = d.Telefono;
+        if (!string.IsNullOrWhiteSpace(d.Etiqueta)) _etiquetaPersonaSel = d.Etiqueta!;
+        if (!string.IsNullOrWhiteSpace(_persona.Documento) && _persona.Documento.Trim().Length >= 3)
+            await BuscarDoc();   // muestra el formulario (si no existe) o la tarjeta de "ya existe, vincular"
     }
 
     private async Task<Guid?> CrearPersonaTablaCoreAsync(NuevaPersonaDir d)
@@ -2057,11 +2067,17 @@
         catch { }
     }
 
-    // Expander de la fila de alta: crea la empresa y abre de una su ficha.
-    private async Task CrearEmpresaTablaYAbrir(NuevaEmpresaDir d)
+    // Expander de la fila de alta: ABRE el modal de creacion (el mismo del boton "Nuevo") precargado con lo que
+    // haya en la fila de empresas; el usuario completa/confirma ahi y guarda.
+    private void AbrirCrearDesdeEmpresa(NuevaEmpresaDir d)
     {
-        var id = await CrearEmpresaTablaCoreAsync(d);
-        if (id is Guid g) await AbrirEmpresa(g);
+        AbrirCrear();  // resetea los forms y abre _showCrear (el _tab ya es "empresas")
+        _empresa.Nit = d.Nit ?? "";
+        _empresa.DigitoVerificacion = d.Dv;
+        _empresa.RazonSocial = d.RazonSocial ?? "";
+        _empresa.NombreComercial = d.NombreComercial;
+        _empresa.Email = d.Email;
+        _empresa.Telefono = d.Telefono;
     }
 
     private async Task<Guid?> CrearEmpresaTablaCoreAsync(NuevaEmpresaDir d)
