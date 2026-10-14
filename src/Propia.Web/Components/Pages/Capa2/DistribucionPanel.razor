@@ -1465,37 +1465,18 @@ else
     private const string GruposKey = "propia_agrupar_unidades";
 
     // Columnas por las que se puede agrupar: fijas relevantes + campos propios (dinamicos).
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas),
+    // no un subconjunto curado (pedido de Alex: que en los 3 menus salgan todos los campos por igual).
     private List<TablaAgruparMenu.Col> ColsAgrupablesU()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("estado", "Estado"),
-            new("tipo", "Tipo"),
-            new("propietario", "Propietario"),
-        };
-        foreach (var d in _camposDef) cols.Add(new(CampoKey(d), d.Label));
-        return cols;
-    }
+        => ColumnasVisibles.Select(it => new TablaAgruparMenu.Col(it.Key, it.EsCustom ? it.Campo!.Label : Etiqueta(it.Def!))).ToList();
 
-    // Valor de agrupacion de una unidad para una dimension (item+clave -> ValorGrupo), para el motor compartido.
+    // Valor de agrupacion de una unidad para una dimension. Reusa SortStr (resuelve toda clave fija + "cd:"),
+    // asi cualquier columna agrupa igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoU(UnidadDto u, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
-        {
-            if (CampoDeClave(clave) is UnidadCampoDefinicionDto gcd)
-            {
-                var val = ValorCampo(u.Id, gcd.Id);
-                var t = string.IsNullOrWhiteSpace(val) ? "(Sin dato)" : val!;
-                yield return new ValorGrupo(t, t);
-            }
-            yield break;
-        }
-        switch (clave)
-        {
-            case "estado": var es = string.IsNullOrWhiteSpace(u.Estado) ? "Sin estado" : u.Estado!; yield return new ValorGrupo(es, es); break;
-            case "tipo": var tp = EtiquetaU(u); yield return new ValorGrupo(tp, tp); break;
-            case "propietario": var pr = string.IsNullOrWhiteSpace(u.PropietarioNombre) ? "Sin propietario" : u.PropietarioNombre!; yield return new ValorGrupo(pr, pr); break;
-        }
+        var v = SortStr(u, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t);
     }
 
     private async Task OnGruposUChanged()
