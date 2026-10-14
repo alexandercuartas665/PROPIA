@@ -58,3 +58,13 @@ Commit `ab92c710` - "Modal Editar usuario: rediseno al canon de la maqueta".
 
 ## Rollback
 Redeploy del artefacto 0.0.148. **No requiere tocar la BD** (sin migracion en esta tanda).
+
+---
+
+## Addendum v0.0.150 (2026-10-14) - fix expander del alta inline
+El expander de la fila de alta ("Crear y abrir la ficha") estaba `disabled` hasta tener nombre+documento+rol,
+por lo que al hacer clic con datos incompletos no pasaba nada (boton mudo, sin aviso). Ahora va SIEMPRE
+habilitado (canon skill vista-tabla seccion 8): al clic valida los minimos y, si faltan, muestra el toast
+"Para crear y abrir la ficha: nombre completo, documento y al menos un rol"; si estan completos, crea el
+usuario (Invitacion pendiente) y abre su ficha. Archivo: `UsuariosTablaVista.razor`. Sin migracion.
+Verificado en runtime (toast cuando faltan datos; modal abre al completar). Version visible **0.0.150**.
