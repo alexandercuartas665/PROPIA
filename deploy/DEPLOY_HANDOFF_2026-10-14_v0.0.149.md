@@ -68,3 +68,16 @@ habilitado (canon skill vista-tabla seccion 8): al clic valida los minimos y, si
 "Para crear y abrir la ficha: nombre completo, documento y al menos un rol"; si estan completos, crea el
 usuario (Invitacion pendiente) y abre su ficha. Archivo: `UsuariosTablaVista.razor`. Sin migracion.
 Verificado en runtime (toast cuando faltan datos; modal abre al completar). Version visible **0.0.150**.
+
+---
+
+## Addendum v0.0.151 (2026-10-14) - modal de CREACION de usuario desde el expander del alta
+Pedido de Alex: "apenas llene la primera columna (documento) que el expander deje abrir el modal para crear".
+Ahora el expander de la fila de alta ABRE un modal **"Crear usuario"** (nuevo, distinto del editar) precargado
+con lo que haya en la fila -aunque sea solo el documento-; alli la identidad es EDITABLE (nombre/documento/
+correo), se eligen Rol (requerido) y Cargo (chips), y "Crear usuario" valida los minimos (documento + nombre
+completo + >=1 rol) y reusa el flujo de alta: crea la persona en el Directorio si no existe, crea el UsuarioTenant
+en Invitacion pendiente, persiste celular, y ABRE la ficha del creado para continuar. El modal de EDITAR (usuarios
+existentes) sigue con identidad de solo lectura. Archivos: `UsuariosPanel.razor`, `UsuariosTablaVista.razor`.
+Sin migracion. Verificado en runtime (documento solo -> modal crear -> completar -> crea + abre ficha; split de
+nombre OK). Version visible **0.0.151**.
