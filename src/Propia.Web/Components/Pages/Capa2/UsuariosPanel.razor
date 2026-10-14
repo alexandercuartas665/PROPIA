@@ -461,7 +461,7 @@
                 </div>
                 <div class="flex-grow-1">
                     <div class="usr-modal-title">Editar usuario</div>
-                    <div class="usr-modal-subtitle">Rol de acceso, etiquetas y participacion en la copropiedad</div>
+                    <div class="usr-modal-subtitle">Rol de acceso, cargo y participacion en la copropiedad</div>
                 </div>
                 <button class="usr-modal-x" @onclick="CerrarEditar">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
@@ -497,270 +497,112 @@
                     <label class="usr-label">Nombre completo</label>
                     <input class="usr-input" value="@_editUser.NombreCompleto" disabled />
                 </div>
-                <div class="mb-3">
-                    <label class="usr-label">Correo de acceso</label>
-                    <input class="usr-input" value="@(_editUser.Email ?? "")" disabled />
+                @* Documento + Correo: identidad de solo lectura (vive en el Directorio). *@
+                <div class="usr-mgrid mb-3" style="grid-template-columns:1fr 1fr;gap:12px">
+                    <div>
+                        <label class="usr-label">Documento de identidad</label>
+                        <input class="usr-input" value="@_editUser.Documento" disabled />
+                    </div>
+                    <div>
+                        <label class="usr-label">Correo de acceso</label>
+                        <input class="usr-input" value="@(_editUser.Email ?? "")" disabled />
+                    </div>
                 </div>
-                <div class="usr-hint mb-3">Nombre y correo se editan en el Directorio (la identidad vive alli).</div>
-
+                @* Celular (WhatsApp): UNICO dato de identidad editable aqui (persiste en Persona.Telefono). *@
                 <div class="mb-2">
-                    <label class="usr-label">Rol</label>
-                    @* 2.5 v2.0: Rol MULTI-SELECT (igual que el alta): chips de los roles elegidos + "+" que abre
-                       un menu toggle con todos los roles activos. Persiste via PUT /api/usuarios/{id}/roles. *@
-                    <div class="urole-multi">
+                    <label class="usr-label">Celular (WhatsApp)</label>
+                    <input class="usr-input" @bind="_editTelefono" @bind:event="oninput" placeholder="Numero de celular" />
+                </div>
+                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">La identidad (nombre, documento, correo) es unica por persona y se edita en el Directorio.</div>
+
+                @* ROL (multi): chips asignados (x) + disponibles (clic para asignar). Otorga permisos (RBAC).
+                   Persiste via PUT /api/usuarios/{id}/roles. *@
+                <div class="usr-gob-sec">
+                    <div class="usr-gob-sec-t">ROL</div>
+                    <div class="usr-gob-sec-hint">Otorga permisos en PropIA (referencia a Roles y Permisos). Un usuario puede tener varios.</div>
+                    <div class="usr-etq-list">
                         @foreach (var rid in _editRolIds)
                         {
                             var rr = rid;
                             var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre
                                      ?? _editUser.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
-                            <span class="urole-chip">@rn<button type="button" class="urole-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
+                            <span class="usr-etq-chip" style="background:var(--propia-brand-soft);color:var(--propia-brand-text-2, var(--propia-brand));border-color:transparent">@rn<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
                         }
-                        @if (_editRolIds.Count == 0) { <span class="urole-ph">Agregar rol</span> }
-                        <button type="button" class="urole-add" title="Agregar rol" @onclick="() => _editRolMenuOpen = !_editRolMenuOpen">+</button>
-                        @if (_editRolMenuOpen)
-                        {
-                            <div class="urole-back" @onclick="() => _editRolMenuOpen = false"></div>
-                            <div class="urole-menu">
-                                @foreach (var r in _roles.Where(r => r.Activo || _editRolIds.Contains(r.Id)))
-                                {
-                                    var rid2 = r.Id; var on = _editRolIds.Contains(rid2);
-                                    <button type="button" class="urole-opt @(on ? "on" : "")" @onclick="() => ToggleEditRol(rid2)">
-                                        <span class="urole-check">@(on ? (MarkupString)"&#10003;" : (MarkupString)"")</span>@r.Nombre
-                                    </button>
-                                }
-                            </div>
-                        }
+                        @if (_editRolIds.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
                     </div>
-                    <div class="usr-hint">Puedes asignar varios roles. El primero es el principal.</div>
-                </div>
-
-                @* ---------- Etiquetas del usuario (catalogo compartido por toda la copropiedad) ---------- *@
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">ETIQUETAS</div>
-                    <div class="usr-gob-sec-hint">Clasifica a esta persona (Consejo, Aseo, Mantenimiento...). Las que crees quedan disponibles para todos los usuarios de la copropiedad.</div>
-
-                    <div class="usr-etq-list" style="margin-bottom:10px">
-                        @foreach (var et in _editUser.Etiquetas)
-                        {
-                            var etId = et.Id;
-                            <span class="usr-etq-chip" style="background:@ChipBg(et.Color);color:@(et.Color ?? "#6D4FE3");border-color:@(et.Color ?? "#DCD2F8")">
-                                @et.Nombre
-                                <button class="usr-etq-x" @onclick="() => QuitarEtiquetaDelUsuario(etId)" disabled="@_busy" title="Quitar de este usuario">&times;</button>
-                            </span>
-                        }
-                        @if (_editUser.Etiquetas.Count == 0) { <span class="usr-etq-empty">Este usuario no tiene etiquetas.</span> }
-                    </div>
-
-                    @{ var disponibles = _etiquetas.Where(e => _editUser!.Etiquetas.All(a => a.Id != e.Id)).ToList(); }
-                    @if (disponibles.Count > 0)
+                    @{ var rolesDisp = _roles.Where(r => r.Activo && !_editRolIds.Contains(r.Id)).ToList(); }
+                    @if (rolesDisp.Count > 0)
                     {
                         <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
-                        <div class="usr-etq-list" style="margin-bottom:10px">
-                            @foreach (var e in disponibles)
+                        <div class="usr-etq-list">
+                            @foreach (var r in rolesDisp)
                             {
-                                var eid = e.Id; var enom = e.Nombre;
-                                <span class="usr-etq-off">
-                                    <button class="usr-etq-pick2" @onclick="() => AsignarEtiquetaAlUsuario(eid)" disabled="@_busy">
-                                        <span class="usr-etq-dot" style="background:@(e.Color ?? "#6D4FE3")"></span>@e.Nombre
-                                    </button>
-                                    <button class="usr-etq-del" @onclick="() => EliminarEtiquetaDelCatalogo(eid, enom)" disabled="@_busy" title="Eliminar de la copropiedad">&times;</button>
-                                </span>
+                                var rid3 = r.Id;
+                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => ToggleEditRol(rid3)"><span class="usr-etq-dot" style="background:var(--propia-brand)"></span>@r.Nombre</button></span>
                             }
                         </div>
                     }
+                </div>
 
-                    <div class="usr-etq-form">
-                        <input class="usr-etq-in" @bind="_nuevaEtqNombre" @bind:event="oninput" placeholder="Nueva etiqueta (ej. Aseo)" />
-                        <input type="color" class="usr-etq-color" @bind="_nuevaEtqColor" title="Color" />
-                        <button class="usr-btn-primary usr-etq-add" @onclick="CrearYAsignarEtiqueta" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtqNombre))">Crear y asignar</button>
+                @* CARGO (multi, descriptivo, NO da permisos): chips + disponibles del catalogo "usuario.cargo".
+                   Persiste via PUT /api/usuarios/{id}/cargos. *@
+                <div class="usr-gob-sec">
+                    <div class="usr-gob-sec-t">CARGO</div>
+                    <div class="usr-gob-sec-hint">Oficio o funcion del personal interno (descriptivo, no otorga permisos).</div>
+                    <div class="usr-etq-list">
+                        @foreach (var cg in _editCargos)
+                        {
+                            var cgv = cg;
+                            <span class="usr-etq-chip" style="background:var(--propia-border-divider);color:var(--propia-text-body);border-color:transparent">@cgv<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditCargo(cgv)">&times;</button></span>
+                        }
+                        @if (_editCargos.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
                     </div>
+                    @{ var cargosDisp = _cargoOpciones.Where(c => !_editCargos.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList(); }
+                    @if (cargosDisp.Count > 0)
+                    {
+                        <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
+                        <div class="usr-etq-list">
+                            @foreach (var c in cargosDisp)
+                            {
+                                var cv = c;
+                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => AgregarEditCargo(cv)"><span class="usr-etq-dot" style="background:var(--propia-text-muted)"></span>@cv</button></span>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
             @* ---------- Columna derecha: donde participa dentro de la copropiedad ---------- *@
             <div class="usr-mcol">
-                @if (_gobUser is not null)
-                {
-                    <div class="usr-gob-sec">
-                        <div class="usr-gob-sec-t">GOBIERNO Y EQUIPO DE TRABAJO</div>
-                        <div class="usr-gob-sec-hint">Activa a esta persona en los grupos de gobierno. Un usuario puede estar en varios a la vez.</div>
-
-                        @* Consejo de administracion *@
-                        <div class="usr-gob-card @(_gobUser.Consejo is not null ? "on" : "")">
-                            <div class="usr-gob-card-h">
-                                <span class="usr-gob-card-name">Consejo de administración</span>
-                                @if (_gobUser.Consejo is not null) { <span class="usr-gob-badge">Miembro</span> }
-                            </div>
-                            @if (_gobUser.Consejo is not null)
-                            {
-                                <div class="usr-gob-tagrow">
-                                    <span class="usr-gob-tag2">@CargoConsejoTxt(_gobUser.Consejo.Cargo)</span>
-                                    <button class="usr-gob-quitar" @onclick="QuitarConsejo" disabled="@_busy">Quitar</button>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="usr-gob-form">
-                                    <select class="usr-gob-in" @bind="_gobCargoConsejo">
-                                        @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@CargoConsejoTxt(c)</option> }
-                                    </select>
-                                    <button class="usr-gob-add" @onclick="AgregarConsejo" disabled="@_busy">+ Agregar</button>
-                                </div>
-                            }
-                        </div>
-
-                        @* Comites *@
-                        <div class="usr-gob-card @(_gobUser.Comites.Count > 0 ? "on" : "")">
-                            <div class="usr-gob-card-h">
-                                <span class="usr-gob-card-name">Comites</span>
-                                @if (_gobUser.Comites.Count > 0) { <span class="usr-gob-badge">@_gobUser.Comites.Count</span> }
-                            </div>
-                            @if (_gobUser.Comites.Count > 0)
-                            {
-                                <div class="usr-gob-tagrow">
-                                    @foreach (var cm in _gobUser.Comites)
-                                    {
-                                        var mid = cm.MiembroId;
-                                        <span class="usr-gob-tag2">@cm.ComiteNombre <button class="usr-gob-x2" @onclick="() => QuitarComite(mid)" disabled="@_busy">&times;</button></span>
-                                    }
-                                </div>
-                            }
-                            @if (_comites.Count > 0)
-                            {
-                                <div class="usr-gob-form">
-                                    <select class="usr-gob-in" @bind="_gobComiteId">
-                                        <option value="@Guid.Empty">Elegir comité...</option>
-                                        @foreach (var c in _comites.Where(c => _gobUser.Comites.All(m => m.ComiteId != c.Id)))
-                                        {
-                                            <option value="@c.Id">@c.Nombre</option>
-                                        }
-                                    </select>
-                                    <button class="usr-gob-add" @onclick="AgregarComite" disabled="@(_busy || _gobComiteId == Guid.Empty)">+ Agregar</button>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="usr-gob-note">No hay comites creados. Crealos en el módulo Gobierno.</div>
-                            }
-                        </div>
-
-                        @* Revisor fiscal *@
-                        <div class="usr-gob-card @(_gobUser.Revisor is not null ? "on" : "")">
-                            <div class="usr-gob-card-h">
-                                <span class="usr-gob-card-name">Revisor fiscal</span>
-                                @if (_gobUser.Revisor is not null) { <span class="usr-gob-badge">Activo</span> }
-                            </div>
-                            @if (_gobUser.Revisor is not null)
-                            {
-                                <div class="usr-gob-tagrow">
-                                    <span class="usr-gob-tag2">Revisor fiscal@(string.IsNullOrWhiteSpace(_gobUser.Revisor.NumeroTarjetaProfesional) ? "" : " - TP " + _gobUser.Revisor.NumeroTarjetaProfesional)</span>
-                                    <button class="usr-gob-quitar" @onclick="QuitarRevisor" disabled="@_busy">Quitar</button>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="usr-gob-form">
-                                    <input class="usr-gob-in" @bind="_gobRevisorTp" placeholder="Tarjeta profesional (opcional)" />
-                                    <button class="usr-gob-add" @onclick="DesignarRevisor" disabled="@_busy">+ Designar</button>
-                                </div>
-                            }
-                        </div>
-
-                        @* Equipo de trabajo *@
-                        <div class="usr-gob-card @(_gobUser.Equipo is not null ? "on" : "")">
-                            <div class="usr-gob-card-h">
-                                <span class="usr-gob-card-name">Equipo de trabajo</span>
-                                @if (_gobUser.Equipo is not null) { <span class="usr-gob-badge">Miembro</span> }
-                            </div>
-                            @if (_gobUser.Equipo is not null)
-                            {
-                                <div class="usr-gob-tagrow">
-                                    <span class="usr-gob-tag2">@(string.IsNullOrWhiteSpace(_gobUser.Equipo.RolPersonalizado) ? RolEquipoTxt(_gobUser.Equipo.Rol) : _gobUser.Equipo.RolPersonalizado)</span>
-                                    <button class="usr-gob-quitar" @onclick="QuitarEquipo" disabled="@_busy">Quitar</button>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="usr-gob-form">
-                                    <select class="usr-gob-in" @bind="_gobEquipoRol">
-                                        @foreach (var rr in Enum.GetValues<RolEquipo>()) { <option value="@rr">@RolEquipoTxt(rr)</option> }
-                                    </select>
-                                    <select class="usr-gob-in" @bind="_gobEquipoTipo">
-                                        <option value="@TipoVinculacion.Interno">Interno</option>
-                                        <option value="@TipoVinculacion.Externo">Externo</option>
-                                    </select>
-                                    <button class="usr-gob-add" @onclick="AgregarEquipo" disabled="@_busy">+ Agregar</button>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-
-                @if (_tablerosUser is not null)
-                {
-                    var misTableros = _tablerosUser.Where(t => t.Usuarios.Any(x => x.PersonaId == _editUser.PersonaId)).ToList();
-                    var otrosTableros = _tablerosUser.Where(t => t.Usuarios.All(x => x.PersonaId != _editUser.PersonaId)).ToList();
-                    <div class="usr-gob-sec">
-                        <div class="usr-gob-sec-t">TABLEROS DE TRABAJO</div>
-                        <div class="usr-gob-sec-hint">Tableros de tareas (2.10) en los que participa esta persona.</div>
-                        @if (misTableros.Count > 0)
+                @* ESTADO: el backend solo mueve Activo<->Inactivo (revocar/reactivar); "Pendiente..." los fija
+                   el sistema (alta/invitacion), por eso no se eligen a mano. *@
+                <div class="mb-3">
+                    <label class="usr-label">Estado</label>
+                    <select class="usr-select" @bind="_editEstado">
+                        @foreach (var e in Enum.GetValues<EstadoUsuarioTenant>())
                         {
-                            <div class="usr-gob-tagrow" style="margin-top:0">
-                                @foreach (var t in misTableros)
-                                {
-                                    var tid = t.Id;
-                                    <span class="usr-tab-chip">
-                                        <span class="usr-tab-dot" style="background:@t.Color"></span>
-                                        <a class="usr-tab-link" href="/tareas" title="Abrir Tareas">@t.Nombre</a>
-                                        <span class="usr-tab-n">@t.NCards</span>
-                                        <button class="usr-gob-x2" @onclick="() => QuitarTablero(tid)" disabled="@_busy" title="Quitar del tablero">&times;</button>
-                                    </span>
-                                }
-                            </div>
+                            <option value="@e">@EstadoLabelU(e)</option>
                         }
-                        else
-                        {
-                            <div class="usr-gob-note" style="margin-top:0">Esta persona no participa en ningun tablero.</div>
-                        }
-                        @if (otrosTableros.Count > 0)
-                        {
-                            <div class="usr-gob-form">
-                                <select class="usr-gob-in" @bind="_tableroSel">
-                                    <option value="@Guid.Empty">Agregar a un tablero...</option>
-                                    @foreach (var t in otrosTableros)
-                                    {
-                                        <option value="@t.Id">@t.Nombre</option>
-                                    }
-                                </select>
-                                <button class="usr-gob-add" @onclick="AgregarTablero" disabled="@(_busy || _tableroSel == Guid.Empty)">+ Agregar</button>
-                            </div>
-                        }
-                    </div>
-                }
+                    </select>
+                </div>
 
-                <div class="usr-dir-box @(_editUser.EnDirectorio ? "on" : "")">
+                @* DATOS DEL SISTEMA (solo lectura) *@
+                <div class="usr-gob-sec">
+                    <div class="usr-gob-sec-t">Datos del sistema</div>
+                    <div class="usr-sysrow"><span>Ultimo acceso</span><b>@FechaCortaU(_editUser.UltimoAcceso)</b></div>
+                    <div class="usr-sysrow"><span>Fecha de vinculacion</span><b>@FechaCortaU(_editUser.FechaVinculacion)</b></div>
+                    <div class="usr-sysrow"><span>Aceptacion de politica de datos</span><b>@(_editUser.AceptoTratamientoDatos ? FechaHoraU(_editUser.FechaAceptacionDatos) : "No registrada")</b></div>
+                </div>
+
+                @* PERSONA UNICA (callout): la identidad vive en el Directorio; la referencian varios modulos. *@
+                <div class="usr-dir-box on">
                     <div class="usr-dir-ico">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                     </div>
                     <div class="flex-grow-1">
-                        <div style="font-size:13px;font-weight:700;color:var(--propia-text-body)">Directorio de terceros</div>
-                        @if (_editUser.EnDirectorio)
-                        {
-                            <div style="font-size:12px;color:#0F8A4F">Registrado en el Directorio de la copropiedad.</div>
-                            @if (_perfilIncompletoAviso)
-                            {
-                                <div style="font-size:12px;color:#B45309">Perfil incompleto: <a href="/directorio">completar datos en el Directorio</a>.</div>
-                            }
-                        }
-                        else
-                        {
-                            <div style="font-size:12px;color:var(--propia-text-faint);line-height:1.4">Aun no aparece en el Directorio. Registralo para gestionarlo como tercero (datos, vinculos, etiquetas).</div>
-                        }
+                        <div style="font-size:13px;font-weight:700;color:var(--propia-text-body)">Persona unica</div>
+                        <div style="font-size:12px;color:var(--propia-ok)">Registrada en el Directorio. Usuarios, Residentes y Terceros la referencian.</div>
                     </div>
-                    @if (!_editUser.EnDirectorio)
-                    {
-                        <button class="usr-gob-add" @onclick="RegistrarDirectorioModal" disabled="@_busy">Registrar</button>
-                    }
                 </div>
 
                 <div class="usr-security">
@@ -1277,37 +1119,22 @@
 
     // Editar usuario
     private UsuarioListaDto? _editUser;
-    // 2.5 v2.0: el editar usa multi-rol (lista), no un unico rol. El principal es el primero.
+    // 2.5 v2.0: el editar usa multi-rol y multi-cargo (listas). Rol = permisos; Cargo = descriptivo.
     private List<Guid> _editRolIds = new();
-    private bool _editRolMenuOpen;
-
-    // Gobierno y equipo (2.5.1) dentro del modal Editar
-    private GobiernoPersonaDto? _gobUser;
-    private List<ComiteDto> _comites = new();
-    private CargoConsejo _gobCargoConsejo = CargoConsejo.Vocal;
-    private Guid _gobComiteId;
-    private string _gobRevisorTp = "";
-    private RolEquipo _gobEquipoRol = RolEquipo.Otro;
-    private TipoVinculacion _gobEquipoTipo = TipoVinculacion.Interno;
+    private List<string> _editCargos = new();
+    private string _editTelefono = "";                 // celular (Persona.Telefono), unico dato de identidad editable
+    private EstadoUsuarioTenant _editEstado;            // solo Activo<->Inactivo son efectivos (revocar/reactivar)
 
     // Foto de perfil (2.5.C) dentro del modal Editar
     private string? _editFotoUrl;
     private bool _subiendoFoto;
 
-    // Tableros de trabajo (2.5.D) dentro del modal Editar
-    private List<TableroDto>? _tablerosUser;
-    private Guid _tableroSel;
-
-    // Directorio (2.5.E) dentro del modal Editar
-    private bool _perfilIncompletoAviso;
-
     // La UI de Roles y Permisos se movio a su propia bandeja (RolesPanel.razor, ruta /roles).
     // Aqui solo se conserva _roles + CargarRolesAsync para poblar los selects de rol de Usuarios.
 
-    // Etiquetas de usuario (2.5). Catalogo del tenant: lo que se crea aqui sirve para todos.
+    // Catalogo de etiquetas del tenant: aun lo usa el boton Filtros (filtrar por etiqueta). La gestion de
+    // etiquetas por usuario se retiro del modal en la v2.0 (spec seccion 11).
     private List<EtiquetaUsuarioDto> _etiquetas = new();
-    private string _nuevaEtqNombre = "";
-    private string _nuevaEtqColor = "#6D4FE3";
 
     // La vista (Lista/Tabla) se recuerda por modulo en localStorage: sobrevive al cierre de
     // sesion (el logout solo borra llaves puntuales, no hace localStorage.clear()).
@@ -1525,87 +1352,6 @@
         StateHasChanged();
     }
 
-    // ---------------- Etiquetas de usuario (2.5) ----------------
-    // Se administran dentro del modal del usuario. El catalogo es del tenant: una etiqueta
-    // creada aqui queda disponible para todos los usuarios de la copropiedad.
-
-    private async Task AsignarEtiquetaAlUsuario(Guid etiquetaId)
-    {
-        if (_editUser is null) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/etiquetas/{etiquetaId}", null);
-            if (resp.IsSuccessStatusCode) await RecargarSinCerrarModalAsync();
-            else { _msg = "No se pudo asignar la etiqueta."; _msgClass = "alert-danger"; }
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task QuitarEtiquetaDelUsuario(Guid etiquetaId)
-    {
-        if (_editUser is null) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/etiquetas/{etiquetaId}");
-            if (resp.IsSuccessStatusCode) await RecargarSinCerrarModalAsync();
-        }
-        finally { _busy = false; }
-    }
-
-    private async Task CrearYAsignarEtiqueta()
-    {
-        if (_editUser is null || string.IsNullOrWhiteSpace(_nuevaEtqNombre)) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync("/api/usuarios/etiquetas",
-                new CrearEtiquetaUsuarioRequest(_nuevaEtqNombre.Trim(), _nuevaEtqColor));
-            if (!resp.IsSuccessStatusCode)
-            {
-                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-                _msg = err is not null && err.TryGetValue("error", out var m) ? m : "No se pudo crear la etiqueta.";
-                _msgClass = "alert-danger";
-                return;
-            }
-            var creada = await resp.Content.ReadFromJsonAsync<EtiquetaUsuarioDto>();
-            _nuevaEtqNombre = ""; _nuevaEtqColor = "#6D4FE3";
-            if (creada is not null)
-                await Auth().PostAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/etiquetas/{creada.Id}", null);
-            await RecargarSinCerrarModalAsync();
-        }
-        finally { _busy = false; }
-    }
-
-    /// <summary>Borra la etiqueta de TODA la copropiedad (se quita de todos los usuarios que la tengan).</summary>
-    private async Task EliminarEtiquetaDelCatalogo(Guid etiquetaId, string nombre)
-    {
-        var ok = await Modals.ConfirmAsync(
-            $"Eliminar la etiqueta \"{nombre}\" de toda la copropiedad? Se quitara de todos los usuarios que la tengan.", "Eliminar etiqueta");
-        if (!ok) return;
-        _busy = true;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/usuarios/etiquetas/{etiquetaId}");
-            if (resp.IsSuccessStatusCode) await RecargarSinCerrarModalAsync();
-        }
-        finally { _busy = false; }
-    }
-
-    /// <summary>Recarga la lista y reapunta _editUser al usuario ya refrescado, para no cerrar el modal.</summary>
-    private async Task RecargarSinCerrarModalAsync()
-    {
-        var id = _editUser?.UsuarioTenantId;
-        await CargarAsync();
-        if (id is Guid uid)
-            _editUser = _usuarios?.FirstOrDefault(u => u.UsuarioTenantId == uid) ?? _editUser;
-    }
-
-    // Fondo tenue del chip a partir del color (hex + alpha ~10%).
-    private static string ChipBg(string? color)
-        => string.IsNullOrWhiteSpace(color) ? "#F1ECFD" : (color.Length == 7 ? color + "1A" : "#F1ECFD");
-
     // ---------------- Filtros y foto (2.5.C) ----------------
     private IEnumerable<(Guid Id, string Nombre)> RolesDisponibles()
         => _usuarios is null
@@ -1641,53 +1387,7 @@
     }
     private sealed record FotoResp(string? Url);
 
-    // ---------------- Tableros de trabajo (2.5.D) ----------------
-    private async Task RecargarTablerosAsync()
-    {
-        _tablerosUser = await Auth().GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
-    }
-    private async Task AgregarTablero()
-    {
-        if (_editUser is null || _tableroSel == Guid.Empty) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().PostAsync($"/api/tareas/tableros/{_tableroSel}/usuarios/{_editUser.PersonaId}", null);
-            if (r.IsSuccessStatusCode) { _tableroSel = Guid.Empty; await RecargarTablerosAsync(); }
-            else { _msg = "No se pudo enlazar el tablero (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
-        }
-        finally { _busy = false; }
-    }
-    private async Task QuitarTablero(Guid tableroId)
-    {
-        if (_editUser is null) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/tareas/tableros/{tableroId}/usuarios/{_editUser.PersonaId}");
-            if (r.IsSuccessStatusCode) await RecargarTablerosAsync();
-            else { _msg = "No se pudo quitar del tablero (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
-        }
-        finally { _busy = false; }
-    }
 
-    // ---------------- Directorio (2.5.E) ----------------
-    private async Task RegistrarDirectorioModal()
-    {
-        if (_editUser is null) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().PostAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/directorio", null);
-            if (r.IsSuccessStatusCode)
-            {
-                var res = await r.Content.ReadFromJsonAsync<RegistroDirectorioDto>();
-                _perfilIncompletoAviso = res?.PerfilIncompleto ?? false;
-                _editUser = _editUser with { EnDirectorio = true };
-                _msg = "Usuario registrado en el Directorio."; _msgClass = "alert-success";
-                await CargarAsync();
-            }
-            else { _msg = "No se pudo registrar en el Directorio (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
-        }
-        finally { _busy = false; }
-    }
 
     private async Task CargarRolesAsync()
     {
@@ -1812,7 +1512,7 @@
             await CargarAsync();
             var creado = _usuarios?.FirstOrDefault(u => u.PersonaId == personaId);
             _msg = $"Usuario {d.Nombres} {d.Apellidos} creado. Completa su ficha."; _msgClass = "alert-success";
-            if (creado is not null) await AbrirEditar(creado);
+            if (creado is not null) AbrirEditar(creado);
             return;
         }
 
@@ -1878,183 +1578,104 @@
     }
 
     // ---------------- Editar usuario ----------------
-    private async Task AbrirEditar(UsuarioListaDto u)
+    private void AbrirEditar(UsuarioListaDto u)
     {
         _editUser = u;
         _editRolIds = u.Roles is { Count: > 0 }
             ? u.Roles.Select(r => r.Id).ToList()
             : (u.RolId is Guid rid ? new List<Guid> { rid } : new List<Guid>());
-        _editRolMenuOpen = false;
+        _editCargos = u.Cargos?.ToList() ?? new();
+        _editTelefono = u.Telefono ?? "";
+        _editEstado = u.Estado;
         _editFotoUrl = u.FotoUrl;
-        _gobUser = null;
-        _gobComiteId = Guid.Empty; _gobRevisorTp = ""; _gobCargoConsejo = CargoConsejo.Vocal;
-        _gobEquipoRol = RolEquipo.Otro; _gobEquipoTipo = TipoVinculacion.Interno;
-        _tablerosUser = null; _tableroSel = Guid.Empty;
-        _perfilIncompletoAviso = false;
-        try
-        {
-            var http = Auth();
-            _comites = await http.GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
-            _gobUser = await http.GetFromJsonAsync<GobiernoPersonaDto>($"/api/mi-copropiedad/gobierno/persona/{u.PersonaId}")
-                       ?? new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null);
-            _tablerosUser = await http.GetFromJsonAsync<List<TableroDto>>("/api/tareas/tableros") ?? new();
-        }
-        catch { _gobUser = new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null); _tablerosUser = new(); }
     }
-    private void CerrarEditar() { _editUser = null; _gobUser = null; _tablerosUser = null; }
+    private void CerrarEditar() { _editUser = null; }
 
-    // ---------------- Gobierno / equipo dentro de Editar (2.5.1) ----------------
-    private async Task RecargarGobiernoAsync()
-    {
-        if (_editUser is null) return;
-        _gobUser = await Auth().GetFromJsonAsync<GobiernoPersonaDto>($"/api/mi-copropiedad/gobierno/persona/{_editUser.PersonaId}")
-                   ?? new GobiernoPersonaDto(null, new List<GobiernoComiteTag>(), null, null);
-        await CargarAsync();  // refresca los tags de gobierno en la lista
-    }
-    private void GobErr(HttpResponseMessage r)
-    { _msg = "No se pudo actualizar el gobierno (" + (int)r.StatusCode + ")."; _msgClass = "alert-danger"; }
-
-    private async Task AgregarConsejo()
-    {
-        if (_editUser is null) return; _busy = true; _msg = null;
-        try
-        {
-            var req = new AgregarMiembroConsejoRequest(_editUser.PersonaId, _gobCargoConsejo, DateOnly.FromDateTime(DateTime.Today), null);
-            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/consejo", req);
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task QuitarConsejo()
-    {
-        if (_gobUser?.Consejo is null) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().PutAsync($"/api/mi-copropiedad/consejo/{_gobUser.Consejo.MiembroId}/desactivar", null);
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task AgregarComite()
-    {
-        if (_editUser is null || _gobComiteId == Guid.Empty) return; _busy = true; _msg = null;
-        try
-        {
-            var req = new AgregarComiteMiembroRequest(_gobComiteId, _editUser.PersonaId, null);
-            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/comites/miembros", req);
-            if (r.IsSuccessStatusCode) { _gobComiteId = Guid.Empty; await RecargarGobiernoAsync(); } else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task QuitarComite(Guid miembroId)
-    {
-        _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/comites/miembros/{miembroId}");
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task DesignarRevisor()
-    {
-        if (_editUser is null) return; _busy = true; _msg = null;
-        try
-        {
-            var req = new DesignarRevisorFiscalRequest(_editUser.PersonaId,
-                string.IsNullOrWhiteSpace(_gobRevisorTp) ? null : _gobRevisorTp.Trim(),
-                DateOnly.FromDateTime(DateTime.Today));
-            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/revisor-fiscal", req);
-            if (r.IsSuccessStatusCode) { _gobRevisorTp = ""; await RecargarGobiernoAsync(); } else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task QuitarRevisor()
-    {
-        if (_gobUser?.Revisor is null) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/revisor-fiscal/{_gobUser.Revisor.RevisorId}");
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task AgregarEquipo()
-    {
-        if (_editUser is null) return; _busy = true; _msg = null;
-        try
-        {
-            var req = new AgregarMiembroEquipoRequest(_editUser.PersonaId, _gobEquipoRol, null, _gobEquipoTipo,
-                DateOnly.FromDateTime(DateTime.Today), null, null, null);
-            var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/equipo", req);
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-    private async Task QuitarEquipo()
-    {
-        if (_gobUser?.Equipo is null) return; _busy = true; _msg = null;
-        try
-        {
-            var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipo/{_gobUser.Equipo.MiembroId}");
-            if (r.IsSuccessStatusCode) await RecargarGobiernoAsync(); else GobErr(r);
-        }
-        finally { _busy = false; }
-    }
-
-    private static string CargoConsejoTxt(CargoConsejo c) => c switch
-    {
-        CargoConsejo.Presidente => "Presidente",
-        CargoConsejo.Vicepresidente => "Vicepresidente",
-        CargoConsejo.Secretario => "Secretario",
-        CargoConsejo.Tesorero => "Tesorero",
-        CargoConsejo.Vocal => "Vocal",
-        CargoConsejo.Suplente => "Suplente",
-        _ => c.ToString()
-    };
-    private static string RolEquipoTxt(RolEquipo r) => r switch
-    {
-        RolEquipo.AdministradorDelegado => "Administrador delegado",
-        RolEquipo.Contador => "Contador",
-        RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
-        RolEquipo.CoordinadorOperativo => "Coordinador operativo",
-        RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
-        RolEquipo.PersonalAseo => "Personal de aseo",
-        RolEquipo.Mantenimiento => "Mantenimiento",
-        RolEquipo.Recepcion => "Recepcion",
-        _ => "Otro"
-    };
-
+    // 2.5 v2.0: persiste lo editable del modal -> celular (Persona.Telefono), roles (multi), cargos (multi) y
+    // estado (solo Activo<->Inactivo via revocar/reactivar; los "Pendiente" los fija el sistema). Cada paso es
+    // un PUT/POST independiente; si uno falla se detiene mostrando el error y no cierra.
     private async Task GuardarEditar()
     {
         if (_editUser is null) return;
         _busy = true; _msg = null;
         try
         {
-            // Roles (multi): si el conjunto elegido difiere del actual, persistir con PUT /roles.
-            // No enviar vacio (el usuario debe conservar al menos un rol; el backend tambien lo valida).
-            var actuales = (_editUser.Roles?.Select(r => r.Id) ?? Enumerable.Empty<Guid>()).ToHashSet();
-            var elegidos = _editRolIds.ToHashSet();
-            if (elegidos.Count > 0 && !elegidos.SetEquals(actuales))
+            var http = Auth();
+            var id = _editUser.UsuarioTenantId;
+            var cambios = false;
+
+            // 1) Celular (Persona.Telefono): si cambio.
+            var telNuevo = (_editTelefono ?? "").Trim();
+            if (!string.Equals((_editUser.Telefono ?? "").Trim(), telNuevo, StringComparison.Ordinal))
             {
-                var http = Auth();
-                var resp = await http.PutAsJsonAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/roles",
-                    new ActualizarRolesUsuarioRequest(_editRolIds.ToList()));
-                if (!resp.IsSuccessStatusCode)
-                {
-                    _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
-                }
-                _msg = _editRolIds.Count > 1 ? "Roles actualizados." : "Rol actualizado."; _msgClass = "alert-success";
+                var r = await http.PutAsJsonAsync($"/api/usuarios/{id}/telefono", new ActualizarTelefonoUsuarioRequest(telNuevo));
+                if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                cambios = true;
             }
+
+            // 2) Roles (multi): no vacio; el backend tambien lo valida.
+            var rolesActuales = (_editUser.Roles?.Select(x => x.Id) ?? Enumerable.Empty<Guid>()).ToHashSet();
+            if (_editRolIds.Count > 0 && !_editRolIds.ToHashSet().SetEquals(rolesActuales))
+            {
+                var r = await http.PutAsJsonAsync($"/api/usuarios/{id}/roles", new ActualizarRolesUsuarioRequest(_editRolIds.ToList()));
+                if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                cambios = true;
+            }
+
+            // 3) Cargos (multi, descriptivos): vacio es valido.
+            var cargosActuales = new HashSet<string>(_editUser.Cargos ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            if (!new HashSet<string>(_editCargos, StringComparer.OrdinalIgnoreCase).SetEquals(cargosActuales))
+            {
+                var r = await http.PutAsJsonAsync($"/api/usuarios/{id}/cargos", new ActualizarCargosUsuarioRequest(_editCargos.ToList()));
+                if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                cambios = true;
+            }
+
+            // 4) Estado: solo Activo<->Inactivo (revocar / reactivar).
+            if (_editEstado != _editUser.Estado)
+            {
+                if (_editEstado == EstadoUsuarioTenant.Inactivo)
+                {
+                    var r = await http.PostAsJsonAsync($"/api/usuarios/{id}/revocar", new RevocarAccesoRequest(null));
+                    if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                    cambios = true;
+                }
+                else if (_editEstado == EstadoUsuarioTenant.Activo && _editUser.Estado == EstadoUsuarioTenant.Inactivo)
+                {
+                    var r = await http.PostAsync($"/api/usuarios/{id}/reactivar", null);
+                    if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                    cambios = true;
+                }
+                else
+                {
+                    _msg = "Los estados 'Pendiente' los asigna el sistema; no se cambian a mano."; _msgClass = "alert-info";
+                }
+            }
+
+            if (cambios && _msgClass != "alert-info") { _msg = "Cambios guardados."; _msgClass = "alert-success"; }
             _editUser = null;
             await CargarAsync();
         }
         finally { _busy = false; }
     }
 
-    // Multi-select de Rol en el editar (chips + menu toggle). El menu queda abierto para elegir varios.
+    // Multi-select de Rol/Cargo en el editar (chips asignados + disponibles para clic).
     private void ToggleEditRol(Guid id) { if (!_editRolIds.Remove(id)) _editRolIds.Add(id); }
     private void QuitarEditRol(Guid id) => _editRolIds.Remove(id);
+    private void AgregarEditCargo(string c) { if (!_editCargos.Contains(c, StringComparer.OrdinalIgnoreCase)) _editCargos.Add(c); }
+    private void QuitarEditCargo(string c) => _editCargos.RemoveAll(x => string.Equals(x, c, StringComparison.OrdinalIgnoreCase));
+
+    // Datos del sistema (modal): label de estado (= badge de la tabla) y formato de fechas.
+    private static string EstadoLabelU(EstadoUsuarioTenant e) => e switch
+    {
+        EstadoUsuarioTenant.Activo => "Activo",
+        EstadoUsuarioTenant.Pendiente => "Invitación pendiente",
+        EstadoUsuarioTenant.PendienteContacto => "Pendiente de contacto",
+        EstadoUsuarioTenant.Inactivo => "Inactivo",
+        _ => e.ToString()
+    };
+    private static string FechaCortaU(DateTimeOffset? d) => d.HasValue ? d.Value.ToLocalTime().ToString("yyyy-MM-dd") : "Sin registro";
+    private static string FechaHoraU(DateTimeOffset? d) => d.HasValue ? d.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Sin registro";
 
     private async Task RevocarAccesoAsync(Guid usuarioTenantId)
     {

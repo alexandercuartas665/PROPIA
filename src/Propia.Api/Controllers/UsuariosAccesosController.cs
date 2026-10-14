@@ -132,6 +132,14 @@ public class UsuariosAccesosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // 2.5 v2.0 modal "Editar usuario": editar el celular (Persona.Telefono) resolviendo la Persona desde el usuario.
+    [HttpPut("{id:guid}/telefono")]
+    public async Task<IActionResult> ActualizarTelefono(Guid id, [FromBody] ActualizarTelefonoUsuarioRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarTelefonoPersonaAsync(id, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // 2.5 v2.0: alta -> crea el UsuarioTenant en Pendiente con todos sus roles/cargos.
     [HttpPost("alta")]
     public async Task<IActionResult> CrearEnAlta([FromBody] CrearUsuarioAltaRequest req, CancellationToken ct)

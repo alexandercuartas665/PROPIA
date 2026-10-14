@@ -48,7 +48,11 @@ public record UsuarioListaDto(
     // 2.5 v2.0 multi-rol/cargo: TODOS los roles asignados (chips) y los cargos (descriptivos).
     IReadOnlyList<RolChipDto> Roles,
     IReadOnlyList<string> Cargos,
-    DateTimeOffset? FechaVinculacion);  // activacion, o invitacion si aun pendiente
+    DateTimeOffset? FechaVinculacion,  // activacion, o invitacion si aun pendiente
+    // 2.5 v2.0 modal "Editar usuario" (datos del sistema): consentimiento de tratamiento de datos de la
+    // Persona (Directorio 2.4). Solo lectura. Aditivos: default para no romper otras construcciones.
+    bool AceptoTratamientoDatos = false,
+    DateTimeOffset? FechaAceptacionDatos = null);
 
 /// <summary>Rol como chip (id + nombre) para pintar la selección múltiple en la tabla de Usuarios.</summary>
 public record RolChipDto(Guid Id, string Nombre);
@@ -81,6 +85,9 @@ public record CambiarRolUsuarioRequest(Guid RolId);
 // 2.5 v2.0 multi-rol/cargo: reemplazan el conjunto completo de roles/cargos de un usuario.
 public record ActualizarRolesUsuarioRequest(IReadOnlyList<Guid> RolIds);
 public record ActualizarCargosUsuarioRequest(IReadOnlyList<string> Cargos);
+// 2.5 v2.0 modal "Editar usuario": el celular (WhatsApp) es el unico dato de identidad editable aqui.
+// Vive en Persona.Telefono (Directorio); este request lo actualiza resolviendo la Persona desde el UsuarioTenant.
+public record ActualizarTelefonoUsuarioRequest(string? Telefono);
 
 // 2.5 v2.0 alta: crea el UsuarioTenant en "Invitacion pendiente" con TODOS sus roles/cargos (la persona
 // ya existe en el Directorio; la invitacion/envio la dispara el flujo de invitacion aparte).

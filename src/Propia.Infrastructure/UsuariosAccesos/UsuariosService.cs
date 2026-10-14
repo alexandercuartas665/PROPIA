@@ -160,7 +160,9 @@ public class UsuariosService : IUsuariosService
             GruposDe(u.PersonaId),
             rolesPorUsuario.TryGetValue(u.Id, out var rls) ? rls : new List<RolChipDto>(),
             cargosPorUsuario.TryGetValue(u.Id, out var cgs) ? cgs : new List<string>(),
-            u.FechaActivacion ?? u.FechaInvitacion
+            u.FechaActivacion ?? u.FechaInvitacion,
+            u.Persona.AceptoTratamientoDatos,
+            u.Persona.FechaAceptacionDatos
         )).ToList();
     }
 
@@ -853,6 +855,21 @@ public class UsuariosService : IUsuariosService
         foreach (var c in cargos)
             _db.UsuarioTenantCargos.Add(new UsuarioTenantCargo { TenantId = ut.TenantId, UsuarioTenantId = ut.Id, Cargo = c });
 
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>Actualiza el celular (Persona.Telefono) resolviendo la Persona desde el UsuarioTenant. El resto
+    /// de la identidad (nombre, documento, correo) sigue siendo de solo lectura aqui (se edita en el Directorio).</summary>
+    public async Task<bool> ActualizarTelefonoPersonaAsync(Guid usuarioTenantId, ActualizarTelefonoUsuarioRequest req, CancellationToken ct)
+    {
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut is null) return false;
+        // personas es global: el UsuarioTenant (tenant-scoped) garantiza que esta Persona es de esta copropiedad.
+        var persona = await _db.Personas.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == ut.PersonaId, ct);
+        if (persona is null) return false;
+        var tel = (req.Telefono ?? string.Empty).Trim();
+        persona.Telefono = tel.Length == 0 ? null : tel;
         await _db.SaveChangesAsync(ct);
         return true;
     }
