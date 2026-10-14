@@ -1,10 +1,16 @@
 # PROPIA - Checklist de deploy
 
-> **DEPLOY VIGENTE: 0.0.145 (2026-10-13).** `main` HEAD `3c1e864a`. Esta tanda lleva **1 MIGRACION**
-> (`AddUsuarioTenantArchivado`: columna `archivado` en `usuarios_tenant` + recrea `get_tenants_for_persona` y
-> agrega `set_usuario_tenant_archivado`) + UI/servicio: vista "Archivadas" en el selector "Mis copropiedades"
-> (archivar/activar por usuario). **APLICAR la migracion** (codigo + migracion JUNTOS) y redeploy. Detalle en
-> `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md` + `HANDOFF_DEPLOY.md`.
+> **DEPLOY VIGENTE: 0.0.146 (2026-10-13).** `main` HEAD `0e64eaf4`. **SOLO CODIGO (SIN MIGRACION, SIN CONFIG).**
+> Arregla la subida de imagenes (logo/fachada) de la Identidad + tarjeta drag & drop (causa raiz: parametro
+> `Jwt` de `IdentidadForm` pasado como literal `Jwt="_jwt"` sin `@` -> `Bearer _jwt` -> 401 IDX14100). Redeploy
+> del artefacto de `main`; **no hay migracion que aplicar sobre 0.0.145**. Recomendado aparte: activar storage
+> R2 en prod (`Storage__Provider=R2` + credenciales) para que las imagenes no se pierdan en cada redeploy.
+> Detalle en `DEPLOY_HANDOFF_2026-10-13_v0.0.146.md` + `HANDOFF_DEPLOY.md` (seccion "Subida de imagenes Identidad").
+>
+> **Tanda anterior 0.0.145 (`3c1e864a`): 1 MIGRACION** (`AddUsuarioTenantArchivado`: columna `archivado` en
+> `usuarios_tenant` + recrea `get_tenants_for_persona` y agrega `set_usuario_tenant_archivado`) + vista
+> "Archivadas" en el selector. **Si prod NO tiene aun 0.0.145, APLICAR esa migracion** (codigo + migracion
+> JUNTOS). 0.0.146 no agrega migracion sobre 0.0.145. Detalle en `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md`.
 > **Prod ya esta en 0.0.141** (`AddOrganizacionLimiteCopropiedades` ya aplicada). De 0.0.141 a 0.0.145 la UNICA
 > migracion es `AddUsuarioTenantArchivado` (0.0.142-0.0.144 eran UI/servicio sin migracion). Si se despliega sobre
 > prod anterior a 0.0.141, aplicar ademas esa migracion (ver doc 0.0.141) y revisar pendientes previas (p.ej. 0.0.125).

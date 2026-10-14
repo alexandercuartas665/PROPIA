@@ -1,13 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.145** (`main` HEAD `3c1e864a`, rama
-> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.145) tiene **1 MIGRACION** +
-> UI/servicio: vista **"Archivadas"** en el selector "Mis copropiedades" (archivar/activar copropiedades
-> POR USUARIO desde galeria y tabla; la tabla pierde la columna Rol y gana "Ultimo ingreso"). **APLICAR la
-> migracion** `AddUsuarioTenantArchivado` (columna `archivado` en `usuarios_tenant` + recrea la funcion SQL
-> `get_tenants_for_persona` y agrega `set_usuario_tenant_archivado`) y redeploy del artefacto de `main`.
-> Detalle en la seccion **ESTADO 2026-10-13 Selector: vista Archivadas** y en el doc per-deploy
-> `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md`.
+> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.146** (`main` HEAD `0e64eaf4`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.146) es **SOLO CODIGO (SIN
+> MIGRACION, SIN CONFIG)**: arregla la **subida de imagenes** (logo/fachada) de la Identidad de la copropiedad
+> + tarjeta **drag & drop**. Causa raiz del 401: `IdentidadForm` recibia el parametro `Jwt` como literal
+> (`Jwt="_jwt"` sin `@`) y mandaba `Bearer _jwt` -> `IDX14100 no dots` -> 401. Detalle en la seccion
+> **ESTADO 2026-10-13 Subida de imagenes Identidad** y en el doc `DEPLOY_HANDOFF_2026-10-13_v0.0.146.md`.
+> Recomendado (aparte): activar storage **R2** en prod para que las imagenes subidas no se pierdan en cada
+> redeploy (`LocalBlobStorage` usa filesystem efimero). Ver "Config" del doc per-deploy.
+>
+> **Tanda anterior (0.0.145, `3c1e864a`): 1 MIGRACION** + UI/servicio: vista **"Archivadas"** en el selector
+> "Mis copropiedades" (archivar/activar copropiedades POR USUARIO). **Si prod NO tiene aun 0.0.145, APLICAR la
+> migracion** `AddUsuarioTenantArchivado` (columna `archivado` en `usuarios_tenant` + recrea `get_tenants_for_persona`
+> y agrega `set_usuario_tenant_archivado`). La tanda 0.0.146 NO agrega migracion sobre 0.0.145.
+> Detalle en **ESTADO 2026-10-13 Selector: vista Archivadas** y en `DEPLOY_HANDOFF_2026-10-13_v0.0.145.md`.
 >
 > **OJO - prod ya esta en 0.0.141** (la migracion `AddOrganizacionLimiteCopropiedades` ya se aplico). Las
 > tandas 0.0.142-0.0.144 (expander del alta + hotfix del limite) son UI/servicio SIN migracion. La UNICA
@@ -27,6 +33,39 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-13 Subida de imagenes Identidad (logo/fachada) + drag & drop  [VERSION ACTUAL 0.0.146]
+
+Version **0.0.146**. Commit `0e64eaf4`. Rama `equipo/alex-header-zonas-equipos` (ya en `main`). **SIN migracion, SIN config obligatoria.**
+
+### Que cambia
+- **Fix del 401 al subir logo/fachada.** Causa raiz (Blazor): un parametro de componente tipo `string` pasado
+  como `Attr="_jwt"` **sin `@`** se interpreta como el literal `"_jwt"`, no como el campo. `IdentidadForm`
+  enviaba `Bearer _jwt` al API -> `IDX14100: JWT is not well formed, there are no dots` -> 401. Fix:
+  `MiCopropiedadPanel.razor` `Jwt="@_jwt"` y `EditarIdentidadModal.razor` `Jwt="@Jwt"`.
+- **Subida robusta + drag & drop**: `IdentidadForm.razor` bufferiza el `InputFile` a bytes (`ByteArrayContent`)
+  antes del POST, y las tarjetas de Logo/Fachada aceptan arrastrar/soltar o clic, con preview y boton quitar.
+- CSS `.pmm-drop*` en `propia-tokens.css`; bump `?v` del link en `App.razor`.
+
+### Migracion / Config
+- **Ninguna migracion.** La ultima sigue siendo `AddUsuarioTenantArchivado` (tanda 0.0.145).
+- **Sin cambios de env obligatorios.** Recomendado (opcional, para persistir imagenes en prod): `Storage__Provider=R2`
+  + `Storage__R2__{AccountId,AccessKeyId,SecretAccessKey,BucketName,PublicUrl}`. Sin R2 las subidas funcionan pero
+  el filesystem de Railway es efimero y la imagen se pierde en el siguiente redeploy.
+
+### Verificacion post-deploy
+- `Configuracion Copropiedad` > Identidad > **Editar datos** > tarjeta **Logo**/**Fachada**: arrastrar/soltar o
+  clic -> sube y muestra preview (sin "No se pudo subir la imagen"). **Guardar** -> recargar -> el logo persiste
+  y la tarjeta del selector "Mis copropiedades" lo muestra.
+
+### Verificado en dev (copropiedad demo)
+POST `/api/uploads/imagen/logo` **200** (antes 401); blob escrito en `wwwroot/uploads/tenants/<tid>/logo.png`;
+preview renderizada; al Guardar, `tenants.logo_url` persiste la URL subida. Datos de prueba revertidos.
+
+### Rollback
+Redeploy del artefacto 0.0.145. **No toca BD** (sin migracion en esta tanda).
 
 ---
 
