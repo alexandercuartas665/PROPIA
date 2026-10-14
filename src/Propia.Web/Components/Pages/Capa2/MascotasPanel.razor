@@ -205,9 +205,11 @@ else
                 <div class="mas-newrow mas-newrow--edit mas-grid" style="grid-template-columns:@GridCols" @key="_nonce" @onkeydown="OnAltaKeydown">
                     <div class="mas-sel-cell"></div>
                     <div class="mas-col-exp">
-                        <span class="mas-exp-mut" title="Nueva mascota">
+                        @* Canon Unidades: el expander del alta CREA la mascota con lo escrito y ABRE su ficha.
+                           Minimo: unidad + nombre. *@
+                        <button type="button" class="mas-exp-fijo" title="Crear y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@(_busy || _nuUnidadId is null || string.IsNullOrWhiteSpace(_nuNombre))">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </span>
+                        </button>
                     </div>
                     @foreach (var k in ColsVisibles())
                     {
@@ -402,6 +404,75 @@ else
                                      TituloSingular="mascota" TituloPlural="Mascotas"
                                      Ejemplo="Ej. Numero de chip, Vacunas al dia" Jwt="@_jwt"
                                      Cambiado="RecargarCamposYConfigAsync" />
+            </div>
+        </div>
+    </div>
+}
+
+@* Ficha de la mascota (modal simple): campos fijos + propios, con los endpoints de la edicion inline.
+   La abre el expander (de una fila, o del alta tras crear + abrir, canon Unidades). *@
+@if (_fichaM is { } fm)
+{
+    <div class="mas-cg-back" @onclick="CerrarFichaM">
+        <div class="mas-cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="mas-cg-head">
+                <div>
+                    <div class="mas-cg-title">Ficha de la mascota</div>
+                    <div class="mas-cg-sub">@(string.IsNullOrWhiteSpace(fm.Nombre) ? "Sin nombre" : fm.Nombre) &middot; @fm.UnidadCodigo</div>
+                </div>
+                <button class="mas-cg-x" type="button" @onclick="CerrarFichaM" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="mas-cg-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Nombre</span>
+                        <input class="mas-row-inp" value="@fm.Nombre" @onchange="e => FichaGuardarNombre(fm, e.Value?.ToString())" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Tipo</span>
+                        <select class="mas-row-inp" @onchange="e => FichaGuardarTipo(fm, e.Value?.ToString())">
+                            @foreach (var o in OpcionesTipoFila(fm)) { <option value="@o" selected="@(string.Equals(EfectivoTipoLabel(fm), o, StringComparison.OrdinalIgnoreCase))">@o</option> }
+                        </select></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Raza</span>
+                        <input class="mas-row-inp" value="@fm.Raza" @onchange="e => FichaGuardarRaza(fm, e.Value?.ToString())" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
+                        <input class="mas-row-inp" value="@fm.UnidadCodigo" disabled /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
+                        <input class="mas-row-inp" value="@(string.IsNullOrWhiteSpace(fm.PropietarioNombre) ? "-" : fm.PropietarioNombre)" disabled /></label>
+                    @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
+                    {
+                        var d = def; var val = ValorDe(fm.MascotaId, def.Id);
+                        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>@def.Label</span>
+                            @if (def.Tipo == TipoCampoTablero.Formula)
+                            {
+                                <input class="mas-row-inp" value="@(string.IsNullOrWhiteSpace(val) ? "(se calcula)" : val)" disabled />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Seleccion)
+                            {
+                                <select class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                            {
+                                <input class="mas-row-inp" type="number" step="any" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Fecha)
+                            {
+                                <input class="mas-row-inp" type="date" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Usuario)
+                            {
+                                <select class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                                </select>
+                            }
+                            else
+                            {
+                                <input class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                            }
+                        </label>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -651,7 +722,7 @@ else
          @oncontextmenu="e => AbrirCtx(e, v)" @oncontextmenu:preventDefault="true">
         <div class="mas-sel-cell"><label class="mas-chk"><input type="checkbox" checked="@_sel.Contains(v.MascotaId)" @onchange="@(e => ToggleSel(v.MascotaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
         <div class="mas-col-exp">
-            <button type="button" class="mas-exp-fijo" title="Abrir la unidad de esta mascota" @onclick="() => AbrirUnidad(v)">
+            <button type="button" class="mas-exp-fijo" title="Abrir la ficha de la mascota" @onclick="() => AbrirFichaM(v)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
         </div>
@@ -903,7 +974,8 @@ else
         StateHasChanged();
     }
 
-    private async Task AgregarAsync()
+    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha de la mascota para completarla.
+    private async Task AgregarAsync(bool abrir = false)
     {
         if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad de la mascota.", true); return; }
         if (string.IsNullOrWhiteSpace(_nuNombre)) { Mensaje("Escribe el nombre de la mascota.", true); return; }
@@ -929,10 +1001,23 @@ else
             _altaAbierta = false; _nonce++;
             await CargarAsync();
             Mensaje("Mascota agregada.", false);
+            // Canon Unidades: crear + abrir la ficha para completar el registro.
+            if (abrir && creada is not null) _fichaM = _mascotas.FirstOrDefault(x => x.MascotaId == creada.Id);
         }
         catch (Exception ex) { Mensaje("No se pudo agregar: " + ex.Message, true); }
         finally { _busy = false; }
     }
+
+    // ===== Ficha de la mascota (modal simple): campos fijos + propios, con los endpoints de la edicion inline.
+    // La abre el expander (de la fila de datos, o del alta tras crear). =====
+    private MascotaResumenDto? _fichaM;
+    private void AbrirFichaM(MascotaResumenDto v) => _fichaM = v;
+    private void CerrarFichaM() => _fichaM = null;
+    private void RefrescarFichaM(Guid mascotaId) { if (_fichaM is not null) _fichaM = _mascotas.FirstOrDefault(x => x.MascotaId == mascotaId) ?? _fichaM; }
+    private async Task FichaGuardarNombre(MascotaResumenDto v, string? valor) { await GuardarNombreAsync(v, valor); RefrescarFichaM(v.MascotaId); }
+    private async Task FichaGuardarRaza(MascotaResumenDto v, string? valor) { await GuardarRazaAsync(v, valor); RefrescarFichaM(v.MascotaId); }
+    private async Task FichaGuardarTipo(MascotaResumenDto v, string? valor) { await GuardarTipoAsync(v, valor); RefrescarFichaM(v.MascotaId); }
+    private async Task FichaGuardarDinamico(Guid mascotaId, Guid defId, string? valor) { await GuardarDinamicoAsync(mascotaId, defId, valor); RefrescarFichaM(mascotaId); }
 
     private async Task GuardarNombreAsync(MascotaResumenDto v, string? valor)
     {

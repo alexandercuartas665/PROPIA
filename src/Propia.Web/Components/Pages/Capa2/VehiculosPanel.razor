@@ -208,9 +208,11 @@ else
                 <div class="veh-newrow veh-newrow--edit veh-grid" style="grid-template-columns:@GridCols" @key="_nonce" @onkeydown="OnAltaKeydown">
                     <div class="veh-sel-cell"></div>
                     <div class="veh-col-exp">
-                        <span class="veh-exp-mut" title="Nuevo vehículo">
+                        @* Canon Unidades: el expander del alta CREA el vehiculo con lo escrito y ABRE su ficha.
+                           Minimo: unidad + placa. *@
+                        <button type="button" class="veh-exp-fijo" title="Crear y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@(_busy || _nuUnidadId is null || string.IsNullOrWhiteSpace(_nuPlaca))">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                        </span>
+                        </button>
                     </div>
                     @foreach (var k in ColsVisibles())
                     {
@@ -398,6 +400,73 @@ else
                                      TituloSingular="vehiculo" TituloPlural="Vehiculos"
                                      Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt"
                                      Cambiado="RecargarCamposYConfigAsync" />
+            </div>
+        </div>
+    </div>
+}
+
+@* Ficha del vehiculo (modal simple): campos fijos + propios, con los endpoints de la edicion inline.
+   La abre el expander (de una fila, o del alta tras crear + abrir, canon Unidades). *@
+@if (_fichaV is { } fv)
+{
+    <div class="veh-cg-back" @onclick="CerrarFichaV">
+        <div class="veh-cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="veh-cg-head">
+                <div>
+                    <div class="veh-cg-title">Ficha del vehículo</div>
+                    <div class="veh-cg-sub">@(string.IsNullOrWhiteSpace(fv.Placa) ? "Sin placa" : fv.Placa) &middot; @fv.UnidadCodigo</div>
+                </div>
+                <button class="veh-cg-x" type="button" @onclick="CerrarFichaV" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="veh-cg-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Placa</span>
+                        <input class="veh-row-inp" value="@fv.Placa" @onchange="e => FichaGuardarPlaca(fv, e.Value?.ToString())" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Tipo</span>
+                        <select class="veh-row-inp" value="@fv.TipoVehiculo" @onchange="e => FichaGuardarTipo(fv, e.Value?.ToString())">
+                            @foreach (var t in TiposVehiculo) { <option value="@t" selected="@(t == fv.TipoVehiculo)">@TipoLabel(t)</option> }
+                        </select></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
+                        <input class="veh-row-inp" value="@fv.UnidadCodigo" disabled /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
+                        <input class="veh-row-inp" value="@(string.IsNullOrWhiteSpace(fv.PropietarioNombre) ? "-" : fv.PropietarioNombre)" disabled /></label>
+                    @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
+                    {
+                        var d = def; var val = ValorDe(fv.PlacaId, def.Id);
+                        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>@def.Label</span>
+                            @if (def.Tipo == TipoCampoTablero.Formula)
+                            {
+                                <input class="veh-row-inp" value="@(string.IsNullOrWhiteSpace(val) ? "(se calcula)" : val)" disabled />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Seleccion)
+                            {
+                                <select class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
+                                </select>
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                            {
+                                <input class="veh-row-inp" type="number" step="any" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Fecha)
+                            {
+                                <input class="veh-row-inp" type="date" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                            }
+                            else if (def.Tipo == TipoCampoTablero.Usuario)
+                            {
+                                <select class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())">
+                                    <option value="">-</option>
+                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
+                                </select>
+                            }
+                            else
+                            {
+                                <input class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                            }
+                        </label>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -619,7 +688,7 @@ else
          @oncontextmenu="e => AbrirCtx(e, v)" @oncontextmenu:preventDefault="true">
         <div class="veh-sel-cell"><label class="veh-chk"><input type="checkbox" checked="@_sel.Contains(v.PlacaId)" @onchange="@(e => ToggleSel(v.PlacaId, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></div>
         <div class="veh-col-exp">
-            <button type="button" class="veh-exp-fijo" title="Abrir la unidad de este vehículo" @onclick="() => AbrirUnidad(v)">
+            <button type="button" class="veh-exp-fijo" title="Abrir la ficha del vehículo" @onclick="() => AbrirFichaV(v)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
         </div>
@@ -865,7 +934,8 @@ else
         StateHasChanged();
     }
 
-    private async Task AgregarAsync()
+    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha del vehiculo para completarlo.
+    private async Task AgregarAsync(bool abrir = false)
     {
         if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad del vehiculo.", true); return; }
         if (string.IsNullOrWhiteSpace(_nuPlaca)) { Mensaje("Escribe la placa.", true); return; }
@@ -890,10 +960,23 @@ else
             _altaAbierta = false; _nonce++;
             await CargarAsync();
             Mensaje("Vehiculo agregado.", false);
+            // Canon Unidades: crear + abrir la ficha para completar el registro.
+            if (abrir && creada is not null) _fichaV = _vehiculos.FirstOrDefault(x => x.PlacaId == creada.Id);
         }
         catch (Exception ex) { Mensaje("No se pudo agregar: " + ex.Message, true); }
         finally { _busy = false; }
     }
+
+    // ===== Ficha del vehiculo (modal simple): campos fijos + propios, con los mismos endpoints de la edicion
+    // inline. La abre el expander (de la fila de datos, o del alta tras crear). =====
+    private VehiculoResumenDto? _fichaV;
+    private void AbrirFichaV(VehiculoResumenDto v) => _fichaV = v;
+    private void CerrarFichaV() => _fichaV = null;
+    // Tras guardar un campo desde la ficha, CargarAsync recarga _vehiculos; re-apunta _fichaV al registro fresco.
+    private void RefrescarFichaV(Guid placaId) { if (_fichaV is not null) _fichaV = _vehiculos.FirstOrDefault(x => x.PlacaId == placaId) ?? _fichaV; }
+    private async Task FichaGuardarPlaca(VehiculoResumenDto v, string? valor) { await GuardarPlacaAsync(v, valor); RefrescarFichaV(v.PlacaId); }
+    private async Task FichaGuardarTipo(VehiculoResumenDto v, string? valor) { await GuardarTipoAsync(v, valor); RefrescarFichaV(v.PlacaId); }
+    private async Task FichaGuardarDinamico(Guid placaId, Guid defId, string? valor) { await GuardarDinamicoAsync(placaId, defId, valor); RefrescarFichaV(placaId); }
 
     private async Task GuardarPlacaAsync(VehiculoResumenDto v, string? valor)
     {
