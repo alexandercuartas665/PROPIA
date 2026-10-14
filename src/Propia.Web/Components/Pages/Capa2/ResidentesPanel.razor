@@ -1496,7 +1496,8 @@ else
             await CargarAsync();
             if (abrir && creada is not null)
             {
-                if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+                // El expander del alta abre SIEMPRE una ficha en modal (como la edicion), sin salir de Residentes.
+                if (creada.EntidadTipo == EntidadDirectorio.Empresa && creada.EmpresaId is Guid eid) await AbrirFichaEmpresaAsync(eid, sel.NombreCompleto);
                 else if (creada.PersonaId != Guid.Empty) await AbrirFichaPersonaAsync(creada.PersonaId, sel.NombreCompleto);
             }
         }
@@ -1505,12 +1506,12 @@ else
     }
 
     // El expander abre una ficha RAPIDA en un modal (editar datos, foto, documentos) SIN salir de
-    // Residentes. Empresas siguen al Directorio (no tienen ficha rapida todavia).
+    // Residentes. Personas y empresas abren su propia ficha en modal (nunca navega a otro modulo).
     private async Task AbrirFicha(ResidenteResumenDto r)
     {
         if (r.EntidadTipo == EntidadDirectorio.Empresa)
         {
-            if (r.EmpresaId is Guid eid) Nav.NavigateTo($"/directorio/empresas/{eid}");
+            if (r.EmpresaId is Guid eid) await AbrirFichaEmpresaAsync(eid, r.Nombre);
             return;
         }
         if (r.PersonaId is Guid pid) await AbrirFichaPersonaAsync(pid, r.Nombre);
@@ -1523,6 +1524,15 @@ else
         var options = new ModalOptions { Width = "720px", Height = "auto" };
         var cambio = await Modals.OpenAsync<FichaResidenteModal, bool>(parameters, options);
         // Si se edito algo (datos/foto/documentos) se refresca la tabla para reflejar el cambio global.
+        if (cambio == true) await CargarAsync();
+    }
+
+    private async Task AbrirFichaEmpresaAsync(Guid empresaId, string? nombre)
+    {
+        var parameters = new ModalParameters()
+            .Set("Jwt", _jwt).Set("EmpresaId", empresaId).Set("NombreInicial", nombre);
+        var options = new ModalOptions { Width = "640px", Height = "auto" };
+        var cambio = await Modals.OpenAsync<FichaEmpresaModal, bool>(parameters, options);
         if (cambio == true) await CargarAsync();
     }
 

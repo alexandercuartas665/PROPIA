@@ -105,3 +105,20 @@ busqueda. Para Empresa, abre con NIT/razon social precargados. Handlers nuevos `
 habilitados (quitado el gate por `DraftValido`). Archivos: `DirectorioPanel.razor`, `DirectorioPersonasVista.razor`,
 `DirectorioEmpresasVista.razor`. Sin migracion. Verificado en runtime (Personas y Empresas abren el modal con el
 primer campo). Version visible **0.0.153**.
+
+---
+
+## Addendum v0.0.154 (2026-10-14) - Residentes: el expander (alta y edicion) de un tercero EMPRESA abre ficha en modal, no navega
+Alex: en Residentes el expander "no abre el modal y salta a una pagina". Causa: para un residente que es
+EMPRESA/tercero, tanto el expander del alta (`AgregarAsync(true)`) como el de la fila existente (`AbrirFicha`)
+hacian `Nav.NavigateTo("/directorio/empresas/{id}")` -> saltaban al modulo Directorio ("un modulo extrano").
+El caso PERSONA ya abria su ficha en modal (`FichaResidenteModal`); solo el caso empresa navegaba. Fix: nuevo
+componente **`FichaEmpresaModal.razor`** (ficha rapida de la empresa: razon social, nombre comercial, correo,
+telefono, direccion, sitio web + documentos RUT/camara, reutilizando `/api/directorio/empresas/{id}` GET/PUT y
+`/api/directorio/adjuntos/Empresa/{id}`), y en `ResidentesPanel.razor` ambos expanders ahora llaman a
+`AbrirFichaEmpresaAsync` (abre el modal en sitio, 640px) en vez de navegar. El PUT preserva TipoEmpresa/Sector/
+Regimen/Logo/RepresentanteLegal (campos que la ficha rapida no edita). Archivos: `FichaEmpresaModal.razor` (nuevo),
+`ResidentesPanel.razor`. Sin migracion. Verificado en runtime (claude-in-chrome) en los 3 caminos: alta persona ->
+FichaResidenteModal; alta empresa -> FichaEmpresaModal (NIT 12914665, sin salir de /residentes); edicion empresa
+existente (A-1223) -> FichaEmpresaModal. Datos de prueba creados y borrados (total 595, empresas 1). Version visible
+**0.0.154**.

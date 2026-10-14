@@ -1,0 +1,271 @@
+@* FichaEmpresaModal - ficha rapida de una empresa/tercero vinculada como residente. Reemplaza la
+   navegacion al Directorio: edita datos basicos de la empresa y adjunta sus documentos (RUT, camara
+   de comercio, etc.) sin salir de Residentes. Reutiliza los endpoints globales de Directorio. *@
+
+@inherits ModalBase<bool>
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+
+@if (_cargando)
+{
+    <div class="fe-loading"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+}
+else
+{
+<div class="fe-head">
+    <div class="fe-head-ic">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V8l6-4 6 4v13"/><path d="M9 12h0M12 12h0M15 12h0M9 16h0M12 16h0M15 16h0"/></svg>
+    </div>
+    <div class="fe-head-tt">
+        <div class="fe-head-h">@(_nombreComercial is { Length: > 0 } nc ? nc : _razonSocial)</div>
+        <div class="fe-head-s">NIT @_nit@(string.IsNullOrWhiteSpace(_dv) ? "" : "-" + _dv)</div>
+    </div>
+    <button class="fe-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+</div>
+
+<div class="fe-body">
+    <div class="fe-sectlbl">DATOS DE LA EMPRESA</div>
+    <div class="fe-grid">
+        <div class="fe-fld fe-fld--wide">
+            <label>Razón social</label>
+            <input class="fe-in" @bind="_razonSocial" />
+        </div>
+        <div class="fe-fld fe-fld--wide">
+            <label>Nombre comercial</label>
+            <input class="fe-in" @bind="_nombreComercial" placeholder="Opcional" />
+        </div>
+        <div class="fe-fld">
+            <label>Correo</label>
+            <input class="fe-in" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
+        </div>
+        <div class="fe-fld">
+            <label>Teléfono</label>
+            <input class="fe-in" @bind="_telefono" placeholder="Opcional" />
+        </div>
+        <div class="fe-fld fe-fld--wide">
+            <label>Dirección</label>
+            <input class="fe-in" @bind="_direccion" placeholder="Opcional" />
+        </div>
+        <div class="fe-fld fe-fld--wide">
+            <label>Sitio web</label>
+            <input class="fe-in" @bind="_sitioWeb" placeholder="https://" />
+        </div>
+    </div>
+
+    <div class="fe-sectlbl fe-sectlbl--sep">DOCUMENTOS (RUT, CÁMARA DE COMERCIO, ETC.)</div>
+    @if (_adjuntos.Count == 0)
+    {
+        <div class="fe-empty">Sin documentos adjuntos.</div>
+    }
+    else
+    {
+        <div class="fe-doclist">
+            @foreach (var a in _adjuntos)
+            {
+                var adj = a;
+                <div class="fe-doc">
+                    <div class="fe-doc-ic">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                    </div>
+                    <div class="fe-doc-txt">
+                        <a class="fe-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
+                        <div class="fe-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
+                    </div>
+                    <button class="fe-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+    <label class="fe-doc-add">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
+        <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
+    </label>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_msg))
+{
+    <div class="fe-msg @(_msgError ? "err" : "ok")">@_msg</div>
+}
+
+<div class="fe-foot">
+    <button class="fe-btn" type="button" @onclick="Cerrar">Cerrar</button>
+    <button class="fe-btn fe-btn-primary" type="button" @onclick="GuardarAsync" disabled="@_guardando">@(_guardando ? "Guardando..." : "Guardar cambios")</button>
+</div>
+}
+
+<style>
+    .fe-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; }
+    .fe-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .fe-head-ic { width: 40px; height: 40px; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fe-head-tt { flex: 1; min-width: 0; }
+    .fe-head-h { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .fe-head-s { font-size: 12px; color: var(--propia-text-muted); margin-top: 1px; }
+    .fe-x { width: 32px; height: 32px; border-radius: 9px; border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fe-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+
+    .fe-body { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; }
+    .fe-sectlbl { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; }
+    .fe-sectlbl--sep { margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--propia-border-card); }
+
+    .fe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .fe-fld { display: flex; flex-direction: column; gap: 4px; }
+    .fe-fld--wide { grid-column: 1 / -1; }
+    .fe-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
+    .fe-in { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); outline: none; background: var(--propia-bg-card); box-sizing: border-box; }
+    .fe-in:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+
+    .fe-empty { font-size: 12px; color: var(--propia-text-muted); padding: 6px 0; }
+    .fe-doclist { display: flex; flex-direction: column; gap: 7px; }
+    .fe-doc { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--propia-border-divider); border-radius: 10px; background: var(--propia-bg-card-soft); }
+    .fe-doc-ic { width: 30px; height: 30px; border-radius: 8px; background: #E6F2FB; color: #2563EB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fe-doc-txt { flex: 1; min-width: 0; }
+    .fe-doc-nom { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fe-doc-nom:hover { color: var(--propia-brand); text-decoration: underline; }
+    .fe-doc-meta { font-size: 10.5px; color: var(--propia-text-faint); }
+    .fe-doc-del { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .fe-doc-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
+    .fe-doc-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start; }
+    .fe-doc-add:hover { background: var(--propia-brand-soft); }
+
+    .fe-msg { margin: 0 20px; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
+    .fe-msg.ok { background: var(--propia-ok-soft); color: #1B7A44; }
+    .fe-msg.err { background: var(--propia-danger-soft); color: #B02121; }
+
+    .fe-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .fe-btn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .fe-btn:hover { background: var(--propia-bg-card-soft); }
+    .fe-btn-primary { background: var(--propia-brand); border-color: var(--propia-brand); color: var(--propia-text-inverse); }
+    .fe-btn-primary:hover { background: #5B3FD1; }
+    .fe-btn-primary:disabled { opacity: .6; cursor: default; }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public Guid EmpresaId { get; set; }
+    [Parameter] public string? NombreInicial { get; set; }
+
+    private bool _cargando = true;
+    private bool _guardando;
+    private bool _subiendoDoc;
+    private string? _msg;
+    private bool _msgError;
+    private bool _dirty;
+
+    private string _nit = "";
+    private string? _dv;
+    private string _razonSocial = "";
+    private string? _nombreComercial;
+    private string? _email;
+    private string? _telefono;
+    private string? _direccion;
+    private string? _sitioWeb;
+    // Campos que no se editan en esta ficha rapida: se preservan tal cual al guardar (PUT es reemplazo).
+    private string? _tipoEmpresa;
+    private string? _sectorEconomico;
+    private string? _regimenTributario;
+    private string? _logoUrl;
+    private Guid? _representanteLegalPersonaId;
+
+    private List<DirectorioAdjuntoDto> _adjuntos = new();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<Empresa360Dto>($"/api/directorio/empresas/{EmpresaId}");
+            if (dto is not null)
+            {
+                var e = dto.Empresa;
+                _nit = e.Nit; _dv = e.DigitoVerificacion;
+                _razonSocial = e.RazonSocial; _nombreComercial = e.NombreComercial;
+                _email = e.Email; _telefono = e.Telefono; _direccion = e.Direccion;
+                _sitioWeb = e.SitioWeb;
+                _tipoEmpresa = e.TipoEmpresa; _sectorEconomico = e.SectorEconomico;
+                _regimenTributario = e.RegimenTributario; _logoUrl = e.LogoUrl;
+                _representanteLegalPersonaId = e.RepresentanteLegalPersonaId;
+            }
+            await CargarAdjuntosAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarAdjuntosAsync()
+    {
+        try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/Empresa/{EmpresaId}") ?? new(); }
+        catch { _adjuntos = new(); }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_razonSocial))
+        { _msg = "La razon social es obligatoria."; _msgError = true; return; }
+        _guardando = true; _msg = "";
+        try
+        {
+            var req = new ActualizarEmpresaRequest(
+                _razonSocial.Trim(),
+                string.IsNullOrWhiteSpace(_nombreComercial) ? null : _nombreComercial!.Trim(),
+                string.IsNullOrWhiteSpace(_email) ? null : _email!.Trim(),
+                string.IsNullOrWhiteSpace(_telefono) ? null : _telefono!.Trim(),
+                string.IsNullOrWhiteSpace(_direccion) ? null : _direccion!.Trim(),
+                _tipoEmpresa, _sectorEconomico, _regimenTributario,
+                string.IsNullOrWhiteSpace(_sitioWeb) ? null : _sitioWeb!.Trim(),
+                _logoUrl, _representanteLegalPersonaId);
+            var resp = await Auth().PutAsJsonAsync($"/api/directorio/empresas/{EmpresaId}", req);
+            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Datos guardados."; _msgError = false; }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _guardando = false; }
+    }
+
+    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _subiendoDoc = true; _msg = "";
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(10_500_000).CopyToAsync(ms);
+            ms.Position = 0;
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(ms);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/directorio/adjuntos/Empresa/{EmpresaId}", content);
+            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Documento adjuntado."; _msgError = false; await CargarAdjuntosAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _subiendoDoc = false; }
+    }
+
+    private async Task EliminarAdjunto(Guid id)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/adjuntos/{id}");
+            if (resp.IsSuccessStatusCode) { _dirty = true; _adjuntos.RemoveAll(a => a.Id == id); }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+    }
+
+    private void Cerrar() => Close(_dirty);
+
+    private static string FmtTam(long b)
+        => b >= 1_048_576 ? $"{b / 1_048_576.0:0.0} MB" : $"{b / 1024.0:0} KB";
+}
