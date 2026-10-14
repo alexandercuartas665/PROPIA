@@ -812,17 +812,26 @@
         return sb.ToString();
     }
 
-    private List<FiltroDinamico.CampoDef> CamposFiltroDir => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltroDir
     {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "documento", Label = "Documento / NIT", Kind = "texto" },
-        new() { Key = "email", Label = "Email", Kind = "texto" },
-        new() { Key = "telefono", Label = "Telefono", Kind = "texto" },
-        new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoDirectorio>().Select(s => (s.ToString(), s.ToString())).ToList() },
-        new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
-                Opciones = EtiquetasOpciones().Select(v => (v, v)).ToList() },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+                new() { Key = "documento", Label = "Documento / NIT", Kind = "texto" },
+                new() { Key = "email", Label = "Email", Kind = "texto" },
+                new() { Key = "telefono", Label = "Telefono", Kind = "texto" },
+                new() { Key = "estado", Label = "Estado", Kind = "sel",
+                        Opciones = Enum.GetValues<EstadoDirectorio>().Select(s => (s.ToString(), s.ToString())).ToList() },
+                new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
+                        Opciones = EtiquetasOpciones().Select(v => (v, v)).ToList() },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_defsCampos.Select(FiltroDinamico.DeDinamico));
+            return l;
+        }
+    }
 
     // Paginacion (footer canonico) de la vista Tabla. Sin agrupar; con agrupacion se ven todos.
     private int _pagina = 1;
@@ -852,15 +861,19 @@
     {
         get
         {
-            var list = _personas?.Where(p => _fd?.Pasa(campo => campo switch
+            var list = _personas?.Where(p => _fd?.Pasa(campo =>
             {
-                "nombre" => $"{p.Nombres} {p.Apellidos}",
-                "documento" => p.Documento,
-                "email" => p.Email ?? "",
-                "telefono" => p.Telefono ?? "",
-                "estado" => p.Estado.ToString(),
-                "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Valor)),
-                _ => ""
+                if (campo.StartsWith("cd:", StringComparison.Ordinal)) return ValorCampoDir(p.RegistroCamposId, campo);
+                return campo switch
+                {
+                    "nombre" => $"{p.Nombres} {p.Apellidos}",
+                    "documento" => p.Documento,
+                    "email" => p.Email ?? "",
+                    "telefono" => p.Telefono ?? "",
+                    "estado" => p.Estado.ToString(),
+                    "etiqueta" => p.Etiquetas is null ? "" : string.Join(",", p.Etiquetas.Select(e => e.Valor)),
+                    _ => ""
+                };
             }) ?? true).ToList();
             if (list is not null && _sortsDir.Count > 0)
             {
@@ -882,15 +895,19 @@
     {
         get
         {
-            var list = _empresas?.Where(em => _fd?.Pasa(campo => campo switch
+            var list = _empresas?.Where(em => _fd?.Pasa(campo =>
             {
-                "nombre" => $"{em.RazonSocial} {em.NombreComercial}",
-                "documento" => em.Nit,
-                "email" => em.Email ?? "",
-                "telefono" => em.Telefono ?? "",
-                "estado" => em.Estado.ToString(),
-                "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.Valor)),
-                _ => ""
+                if (campo.StartsWith("cd:", StringComparison.Ordinal)) return ValorCampoDir(em.RegistroCamposId, campo);
+                return campo switch
+                {
+                    "nombre" => $"{em.RazonSocial} {em.NombreComercial}",
+                    "documento" => em.Nit,
+                    "email" => em.Email ?? "",
+                    "telefono" => em.Telefono ?? "",
+                    "estado" => em.Estado.ToString(),
+                    "etiqueta" => em.Etiquetas is null ? "" : string.Join(",", em.Etiquetas.Select(e => e.Valor)),
+                    _ => ""
+                };
             }) ?? true).ToList();
             if (list is not null && _sortsDir.Count > 0)
             {
@@ -921,14 +938,28 @@
     // cae en cada grupo de etiqueta que tenga). Color/Icono viajan en el ValorGrupo para el chip. El
     // motor comparte con el resto de modulos: agrupa, ordena por titulo y manda los "Sin etiqueta" al
     // final (tituloSinValor) igual que antes. Directorio se queda en 1 nivel (solo "etiquetas").
-    private static IEnumerable<ValorGrupo> ValorGrupoPersona(PersonaResumenDto p, string clave)
+    private IEnumerable<ValorGrupo> ValorGrupoPersona(PersonaResumenDto p, string clave)
     {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            var v = ValorCampoDir(p.RegistroCamposId, clave);
+            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+            yield return new ValorGrupo(t, t, null, null);
+            yield break;
+        }
         if (p.Etiquetas is null) yield break;
         foreach (var e in p.Etiquetas.DistinctBy(x => x.Valor))
             yield return new ValorGrupo(e.Valor, e.Valor, null, null);
     }
-    private static IEnumerable<ValorGrupo> ValorGrupoEmpresa(EmpresaResumenDto em, string clave)
+    private IEnumerable<ValorGrupo> ValorGrupoEmpresa(EmpresaResumenDto em, string clave)
     {
+        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        {
+            var v = ValorCampoDir(em.RegistroCamposId, clave);
+            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+            yield return new ValorGrupo(t, t, null, null);
+            yield break;
+        }
         if (em.Etiquetas is null) yield break;
         foreach (var e in em.Etiquetas.DistinctBy(x => x.Valor))
             yield return new ValorGrupo(e.Valor, e.Valor, null, null);
@@ -954,7 +985,11 @@
 
     /// <summary>Campos por los que Directorio puede agrupar (hoy solo la Etiqueta, tag-based).</summary>
     private List<TablaAgruparMenu.Col> ColsAgrupablesDir()
-        => new() { new TablaAgruparMenu.Col("etiquetas", "Etiqueta") };
+    {
+        var cols = new List<TablaAgruparMenu.Col> { new("etiquetas", "Etiqueta") };
+        foreach (var d in _defsCampos) cols.Add(new("cd:" + d.Id, d.Label));
+        return cols;
+    }
 
     private async Task OnGruposDirChanged()
     {

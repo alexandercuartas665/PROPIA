@@ -559,38 +559,52 @@ else
 
     private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || (_fd?.Hay ?? false);
 
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltro
     {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "categoria", Label = "Categoria", Kind = "sel",
-                Opciones = Enum.GetValues<CategoriaEquipo>().Select(c => (c.ToString(), LblCatEq(c))).ToList() },
-        new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoEquipoActivo>().Select(s => (s.ToString(), EstadoTextoCorto(s))).ToList() },
-        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = new() { (TipoElemento.Equipo.ToString(), LblTipoEq(TipoElemento.Equipo)), (TipoElemento.Activo.ToString(), LblTipoEq(TipoElemento.Activo)) } },
-        new() { Key = "reservable", Label = "Reservable", Kind = "sel",
-                Opciones = new() { ("si", "Si"), ("no", "No") } },
-        new() { Key = "ubicacion", Label = "Ubicacion", Kind = "texto" },
-        new() { Key = "marca", Label = "Marca", Kind = "texto" },
-        new() { Key = "cantidad", Label = "Cantidad", Kind = "num" },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+                new() { Key = "categoria", Label = "Categoria", Kind = "sel",
+                        Opciones = Enum.GetValues<CategoriaEquipo>().Select(c => (c.ToString(), LblCatEq(c))).ToList() },
+                new() { Key = "estado", Label = "Estado", Kind = "sel",
+                        Opciones = Enum.GetValues<EstadoEquipoActivo>().Select(s => (s.ToString(), EstadoTextoCorto(s))).ToList() },
+                new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                        Opciones = new() { (TipoElemento.Equipo.ToString(), LblTipoEq(TipoElemento.Equipo)), (TipoElemento.Activo.ToString(), LblTipoEq(TipoElemento.Activo)) } },
+                new() { Key = "reservable", Label = "Reservable", Kind = "sel",
+                        Opciones = new() { ("si", "Si"), ("no", "No") } },
+                new() { Key = "ubicacion", Label = "Ubicacion", Kind = "texto" },
+                new() { Key = "marca", Label = "Marca", Kind = "texto" },
+                new() { Key = "cantidad", Label = "Cantidad", Kind = "num" },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_camposDef.Select(d => FiltroDinamico.DeDinamico(d.Id, d.Label, d.Tipo, d.Opciones)));
+            return l;
+        }
+    }
 
     private IEnumerable<EquipoActivoDto> Filtrados()
     {
         var q = _q.Trim();
         var baseSeq = _equipos
             .Where(e => q == "" || e.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Where(e => _fd?.Pasa(campo => campo switch
+            .Where(e => _fd?.Pasa(campo =>
             {
-                "nombre" => e.Nombre,
-                "categoria" => e.Categoria.ToString(),
-                "estado" => e.Estado.ToString(),
-                "tipo" => e.Tipo.ToString(),
-                "reservable" => e.EsReservable ? "si" : "no",
-                "ubicacion" => e.Ubicacion ?? "",
-                "marca" => e.Marca ?? "",
-                "cantidad" => e.Cantidad.ToString(),
-                _ => ""
+                if (campo.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(campo.AsSpan(3), out var defId))
+                    return ValorCampo(e.Id, defId) ?? "";
+                return campo switch
+                {
+                    "nombre" => e.Nombre,
+                    "categoria" => e.Categoria.ToString(),
+                    "estado" => e.Estado.ToString(),
+                    "tipo" => e.Tipo.ToString(),
+                    "reservable" => e.EsReservable ? "si" : "no",
+                    "ubicacion" => e.Ubicacion ?? "",
+                    "marca" => e.Marca ?? "",
+                    "cantidad" => e.Cantidad.ToString(),
+                    _ => ""
+                };
             }) ?? true);
         // Orden multi-criterio (menu "Ordenar" / clic en header); sin sort mantiene el orden natural del backend.
         if (_sortsE.Count > 0)

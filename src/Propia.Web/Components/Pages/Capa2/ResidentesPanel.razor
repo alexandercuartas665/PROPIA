@@ -1137,22 +1137,36 @@ else
     }
 
     // ---------- Filtro dinamico de la tabla ----------
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltro
     {
-        new() { Key = "rol", Label = "Rol", Kind = "sel",
-                Opciones = Enum.GetValues<RolUnidadPersona>().Select(r => (r.ToString(), RolLabel(r))).ToList() },
-        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
-        new() { Key = "habita", Label = "Habita", Kind = "sel",
-                Opciones = new List<(string, string)> { ("si", "Si"), ("no", "No") } },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "rol", Label = "Rol", Kind = "sel",
+                        Opciones = Enum.GetValues<RolUnidadPersona>().Select(r => (r.ToString(), RolLabel(r))).ToList() },
+                new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+                new() { Key = "habita", Label = "Habita", Kind = "sel",
+                        Opciones = new List<(string, string)> { ("si", "Si"), ("no", "No") } },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_defs.Select(FiltroDinamico.DeDinamico));
+            return l;
+        }
+    }
 
-    private string? ValorFiltro(ResidenteResumenDto r, string key) => key switch
+    private string? ValorFiltro(ResidenteResumenDto r, string key)
     {
-        "rol" => r.Rol.ToString(),
-        "unidad" => r.UnidadCodigo,
-        "habita" => r.Habita ? "si" : "no",
-        _ => null
-    };
+        if (key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var defId))
+            return ValorDe(r.UnidadPersonaId, defId) ?? "";
+        return key switch
+        {
+            "rol" => r.Rol.ToString(),
+            "unidad" => r.UnidadCodigo,
+            "habita" => r.Habita ? "si" : "no",
+            _ => null
+        };
+    }
 
     private List<ResidenteResumenDto> Filtrados
     {

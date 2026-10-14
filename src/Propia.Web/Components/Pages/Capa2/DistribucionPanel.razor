@@ -1350,20 +1350,29 @@ else
     private FiltroDinamico? _fd;   // boton "Filtros" con reglas dinamicas (componente compartido)
 
     // Campos filtrables para el boton "Filtros" (reemplazan los selects "Todo tipo"/"Toda torre").
-    private List<FiltroDinamico.CampoDef> CamposFiltroU => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltroU
     {
-        new() { Key = "numero", Label = AliasCampo("num", "Unidad"), Kind = "texto" },
-        new() { Key = "tipo", Label = AliasCampo("tipo", "Tipo"), Kind = "sel",
-                Opciones = TiposBaseVisibles.Select(t => (Etiqueta(t), Etiqueta(t)))
-                    .Concat(TiposCustomVisibles.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
-        // Estado usa las opciones configuradas por la copropiedad (mismas que la tabla y la ficha).
-        new() { Key = "estado", Label = AliasCampo("estado", "Estado"), Kind = "sel",
-                Opciones = EstadosConfig().Select(e => (e, e)).ToList() },
-        new() { Key = "piso", Label = AliasCampo("piso", LabelPisoSingular), Kind = "num" },
-        new() { Key = "area", Label = AliasCampo("area", "Area"), Kind = "num" },
-        new() { Key = "coef", Label = AliasCampo("coef", "Coeficiente"), Kind = "num" },
-        new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "numero", Label = AliasCampo("num", "Unidad"), Kind = "texto" },
+                new() { Key = "tipo", Label = AliasCampo("tipo", "Tipo"), Kind = "sel",
+                        Opciones = TiposBaseVisibles.Select(t => (Etiqueta(t), Etiqueta(t)))
+                            .Concat(TiposCustomVisibles.Select(tc => (tc.Nombre, tc.Nombre))).ToList() },
+                // Estado usa las opciones configuradas por la copropiedad (mismas que la tabla y la ficha).
+                new() { Key = "estado", Label = AliasCampo("estado", "Estado"), Kind = "sel",
+                        Opciones = EstadosConfig().Select(e => (e, e)).ToList() },
+                new() { Key = "piso", Label = AliasCampo("piso", LabelPisoSingular), Kind = "num" },
+                new() { Key = "area", Label = AliasCampo("area", "Area"), Kind = "num" },
+                new() { Key = "coef", Label = AliasCampo("coef", "Coeficiente"), Kind = "num" },
+                new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_camposDef.Select(d => FiltroDinamico.DeDinamico(d.Id, d.Label, d.Tipo, d.Opciones)));
+            return l;
+        }
+    }
 
     private string _vista = "tabla";   // "tabla" | "lista" (se recuerda por modulo)
     private const string VistaKey = "propia_view_unidades";
@@ -1399,16 +1408,21 @@ else
                 .Where(u => q == ""
                     || u.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (u.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
-                .Where(u => _fd?.Pasa(campo => campo switch
+                .Where(u => _fd?.Pasa(campo =>
                 {
-                    "numero" => u.Numero,
-                    "tipo" => EtiquetaU(u),
-                    "estado" => u.Estado ?? "",
-                    "piso" => u.Piso?.ToString() ?? "",
-                    "area" => u.AreaM2?.ToString(ci) ?? "",
-                    "coef" => u.CoeficientePropiedad.ToString(ci),
-                    "propietario" => u.PropietarioNombre ?? "",
-                    _ => ""
+                    if (campo.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(campo.AsSpan(3), out var defId))
+                        return ValorCampo(u.Id, defId) ?? "";
+                    return campo switch
+                    {
+                        "numero" => u.Numero,
+                        "tipo" => EtiquetaU(u),
+                        "estado" => u.Estado ?? "",
+                        "piso" => u.Piso?.ToString() ?? "",
+                        "area" => u.AreaM2?.ToString(ci) ?? "",
+                        "coef" => u.CoeficientePropiedad.ToString(ci),
+                        "propietario" => u.PropietarioNombre ?? "",
+                        _ => ""
+                    };
                 }) ?? true);
             // Orden multi-criterio (boton "Ordenar" y clic en header). OrderBy estable conserva el orden natural si no hay sort.
             if (_sorts.Count > 0)

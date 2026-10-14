@@ -1181,31 +1181,45 @@ else
 
     private bool HayFiltros => !string.IsNullOrWhiteSpace(_q) || (_fd?.Hay ?? false);
 
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltro
     {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "categoria", Label = "Categoria", Kind = "sel",
-                Opciones = Enum.GetValues<CategoriaZonaComun>().Select(c => (c.ToString(), LblCatZn(c))).ToList() },
-        new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => (s.ToString(), LblEstZn(s))).ToList() },
-        new() { Key = "reservable", Label = "Reservable", Kind = "sel",
-                Opciones = new() { ("si", "Si"), ("no", "No") } },
-        new() { Key = "aforo", Label = "Aforo", Kind = "num" },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+                new() { Key = "categoria", Label = "Categoria", Kind = "sel",
+                        Opciones = Enum.GetValues<CategoriaZonaComun>().Select(c => (c.ToString(), LblCatZn(c))).ToList() },
+                new() { Key = "estado", Label = "Estado", Kind = "sel",
+                        Opciones = Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => (s.ToString(), LblEstZn(s))).ToList() },
+                new() { Key = "reservable", Label = "Reservable", Kind = "sel",
+                        Opciones = new() { ("si", "Si"), ("no", "No") } },
+                new() { Key = "aforo", Label = "Aforo", Kind = "num" },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_camposDef.Select(d => FiltroDinamico.DeDinamico(d.Id, d.Label, d.Tipo, d.Opciones)));
+            return l;
+        }
+    }
 
     private IEnumerable<ZonaComunDto> Filtradas()
     {
         var q = _q.Trim();
         var baseSeq = _zonas
             .Where(z => q == "" || z.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Where(z => _fd?.Pasa(campo => campo switch
+            .Where(z => _fd?.Pasa(campo =>
             {
-                "nombre" => z.Nombre,
-                "categoria" => z.Categoria.ToString(),
-                "estado" => z.Estado.ToString(),
-                "reservable" => z.EsReservable ? "si" : "no",
-                "aforo" => z.CapacidadPersonas?.ToString() ?? "",
-                _ => ""
+                if (campo.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(campo.AsSpan(3), out var defId))
+                    return ValorCampo(z.Id, defId) ?? "";
+                return campo switch
+                {
+                    "nombre" => z.Nombre,
+                    "categoria" => z.Categoria.ToString(),
+                    "estado" => z.Estado.ToString(),
+                    "reservable" => z.EsReservable ? "si" : "no",
+                    "aforo" => z.CapacidadPersonas?.ToString() ?? "",
+                    _ => ""
+                };
             }) ?? true);
         // Orden multi-criterio (menu "Ordenar" / clic en header); sin sort, orden por defecto (categoria + nombre).
         if (_sortsZ.Count > 0)

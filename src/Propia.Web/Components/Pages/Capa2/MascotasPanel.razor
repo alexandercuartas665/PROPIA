@@ -554,15 +554,24 @@ else
     };
     private string GridCols => "38px 34px " + string.Join(" ", ColsVisibles().Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k))) + " 60px 40px";
 
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltro
     {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "raza", Label = "Raza", Kind = "texto" },
-        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = _tipoOpciones.Select(o => (o, o)).ToList() },
-        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
-        new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+                new() { Key = "raza", Label = "Raza", Kind = "texto" },
+                new() { Key = "tipo", Label = "Tipo", Kind = "sel",
+                        Opciones = _tipoOpciones.Select(o => (o, o)).ToList() },
+                new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+                new() { Key = "propietario", Label = "Propietario", Kind = "texto" },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_defs.Select(FiltroDinamico.DeDinamico));
+            return l;
+        }
+    }
 
     private List<MascotaResumenDto> Filtradas
     {
@@ -575,14 +584,19 @@ else
                     || (v.Raza ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
                     || v.UnidadCodigo.Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (v.PropietarioNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
-                .Where(v => _fd?.Pasa(campo => campo switch
+                .Where(v => _fd?.Pasa(campo =>
                 {
-                    "nombre" => v.Nombre,
-                    "raza" => v.Raza ?? "",
-                    "tipo" => EfectivoTipoLabel(v),
-                    "unidad" => v.UnidadCodigo,
-                    "propietario" => v.PropietarioNombre ?? "",
-                    _ => ""
+                    if (campo.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(campo.AsSpan(3), out var defId))
+                        return ValorDe(v.MascotaId, defId) ?? "";
+                    return campo switch
+                    {
+                        "nombre" => v.Nombre,
+                        "raza" => v.Raza ?? "",
+                        "tipo" => EfectivoTipoLabel(v),
+                        "unidad" => v.UnidadCodigo,
+                        "propietario" => v.PropietarioNombre ?? "",
+                        _ => ""
+                    };
                 }) ?? true);
             if (_sorts.Count > 0)
             {
