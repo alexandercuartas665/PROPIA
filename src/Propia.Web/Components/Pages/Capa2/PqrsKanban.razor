@@ -1141,37 +1141,23 @@
         if (string.IsNullOrWhiteSpace(raw) || raw == "ninguno") return new();
         return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k != "ninguno").ToList();
     }
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesPqr()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("estado", "Etapa"), new("tipo", "Tipo"), new("categoria", "Categoria"), new("unidad", "Unidad"),
-        };
-        foreach (var c in _campos.OrderBy(c => c.Orden)) cols.Add(new(CampoColKey(c.Id), c.Label));
-        return cols;
-    }
-    // Valor de agrupacion de un radicado en una dimension (un solo valor por dimension).
+        => ColumnasVisibles.Select(c => new TablaAgruparMenu.Col(c.Key, c.Label)).ToList();
+    // Valor de agrupacion de un radicado. "estado" (etapa) lleva color + Orden; el resto (tipo, categoria,
+    // unidad, radicado, ... y las dinamicas) se resuelve con ValorOrdenPqr, asi agrupa igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoPqr(PqrsdBandejaItemDto x, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        if (clave == "estado")
         {
-            if (CampoDin(clave[3..]) is not { } gcd) yield break;
-            var v = x.Campos?.FirstOrDefault(vv => vv.CampoId == gcd.Id)?.Valor;
-            var t = string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!;
-            yield return new ValorGrupo(t, t);
+            var est = _estados.FirstOrDefault(e => e.Id == x.EstadoId);
+            var en = est?.Nombre ?? "Sin columna";
+            yield return new ValorGrupo(en, en, est?.Color, Orden: est?.Orden ?? 999);
             yield break;
         }
-        switch (clave)
-        {
-            case "estado":
-                var est = _estados.FirstOrDefault(e => e.Id == x.EstadoId);
-                var en = est?.Nombre ?? "Sin columna";
-                yield return new ValorGrupo(en, en, est?.Color, Orden: est?.Orden ?? 999);
-                break;
-            case "tipo": var tl = TipoLabel(x.Tipo); yield return new ValorGrupo(tl, tl); break;
-            case "categoria": var cat = string.IsNullOrWhiteSpace(x.CategoriaNombre) ? "Sin categoria" : x.CategoriaNombre!; yield return new ValorGrupo(cat, cat); break;
-            case "unidad": var u = string.IsNullOrEmpty(x.UnidadNumero) ? "Sin unidad" : x.UnidadNumero!; yield return new ValorGrupo(u, u); break;
-        }
+        var v = ValorOrdenPqr(x, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t);
     }
     // Lista filtrada + ordenada (render-all; el arbol de grupos conserva ese orden en las hojas).
     private List<PqrsdBandejaItemDto> RaicesOrdenadasPqr() => AplicarSortPqr(ItemsFiltrados).ToList();

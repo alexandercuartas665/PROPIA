@@ -1203,32 +1203,17 @@ else
 
     // ---------- Agrupacion (multi-nivel, fuente unica compartida) ----------
     // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesR()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("rol", "Rol"),
-            new("unidad", "Unidad"),
-        };
-        foreach (var d in _defs) cols.Add(new("cd:" + d.Id, d.Label));
-        return cols;
-    }
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
-    // Valor de una dimension de agrupacion para un residente (uno por nivel; sin valor => "(Sin dato)").
+    // Valor de una dimension de agrupacion para un residente. Reusa SortStrR (resuelve toda clave fija +
+    // "cd:", con nombre para campos Directorio/Usuario), asi cualquier columna agrupa igual que ordena.
     private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoR(ResidenteResumenDto r, string clave)
     {
-        switch (clave)
-        {
-            case "rol": { var t = RolLabel(r.Rol); yield return new(t, t); yield break; }
-            case "unidad": { var t = r.UnidadCodigo; if (!string.IsNullOrWhiteSpace(t)) yield return new(t, t); yield break; }
-        }
-        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorDe).
-        if (CampoCustom(clave) is CampoDinDef cd)
-        {
-            var v = ValorDe(r.UnidadPersonaId, cd.Id);
-            if (!string.IsNullOrWhiteSpace(v)) yield return new(v!, v!);
-        }
-        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
+        var v = SortStrR(r, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new(t, t);
     }
 
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).

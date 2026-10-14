@@ -1587,38 +1587,24 @@
         if (string.IsNullOrWhiteSpace(raw)) return new();
         return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesS()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("aseguradora", "Aseguradora"), new("estado", "Vencimiento"),
-        };
-        foreach (var c in CamposActivos) cols.Add(new(ClaveCustom(c), c.Label));
-        return cols;
-    }
-    // Valor de agrupacion de una poliza en una dimension (uno por dimension). Vencimiento lleva Orden
-    // por severidad del semaforo (Vencida < Por vencer < Al dia) para un orden logico de grupos.
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
+    // Valor de agrupacion de una poliza. El vencimiento (semaforo) lleva Orden por severidad (Vencida <
+    // Por vencer < Al dia); el resto (aseguradora, fechas, ... y las dinamicas) se resuelve con ValorOrdenS,
+    // asi cualquier columna agrupa igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoS(PolizaDto p, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
-        {
-            if (CampoCustom(clave) is not { } def) yield break;
-            var val = ValorCampoTexto(p, def);
-            var t = string.IsNullOrWhiteSpace(val) ? "Sin dato" : val;
-            yield return new ValorGrupo(t, t);
-            yield break;
-        }
-        if (clave == "aseguradora")
-        {
-            var a = string.IsNullOrWhiteSpace(p.Aseguradora) ? "Sin aseguradora" : p.Aseguradora;
-            yield return new ValorGrupo(a, a);
-        }
-        else // "estado" = vencimiento (semaforo)
+        if (clave is "vencimiento" or "estado")
         {
             var s = SemaforoTexto(p.Semaforo);
             var ord = p.Semaforo switch { SemaforoContrato.Rojo => 0, SemaforoContrato.Amarillo => 1, SemaforoContrato.Verde => 2, _ => 3 };
             yield return new ValorGrupo(s, s, Orden: ord);
+            yield break;
         }
+        var v = ValorOrdenS(p, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t);
     }
 
     private IEnumerable<Fila> FilasRender()

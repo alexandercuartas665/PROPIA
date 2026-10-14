@@ -1188,21 +1188,13 @@ else
     private List<string> _gruposE = new();
     private bool _agrupadoE => _gruposE.Count > 0;
 
-    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesE()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("categoria", "Categoria"),
-            new("tipo", "Tipo"),
-            new("estado", "Estado"),
-            new("reservable", "Reservable"),
-        };
-        foreach (var d in _camposDef) cols.Add(new("cd:" + d.Id, d.Label));
-        return cols;
-    }
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
-    // Valor de una dimension de agrupacion para un equipo (uno por nivel; sin valor => grupo "(Sin dato)").
+    // Valor de una dimension de agrupacion para un equipo. Para categoria/tipo/estado/reservable usa su
+    // etiqueta; el resto (modelo, serie, ... y "cd:") se resuelve con SortStrE, asi cualquier columna agrupa
+    // igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoE(EquipoActivoDto e, string clave)
     {
         switch (clave)
@@ -1212,14 +1204,9 @@ else
             case "estado": { var t = EstadoTextoCorto(e.Estado); yield return new(t, t); yield break; }
             case "reservable": { var t = e.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
         }
-        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorCampo).
-        if (CampoCustom(clave) is EquipoCampoDefinicionDto cd)
-        {
-            var v = ValorCampo(e.Id, cd.Id);
-            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v!;
-            yield return new(t, t);
-        }
-        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
+        var v = SortStrE(e, clave);
+        var tv = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new(tv, tv);
     }
 
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).

@@ -1830,37 +1830,23 @@ else
     // _gruposC vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a <tr>. =====
     private void OnGruposCChanged() { StateHasChanged(); }
     private void SetGroupC(string clave) { _gruposC = new() { clave }; OnGruposCChanged(); }
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesC()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("etapa", "Etapa"), new("tipo", "Tipo"), new("tercero", "Tercero"), new("estado", "Estado"),
-        };
-        foreach (var c in CamposActivos) cols.Add(new("cd:" + c.Id, c.Label));
-        return cols;
-    }
-    // Valor de agrupacion de un contrato en una dimension (uno por dimension). Etapa lleva Orden (flujo).
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
+    // Valor de agrupacion de un contrato. "etapa" lleva color + Orden (flujo); el resto (tipo, tercero,
+    // estado, numero, fechas, ... y las dinamicas) se resuelve con ValorOrdenC, asi agrupa igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoC(ContratoServicioDto c, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        if (clave == "etapa")
         {
-            if (CampoDinC(clave[3..]) is not { } gcd) yield break;
-            var v = ValorCampo(c, gcd.Id);
-            var t = string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!;
-            yield return new ValorGrupo(t, t);
+            var et = _etapas.FirstOrDefault(e => e.Id == c.EtapaId);
+            var en = et?.Nombre ?? "(sin etapa)";
+            yield return new ValorGrupo(en, en, et?.Color, Orden: et?.Orden ?? 999);
             yield break;
         }
-        switch (clave)
-        {
-            case "etapa":
-                var et = _etapas.FirstOrDefault(e => e.Id == c.EtapaId);
-                var en = et?.Nombre ?? "(sin etapa)";
-                yield return new ValorGrupo(en, en, et?.Color, Orden: et?.Orden ?? 999);
-                break;
-            case "tipo": var tl = TipoLabel(c.Tipo); yield return new ValorGrupo(tl, tl); break;
-            case "tercero": var p = string.IsNullOrWhiteSpace(c.Proveedor) ? "(sin proveedor)" : c.Proveedor!; yield return new ValorGrupo(p, p); break;
-            case "estado": var es = EstadoTextoContrato(c); yield return new ValorGrupo(es, es); break;
-        }
+        var v = ValorOrdenC(c, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t);
     }
     // Secuencia unica para el <tbody>: sin agrupar = filas de la pagina; agrupado = encabezados + filas
     // (arbol aplanado sobre la lista filtrada+ordenada completa, sin paginar).

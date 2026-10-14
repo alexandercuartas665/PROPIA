@@ -616,35 +616,17 @@ else
         }
     }
 
-    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesM()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("tipo", "Tipo de mascota"),
-            new("unidad", "Unidad"),
-            new("propietario", "Propietario"),
-        };
-        foreach (var d in _defs) cols.Add(new("cd:" + d.Id, d.Label));
-        return cols;
-    }
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
-    // Valor de una dimension de agrupacion para una mascota (uno por nivel; sin valor => grupo "(Sin dato)").
+    // Valor de una dimension de agrupacion para una mascota. Reusa SortStr (resuelve toda clave fija + "cd:"),
+    // asi cualquier columna agrupa igual que ordena.
     private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoM(MascotaResumenDto v, string clave)
     {
-        switch (clave)
-        {
-            case "tipo": { var t = EfectivoTipoLabel(v); yield return new(t, t); yield break; }
-            case "unidad": { var t = v.UnidadCodigo; if (!string.IsNullOrWhiteSpace(t)) yield return new(t, t); yield break; }
-            case "propietario": { var t = v.PropietarioNombre; if (!string.IsNullOrWhiteSpace(t)) yield return new(t!, t!); yield break; }
-        }
-        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorDe).
-        if (CampoCustom(clave) is CampoDinDef cd)
-        {
-            var val = ValorDe(v.MascotaId, cd.Id);
-            if (!string.IsNullOrWhiteSpace(val)) yield return new(val!, val!);
-        }
-        // Clave no reconocida o sin valor: no se emite (el motor la coloca en el grupo "(Sin dato)").
+        var val = SortStr(v, clave);
+        var t = string.IsNullOrWhiteSpace(val) ? "(Sin dato)" : val;
+        yield return new(t, t);
     }
 
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).

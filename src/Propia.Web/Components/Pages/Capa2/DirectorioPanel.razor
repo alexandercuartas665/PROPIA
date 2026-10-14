@@ -938,31 +938,33 @@
     // cae en cada grupo de etiqueta que tenga). Color/Icono viajan en el ValorGrupo para el chip. El
     // motor comparte con el resto de modulos: agrupa, ordena por titulo y manda los "Sin etiqueta" al
     // final (tituloSinValor) igual que antes. Directorio se queda en 1 nivel (solo "etiquetas").
+    // Agrupar por cualquier columna: "etiquetas" agrupa multi-valor (una fila en cada etiqueta); el resto
+    // (nombres, doc, estado, ... y "cd:") se resuelve con ValorOrdenPersona, asi agrupa igual que ordena.
     private IEnumerable<ValorGrupo> ValorGrupoPersona(PersonaResumenDto p, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        if (clave == "etiquetas")
         {
-            var v = ValorCampoDir(p.RegistroCamposId, clave);
-            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
-            yield return new ValorGrupo(t, t, null, null);
+            if (p.Etiquetas is null) yield break;
+            foreach (var e in p.Etiquetas.DistinctBy(x => x.Valor))
+                yield return new ValorGrupo(e.Valor, e.Valor, null, null);
             yield break;
         }
-        if (p.Etiquetas is null) yield break;
-        foreach (var e in p.Etiquetas.DistinctBy(x => x.Valor))
-            yield return new ValorGrupo(e.Valor, e.Valor, null, null);
+        var v = ValorOrdenPersona(p, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t, null, null);
     }
     private IEnumerable<ValorGrupo> ValorGrupoEmpresa(EmpresaResumenDto em, string clave)
     {
-        if (clave.StartsWith("cd:", StringComparison.Ordinal))
+        if (clave == "etiquetas")
         {
-            var v = ValorCampoDir(em.RegistroCamposId, clave);
-            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
-            yield return new ValorGrupo(t, t, null, null);
+            if (em.Etiquetas is null) yield break;
+            foreach (var e in em.Etiquetas.DistinctBy(x => x.Valor))
+                yield return new ValorGrupo(e.Valor, e.Valor, null, null);
             yield break;
         }
-        if (em.Etiquetas is null) yield break;
-        foreach (var e in em.Etiquetas.DistinctBy(x => x.Valor))
-            yield return new ValorGrupo(e.Valor, e.Valor, null, null);
+        var v = ValorOrdenEmpresa(em, clave);
+        var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new ValorGrupo(t, t, null, null);
     }
 
     private List<DirectorioPersonasVista.Grupo>? GruposPersonas()
@@ -984,10 +986,16 @@
     }
 
     /// <summary>Campos por los que Directorio puede agrupar (hoy solo la Etiqueta, tag-based).</summary>
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: las columnas activas (visibles) del catalogo
+    // + las propias ("cd:{id}"). Mismo set que ColsOrdenablesDir.
     private List<TablaAgruparMenu.Col> ColsAgrupablesDir()
     {
-        var cols = new List<TablaAgruparMenu.Col> { new("etiquetas", "Etiqueta") };
-        foreach (var d in _defsCampos) cols.Add(new("cd:" + d.Id, d.Label));
+        var cols = new List<TablaAgruparMenu.Col>();
+        foreach (var c in CatalogoActivoOrdenado)
+            if (ColVisibleDir(c.Key, c.Hideable))
+                cols.Add(new TablaAgruparMenu.Col(c.Key, ColLabelDir(c.Key, c.DefLabel)));
+        foreach (var d in _defsCampos)
+            cols.Add(new TablaAgruparMenu.Col("cd:" + d.Id, d.Label));
         return cols;
     }
 

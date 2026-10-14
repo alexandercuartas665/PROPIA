@@ -1038,36 +1038,24 @@ else
     private List<string> _gruposZ = new();
     private bool _agrupadoZ => _gruposZ.Count > 0;
 
-    // Columnas ofrecidas en el menu Agrupar: las de sistema agrupables + las propias ("cd:{id}").
+    // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas).
     private List<TablaAgruparMenu.Col> ColsAgrupablesZ()
-    {
-        var cols = new List<TablaAgruparMenu.Col>
-        {
-            new("categoria", "Categoria"),
-            new("reserva", "Reserva"),
-            new("estado", "Estado"),
-        };
-        foreach (var d in _camposDef) cols.Add(new("cd:" + d.Id, d.Label));
-        return cols;
-    }
+        => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
-    // Valor de una dimension de agrupacion para una zona (uno por nivel; sin valor => grupo "(Sin dato)").
+    // Valor de una dimension de agrupacion para una zona. Para categoria/reserva/estado usa su etiqueta;
+    // el resto (nombre, aforo, ... y "cd:") se resuelve con SortStrZ, asi cualquier columna agrupa igual que ordena.
     private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoZona(ZonaComunDto z, string clave)
     {
         switch (clave)
         {
             case "categoria": { var t = z.Categoria.ToString(); yield return new(t, LblCatZn(z.Categoria)); yield break; }
-            case "reserva": { var t = z.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
+            case "reserva":
+            case "reservable": { var t = z.EsReservable ? "Reservable" : "No reservable"; yield return new(t, t); yield break; }
             case "estado": { var t = z.Estado.ToString(); yield return new(t, LblEstZn(z.Estado)); yield break; }
         }
-        // Campo propio (dinamico): mismo resolvedor que el resto del modulo (CampoCustom + ValorCampo).
-        if (CampoCustom(clave) is ZonaCampoDefinicionDto cd)
-        {
-            var v = ValorCampo(z.Id, cd.Id);
-            var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v!;
-            yield return new(t, t);
-        }
-        // Clave no reconocida: no se emite valor (el motor la coloca en el grupo "(Sin dato)").
+        var v = SortStrZ(z, clave);
+        var tv = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
+        yield return new(tv, tv);
     }
 
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
