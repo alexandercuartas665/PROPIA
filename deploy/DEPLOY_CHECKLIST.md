@@ -1,6 +1,14 @@
 # PROPIA - Checklist de deploy
 
-> **DEPLOY VIGENTE: 0.0.146 (2026-10-13).** `main` HEAD `0e64eaf4`. **SOLO CODIGO (SIN MIGRACION, SIN CONFIG).**
+> **DEPLOY VIGENTE: 0.0.147 (2026-10-14).** `main` HEAD `0969b57f`. **SOLO CODIGO (SIN MIGRACION, SIN CONFIG).**
+> Tanda grande de homogenizacion vista-tabla: Filtros y Agrupar con TODOS los campos (incl. dinamicos) en todos
+> los modulos; Agrupar = Ordenar/Columnas; expander del alta = crear+abrir ficha en todos (Usuarios, Roles, y
+> ficha nueva en Vehiculos/Mascotas); arreglos de Usuarios (alta rol obligatorio, sin lapiz por fila, multi-rol
+> en el modal) y Roles (editor sin "Semilla"). Redeploy del artefacto de `main`; **no hay migracion**. Detalle
+> en `DEPLOY_HANDOFF_2026-10-14_v0.0.147.md`. (Si prod NO tiene aun 0.0.145, aplicar antes su migracion
+> `AddUsuarioTenantArchivado`; 0.0.146/0.0.147 no agregan migracion.)
+>
+> **(Historico) DEPLOY 0.0.146 (2026-10-13).** `main` HEAD `0e64eaf4`. SOLO CODIGO.
 > Arregla la subida de imagenes (logo/fachada) de la Identidad + tarjeta drag & drop (causa raiz: parametro
 > `Jwt` de `IdentidadForm` pasado como literal `Jwt="_jwt"` sin `@` -> `Bearer _jwt` -> 401 IDX14100). Redeploy
 > del artefacto de `main`; **no hay migracion que aplicar sobre 0.0.145**. Recomendado aparte: activar storage

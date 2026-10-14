@@ -1,6 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **ULTIMA ACTUALIZACION 2026-10-13: VERSION A DESPLEGAR = 0.0.146** (`main` HEAD `0e64eaf4`, rama
+> **ULTIMA ACTUALIZACION 2026-10-14: VERSION A DESPLEGAR = 0.0.147** (`main` HEAD `0969b57f`, rama
+> `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Tanda grande **SOLO CODIGO (SIN MIGRACION, SIN
+> CONFIG)**: homogenizacion de la vista-tabla (Filtros y Agrupar con TODOS los campos incl. dinamicos en todos
+> los modulos; Agrupar = Ordenar/Columnas) + expander del alta = crear+abrir ficha en todos (Usuarios, Roles,
+> y ficha nueva en Vehiculos/Mascotas) + arreglos de Usuarios (alta con rol obligatorio, sin lapiz por fila,
+> multi-rol en el modal) y Roles (editor sin "Semilla"). Detalle en `DEPLOY_HANDOFF_2026-10-14_v0.0.147.md`.
+> No agrega migracion sobre 0.0.145 (`AddUsuarioTenantArchivado` sigue siendo la ultima).
+>
+> _(Historico 2026-10-13: VERSION 0.0.146 (`0e64eaf4`): fix subida de imagenes Identidad + drag&drop, solo codigo.)_
+>
+> _(Historico: VERSION 0.0.145 (`3c1e864a`): 1 MIGRACION `AddUsuarioTenantArchivado` + vista "Archivadas" del
+> selector. Si prod NO tiene 0.0.145, aplicar esa migracion. 0.0.146/0.0.147 no agregan migracion.)_
+>
+> _Lo que sigue abajo es el detalle historico de tandas previas (0.0.146, 0.0.145, ...)._
+>
+> **(banner previo 0.0.146) VERSION A DESPLEGAR = 0.0.146** (`main` HEAD `0e64eaf4`, rama
 > `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Esta tanda (0.0.146) es **SOLO CODIGO (SIN
 > MIGRACION, SIN CONFIG)**: arregla la **subida de imagenes** (logo/fachada) de la Identidad de la copropiedad
 > + tarjeta **drag & drop**. Causa raiz del 401: `IdentidadForm` recibia el parametro `Jwt` como literal
