@@ -81,3 +81,14 @@ en Invitacion pendiente, persiste celular, y ABRE la ficha del creado para conti
 existentes) sigue con identidad de solo lectura. Archivos: `UsuariosPanel.razor`, `UsuariosTablaVista.razor`.
 Sin migracion. Verificado en runtime (documento solo -> modal crear -> completar -> crea + abre ficha; split de
 nombre OK). Version visible **0.0.151**.
+
+---
+
+## Addendum v0.0.152 (2026-10-14) - UN SOLO modal para crear y editar
+Alex: "debe ser el mismo modal". El modal separado de creacion se FUSIONO con el de editar: ahora es un unico
+bloque (`@if (_editUser is not null || _creando)`) que en modo creacion (`_creando`) muestra la identidad
+EDITABLE (nombre/documento/correo), Estado fijo "Invitacion pendiente" y boton "Crear usuario"; y en modo
+edicion (usuario existente) la identidad es de solo lectura, con Estado (select), Datos del sistema y Zona de
+acceso, y boton "Guardar cambios". Al crear, el mismo modal pasa a modo edicion del recien creado.
+Archivo: `UsuariosPanel.razor`. Sin migracion. Verificado en runtime (crear -> edita el creado; editar existente
+sin cambios). Version visible **0.0.152**.

@@ -451,7 +451,9 @@
 @* ============================================================ *@
 @* MODAL: Editar usuario                                        *@
 @* ============================================================ *@
-@if (_editUser is not null)
+@* MISMO modal para CREAR (_creando: identidad editable, "Crear usuario") y EDITAR (_editUser: identidad
+   de solo lectura + estado/datos/zona, "Guardar cambios"). *@
+@if (_editUser is not null || _creando)
 {
     <div class="usr-modal-bg" @onclick="CerrarEditar">
         <div class="usr-modal usr-modal-user" @onclick:stopPropagation="true">
@@ -460,7 +462,7 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </div>
                 <div class="flex-grow-1">
-                    <div class="usr-modal-title">Editar usuario</div>
+                    <div class="usr-modal-title">@(_creando ? "Crear usuario" : "Editar usuario")</div>
                     <div class="usr-modal-subtitle">Rol de acceso, cargo y participacion en la copropiedad</div>
                 </div>
                 <button class="usr-modal-x" @onclick="CerrarEditar">
@@ -469,63 +471,86 @@
             </div>
             <div class="usr-modal-body">
             <div class="usr-mgrid">
-            @* ---------- Columna izquierda: quien es, que rol tiene y como se clasifica ---------- *@
+            @* ---------- Columna izquierda: identidad (editable solo al crear) + rol + cargo ---------- *@
             <div class="usr-mcol">
                 <div class="d-flex align-items-center gap-3 mb-4">
                     <div class="usr-av-edit">
-                        @if (!string.IsNullOrWhiteSpace(_editFotoUrl))
+                        @if (!_creando && !string.IsNullOrWhiteSpace(_editFotoUrl))
                         {
-                            <img class="usr-av usr-av-img" style="width:64px;height:64px;border-radius:15px" src="@_editFotoUrl" alt="@_editUser.NombreCompleto" />
+                            <img class="usr-av usr-av-img" style="width:64px;height:64px;border-radius:15px" src="@_editFotoUrl" alt="@_editUser!.NombreCompleto" />
                         }
                         else
                         {
-                            <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_editUser.NombreCompleto)</div>
+                            <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_creando ? _nuevoNombre : _editUser!.NombreCompleto)</div>
                         }
-                        <label class="usr-av-cam" title="Cambiar foto">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                            <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" style="display:none" />
-                        </label>
+                        @if (!_creando)
+                        {
+                            <label class="usr-av-cam" title="Cambiar foto">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" style="display:none" />
+                            </label>
+                        }
                     </div>
                     <div>
-                        <div class="usr-name" style="font-size:16px">@_editUser.NombreCompleto</div>
-                        <div class="usr-email">@(_editUser.Email ?? "Sin correo") @(_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio")</div>
+                        <div class="usr-name" style="font-size:16px">@(_creando ? (string.IsNullOrWhiteSpace(_nuevoNombre) ? "Nuevo usuario" : _nuevoNombre) : _editUser!.NombreCompleto)</div>
+                        <div class="usr-email">@(_creando ? "Se registrara en el Directorio" : (_editUser!.Email ?? "Sin correo") + (_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio"))</div>
                         @if (_subiendoFoto) { <div class="usr-email" style="color:#1E88E5">Subiendo foto...</div> }
                     </div>
                 </div>
 
                 <div class="mb-3">
-                    <label class="usr-label">Nombre completo</label>
-                    <input class="usr-input" value="@_editUser.NombreCompleto" disabled />
+                    <label class="usr-label">Nombre completo@(_creando ? " *" : "")</label>
+                    @if (_creando)
+                    {
+                        <input class="usr-input" @bind="_nuevoNombre" @bind:event="oninput" placeholder="Nombres y apellidos" />
+                    }
+                    else
+                    {
+                        <input class="usr-input" value="@_editUser!.NombreCompleto" disabled />
+                    }
                 </div>
-                @* Documento + Correo: identidad de solo lectura (vive en el Directorio). *@
+                @* Documento + Correo: editables SOLO al crear (persona nueva); al editar son solo lectura (Directorio). *@
                 <div class="usr-mgrid mb-3" style="grid-template-columns:1fr 1fr;gap:12px">
                     <div>
-                        <label class="usr-label">Documento de identidad</label>
-                        <input class="usr-input" value="@_editUser.Documento" disabled />
+                        <label class="usr-label">@(_creando ? "Documento *" : "Documento de identidad")</label>
+                        @if (_creando)
+                        {
+                            <input class="usr-input" @bind="_nuevoDoc" @bind:event="oninput" placeholder="Numero de documento" />
+                        }
+                        else
+                        {
+                            <input class="usr-input" value="@_editUser!.Documento" disabled />
+                        }
                     </div>
                     <div>
-                        <label class="usr-label">Correo de acceso</label>
-                        <input class="usr-input" value="@(_editUser.Email ?? "")" disabled />
+                        <label class="usr-label">@(_creando ? "Correo (opcional)" : "Correo de acceso")</label>
+                        @if (_creando)
+                        {
+                            <input class="usr-input" @bind="_nuevoEmail" @bind:event="oninput" placeholder="correo@@ejemplo.com" />
+                        }
+                        else
+                        {
+                            <input class="usr-input" value="@(_editUser!.Email ?? "")" disabled />
+                        }
                     </div>
                 </div>
-                @* Celular (WhatsApp): UNICO dato de identidad editable aqui (persiste en Persona.Telefono). *@
+                @* Celular (WhatsApp): editable en ambos modos (persiste en Persona.Telefono). *@
                 <div class="mb-2">
                     <label class="usr-label">Celular (WhatsApp)</label>
                     <input class="usr-input" @bind="_editTelefono" @bind:event="oninput" placeholder="Numero de celular" />
                 </div>
-                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">La identidad (nombre, documento, correo) es unica por persona y se edita en el Directorio.</div>
+                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">@(_creando ? "La persona se registra en el Directorio; la foto y mas datos se completan luego en la ficha." : "La identidad (nombre, documento, correo) es unica por persona y se edita en el Directorio.")</div>
 
-                @* ROL (multi): chips asignados (x) + disponibles (clic para asignar). Otorga permisos (RBAC).
-                   Persiste via PUT /api/usuarios/{id}/roles. *@
+                @* ROL (multi): chips asignados (x) + disponibles (clic para asignar). Otorga permisos (RBAC). *@
                 <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">ROL</div>
+                    <div class="usr-gob-sec-t">ROL@(_creando ? " *" : "")</div>
                     <div class="usr-gob-sec-hint">Otorga permisos en PropIA (referencia a Roles y Permisos). Un usuario puede tener varios.</div>
                     <div class="usr-etq-list">
                         @foreach (var rid in _editRolIds)
                         {
                             var rr = rid;
                             var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre
-                                     ?? _editUser.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
+                                     ?? _editUser?.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
                             <span class="usr-etq-chip" style="background:var(--propia-brand-soft);color:var(--propia-brand-text-2, var(--propia-brand));border-color:transparent">@rn<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
                         }
                         @if (_editRolIds.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
@@ -544,8 +569,7 @@
                     }
                 </div>
 
-                @* CARGO (multi, descriptivo, NO da permisos): chips + disponibles del catalogo "usuario.cargo".
-                   Persiste via PUT /api/usuarios/{id}/cargos. *@
+                @* CARGO (multi, descriptivo, NO da permisos): chips + disponibles del catalogo "usuario.cargo". *@
                 <div class="usr-gob-sec">
                     <div class="usr-gob-sec-t">CARGO</div>
                     <div class="usr-gob-sec-hint">Oficio o funcion del personal interno (descriptivo, no otorga permisos).</div>
@@ -572,27 +596,37 @@
                 </div>
             </div>
 
-            @* ---------- Columna derecha: donde participa dentro de la copropiedad ---------- *@
+            @* ---------- Columna derecha: estado + sistema + zona de acceso (solo al editar) ---------- *@
             <div class="usr-mcol">
-                @* ESTADO: el backend solo mueve Activo<->Inactivo (revocar/reactivar); "Pendiente..." los fija
-                   el sistema (alta/invitacion), por eso no se eligen a mano. *@
-                <div class="mb-3">
-                    <label class="usr-label">Estado</label>
-                    <select class="usr-select" @bind="_editEstado">
-                        @foreach (var e in Enum.GetValues<EstadoUsuarioTenant>())
-                        {
-                            <option value="@e">@EstadoLabelU(e)</option>
-                        }
-                    </select>
-                </div>
+                @if (!_creando)
+                {
+                    @* ESTADO: el backend solo mueve Activo<->Inactivo (revocar/reactivar); "Pendiente..." los fija el sistema. *@
+                    <div class="mb-3">
+                        <label class="usr-label">Estado</label>
+                        <select class="usr-select" @bind="_editEstado">
+                            @foreach (var e in Enum.GetValues<EstadoUsuarioTenant>())
+                            {
+                                <option value="@e">@EstadoLabelU(e)</option>
+                            }
+                        </select>
+                    </div>
 
-                @* DATOS DEL SISTEMA (solo lectura) *@
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">Datos del sistema</div>
-                    <div class="usr-sysrow"><span>Ultimo acceso</span><b>@FechaCortaU(_editUser.UltimoAcceso)</b></div>
-                    <div class="usr-sysrow"><span>Fecha de vinculacion</span><b>@FechaCortaU(_editUser.FechaVinculacion)</b></div>
-                    <div class="usr-sysrow"><span>Aceptacion de politica de datos</span><b>@(_editUser.AceptoTratamientoDatos ? FechaHoraU(_editUser.FechaAceptacionDatos) : "No registrada")</b></div>
-                </div>
+                    @* DATOS DEL SISTEMA (solo lectura) *@
+                    <div class="usr-gob-sec">
+                        <div class="usr-gob-sec-t">Datos del sistema</div>
+                        <div class="usr-sysrow"><span>Ultimo acceso</span><b>@FechaCortaU(_editUser!.UltimoAcceso)</b></div>
+                        <div class="usr-sysrow"><span>Fecha de vinculacion</span><b>@FechaCortaU(_editUser!.FechaVinculacion)</b></div>
+                        <div class="usr-sysrow"><span>Aceptacion de politica de datos</span><b>@(_editUser!.AceptoTratamientoDatos ? FechaHoraU(_editUser!.FechaAceptacionDatos) : "No registrada")</b></div>
+                    </div>
+                }
+                else
+                {
+                    @* En creacion el estado es fijo (Invitacion pendiente); el usuario nace pendiente. *@
+                    <div class="mb-3">
+                        <label class="usr-label">Estado</label>
+                        <input class="usr-input" value="Invitación pendiente" disabled />
+                    </div>
+                }
 
                 @* PERSONA UNICA (callout): la identidad vive en el Directorio; la referencian varios modulos. *@
                 <div class="usr-dir-box on">
@@ -601,143 +635,48 @@
                     </div>
                     <div class="flex-grow-1">
                         <div style="font-size:13px;font-weight:700;color:var(--propia-text-body)">Persona unica</div>
-                        <div style="font-size:12px;color:var(--propia-ok)">Registrada en el Directorio. Usuarios, Residentes y Terceros la referencian.</div>
+                        <div style="font-size:12px;color:var(--propia-ok)">@(_creando ? "Se registrara en el Directorio; Usuarios, Residentes y Terceros podran referenciarla." : "Registrada en el Directorio. Usuarios, Residentes y Terceros la referencian.")</div>
                     </div>
                 </div>
 
-                <div class="usr-security">
-                    <div class="usr-sec-label">ZONA DE ACCESO</div>
-                    <div class="d-flex align-items-center gap-3 usr-sec-box">
-                        <div class="usr-sec-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
-                        <div class="flex-grow-1">
-                            <div style="font-size:13px;font-weight:700;color:var(--propia-text-body)">Revocar acceso</div>
-                            <div style="font-size:12px;color:var(--propia-text-faint);line-height:1.4">Invalida la sesión y bloquea el ingreso a la copropiedad. Se puede reactivar luego.</div>
+                @if (!_creando)
+                {
+                    <div class="usr-security">
+                        <div class="usr-sec-label">ZONA DE ACCESO</div>
+                        <div class="d-flex align-items-center gap-3 usr-sec-box">
+                            <div class="usr-sec-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
+                            <div class="flex-grow-1">
+                                <div style="font-size:13px;font-weight:700;color:var(--propia-text-body)">Revocar acceso</div>
+                                <div style="font-size:12px;color:var(--propia-text-faint);line-height:1.4">Invalida la sesión y bloquea el ingreso a la copropiedad. Se puede reactivar luego.</div>
+                            </div>
+                            <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => RevocarAccesoAsync(_editUser!.UsuarioTenantId)">Revocar</button>
                         </div>
-                        <button class="usr-rowbtn usr-rowbtn-danger" @onclick="() => RevocarAccesoAsync(_editUser!.UsuarioTenantId)">Revocar</button>
                     </div>
-                </div>
+                }
             </div>
             </div>
             </div>
             <div class="usr-modal-foot">
                 <button class="usr-btn-ghost" @onclick="CerrarEditar">Cancelar</button>
-                <button class="usr-btn-primary" @onclick="GuardarEditar" disabled="@_busy">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"></path></svg>
-                    Guardar cambios
-                </button>
+                @if (_creando)
+                {
+                    <button class="usr-btn-primary" @onclick="GuardarCrear" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"></path></svg>
+                        Crear usuario
+                    </button>
+                }
+                else
+                {
+                    <button class="usr-btn-primary" @onclick="GuardarEditar" disabled="@_busy">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"></path></svg>
+                        Guardar cambios
+                    </button>
+                }
             </div>
         </div>
     </div>
 }
 
-@* ============================================================ *@
-@* MODAL: Crear usuario (identidad NUEVA -> editable)            *@
-@* El expander del alta lo abre con lo que haya en la fila; aqui se completan nombre/rol y al guardar se crea. *@
-@* ============================================================ *@
-@if (_creando)
-{
-    <div class="usr-modal-bg" @onclick="CerrarCrear">
-        <div class="usr-modal usr-modal-user" @onclick:stopPropagation="true">
-            <div class="usr-modal-head">
-                <div class="usr-modal-ico">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M22 11h-6"></path></svg>
-                </div>
-                <div class="flex-grow-1">
-                    <div class="usr-modal-title">Crear usuario</div>
-                    <div class="usr-modal-subtitle">Completa la identidad y el rol; se registra en el Directorio</div>
-                </div>
-                <button class="usr-modal-x" @onclick="CerrarCrear">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <div class="usr-modal-body">
-            <div class="usr-mgrid">
-            @* ---------- Izquierda: identidad NUEVA (editable, a diferencia del editar) ---------- *@
-            <div class="usr-mcol">
-                <div class="mb-3">
-                    <label class="usr-label">Nombre completo *</label>
-                    <input class="usr-input" @bind="_nuevoNombre" @bind:event="oninput" placeholder="Nombres y apellidos" />
-                </div>
-                <div class="usr-mgrid mb-3" style="grid-template-columns:1fr 1fr;gap:12px">
-                    <div>
-                        <label class="usr-label">Documento *</label>
-                        <input class="usr-input" @bind="_nuevoDoc" @bind:event="oninput" placeholder="Numero de documento" />
-                    </div>
-                    <div>
-                        <label class="usr-label">Correo (opcional)</label>
-                        <input class="usr-input" @bind="_nuevoEmail" @bind:event="oninput" placeholder="correo@@ejemplo.com" />
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="usr-label">Celular (WhatsApp)</label>
-                    <input class="usr-input" @bind="_editTelefono" @bind:event="oninput" placeholder="Numero de celular" />
-                </div>
-                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">La persona se registra en el Directorio. La foto y mas datos se completan luego en la ficha.</div>
-            </div>
-            @* ---------- Derecha: acceso (rol requerido + cargo) ---------- *@
-            <div class="usr-mcol">
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">ROL *</div>
-                    <div class="usr-gob-sec-hint">Otorga permisos en PropIA. Un usuario puede tener varios.</div>
-                    <div class="usr-etq-list">
-                        @foreach (var rid in _editRolIds)
-                        {
-                            var rr = rid;
-                            var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre ?? "Rol";
-                            <span class="usr-etq-chip" style="background:var(--propia-brand-soft);color:var(--propia-brand-text-2, var(--propia-brand));border-color:transparent">@rn<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
-                        }
-                        @if (_editRolIds.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
-                    </div>
-                    @{ var rolesDispC = _roles.Where(r => r.Activo && !_editRolIds.Contains(r.Id)).ToList(); }
-                    @if (rolesDispC.Count > 0)
-                    {
-                        <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
-                        <div class="usr-etq-list">
-                            @foreach (var r in rolesDispC)
-                            {
-                                var ridc = r.Id;
-                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => ToggleEditRol(ridc)"><span class="usr-etq-dot" style="background:var(--propia-brand)"></span>@r.Nombre</button></span>
-                            }
-                        </div>
-                    }
-                </div>
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">CARGO</div>
-                    <div class="usr-gob-sec-hint">Oficio o funcion del personal interno (descriptivo, no otorga permisos).</div>
-                    <div class="usr-etq-list">
-                        @foreach (var cg in _editCargos)
-                        {
-                            var cgv = cg;
-                            <span class="usr-etq-chip" style="background:var(--propia-border-divider);color:var(--propia-text-body);border-color:transparent">@cgv<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditCargo(cgv)">&times;</button></span>
-                        }
-                        @if (_editCargos.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
-                    </div>
-                    @{ var cargosDispC = _cargoOpciones.Where(c => !_editCargos.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList(); }
-                    @if (cargosDispC.Count > 0)
-                    {
-                        <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
-                        <div class="usr-etq-list">
-                            @foreach (var c in cargosDispC)
-                            {
-                                var cvc = c;
-                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => AgregarEditCargo(cvc)"><span class="usr-etq-dot" style="background:var(--propia-text-muted)"></span>@cvc</button></span>
-                            }
-                        </div>
-                    }
-                </div>
-            </div>
-            </div>
-            </div>
-            <div class="usr-modal-foot">
-                <button class="usr-btn-ghost" @onclick="CerrarCrear">Cancelar</button>
-                <button class="usr-btn-primary" @onclick="GuardarCrear" disabled="@_busy">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"></path></svg>
-                    Crear usuario
-                </button>
-            </div>
-        </div>
-    </div>
-}
 
 
 @* ============================================================ *@
@@ -1719,10 +1658,10 @@
         _editEstado = u.Estado;
         _editFotoUrl = u.FotoUrl;
     }
-    private void CerrarEditar() { _editUser = null; }
+    // Cierra el modal (crear o editar): resetea ambos modos.
+    private void CerrarEditar() { _editUser = null; _creando = false; }
 
-    // ---------------- Crear usuario (modal) ----------------
-    private void CerrarCrear() { _creando = false; }
+    // ---------------- Crear usuario (mismo modal, modo creacion) ----------------
     // Primera palabra = nombres, resto = apellidos (mismo criterio que la fila de alta, UsuariosTablaVista.PartirNombre).
     private static (string Nombres, string Apellidos) PartirNombreU(string completo)
     {
