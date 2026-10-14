@@ -153,13 +153,18 @@ else
             <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
         </div>
         <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
-        @* "Editar campo" de la columna Categoria: modal canonico que muestra las categorias (semillas) y
-           permite agregar nuevas por copropiedad (se guardan en unidades-config entidad=rol, clave=categoria). *@
-        @if (_editSisClave == "categoria")
+        @* "Editar campo" de CUALQUIER columna de sistema de roles: UN solo modal canonico focalizado.
+           Categoria = lista EXCEPCION en SOLO LECTURA: es el enum cerrado CategoriaRol (ubica al usuario en la
+           app); el plan de olas la marca "Protegida" (roles NO agregan/borran opciones). El resto (nombre, base,
+           usuarios) = sin lista (alias/descripcion/visibilidad). *@
+        @if (_editSisClave is not null)
         {
-            <EditarCampoSistemaModal Clave="categoria" DefLabel="Categoria" Tipo="Propia.Domain.Enums.TipoCampoTablero.Seleccion" Requerido="false"
-                                     EntidadConfig="rol" TituloSingular="rol" Jwt="@_jwt"
-                                     SemillaFallback="@CategoriasSemilla" PermiteAgregar="true"
+            <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel"
+                                     Tipo="@(_editSisClave == "categoria" ? Propia.Domain.Enums.TipoCampoTablero.Seleccion : null)"
+                                     Requerido="false" EntidadConfig="rol" TituloSingular="rol" Jwt="@_jwt"
+                                     OpcionesLista="@(_editSisClave == "categoria" ? CategoriasOpcionesVista() : null)"
+                                     PermiteAgregar="false"
+                                     HintReadOnly="La categoria del rol es fija del sistema (ubica al usuario en la app); no se agregan opciones aqui."
                                      Guardado="OnCategoriasGuardadas" Cerrado="() => _editSisClave = null" />
         }
         @* Barra de acciones masivas: aparece al seleccionar filas con el checkbox. Activar/Desactivar aplica
@@ -395,7 +400,8 @@ else
     private List<TablaOrdenarMenu.Sort> _sorts = new();
     private List<string> _grupos = new();
     private TablaColMenu? _colMenu;
-    private string? _editSisClave;   // columna de sistema en edicion (por ahora solo "categoria")
+    private string? _editSisClave;   // columna de sistema en edicion (cualquier columna fija)
+    private string _editSisLabel = "";
 
     private void OnFiltroChanged() => StateHasChanged();
     private void OnSortsChanged() => StateHasChanged();
@@ -492,8 +498,9 @@ else
                 break;
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
-                // Solo la columna Categoria tiene lista editable (ver/agregar categorias). El resto no aplica.
-                if (col.Key == "categoria") _editSisClave = "categoria";
+                // TODA columna de sistema abre el modal focalizado: Categoria es lista editable; el resto
+                // (nombre, base, usuarios) solo alias/descripcion/visibilidad.
+                _editSisClave = col.Key; _editSisLabel = col.Label;
                 break;
             default:
                 break;
@@ -503,8 +510,9 @@ else
     private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
     // Semillas de categoria (las del enum) para el modal "Editar campo" de la columna Categoria.
-    private static readonly string[] CategoriasSemilla =
-        Enum.GetValues<CategoriaRol>().Select(LabelCategoria).ToArray();
+    // Opciones (solo lectura) de la columna Categoria para el modal "Editar campo": el enum cerrado CategoriaRol.
+    private static List<EditarCampoSistemaModal.OpcionVista> CategoriasOpcionesVista()
+        => Enum.GetValues<CategoriaRol>().Select(c => new EditarCampoSistemaModal.OpcionVista(LabelCategoria(c), null)).ToList();
     private async Task OnCategoriasGuardadas() { await RecargarConfigAsync(); StateHasChanged(); }
 
     // ===== Seleccion multiple + acciones masivas (checkbox de la bandeja) =====

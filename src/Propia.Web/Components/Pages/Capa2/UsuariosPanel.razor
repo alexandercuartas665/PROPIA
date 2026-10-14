@@ -840,14 +840,21 @@
     </div>
 }
 
-@* "Editar campo" de la columna Cargo: modal canonico mostrando la lista (semillas del catalogo A&D) +
-   agregar opciones propias de la copropiedad (se guardan en unidades-config entidad=usuario). *@
-@if (_editSisClave == "cargo")
+@* "Editar campo" de CUALQUIER columna de sistema de usuarios: UN solo modal canonico focalizado.
+   - cargo: lista BLANDA (semillas del catalogo A&D 'usuario.cargo' + agregar por copropiedad).
+   - rol / estado: lista EXCEPCION en SOLO LECTURA (universo gobernado: rol por la tabla de roles/RBAC,
+     estado por la maquina de estado del sistema); no se agregan opciones.
+   - resto (usuario/documento/email/telefono/fechas): sin lista (alias/descripcion/visibilidad). *@
+@if (_editSisClave is not null)
 {
-    <EditarCampoSistemaModal Clave="cargo" DefLabel="@_editSisLabel" Tipo="Propia.Domain.Enums.TipoCampoTablero.Seleccion" Requerido="false"
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="@TipoSisU(_editSisClave)" Requerido="false"
                              EntidadConfig="usuario" TituloSingular="usuario" Jwt="@_jwt"
-                             ListaCatalogo="usuario.cargo" SemillaFallback="@_cargoOpciones.ToArray()"
-                             Guardado="OnCargoListaGuardada" Cerrado="() => _editSisClave = null" />
+                             ListaCatalogo="@(_editSisClave == "cargo" ? "usuario.cargo" : null)"
+                             SemillaFallback="@(_editSisClave == "cargo" ? _cargoOpciones.ToArray() : null)"
+                             OpcionesLista="@OpcionesSisU(_editSisClave)"
+                             PermiteAgregar="@(_editSisClave == "cargo")"
+                             HintReadOnly="@HintSisU(_editSisClave)"
+                             Guardado="OnCampoSistemaUGuardado" Cerrado="() => _editSisClave = null" />
 }
 
 
@@ -895,6 +902,44 @@
     private string? _editSisClave;
     private string _editSisLabel = "";
     private async Task OnCargoListaGuardada() { await RecargarCargoOpciones(); StateHasChanged(); }
+    // Tras editar un campo de sistema (alias/descripcion/visibilidad, o agregar opcion de cargo) recarga lo que
+    // corresponda: la config de columnas siempre; las opciones de cargo si fue esa lista (para el select de celda).
+    private async Task OnCampoSistemaUGuardado()
+    {
+        if (_editSisClave == "cargo") await RecargarCargoOpciones();
+        await CargarCfgUAsync();
+        StateHasChanged();
+    }
+
+    // Tipo del campo de sistema por columna (fija el label de tipo y si se muestra seccion de lista).
+    private static Propia.Domain.Enums.TipoCampoTablero? TipoSisU(string clave) => clave switch
+    {
+        "cargo" or "rol" or "estado" => Propia.Domain.Enums.TipoCampoTablero.Seleccion,
+        "telefono" => Propia.Domain.Enums.TipoCampoTablero.Telefono,
+        "email" => Propia.Domain.Enums.TipoCampoTablero.Email,
+        "ultimoacceso" or "fechavinculacion" => Propia.Domain.Enums.TipoCampoTablero.Fecha,
+        _ => Propia.Domain.Enums.TipoCampoTablero.Texto
+    };
+    // Opciones de las listas EXCEPCION (solo lectura): rol = tabla de roles del tenant; estado = maquina de estado.
+    private List<EditarCampoSistemaModal.OpcionVista>? OpcionesSisU(string clave) => clave switch
+    {
+        "rol" => RolesComoOpcionesU(),
+        "estado" => EstadosComoOpcionesU(),
+        _ => null
+    };
+    private List<EditarCampoSistemaModal.OpcionVista> RolesComoOpcionesU()
+        => _roles.Where(r => r.Activo).Select(r => new EditarCampoSistemaModal.OpcionVista(r.Nombre)).ToList();
+    // Universo de estados del usuario (labels iguales al badge de la tabla, ver UsuariosTablaVista.EstadoChip).
+    private static List<EditarCampoSistemaModal.OpcionVista> EstadosComoOpcionesU() => new()
+    {
+        new("Activo"), new("Invitación pendiente"), new("Pendiente de contacto"), new("Inactivo")
+    };
+    private static string HintSisU(string clave) => clave switch
+    {
+        "rol" => "Los roles se administran en Usuarios -> Roles y permisos; aqui no se agregan.",
+        "estado" => "El estado del usuario lo administra el sistema; no se agregan opciones aqui.",
+        _ => "Las opciones de esta lista se administran en la consola A&D (Super Admin)."
+    };
 
     // Filtros y vista (2.5.C)
     // Filtro dinamico unico (componente compartido): rol y etiqueta como reglas.
@@ -1409,8 +1454,7 @@
             case TablaColMenu.Accion.Editar:
             case TablaColMenu.Accion.Descripcion:
                 if (campo is not null) AbrirEditarCampoU(campo);
-                else if (col.Key == "cargo") { _editSisClave = "cargo"; _editSisLabel = col.Label; }  // lista: modal canonico
-                else _gestorCamposAbierto = true;   // otros de sistema: gestor (alias/descripcion/visibilidad)
+                else { _editSisClave = col.Key; _editSisLabel = col.Label; }  // TODA columna de sistema -> modal canonico focalizado
                 break;
             case TablaColMenu.Accion.Eliminar:
                 if (campo is not null) await EliminarCampoUAsync(campo);
