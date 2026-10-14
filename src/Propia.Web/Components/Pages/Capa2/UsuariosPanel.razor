@@ -322,6 +322,7 @@
                 <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones"
                                     Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
+                                    OnCrearAbrir="CrearUsuarioAbrirTabla"
                                     SortKey="@_sortKeyU" SortDir="_sortDirU" OnOrdenar="OrdenarPorColumnaU"
                                     OnRevocar="RevocarAccesoAsync" OnMensaje="MostrarMensajeInfo"
                                     Columnas="ColsVisiblesU().ToList()" ColLabels="LabelsU()" GridStyle="@UtbGridStyleU"
@@ -1721,7 +1722,12 @@
     private void SeleccionarPersona(PersonaResumenDto p) { _personaSel = p; _personasEncontradas.Clear(); }
 
     // Alta inline desde la tabla: encuentra o crea la persona en el Directorio y la invita con el rol.
-    private async Task InvitarUsuarioTabla(NuevoUsuarioInvitar d)
+    // Gesto directo (Tab / alta): crea + envia la invitacion.
+    private Task InvitarUsuarioTabla(NuevoUsuarioInvitar d) => CrearUsuarioTablaAsync(d, abrir: false);
+    // Gesto del expander (canon Unidades): crea el usuario y ABRE su ficha para completarlo (sin invitar aun).
+    private Task CrearUsuarioAbrirTabla(NuevoUsuarioInvitar d) => CrearUsuarioTablaAsync(d, abrir: true);
+
+    private async Task CrearUsuarioTablaAsync(NuevoUsuarioInvitar d, bool abrir)
     {
         _msg = null;
         var http = Auth();
@@ -1754,6 +1760,17 @@
         var cargos = d.Cargos?.ToList() ?? new List<string>();
         var alta = await http.PostAsJsonAsync("/api/usuarios/alta", new CrearUsuarioAltaRequest(personaId, rolIds, cargos));
         if (!alta.IsSuccessStatusCode) { _msg = "No se pudo crear el usuario: " + await alta.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+
+        if (abrir)
+        {
+            // Canon Unidades: crear + abrir la ficha para terminar el registro en el modal. La invitacion se
+            // envia luego (desde el modal / "Invitar usuario"); por eso aqui NO se exigio correo.
+            await CargarAsync();
+            var creado = _usuarios?.FirstOrDefault(u => u.PersonaId == personaId);
+            _msg = $"Usuario {d.Nombres} {d.Apellidos} creado. Completa su ficha."; _msgClass = "alert-success";
+            if (creado is not null) await AbrirEditar(creado);
+            return;
+        }
 
         // 3) Enviar la invitacion (link de aceptacion / fijar password).
         var inv = await http.PostAsJsonAsync("/api/usuarios/invitaciones",

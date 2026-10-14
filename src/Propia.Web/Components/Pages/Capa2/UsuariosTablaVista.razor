@@ -75,8 +75,9 @@
         <div class="utb-newrow utb-newrow--edit utb-grid" style="@GridStyle" @key="_nonce">
             <div class="utb-sel-cell"></div>
             <div class="utb-exp-col">
-                @* Canon Unidades: el expander de la fila de alta confirma el registro (aqui: crear y enviar invitacion). *@
-                <button type="button" class="utb-exp" tabindex="-1" title="Crear y enviar invitacion" @onclick="Invitar" disabled="@(_busy || !Valido)">
+                @* Canon Unidades: el expander de la fila de alta CREA el usuario con lo escrito y ABRE su ficha
+                   para completarlo (la invitacion se envia luego desde el modal). Minimo: nombre + documento + rol. *@
+                <button type="button" class="utb-exp" tabindex="-1" title="Crear y abrir la ficha" @onclick="CrearAbrir" disabled="@(_busy || !PuedeCrearAbrir)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </button>
             </div>
@@ -236,6 +237,8 @@
     [Parameter] public EventCallback<Guid> OnRevocar { get; set; }
     // Mensaje breve al padre (p.ej. "Enlace copiado"), se muestra en su barra de alertas.
     [Parameter] public EventCallback<string> OnMensaje { get; set; }
+    // Expander del alta (canon Unidades): crear el usuario con lo escrito y ABRIR su ficha para completarlo.
+    [Parameter] public EventCallback<NuevoUsuarioInvitar> OnCrearAbrir { get; set; }
 
     // Orden por columna: el padre ordena ANTES de paginar; aqui solo se pinta la flecha y se avisa.
     [Parameter] public string? SortKey { get; set; }
@@ -578,6 +581,13 @@
         (!string.IsNullOrWhiteSpace(_d.Email) || !string.IsNullOrWhiteSpace(_d.Telefono)) &&
         _d.RolIds.Count > 0;
 
+    // Minimo para el gesto del expander (crear + abrir ficha, canon Unidades): nombre + documento + rol.
+    // NO exige correo/celular: la invitacion se envia luego desde el modal (decision de Alex 2026-10-14).
+    private bool PuedeCrearAbrir =>
+        !string.IsNullOrWhiteSpace(_d.Documento) &&
+        _d.NombreCompleto.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2 &&
+        _d.RolIds.Count > 0;
+
     // Hay algo escrito en la fila de alta (para distinguir "fila vacia" -> descartar al salir, de
     // "fila a medio llenar" -> avisar y mantener, sin crear un registro invisible ni perder lo escrito).
     private bool TieneContenido =>
@@ -658,6 +668,31 @@
                 _d.RolIds.ToList(),
                 _d.Cargos.Count > 0 ? _d.Cargos.ToList() : null));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
+            _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false; _cargoMenuOpen = false;
+        }
+        finally { _busy = false; }
+    }
+
+    // Expander del alta (canon Unidades): crea el usuario con lo escrito y abre su ficha para completarlo.
+    // Minimo nombre + documento + rol (sin correo: la invitacion se envia luego desde el modal).
+    private async Task CrearAbrir()
+    {
+        if (!PuedeCrearAbrir)
+        {
+            await OnMensaje.InvokeAsync("Para crear y abrir la ficha: nombre completo (nombres y apellidos), documento y al menos un rol.");
+            return;
+        }
+        _busy = true;
+        try
+        {
+            var (nombres, apellidos) = PartirNombre(_d.NombreCompleto);
+            var primarioId = _d.RolIds[0];
+            await OnCrearAbrir.InvokeAsync(new NuevoUsuarioInvitar(
+                _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, primarioId,
+                string.IsNullOrWhiteSpace(_d.Email) ? null : _d.Email.Trim(),
+                string.IsNullOrWhiteSpace(_d.Telefono) ? null : _d.Telefono.Trim(),
+                _d.RolIds.ToList(),
+                _d.Cargos.Count > 0 ? _d.Cargos.ToList() : null));
             _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false; _cargoMenuOpen = false;
         }
         finally { _busy = false; }
