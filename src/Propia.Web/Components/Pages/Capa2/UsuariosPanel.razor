@@ -504,12 +504,33 @@
 
                 <div class="mb-2">
                     <label class="usr-label">Rol</label>
-                    <select class="usr-select" @bind="_editRolId">
-                        @foreach (var r in _roles.Where(r => r.Activo || r.Id == _editUser.RolId))
+                    @* 2.5 v2.0: Rol MULTI-SELECT (igual que el alta): chips de los roles elegidos + "+" que abre
+                       un menu toggle con todos los roles activos. Persiste via PUT /api/usuarios/{id}/roles. *@
+                    <div class="urole-multi">
+                        @foreach (var rid in _editRolIds)
                         {
-                            <option value="@r.Id">@r.Nombre</option>
+                            var rr = rid;
+                            var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre
+                                     ?? _editUser.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
+                            <span class="urole-chip">@rn<button type="button" class="urole-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
                         }
-                    </select>
+                        @if (_editRolIds.Count == 0) { <span class="urole-ph">Agregar rol</span> }
+                        <button type="button" class="urole-add" title="Agregar rol" @onclick="() => _editRolMenuOpen = !_editRolMenuOpen">+</button>
+                        @if (_editRolMenuOpen)
+                        {
+                            <div class="urole-back" @onclick="() => _editRolMenuOpen = false"></div>
+                            <div class="urole-menu">
+                                @foreach (var r in _roles.Where(r => r.Activo || _editRolIds.Contains(r.Id)))
+                                {
+                                    var rid2 = r.Id; var on = _editRolIds.Contains(rid2);
+                                    <button type="button" class="urole-opt @(on ? "on" : "")" @onclick="() => ToggleEditRol(rid2)">
+                                        <span class="urole-check">@(on ? (MarkupString)"&#10003;" : (MarkupString)"")</span>@r.Nombre
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="usr-hint">Puedes asignar varios roles. El primero es el principal.</div>
                 </div>
 
                 @* ---------- Etiquetas del usuario (catalogo compartido por toda la copropiedad) ---------- *@
@@ -830,6 +851,25 @@
 
 
 <ModalHost />
+
+@* Multi-select de Rol del modal "Editar usuario" (chips + menu). Local y autocontenido: el menu es
+   position:absolute bajo el control (no necesita el anclaje JS de la tabla), asi funciona en cualquier vista. *@
+<style>
+    .urole-multi { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 3px 2px; min-width: 0; }
+    .urole-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; background: var(--propia-brand-soft); color: var(--propia-brand-text-2, var(--propia-brand)); }
+    .urole-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 13px; line-height: 1; font-family: inherit; }
+    .urole-x:hover { opacity: 1; background: var(--propia-brand-soft-2, rgba(109,79,227,.14)); }
+    .urole-ph { font-size: 12.5px; color: var(--propia-text-faint); }
+    .urole-add { flex: 0 0 auto; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border: 1px dashed var(--propia-border-input); background: transparent; color: var(--propia-text-muted); border-radius: 6px; font-size: 15px; line-height: 1; cursor: pointer; font-family: inherit; }
+    .urole-add:hover { border-style: solid; border-color: var(--propia-brand); color: var(--propia-brand); }
+    .urole-back { position: fixed; inset: 0; z-index: 40; background: transparent; }
+    .urole-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 4000; min-width: 220px; max-height: 280px; overflow: auto; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: var(--propia-shadow-modal, 0 10px 30px rgba(27,42,58,.18)); padding: 5px; }
+    .urole-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 9px; border: 0; background: transparent; border-radius: 7px; font-size: 13px; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
+    .urole-opt:hover { background: var(--propia-bg-card-soft); }
+    .urole-opt.on { color: var(--propia-brand); font-weight: 700; }
+    .urole-check { flex: 0 0 auto; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--propia-border-input); border-radius: 4px; font-size: 11px; color: var(--propia-brand); }
+    .urole-opt.on .urole-check { border-color: var(--propia-brand); background: var(--propia-brand-soft); }
+</style>
 
 @code {
     // Embebido en el hub de Configuracion: oculta su page-head/PageTitle (conserva las acciones).
@@ -1171,7 +1211,9 @@
 
     // Editar usuario
     private UsuarioListaDto? _editUser;
-    private Guid _editRolId;
+    // 2.5 v2.0: el editar usa multi-rol (lista), no un unico rol. El principal es el primero.
+    private List<Guid> _editRolIds = new();
+    private bool _editRolMenuOpen;
 
     // Gobierno y equipo (2.5.1) dentro del modal Editar
     private GobiernoPersonaDto? _gobUser;
@@ -1758,7 +1800,10 @@
     private async Task AbrirEditar(UsuarioListaDto u)
     {
         _editUser = u;
-        _editRolId = u.RolId ?? Guid.Empty;
+        _editRolIds = u.Roles is { Count: > 0 }
+            ? u.Roles.Select(r => r.Id).ToList()
+            : (u.RolId is Guid rid ? new List<Guid> { rid } : new List<Guid>());
+        _editRolMenuOpen = false;
         _editFotoUrl = u.FotoUrl;
         _gobUser = null;
         _gobComiteId = Guid.Empty; _gobRevisorTp = ""; _gobCargoConsejo = CargoConsejo.Vocal;
@@ -1905,22 +1950,30 @@
         _busy = true; _msg = null;
         try
         {
-            if (_editRolId != Guid.Empty && _editRolId != _editUser.RolId)
+            // Roles (multi): si el conjunto elegido difiere del actual, persistir con PUT /roles.
+            // No enviar vacio (el usuario debe conservar al menos un rol; el backend tambien lo valida).
+            var actuales = (_editUser.Roles?.Select(r => r.Id) ?? Enumerable.Empty<Guid>()).ToHashSet();
+            var elegidos = _editRolIds.ToHashSet();
+            if (elegidos.Count > 0 && !elegidos.SetEquals(actuales))
             {
                 var http = Auth();
-                var resp = await http.PutAsJsonAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/rol",
-                    new CambiarRolUsuarioRequest(_editRolId));
+                var resp = await http.PutAsJsonAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/roles",
+                    new ActualizarRolesUsuarioRequest(_editRolIds.ToList()));
                 if (!resp.IsSuccessStatusCode)
                 {
                     _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return;
                 }
-                _msg = "Rol actualizado."; _msgClass = "alert-success";
+                _msg = _editRolIds.Count > 1 ? "Roles actualizados." : "Rol actualizado."; _msgClass = "alert-success";
             }
             _editUser = null;
             await CargarAsync();
         }
         finally { _busy = false; }
     }
+
+    // Multi-select de Rol en el editar (chips + menu toggle). El menu queda abierto para elegir varios.
+    private void ToggleEditRol(Guid id) { if (!_editRolIds.Remove(id)) _editRolIds.Add(id); }
+    private void QuitarEditRol(Guid id) => _editRolIds.Remove(id);
 
     private async Task RevocarAccesoAsync(Guid usuarioTenantId)
     {
