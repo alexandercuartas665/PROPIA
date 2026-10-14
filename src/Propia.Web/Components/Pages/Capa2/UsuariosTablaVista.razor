@@ -389,14 +389,10 @@
             }
         }
         <div class="utb-addcol-cell"></div>
+        @* El editar por fila (lapiz) se quito: la ficha se abre con el expander o el nombre (canon vista-tabla).
+           Para inactivos se conserva "Reactivar" por ser una accion distinta no cubierta por el expander. *@
         <div class="utb-act">
-            @if (u.Estado == EstadoUsuarioTenant.Activo)
-            {
-                <button class="utb-icon" title="Editar" @onclick="() => OnEditar.InvokeAsync(uu)">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </button>
-            }
-            else
+            @if (u.Estado != EstadoUsuarioTenant.Activo)
             {
                 <button class="utb-icon" title="Reactivar" @onclick="() => OnReactivar.InvokeAsync(uu.UsuarioTenantId)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
@@ -413,6 +409,10 @@
         {
             case "rol": { var t = string.IsNullOrWhiteSpace(u.RolNombre) ? "(Sin dato)" : u.RolNombre!; yield return new(t, t); yield break; }
             case "estado": { var t = u.Estado.ToString(); yield return new(t, t); yield break; }
+            case "cargo":
+                if (u.Cargos.Count == 0) { yield return new("(Sin dato)", "(Sin dato)"); yield break; }
+                foreach (var c in u.Cargos) yield return new(c, c);
+                yield break;
         }
         if (clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave.AsSpan(3), out var defId))
         {
@@ -481,7 +481,16 @@
     public async Task AltaBlurGuardar()
     {
         if (!_altaAbierta || _busy) return;
-        if (!Valido) { CerrarAlta(); StateHasChanged(); return; }
+        // Fila vacia (abierta y se salio sin escribir): descartar en silencio (canon).
+        if (!TieneContenido) { CerrarAlta(); StateHasChanged(); return; }
+        // Fila a medio llenar: NO crear (evitaria un registro invisible/invalido) ni descartar (perderia lo
+        // escrito); se avisa que falta y se mantiene la fila abierta para completarla.
+        if (!Valido)
+        {
+            await OnMensaje.InvokeAsync("Falta completar: documento, nombre (nombres y apellidos), un correo o celular y al menos un rol.");
+            StateHasChanged();
+            return;
+        }
         await Invitar();   // Invitar ya resetea, cierra la fila y pone _busy durante el POST
         StateHasChanged();
     }
@@ -554,12 +563,21 @@
         if (!_cargoMenuOpen) _cargoMenuAnclado = false;
     }
 
-    // Valido (spec 2.5 v2.0): documento + nombre completo (>=2 palabras) + canal de invitacion (Correo O
-    // Celular). El Rol NO es obligatorio: si queda vacio se guarda "Portal Residente" por defecto.
+    // Valido: documento + nombre completo (>=2 palabras) + canal de invitacion (Correo O Celular) + >=1 rol.
+    // El Rol es OBLIGATORIO: sin el, el alta usaba "Portal Residente" (solo directorio) y el usuario quedaba
+    // oculto de la lista (decision de Alex 2026-10-14: rol obligatorio en el alta).
     private bool Valido =>
         !string.IsNullOrWhiteSpace(_d.Documento) &&
         _d.NombreCompleto.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2 &&
-        (!string.IsNullOrWhiteSpace(_d.Email) || !string.IsNullOrWhiteSpace(_d.Telefono));
+        (!string.IsNullOrWhiteSpace(_d.Email) || !string.IsNullOrWhiteSpace(_d.Telefono)) &&
+        _d.RolIds.Count > 0;
+
+    // Hay algo escrito en la fila de alta (para distinguir "fila vacia" -> descartar al salir, de
+    // "fila a medio llenar" -> avisar y mantener, sin crear un registro invisible ni perder lo escrito).
+    private bool TieneContenido =>
+        !string.IsNullOrWhiteSpace(_d.Documento) || !string.IsNullOrWhiteSpace(_d.NombreCompleto) ||
+        !string.IsNullOrWhiteSpace(_d.Email) || !string.IsNullOrWhiteSpace(_d.Telefono) ||
+        _d.RolIds.Count > 0 || _d.Cargos.Count > 0;
 
     // Divide "Nombre completo" en nombres (primera palabra) y apellidos (el resto).
     private static (string Nombres, string Apellidos) PartirNombre(string completo)
@@ -617,22 +635,21 @@
     {
         if (!Valido)
         {
-            await OnMensaje.InvokeAsync("Completa documento, nombre completo (nombres y apellidos) y un correo o celular.");
+            await OnMensaje.InvokeAsync("Completa documento, nombre completo (nombres y apellidos), un correo o celular y al menos un rol.");
             return;
         }
         _busy = true;
         try
         {
             var (nombres, apellidos) = PartirNombre(_d.NombreCompleto);
-            // Rol principal: el primero elegido; si no eligieron ninguno, "Portal Residente" por defecto (spec).
-            var primarioId = _d.RolIds.Count > 0
-                ? _d.RolIds[0]
-                : (Roles.FirstOrDefault(r => r.Nombre == "Portal Residente")?.Id ?? _d.RolIds.FirstOrDefault());
+            // Rol obligatorio (Valido garantiza >=1): el principal es el primero elegido. Ya no se asigna
+            // "Portal Residente" por defecto, que al ser "solo directorio" dejaba al usuario oculto de la lista.
+            var primarioId = _d.RolIds[0];
             await OnInvitar.InvokeAsync(new NuevoUsuarioInvitar(
                 _d.TipoDocumento, _d.Documento.Trim(), nombres, apellidos, primarioId,
                 string.IsNullOrWhiteSpace(_d.Email) ? null : _d.Email.Trim(),
                 string.IsNullOrWhiteSpace(_d.Telefono) ? null : _d.Telefono.Trim(),
-                _d.RolIds.Count > 0 ? _d.RolIds.ToList() : null,
+                _d.RolIds.ToList(),
                 _d.Cargos.Count > 0 ? _d.Cargos.ToList() : null));
             // Ola C: tras crear, la fila se colapsa de nuevo a la CTA (canon Unidades).
             _d.Reset(); _nonce++; _altaAbierta = false; _rolMenuOpen = false; _cargoMenuOpen = false;

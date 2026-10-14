@@ -899,16 +899,32 @@
     // Filtro dinamico unico (componente compartido): rol y etiqueta como reglas.
     private FiltroDinamico? _fd;
 
-    private List<FiltroDinamico.CampoDef> CamposFiltroUsr => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltroUsr
     {
-        new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
-        new() { Key = "documento", Label = "Documento", Kind = "texto" },
-        new() { Key = "email", Label = "Email", Kind = "texto" },
-        new() { Key = "rol", Label = "Rol", Kind = "sel",
-                Opciones = RolesDisponibles().Select(r => (r.Id.ToString(), r.Nombre)).ToList() },
-        new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
-                Opciones = _etiquetas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
-    };
+        get
+        {
+            var l = new List<FiltroDinamico.CampoDef>
+            {
+                new() { Key = "nombre", Label = "Nombre", Kind = "texto" },
+                new() { Key = "documento", Label = "Documento", Kind = "texto" },
+                new() { Key = "email", Label = "Email", Kind = "texto" },
+                new() { Key = "telefono", Label = "Celular", Kind = "texto" },
+                new() { Key = "rol", Label = "Rol", Kind = "sel",
+                        Opciones = RolesDisponibles().Select(r => (r.Id.ToString(), r.Nombre)).ToList() },
+                new() { Key = "cargo", Label = "Cargo", Kind = "multi",
+                        Opciones = _cargoOpciones.Select(c => (c, c)).ToList() },
+                new() { Key = "estado", Label = "Estado", Kind = "sel",
+                        Opciones = Enum.GetValues<EstadoUsuarioTenant>().Select(s => (s.ToString(), s.ToString())).ToList() },
+                new() { Key = "etiqueta", Label = "Etiqueta", Kind = "multi",
+                        Opciones = _etiquetas.Select(e => (e.Id.ToString(), e.Nombre)).ToList() },
+                new() { Key = "ultimoacceso", Label = "Ultimo acceso", Kind = "fecha" },
+                new() { Key = "fechavinculacion", Label = "Fecha de vinculacion", Kind = "fecha" },
+            };
+            // Campos propios (dinamicos): mismo mapeo compartido que el resto de modulos.
+            l.AddRange(_defsCampos.Select(FiltroDinamico.DeDinamico));
+            return l;
+        }
+    }
     // Orden por columna en la vista Tabla (clic en cabecera; reclic invierte). Se aplica sobre
     // la lista filtrada (render-all; el hijo no pagina).
     // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en
@@ -934,6 +950,7 @@
         var cols = new List<TablaAgruparMenu.Col>
         {
             new("rol", ColLabelU("rol")),
+            new("cargo", ColLabelU("cargo")),
             new("estado", ColLabelU("estado")),
         };
         foreach (var d in _defsCampos) cols.Add(new("cd:" + d.Id, d.Label));
@@ -997,14 +1014,24 @@
     {
         if (_usuarios is null) return Enumerable.Empty<UsuarioListaDto>();
         return _usuarios.Where(u => EnTab(u.Estado, _tab))
-            .Where(u => _fd?.Pasa(campo => campo switch
+            .Where(u => _fd?.Pasa(campo =>
             {
-                "nombre" => u.NombreCompleto,
-                "documento" => u.Documento,
-                "email" => u.Email ?? "",
-                "rol" => u.RolId?.ToString() ?? "",
-                "etiqueta" => string.Join(",", u.Etiquetas.Select(e => e.Id)),
-                _ => ""
+                if (campo.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(campo.AsSpan(3), out var defId))
+                    return _valoresCampos.TryGetValue(u.UsuarioTenantId, out var m) && m.TryGetValue(defId, out var v) ? (v ?? "") : "";
+                return campo switch
+                {
+                    "nombre" => u.NombreCompleto,
+                    "documento" => u.Documento,
+                    "email" => u.Email ?? "",
+                    "telefono" => u.Telefono ?? "",
+                    "rol" => u.RolId?.ToString() ?? "",
+                    "cargo" => string.Join(",", u.Cargos),
+                    "estado" => u.Estado.ToString(),
+                    "etiqueta" => string.Join(",", u.Etiquetas.Select(e => e.Id)),
+                    "ultimoacceso" => u.UltimoAcceso?.ToString("yyyy-MM-dd") ?? "",
+                    "fechavinculacion" => u.FechaVinculacion?.ToString("yyyy-MM-dd") ?? "",
+                    _ => ""
+                };
             }) ?? true);
     }
 
