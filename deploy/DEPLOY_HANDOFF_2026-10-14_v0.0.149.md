@@ -290,3 +290,16 @@ Las vista-tabla conservan su scroll horizontal interno (su contenedor propio con
 256/162/132/95px a **0**; la tabla interna sigue scrolleando; el FAB sigue visible. Version visible **0.0.160**.
 Pendiente (pulido, proximas olas): filas de botones del header que se recortan (deberian envolver), y el encabezado
 de los modales ricos (ficha) apretado en celular.
+
+---
+
+## Addendum v0.0.161 (2026-10-15) - Responsive celular Ola 2: modales de ficha
+Encabezado (`pm-head`) de **FichaResidenteModal** en celular: el titulo editable se cortaba ("Mari…") y el
+subtitulo envolvia en 3 lineas. Fix (@media <=640px): `pm-head` con `flex-wrap`, el bloque titulo+subtitulo
+(`pm-head-tt`) pasa a su propia fila a ancho completo (`flex:1 0 100%`), las acciones a la derecha
+(`margin-left:auto`) y el titulo a 15px. Verificado en runtime (375px): el titulo muestra el nombre completo.
+**FichaEmpresaModal**: `fe-grid` ahora stackea a 1 columna (@media <=640px). El resto de modales ricos
+(FichaZona/Equipo, Gestionar*, NuevaTarea/Pqrsd, ProgramarMantenimiento, Contrato srv-modal) **ya** traian
+media query movil. Version visible **0.0.161**.
+**Pendiente (proxima ola):** filas de botones del header de modulos que se recortan en celular (envolver), barrido
+fino modal-por-modal (GestionarPqrsd/Plantillas sin @media), y compactar el toolbar de la vista-tabla en celular.
