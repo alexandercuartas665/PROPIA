@@ -1963,18 +1963,20 @@ else
             catch { /* prerender */ }
         }
 
-        // Scroll infinito + FAB (solo vista Tabla sin agrupar): (re)instala los observers cuando cambia
-        // el lote mostrado, el alta o el total. Sin agrupar se muestra todo (no hay scroll infinito).
-        if (_jwt is not null && _vista == "tabla" && _gruposU.Count == 0)
+        // Guardado invisible del alta + scroll infinito/FAB. OJO: el guardado invisible (Tab/clic fuera ->
+        // AltaBlurGuardar) debe correr SIEMPRE, agrupado o no. Antes todo el bloque estaba gateado con
+        // `_gruposU.Count == 0`, asi que con agrupacion activa el auto-guardado NO se enganchaba y el Tab
+        // no creaba la unidad. El scroll infinito si es solo sin agrupar (con grupos se muestra todo).
+        if (_jwt is not null && _vista == "tabla")
         {
-            var sig = $"{_shown}|{_altaAbierta}|{Filtradas.Count}";
+            var sig = $"{_shown}|{_altaAbierta}|{Filtradas.Count}|{_gruposU.Count}";
             if (sig != _wiredSig)
             {
                 _wiredSig = sig;
                 _self ??= DotNetObjectReference.Create(this);
-                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
-                // Guardado invisible de la fila de alta (sin ✓/×): activa/desactiva el auto-guardado robusto
-                // (clic fuera + Tab fuera; ignora pickers nativos y el panel flotante del selector de persona).
+                if (_gruposU.Count == 0) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { } }
+                // Guardado invisible de la fila de alta (clic fuera + Tab fuera; ignora pickers nativos y el
+                // panel flotante del selector de persona). SIEMPRE, con o sin agrupacion/ordenamiento.
                 if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
