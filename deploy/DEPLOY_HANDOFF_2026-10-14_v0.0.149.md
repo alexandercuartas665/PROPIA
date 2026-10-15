@@ -337,3 +337,19 @@ Cierra el pulido movil (CSS global, sin backend, en `propia-tokens.css` `?v=10` 
 **Verificado en runtime (375px):** Unidades y Configuracion ya no recortan los botones del header/card (ninguno pasa
 de 375px). Version visible **0.0.163**. **Responsive movil cerrado** (Olas 1-4): sin scroll lateral de pagina,
 modales full-width, headers/botones sin recorte.
+
+---
+
+## Addendum v0.0.164 (2026-10-15) - Equipos y Activos: la tabla da scroll horizontal (no achica columnas)
+Alex: en anchos angostos la tabla de **Equipos** comprimia las columnas (ilegibles) en vez de dar scroll. Causa:
+`.ea-listgrid` no tenia `min-width: max-content` **y** dos columnas se definen con unidades flexibles sin minimo
+(`tipo => 1fr`, `estado => 1.1fr`), asi que con `min-width:0` se comprimian a ~55-66px. Los demas modulos de
+vista-tabla ya scrollean (Unidades/Vehiculos/Mascotas tienen `min-width:max-content`; Zonas/Directorio/Usuarios
+tienen minimos px o son `<table>`).
+
+**Fix (1 linea, sin backend):** `.ea-listgrid { ...; min-width: max-content; }` en `EquiposActivosPanel.razor`
+(igual que `.veh-grid` de Vehiculos). Las columnas mantienen su ancho natural y el contenedor `.ea-scroll`
+(overflow-x:auto) muestra el scroll horizontal.
+
+**Verificado en runtime (680px):** `.ea-scroll` scrollWidth 668 -> **1350** (ahora scrollea); columnas de ~55-66px
+pasan a 228/137/114px (legibles); barra de scroll horizontal visible. Version visible **0.0.164**.
