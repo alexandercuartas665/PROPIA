@@ -253,3 +253,21 @@ prueba borrado. Datos de prueba limpios. Version visible **0.0.158**.
 
 **Pendiente/alcance:** el override es solo PERSONA (no empresa); inline-edit del propietario en la tabla (hoy se
 edita en alta + ficha).
+
+---
+
+## Addendum v0.0.159 (2026-10-15) - Vista por defecto = TABLA en los modulos que abrian en otra vista
+Alex: que todos los modulos carguen por defecto en la vista TABLA. Decision: **solo cambiar el default** (se respeta
+el localStorage: quien ya eligio otra vista la conserva); **incluir PQRSD y Tareas** (eran kanban-first). Sin migracion,
+sin backend: solo el valor inicial del campo de vista + el fallback cuando no hay nada guardado.
+
+Cambios (6 archivos): `DirectorioPanel` (`_view` "lista"->"tabla"), `UsuariosPanel` (`_vista` "lista"->"tabla"),
+`ZonasComunesPanel` (`_view` "cards"->"list"), `EquiposActivosPanel` (`_view` "cards"->"list"), `PqrsKanban`
+(`_boardMode` "tablero"->"tabla" + fallback de localStorage), `TableroTareas` (`_boardMode` "tablero"->"lista" +
+`LeerVistaGuardadaAsync` default "tablero"->"lista"; el embebido del PQRSD sigue con `VistaInicial="tablero"`).
+Los que ya abrian en tabla no se tocaron (Unidades, Residentes, Vehiculos, Mascotas, Contratos, Seguros).
+`MiCopropiedadPanel._znView/_eqView` eran campos muertos (sin uso) -> no se tocaron.
+
+**Verificado en runtime (navegador integrado, localStorage de vista limpio para ver el default):** Directorio,
+Usuarios, Zonas comunes, Equipos y Activos, PQRSD y Tareas abren con la vista **Tabla** activa. Version visible
+**0.0.159**.
