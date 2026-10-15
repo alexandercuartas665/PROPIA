@@ -165,6 +165,34 @@ else
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
                 <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
             </label>
+
+            @* ===== Comentarios (panel estandar de la ficha) ===== *@
+            <div class="fr-sectlbl fr-sectlbl--sep">COMENTARIOS</div>
+            @if (_comentarios.Count > 0)
+            {
+                <div class="fr-com-list">
+                    @foreach (var c in _comentarios)
+                    {
+                        <div class="fr-com-item">
+                            <span class="fr-com-av">@InicialesAutor(c.AutorNombre)</span>
+                            <div class="fr-com-b">
+                                <div class="fr-com-hd"><b>@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Usuario" : c.AutorNombre)</b><span class="fr-com-time">@c.CreatedAt.ToCo().ToString("dd/MM/yyyy HH:mm")</span></div>
+                                <div class="fr-com-txt">@c.Texto</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="fr-empty">Aun no hay comentarios en este registro.</div>
+            }
+            <div class="fr-com-new">
+                <textarea class="fr-in fr-com-ta" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." rows="2"></textarea>
+                <div class="fr-com-foot">
+                    <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="PublicarComentario" disabled="@(_publicando || string.IsNullOrWhiteSpace(_nuevoComentario))">@(_publicando ? "Publicando..." : "Publicar")</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -310,6 +338,19 @@ else
     .fr-rolchip-add:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
     .fr-roles-note { font-size: 11.5px; color: var(--propia-text-muted); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 9px; padding: 8px 11px; margin-top: 10px; line-height: 1.45; }
 
+    /* ===== Comentarios ===== */
+    .fr-com-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .fr-com-item { display: flex; gap: 9px; }
+    .fr-com-av { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; }
+    .fr-com-b { flex: 1; min-width: 0; }
+    .fr-com-hd { display: flex; align-items: baseline; gap: 8px; }
+    .fr-com-hd b { font-size: 12.5px; font-weight: 700; color: var(--propia-text-h1); }
+    .fr-com-time { font-size: 10.5px; color: var(--propia-text-faint); }
+    .fr-com-txt { font-size: 12.5px; color: var(--propia-text-body); margin-top: 1px; white-space: pre-wrap; word-break: break-word; }
+    .fr-com-ta { resize: vertical; font-family: inherit; min-height: 56px; }
+    .fr-com-foot { display: flex; justify-content: flex-end; margin-top: 7px; }
+    .fr-btn-sm { padding: 6px 14px; font-size: 12px; }
+
     .fr-msg { margin: 12px 0 0; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
     .fr-msg.ok { background: var(--propia-ok-soft); color: #1B7A44; }
     .fr-msg.err { background: var(--propia-danger-soft); color: #B02121; }
@@ -376,6 +417,11 @@ else
 
     private List<DirectorioAdjuntoDto> _adjuntos = new();
 
+    // ----- Comentarios -----
+    private List<PersonaComentarioDto> _comentarios = new();
+    private string? _nuevoComentario;
+    private bool _publicando;
+
     // Titulo editable: refleja "Nombres Apellidos" y, al editarlo, reparte en nombres (1a palabra) + apellidos (resto).
     private string TituloNombre
     {
@@ -432,6 +478,7 @@ else
             }
             await CargarAdjuntosAsync();
             await CargarRolesAsync();
+            await CargarComentariosAsync();
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _cargando = false; }
@@ -464,6 +511,40 @@ else
         }
         catch { }
         finally { _rolesCargando = false; }
+    }
+
+    private async Task CargarComentariosAsync()
+    {
+        try { _comentarios = await Auth().GetFromJsonAsync<List<PersonaComentarioDto>>($"/api/directorio/personas/{PersonaId}/comentarios") ?? new(); }
+        catch { _comentarios = new(); }
+    }
+
+    private async Task PublicarComentario()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoComentario)) return;
+        _publicando = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/directorio/personas/{PersonaId}/comentarios",
+                new CrearPersonaComentarioRequest(_nuevoComentario!.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                var c = await resp.Content.ReadFromJsonAsync<PersonaComentarioDto>();
+                if (c is not null) { _comentarios.Add(c); _dirty = true; }
+                _nuevoComentario = "";
+            }
+            else { _msg = "No se pudo publicar el comentario: " + await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _publicando = false; }
+    }
+
+    private static string InicialesAutor(string? n)
+    {
+        if (string.IsNullOrWhiteSpace(n)) return "?";
+        var parts = n.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var ini = string.Concat(parts.Take(2).Select(p => p[0]));
+        return ini.ToUpperInvariant();
     }
 
     private List<RolDto> RolesDisponibles() => _roles.Where(r => r.Activo && !_rolIdsAsignados.Contains(r.Id)).ToList();

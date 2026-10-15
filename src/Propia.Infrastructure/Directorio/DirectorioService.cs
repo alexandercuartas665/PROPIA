@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Directorio;
@@ -13,13 +15,73 @@ public class DirectorioService : IDirectorioService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IBlobStorage _blob;
+    private readonly IHttpContextAccessor? _http;
     private static readonly int[] PesosNit = { 41, 37, 29, 23, 19, 17, 13, 7, 3 };
 
-    public DirectorioService(PropiaDbContext db, ITenantContext tenantContext, IBlobStorage blob)
+    // http es opcional: la app lo inyecta via DI (para resolver el autor de los comentarios); en pruebas que
+    // construyen el servicio a mano queda null y GetUsuarioActualId devuelve Guid.Empty (no usan comentarios).
+    public DirectorioService(PropiaDbContext db, ITenantContext tenantContext, IBlobStorage blob, IHttpContextAccessor? http = null)
     {
         _db = db;
         _tenantContext = tenantContext;
         _blob = blob;
+        _http = http;
+    }
+
+    private Guid GetUsuarioActualId()
+    {
+        var sub = _http?.HttpContext?.User?.FindFirstValue("user_id");
+        return Guid.TryParse(sub, out var id) ? id : Guid.Empty;
+    }
+
+    // ============================ Comentarios de persona ============================
+
+    public async Task<IReadOnlyList<PersonaComentarioDto>> ListarComentariosPersonaAsync(Guid personaId, CancellationToken ct)
+    {
+        var raw = await _db.PersonaComentarios.AsNoTracking()
+            .Where(c => c.PersonaId == personaId)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new { c.Id, c.AutorUsuarioId, c.Texto, c.CreatedAt })
+            .ToListAsync(ct);
+        if (raw.Count == 0) return System.Array.Empty<PersonaComentarioDto>();
+
+        var autorIds = raw.Select(c => c.AutorUsuarioId).Distinct().ToList();
+        // Resolver nombre del autor: ApplicationUser -> Persona -> Nombres + Apellidos.
+        var autorPersona = await _db.Users.AsNoTracking()
+            .Where(u => autorIds.Contains(u.Id) && u.PersonaId != null)
+            .Select(u => new { u.Id, u.PersonaId })
+            .ToListAsync(ct);
+        var personaIds = autorPersona.Where(a => a.PersonaId != null).Select(a => a.PersonaId!.Value).Distinct().ToList();
+        var nombres = await _db.Personas.AsNoTracking()
+            .Where(p => personaIds.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim() })
+            .ToListAsync(ct);
+
+        string? Resolver(Guid autorId)
+        {
+            var pid = autorPersona.FirstOrDefault(a => a.Id == autorId)?.PersonaId;
+            if (pid is null) return null;
+            var n = nombres.FirstOrDefault(x => x.Id == pid.Value)?.Nombre;
+            return string.IsNullOrWhiteSpace(n) ? null : n;
+        }
+
+        return raw.Select(c => new PersonaComentarioDto(c.Id, c.AutorUsuarioId, Resolver(c.AutorUsuarioId), c.Texto, c.CreatedAt)).ToList();
+    }
+
+    public async Task<PersonaComentarioDto> AgregarComentarioPersonaAsync(Guid personaId, CrearPersonaComentarioRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Texto)) throw new InvalidOperationException("El comentario no puede estar vacio.");
+        var autorId = GetUsuarioActualId();
+        var c = new PersonaComentario { PersonaId = personaId, AutorUsuarioId = autorId, Texto = req.Texto.Trim() };
+        _db.PersonaComentarios.Add(c);
+        await _db.SaveChangesAsync(ct);
+
+        var pid = await _db.Users.AsNoTracking().Where(u => u.Id == autorId).Select(u => u.PersonaId).FirstOrDefaultAsync(ct);
+        string? autorNombre = pid is Guid p
+            ? await _db.Personas.AsNoTracking().Where(x => x.Id == p)
+                .Select(x => (((x.Nombres ?? "") + " " + (x.Apellidos ?? "")).Trim())).FirstOrDefaultAsync(ct)
+            : null;
+        return new PersonaComentarioDto(c.Id, c.AutorUsuarioId, string.IsNullOrWhiteSpace(autorNombre) ? null : autorNombre, c.Texto, c.CreatedAt);
     }
 
     // ============================ Persona ============================

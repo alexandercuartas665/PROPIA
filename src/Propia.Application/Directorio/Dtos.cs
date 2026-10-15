@@ -131,3 +131,9 @@ public record EquipoEmpresaDto(
 // ---------- Adjuntos (documentos de la identidad: RUT, camara de comercio, certificados) ----------
 public record DirectorioAdjuntoDto(
     Guid Id, string Nombre, string Url, string? ContentType, long TamanoBytes, DateTimeOffset CreatedAt);
+
+// ---------- Comentarios de persona (ficha de Residente/Directorio) ----------
+public record PersonaComentarioDto(
+    Guid Id, Guid AutorUsuarioId, string? AutorNombre, string Texto, DateTimeOffset CreatedAt);
+
+public record CrearPersonaComentarioRequest(string Texto);

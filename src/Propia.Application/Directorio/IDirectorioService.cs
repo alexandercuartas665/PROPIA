@@ -80,6 +80,10 @@ public interface IDirectorioService
     Task<IReadOnlyList<DirectorioAdjuntoDto>> ListarAdjuntosAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct);
     /// <summary>Sube el archivo al storage y registra el adjunto de la persona/empresa.</summary>
     Task<DirectorioAdjuntoDto> AgregarAdjuntoAsync(EntidadDirectorio tipo, Guid entidadId, string nombreArchivo, string? contentType, long tamanoBytes, Stream contenido, CancellationToken ct);
+
+    // ----- Comentarios de persona (ficha de Residente/Directorio) -----
+    Task<IReadOnlyList<PersonaComentarioDto>> ListarComentariosPersonaAsync(Guid personaId, CancellationToken ct);
+    Task<PersonaComentarioDto> AgregarComentarioPersonaAsync(Guid personaId, CrearPersonaComentarioRequest req, CancellationToken ct);
     Task<bool> EliminarAdjuntoAsync(Guid adjuntoId, CancellationToken ct);
 
     // --- Helper de validacion NIT (digito DIAN) ---

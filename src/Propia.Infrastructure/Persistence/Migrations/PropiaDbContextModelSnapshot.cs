@@ -10335,6 +10335,56 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("persona_campos_valores");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.PersonaComentario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AutorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("texto");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("PersonaId", "CreatedAt");
+
+                    b.ToTable("persona_comentarios", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.PersonaEmpresa", b =>
                 {
                     b.Property<Guid>("Id")

@@ -39,6 +39,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<Organizacion> Organizaciones => Set<Organizacion>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Persona> Personas => Set<Persona>();
+    public DbSet<PersonaComentario> PersonaComentarios => Set<PersonaComentario>();
     public DbSet<UsuarioContactoNotificacion> UsuarioContactosNotificacion => Set<UsuarioContactoNotificacion>();
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();

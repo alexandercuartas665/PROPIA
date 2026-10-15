@@ -160,3 +160,35 @@ camino de alta/invitacion quedo cableado y ejercitado (rechazo correcto "ya tien
 no se corrio un alta exitosa nueva porque en la demo TODOS los residentes ya son usuarios (semilla con Portal
 Residente). Sin migracion. Version visible **0.0.155**. **Pendiente Ola 3: panel COMENTARIOS (tabla + RLS +
 endpoints + migracion).**
+
+---
+
+## Addendum v0.0.156 (2026-10-15) - FichaResidenteModal Ola 3: panel COMENTARIOS (CON MIGRACION)
+Cierra la Ola 3 del rediseno del modal de residente: panel de COMENTARIOS (como pide la maqueta), en la columna
+derecha debajo de DOCUMENTOS. **Tiene migracion** (tabla nueva + RLS).
+
+**MIGRACION (aplicar en deploy):** `20261015011139_AddPersonaComentarios` crea `persona_comentarios`
+(id, persona_id, autor_usuario_id, texto[4000], tenant_id + auditoria) con indices (tenant_id, (persona_id, created_at))
+y **RLS** (ENABLE + FORCE + policy `tenant_isolation` con `current_tenant_id()` + GRANT a `propia_app`). Aditiva: no
+toca datos existentes. `RlsCoverageTests` verde (2/2) con la tabla nueva incluida.
+
+**Backend:** entidad `PersonaComentario : TenantEntity`; DbSet + model config (HasQueryFilter por tenant) en
+`PropiaDbContext` / `ConfigureDirectorioUsuariosPresupuesto`. `IDirectorioService`/`DirectorioService` ganan
+`ListarComentariosPersonaAsync` + `AgregarComentarioPersonaAsync` (resuelven el nombre del autor via
+ApplicationUser->Persona; capturan el usuario actual con `IHttpContextAccessor`). **OJO:** el ctor de
+`DirectorioService` ahora recibe `IHttpContextAccessor? http = null` (opcional: la app lo inyecta via DI; las pruebas
+que lo construyen a mano siguen compilando y `GetUsuarioActualId` devuelve Guid.Empty). Endpoints nuevos en
+`DirectorioController`: `GET/POST /api/directorio/personas/{id}/comentarios` (`PersonaComentarioDto` /
+`CrearPersonaComentarioRequest`).
+
+**UI:** seccion COMENTARIOS en `FichaResidenteModal` (avatar de iniciales + autor + fecha + texto; textarea +
+Publicar). Carga por GET al abrir; publica por POST y agrega el nuevo sin recargar.
+
+**Pasos de deploy:** 1) `git pull` (HEAD de esta tanda). 2) **Aplicar la migracion** `AddPersonaComentarios`
+(`dotnet ef database update` o el pipeline). 3) Build/deploy. 4) Verificar version **v0.0.156**.
+
+**Verificado en runtime (navegador integrado, demo 6d93d9fa):** migracion aplicada en dev (tabla + RLS forced +
+policy `tenant_isolation` confirmados); en el modal de Nelson Hurtado Cuero se publico un comentario -> aparece con
+autor "Admin Delegado Demo", fecha y avatar; al cerrar y reabrir el modal, el comentario persiste (viene por GET de
+BD). Dato de prueba borrado (persona_comentarios = 0). `RlsCoverageTests` 2/2 verde. Version visible **0.0.156**.
+**Las 3 olas del rediseno del modal de residente quedan completas.**

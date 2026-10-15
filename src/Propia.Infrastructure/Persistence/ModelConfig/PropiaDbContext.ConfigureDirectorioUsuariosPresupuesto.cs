@@ -65,6 +65,15 @@ public partial class PropiaDbContext
             // Sin HasQueryFilter: mismo criterio global que DirectorioContacto.
         });
 
+        modelBuilder.Entity<PersonaComentario>(b =>
+        {
+            b.ToTable("persona_comentarios");
+            b.Property(x => x.Texto).IsRequired().HasMaxLength(4000);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.PersonaId, x.CreatedAt });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<DirectorioEtiqueta>(b =>
         {
             b.HasOne(x => x.Vinculo).WithMany().HasForeignKey(x => x.VinculoId).OnDelete(DeleteBehavior.Cascade);

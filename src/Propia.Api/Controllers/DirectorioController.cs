@@ -178,6 +178,18 @@ public class DirectorioController : ControllerBase
     }
 
     // ---------- Empresas ----------
+    // ---------- Comentarios de persona (ficha de Residente/Directorio) ----------
+    [HttpGet("personas/{id:guid}/comentarios")]
+    public async Task<IActionResult> ListarComentariosPersona(Guid id, CancellationToken ct)
+        => Ok(await _svc.ListarComentariosPersonaAsync(id, ct));
+
+    [HttpPost("personas/{id:guid}/comentarios")]
+    public async Task<IActionResult> AgregarComentarioPersona(Guid id, [FromBody] CrearPersonaComentarioRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.AgregarComentarioPersonaAsync(id, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("empresas")]
     public async Task<IActionResult> ListarEmpresas([FromQuery] string? q, CancellationToken ct)
         => Ok(await _svc.ListarEmpresasDelTenantAsync(q, ct));
