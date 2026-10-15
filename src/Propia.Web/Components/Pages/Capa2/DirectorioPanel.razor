@@ -180,7 +180,7 @@
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(PersonasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
-                                     OnAbrir="AbrirPersona" OnCrear="CrearPersonaTabla" OnCrearAbrir="AbrirCrearDesdePersona" OnEditarCampo="EditarPersonaInline" />
+                                     OnAbrir="AbrirFichaPersonaModal" OnCrear="CrearPersonaTabla" OnCrearAbrir="AbrirCrearDesdePersona" OnEditarCampo="EditarPersonaInline" />
         }
         else
         {
@@ -195,7 +195,7 @@
                                      OnAbrirColMenu="AbrirColMenuDir"
                                      Total="@(EmpresasFiltradas?.Count ?? 0)" Pagina="_pagina" PorPagina="_porPagina"
                                      PaginaChanged="p => _pagina = p" PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }"
-                                     OnAbrir="AbrirEmpresa" OnCrear="CrearEmpresaTabla" OnCrearAbrir="AbrirCrearDesdeEmpresa" OnEditarCampo="EditarEmpresaInline" />
+                                     OnAbrir="AbrirFichaEmpresaModal" OnCrear="CrearEmpresaTabla" OnCrearAbrir="AbrirCrearDesdeEmpresa" OnEditarCampo="EditarEmpresaInline" />
         }
     }
 </div>
@@ -1847,6 +1847,34 @@
     }
 
     private void CerrarDetalle() { _detalleAbierto = false; _detalleEdit = false; }
+
+    // ===================== Ficha de Tercero (modal estandar is-fixedh) =====================
+    // El expander de la bandeja Terceros abre la ficha rica en modal (reemplaza el panel inline),
+    // igual que Residentes/Tareas/PQRSD. Navega ‹ › por toda la lista filtrada y refresca al cerrar si hubo cambios.
+    private Task AbrirFichaPersonaModal(Guid id)
+        => AbrirFichaTerceroAsync(EntidadDirectorio.Persona, id, (PersonasFiltradas ?? new()).Select(p => p.Id).ToList());
+
+    private Task AbrirFichaEmpresaModal(Guid id)
+        => AbrirFichaTerceroAsync(EntidadDirectorio.Empresa, id, (EmpresasFiltradas ?? new()).Select(e => e.Id).ToList());
+
+    private async Task AbrirFichaTerceroAsync(EntidadDirectorio tipo, Guid id, List<Guid> lista)
+    {
+        var cambioAcumulado = false;
+        while (true)
+        {
+            var pars = new ModalParameters()
+                .Set(nameof(FichaTerceroModal.Jwt), _jwt)
+                .Set(nameof(FichaTerceroModal.EntidadTipo), tipo)
+                .Set(nameof(FichaTerceroModal.EntidadId), id)
+                .Set(nameof(FichaTerceroModal.ListaIds), lista);
+            var opts = new ModalOptions { Width = "1056px", Height = "86vh", CssClass = "is-fixedh" };
+            var res = await Modals.OpenAsync<FichaTerceroModal, FichaTerceroModal.Resultado>(pars, opts);
+            if (res?.Cambio == true) cambioAcumulado = true;
+            if (res?.IrA is Guid siguiente) { id = siguiente; continue; }
+            break;
+        }
+        if (cambioAcumulado) await CargarAsync();
+    }
 
     private void EntrarEdicion()
     {

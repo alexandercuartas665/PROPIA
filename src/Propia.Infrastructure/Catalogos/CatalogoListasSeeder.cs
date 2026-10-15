@@ -148,6 +148,21 @@ public static class CatalogoListasSeeder
             new("Proveedor", "Proveedor", 7),
         }));
 
+        // Terceros (2.4 v2): "Servicio que presta" por el proveedor/contratista externo. Lista "libre"
+        // (la clave ES el servicio/label), seleccion multiple, editable por A&D sin deploy. Se almacena
+        // como etiquetas del vinculo del tercero con la copropiedad (reusa el mecanismo de etiquetas).
+        reg.Add(("tercero.servicio", new List<SemillaOpcion>
+        {
+            new("Mantenimiento", "Mantenimiento", 0),
+            new("Vigilancia", "Vigilancia", 1),
+            new("Aseo", "Aseo", 2),
+            new("Jardinería", "Jardinería", 3),
+            new("Jurídico", "Jurídico", 4),
+            new("Contable", "Contable", 5),
+            new("Servicios públicos", "Servicios públicos", 6),
+            new("Otros", "Otros", 7),
+        }));
+
         // Usuarios (2.5 v2.0): Cargo (descriptivo, seleccion multiple, NO otorga permisos). Lista "libre":
         // la clave ES la etiqueta. Editable por A&D; el usuario guarda las etiquetas elegidas.
         reg.Add(("usuario.cargo", new List<SemillaOpcion>

@@ -1,0 +1,901 @@
+@* FichaTerceroModal - ficha de un TERCERO (proveedor / contratista externo; modulo Terceros, antes
+   Directorio). Un tercero es una PERSONA o una EMPRESA del Directorio marcada como proveedor; aqui se
+   mapea sobre esas entidades (sin tabla nueva). Frame estandar de ficha (1056 x 86vh fijo, is-fixedh):
+   cabecera con navegacion ‹ ›, titulo editable y acciones; pestanas (Perfil / Documentos / Comentarios /
+   Vinculos / Acceso / Historial); perfil en 2 columnas; pie "Cerrar / Invitar al sistema".
+   Calca de la maqueta D:\DesarrolloIA\Maqueta\modal-tercero.html (P.fichaTercero; clases .pm-* / .fr-* /
+   .gpq-tabs). "Servicio que presta" = etiquetas del vinculo (opciones de la lista catalogo tercero.servicio). *@
+
+@inherits ModalBase<FichaTerceroModal.Resultado>
+@using Propia.Application.Directorio
+@using Propia.Application.UsuariosAccesos
+@using Propia.Application.Catalogos
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+@if (_cargando)
+{
+    <div class="fr-loading"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+}
+else
+{
+<div class="pm-head">
+    @if (ListaIds is { Count: > 1 } && _idx >= 0)
+    {
+        <div class="pm-nav">
+            <button class="pm-nav-btn" type="button" title="Registro anterior" disabled="@(_idx <= 0)" @onclick="Anterior">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <span class="pm-nav-pos">@(_idx + 1) / @ListaIds.Count</span>
+            <button class="pm-nav-btn" type="button" title="Registro siguiente" disabled="@(_idx >= ListaIds.Count - 1)" @onclick="Siguiente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+        </div>
+    }
+    <div class="pm-head-ic" title="Tercero (proveedor / contratista)">
+        @* fi-rr-users-gear equivalente: personas + engranaje *@
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.6-5 5.5-5 1.1 0 2.1.25 3 .7"/><circle cx="17.5" cy="16.5" r="2.4"/><path d="M17.5 13.4v-1.3M17.5 20.9v-1.3M20.6 16.5h-1.3M15.7 16.5h-1.3M19.7 14.3l-.9.9M16.2 17.8l-.9.9M19.7 18.7l-.9-.9M16.2 15.2l-.9-.9"/></svg>
+    </div>
+    <div class="pm-head-tt">
+        <input class="pm-head-h-edit" @bind="_titulo" @bind:event="oninput" title="@(EsEmpresa ? "Razón social (editable)" : "Nombre del tercero (editable)")" />
+        <div class="pm-head-s">@Subtitulo</div>
+    </div>
+    <div class="pm-head-acts">
+        <button class="pm-head-act" type="button" title="Copiar enlace al registro" @onclick="CopiarEnlace">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        </button>
+        <div class="fr-menu-wrap">
+            <button class="pm-head-act" type="button" title="Más acciones" @onclick="() => _menu = !_menu">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+            @if (_menu)
+            {
+                <div class="fr-menu" tabindex="-1">
+                    <button class="fr-menu-it" type="button" @onclick="CopiarEnlace">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                        Copiar enlace al registro
+                    </button>
+                    <button class="fr-menu-it" type="button" @onclick="AbrirEnDirectorio">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+                        Abrir en el Directorio
+                    </button>
+                </div>
+            }
+        </div>
+        <button class="pm-x" type="button" title="Cerrar" @onclick="Cerrar">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+</div>
+
+<div class="pm-body">
+    @* CTA Editar (solo en Perfil) + pestanas *@
+    <div class="tc-topbar">
+        @if (_tab == "Perfil")
+        {
+            @if (!_editando)
+            {
+                <button class="fr-btn fr-btn-sm" type="button" @onclick="Editar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg> Editar</button>
+            }
+            else
+            {
+                <button class="fr-btn fr-btn-sm" type="button" @onclick="CancelarEdicion" disabled="@_guardando">Cancelar</button>
+                <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="GuardarAsync" disabled="@_guardando">@(_guardando ? "Guardando..." : "Guardar cambios")</button>
+            }
+        }
+    </div>
+    <div class="gpq-tabs">
+        @foreach (var t in Tabs)
+        {
+            var tt = t;
+            <button class="gpq-tab @(_tab == tt ? "active" : "")" type="button" @onclick="() => _tab = tt">@tt</button>
+        }
+    </div>
+
+    @if (_tab == "Perfil")
+    {
+        <div class="fr-body">
+            @* ---------- Columna izquierda: logo/foto + chips de servicio ---------- *@
+            <div class="fr-left">
+                <div class="fr-sectlbl">@(EsEmpresa ? "LOGO" : "FOTO")</div>
+                @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+                {
+                    <div class="fr-avatar" style="background-image:url('@_imagenUrl')" role="button" title="Ver imagen completa" @onclick="() => _verImagen = _imagenUrl"></div>
+                }
+                else
+                {
+                    <div class="fr-avatar-ini">@Iniciales</div>
+                }
+                <label class="fr-img-change">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoImg ? "Subiendo..." : (EsEmpresa ? "Cambiar logo" : "Cambiar foto"))
+                    <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
+                </label>
+
+                <div class="fr-tags">
+                    @if (_servicios.Count == 0)
+                    {
+                        <span class="chip">Sin servicio</span>
+                    }
+                    else
+                    {
+                        @foreach (var s in _servicios)
+                        {
+                            var sv = s;
+                            <span class="chip">
+                                @sv.Valor
+                                @if (_editando) { <button type="button" class="chip-x" title="Quitar servicio" @onclick="() => QuitarServicio(sv)">&times;</button> }
+                            </span>
+                        }
+                    }
+                </div>
+                @if (_editando && _vinculoId is not null)
+                {
+                    <div class="fr-roles-disp" style="justify-content:center">
+                        @foreach (var op in ServiciosDisponibles())
+                        {
+                            var o = op;
+                            <button type="button" class="fr-rolchip-add" @onclick="() => AgregarServicio(o)">+ @o</button>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* ---------- Columna derecha: datos ---------- *@
+            <div class="fr-right">
+                <div class="fr-sectlbl">DATOS DEL TERCERO</div>
+                <div class="fr-grid">
+                    <div class="fr-fld">
+                        <label>@(EsEmpresa ? "Razón social" : "Nombre")</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@_titulo" title="Se edita en el título" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Tipo de tercero</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@(EsEmpresa ? "Empresa" : "Persona natural")" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Tipo de documento</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@DocLabel" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Número de documento</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@_documento" title="La identidad se edita en el Directorio" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Correo</label>
+                        <input class="fr-in @(_editando ? "" : "fr-in--ro")" type="email" readonly="@(!_editando)" tabindex="@(_editando ? 0 : -1)" @bind="_email" @bind:event="oninput" placeholder="correo@ejemplo.com" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Celular</label>
+                        <input class="fr-in @(_editando ? "" : "fr-in--ro")" readonly="@(!_editando)" tabindex="@(_editando ? 0 : -1)" @bind="_telefono" @bind:event="oninput" placeholder="@(_editando ? "Opcional" : "-")" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Empresa</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@(string.IsNullOrWhiteSpace(_empresa) ? "-" : _empresa)" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Servicio que presta</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@(_servicios.Count == 0 ? "-" : string.Join(", ", _servicios.Select(s => s.Valor)))" title="Se edita con los chips de la izquierda" />
+                    </div>
+                    <div class="fr-fld">
+                        <label>Estado</label>
+                        <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@(_estado == EstadoDirectorio.Activo ? "Activo" : "Inactivo")" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_tab == "Documentos")
+    {
+        <div class="tc-tab">
+            <div class="fr-sectlbl">DOCUMENTOS (RUT, CÁMARA DE COMERCIO, CERTIFICADOS, ETC.)</div>
+            @if (_adjuntos.Count == 0)
+            {
+                <div class="fr-empty">Sin documentos adjuntos.</div>
+            }
+            else
+            {
+                <div class="fr-doclist">
+                    @foreach (var a in _adjuntos)
+                    {
+                        var adj = a;
+                        <div class="fr-doc">
+                            <div class="fr-doc-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></div>
+                            <div class="fr-doc-txt">
+                                <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
+                                <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
+                            </div>
+                            <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                        </div>
+                    }
+                </div>
+            }
+            <label class="fr-doc-add">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
+                <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
+            </label>
+        </div>
+    }
+    else if (_tab == "Comentarios")
+    {
+        <div class="tc-tab">
+            <div class="fr-sectlbl">COMENTARIOS</div>
+            @if (EsEmpresa)
+            {
+                <div class="fr-empty">Los comentarios están disponibles para terceros tipo persona.</div>
+            }
+            else
+            {
+                @if (_comentarios.Count > 0)
+                {
+                    <div class="fr-com-list">
+                        @foreach (var c in _comentarios)
+                        {
+                            <div class="fr-com-item">
+                                <span class="fr-com-av">@InicialesAutor(c.AutorNombre)</span>
+                                <div class="fr-com-b">
+                                    <div class="fr-com-hd"><b>@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Usuario" : c.AutorNombre)</b><span class="fr-com-time">@c.CreatedAt.ToCo().ToString("dd/MM/yyyy HH:mm")</span></div>
+                                    <div class="fr-com-txt">@c.Texto</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="fr-empty">Aún no hay comentarios en este registro.</div>
+                }
+                <div class="fr-com-new">
+                    <textarea class="fr-in fr-com-ta" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." rows="2"></textarea>
+                    <div class="fr-com-foot">
+                        <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="PublicarComentario" disabled="@(_publicando || string.IsNullOrWhiteSpace(_nuevoComentario))">@(_publicando ? "Publicando..." : "Publicar")</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (_tab == "Vínculos")
+    {
+        <div class="tc-tab"><div class="gum-tab-empty">Sin vínculos con unidades / equipos.</div></div>
+    }
+    else if (_tab == "Acceso")
+    {
+        <div class="tc-tab">
+            <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
+            @if (_accesoPersonaId is null)
+            {
+                <div class="gum-tab-empty">Para invitar a este tercero empresa al sistema, primero registra su representante legal (persona) en el Directorio.</div>
+            }
+            else
+            {
+                <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. rol Terceros) y referencia la bandeja Roles y permisos; el detalle de permisos se edita allí.</p>
+                @if (_rolesCargando)
+                {
+                    <div class="fr-empty">Cargando roles...</div>
+                }
+                else
+                {
+                    <div class="fr-chips">
+                        @if (_rolIdsAsignados.Count == 0)
+                        {
+                            <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
+                        }
+                        else
+                        {
+                            @foreach (var rid in _rolIdsAsignados)
+                            {
+                                var id = rid;
+                                <span class="fr-rolchip">@RolNombre(id)<button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button></span>
+                            }
+                        }
+                    </div>
+                    @if (RolesDisponibles() is { Count: > 0 } disp)
+                    {
+                        <div class="fr-roles-disp">
+                            <span class="fr-disp-lbl">Clic para asignar:</span>
+                            @foreach (var r in disp)
+                            {
+                                var rr = r;
+                                <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
+                            }
+                        </div>
+                    }
+                    <div class="fr-com-foot" style="justify-content:flex-start;margin-top:12px">
+                        <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="GuardarAccesoAsync" disabled="@_guardandoAcceso">@(_guardandoAcceso ? "Guardando..." : (_usuarioTenantId is null ? "Invitar con el rol" : "Actualizar rol"))</button>
+                    </div>
+                }
+            }
+        </div>
+    }
+    else if (_tab == "Historial")
+    {
+        <div class="tc-tab"><div class="gum-tab-empty">Sin movimientos.</div></div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_msg))
+    {
+        <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
+    }
+</div>
+
+<div class="pm-foot">
+    <button class="fr-btn" type="button" @onclick="Cerrar">Cerrar</button>
+    <button class="fr-btn fr-btn-primary" type="button" @onclick="InvitarAlSistema">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+        Invitar al sistema
+    </button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_verImagen))
+{
+    <div class="fr-lb" @onclick="() => _verImagen = null">
+        <button class="fr-lb-x" type="button" title="Cerrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <img src="@_verImagen" alt="Imagen del tercero" />
+    </div>
+}
+}
+
+<style>
+    .fr-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; }
+
+    /* ===== Cabecera (calca .pm-*) ===== */
+    .pm-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .pm-head-ic { width: 40px; height: 40px; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pm-head-tt { flex: 1; min-width: 0; }
+    .pm-head-h-edit { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 4px 8px; font-size: 16px; font-weight: 800; color: var(--propia-text-h1); font-family: inherit; line-height: normal; }
+    .pm-head-h-edit:hover { border-color: var(--propia-border-card); }
+    .pm-head-h-edit:focus { outline: none; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); background: var(--propia-bg-card); }
+    .pm-head-s { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; line-height: normal; }
+    .pm-nav { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .pm-nav-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .pm-nav-btn:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .pm-nav-btn:disabled { opacity: .4; cursor: default; }
+    .pm-nav-pos { font-size: 11px; font-weight: 700; color: var(--propia-text-faint); padding: 0 5px; white-space: nowrap; }
+    .pm-head-acts { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .pm-head-act { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .pm-head-act:hover { background: var(--propia-bg-hover); color: var(--propia-brand); }
+    .pm-x { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pm-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+    .fr-menu-wrap { position: relative; display: inline-flex; }
+    .fr-menu { position: absolute; top: 34px; right: 0; z-index: 20; min-width: 210px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; box-shadow: 0 12px 34px rgba(27,42,58,.18); padding: 5px; display: flex; flex-direction: column; gap: 1px; }
+    .fr-menu-it { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; color: var(--propia-text-body); font-size: 12.5px; font-weight: 600; text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+    .fr-menu-it:hover { background: var(--propia-bg-hover); color: var(--propia-brand); }
+
+    /* ===== Cuerpo + pestanas ===== */
+    .pm-body { padding: 16px 20px; overflow: auto; flex: 1 1 auto; min-height: 0; }
+    .tc-topbar { display: flex; justify-content: flex-end; gap: 8px; min-height: 30px; margin-bottom: 8px; }
+    .gpq-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--propia-border-divider); margin-bottom: 14px; flex-wrap: wrap; }
+    .gpq-tab { border: 0; background: transparent; color: var(--propia-text-muted); font-size: 13px; font-weight: 700; font-family: inherit; padding: 11px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .gpq-tab:hover { color: var(--propia-text-body); }
+    .gpq-tab.active { color: var(--propia-brand); border-bottom-color: var(--propia-brand); }
+    .tc-tab { padding: 4px 2px 8px; display: flex; flex-direction: column; gap: 10px; }
+    .gum-tab-empty { font-size: 12.5px; color: var(--propia-text-muted); padding: 24px 0; text-align: center; }
+
+    .fr-body { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 18px; padding: 6px 2px 8px; }
+    .fr-left { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+    .fr-left .fr-sectlbl { align-self: stretch; }
+    .fr-right { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .fr-sectlbl { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; }
+    .fr-sectlbl--sep { margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--propia-border-card); }
+
+    .fr-avatar { width: 150px; height: 150px; border-radius: 50%; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--propia-border-divider); border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); cursor: zoom-in; margin-top: 4px; }
+    .fr-avatar-ini { width: 150px; height: 150px; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 800; border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); margin-top: 4px; }
+    .fr-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand); cursor: pointer; }
+    .fr-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 2px; }
+    /* Chip de servicio = calca maqueta: pill neutro, fondo transparente, texto cuerpo, sin borde. */
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px; background: transparent; color: var(--propia-text-body); border: 0; }
+    .chip-x { border: 0; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; padding: 0 1px; opacity: .7; }
+    .chip-x:hover { opacity: 1; color: var(--propia-brand); }
+
+    .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .fr-fld { display: flex; flex-direction: column; gap: 4px; }
+    .fr-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
+    .fr-in { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); outline: none; background: var(--propia-bg-card); box-sizing: border-box; }
+    .fr-in:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .fr-in--ro { background: var(--propia-bg-card-soft); color: var(--propia-text-body); min-height: 36px; }
+
+    .fr-empty { font-size: 12px; color: var(--propia-text-muted); padding: 6px 0; }
+    .fr-doclist { display: flex; flex-direction: column; gap: 7px; }
+    .fr-doc { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--propia-border-divider); border-radius: 10px; background: var(--propia-bg-card-soft); }
+    .fr-doc-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .fr-doc-txt { flex: 1; min-width: 0; }
+    .fr-doc-nom { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fr-doc-nom:hover { color: var(--propia-brand); text-decoration: underline; }
+    .fr-doc-meta { font-size: 10.5px; color: var(--propia-text-faint); }
+    .fr-doc-del { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .fr-doc-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
+    .fr-doc-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start; }
+
+    .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .fr-chip-empty { font-size: 12px; color: var(--propia-text-faint); font-style: italic; }
+    .fr-rolchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); }
+    .fr-rolchip-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; border-radius: 50%; }
+    .fr-rolchip-x:hover { background: rgba(109,79,227,.16); }
+    .fr-roles-disp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+    .fr-disp-lbl { font-size: 11px; font-weight: 700; color: var(--propia-text-faint); }
+    .fr-rolchip-add { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--propia-bg-card); color: var(--propia-text-secondary); border: 1px dashed var(--propia-border-card-2); cursor: pointer; }
+    .fr-rolchip-add:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    .fr-roles-hint { font-size: 11.5px; color: var(--propia-text-muted); margin: 2px 0 10px; line-height: 1.5; }
+
+    .fr-com-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .fr-com-item { display: flex; gap: 9px; }
+    .fr-com-av { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; }
+    .fr-com-b { flex: 1; min-width: 0; }
+    .fr-com-hd { display: flex; align-items: baseline; gap: 8px; }
+    .fr-com-hd b { font-size: 12.5px; font-weight: 700; color: var(--propia-text-h1); }
+    .fr-com-time { font-size: 10.5px; color: var(--propia-text-faint); }
+    .fr-com-txt { font-size: 12.5px; color: var(--propia-text-body); margin-top: 1px; white-space: pre-wrap; word-break: break-word; }
+    .fr-com-ta { resize: vertical; font-family: inherit; min-height: 56px; }
+    .fr-com-foot { display: flex; justify-content: flex-end; margin-top: 7px; }
+    .fr-btn-sm { padding: 6px 14px; font-size: 12px; }
+
+    .fr-msg { margin: 12px 0 0; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
+    .fr-msg.ok { background: var(--propia-ok-soft); color: #1B7A44; }
+    .fr-msg.err { background: var(--propia-danger-soft); color: #B02121; }
+
+    .pm-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .fr-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .fr-btn:hover { background: var(--propia-bg-card-soft); }
+    .fr-btn-primary { background: var(--propia-brand); border-color: var(--propia-brand); color: var(--propia-text-inverse); }
+    .fr-btn-primary:hover { background: #5B3FD1; }
+    .fr-btn-primary:disabled, .fr-btn:disabled { opacity: .6; cursor: default; }
+
+    .fr-lb { position: fixed; inset: 0; z-index: 9500; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
+    .fr-lb img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
+    .fr-lb-x { position: absolute; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: var(--propia-text-inverse); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .fr-lb-x:hover { background: rgba(255,255,255,.28); }
+
+    @@media (max-width: 640px) {
+        .fr-body { grid-template-columns: 1fr; }
+        .fr-grid { grid-template-columns: 1fr; }
+        .pm-head { flex-wrap: wrap; row-gap: 4px; padding: 12px 14px; }
+        .pm-head-tt { order: 10; flex: 1 0 100%; }
+        .pm-head-acts { margin-left: auto; }
+        .pm-head-h-edit { font-size: 15px; }
+    }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Tipo de entidad sobre la que se mapea el tercero (Persona | Empresa).</summary>
+    [Parameter] public EntidadDirectorio EntidadTipo { get; set; } = EntidadDirectorio.Persona;
+    [Parameter] public Guid EntidadId { get; set; }
+    [Parameter] public string? NombreInicial { get; set; }
+    /// <summary>Ids visibles (del MISMO tipo) para la navegacion entre registros.</summary>
+    [Parameter] public List<Guid>? ListaIds { get; set; }
+
+    public record Resultado(bool Cambio, Guid? IrA);
+
+    private static readonly string[] Tabs = { "Perfil", "Documentos", "Comentarios", "Vínculos", "Acceso", "Historial" };
+    private string _tab = "Perfil";
+
+    private bool _cargando = true;
+    private bool _guardando;
+    private bool _guardandoAcceso;
+    private bool _subiendoImg;
+    private bool _subiendoDoc;
+    private bool _menu;
+    private bool _editando;
+    private string? _msg;
+    private bool _msgError;
+    private bool _dirty;
+    private int _idx = -1;
+
+    private bool EsEmpresa => EntidadTipo == EntidadDirectorio.Empresa;
+
+    // ----- Datos comunes -----
+    private string _titulo = "";          // nombre completo (persona) o razon social (empresa)
+    private string _documento = "";
+    private string? _email;
+    private string? _telefono;
+    private string? _imagenUrl;           // foto (persona) o logo (empresa)
+    private string? _empresa;             // empresa a la que pertenece (persona); "-" por defecto
+    private EstadoDirectorio _estado = EstadoDirectorio.Activo;
+
+    // Persona
+    private TipoDocumento _tipoDoc = TipoDocumento.CC;
+    // Empresa (campos a preservar en el PUT)
+    private string? _nombreComercial, _direccion, _tipoEmpresa, _sector, _regimen, _sitioWeb;
+    private Guid? _repLegalPersonaId;
+
+    private string? _verImagen;
+
+    // ----- Servicio que presta (etiquetas del vinculo + opciones de catalogo tercero.servicio) -----
+    private Guid? _vinculoId;
+    private readonly List<EtiquetaAsignadaDto> _servicios = new();
+    private List<string> _servOpciones = new();
+
+    private List<DirectorioAdjuntoDto> _adjuntos = new();
+
+    // ----- Comentarios (solo persona) -----
+    private List<PersonaComentarioDto> _comentarios = new();
+    private string? _nuevoComentario;
+    private bool _publicando;
+
+    // ----- Acceso al sistema (sobre la persona, o el representante legal de la empresa) -----
+    private Guid? _accesoPersonaId;
+    private bool _rolesCargando = true;
+    private List<RolDto> _roles = new();
+    private readonly List<Guid> _rolIdsAsignados = new();
+    private Guid? _usuarioTenantId;
+
+    private string DocLabel => EsEmpresa ? "NIT" : _tipoDoc switch
+    {
+        TipoDocumento.CC => "Cédula de ciudadanía",
+        TipoDocumento.CE => "Cédula de extranjería",
+        TipoDocumento.PA => "Pasaporte",
+        TipoDocumento.TI => "Tarjeta de identidad",
+        TipoDocumento.NIT => "NIT",
+        _ => "Documento"
+    };
+
+    private string Subtitulo
+    {
+        get
+        {
+            var doc = string.IsNullOrWhiteSpace(_documento) ? "" : _documento;
+            var mail = string.IsNullOrWhiteSpace(_email) ? "" : _email!;
+            return string.Join(" · ", new[] { doc, mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+    }
+
+    private string Iniciales
+    {
+        get
+        {
+            var ini = string.Concat((_titulo ?? "").Trim()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => p[0]));
+            return string.IsNullOrWhiteSpace(ini) ? "#" : ini.ToUpperInvariant();
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _idx = ListaIds?.IndexOf(EntidadId) ?? -1;
+        try
+        {
+            if (EsEmpresa)
+            {
+                var dto = await Auth().GetFromJsonAsync<Empresa360Dto>($"/api/directorio/empresas/{EntidadId}");
+                if (dto is not null)
+                {
+                    var e = dto.Empresa;
+                    _titulo = string.IsNullOrWhiteSpace(e.NombreComercial) ? e.RazonSocial : e.NombreComercial!;
+                    _documento = string.IsNullOrWhiteSpace(e.DigitoVerificacion) ? e.Nit : $"{e.Nit}-{e.DigitoVerificacion}";
+                    _email = e.Email; _telefono = e.Telefono; _imagenUrl = e.LogoUrl; _estado = e.Estado;
+                    _nombreComercial = e.NombreComercial; _direccion = e.Direccion;
+                    _tipoEmpresa = e.TipoEmpresa; _sector = e.SectorEconomico; _regimen = e.RegimenTributario; _sitioWeb = e.SitioWeb;
+                    _repLegalPersonaId = e.RepresentanteLegalPersonaId;
+                    // la "razon social" real se conserva aparte del titulo mostrado
+                    _razonSocial = e.RazonSocial;
+                    _accesoPersonaId = e.RepresentanteLegalPersonaId;
+                    TomarServicios(dto.VinculosEnCopropiedad);
+                }
+            }
+            else
+            {
+                var dto = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{EntidadId}");
+                if (dto is not null)
+                {
+                    var p = dto.Persona;
+                    _titulo = $"{p.Nombres} {p.Apellidos}".Trim();
+                    _tipoDoc = p.TipoDocumento; _documento = p.Documento;
+                    _email = p.Email; _telefono = p.Telefono; _imagenUrl = p.FotoUrl; _estado = p.Estado;
+                    _accesoPersonaId = p.Id;
+                    TomarServicios(dto.VinculosEnCopropiedad);
+                }
+            }
+            await CargarAdjuntosAsync();
+            await CargarServOpcionesAsync();
+            if (!EsEmpresa) await CargarComentariosAsync();
+            await CargarRolesAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _cargando = false; }
+    }
+
+    private string _razonSocial = "";
+
+    private void TomarServicios(IReadOnlyList<VinculoDto> vinculos)
+    {
+        var v = vinculos.FirstOrDefault(x => x.Estado == EstadoVinculo.Activo) ?? vinculos.FirstOrDefault();
+        if (v is null) return;
+        _vinculoId = v.Id;
+        _servicios.Clear();
+        _servicios.AddRange(v.Etiquetas.Select(e => new EtiquetaAsignadaDto(e.Id, e.Valor)));
+    }
+
+    private async Task CargarServOpcionesAsync()
+    {
+        try
+        {
+            var ops = await Auth().GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=tercero.servicio") ?? new();
+            _servOpciones = ops.Where(o => o.Activo).Select(o => o.Label).ToList();
+        }
+        catch { _servOpciones = new(); }
+    }
+
+    private List<string> ServiciosDisponibles()
+        => _servOpciones.Where(o => !_servicios.Any(s => string.Equals(s.Valor, o, StringComparison.OrdinalIgnoreCase))).ToList();
+
+    private async Task AgregarServicio(string valor)
+    {
+        if (_vinculoId is null || _servicios.Any(s => string.Equals(s.Valor, valor, StringComparison.OrdinalIgnoreCase))) return;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/directorio/vinculos/etiquetas", new AsignarEtiquetaRequest(_vinculoId.Value, valor));
+            if (resp.IsSuccessStatusCode)
+            {
+                // El endpoint devuelve el VinculoDto con las etiquetas actualizadas (con sus ids reales).
+                var v = await resp.Content.ReadFromJsonAsync<VinculoDto>();
+                if (v is not null) { _servicios.Clear(); _servicios.AddRange(v.Etiquetas.Select(e => new EtiquetaAsignadaDto(e.Id, e.Valor))); }
+                else { _servicios.Add(new EtiquetaAsignadaDto(Guid.Empty, valor)); }
+                _dirty = true;
+            }
+            else { _msg = "No se pudo agregar el servicio: " + await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+    }
+
+    private async Task QuitarServicio(EtiquetaAsignadaDto s)
+    {
+        try
+        {
+            if (s.Id != Guid.Empty)
+            {
+                var resp = await Auth().DeleteAsync($"/api/directorio/vinculos/etiquetas/{s.Id}");
+                if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            }
+            _servicios.RemoveAll(x => x.Id == s.Id && x.Valor == s.Valor);
+            _dirty = true;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+    }
+
+    private async Task CargarAdjuntosAsync()
+    {
+        var tipo = EsEmpresa ? "Empresa" : "Persona";
+        try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/{tipo}/{EntidadId}") ?? new(); }
+        catch { _adjuntos = new(); }
+    }
+
+    private async Task CargarComentariosAsync()
+    {
+        try { _comentarios = await Auth().GetFromJsonAsync<List<PersonaComentarioDto>>($"/api/directorio/personas/{EntidadId}/comentarios") ?? new(); }
+        catch { _comentarios = new(); }
+    }
+
+    private async Task CargarRolesAsync()
+    {
+        if (_accesoPersonaId is null) { _rolesCargando = false; return; }
+        try
+        {
+            _roles = await Auth().GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
+            var resp = await Auth().GetAsync($"/api/usuarios/por-persona/{_accesoPersonaId.Value}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                var u = await resp.Content.ReadFromJsonAsync<UsuarioPorPersonaDto>();
+                if (u is not null) { _usuarioTenantId = u.UsuarioTenantId; _rolIdsAsignados.Clear(); _rolIdsAsignados.AddRange(u.RolIds); }
+            }
+        }
+        catch { }
+        finally { _rolesCargando = false; }
+    }
+
+    private void Editar() { _editando = true; _msg = ""; }
+    private async Task CancelarEdicion() { _editando = false; _msg = ""; await RecargarAsync(); }
+
+    private async Task RecargarAsync()
+    {
+        _cargando = true; StateHasChanged();
+        _servicios.Clear(); _rolIdsAsignados.Clear(); _usuarioTenantId = null; _rolesCargando = true;
+        await OnInitializedAsync();
+        StateHasChanged();
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_titulo)) { _msg = EsEmpresa ? "La razón social es obligatoria." : "El nombre es obligatorio."; _msgError = true; return; }
+        _guardando = true; _msg = "";
+        try
+        {
+            HttpResponseMessage resp;
+            if (EsEmpresa)
+            {
+                // El titulo edita la razon social (o el nombre comercial si existia). Conservamos el resto.
+                var razon = string.IsNullOrWhiteSpace(_razonSocial) ? _titulo.Trim() : _razonSocial;
+                var nomCom = string.IsNullOrWhiteSpace(_nombreComercial) ? null : _titulo.Trim();
+                if (string.IsNullOrWhiteSpace(_nombreComercial)) razon = _titulo.Trim();
+                var req = new ActualizarEmpresaRequest(razon, nomCom,
+                    string.IsNullOrWhiteSpace(_email) ? null : _email!.Trim(),
+                    string.IsNullOrWhiteSpace(_telefono) ? null : _telefono!.Trim(),
+                    _direccion, _tipoEmpresa, _sector, _regimen, _sitioWeb, _imagenUrl, _repLegalPersonaId);
+                resp = await Auth().PutAsJsonAsync($"/api/directorio/empresas/{EntidadId}", req);
+            }
+            else
+            {
+                var parts = _titulo.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var nombres = parts.Length > 0 ? parts[0] : "";
+                var apellidos = parts.Length > 1 ? parts[1] : "";
+                var req = new ActualizarPersonaRequest(nombres, apellidos,
+                    string.IsNullOrWhiteSpace(_email) ? null : _email!.Trim(),
+                    string.IsNullOrWhiteSpace(_telefono) ? null : _telefono!.Trim(),
+                    _imagenUrl, null, null);
+                resp = await Auth().PutAsJsonAsync($"/api/directorio/personas/{EntidadId}", req);
+            }
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            _dirty = true; _editando = false; _msg = "Datos guardados."; _msgError = false;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _guardando = false; }
+    }
+
+    // ----- Comentarios -----
+    private async Task PublicarComentario()
+    {
+        if (EsEmpresa || string.IsNullOrWhiteSpace(_nuevoComentario)) return;
+        _publicando = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/directorio/personas/{EntidadId}/comentarios", new CrearPersonaComentarioRequest(_nuevoComentario!.Trim()));
+            if (resp.IsSuccessStatusCode)
+            {
+                var c = await resp.Content.ReadFromJsonAsync<PersonaComentarioDto>();
+                if (c is not null) { _comentarios.Add(c); _dirty = true; }
+                _nuevoComentario = "";
+            }
+            else { _msg = "No se pudo publicar: " + await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _publicando = false; }
+    }
+
+    private static string InicialesAutor(string? n)
+    {
+        if (string.IsNullOrWhiteSpace(n)) return "?";
+        var parts = n.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Take(2).Select(p => p[0])).ToUpperInvariant();
+    }
+
+    // ----- Acceso / roles -----
+    private List<RolDto> RolesDisponibles() => _roles.Where(r => r.Activo && !_rolIdsAsignados.Contains(r.Id)).ToList();
+    private string RolNombre(Guid id) => _roles.FirstOrDefault(r => r.Id == id)?.Nombre ?? "Rol";
+    private void AgregarRol(Guid id) { if (!_rolIdsAsignados.Contains(id)) _rolIdsAsignados.Add(id); }
+    private void QuitarRol(Guid id) => _rolIdsAsignados.Remove(id);
+
+    private async Task GuardarAccesoAsync()
+    {
+        if (_accesoPersonaId is null) return;
+        _guardandoAcceso = true; _msg = "";
+        try
+        {
+            if (_usuarioTenantId is Guid utid)
+            {
+                var r = await Auth().PutAsJsonAsync($"/api/usuarios/{utid}/roles", new ActualizarRolesUsuarioRequest(_rolIdsAsignados));
+                if (!r.IsSuccessStatusCode) { _msg = "No se pudo actualizar el rol: " + await r.Content.ReadAsStringAsync(); _msgError = true; return; }
+                _msg = "Rol actualizado."; _msgError = false; _dirty = true;
+            }
+            else if (_rolIdsAsignados.Count > 0)
+            {
+                var r = await Auth().PostAsJsonAsync("/api/usuarios/alta", new CrearUsuarioAltaRequest(_accesoPersonaId.Value, _rolIdsAsignados, new List<string>()));
+                if (!r.IsSuccessStatusCode) { _msg = "No se pudo invitar: " + await r.Content.ReadAsStringAsync(); _msgError = true; return; }
+                var creado = await r.Content.ReadFromJsonAsync<AltaResp>();
+                if (creado is not null) _usuarioTenantId = creado.id;
+                _msg = "Invitado al sistema con el rol."; _msgError = false; _dirty = true;
+            }
+            else { _msg = "Selecciona al menos un rol."; _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _guardandoAcceso = false; }
+    }
+
+    private void InvitarAlSistema()
+    {
+        _tab = "Acceso";
+        if (_accesoPersonaId is not null && _usuarioTenantId is null && _rolIdsAsignados.Count == 0)
+        {
+            // Preseleccionar el rol "Terceros" si existe, para que el usuario solo confirme.
+            var terceros = _roles.FirstOrDefault(r => r.Activo && r.Nombre.Contains("Tercero", StringComparison.OrdinalIgnoreCase));
+            if (terceros is not null) _rolIdsAsignados.Add(terceros.Id);
+        }
+    }
+
+    // ----- Imagen (foto persona / logo empresa) -----
+    private async Task SubirImagen(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _subiendoImg = true; _msg = "";
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(5_500_000).CopyToAsync(ms);
+            ms.Position = 0;
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(ms);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            // Persona: endpoint de foto. Empresa: adjunto como logo no existe endpoint dedicado -> se omite por ahora.
+            if (!EsEmpresa)
+            {
+                var resp = await Auth().PostAsync($"/api/directorio/personas/{EntidadId}/foto", content);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var dto = await resp.Content.ReadFromJsonAsync<UrlResp>();
+                    _imagenUrl = dto?.url; _dirty = true; _msg = "Foto actualizada."; _msgError = false;
+                }
+                else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+            }
+            else { _msg = "La carga de logo de empresa se gestiona desde el Directorio."; _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _subiendoImg = false; }
+    }
+
+    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _subiendoDoc = true; _msg = "";
+        var tipo = EsEmpresa ? "Empresa" : "Persona";
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(10_500_000).CopyToAsync(ms);
+            ms.Position = 0;
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(ms);
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(sc, "file", e.File.Name);
+            var resp = await Auth().PostAsync($"/api/directorio/adjuntos/{tipo}/{EntidadId}", content);
+            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Documento adjuntado."; _msgError = false; await CargarAdjuntosAsync(); }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+        finally { _subiendoDoc = false; }
+    }
+
+    private async Task EliminarAdjunto(Guid id)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/adjuntos/{id}");
+            if (resp.IsSuccessStatusCode) { _dirty = true; _adjuntos.RemoveAll(a => a.Id == id); }
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgError = true; }
+    }
+
+    private async Task CopiarEnlace()
+    {
+        _menu = false;
+        var ruta = EsEmpresa ? $"/directorio/empresas/{EntidadId}" : $"/directorio/personas/{EntidadId}";
+        var url = $"{Nav.BaseUri.TrimEnd('/')}{ruta}";
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", url); _msg = "Enlace al registro copiado."; _msgError = false; }
+        catch { _msg = "No se pudo copiar el enlace."; _msgError = true; }
+    }
+
+    private void AbrirEnDirectorio()
+    {
+        _menu = false;
+        Close(new Resultado(_dirty, null));
+        Nav.NavigateTo(EsEmpresa ? $"/directorio/empresas/{EntidadId}" : $"/directorio/personas/{EntidadId}");
+    }
+
+    private void Anterior() { if (ListaIds is not null && _idx > 0) Close(new Resultado(_dirty, ListaIds[_idx - 1])); }
+    private void Siguiente() { if (ListaIds is not null && _idx >= 0 && _idx < ListaIds.Count - 1) Close(new Resultado(_dirty, ListaIds[_idx + 1])); }
+    private void Cerrar() => Close(new Resultado(_dirty, null));
+
+    private static string FmtTam(long b) => b >= 1_048_576 ? $"{b / 1_048_576.0:0.0} MB" : $"{b / 1024.0:0} KB";
+
+    private record UrlResp(string? url);
+    private record AltaResp(Guid id);
+}
