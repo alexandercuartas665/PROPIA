@@ -271,3 +271,22 @@ Los que ya abrian en tabla no se tocaron (Unidades, Residentes, Vehiculos, Masco
 **Verificado en runtime (navegador integrado, localStorage de vista limpio para ver el default):** Directorio,
 Usuarios, Zonas comunes, Equipos y Activos, PQRSD y Tareas abren con la vista **Tabla** activa. Version visible
 **0.0.159**.
+
+---
+
+## Addendum v0.0.160 (2026-10-15) - Responsive celular Ola 1: guard global anti scroll-lateral de pagina
+Alex: varios modulos se ven mal en celular (scroll lateral). Audit a 375px: la mayoria de paginas estaban bien
+(0 desborde), pero varias desbordaban: Directorio 256px, Usuarios 162px, Documentos 132px, Configuracion Copropiedad
+95px, Contratos 59px (+ leves Reservas 37, Zonas 26, Mantenimiento 16, Equipos 8). Causa: filas CTA/headers/tablas que
+se salen del contenedor de scroll.
+
+**Fix global (CSS, sin backend):** en `assets/css/styles.css`, `.app-wrapper` a `@media (max-width:575.98px)` gana
+`overflow-x: clip`. Mata el scroll lateral de pagina en TODOS los modulos a la vez. Se usa `clip` (no `hidden`) a
+proposito: no crea scroll-container ni fuerza `overflow-y:auto`, asi que NO rompe el sticky de los headers de tabla.
+Las vista-tabla conservan su scroll horizontal interno (su contenedor propio con overflow-x:auto) y el FAB "+ Agregar"
+(position:fixed) sigue visible, asi que no se pierde ninguna funcion. `styles.css` a `?v=2` en `App.razor`.
+
+**Verificado en runtime (celular 375px):** Directorio/Usuarios/Documentos/Configuracion Copropiedad pasan de
+256/162/132/95px a **0**; la tabla interna sigue scrolleando; el FAB sigue visible. Version visible **0.0.160**.
+Pendiente (pulido, proximas olas): filas de botones del header que se recortan (deberian envolver), y el encabezado
+de los modales ricos (ficha) apretado en celular.
