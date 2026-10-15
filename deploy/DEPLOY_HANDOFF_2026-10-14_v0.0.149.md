@@ -192,3 +192,28 @@ policy `tenant_isolation` confirmados); en el modal de Nelson Hurtado Cuero se p
 autor "Admin Delegado Demo", fecha y avatar; al cerrar y reabrir el modal, el comentario persiste (viene por GET de
 BD). Dato de prueba borrado (persona_comentarios = 0). `RlsCoverageTests` 2/2 verde. Version visible **0.0.156**.
 **Las 3 olas del rediseno del modal de residente quedan completas.**
+
+---
+
+## Addendum v0.0.157 (2026-10-15) - Mascotas y Vehiculos: expander del alta visible+habilitado + foco en Unidad
+Alex: en Mascotas y Vehiculos el expander de la fila de alta "no aparece" y al abrir la fila el cursor debia caer
+primero en la columna Unidad. Diagnostico: (1) `.veh-exp-fijo`/`.mas-exp-fijo` tienen `opacity:0` y solo se revelan
+con `.veh-row:hover`/`.mas-row:hover` (filas de datos); **faltaba** la regla para la fila de alta
+(`.veh-newrow--edit`/`.mas-newrow--edit`), por eso quedaba invisible ahi (Residentes si la tenia con `res-listnew`).
+(2) El expander estaba `disabled` hasta llenar unidad+placa/nombre (contra el canon skill 8). (3) El foco al abrir
+caia en Placa/Nombre (`_placaRef`/`_nombreRef`), no en Unidad.
+
+**Fix (sin migracion):**
+- CSS: `.veh-newrow--edit:hover/:focus-within .veh-exp-fijo { opacity:1 }` (y `.mas-*`). Asi, al abrir el alta (el
+  cursor queda dentro de la fila) el expander ya es visible por `:focus-within`, sin necesidad de hover.
+- Expander del alta SIEMPRE habilitado (`disabled="@_busy"`); `AgregarAsync(true)` ya validaba los minimos con
+  toast ("Elige la unidad...", "Escribe la placa/el nombre...").
+- Foco en Unidad primero: `SelectorUnidadCodigo` expone un `FocusAsync()` publico (ref a su input); los paneles
+  guardan `@ref="_unidadSelRef"` en el selector del alta y enfocan ese selector en vez de Placa/Nombre.
+- Orden de columnas: ya era Unidad(1) + Placa/Nombre(2) por defecto (ClavesCandidatas / MascotaCamposSistema),
+  reordenable por el usuario; confirmado en runtime. No se fuerza ningun config existente.
+
+Archivos: `Shared/SelectorUnidadCodigo.razor`, `Pages/Capa2/VehiculosPanel.razor`, `Pages/Capa2/MascotasPanel.razor`.
+Verificado en runtime (navegador integrado, demo): en ambos, al abrir el alta el expander es visible
+(opacity 1 por `:focus-within`, mouse fuera), habilitado, el foco cae en Unidad, el orden es Unidad+Placa/Nombre, y
+el clic con campos vacios muestra el toast de validacion. Version visible **0.0.157**.
