@@ -51,4 +51,6 @@ public class ModalOptions
     public bool CloseOnBackdrop { get; set; } = true;
     /// <summary>Layout fullscreen tipo prototipo (1640px max, 95vh). Ignora Width y Height.</summary>
     public bool Fullscreen { get; set; }
+    /// <summary>Clase(s) CSS extra para el shell (ej. "is-fixedh" para el frame estandar de ficha: radio 12 + alto fijo).</summary>
+    public string? CssClass { get; set; }
 }

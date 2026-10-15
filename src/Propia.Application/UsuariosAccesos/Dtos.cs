@@ -57,6 +57,10 @@ public record UsuarioListaDto(
 /// <summary>Rol como chip (id + nombre) para pintar la selección múltiple en la tabla de Usuarios.</summary>
 public record RolChipDto(Guid Id, string Nombre);
 
+/// <summary>Acceso de una persona en el tenant actual: si ya es usuario (y con que roles), para la ficha de
+/// Residente. La bandeja de Usuarios oculta los usuarios "solo directorio", por eso se resuelve por persona.</summary>
+public record UsuarioPorPersonaDto(Guid UsuarioTenantId, EstadoUsuarioTenant Estado, IReadOnlyList<Guid> RolIds);
+
 public record RegistroDirectorioDto(bool YaEstaba, bool PerfilIncompleto);
 
 public record UsuarioDetalleDto(

@@ -37,4 +37,7 @@ public class ModalReference
 
     /// <summary>Layout fullscreen estilo prototipo (max 1640px x 95vh, padding reducido).</summary>
     public bool Fullscreen { get; set; }
+
+    /// <summary>Clase(s) CSS extra para el shell (ej. "is-fixedh": frame estandar de ficha, radio 12 + alto fijo).</summary>
+    public string? CssClass { get; set; }
 }

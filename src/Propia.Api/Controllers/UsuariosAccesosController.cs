@@ -90,6 +90,15 @@ public class UsuariosAccesosController : ControllerBase
     }
 
     // -------- Invitaciones --------
+    // Acceso de una persona (usuarioTenantId + roles) o 204 si no es usuario. Para la ficha de Residente,
+    // que gestiona el rol de acceso de usuarios "solo directorio" ocultos en la bandeja de Usuarios.
+    [HttpGet("por-persona/{personaId:guid}")]
+    public async Task<IActionResult> PorPersona(Guid personaId, CancellationToken ct)
+    {
+        var dto = await _svc.GetPorPersonaAsync(personaId, ct);
+        return dto is null ? NoContent() : Ok(dto);
+    }
+
     [HttpGet("invitaciones")]
     public async Task<IActionResult> ListarPendientes(CancellationToken ct)
         => Ok(await _svc.ListarPendientesAsync(ct));

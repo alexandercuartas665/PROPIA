@@ -29,7 +29,8 @@ public class ModalService : IModalService
             Width = options?.Width ?? "540px",
             Height = options?.Height,
             CloseOnBackdrop = options?.CloseOnBackdrop ?? true,
-            Fullscreen = options?.Fullscreen ?? false
+            Fullscreen = options?.Fullscreen ?? false,
+            CssClass = options?.CssClass
         };
         _active.Add(reference);
         OnChange?.Invoke();

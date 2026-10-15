@@ -1,12 +1,17 @@
-@* FichaResidenteModal - ficha rapida del residente (modulo Residentes). Reemplaza la navegacion
-   al Directorio: edita datos basicos de la persona, sube su foto y adjunta documentos de identidad
-   (cedula, RUT, etc.). Reutiliza los endpoints globales de Directorio (personas + adjuntos). *@
+@* FichaResidenteModal - ficha de una PERSONA y su relacion con una unidad (modulo Residentes).
+   Frame estandar de ficha (1056px x 86vh fijo, is-fixedh): cabecera con navegacion entre registros,
+   titulo editable, acciones (copiar enlace, mas) y cuerpo en 2 columnas (foto + chips / datos +
+   documentos). Reutiliza los endpoints globales de Directorio (personas + adjuntos).
+   Calca de la maqueta D:\DesarrolloIA\Maqueta\modal-residente.html (clases .pm-* / .fr-*). *@
 
-@inherits ModalBase<bool>
+@inherits ModalBase<FichaResidenteModal.Resultado>
 @using Propia.Application.Directorio
+@using Propia.Application.UsuariosAccesos
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
 
 @if (_cargando)
 {
@@ -14,116 +19,209 @@
 }
 else
 {
-<div class="fr-head">
-    <div class="fr-head-ic">
+<div class="pm-head">
+    @if (ListaPersonaIds is { Count: > 1 } && _idx >= 0)
+    {
+        <div class="pm-nav">
+            <button class="pm-nav-btn" type="button" title="Registro anterior" disabled="@(_idx <= 0)" @onclick="Anterior">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <span class="pm-nav-pos">@(_idx + 1) / @ListaPersonaIds.Count</span>
+            <button class="pm-nav-btn" type="button" title="Registro siguiente" disabled="@(_idx >= ListaPersonaIds.Count - 1)" @onclick="Siguiente">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+        </div>
+    }
+    <div class="pm-head-ic">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
     </div>
-    <div class="fr-head-tt">
-        <div class="fr-head-h">@_nombres @_apellidos</div>
-        <div class="fr-head-s">@DocLabel(_tipoDoc) @_documento</div>
+    <div class="pm-head-tt">
+        <input class="pm-head-h-edit" @bind="TituloNombre" @bind:event="oninput" title="Nombre del residente (editable)" />
+        <div class="pm-head-s">@SubtituloRelacion</div>
     </div>
-    <button class="fr-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div class="pm-head-acts">
+        <button class="pm-head-act" type="button" title="Copiar enlace al registro" @onclick="CopiarEnlace">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        </button>
+        <div class="fr-menu-wrap">
+            <button class="pm-head-act" type="button" title="Mas acciones" @onclick="() => _menu = !_menu">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+            @if (_menu)
+            {
+                <div class="fr-menu" tabindex="-1">
+                    <button class="fr-menu-it" type="button" @onclick="CopiarEnlace">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                        Copiar enlace al registro
+                    </button>
+                    <button class="fr-menu-it" type="button" @onclick="AbrirEnDirectorio">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+                        Abrir en el Directorio
+                    </button>
+                </div>
+            }
+        </div>
+        <button class="pm-x" type="button" title="Cerrar" @onclick="Cerrar">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
 </div>
 
-<div class="fr-body">
-    @* ---------- Columna izquierda: foto ---------- *@
-    <div class="fr-left">
-        <div class="fr-sectlbl">FOTO DE LA PERSONA</div>
-        @if (!string.IsNullOrWhiteSpace(_fotoUrl))
-        {
-            <div class="fr-avatar" style="background-image:url('@_fotoUrl')" role="button" title="Ver foto completa" @onclick="() => _verImagen = _fotoUrl"></div>
+<div class="pm-body">
+    <div class="fr-body">
+        @* ---------- Columna izquierda: foto + chips ---------- *@
+        <div class="fr-left">
+            <div class="fr-sectlbl">FOTO DE LA PERSONA</div>
+            @if (!string.IsNullOrWhiteSpace(_fotoUrl))
+            {
+                <div class="fr-avatar" style="background-image:url('@_fotoUrl')" role="button" title="Ver foto completa" @onclick="() => _verImagen = _fotoUrl"></div>
+            }
+            else
+            {
+                <div class="fr-avatar-ini">@Iniciales</div>
+            }
             <label class="fr-img-change">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoFoto ? "Subiendo..." : "Cambiar foto")
                 <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
             </label>
-        }
-        else
-        {
-            <label class="fr-avatar-drop">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-                <span>@(_subiendoFoto ? "Subiendo..." : "Cargar foto")</span>
-                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
-            </label>
-        }
-    </div>
-
-    @* ---------- Columna derecha: datos + documentos ---------- *@
-    <div class="fr-right">
-        <div class="fr-sectlbl">DATOS DE LA PERSONA</div>
-        <div class="fr-grid">
-            <div class="fr-fld">
-                <label>Nombres</label>
-                <input class="fr-in" @bind="_nombres" />
-            </div>
-            <div class="fr-fld">
-                <label>Apellidos</label>
-                <input class="fr-in" @bind="_apellidos" />
-            </div>
-            <div class="fr-fld">
-                <label>Correo</label>
-                <input class="fr-in" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
-            </div>
-            <div class="fr-fld">
-                <label>Teléfono</label>
-                <input class="fr-in" @bind="_telefono" placeholder="Opcional" />
-            </div>
-            <div class="fr-fld">
-                <label>Fecha de nacimiento</label>
-                <input class="fr-in" type="date" value="@(_fechaNac?.ToString("yyyy-MM-dd"))" @onchange="OnFechaNac" />
-            </div>
-            <div class="fr-fld">
-                <label>Genero</label>
-                <select class="fr-in" @bind="_genero">
-                    <option value="">Sin especificar</option>
-                    <option value="@GeneroPersona.Masculino">Masculino</option>
-                    <option value="@GeneroPersona.Femenino">Femenino</option>
-                    <option value="@GeneroPersona.NoBinario">No binario</option>
-                    <option value="@GeneroPersona.NoIdentificado">Prefiere no decir</option>
-                </select>
+            @* Chips: relacion con la unidad + roles de acceso (maqueta). La unidad va en la grilla DATOS, no como chip. *@
+            <div class="fr-tags">
+                @if (!string.IsNullOrWhiteSpace(Relacion)) { <span class="chip chip--rel">@Relacion</span> }
+                @foreach (var rid in _rolIdsAsignados) { <span class="chip chip--rol">@RolNombre(rid)</span> }
             </div>
         </div>
 
-        <div class="fr-sectlbl fr-sectlbl--sep">DOCUMENTOS (CEDULA, RUT, ETC.)</div>
-        @if (_adjuntos.Count == 0)
+        @* ---------- Columna derecha: datos + documentos ---------- *@
+        <div class="fr-right">
+            <div class="fr-sectlbl">DATOS DE LA PERSONA</div>
+            <div class="fr-grid">
+                <div class="fr-fld">
+                    <label>Nombres</label>
+                    <input class="fr-in" @bind="_nombres" @bind:event="oninput" />
+                </div>
+                <div class="fr-fld">
+                    <label>Apellidos</label>
+                    <input class="fr-in" @bind="_apellidos" @bind:event="oninput" />
+                </div>
+                <div class="fr-fld">
+                    <label>Correo</label>
+                    <input class="fr-in" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
+                </div>
+                <div class="fr-fld">
+                    <label>Teléfono</label>
+                    <input class="fr-in" @bind="_telefono" placeholder="Opcional" />
+                </div>
+                <div class="fr-fld">
+                    <label>Fecha de nacimiento</label>
+                    <input class="fr-in" type="date" value="@(_fechaNac?.ToString("yyyy-MM-dd"))" @onchange="OnFechaNac" />
+                </div>
+                <div class="fr-fld">
+                    <label>Genero</label>
+                    <select class="fr-in" @bind="_genero">
+                        <option value="">Sin especificar</option>
+                        <option value="@GeneroPersona.Masculino">Masculino</option>
+                        <option value="@GeneroPersona.Femenino">Femenino</option>
+                        <option value="@GeneroPersona.NoBinario">No binario</option>
+                        <option value="@GeneroPersona.NoIdentificado">Prefiere no decir</option>
+                    </select>
+                </div>
+                <div class="fr-fld">
+                    <label>Documento</label>
+                    <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@($"{DocLabel(_tipoDoc)} {_documento}")" title="La identidad se edita en el Directorio" />
+                </div>
+                <div class="fr-fld">
+                    <label>Unidad</label>
+                    <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@UnidadCodigo" />
+                </div>
+            </div>
+
+            <div class="fr-sectlbl fr-sectlbl--sep">DOCUMENTOS (CEDULA, RUT, ETC.)</div>
+            @if (_adjuntos.Count == 0)
+            {
+                <div class="fr-empty">Sin documentos adjuntos.</div>
+            }
+            else
+            {
+                <div class="fr-doclist">
+                    @foreach (var a in _adjuntos)
+                    {
+                        var adj = a;
+                        <div class="fr-doc">
+                            <div class="fr-doc-ic">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                            </div>
+                            <div class="fr-doc-txt">
+                                <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
+                                <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
+                            </div>
+                            <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+            <label class="fr-doc-add">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
+                <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
+            </label>
+        </div>
+    </div>
+
+    @* ===== Acceso al sistema (Rol): asignar rol = invitar a la persona como usuario (reusa Usuarios/RBAC) ===== *@
+    <div class="fr-roles">
+        <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
+        <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. Portal Residente) y referencia la bandeja Roles y permisos; el detalle de permisos se edita alli. El cargo es descriptivo y no da permisos.</p>
+        @if (_rolesCargando)
         {
-            <div class="fr-empty">Sin documentos adjuntos.</div>
+            <div class="fr-empty">Cargando roles...</div>
         }
         else
         {
-            <div class="fr-doclist">
-                @foreach (var a in _adjuntos)
+            <div class="fr-chips">
+                @if (_rolIdsAsignados.Count == 0)
                 {
-                    var adj = a;
-                    <div class="fr-doc">
-                        <div class="fr-doc-ic">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
-                        </div>
-                        <div class="fr-doc-txt">
-                            <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
-                            <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
-                        </div>
-                        <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                        </button>
-                    </div>
+                    <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
+                }
+                else
+                {
+                    @foreach (var rid in _rolIdsAsignados)
+                    {
+                        var id = rid;
+                        <span class="fr-rolchip">@RolNombre(id)<button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button></span>
+                    }
                 }
             </div>
+            @if (RolesDisponibles() is { Count: > 0 } disp)
+            {
+                <div class="fr-roles-disp">
+                    <span class="fr-disp-lbl">Clic para asignar:</span>
+                    @foreach (var r in disp)
+                    {
+                        var rr = r;
+                        <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
+                    }
+                </div>
+            }
+            @if (_usuarioTenantId is null && _rolIdsAsignados.Count > 0)
+            {
+                <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
+            }
         }
-        <label class="fr-doc-add">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
-            <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
-        </label>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(_msg))
+    {
+        <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
+    }
 </div>
 
-@if (!string.IsNullOrWhiteSpace(_msg))
-{
-    <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
-}
-
-<div class="fr-foot">
+<div class="pm-foot">
     <button class="fr-btn" type="button" @onclick="Cerrar">Cerrar</button>
-    <button class="fr-btn fr-btn-primary" type="button" @onclick="GuardarAsync" disabled="@_guardando">@(_guardando ? "Guardando..." : "Guardar cambios")</button>
+    <button class="fr-btn fr-btn-primary" type="button" @onclick="GuardarAsync" disabled="@_guardando">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+        @(_guardando ? "Guardando..." : "Guardar cambios")
+    </button>
 </div>
 
 @* Lightbox de la foto completa (sin recorte). *@
@@ -138,14 +236,32 @@ else
 
 <style>
     .fr-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; }
-    .fr-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
-    .fr-head-ic { width: 40px; height: 40px; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .fr-head-tt { flex: 1; min-width: 0; }
-    .fr-head-h { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
-    .fr-head-s { font-size: 12px; color: var(--propia-text-muted); margin-top: 1px; }
-    .fr-x { width: 32px; height: 32px; border-radius: 9px; border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .fr-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
 
+    /* ===== Cabecera Vista Ficha (calca maqueta .pm-*) ===== */
+    .pm-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .pm-head-ic { width: 40px; height: 40px; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pm-head-tt { flex: 1; min-width: 0; }
+    .pm-head-h-edit { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 4px 8px; font-size: 16px; font-weight: 800; color: var(--propia-text-h1); font-family: inherit; line-height: normal; }
+    .pm-head-h-edit:hover { border-color: var(--propia-border-card); }
+    .pm-head-h-edit:focus { outline: none; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); background: var(--propia-bg-card); }
+    .pm-head-s { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; line-height: normal; }
+    .pm-nav { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .pm-nav-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .pm-nav-btn:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .pm-nav-btn:disabled { opacity: .4; cursor: default; }
+    .pm-nav-pos { font-size: 11px; font-weight: 700; color: var(--propia-text-faint); padding: 0 5px; white-space: nowrap; }
+    .pm-head-acts { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .pm-head-act { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .pm-head-act:hover { background: var(--propia-bg-hover); color: var(--propia-brand); }
+    .pm-x { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pm-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+    .fr-menu-wrap { position: relative; display: inline-flex; }
+    .fr-menu { position: absolute; top: 34px; right: 0; z-index: 20; min-width: 210px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; box-shadow: 0 12px 34px rgba(27,42,58,.18); padding: 5px; display: flex; flex-direction: column; gap: 1px; }
+    .fr-menu-it { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; color: var(--propia-text-body); font-size: 12.5px; font-weight: 600; text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+    .fr-menu-it:hover { background: var(--propia-bg-hover); color: var(--propia-brand); }
+
+    /* ===== Cuerpo 2 columnas (calca maqueta .fr-*) ===== */
+    .pm-body { padding: 16px 20px; overflow: auto; flex: 1 1 auto; min-height: 0; }
     .fr-body { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 18px; padding: 18px 20px; }
     .fr-left { display: flex; flex-direction: column; align-items: center; gap: 9px; }
     .fr-left .fr-sectlbl { align-self: stretch; }
@@ -153,18 +269,20 @@ else
     .fr-sectlbl { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; }
     .fr-sectlbl--sep { margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--propia-border-card); }
 
-    /* Foto tipo avatar de perfil: circulo centrado; la imagen se recorta a "cover" sin importar
-       su tamano original. Clic para verla completa (lightbox). */
     .fr-avatar { width: 150px; height: 150px; border-radius: 50%; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--propia-border-divider); border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); cursor: zoom-in; margin-top: 4px; }
+    .fr-avatar-ini { width: 150px; height: 150px; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 800; border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); margin-top: 4px; }
     .fr-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand); cursor: pointer; }
-    .fr-avatar-drop { width: 150px; height: 150px; border-radius: 50%; border: 1.5px dashed var(--propia-text-faint); background: var(--propia-bg-card); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; text-align: center; margin-top: 4px; }
-    .fr-avatar-drop:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .fr-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 2px; }
+    .chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--propia-bg-card-soft); color: var(--propia-text-secondary); border: 1px solid var(--propia-border-card); }
+    .chip--rel { background: var(--propia-brand-soft); color: var(--propia-brand); border-color: var(--propia-brand-border); }
+    .chip--rol { background: var(--propia-ok-soft); color: #1B7A44; border-color: transparent; }
 
     .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .fr-fld { display: flex; flex-direction: column; gap: 4px; }
     .fr-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
     .fr-in { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); outline: none; background: var(--propia-bg-card); box-sizing: border-box; }
     .fr-in:focus { border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
+    .fr-in--ro { background: var(--propia-bg-card-soft); color: var(--propia-text-body); min-height: 36px; }
 
     .fr-empty { font-size: 12px; color: var(--propia-text-muted); padding: 6px 0; }
     .fr-doclist { display: flex; flex-direction: column; gap: 7px; }
@@ -177,37 +295,67 @@ else
     .fr-doc-del { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .fr-doc-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
     .fr-doc-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start; }
-    .fr-doc-add:hover { background: var(--propia-brand-soft); }
 
-    .fr-msg { margin: 0 20px; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
+    /* ===== Acceso al sistema (Rol) ===== */
+    .fr-roles { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--propia-border-card); }
+    .fr-roles-hint { font-size: 11.5px; color: var(--propia-text-muted); margin: 6px 0 10px; line-height: 1.5; }
+    .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .fr-chip-empty { font-size: 12px; color: var(--propia-text-faint); font-style: italic; }
+    .fr-rolchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--propia-brand-soft); color: var(--propia-brand); border: 1px solid var(--propia-brand-border); }
+    .fr-rolchip-x { border: 0; background: transparent; color: var(--propia-brand); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; border-radius: 50%; }
+    .fr-rolchip-x:hover { background: rgba(109,79,227,.16); }
+    .fr-roles-disp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+    .fr-disp-lbl { font-size: 11px; font-weight: 700; color: var(--propia-text-faint); }
+    .fr-rolchip-add { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--propia-bg-card); color: var(--propia-text-secondary); border: 1px dashed var(--propia-border-card-2); cursor: pointer; }
+    .fr-rolchip-add:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
+    .fr-roles-note { font-size: 11.5px; color: var(--propia-text-muted); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 9px; padding: 8px 11px; margin-top: 10px; line-height: 1.45; }
+
+    .fr-msg { margin: 12px 0 0; padding: 8px 12px; border-radius: 9px; font-size: 12px; }
     .fr-msg.ok { background: var(--propia-ok-soft); color: #1B7A44; }
     .fr-msg.err { background: var(--propia-danger-soft); color: #B02121; }
 
-    .fr-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
-    .fr-btn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    /* ===== Pie (calca maqueta .pm-foot) ===== */
+    .pm-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .fr-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
     .fr-btn:hover { background: var(--propia-bg-card-soft); }
     .fr-btn-primary { background: var(--propia-brand); border-color: var(--propia-brand); color: var(--propia-text-inverse); }
     .fr-btn-primary:hover { background: #5B3FD1; }
     .fr-btn-primary:disabled { opacity: .6; cursor: default; }
 
-    .fr-lb { position: fixed; inset: 0; z-index: 5000; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
+    .fr-lb { position: fixed; inset: 0; z-index: 9500; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
     .fr-lb img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
     .fr-lb-x { position: absolute; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: var(--propia-text-inverse); cursor: pointer; display: flex; align-items: center; justify-content: center; }
     .fr-lb-x:hover { background: rgba(255,255,255,.28); }
+
+    @@media (max-width: 640px) {
+        .fr-body { grid-template-columns: 1fr; }
+        .fr-grid { grid-template-columns: 1fr; }
+    }
 </style>
 
 @code {
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public Guid PersonaId { get; set; }
     [Parameter] public string? NombreInicial { get; set; }
+    /// <summary>Relacion con la unidad (Propietario/Residente/...). Se muestra en el subtitulo y como chip.</summary>
+    [Parameter] public string? Relacion { get; set; }
+    /// <summary>Codigo de la unidad (ej. "1-0103"). Chip + campo solo lectura.</summary>
+    [Parameter] public string? UnidadCodigo { get; set; }
+    /// <summary>Lista ordenada de personaIds visibles para la navegacion entre registros.</summary>
+    [Parameter] public List<Guid>? ListaPersonaIds { get; set; }
+
+    /// <summary>Resultado del modal: si hubo cambios (para refrescar) y a que registro navegar (null = cerrar).</summary>
+    public record Resultado(bool Cambio, Guid? IrA);
 
     private bool _cargando = true;
     private bool _guardando;
     private bool _subiendoFoto;
     private bool _subiendoDoc;
+    private bool _menu;
     private string? _msg;
     private bool _msgError;
     private bool _dirty;
+    private int _idx = -1;
 
     private TipoDocumento _tipoDoc = TipoDocumento.CC;
     private string _documento = "";
@@ -220,7 +368,45 @@ else
     private GeneroPersona? _genero;
     private string? _verImagen;
 
+    // ----- Acceso al sistema (Rol = invitar como usuario, reusa Usuarios/RBAC) -----
+    private bool _rolesCargando = true;
+    private List<RolDto> _roles = new();
+    private readonly List<Guid> _rolIdsAsignados = new();
+    private Guid? _usuarioTenantId;   // si la persona ya es usuario del tenant
+
     private List<DirectorioAdjuntoDto> _adjuntos = new();
+
+    // Titulo editable: refleja "Nombres Apellidos" y, al editarlo, reparte en nombres (1a palabra) + apellidos (resto).
+    private string TituloNombre
+    {
+        get => $"{_nombres} {_apellidos}".Trim();
+        set
+        {
+            var p = (value ?? "").Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            _nombres = p.Length > 0 ? p[0] : "";
+            _apellidos = p.Length > 1 ? p[1] : "";
+        }
+    }
+
+    private string Iniciales
+    {
+        get
+        {
+            var ini = $"{Primera(_nombres)}{Primera(_apellidos)}";
+            return string.IsNullOrWhiteSpace(ini) ? "#" : ini.ToUpperInvariant();
+        }
+    }
+    private static string Primera(string? s) => string.IsNullOrWhiteSpace(s) ? "" : s.Trim()[..1];
+
+    private string SubtituloRelacion
+    {
+        get
+        {
+            var rel = string.IsNullOrWhiteSpace(Relacion) ? "Residente" : Relacion!;
+            var doc = string.IsNullOrWhiteSpace(_documento) ? "" : $" · {DocLabel(_tipoDoc)} {_documento}";
+            return rel + doc;
+        }
+    }
 
     private HttpClient Auth()
     {
@@ -232,6 +418,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _idx = ListaPersonaIds?.IndexOf(PersonaId) ?? -1;
         try
         {
             var dto = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{PersonaId}");
@@ -244,6 +431,7 @@ else
                 _fotoUrl = p.FotoUrl; _fechaNac = p.FechaNacimiento; _genero = p.Genero;
             }
             await CargarAdjuntosAsync();
+            await CargarRolesAsync();
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _cargando = false; }
@@ -254,6 +442,34 @@ else
         try { _adjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/Persona/{PersonaId}") ?? new(); }
         catch { _adjuntos = new(); }
     }
+
+    // Roles de acceso: catalogo del tenant + los que ya tiene la persona si es usuario del tenant.
+    private async Task CargarRolesAsync()
+    {
+        try
+        {
+            _roles = await Auth().GetFromJsonAsync<List<RolDto>>("/api/roles") ?? new();
+            // La bandeja /api/usuarios oculta los usuarios "solo directorio" (residentes con acceso); se resuelve por persona.
+            var resp = await Auth().GetAsync($"/api/usuarios/por-persona/{PersonaId}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                var u = await resp.Content.ReadFromJsonAsync<UsuarioPorPersonaDto>();
+                if (u is not null)
+                {
+                    _usuarioTenantId = u.UsuarioTenantId;
+                    _rolIdsAsignados.Clear();
+                    _rolIdsAsignados.AddRange(u.RolIds);
+                }
+            }
+        }
+        catch { }
+        finally { _rolesCargando = false; }
+    }
+
+    private List<RolDto> RolesDisponibles() => _roles.Where(r => r.Activo && !_rolIdsAsignados.Contains(r.Id)).ToList();
+    private string RolNombre(Guid id) => _roles.FirstOrDefault(r => r.Id == id)?.Nombre ?? "Rol";
+    private void AgregarRol(Guid id) { if (!_rolIdsAsignados.Contains(id)) _rolIdsAsignados.Add(id); }
+    private void QuitarRol(Guid id) => _rolIdsAsignados.Remove(id);
 
     private void OnFechaNac(ChangeEventArgs e)
         => _fechaNac = DateOnly.TryParse(e.Value?.ToString(), out var d) ? d : null;
@@ -270,11 +486,38 @@ else
                 string.IsNullOrWhiteSpace(_telefono) ? null : _telefono!.Trim(),
                 _fotoUrl, _fechaNac, _genero);
             var resp = await Auth().PutAsJsonAsync($"/api/directorio/personas/{PersonaId}", req);
-            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Datos guardados."; _msgError = false; }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            _dirty = true;
+            // Acceso al sistema: invitar como usuario (si no lo es) o actualizar sus roles.
+            var (rolesOk, nota) = await GuardarRolesAsync();
+            _msg = "Datos guardados." + nota; _msgError = !rolesOk;
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _guardando = false; }
+    }
+
+    // Persiste el acceso: si la persona ya es usuario, actualiza sus roles; si no y hay roles, la invita (alta Pendiente).
+    private async Task<(bool ok, string nota)> GuardarRolesAsync()
+    {
+        try
+        {
+            if (_usuarioTenantId is Guid utid)
+            {
+                var r = await Auth().PutAsJsonAsync($"/api/usuarios/{utid}/roles", new ActualizarRolesUsuarioRequest(_rolIdsAsignados));
+                if (!r.IsSuccessStatusCode) return (false, " No se pudo actualizar el rol: " + await r.Content.ReadAsStringAsync());
+                return (true, " Rol actualizado.");
+            }
+            if (_rolIdsAsignados.Count > 0)
+            {
+                var r = await Auth().PostAsJsonAsync("/api/usuarios/alta", new CrearUsuarioAltaRequest(PersonaId, _rolIdsAsignados, new List<string>()));
+                if (!r.IsSuccessStatusCode) return (false, " No se pudo asignar el rol: " + await r.Content.ReadAsStringAsync());
+                var creado = await r.Content.ReadFromJsonAsync<AltaResp>();
+                if (creado is not null) _usuarioTenantId = creado.id;
+                return (true, " Invitado como usuario con el rol.");
+            }
+            return (true, "");
+        }
+        catch (Exception ex) { return (false, " Fallo al guardar el rol: " + ex.Message); }
     }
 
     private async Task SubirFoto(InputFileChangeEventArgs e)
@@ -335,7 +578,34 @@ else
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
     }
 
-    private void Cerrar() => Close(_dirty);
+    private async Task CopiarEnlace()
+    {
+        _menu = false;
+        var url = $"{Nav.BaseUri.TrimEnd('/')}/directorio/personas/{PersonaId}";
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", url); _msg = "Enlace al registro copiado."; _msgError = false; }
+        catch { _msg = "No se pudo copiar el enlace."; _msgError = true; }
+    }
+
+    private void AbrirEnDirectorio()
+    {
+        _menu = false;
+        Close(new Resultado(_dirty, null));
+        Nav.NavigateTo($"/directorio/personas/{PersonaId}");
+    }
+
+    private void Anterior()
+    {
+        if (ListaPersonaIds is null || _idx <= 0) return;
+        Close(new Resultado(_dirty, ListaPersonaIds[_idx - 1]));
+    }
+
+    private void Siguiente()
+    {
+        if (ListaPersonaIds is null || _idx < 0 || _idx >= ListaPersonaIds.Count - 1) return;
+        Close(new Resultado(_dirty, ListaPersonaIds[_idx + 1]));
+    }
+
+    private void Cerrar() => Close(new Resultado(_dirty, null));
 
     private static string DocLabel(TipoDocumento t) => t switch
     {
@@ -351,4 +621,5 @@ else
         => b >= 1_048_576 ? $"{b / 1_048_576.0:0.0} MB" : $"{b / 1024.0:0} KB";
 
     private record UrlResp(string? url);
+    private record AltaResp(Guid id);
 }

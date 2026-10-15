@@ -737,6 +737,17 @@ public class UsuariosService : IUsuariosService
     /// <summary>Reemplaza el conjunto COMPLETO de roles de un usuario (chips). Sincroniza el rol principal
     /// (UsuarioTenant.RolId/Rol = el primero). Default spec: si queda vacio -> "Portal Residente".
     /// Guard: no deja la copropiedad sin Administrador activo.</summary>
+    public async Task<UsuarioPorPersonaDto?> GetPorPersonaAsync(Guid personaId, CancellationToken ct)
+    {
+        // El filtro de tenant (HasQueryFilter) acota al tenant actual; incluye usuarios "solo directorio"
+        // (residentes con acceso), que la bandeja de Usuarios oculta.
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.PersonaId == personaId, ct);
+        if (ut is null) return null;
+        var rolIds = await _db.UsuarioTenantRoles.Where(x => x.UsuarioTenantId == ut.Id)
+            .Select(x => x.RolId).ToListAsync(ct);
+        return new UsuarioPorPersonaDto(ut.Id, ut.Estado, rolIds);
+    }
+
     public async Task<bool> ActualizarRolesAsync(Guid usuarioTenantId, ActualizarRolesUsuarioRequest req, CancellationToken ct)
     {
         var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);

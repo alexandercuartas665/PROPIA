@@ -15,6 +15,10 @@ public interface IUsuariosService
     Task<IReadOnlyList<UsuarioListaDto>> ListarUsuariosAsync(EstadoUsuarioTenant? estado, string? query, CancellationToken ct);
     Task<UsuarioDetalleDto?> GetUsuarioDetalleAsync(Guid usuarioTenantId, CancellationToken ct);
 
+    /// <summary>Acceso de una persona en el tenant actual (usuarioTenantId + roles) o null si no es usuario.
+    /// Para la ficha de Residente, que necesita ver/editar roles de usuarios "solo directorio" ocultos en la bandeja.</summary>
+    Task<UsuarioPorPersonaDto?> GetPorPersonaAsync(Guid personaId, CancellationToken ct);
+
     // --- Invitacion (envio + aceptacion publica) ---
     Task<InvitacionDto> InvitarAsync(CrearInvitacionRequest req, CancellationToken ct);
     // Invita a un externo (por email) a un tablero: crea la persona si no existe y envia correo.

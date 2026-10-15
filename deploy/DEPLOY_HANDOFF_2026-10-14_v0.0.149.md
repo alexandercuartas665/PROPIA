@@ -122,3 +122,41 @@ Regimen/Logo/RepresentanteLegal (campos que la ficha rapida no edita). Archivos:
 FichaResidenteModal; alta empresa -> FichaEmpresaModal (NIT 12914665, sin salir de /residentes); edicion empresa
 existente (A-1223) -> FichaEmpresaModal. Datos de prueba creados y borrados (total 595, empresas 1). Version visible
 **0.0.154**.
+
+---
+
+## Addendum v0.0.155 (2026-10-14) - FichaResidenteModal: rediseno al frame estandar de ficha + asignar rol (invitar como usuario)
+Pedido de Alex (maqueta `D:\DesarrolloIA\Maqueta\modal-residente.html`): el modal de residente al frame estandar
+rico (como Tarea/PQRSD/Contrato) MAS poder asignar el rol de acceso. **Ola 1+2 de 3** (falta COMENTARIOS, Ola 3).
+
+**UI - FichaResidenteModal.razor (reescrito):** del quick-ficha de 720px al frame estandar `is-fixedh`
+(1056px x 86vh fijo, radio 12): cabecera con navegacion ‹ › entre registros (recorre las personas visibles),
+**titulo editable** (nombre; reparte en nombres/apellidos), subtitulo "relacion · CC doc", acciones de cabecera
+(copiar enlace al registro, menu ···) y cerrar. Cuerpo en 2 columnas (calca `.fr-*`): izquierda foto o avatar de
+iniciales + "Cambiar foto" + chips (relacion + rol); derecha DATOS en grilla (Nombres, Apellidos, Correo, Telefono,
+Fecha de nacimiento, Genero, Documento [solo lectura], Unidad [solo lectura]) + DOCUMENTOS (adjuntos de persona).
+Pie Cerrar / Guardar cambios. Medido lado-a-lado vs la maqueta servida por HTTP (shell 1056 x 86vh radio 12,
+cabecera ~81px, cuerpo 2col 4fr/8fr gap 18, avatar 150) con getComputedStyle; gap de line-height corregido.
+
+**Nuevo - seccion "ACCESO AL SISTEMA (ROL)":** multi-seleccion (chips asignados con x + roles disponibles "clic
+para asignar"), patron del modal de Usuario. Al **Guardar**, el rol se persiste: si la persona ya es usuario del
+tenant se **actualizan sus roles** (`PUT /api/usuarios/{id}/roles`); si no, se **invita como usuario** (alta en
+Invitacion pendiente con el/los rol(es): `POST /api/usuarios/alta`). El rol otorga acceso (p. ej. Portal Residente);
+el detalle de permisos se edita en la bandeja Roles y permisos.
+
+**Infra de modales:** `ModalOptions`/`ModalReference`/`ModalService`/`ModalHost` ganan `CssClass` para aplicar la
+clase `is-fixedh` del frame estandar (radio 12 + alto fijo 880). Reutilizable por otras fichas.
+
+**Backend nuevo (sin migracion):** `GET /api/usuarios/por-persona/{personaId}` -> `UsuarioPorPersonaDto`
+(usuarioTenantId + estado + rolIds) o 204. Necesario porque la bandeja `/api/usuarios` **oculta** los usuarios
+"solo directorio" (residentes con acceso: filtra por `RolesSemillaTenant.SoloDirectorio`), asi que no sirve para
+detectar si un residente ya es usuario; se resuelve por persona (respeta el filtro de tenant). Archivos backend:
+`UsuariosAccesos/Dtos.cs`, `IUsuariosService.cs`, `UsuariosService.cs`, `Api/Controllers/UsuariosAccesosController.cs`.
+
+**Verificado en runtime (claude-in-chrome, demo 6d93d9fa):** frame milimetrico vs maqueta; navegacion ‹ 19/221 ›;
+deteccion de rol (Nelson Hurtado Cuero ya es usuario con "Portal Residente" -> aparece asignado); asignar "Terceros"
++ Guardar -> PUT ok (BD: Portal Residente + Terceros), y restaurado a Portal Residente (BD de vuelta a 1 rol). El
+camino de alta/invitacion quedo cableado y ejercitado (rechazo correcto "ya tiene acceso" en persona existente);
+no se corrio un alta exitosa nueva porque en la demo TODOS los residentes ya son usuarios (semilla con Portal
+Residente). Sin migracion. Version visible **0.0.155**. **Pendiente Ola 3: panel COMENTARIOS (tabla + RLS +
+endpoints + migracion).**
