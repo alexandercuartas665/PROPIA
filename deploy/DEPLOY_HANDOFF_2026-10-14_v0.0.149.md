@@ -303,3 +303,21 @@ subtitulo envolvia en 3 lineas. Fix (@media <=640px): `pm-head` con `flex-wrap`,
 media query movil. Version visible **0.0.161**.
 **Pendiente (proxima ola):** filas de botones del header de modulos que se recortan en celular (envolver), barrido
 fino modal-por-modal (GestionarPqrsd/Plantillas sin @media), y compactar el toolbar de la vista-tabla en celular.
+
+---
+
+## Addendum v0.0.162 (2026-10-15) - Responsive celular Ola 3: header que envuelve + barrido de modales
+**Header de modulo (`.mod-pagehead`, en propia-tokens.css):** a `@media <=575.98px` pasa a `flex-direction:column`
+(titulo arriba) y el bloque de acciones (ultimo hijo) `display:flex; flex-wrap:wrap` -> los botones
+(Nuevo/Descargar/Cargar) ya NO se recortan al borde; envuelven a otra fila. Aplica a los 6 modulos que usan
+`.mod-pagehead`: Directorio, Usuarios, Zonas comunes, Equipos y Activos, Roles, Seguros. Titulo a 26px en celular.
+`propia-tokens.css` a `?v=8` en `App.razor`.
+
+**Barrido de modales (celular 375px):** todos los modales renderan full-width (ModalHost <640px) **sin desborde
+horizontal de contenido**. Verificados: GestionarPqrsdModal (el mas pesado, sin @media -> OK, grillas 2-col caben),
+NuevaPqrsdWizardModal (OK), ficha de residente (Ola 2). La mayoria de modales ricos ya traia media query movil.
+
+**Verificado en runtime (375px):** header de Directorio en columna, botones Descargar/Cargar/Agregar sin recorte
+(ninguno pasa de 375px); modales full-width sin overflow. Version visible **0.0.162**.
+**Pendiente (pulido menor):** headers NO-mod-pagehead que aun recorten un boton (ej. Config "Cargar plantilla" en su
+tarjeta propia), y compactar el toolbar de la vista-tabla en celular (hoy envuelve en varias filas, funcional).
