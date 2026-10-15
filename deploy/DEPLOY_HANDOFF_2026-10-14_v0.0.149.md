@@ -321,3 +321,19 @@ NuevaPqrsdWizardModal (OK), ficha de residente (Ola 2). La mayoria de modales ri
 (ninguno pasa de 375px); modales full-width sin overflow. Version visible **0.0.162**.
 **Pendiente (pulido menor):** headers NO-mod-pagehead que aun recorten un boton (ej. Config "Cargar plantilla" en su
 tarjeta propia), y compactar el toolbar de la vista-tabla en celular (hoy envuelve en varias filas, funcional).
+
+---
+
+## Addendum v0.0.163 (2026-10-15) - Responsive celular Ola 4 (pulido): headers propios + card de carga + toolbar
+Cierra el pulido movil (CSS global, sin backend, en `propia-tokens.css` `?v=10` en `App.razor`), dentro del mismo
+`@media (max-width:575.98px)` del header:
+- `.dst-pagehead` (Unidades, no usa mod-pagehead) -> `flex-direction:column` + `.dst-head-actions { flex-wrap:wrap }`:
+  "Cargar plantilla (Excel)" ya no se recorta.
+- `.hcm-actions` (card de carga masiva de `HubCargaMasiva`, usado en Configuracion) traia `flex-shrink:0` -> no
+  encogia y el boton "Cargar plantilla" se salia; ahora `flex:1 1 100%; min-width:0; flex-wrap:wrap` -> los botones
+  Descargar/Cargar envuelven dentro del viewport.
+- `.mod-filtros` (toolbar compartido de la vista-tabla): gap 6px + margin 10px en celular (un poco mas compacto).
+
+**Verificado en runtime (375px):** Unidades y Configuracion ya no recortan los botones del header/card (ninguno pasa
+de 375px). Version visible **0.0.163**. **Responsive movil cerrado** (Olas 1-4): sin scroll lateral de pagina,
+modales full-width, headers/botones sin recorte.
