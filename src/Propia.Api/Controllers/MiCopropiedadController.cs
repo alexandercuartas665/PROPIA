@@ -641,6 +641,15 @@ public class MiCopropiedadController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Propietario override (opcional) del vehiculo: PersonaId null = limpiar (vuelve al dueno de la unidad).
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-placas/{placaId:guid}/propietario")]
+    public async Task<IActionResult> ActualizarPropietarioPlaca(Guid placaId, [FromBody] ActualizarPropietarioRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarPropietarioPlacaAsync(placaId, req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
     [HttpDelete("unidades-placas/{placaId:guid}")]
     public async Task<IActionResult> EliminarPlacaUnidad(Guid placaId, CancellationToken ct)
@@ -680,6 +689,15 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> ActualizarMascotaUnidad(Guid mascotaId, [FromBody] ActualizarUnidadMascotaRequest req, CancellationToken ct)
     {
         try { var dto = await _svc.ActualizarMascotaUnidadAsync(mascotaId, req, ct); return dto is null ? NotFound() : Ok(dto); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Propietario override (opcional) de la mascota: PersonaId null = limpiar (vuelve al dueno de la unidad).
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPut("unidades-mascotas/{mascotaId:guid}/propietario")]
+    public async Task<IActionResult> ActualizarPropietarioMascota(Guid mascotaId, [FromBody] ActualizarPropietarioRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarPropietarioMascotaAsync(mascotaId, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

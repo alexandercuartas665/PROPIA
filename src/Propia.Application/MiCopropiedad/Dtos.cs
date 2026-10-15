@@ -205,10 +205,15 @@ public record UnidadPlacaDto(Guid Id, string Placa, TipoVehiculo TipoVehiculo);
 public record VehiculoResumenDto(
     Guid PlacaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     string Placa, TipoVehiculo TipoVehiculo,
-    string? PropietarioNombre);
-public record CrearUnidadPlacaRequest(string Placa, TipoVehiculo TipoVehiculo);
+    // PropietarioNombre resuelto: override si PropietarioPersonaId no es null, si no el dueno de la unidad.
+    string? PropietarioNombre, Guid? PropietarioPersonaId = null);
+public record CrearUnidadPlacaRequest(string Placa, TipoVehiculo TipoVehiculo, Guid? PropietarioPersonaId = null);
 // PUT es MERGE: lo que llega null no se toca.
 public record ActualizarUnidadPlacaRequest(string? Placa = null, TipoVehiculo? TipoVehiculo = null);
+
+// Propietario override (opcional) del vehiculo/mascota. PersonaId = null -> limpiar (vuelve al dueno de la unidad).
+// Endpoint dedicado para no chocar con el MERGE del PUT general (null = "no tocar" vs null = "limpiar").
+public record ActualizarPropietarioRequest(Guid? PersonaId);
 
 // Arriendos y cobros mensuales de la unidad.
 public record UnidadArriendoDto(Guid Id, string Concepto, decimal ValorMensual, string? Referencia);
@@ -221,8 +226,8 @@ public record UnidadMascotaDto(Guid Id, string Nombre, TipoMascota Tipo, string?
 public record MascotaResumenDto(
     Guid MascotaId, Guid UnidadId, string UnidadNumero, string UnidadCodigo,
     string Nombre, TipoMascota Tipo, string? Raza,
-    string? PropietarioNombre, string? TipoCustom = null);
-public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza, string? TipoCustom = null);
+    string? PropietarioNombre, string? TipoCustom = null, Guid? PropietarioPersonaId = null);
+public record CrearUnidadMascotaRequest(string Nombre, TipoMascota Tipo, string? Raza, string? TipoCustom = null, Guid? PropietarioPersonaId = null);
 // TipoCustom: null = no tocar (MERGE); "" = limpiar (vuelve al enum); texto = tipo propio.
 public record ActualizarUnidadMascotaRequest(string? Nombre = null, TipoMascota? Tipo = null, string? Raza = null, string? TipoCustom = null);
 

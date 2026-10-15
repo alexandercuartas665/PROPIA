@@ -217,3 +217,39 @@ Archivos: `Shared/SelectorUnidadCodigo.razor`, `Pages/Capa2/VehiculosPanel.razor
 Verificado en runtime (navegador integrado, demo): en ambos, al abrir el alta el expander es visible
 (opacity 1 por `:focus-within`, mouse fuera), habilitado, el foco cae en Unidad, el orden es Unidad+Placa/Nombre, y
 el clic con campos vacios muestra el toast de validacion. Version visible **0.0.157**.
+
+---
+
+## Addendum v0.0.158 (2026-10-15) - Vehiculos y Mascotas: propietario editable (override opcional del Directorio) CON MIGRACION
+Alex: en Vehiculos y Mascotas el propietario venia derivado del dueno de la unidad y no se podia editar; se pide
+poder elegirlo con el buscador del Directorio (SelectorPersona). Semantica elegida: **override opcional** (si se
+asigna una persona manda; si queda vacio, se muestra el dueno de la unidad = comportamiento actual).
+
+**MIGRACION (aplicar en deploy):** `20261015110445_AddVehiculoMascotaPropietario` agrega la columna nullable
+`propietario_persona_id` (uuid) a `unidad_placas` y `unidad_mascotas`. **Aditiva**, no toca datos ni RLS (las
+tablas ya tienen RLS; agregar columna no la afecta).
+
+**Backend:** `UnidadPlaca`/`UnidadMascota` ganan `PropietarioPersonaId` (Guid?). DTOs: `VehiculoResumenDto`/
+`MascotaResumenDto` + `PropietarioPersonaId`; `CrearUnidadPlacaRequest`/`CrearUnidadMascotaRequest` + ese campo;
+nuevo `ActualizarPropietarioRequest(Guid? PersonaId)`. Servicio (`MiCopropiedadService.Unidades`/`.FichaInmuebleV3`):
+`ListVehiculos/ListMascotas` resuelven el nombre = **override si hay persona, si no el dueno de la unidad**
+(`NombresPropietarioOverrideAsync`); `AgregarPlaca/AgregarMascota` guardan el override; nuevos
+`ActualizarPropietarioPlacaAsync/MascotaAsync` (PersonaId null = limpiar). T-02: valida que la persona tenga
+vinculo activo en el tenant (`DirectorioVinculos`). Endpoints: `PUT /api/mi-copropiedad/unidades-placas/{id}/propietario`
+y `.../unidades-mascotas/{id}/propietario` (gateados con permiso Editar de MiCopropiedad).
+
+**UI (ambos paneles):** alta -> la columna Propietario es un `SelectorPersona Flotante` (opcional); ficha ->
+muestra el propietario actual + fuente ("segun la unidad" / "del Directorio") + "Quitar" (si hay override) +
+`SelectorPersona` para cambiarlo. `@using Propia.Application.Directorio` agregado.
+
+**Pasos de deploy:** 1) `git pull`. 2) **Aplicar la migracion** `AddVehiculoMascotaPropietario`. 3) Build/deploy.
+4) Verificar version **v0.0.158**.
+
+**Verificado en runtime (navegador integrado, demo 6d93d9fa):** /vehiculos y /mascotas cargan con la columna nueva;
+Mascotas (ficha de "Jack"): asignar "Nelson Hurtado Cuero" por el Directorio -> BD propietario_persona_id seteado,
+UI "del Directorio"; "Quitar" -> vuelve al dueno de la unidad, BD a null. Vehiculos (alta): unidad 1-0101 + placa
+TEST01 + propietario Nelson -> creado con override (BD confirmado), ficha muestra "del Directorio"; vehiculo de
+prueba borrado. Datos de prueba limpios. Version visible **0.0.158**.
+
+**Pendiente/alcance:** el override es solo PERSONA (no empresa); inline-edit del propietario en la tabla (hoy se
+edita en alta + ficha).

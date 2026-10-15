@@ -395,16 +395,19 @@ public partial class MiCopropiedadService
     public async Task<IReadOnlyList<VehiculoResumenDto>> ListVehiculosAsync(CancellationToken ct)
     {
         var rows = await _db.UnidadPlacas.AsNoTracking()
-            .Select(v => new { v.Id, v.UnidadId, v.Placa, v.TipoVehiculo }).ToListAsync(ct);
+            .Select(v => new { v.Id, v.UnidadId, v.Placa, v.TipoVehiculo, v.PropietarioPersonaId }).ToListAsync(ct);
         if (rows.Count == 0) return Array.Empty<VehiculoResumenDto>();
 
         var datos = await DatosDeUnidadesAsync(rows.Select(r => r.UnidadId), ct);
+        var overrides = await NombresPropietarioOverrideAsync(rows.Select(r => r.PropietarioPersonaId), ct);
         return rows
             .Select(v =>
             {
                 var (numero, codigo, propietario) = datos.GetValueOrDefault(v.UnidadId);
+                // Override opcional: si hay persona asignada se usa su nombre; si no, el dueno de la unidad.
+                var nombre = v.PropietarioPersonaId is Guid pid && overrides.TryGetValue(pid, out var n) ? n : propietario;
                 return new VehiculoResumenDto(v.Id, v.UnidadId, numero, codigo,
-                    v.Placa, v.TipoVehiculo, propietario);
+                    v.Placa, v.TipoVehiculo, nombre, v.PropietarioPersonaId);
             })
             .OrderBy(v => v.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(v => v.Placa)
             .ToList();
@@ -413,19 +416,32 @@ public partial class MiCopropiedadService
     public async Task<IReadOnlyList<MascotaResumenDto>> ListMascotasAsync(CancellationToken ct)
     {
         var rows = await _db.UnidadMascotas.AsNoTracking()
-            .Select(m => new { m.Id, m.UnidadId, m.Nombre, m.Tipo, m.Raza, m.TipoCustom }).ToListAsync(ct);
+            .Select(m => new { m.Id, m.UnidadId, m.Nombre, m.Tipo, m.Raza, m.TipoCustom, m.PropietarioPersonaId }).ToListAsync(ct);
         if (rows.Count == 0) return Array.Empty<MascotaResumenDto>();
 
         var datos = await DatosDeUnidadesAsync(rows.Select(r => r.UnidadId), ct);
+        var overrides = await NombresPropietarioOverrideAsync(rows.Select(r => r.PropietarioPersonaId), ct);
         return rows
             .Select(m =>
             {
                 var (numero, codigo, propietario) = datos.GetValueOrDefault(m.UnidadId);
+                var nombre = m.PropietarioPersonaId is Guid pid && overrides.TryGetValue(pid, out var n) ? n : propietario;
                 return new MascotaResumenDto(m.Id, m.UnidadId, numero, codigo,
-                    m.Nombre, m.Tipo, m.Raza, propietario, m.TipoCustom);
+                    m.Nombre, m.Tipo, m.Raza, nombre, m.TipoCustom, m.PropietarioPersonaId);
             })
             .OrderBy(m => m.UnidadCodigo, StringComparer.CurrentCultureIgnoreCase).ThenBy(m => m.Nombre)
             .ToList();
+    }
+
+    // Nombres de las personas asignadas como propietario override (vehiculos/mascotas). Personas es GLOBAL.
+    private async Task<Dictionary<Guid, string>> NombresPropietarioOverrideAsync(IEnumerable<Guid?> ids, CancellationToken ct)
+    {
+        var distinct = ids.Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
+        if (distinct.Count == 0) return new();
+        return await _db.Personas.AsNoTracking()
+            .Where(p => distinct.Contains(p.Id))
+            .Select(p => new { p.Id, Nombre = ((p.Nombres ?? "") + " " + (p.Apellidos ?? "")).Trim() })
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, ct);
     }
 
     /// <summary>

@@ -68,6 +68,7 @@ public interface IMiCopropiedadService
     Task<IReadOnlyList<UnidadPlacaDto>> ListPlacasUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadPlacaDto?> AgregarPlacaUnidadAsync(Guid unidadId, CrearUnidadPlacaRequest req, CancellationToken ct);
     Task<UnidadPlacaDto?> ActualizarPlacaUnidadAsync(Guid placaId, ActualizarUnidadPlacaRequest req, CancellationToken ct);
+    Task<bool> ActualizarPropietarioPlacaAsync(Guid placaId, ActualizarPropietarioRequest req, CancellationToken ct);
     Task<bool> EliminarPlacaUnidadAsync(Guid placaId, CancellationToken ct);
 
     // Arriendos y cobros mensuales
@@ -78,6 +79,7 @@ public interface IMiCopropiedadService
     // Mascotas
     Task<IReadOnlyList<UnidadMascotaDto>> ListMascotasUnidadAsync(Guid unidadId, CancellationToken ct);
     Task<UnidadMascotaDto?> AgregarMascotaUnidadAsync(Guid unidadId, CrearUnidadMascotaRequest req, CancellationToken ct);
+    Task<bool> ActualizarPropietarioMascotaAsync(Guid mascotaId, ActualizarPropietarioRequest req, CancellationToken ct);
     Task<UnidadMascotaDto?> ActualizarMascotaUnidadAsync(Guid mascotaId, ActualizarUnidadMascotaRequest req, CancellationToken ct);
     Task<bool> EliminarMascotaUnidadAsync(Guid mascotaId, CancellationToken ct);
 

@@ -225,6 +225,10 @@ public class UnidadPlaca : TenantEntity
 
     /// <summary>Reusa el enum de Porteria 2.12 (Automovil/Moto/...). En la ficha v3 se muestra Carro/Moto.</summary>
     public TipoVehiculo TipoVehiculo { get; set; } = TipoVehiculo.Automovil;
+
+    /// <summary>Propietario del vehiculo (override opcional del Directorio). Si es null se usa el dueno de la
+    /// unidad. Persona GLOBAL: validar que pertenezca al tenant al asignar. V-propietario-editable.</summary>
+    public Guid? PropietarioPersonaId { get; set; }
 }
 
 /// <summary>
@@ -263,6 +267,10 @@ public class UnidadMascota : TenantEntity
     /// el enum queda en <see cref="TipoMascota.Otro"/> como respaldo neutro. Opcional.</summary>
     public string? TipoCustom { get; set; }
     public string? Raza { get; set; }
+
+    /// <summary>Propietario de la mascota (override opcional del Directorio). Si es null se usa el dueno de la
+    /// unidad. Persona GLOBAL: validar que pertenezca al tenant al asignar.</summary>
+    public Guid? PropietarioPersonaId { get; set; }
 }
 
 /// <summary>

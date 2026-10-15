@@ -18339,6 +18339,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(80)")
                         .HasColumnName("nombre");
 
+                    b.Property<Guid?>("PropietarioPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("propietario_persona_id");
+
                     b.Property<string>("Raza")
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
@@ -18518,6 +18522,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasMaxLength(15)
                         .HasColumnType("character varying(15)")
                         .HasColumnName("placa");
+
+                    b.Property<Guid?>("PropietarioPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("propietario_persona_id");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")

@@ -29,11 +29,34 @@ public partial class MiCopropiedadService
         var placa = (req.Placa ?? "").Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(placa)) throw new InvalidOperationException("La placa es obligatoria.");
         if (placa.Length > 15) placa = placa[..15];
-        var e = new UnidadPlaca { TenantId = tid, UnidadId = unidadId, Placa = placa, TipoVehiculo = req.TipoVehiculo };
+        var e = new UnidadPlaca { TenantId = tid, UnidadId = unidadId, Placa = placa, TipoVehiculo = req.TipoVehiculo,
+            PropietarioPersonaId = await ValidarPropietarioAsync(req.PropietarioPersonaId, ct) };
         _db.UnidadPlacas.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Placa '{placa}' habilitada en la unidad.", ct, unidadId);
         return new UnidadPlacaDto(e.Id, e.Placa, e.TipoVehiculo);
+    }
+
+    // Propietario override (opcional) del vehiculo/mascota. PersonaId null -> limpia (vuelve al dueno de la unidad).
+    // T-02: valida que la persona tenga vinculo activo en la copropiedad actual (DirectorioVinculos ya viene acotado).
+    private async Task<Guid?> ValidarPropietarioAsync(Guid? personaId, CancellationToken ct)
+    {
+        if (personaId is not Guid pid) return null;
+        var ok = await _db.DirectorioVinculos.AnyAsync(v =>
+            v.EntidadTipo == Domain.Enums.EntidadDirectorio.Persona && v.EntidadId == pid
+            && v.Estado == Domain.Enums.EstadoVinculo.Activo, ct);
+        if (!ok) throw new InvalidOperationException("La persona no pertenece a esta copropiedad.");
+        return pid;
+    }
+
+    public async Task<bool> ActualizarPropietarioPlacaAsync(Guid placaId, ActualizarPropietarioRequest req, CancellationToken ct)
+    {
+        var e = await _db.UnidadPlacas.FirstOrDefaultAsync(x => x.Id == placaId, ct);
+        if (e is null) return false;
+        e.PropietarioPersonaId = await ValidarPropietarioAsync(req.PersonaId, ct);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Propietario del vehiculo '{e.Placa}' actualizado.", ct, e.UnidadId);
+        return true;
     }
 
     // Los modulos /vehiculos y /mascotas editan en linea sobre la tabla (patron de vista tabla del
@@ -114,11 +137,22 @@ public partial class MiCopropiedadService
         if (nombre.Length > 80) nombre = nombre[..80];
         var raza = string.IsNullOrWhiteSpace(req.Raza) ? null : req.Raza.Trim();
         var tipoCustom = string.IsNullOrWhiteSpace(req.TipoCustom) ? null : req.TipoCustom.Trim();
-        var e = new UnidadMascota { TenantId = tid, UnidadId = unidadId, Nombre = nombre, Tipo = req.Tipo, Raza = raza, TipoCustom = tipoCustom };
+        var e = new UnidadMascota { TenantId = tid, UnidadId = unidadId, Nombre = nombre, Tipo = req.Tipo, Raza = raza, TipoCustom = tipoCustom,
+            PropietarioPersonaId = await ValidarPropietarioAsync(req.PropietarioPersonaId, ct) };
         _db.UnidadMascotas.Add(e);
         await _db.SaveChangesAsync(ct);
         await RegistrarBitacoraAsync("Unidad", $"Mascota '{nombre}' registrada en la unidad.", ct, unidadId);
         return new UnidadMascotaDto(e.Id, e.Nombre, e.Tipo, e.Raza, e.TipoCustom);
+    }
+
+    public async Task<bool> ActualizarPropietarioMascotaAsync(Guid mascotaId, ActualizarPropietarioRequest req, CancellationToken ct)
+    {
+        var e = await _db.UnidadMascotas.FirstOrDefaultAsync(x => x.Id == mascotaId, ct);
+        if (e is null) return false;
+        e.PropietarioPersonaId = await ValidarPropietarioAsync(req.PersonaId, ct);
+        await _db.SaveChangesAsync(ct);
+        await RegistrarBitacoraAsync("Unidad", $"Propietario de la mascota '{e.Nombre}' actualizado.", ct, e.UnidadId);
+        return true;
     }
 
     public async Task<UnidadMascotaDto?> ActualizarMascotaUnidadAsync(Guid mascotaId, ActualizarUnidadMascotaRequest req, CancellationToken ct)

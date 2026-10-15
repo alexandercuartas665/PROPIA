@@ -1,5 +1,6 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Catalogos
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @using Microsoft.AspNetCore.Components.Web
@@ -277,7 +278,11 @@ else
                                 <input class="mas-row-inp" placeholder="Raza" value="@_nuRaza" @oninput="OnRazaNueva" />
                                 break;
                             case "propietario":
-                                <div class="mas-cell mas-auto">(según la unidad)</div>
+                                @* Override opcional del Directorio; si se deja vacio, se usa el dueno de la unidad. *@
+                                <div class="mas-nf-prop">
+                                    <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="_propSelNuevo" SeleccionadaChanged="OnPropietarioNuevo"
+                                                     PermiteEmpresa="false" Placeholder="Propietario (opcional)" />
+                                </div>
                                 break;
                         }
                     }
@@ -435,7 +440,16 @@ else
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
                         <input class="mas-row-inp" value="@fm.UnidadCodigo" disabled /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
-                        <input class="mas-row-inp" value="@(string.IsNullOrWhiteSpace(fm.PropietarioNombre) ? "-" : fm.PropietarioNombre)" disabled /></label>
+                        <div class="mas-prop-cur">
+                            <span>@(string.IsNullOrWhiteSpace(fm.PropietarioNombre) ? "-" : fm.PropietarioNombre)</span>
+                            <span class="mas-prop-src">@(fm.PropietarioPersonaId is null ? "según la unidad" : "del Directorio")</span>
+                            @if (fm.PropietarioPersonaId is not null)
+                            {
+                                <button type="button" class="mas-prop-clear" @onclick="() => FichaCambiarPropietario(fm, null)">Quitar</button>
+                            }
+                        </div>
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="@(sel => FichaCambiarPropietario(fm, sel))"
+                                         PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" /></label>
                     @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
                     {
                         var d = def; var val = ValorDe(fm.MascotaId, def.Id);
@@ -521,6 +535,8 @@ else
     private string _nuNombre = "";
     private string _nuRaza = "";
     private string _nuTipoSel = "";
+    private PersonaCandidatoDto? _propSelNuevo;   // propietario override elegido en el alta (opcional)
+    private Guid? _nuPropietarioId;
     private readonly Dictionary<Guid, string> _nuDinamicos = new();
 
     private string _q = "";
@@ -814,6 +830,18 @@ else
         StateHasChanged();
     }
     private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
+    private void OnPropietarioNuevo(PersonaCandidatoDto? sel) { _propSelNuevo = sel; _nuPropietarioId = sel?.PersonaId; }
+
+    // Ficha: setear (sel) o limpiar (null) el propietario override de la mascota; refresca tabla y ficha.
+    private async Task FichaCambiarPropietario(MascotaResumenDto v, PersonaCandidatoDto? sel)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-mascotas/{v.MascotaId}/propietario",
+            new ActualizarPropietarioRequest(sel?.PersonaId));
+        if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+        await CargarAsync();
+        RefrescarFichaM(v.MascotaId);
+        Mensaje(sel is null ? "Propietario: se usa el dueno de la unidad." : "Propietario actualizado.", false);
+    }
     private void AbrirUnidad(MascotaResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnNombreNuevo(ChangeEventArgs e) => _nuNombre = e.Value?.ToString() ?? string.Empty;
     private void OnRazaNueva(ChangeEventArgs e) => _nuRaza = e.Value?.ToString() ?? string.Empty;
@@ -957,7 +985,7 @@ else
     private void AbrirAlta()
     {
         _altaAbierta = true; _focusPending = true;
-        _nuUnidadId = null; _nuNombre = ""; _nuRaza = ""; _nuTipoSel = _tipoOpciones.FirstOrDefault() ?? TipoLabel(TipoMascota.Perro); _nuDinamicos.Clear();
+        _nuUnidadId = null; _nuNombre = ""; _nuRaza = ""; _nuTipoSel = _tipoOpciones.FirstOrDefault() ?? TipoLabel(TipoMascota.Perro); _propSelNuevo = null; _nuPropietarioId = null; _nuDinamicos.Clear();
     }
     private void CerrarAlta() { _altaAbierta = false; }
     private async Task OnAltaKeydown(KeyboardEventArgs e)
@@ -986,7 +1014,7 @@ else
         {
             var (tn, tc) = DesdeSelTipo(_nuTipoSel);
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{uid}/mascotas",
-                new CrearUnidadMascotaRequest(_nuNombre.Trim(), tn, string.IsNullOrWhiteSpace(_nuRaza) ? null : _nuRaza.Trim(), tc));
+                new CrearUnidadMascotaRequest(_nuNombre.Trim(), tn, string.IsNullOrWhiteSpace(_nuRaza) ? null : _nuRaza.Trim(), tc, _nuPropietarioId));
             if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
 
             var creada = await resp.Content.ReadFromJsonAsync<UnidadMascotaDto>();
@@ -999,7 +1027,7 @@ else
                 _recienCreados.Add(creada.Id); _suppressRecienClearM = true;
             }
 
-            _nuNombre = ""; _nuRaza = ""; _nuTipoSel = _tipoOpciones.FirstOrDefault() ?? TipoLabel(TipoMascota.Perro); _nuUnidadId = null; _nuDinamicos.Clear();
+            _nuNombre = ""; _nuRaza = ""; _nuTipoSel = _tipoOpciones.FirstOrDefault() ?? TipoLabel(TipoMascota.Perro); _nuUnidadId = null; _propSelNuevo = null; _nuPropietarioId = null; _nuDinamicos.Clear();
             _altaAbierta = false; _nonce++;
             await CargarAsync();
             Mensaje("Mascota agregada.", false);
@@ -1603,6 +1631,11 @@ else
     .mas-row:hover .mas-exp-fijo { opacity: 1; }
     /* Canon: el expander tambien es visible en la fila de alta (hover o foco dentro de la fila). */
     .mas-newrow--edit:hover .mas-exp-fijo, .mas-newrow--edit:focus-within .mas-exp-fijo { opacity: 1; }
+    /* Propietario override (ficha): valor actual + fuente + quitar, encima del buscador del Directorio. */
+    .mas-prop-cur { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--propia-text-body); margin-bottom: 6px; }
+    .mas-prop-src { font-size: 10.5px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 1px 6px; }
+    .mas-prop-clear { border: 0; background: transparent; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; }
+    .mas-prop-clear:hover { text-decoration: underline; }
     .mas-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
     .mas-exp-mut { opacity: 1; color: var(--propia-text-faint); cursor: default; display: inline-flex; align-items: center; justify-content: center; }
     .mas-addcol-h { display: flex; align-items: center; justify-content: center; }

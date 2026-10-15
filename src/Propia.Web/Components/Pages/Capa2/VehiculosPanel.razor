@@ -1,5 +1,6 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Application.Catalogos
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @using Microsoft.AspNetCore.Components.Web
@@ -277,7 +278,11 @@ else
                                 </select>
                                 break;
                             case "propietario":
-                                <div class="veh-cell veh-auto">(según la unidad)</div>
+                                @* Override opcional del Directorio; si se deja vacio, se usa el dueno de la unidad. *@
+                                <div class="veh-nf-prop">
+                                    <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="_propSelNuevo" SeleccionadaChanged="OnPropietarioNuevo"
+                                                     PermiteEmpresa="false" Placeholder="Propietario (opcional)" />
+                                </div>
                                 break;
                         }
                     }
@@ -429,7 +434,16 @@ else
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
                         <input class="veh-row-inp" value="@fv.UnidadCodigo" disabled /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
-                        <input class="veh-row-inp" value="@(string.IsNullOrWhiteSpace(fv.PropietarioNombre) ? "-" : fv.PropietarioNombre)" disabled /></label>
+                        <div class="veh-prop-cur">
+                            <span>@(string.IsNullOrWhiteSpace(fv.PropietarioNombre) ? "-" : fv.PropietarioNombre)</span>
+                            <span class="veh-prop-src">@(fv.PropietarioPersonaId is null ? "según la unidad" : "del Directorio")</span>
+                            @if (fv.PropietarioPersonaId is not null)
+                            {
+                                <button type="button" class="veh-prop-clear" @onclick="() => FichaCambiarPropietario(fv, null)">Quitar</button>
+                            }
+                        </div>
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="@(sel => FichaCambiarPropietario(fv, sel))"
+                                         PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" /></label>
                     @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
                     {
                         var d = def; var val = ValorDe(fv.PlacaId, def.Id);
@@ -514,6 +528,8 @@ else
     private Guid? _nuUnidadId;
     private string _nuPlaca = "";
     private TipoVehiculo _nuTipo = TipoVehiculo.Automovil;
+    private PersonaCandidatoDto? _propSelNuevo;   // propietario override elegido en el alta (opcional)
+    private Guid? _nuPropietarioId;
     private readonly Dictionary<Guid, string> _nuDinamicos = new();
 
     private string _q = "";
@@ -777,6 +793,18 @@ else
         StateHasChanged();
     }
     private void OnUnidadSel(Guid? id) => _nuUnidadId = id;
+    private void OnPropietarioNuevo(PersonaCandidatoDto? sel) { _propSelNuevo = sel; _nuPropietarioId = sel?.PersonaId; }
+
+    // Ficha: setear (sel) o limpiar (null) el propietario override del vehiculo; refresca tabla y ficha.
+    private async Task FichaCambiarPropietario(VehiculoResumenDto v, PersonaCandidatoDto? sel)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}/propietario",
+            new ActualizarPropietarioRequest(sel?.PersonaId));
+        if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+        await CargarAsync();
+        RefrescarFichaV(v.PlacaId);
+        Mensaje(sel is null ? "Propietario: se usa el dueno de la unidad." : "Propietario actualizado.", false);
+    }
     private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
     private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
@@ -917,7 +945,7 @@ else
     private void AbrirAlta()
     {
         _altaAbierta = true; _focusPending = true;
-        _nuUnidadId = null; _nuPlaca = ""; _nuTipo = TipoVehiculo.Automovil; _nuDinamicos.Clear();
+        _nuUnidadId = null; _nuPlaca = ""; _nuTipo = TipoVehiculo.Automovil; _propSelNuevo = null; _nuPropietarioId = null; _nuDinamicos.Clear();
     }
     private void CerrarAlta() { _altaAbierta = false; }
     private async Task OnAltaKeydown(KeyboardEventArgs e)
@@ -945,7 +973,7 @@ else
         try
         {
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{uid}/placas",
-                new CrearUnidadPlacaRequest(_nuPlaca.Trim(), _nuTipo));
+                new CrearUnidadPlacaRequest(_nuPlaca.Trim(), _nuTipo, _nuPropietarioId));
             if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
 
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPlacaDto>();
@@ -958,7 +986,7 @@ else
                 _recienCreados.Add(creada.Id); _suppressRecienClearV = true;
             }
 
-            _nuPlaca = ""; _nuTipo = TipoVehiculo.Automovil; _nuUnidadId = null; _nuDinamicos.Clear();
+            _nuPlaca = ""; _nuTipo = TipoVehiculo.Automovil; _nuUnidadId = null; _propSelNuevo = null; _nuPropietarioId = null; _nuDinamicos.Clear();
             _altaAbierta = false; _nonce++;
             await CargarAsync();
             Mensaje("Vehiculo agregado.", false);
@@ -1547,6 +1575,11 @@ else
     /* Canon: el expander tambien es visible en la fila de alta (hover o foco dentro de la fila). */
     .veh-newrow--edit:hover .veh-exp-fijo, .veh-newrow--edit:focus-within .veh-exp-fijo { opacity: 1; }
     .veh-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    /* Propietario override (ficha): valor actual + fuente + quitar, encima del buscador del Directorio. */
+    .veh-prop-cur { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--propia-text-body); margin-bottom: 6px; }
+    .veh-prop-src { font-size: 10.5px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 1px 6px; }
+    .veh-prop-clear { border: 0; background: transparent; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; }
+    .veh-prop-clear:hover { text-decoration: underline; }
     .veh-exp-mut { opacity: 1; color: var(--propia-text-faint); cursor: default; display: inline-flex; align-items: center; justify-content: center; }
     .veh-addcol-h { display: flex; align-items: center; justify-content: center; }
     .veh-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
