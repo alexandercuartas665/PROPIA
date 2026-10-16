@@ -690,11 +690,13 @@ window.propiaSyncScroll = function (topSel, bodySel) {
 // Posicionamiento de paneles flotantes (SelectorPersona): calcula un rect fixed anclado al
 // input, con flip hacia arriba si no cabe abajo, clamp horizontal y max-height. Vive aqui (no
 // via eval) porque la CSP del sitio no permite 'unsafe-eval'. Devuelve [top, left, width, maxH].
-window.propiaFloatPos = window.propiaFloatPos || function (a, p) {
+window.propiaFloatPos = window.propiaFloatPos || function (a, p, minW) {
     if (!a) return null;
     var r = a.getBoundingClientRect();
     var vw = window.innerWidth, vh = window.innerHeight, m = 8, gap = 4;
-    var w = Math.max(r.width, 300);
+    // minW: ancho MINIMO del panel. Por defecto 300 (resultados comodos). Si se pasa 0 (o un valor
+    // chico), el panel toma el ancho del input/ancla y no invade las columnas vecinas (ej. alta de tabla).
+    var w = Math.max(r.width, (minW === undefined || minW === null ? 300 : minW));
     var left = r.left; if (left + w > vw - m) left = Math.max(m, vw - w - m);
     var ph = p ? p.scrollHeight : 0;
     var below = vh - r.bottom - m, above = r.top - m;
