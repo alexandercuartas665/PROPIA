@@ -336,7 +336,7 @@ else
                                 <input class="res-nf-inp" @ref="_unidadRef" placeholder="Ej. A1-101" @bind="_unidadQuery" @bind:event="oninput" @onfocus="() => _unidadDrop = true" autocomplete="off" />
                                 @if (_unidadDrop && UnidadesFiltradas().Any())
                                 {
-                                    <div class="res-drop">
+                                    <div class="res-drop" @ref="_unidadDropRef" style="@_unidadDropStyle">
                                         @foreach (var u in UnidadesFiltradas())
                                         {
                                             <button type="button" class="res-drop-it" @onclick="() => ElegirUnidad(u)">
@@ -591,7 +591,7 @@ else
     {
         new("unidad", "Unidad", TipoCampoTablero.Texto),
         new("nombre", "Nombre", TipoCampoTablero.Texto),
-        new("documento", "Documento", TipoCampoTablero.Texto),
+        new("documento", "Documento", TipoCampoTablero.Texto, VisibleDefault: false),
         new("rol", "Rol", TipoCampoTablero.Seleccion),
         new("telefono", "Telefono", TipoCampoTablero.Telefono),
         new("email", "Email", TipoCampoTablero.Email),
@@ -1043,6 +1043,8 @@ else
     private int _nonce;
     private bool _focusPending;
     private ElementReference _unidadRef;
+    private ElementReference _unidadDropRef;
+    private string? _unidadDropStyle;   // panel flotante (position:fixed) con flip, via propiaFloatPos
     private void AbrirAltaR()
     {
         _altaAbierta = true;
@@ -1115,6 +1117,23 @@ else
             _scrollBottomPendingR = false;
             try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".res-scroll"); } catch { }
         }
+        // Desplegable de Unidad del alta: panel flotante (position:fixed) con flip arriba/abajo segun el
+        // espacio disponible, para que NO quede detras del header sticky cuando el alta esta arriba del todo.
+        // Reusa propiaFloatPos (el mismo helper del panel flotante de SelectorPersona).
+        if (_altaAbierta && _unidadDrop && UnidadesFiltradas().Any())
+        {
+            try
+            {
+                var fp = await Js.InvokeAsync<double[]?>("propiaFloatPos", _unidadRef, _unidadDropRef);
+                if (fp is { Length: 4 })
+                {
+                    var s = $"position:fixed; top:{fp[0]}px; left:{fp[1]}px; width:{fp[2]}px; max-height:{fp[3]}px; overflow-y:auto; z-index:4000;";
+                    if (s != _unidadDropStyle) { _unidadDropStyle = s; StateHasChanged(); }
+                }
+            }
+            catch { }
+        }
+        else if (_unidadDropStyle is not null) { _unidadDropStyle = null; }
     }
 
     private HttpClient Auth()
@@ -1749,7 +1768,9 @@ else
     .res-nf-persona .sp-search:focus-within { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px rgba(109,79,227,.12); }
     .res-nf-persona .sp-search-inp { min-width: 0; padding: 5px 0; font-size: 12.5px; }
     .res-nf-ro { font-size: 12px; color: var(--propia-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .res-nf-ro-inp { background: var(--propia-bg-card-soft); color: var(--propia-text-muted); cursor: default; }
+    /* Documento (readonly, autocompleta desde el tercero elegido): transparente para que combine con los
+       demas inputs del alta (que son transparentes), en vez de verse como una caja gris maciza. */
+    .res-nf-ro-inp { background: transparent; color: var(--propia-text-muted); cursor: default; }
     .res-nf-ro-inp:focus { border-color: var(--propia-border-input); box-shadow: none; }
     .res-nf-selname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--propia-text-h1); }
     .res-nf-selname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1763,7 +1784,9 @@ else
     .res-editcell:focus { border-color: var(--propia-brand, var(--propia-brand)); background: var(--propia-bg-card); color: var(--propia-text-body); }
 
     /* Abre HACIA ARRIBA: la fila de alta va al fondo del contenedor con overflow. */
-    .res-drop { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; z-index: 30; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 -8px 28px rgba(16,32,52,.16); overflow: hidden; max-height: 260px; overflow-y: auto; }
+    /* Flotante (position:fixed) posicionado por propiaFloatPos (flip arriba/abajo); antes abria siempre hacia
+       arriba (bottom:100%) y quedaba detras del header sticky cuando el alta estaba arriba. */
+    .res-drop { position: fixed; z-index: 4000; min-width: 220px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; box-shadow: 0 14px 38px rgba(27,42,58,.22); overflow: hidden; max-height: 260px; overflow-y: auto; }
     .res-drop-it { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; cursor: pointer; }
     .res-drop-it:hover { background: var(--propia-brand-soft-2); }
     .res-drop-cod { font-weight: 700; color: var(--propia-brand-text); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
