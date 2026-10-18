@@ -126,10 +126,9 @@ public class MisCopropiedadesService : IMisCopropiedadesService
         {
             await using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = $@"
-                    SELECT set_config('app.tenant_id', '{nuevo.Id}', false);
-                    INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
-                    VALUES ('{Guid.NewGuid()}', '{nuevo.Id}', '{personaId}', '{RolAdministrador}', 1, now(), now());";
+                // Provisioning de roles: nace con el admin ya enlazado a su rol base (rol_id +
+                // usuario_tenant_roles), no con rol_id NULL dependiendo del link perezoso.
+                cmd.CommandText = Propia.Infrastructure.UsuariosAccesos.TenantRolProvisioning.InsertarAdminConRolSql(nuevo.Id, personaId);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
@@ -248,10 +247,9 @@ public class MisCopropiedadesService : IMisCopropiedadesService
         {
             await using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = $@"
-                    SELECT set_config('app.tenant_id', '{nuevo.Id}', false);
-                    INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
-                    VALUES ('{Guid.NewGuid()}', '{nuevo.Id}', '{personaId}', '{RolAdministrador}', 1, now(), now());";
+                // Provisioning de roles: nace con el admin ya enlazado a su rol base (rol_id +
+                // usuario_tenant_roles), no con rol_id NULL dependiendo del link perezoso.
+                cmd.CommandText = Propia.Infrastructure.UsuariosAccesos.TenantRolProvisioning.InsertarAdminConRolSql(nuevo.Id, personaId);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 

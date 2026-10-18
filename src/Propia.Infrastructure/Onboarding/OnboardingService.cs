@@ -327,10 +327,10 @@ public class OnboardingService : IOnboardingService
         try
         {
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $@"
-                SELECT set_config('app.tenant_id', '{tenant.Id}', false);
-                INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
-                VALUES ('{Guid.NewGuid()}', '{tenant.Id}', '{persona.Id}', 'Administrador', 1, now(), now());";
+            // Provisioning de roles: la copropiedad nace con el admin YA enlazado a su rol base
+            // Administrador (usuarios_tenant.rol_id + fila en usuario_tenant_roles), en vez de rol_id
+            // NULL dependiendo del link perezoso. set_config sigue activo para el deploy de agentes de abajo.
+            cmd.CommandText = Propia.Infrastructure.UsuariosAccesos.TenantRolProvisioning.InsertarAdminConRolSql(tenant.Id, persona.Id);
             await cmd.ExecuteNonQueryAsync(ct);
 
             // Desplegar plantillas de agente IA con la misma sesion SQL (set_config sigue activo).
