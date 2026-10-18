@@ -1887,6 +1887,19 @@ else
             bool pagaAdmin = !string.Equals(_nuPagaAdmin, "false", StringComparison.OrdinalIgnoreCase);
             decimal? cuota = decimal.TryParse(_nuCuota, System.Globalization.NumberStyles.Any, ci, out var cq) ? cq : null;
             decimal? ModAlta(int n) => _nuMod.TryGetValue(n, out var s) && decimal.TryParse(s, System.Globalization.NumberStyles.Any, ci, out var mv) ? mv : null;
+            // Rango por la precision de la BD: coeficiente y modulos contributivos son NUMERIC(7,4) -> |valor| < 1000;
+            // area NUMERIC(10,2) y cuota NUMERIC(14,2) admiten numeros grandes. Validar aqui evita el error de
+            // Postgres 22003 "numeric field overflow" (un 500 crudo) y muestra un mensaje claro en el alta.
+            var fueraRango = new List<string>();
+            if (Math.Abs(coef) >= 1000m) fueraRango.Add("coeficiente");
+            for (int n = 1; n <= 5; n++) if (ModAlta(n) is decimal mv && Math.Abs(mv) >= 1000m) fueraRango.Add($"modulo contributivo {n}");
+            if (area is decimal av && Math.Abs(av) >= 100_000_000m) fueraRango.Add("area");
+            if (cuota is decimal qv && Math.Abs(qv) >= 1_000_000_000_000m) fueraRango.Add("cuota mensual");
+            if (fueraRango.Count > 0)
+            {
+                _inlineMsgU = $"Valor fuera de rango: {string.Join(", ", fueraRango)}. El coeficiente y los modulos contributivos deben ser menores a 1000 (maximo 999.9999); el coeficiente es una fraccion (ej. 0.1139).";
+                return;
+            }
             var req = new CrearUnidadRequest(numero, nuTipo, piso, coef, area,
                 hab, banos, parq, estado, obs,
                 MatriculaInmobiliaria: string.IsNullOrWhiteSpace(_nuMatricula) ? null : _nuMatricula.Trim(),
