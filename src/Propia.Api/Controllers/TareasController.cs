@@ -84,6 +84,14 @@ public class TareasController : ControllerBase
     }
 
     [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
+    [HttpPut("estados/{id:guid}/terminal")]
+    public async Task<IActionResult> SetEstadoTerminal(Guid id, [FromBody] SetEstadoTerminalRequest req, CancellationToken ct)
+    {
+        try { return await _svc.SetEstadoTerminalAsync(id, req.EsTerminal, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Tareas, AccionPermiso.Aprobar)]
     [HttpDelete("estados/{id:guid}")]
     public async Task<IActionResult> EliminarEstado(Guid id, CancellationToken ct)
     {

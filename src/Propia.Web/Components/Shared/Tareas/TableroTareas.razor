@@ -917,7 +917,7 @@ else
             <div class="tb-modal-head">
                 <div class="tb-modal-tt">
                     <div class="tb-modal-h">Configurar tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre - motivos y usuarios</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre - campos y usuarios</div>
                 </div>
                 <button class="tb-modal-x" @onclick="CerrarConfigBoard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
@@ -969,32 +969,8 @@ else
                        listar, editar (abre el editor flotante compartido), archivar/restaurar y eliminar. *@
                     <div class="tbcfg-help">Para crear un campo nuevo usa el boton <strong>+</strong> de la ultima columna de la tabla. Aqui puedes editarlos, archivarlos o eliminarlos.</div>
                 </div>
-                <div class="tbcfg-sec">
-                    <div class="tbcfg-h">MOTIVOS DE CIERRE</div>
-                    <p class="tbcfg-hint">Al cerrar una tarea se elige uno de estos motivos; cada uno trae su clasificacion.</p>
-                    @foreach (var m in _motivosTareas.OrderBy(x => x.Orden))
-                    {
-                        var mm = m;
-                        <div class="tbcfg-erow">
-                            <input class="tbcfg-in" value="@m.Nombre" @onchange="(ev) => RenombrarMotivoTarea(mm, ev)" />
-                            <select class="tbcfg-in tbcfg-in-sm" @onchange="(ev) => ClasifMotivoTarea(mm, ev)">
-                                <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
-                                <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
-                                <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
-                            </select>
-                            <button class="tb-btn tb-btn-ghost" @onclick="() => EliminarMotivoTarea(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
-                        </div>
-                    }
-                    <div class="tbcfg-erow tbcfg-erow-end">
-                        <input class="tbcfg-in" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoTareaNombre" />
-                        <select class="tbcfg-in tbcfg-in-sm" @bind="_nuevoMotivoTareaClasif">
-                            <option value="1">Cierre correcto</option>
-                            <option value="2">Via interna agotada</option>
-                            <option value="3">Perdida</option>
-                        </select>
-                        <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
-                    </div>
-                </div>
+                @* MOTIVOS DE CIERRE se movio al editor de la columna ETAPA (chevron "Gestionar colores y orden"),
+                   junto al flag de "estado de cierre": ese aspecto es propio del campo Etapa, no del tablero. *@
                 <div class="tbcfg-sec">
                     <div class="tbcfg-h">USUARIOS DEL TABLERO (INVITAR)</div>
                     <div class="tbcfg-help">Invita personas a trabajar en este tablero - tambien de tus otras copropiedades (solo usuarios del sistema). Los cambios se aplican al instante.</div>
@@ -1839,7 +1815,7 @@ else
             <button type="button" class="tbfld-x" @onclick="() => _estEditorOpen = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
         <div class="tbfld-pop-b">
-            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Los estados son las columnas del tablero.</div>
+            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Marca con la bandera cual es el <strong>estado de cierre</strong>: al llegar ahi, la tarea pide un motivo de cierre.</div>
             <div class="tbcfg-list">
                 @for (var iEst = 0; iEst < _board.Estados.Count; iEst++)
                 {
@@ -1869,6 +1845,13 @@ else
                             <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _estEditId = est.Id; _estEditVal = est.Nombre; }">@est.Nombre</span>
                         }
                         <span class="tbcfg-est-cnt">@CountEstado(est.Id) tarjetas</span>
+                        @* Bandera de "estado de cierre" (EsTerminal): al llegar una tarea aqui se le pide motivo. *@
+                        <button type="button" class="tbcfg-cierre @(est.EsTerminal ? "on" : "")" disabled="@_busy"
+                                title="@(est.EsTerminal ? "Estado de cierre (click para quitar)" : "Marcar como estado de cierre")"
+                                @onclick="() => ToggleEstadoCierre(est)">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                            <span>cierre</span>
+                        </button>
                         <span class="tbcfg-ord">
                             <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxEst == 0 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, -1)">&#9650;</button>
                             <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxEst == _board.Estados.Count - 1 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, 1)">&#9660;</button>
@@ -1883,6 +1866,34 @@ else
             <div class="tbcfg-add">
                 <input @bind="_cfgEstadoNew" @bind:event="oninput" placeholder="Nuevo estado (ej. En revisión)" />
                 <button class="tb-btn tb-btn-primary" @onclick="CfgAddEstado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgEstadoNew))">Agregar</button>
+            </div>
+            @* MOTIVOS DE CIERRE: viven junto al estado de cierre porque solo aplican al cerrar (al mover una tarea a
+               un estado de cierre). Son del modulo Tareas (compartidos por todos los tableros), de ahi la nota. *@
+            <div class="tbcfg-sec">
+                <div class="tbcfg-h">MOTIVOS DE CIERRE</div>
+                <p class="tbcfg-hint">Al llegar a un estado de cierre se elige uno de estos motivos; cada uno trae su clasificacion. Son compartidos por todos los tableros de Tareas.</p>
+                @foreach (var m in _motivosTareas.OrderBy(x => x.Orden))
+                {
+                    var mm = m;
+                    <div class="tbcfg-erow">
+                        <input class="tbcfg-in" value="@m.Nombre" @onchange="(ev) => RenombrarMotivoTarea(mm, ev)" />
+                        <select class="tbcfg-in tbcfg-in-sm" @onchange="(ev) => ClasifMotivoTarea(mm, ev)">
+                            <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
+                            <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
+                            <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
+                        </select>
+                        <button class="tb-btn tb-btn-ghost" @onclick="() => EliminarMotivoTarea(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
+                    </div>
+                }
+                <div class="tbcfg-erow tbcfg-erow-end">
+                    <input class="tbcfg-in" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoTareaNombre" />
+                    <select class="tbcfg-in tbcfg-in-sm" @bind="_nuevoMotivoTareaClasif">
+                        <option value="1">Cierre correcto</option>
+                        <option value="2">Via interna agotada</option>
+                        <option value="3">Perdida</option>
+                    </select>
+                    <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2006,12 +2017,16 @@ else
    calca EditarCampoSistemaModal (como Unidades), persistiendo en columnas-config del tablero. *@
 @if (_editSisClave is not null && _board is not null)
 {
+    @* Captura la clave por VALOR en este render: EditarCampoSistemaModal.AbrirGestor cierra el modal
+       (pone _editSisClave = null) ANTES de invocar AbrirGestorAvanzado, asi que un lambda que leyera el
+       campo recibiria null y AbrirGestorListaTb(null) no abriria nada. Con el local queda fijado a "est". *@
+    var sisClave = _editSisClave;
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
                              EntidadConfig="tablero" TituloSingular="tarjeta" Jwt="@_jwt"
                              OpcionesLista="@OpcionesVistaTb(_editSisClave)"
                              OnAgregarOpcion="@((t) => AgregarOpcionTbAsync(_editSisClave, t))"
-                             AbrirGestorAvanzado="@(EsListaTb(_editSisClave) ? EventCallback.Factory.Create(this, () => AbrirGestorListaTb(_editSisClave)) : default)"
+                             AbrirGestorAvanzado="@(EsListaTb(sisClave) ? EventCallback.Factory.Create(this, () => AbrirGestorListaTb(sisClave)) : default)"
                              Guardado="RecargarTrasCambioCampos" Cerrado="() => _editSisClave = null" />
 }
 
@@ -5322,6 +5337,20 @@ else
         await RecargarBoard();
     }
 
+    // Marca/desmarca un estado como "de cierre" (EsTerminal). El backend valida que el tablero conserve
+    // siempre al menos un estado de cierre y uno abierto; si no, devuelve el motivo y se muestra como error.
+    private async Task ToggleEstadoCierre(EstadoTareaDto est)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}/terminal", new SetEstadoTerminalRequest(!est.EsTerminal));
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
+    }
+
     private async Task GuardarEstadoNombreAsync(EstadoTareaDto est)
     {
         var v = (_estEditVal ?? "").Trim();
@@ -5479,7 +5508,7 @@ else
     // ---- Fase 1: Estados y Etiquetas se editan desde el chevron de SU columna ("Editar campo"), en un
     //      popover anclado al header (no en el modal Configurar). Reusa la logica de estados/etiquetas. ----
     private bool _estEditorOpen, _etiqEditorOpen, _prioEditorOpen;
-    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; }
+    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; if (_motivosTareas.Count == 0) await CargarMotivosTareasAsync(); }
     private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _prioEditorOpen = false; _etiqEditorOpen = true; }
     private async Task AbrirPrioridadesEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = false; _prioEditorOpen = true; }
 

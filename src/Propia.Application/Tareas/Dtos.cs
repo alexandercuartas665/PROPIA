@@ -204,6 +204,7 @@ public record AgregarColaboradorRequest(Guid PersonaId);
 
 public record CrearEstadoRequest(string Nombre, string? Color, int Orden, Guid? TableroId = null);
 public record ActualizarEstadoRequest(string Nombre, string? Color, int Orden, bool Activo);
+public record SetEstadoTerminalRequest(bool EsTerminal);
 
 public record CrearEtiquetaRequest(string Nombre, string? Color, Guid? TableroId = null);
 public record ActualizarEtiquetaRequest(string Nombre, string? Color, bool Activo);

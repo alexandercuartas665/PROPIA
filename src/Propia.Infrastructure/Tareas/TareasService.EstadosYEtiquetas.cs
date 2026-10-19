@@ -106,14 +106,34 @@ public partial class TareasService
     {
         var e = await _db.TareasEstados.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (e is null) return false;
-        if (e.EsTerminal) throw new InvalidOperationException("Los estados terminales no son editables.");
+        // El flag "de cierre" (EsTerminal) ahora lo elige el usuario en el editor de estados; por eso un estado
+        // terminal SI es editable (nombre/color/orden). El flag en si se cambia por SetEstadoTerminalAsync.
         var nom = req.Nombre.Trim();
-        if (e.Nombre != nom && await _db.TareasEstados.AnyAsync(x => x.Nombre == nom && x.Id != id, ct))
+        if (e.Nombre != nom && await _db.TareasEstados.AnyAsync(x => x.TableroId == e.TableroId && x.Nombre == nom && x.Id != id, ct))
             throw new InvalidOperationException("Ya existe un estado con este nombre.");
         e.Nombre = nom;
         e.Color = req.Color;
         e.Orden = req.Orden;
         e.Activo = req.Activo;
+        e.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    // Marca/desmarca un estado como "de cierre" (EsTerminal) dentro de SU tablero. Guardas: el tablero debe
+    // conservar siempre al menos un estado de cierre y al menos un estado abierto (si no, el flujo de cierre
+    // -que pide motivo- o la creacion/reapertura de tareas se quedarian sin destino valido).
+    public async Task<bool> SetEstadoTerminalAsync(Guid id, bool esTerminal, CancellationToken ct)
+    {
+        var e = await _db.TareasEstados.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (e is null) return false;
+        if (e.EsTerminal == esTerminal) return true; // sin cambio
+        var hermanos = await _db.TareasEstados.Where(x => x.TableroId == e.TableroId).ToListAsync(ct);
+        var terminalesTrasCambio = hermanos.Count(x => x.Id == id ? esTerminal : x.EsTerminal);
+        var abiertosTrasCambio = hermanos.Count - terminalesTrasCambio;
+        if (terminalesTrasCambio < 1) throw new InvalidOperationException("Debe quedar al menos un estado de cierre en el tablero.");
+        if (abiertosTrasCambio < 1) throw new InvalidOperationException("Debe quedar al menos un estado abierto (no de cierre) en el tablero.");
+        e.EsTerminal = esTerminal;
         e.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

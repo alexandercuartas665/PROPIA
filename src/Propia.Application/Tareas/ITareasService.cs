@@ -10,6 +10,7 @@ public interface ITareasService
     Task<IReadOnlyList<EstadoTareaDto>> ListarEstadosAsync(CancellationToken ct);
     Task<EstadoTareaDto> CrearEstadoAsync(CrearEstadoRequest req, CancellationToken ct);
     Task<bool> ActualizarEstadoAsync(Guid id, ActualizarEstadoRequest req, CancellationToken ct);
+    Task<bool> SetEstadoTerminalAsync(Guid id, bool esTerminal, CancellationToken ct);
     Task<bool> EliminarEstadoAsync(Guid id, CancellationToken ct);
 
     // Tableros: asegura (get-or-create) el tablero GENERAL de la copropiedad, ya sembrado con estados y

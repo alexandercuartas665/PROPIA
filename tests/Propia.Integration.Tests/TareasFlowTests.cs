@@ -61,6 +61,45 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    /// <summary>
+    /// El "estado de cierre" (EsTerminal) ahora lo elige el usuario por tablero, pero el tablero debe
+    /// conservar SIEMPRE al menos un estado de cierre y al menos uno abierto (si no, el flujo de cierre
+    /// o la creacion/reapertura de tareas se quedarian sin destino valido).
+    /// </summary>
+    [Fact]
+    public async Task Estado_de_cierre_se_puede_elegir_pero_siempre_queda_uno_de_cierre_y_uno_abierto()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Cierre");
+        var (svc, _, _) = Build(tenantId);
+
+        var estados = await svc.ListarEstadosAsync(CancellationToken.None);
+        var completada = estados.First(e => e.Nombre == EstadoTareaBase.Completada && e.EsTerminal);
+        var cancelada = estados.First(e => e.Nombre == EstadoTareaBase.Cancelada && e.EsTerminal);
+        var pendiente = estados.First(e => e.Nombre == EstadoTareaBase.Pendiente && !e.EsTerminal);
+
+        // Marcar un estado abierto como de cierre y quitar el flag a los dos terminales base: OK (queda uno).
+        Assert.True(await svc.SetEstadoTerminalAsync(pendiente.Id, true, CancellationToken.None));
+        Assert.True(await svc.SetEstadoTerminalAsync(completada.Id, false, CancellationToken.None));
+        Assert.True(await svc.SetEstadoTerminalAsync(cancelada.Id, false, CancellationToken.None));
+
+        var tras = await svc.ListarEstadosAsync(CancellationToken.None);
+        Assert.True(tras.First(e => e.Id == pendiente.Id).EsTerminal);
+        Assert.False(tras.First(e => e.Id == completada.Id).EsTerminal);
+
+        // Pendiente es ahora el UNICO de cierre: quitarle el flag se rechaza (no puede quedar sin cierre).
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.SetEstadoTerminalAsync(pendiente.Id, false, CancellationToken.None));
+
+        // Y marcar como de cierre TODOS los abiertos (dejando cero abiertos) tambien se rechaza.
+        var abiertos = tras.Where(e => e.Id != pendiente.Id).ToList(); // los 5 que quedaron abiertos
+        for (var i = 0; i < abiertos.Count - 1; i++)
+            Assert.True(await svc.SetEstadoTerminalAsync(abiertos[i].Id, true, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.SetEstadoTerminalAsync(abiertos[^1].Id, true, CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
     [Fact]
     public async Task Crear_tarea_genera_numero_y_arranca_Pendiente_con_historial()
     {
