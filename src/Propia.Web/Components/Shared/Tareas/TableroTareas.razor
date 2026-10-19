@@ -160,12 +160,9 @@ else
                     {
                         @ModeSwitch
                     }
-                    @* Configurar al final del cluster (extra de Tareas; T-02: oculto en modo Compacto -las columnas
-                       del tablero PQRSD compartido se administran desde /tareas, no por expediente). *@
-                    @if (!_verCerradas && !EsBoardForaneo && !Compacto && PuedeConfigurar)
-                    {
-                        <button class="tb-btn tb-btn-soft" @onclick="AbrirConfigBoard"><i class="fi fi-rr-settings"></i>Configurar</button>
-                    }
+                    @* El boton "Configurar" se retiro: sus funciones ya viven en su sitio -> campos (crear con "+",
+                       editar/eliminar por el chevron de la columna, archivados+restaurar en el menu "Columnas"),
+                       cierre y motivos en "Editar campo" de ETAPA, y el acceso de usuarios en Roles y Permisos. *@
                 </div>
                 @if (!_verCerradas && !EsBoardForaneo && PuedeCrear)
                 {
@@ -909,125 +906,9 @@ else
     </div>
 }
 
-@* ===================== Modal Configurar tablero (estados + campos) ===================== *@
-@if (_cfgOpen && _board is not null)
-{
-    <div class="tb-modal-bd" @onclick="CerrarConfigBoard">
-        <div class="tb-modal" @onclick:stopPropagation="true">
-            <div class="tb-modal-head">
-                <div class="tb-modal-tt">
-                    <div class="tb-modal-h">Configurar tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre - campos y usuarios</div>
-                </div>
-                <button class="tb-modal-x" @onclick="CerrarConfigBoard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>
-            <div class="tb-modal-body">
-                @* ESTADOS (columnas) y ETIQUETAS se editan desde el chevron de SU columna ("Editar campo"),
-                   no aqui. Ver los popovers _estEditorOpen / _etiqEditorOpen. *@
-                <div>
-                    <div class="tbcfg-h">CAMPOS PERSONALIZADOS</div>
-                    <div class="tbcfg-help">Gestiona los campos del tablero: editar, archivar o eliminar. Los campos aparecen en cada tarjeta, en los filtros y como columnas de la lista.</div>
-                    @if (_board.Tablero.Campos is { Count: > 0 })
-                    {
-                        <div class="tbcfg-campos">
-                            @foreach (var c in _board.Tablero.Campos)
-                            {
-                                var campo = c;
-                                <div class="tbcfg-campo @(_campoDraft.Id == c.Id ? "on" : "")">
-                                    <div class="tbcfg-campo-id">
-                                        <span class="tbcfg-campo-nom">@c.Label</span>
-                                        <span class="tbcfg-campo-tipo">@TipoCampoLabel(c.Tipo)</span>
-                                        @if (c.MostrarEnFiltro) { <span class="tbcfg-campo-filt" title="Aparece en filtros">filtro</span> }
-                                    </div>
-                                    <button class="tbcfg-campo-ed" title="Editar" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                                    <button class="tbcfg-campo-ed" title="Archivar (ocultar sin borrar datos)" @onclick="() => ArchivarCampo(campo.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg></button>
-                                    <button class="tbcfg-del" title="Eliminar (borra los datos)" @onclick="() => CfgRemoveCampo(campo.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_camposArchivados is { Count: > 0 })
-                    {
-                        <div class="tbcfg-arch">
-                            <div class="tbcfg-arch-h">ARCHIVADOS <span>@_camposArchivados.Count</span></div>
-                            <div class="tbcfg-help">Conservan sus datos. Restaura para volver a usarlos, o elimina para borrarlos definitivamente.</div>
-                            @foreach (var a in _camposArchivados)
-                            {
-                                var ac = a;
-                                <div class="tbcfg-arch-it">
-                                    <span class="tbcfg-campo-nom">@a.Label</span>
-                                    <span class="tbcfg-campo-tipo">@TipoCampoLabel(a.Tipo)</span>
-                                    <div class="tb-flex"></div>
-                                    <button class="tbcfg-arch-restore" @onclick="() => RestaurarCampo(ac.Id)">Restaurar</button>
-                                    <button class="tbcfg-del" title="Eliminar definitivamente (borra los datos)" @onclick="() => CfgRemoveCampo(ac.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
-                                </div>
-                            }
-                        </div>
-                    }
-                    @* El editor "Nuevo campo" se quito de aqui (Alex, opcion A): la CREACION de campos es canonica
-                       desde el boton "+" de la ultima columna de la tabla. Este modal queda como gestor/overview:
-                       listar, editar (abre el editor flotante compartido), archivar/restaurar y eliminar. *@
-                    <div class="tbcfg-help">Para crear un campo nuevo usa el boton <strong>+</strong> de la ultima columna de la tabla. Aqui puedes editarlos, archivarlos o eliminarlos.</div>
-                </div>
-                @* MOTIVOS DE CIERRE se movio al editor de la columna ETAPA (chevron "Gestionar colores y orden"),
-                   junto al flag de "estado de cierre": ese aspecto es propio del campo Etapa, no del tablero. *@
-                <div class="tbcfg-sec">
-                    <div class="tbcfg-h">USUARIOS DEL TABLERO (INVITAR)</div>
-                    <div class="tbcfg-help">Invita personas de esta copropiedad a trabajar en este tablero. Los cambios se aplican al instante.</div>
-                    @if (_board.Tablero.Usuarios.Count > 0)
-                    {
-                        <div class="tb-chips" style="margin-bottom:10px;">
-                            @foreach (var u in _board.Tablero.Usuarios)
-                            {
-                                var usr = u;
-                                <span class="tb-chip">
-                                    <span class="tb-ava tb-ava-sm">@u.Iniciales</span>
-                                    <span class="tb-chip-nom">@u.Nombre</span>
-                                    <button type="button" class="tb-chip-x" @onclick="() => QuitarUsuarioConfigAsync(usr.PersonaId)" title="Quitar del tablero">&times;</button>
-                                </span>
-                            }
-                        </div>
-                    }
-                    <div class="tb-search-wrap">
-                        @* Compartir con usuarios de OTRA copropiedad/cliente se retiro (pedido de Alex): solo se
-                           invita a personas del directorio de ESTA copropiedad. *@
-                        <input class="tb-input" placeholder="Buscar persona para invitar..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
-                        @if (_tbResultados.Count > 0)
-                        {
-                            <div class="tb-search-drop">
-                                @foreach (var p in _tbResultados.Where(x => _board.Tablero.Usuarios.All(u => u.PersonaId != x.Id)))
-                                {
-                                    var per = p;
-                                    var nombreCfg = $"{p.Nombres} {p.Apellidos}".Trim();
-                                    <button type="button" class="tb-search-item" @onclick="() => InvitarDesdeConfigAsync(per)">
-                                        @if (!string.IsNullOrEmpty(p.FotoUrl))
-                                        {
-                                            <img class="tb-chip-ava" src="@p.FotoUrl" alt="" />
-                                        }
-                                        else
-                                        {
-                                            <span class="tb-ava tb-ava-sm">@Iniciales(nombreCfg)</span>
-                                        }
-                                        <span class="tb-search-nom">@nombreCfg</span>
-                                        <span class="tb-search-doc">@p.Documento</span>
-                                    </button>
-                                }
-                            </div>
-                        }
-                        else if (!string.IsNullOrWhiteSpace(_tbBuscar) && _tbBuscar.Trim().Length >= 2)
-                        {
-                            <div class="tb-search-empty">Sin resultados en el directorio.</div>
-                        }
-                    </div>
-                </div>
-            </div>
-            <div class="tb-modal-foot">
-                <div class="tb-flex"></div>
-                <button class="tb-btn tb-btn-primary" @onclick="CerrarConfigBoard">Listo</button>
-            </div>
-        </div>
-    </div>
-}
+@* El modal "Configurar tablero" se retiro: campos (crear con "+", editar/eliminar por el chevron de la
+   columna, archivados+restaurar en el menu "Columnas"), cierre y motivos en "Editar campo" de ETAPA, y el
+   acceso de usuarios al modulo en Roles y Permisos. La membresia por tablero (chips) no gateaba el acceso. *@
 
 @* ===================== Modal tarjeta (rico, fiel al prototipo) ===================== *@
 @if (_cardDraft is not null && _board is not null)
@@ -3232,7 +3113,6 @@ else
     }
     private string _respPick = "";
     private bool _subiendo;
-    private bool _cfgOpen;
     private bool _gestorCamposOpen;   // Selector de Campos (opcion A): modal del gestor compartido de campos propios
 
     // Permisos del usuario sobre el modulo, traidos de GET /api/tareas/permisos. Se usa para NO
@@ -3264,7 +3144,6 @@ else
         catch { /* sin permisos conocidos se esconde la configuracion; el backend sigue mandando */ }
     }
     private string _cfgEstadoNew = "";
-    private string _cfgCampoNew = "";
     private CampoDraft _campoDraft = new();
 
     // Contexto para la tarjeta rica (copropiedad + origen)
@@ -3661,6 +3540,7 @@ else
         _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{id}/board?verCerradas={(_verCerradas ? "true" : "false")}{OrigenQs()}");
         // Etiquetas de ESTE tablero (+ las globales). Se gestionan en "Configurar tablero".
         try { _etiquetasCat = await Auth().GetFromJsonAsync<List<EtiquetaTareaDto>>($"/api/tareas/etiquetas?tableroId={id}") ?? _etiquetasCat; } catch { }
+        await CargarCamposArchivados();   // para el pie "ARCHIVADOS" del menu Columnas (restaurar/eliminar)
         SyncTareas();
         await RestaurarColsAsync();   // config de columnas guardada para ESTE tablero (por usuario)
         ReconciliarOrden();           // deja _colOrden alineado con los campos actuales del tablero
@@ -3771,7 +3651,30 @@ else
         {
             <TablaColumnasMenu Columnas="ColsVisibilidadT()" OnMover="MoverColT" OnToggleVisible="ToggleVisibleColT"
                                OnEliminar="EliminarCampoColT" OnOcultarTodas="OcultarTodasColT"
-                               OnMostrarTodas="MostrarTodasColT" OnRestablecer="RestablecerColT" />
+                               OnMostrarTodas="MostrarTodasColT" OnRestablecer="RestablecerColT">
+                <PieExtra>
+                    @* Campos archivados + restaurar (antes vivia en el modal Configurar, ya retirado). Board-scoped
+                       (usa _board), que es justo el contexto donde se muestra este menu. *@
+                    @if (_camposArchivados is { Count: > 0 })
+                    {
+                        <div class="tbcfg-arch" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--propia-border-divider);">
+                            <div class="tbcfg-arch-h">ARCHIVADOS <span>@_camposArchivados.Count</span></div>
+                            <div class="tbcfg-help">Conservan sus datos. Restaura para volver a usarlos, o elimina para borrarlos.</div>
+                            @foreach (var a in _camposArchivados)
+                            {
+                                var ac = a;
+                                <div class="tbcfg-arch-it">
+                                    <span class="tbcfg-campo-nom">@a.Label</span>
+                                    <span class="tbcfg-campo-tipo">@TipoCampoLabel(a.Tipo)</span>
+                                    <div class="tb-flex"></div>
+                                    <button class="tbcfg-arch-restore" @onclick="() => RestaurarCampo(ac.Id)">Restaurar</button>
+                                    <button class="tbcfg-del" title="Eliminar definitivamente (borra los datos)" @onclick="() => CfgRemoveCampo(ac.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </PieExtra>
+            </TablaColumnasMenu>
         }
         @* Modos de vista DESPUES de Columnas, igual que el toggle de Unidades Privadas (pedido de Alex). *@
         @ModeSwitch
@@ -5099,36 +5002,9 @@ else
     }
 
     // ---- Invitar/quitar desde "Configurar tablero" (aplican al instante, sin draft) ----
-    private async Task InvitarDesdeConfigAsync(PersonaResumenDto p)
-    {
-        if (_board is null) return;
-        try
-        {
-            var resp = await Auth().PostAsync($"/api/tareas/tableros/{_board.Tablero.Id}/usuarios/{p.Id}", null);
-            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo invitar a la persona."; _msgClass = "alert-danger"; return; }
-            _tbBuscar = "";
-            _tbResultados.Clear();
-            _tbResultCopro.Clear();
-            await RecargarBoard();
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
-
-    // El invitar "por correo a un usuario de otra copropiedad/cliente" se retiro del modal Configurar
-    // (pedido de Alex: no compartir el tablero cross-tenant). El endpoint usuarios/por-correo queda sin uso
-    // desde aqui.
-
-    private async Task QuitarUsuarioConfigAsync(Guid personaId)
-    {
-        if (_board is null) return;
-        try
-        {
-            var resp = await Auth().DeleteAsync($"/api/tareas/tableros/{_board.Tablero.Id}/usuarios/{personaId}");
-            if (!resp.IsSuccessStatusCode) { _msg = "No se pudo quitar a la persona."; _msgClass = "alert-danger"; return; }
-            await RecargarBoard();
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
+    // Invitar/quitar usuarios del tablero se retiro con el modal Configurar: el acceso a Tareas lo gobierna
+    // Roles y Permisos (la membresia por tablero no gateaba el acceso). La membresia aun se gestiona, si hace
+    // falta, desde el modal de crear/editar tablero (miembros + invitar externo).
 
     // ===================== Tablero compartido (board VIRTUAL en el pipeline real) =====================
     // El tablero "Todas mis copropiedades" usa el MISMO _board y las MISMAS vistas que cualquier
@@ -5426,9 +5302,8 @@ else
         if (resp.IsSuccessStatusCode) { _tableroDraft = null; _board = null; await CargarAsync(); }
     }
 
-    // ----- Configurar tablero (estados + campos) -----
-    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; _tbBuscar = ""; _tbCross = false; _tbResultados.Clear(); _tbResultCopro.Clear(); await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
-    private void CerrarConfigBoard() { _cfgOpen = false; }
+    // El modal "Configurar tablero" se retiro; sus piezas viven en su sitio (ver comentario donde estaba el
+    // boton Configurar). Los campos archivados se cargan ahora al abrir el tablero (AbrirBoardAsync).
     // Selector de Campos (opcion A): abre/cierra el modal del gestor compartido de campos propios del tablero.
     private void AbrirGestorCampos() { _gestorCamposOpen = true; }
     private async Task CerrarGestorCampos() { _gestorCamposOpen = false; await RecargarTrasCambioCampos(); }
