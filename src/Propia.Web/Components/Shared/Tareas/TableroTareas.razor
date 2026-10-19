@@ -973,7 +973,7 @@ else
                    junto al flag de "estado de cierre": ese aspecto es propio del campo Etapa, no del tablero. *@
                 <div class="tbcfg-sec">
                     <div class="tbcfg-h">USUARIOS DEL TABLERO (INVITAR)</div>
-                    <div class="tbcfg-help">Invita personas a trabajar en este tablero - tambien de tus otras copropiedades (solo usuarios del sistema). Los cambios se aplican al instante.</div>
+                    <div class="tbcfg-help">Invita personas de esta copropiedad a trabajar en este tablero. Los cambios se aplican al instante.</div>
                     @if (_board.Tablero.Usuarios.Count > 0)
                     {
                         <div class="tb-chips" style="margin-bottom:10px;">
@@ -989,13 +989,8 @@ else
                         </div>
                     }
                     <div class="tb-search-wrap">
-                        @if (_tenants.Count > 1)
-                        {
-                            <label class="tbcfg-cross">
-                                <input type="checkbox" checked="@_tbCross" @onchange="e => { _tbCross = (bool)e.Value!; _tbResultados.Clear(); _tbResultCopro.Clear(); }" />
-                                <span>Buscar también en mis otras copropiedades (solo usuarios del sistema)</span>
-                            </label>
-                        }
+                        @* Compartir con usuarios de OTRA copropiedad/cliente se retiro (pedido de Alex): solo se
+                           invita a personas del directorio de ESTA copropiedad. *@
                         <input class="tb-input" placeholder="Buscar persona para invitar..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
                         @if (_tbResultados.Count > 0)
                         {
@@ -1014,10 +1009,6 @@ else
                                             <span class="tb-ava tb-ava-sm">@Iniciales(nombreCfg)</span>
                                         }
                                         <span class="tb-search-nom">@nombreCfg</span>
-                                        @if (_tbResultCopro.TryGetValue(p.Id, out var coproOrigenCfg))
-                                        {
-                                            <span class="tbcfg-copro-chip">@coproOrigenCfg</span>
-                                        }
                                         <span class="tb-search-doc">@p.Documento</span>
                                     </button>
                                 }
@@ -1025,25 +1016,8 @@ else
                         }
                         else if (!string.IsNullOrWhiteSpace(_tbBuscar) && _tbBuscar.Trim().Length >= 2)
                         {
-                            <div class="tb-search-empty">Sin resultados@(_tbCross ? " (usuarios del sistema en tus copropiedades)" : " en el directorio").</div>
+                            <div class="tb-search-empty">Sin resultados en el directorio.</div>
                         }
-
-                        @* Invitar por CORREO EXACTO: agrega a un usuario del sistema aunque sea de OTRO
-                           cliente/tenant. El tablero le queda compartido al instante. No navega directorios ajenos. *@
-                        <div class="tbcfg-porcorreo">
-                            <label class="tbcfg-porcorreo-lbl">O invita por correo a un usuario del sistema (aunque sea de otra copropiedad o cliente)</label>
-                            <div class="tbcfg-porcorreo-row">
-                                <input class="tb-input" type="email" placeholder="correo@@ejemplo.com" @bind="_invCorreo" @bind:event="oninput" autocomplete="off" />
-                                <button class="tb-btn tb-btn-primary" @onclick="InvitarPorCorreoConfigAsync"
-                                        disabled="@_invCorreoBusy">
-                                    @(_invCorreoBusy ? "Invitando..." : "Invitar")
-                                </button>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(_invCorreoMsg))
-                            {
-                                <div class="tbcfg-porcorreo-msg @(_invCorreoErr ? "err" : "ok")">@_invCorreoMsg</div>
-                            }
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1815,7 +1789,7 @@ else
             <button type="button" class="tbfld-x" @onclick="() => _estEditorOpen = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
         <div class="tbfld-pop-b">
-            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Marca con la bandera cual es el <strong>estado de cierre</strong>: al llegar ahi, la tarea pide un motivo de cierre.</div>
+            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Los estados son las columnas del tablero. El <strong>estado de cierre</strong> y los motivos se configuran en "Editar campo" de la columna Etapa.</div>
             <div class="tbcfg-list">
                 @for (var iEst = 0; iEst < _board.Estados.Count; iEst++)
                 {
@@ -1845,13 +1819,6 @@ else
                             <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _estEditId = est.Id; _estEditVal = est.Nombre; }">@est.Nombre</span>
                         }
                         <span class="tbcfg-est-cnt">@CountEstado(est.Id) tarjetas</span>
-                        @* Bandera de "estado de cierre" (EsTerminal): al llegar una tarea aqui se le pide motivo. *@
-                        <button type="button" class="tbcfg-cierre @(est.EsTerminal ? "on" : "")" disabled="@_busy"
-                                title="@(est.EsTerminal ? "Estado de cierre (click para quitar)" : "Marcar como estado de cierre")"
-                                @onclick="() => ToggleEstadoCierre(est)">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-                            <span>cierre</span>
-                        </button>
                         <span class="tbcfg-ord">
                             <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxEst == 0 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, -1)">&#9650;</button>
                             <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxEst == _board.Estados.Count - 1 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, 1)">&#9660;</button>
@@ -1867,34 +1834,8 @@ else
                 <input @bind="_cfgEstadoNew" @bind:event="oninput" placeholder="Nuevo estado (ej. En revisión)" />
                 <button class="tb-btn tb-btn-primary" @onclick="CfgAddEstado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgEstadoNew))">Agregar</button>
             </div>
-            @* MOTIVOS DE CIERRE: viven junto al estado de cierre porque solo aplican al cerrar (al mover una tarea a
-               un estado de cierre). Son del modulo Tareas (compartidos por todos los tableros), de ahi la nota. *@
-            <div class="tbcfg-sec">
-                <div class="tbcfg-h">MOTIVOS DE CIERRE</div>
-                <p class="tbcfg-hint">Al llegar a un estado de cierre se elige uno de estos motivos; cada uno trae su clasificacion. Son compartidos por todos los tableros de Tareas.</p>
-                @foreach (var m in _motivosTareas.OrderBy(x => x.Orden))
-                {
-                    var mm = m;
-                    <div class="tbcfg-erow">
-                        <input class="tbcfg-in" value="@m.Nombre" @onchange="(ev) => RenombrarMotivoTarea(mm, ev)" />
-                        <select class="tbcfg-in tbcfg-in-sm" @onchange="(ev) => ClasifMotivoTarea(mm, ev)">
-                            <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
-                            <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
-                            <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
-                        </select>
-                        <button class="tb-btn tb-btn-ghost" @onclick="() => EliminarMotivoTarea(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
-                    </div>
-                }
-                <div class="tbcfg-erow tbcfg-erow-end">
-                    <input class="tbcfg-in" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoTareaNombre" />
-                    <select class="tbcfg-in tbcfg-in-sm" @bind="_nuevoMotivoTareaClasif">
-                        <option value="1">Cierre correcto</option>
-                        <option value="2">Via interna agotada</option>
-                        <option value="3">Perdida</option>
-                    </select>
-                    <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
-                </div>
-            </div>
+            @* El "estado de cierre" y los MOTIVOS DE CIERRE se gestionan en el editor del campo Etapa
+               ("Editar campo"), no aqui: este popover queda solo para color/orden/alta/baja de estados. *@
         </div>
     </div>
 }
@@ -2027,7 +1968,61 @@ else
                              OpcionesLista="@OpcionesVistaTb(_editSisClave)"
                              OnAgregarOpcion="@((t) => AgregarOpcionTbAsync(_editSisClave, t))"
                              AbrirGestorAvanzado="@(EsListaTb(sisClave) ? EventCallback.Factory.Create(this, () => AbrirGestorListaTb(sisClave)) : default)"
-                             Guardado="RecargarTrasCambioCampos" Cerrado="() => _editSisClave = null" />
+                             Guardado="RecargarTrasCambioCampos" Cerrado="() => _editSisClave = null">
+        <SeccionExtra>
+            @* Config de cierre del campo Etapa, directamente en su editor (pedido de Alex): cual estado es de
+               cierre + los motivos. Reusa el toggle .tbcfg-cierre y el markup de motivos. *@
+            @if (sisClave == "est")
+            {
+                <div class="ecs-fld">
+                    <label>Estado de cierre</label>
+                    <span class="ecs-hint">Marca cual(es) estado(s) cierran la tarea: al llegar ahi se pide un motivo de cierre.</span>
+                    <div class="ecs-cierre-estados">
+                        @foreach (var estC in _board.Estados)
+                        {
+                            var e2 = estC;
+                            <div class="ecs-cierre-est">
+                                <span class="tbcfg-dot" style="background:@(estC.Color ?? EstadoColorDefault)"></span>
+                                <span class="ecs-cierre-nom">@estC.Nombre</span>
+                                <button type="button" class="tbcfg-cierre @(estC.EsTerminal ? "on" : "")" disabled="@_busy"
+                                        title="@(estC.EsTerminal ? "Estado de cierre (click para quitar)" : "Marcar como estado de cierre")"
+                                        @onclick="() => ToggleEstadoCierre(e2)">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                                    <span>cierre</span>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="ecs-fld">
+                    <label>Motivos de cierre</label>
+                    <span class="ecs-hint">Al llegar a un estado de cierre se elige uno; cada uno trae su clasificacion. Compartidos por todos los tableros de Tareas.</span>
+                    @foreach (var m in _motivosTareas.OrderBy(x => x.Orden))
+                    {
+                        var mm = m;
+                        <div class="tbcfg-erow">
+                            <input class="tbcfg-in" value="@m.Nombre" @onchange="(ev) => RenombrarMotivoTarea(mm, ev)" />
+                            <select class="tbcfg-in tbcfg-in-sm" @onchange="(ev) => ClasifMotivoTarea(mm, ev)">
+                                <option value="1" selected="@(m.Clasificacion == ClasificacionCierre.CierreCorrecto)">Cierre correcto</option>
+                                <option value="2" selected="@(m.Clasificacion == ClasificacionCierre.ViaInternaAgotada)">Via interna agotada</option>
+                                <option value="3" selected="@(m.Clasificacion == ClasificacionCierre.Perdida)">Perdida</option>
+                            </select>
+                            <button class="tb-btn tb-btn-ghost" @onclick="() => EliminarMotivoTarea(mm.Id)">@(m.EsBase ? "Desactivar" : "Eliminar")</button>
+                        </div>
+                    }
+                    <div class="tbcfg-erow tbcfg-erow-end">
+                        <input class="tbcfg-in" placeholder="Nuevo motivo de cierre..." @bind="_nuevoMotivoTareaNombre" />
+                        <select class="tbcfg-in tbcfg-in-sm" @bind="_nuevoMotivoTareaClasif">
+                            <option value="1">Cierre correcto</option>
+                            <option value="2">Via interna agotada</option>
+                            <option value="3">Perdida</option>
+                        </select>
+                        <button class="tb-btn tb-btn-primary" @onclick="AgregarMotivoTarea" disabled="@string.IsNullOrWhiteSpace(_nuevoMotivoTareaNombre)">Agregar motivo</button>
+                    </div>
+                </div>
+            }
+        </SeccionExtra>
+    </EditarCampoSistemaModal>
 }
 
 @* CSS movido a wwwroot/css/modules/tareas.css (auditoria R-02: fuera del render tree). *@
@@ -2378,7 +2373,7 @@ else
                 }
                 // E3: Estados/Etiquetas/Prioridad abren el modal canonico (muestra la lista del tablero +
                 // agregar); el color/orden se gestiona en su editor anclado via "Gestionar colores y orden".
-                else { AbrirEditorCampoSistema(col.Key, col.Label); }
+                else { await AbrirEditorCampoSistema(col.Key, col.Label); }
                 break;
             case TablaColMenu.Accion.Eliminar:
                 if (col.EsDinamico && Guid.TryParse(col.Key, out var cidDel))
@@ -5119,44 +5114,9 @@ else
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
-    // ---- Invitar por CORREO EXACTO a un usuario del sistema (aunque sea de otro cliente/tenant) ----
-    private string _invCorreo = "";
-    private bool _invCorreoBusy;
-    private string? _invCorreoMsg;
-    private bool _invCorreoErr;
-
-    private async Task InvitarPorCorreoConfigAsync()
-    {
-        if (_board is null) return;
-        var email = _invCorreo?.Trim() ?? "";
-        if (email.Length == 0 || !email.Contains('@'))
-        {
-            _invCorreoErr = true; _invCorreoMsg = "Escribe un correo valido."; return;
-        }
-        _invCorreoBusy = true; _invCorreoMsg = null;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync(
-                $"/api/tareas/tableros/{_board.Tablero.Id}/usuarios/por-correo", new { Email = email });
-            var r = await resp.Content.ReadFromJsonAsync<AgregarPorCorreoResp>();
-            if (resp.IsSuccessStatusCode && r?.ok == true)
-            {
-                _invCorreoErr = false;
-                _invCorreoMsg = r.yaEstaba ? $"{r.nombre} ya estaba en el tablero." : $"{r.nombre} agregado. Ya ve el tablero compartido.";
-                _invCorreo = "";
-                await RecargarBoard();
-            }
-            else
-            {
-                _invCorreoErr = true;
-                _invCorreoMsg = r?.error ?? "No se pudo invitar.";
-            }
-        }
-        catch (Exception ex) { _invCorreoErr = true; _invCorreoMsg = "Error: " + ex.Message; }
-        finally { _invCorreoBusy = false; }
-    }
-
-    private sealed record AgregarPorCorreoResp(bool ok, string? error, string? nombre, bool yaEstaba);
+    // El invitar "por correo a un usuario de otra copropiedad/cliente" se retiro del modal Configurar
+    // (pedido de Alex: no compartir el tablero cross-tenant). El endpoint usuarios/por-correo queda sin uso
+    // desde aqui.
 
     private async Task QuitarUsuarioConfigAsync(Guid personaId)
     {
@@ -5467,7 +5427,7 @@ else
     }
 
     // ----- Configurar tablero (estados + campos) -----
-    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; _tbBuscar = ""; _tbResultados.Clear(); _tbResultCopro.Clear(); await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
+    private async Task AbrirConfigBoard() { _cfgOpen = true; _cfgEstadoNew = ""; _cfgCampoNew = ""; _tbBuscar = ""; _tbCross = false; _tbResultados.Clear(); _tbResultCopro.Clear(); await CargarCamposArchivados(); await CargarMotivosTareasAsync(); }
     private void CerrarConfigBoard() { _cfgOpen = false; }
     // Selector de Campos (opcion A): abre/cierra el modal del gestor compartido de campos propios del tablero.
     private void AbrirGestorCampos() { _gestorCamposOpen = true; }
@@ -5495,7 +5455,7 @@ else
         "origen" => "orig",
         _ => chevKey   // titulo, est, etiq, valor ya coinciden
     };
-    private void AbrirEditorCampoSistema(string chevKey, string label)
+    private async Task AbrirEditorCampoSistema(string chevKey, string label)
     {
         var clave = ClaveSisConfig(chevKey);
         var def = ColumnasSistemaCatalogo.FirstOrDefault(c => c.Clave == clave);
@@ -5503,12 +5463,15 @@ else
         _editSisLabel = def?.Label ?? label;
         _editSisTipo = def?.Tipo;
         _editSisReq = def?.Fija ?? false;
+        // El campo Etapa ("est") muestra en su editor la config de cierre (estado de cierre + motivos):
+        // se cargan los motivos del modulo para poder listarlos/editarlos ahi.
+        if (clave == "est" && _motivosTareas.Count == 0) await CargarMotivosTareasAsync();
     }
 
     // ---- Fase 1: Estados y Etiquetas se editan desde el chevron de SU columna ("Editar campo"), en un
     //      popover anclado al header (no en el modal Configurar). Reusa la logica de estados/etiquetas. ----
     private bool _estEditorOpen, _etiqEditorOpen, _prioEditorOpen;
-    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; if (_motivosTareas.Count == 0) await CargarMotivosTareasAsync(); }
+    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; }
     private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _prioEditorOpen = false; _etiqEditorOpen = true; }
     private async Task AbrirPrioridadesEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = false; _prioEditorOpen = true; }
 
