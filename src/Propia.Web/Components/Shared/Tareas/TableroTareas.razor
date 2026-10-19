@@ -430,12 +430,15 @@ else
                la guia la pinta el JS compartido (propiaTablaResize). El cursor grab lo da [data-clave]. *@
             <style>
                 .tb-list-hdr .tb-lc { position: relative; }
-                /* El header de la columna de titulo esta PINNED (sticky-left) para alinear con la columna
-                   fija del cuerpo. Sin este override, la regla de arriba (.tb-list-hdr .tb-lc, mas especifica)
-                   pisa el position:sticky de .tb-pin-h y el encabezado del titulo se desalinea de las filas
-                   al scrollear horizontal. sticky tambien sirve de contexto para el handle de resize y el
-                   indicador de orden (hijos absolutos), asi que no se rompe nada. */
-                .tb-list-hdr .tb-lc.tb-pin-h { position: sticky; left: 0; }
+                /* El header del bloque fijo (checkbox 38px + expander 34px + titulo) esta PINNED (sticky-left)
+                   para alinear con la columna fija del cuerpo. Sin estos overrides, la regla de arriba
+                   (.tb-list-hdr .tb-lc, misma especificidad pero mas tardia en el DOM) pisa el position:sticky
+                   y el encabezado se desalinea de las filas al scrollear horizontal. Las tres celdas anclan a
+                   la MISMA izquierda que el cuerpo (0 / 38 / 72) para que no haya salto. sticky tambien sirve de
+                   contexto para el handle de resize y el indicador de orden (hijos absolutos), asi que no rompe. */
+                .tb-list-hdr .tb-lc.tb-lc-sel { position: sticky; left: 0; z-index: 9; }
+                .tb-list-hdr .tb-lc.tb-lc-exp { position: sticky; left: 38px; z-index: 9; }
+                .tb-list-hdr .tb-lc.tb-pin-h { position: sticky; left: 72px; }
                 .tb-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 4; }
                 .tb-col-rz::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
                 .tb-col-rz:hover::after { background: var(--propia-brand); }
@@ -512,15 +515,32 @@ else
                    esta abierta el boton se oculta (la propia fila + su hint quedan a la vista). *@
                 @if (!_altaTblOpen)
                 {
+                    @* Fila CTA (alta cerrada): renderiza el MISMO juego de celdas de columna (vacias) que las
+                       filas de datos para que mida el ancho completo de la tabla (max-content = 2511) y su banda
+                       violeta cubra TODA la tabla. Antes solo tenia 3 celdas (una .tb-nf-ctacell con flex:1) y la
+                       fila paraba en el ancho del viewport, dejando el "fajon violeta a media tabla". El boton va
+                       en la celda de titulo (bajo la columna TITULO); el resto son celdas vacias de relleno. *@
                     <div class="tb-newrow tb-cta-row">
                         <div class="tb-row-selc"></div>
                         <div class="tb-row-exp"></div>
-                        <div class="tb-nf-ctacell">
+                        <div class="tb-row-tit">
                             <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                 Agregar tarea
                             </button>
                         </div>
+                        @if (_colDesc) { <div class="tb-row-desc"></div> }
+                        @if (_colCodigo) { <div class="tb-row-cod"></div> }
+                        <div class="tb-row-cell-est"></div>
+                        @if (_colResp) { <div class="tb-row-resp"></div> }
+                        <div class="tb-row-prog"></div>
+                        @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+                        @if (_colPrio) { <div class="tb-row-prio"></div> }
+                        @if (_colDue) { <div class="tb-row-due"></div> }
+                        @if (_colValor) { <div class="tb-row-valor tb-num"></div> }
+                        @if (_colOrigen) { <div class="tb-row-orig"></div> }
+                        @foreach (var c in CamposVisibles) { <div class="tb-row-campo tb-cc-@c.Id"></div> }
+                        <div class="tb-row-acc"></div>
                     </div>
                 }
                 @* La fila de TOTALES generales al pie se retiro a peticion del usuario;
@@ -897,7 +917,7 @@ else
             <div class="tb-modal-head">
                 <div class="tb-modal-tt">
                     <div class="tb-modal-h">Configurar tablero</div>
-                    <div class="tb-modal-s">@_board.Tablero.Nombre - campos, motivos y usuarios</div>
+                    <div class="tb-modal-s">@_board.Tablero.Nombre - motivos y usuarios</div>
                 </div>
                 <button class="tb-modal-x" @onclick="CerrarConfigBoard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
@@ -906,7 +926,7 @@ else
                    no aqui. Ver los popovers _estEditorOpen / _etiqEditorOpen. *@
                 <div>
                     <div class="tbcfg-h">CAMPOS PERSONALIZADOS</div>
-                    <div class="tbcfg-help">Define campos tipados que aparecerán en cada tarjeta, en los filtros y como columnas de la lista.</div>
+                    <div class="tbcfg-help">Gestiona los campos del tablero: editar, archivar o eliminar. Los campos aparecen en cada tarjeta, en los filtros y como columnas de la lista.</div>
                     @if (_board.Tablero.Campos is { Count: > 0 })
                     {
                         <div class="tbcfg-campos">
@@ -919,7 +939,7 @@ else
                                         <span class="tbcfg-campo-tipo">@TipoCampoLabel(c.Tipo)</span>
                                         @if (c.MostrarEnFiltro) { <span class="tbcfg-campo-filt" title="Aparece en filtros">filtro</span> }
                                     </div>
-                                    <button class="tbcfg-campo-ed" title="Editar" @onclick="() => CfgEditCampo(campo)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                                    <button class="tbcfg-campo-ed" title="Editar" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                                     <button class="tbcfg-campo-ed" title="Archivar (ocultar sin borrar datos)" @onclick="() => ArchivarCampo(campo.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg></button>
                                     <button class="tbcfg-del" title="Eliminar (borra los datos)" @onclick="() => CfgRemoveCampo(campo.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
                                 </div>
@@ -944,54 +964,10 @@ else
                             }
                         </div>
                     }
-                    <div class="tbcfg-editor">
-                        <div class="tbcfg-editor-h">@(_campoDraft.Id is null ? "Nuevo campo" : "Editar campo")</div>
-                        <div class="tbcfg-erow">
-                            <input class="tbcfg-in" @bind="_campoDraft.Label" @bind:event="oninput" placeholder="Nombre del campo (ej. Costo estimado)" />
-                            <select class="tbcfg-in tbcfg-in-sm" @bind="_campoDraft.Tipo">
-                                @foreach (var tp in Enum.GetValues<TipoCampoTablero>()) { <option value="@tp">@TipoCampoLabel(tp)</option> }
-                            </select>
-                        </div>
-                        @if (_campoDraft.Tipo == TipoCampoTablero.Seleccion)
-                        {
-                            <textarea class="tbcfg-in" rows="3" @bind="_campoDraft.Opciones" @bind:event="oninput" placeholder="Una opción por linea"></textarea>
-                        }
-                        @if (_campoDraft.Tipo == TipoCampoTablero.Total)
-                        {
-                            <div class="tbcfg-suma">
-                                <div class="tbcfg-suma-h">Campos a sumar (Número / Moneda)</div>
-                                @if (!CamposSumables.Any())
-                                {
-                                    <div class="tbcfg-suma-empty">Crea antes campos de tipo Número o Moneda para sumarlos.</div>
-                                }
-                                @foreach (var s in CamposSumables)
-                                {
-                                    var sid = s.Id;
-                                    <label class="tbcfg-chkl"><input type="checkbox" checked="@_campoDraft.CamposSuma.Contains(sid)" @onchange="() => ToggleCampoSuma(sid)" /> @s.Label</label>
-                                }
-                            </div>
-                        }
-                        <input class="tbcfg-in" @bind="_campoDraft.Descripcion" @bind:event="oninput" placeholder="@(_campoDraft.Tipo == TipoCampoTablero.Separador ? "Titulo de la seccion (divisoria)" : "Descripcion / ayuda (opcional)")" />
-                        @if (_campoDraft.Tipo != TipoCampoTablero.Separador && _campoDraft.Tipo != TipoCampoTablero.Total)
-                        {
-                            <input class="tbcfg-in" @bind="_campoDraft.ValorPorDefecto" @bind:event="oninput" placeholder="Valor por defecto (opcional)" />
-                            <div class="tbcfg-erow">
-                                <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.Requerido" /> Requerido</label>
-                                <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.PermiteVarios" /> Permitir varios valores</label>
-                            </div>
-                        }
-                        <div class="tbcfg-erow">
-                            <label class="tbcfg-chkl"><input type="checkbox" @bind="_campoDraft.MostrarEnFiltro" /> Mostrar en filtros</label>
-                            <select class="tbcfg-in tbcfg-in-sm" @bind="_campoDraft.Columna">
-                                <option value="1">Ancho normal</option>
-                                <option value="2">Ancho completo</option>
-                            </select>
-                        </div>
-                        <div class="tbcfg-erow tbcfg-erow-end">
-                            @if (_campoDraft.Id is not null) { <button class="tb-btn tb-btn-ghost" @onclick="CfgNuevoCampo">Cancelar</button> }
-                            <button class="tb-btn tb-btn-primary" @onclick="CfgGuardarCampo" disabled="@(_busy || string.IsNullOrWhiteSpace(_campoDraft.Label))">@(_campoDraft.Id is null ? "Agregar campo" : "Guardar campo")</button>
-                        </div>
-                    </div>
+                    @* El editor "Nuevo campo" se quito de aqui (Alex, opcion A): la CREACION de campos es canonica
+                       desde el boton "+" de la ultima columna de la tabla. Este modal queda como gestor/overview:
+                       listar, editar (abre el editor flotante compartido), archivar/restaurar y eliminar. *@
+                    <div class="tbcfg-help">Para crear un campo nuevo usa el boton <strong>+</strong> de la ultima columna de la tabla. Aqui puedes editarlos, archivarlos o eliminarlos.</div>
                 </div>
                 <div class="tbcfg-sec">
                     <div class="tbcfg-h">MOTIVOS DE CIERRE</div>
@@ -2642,29 +2618,9 @@ else
         }
     }
     // Boton de color + paleta pastel para el encabezado de una columna.
-    private RenderFragment ColorDot(string key)
-    {
-        return
-    @<span class="tb-lc-colorwrap" @onclick:stopPropagation="true">
-        <button type="button" class="tb-lc-color" style="background:@(ColBg(key) ?? "transparent")" title="Color de columna" @onclick="() => ToggleColColorMenu(key)"></button>
-        @if (_colColorMenu == key)
-        {
-            <div class="tb-colorpop-bd" @onclick="() => _colColorMenu = null"></div>
-            <div class="tb-colorpop" @onclick:stopPropagation="true">
-                @foreach (var c in PastelCols)
-                {
-                    var cc = c;
-                    <button type="button" class="tb-coloropt @(string.Equals(ColBg(key), cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => SetColColor(key, cc)"></button>
-                }
-                <label class="tb-coloropt tb-coloropt-custom" title="Elegir color personalizado">
-                    @* T-11: <input type="color"> exige un HEX (#rrggbb); un var() no es valido como value, por eso queda literal. *@
-                    <input type="color" value="@(ColBg(key) ?? "#6D4FE3")" @onchange="(e) => SetColColorInput(key, e)" />
-                </label>
-                <button type="button" class="tb-coloropt tb-coloropt-none" title="Sin color" @onclick="() => SetColColor(key, null)"></button>
-            </div>
-        }
-    </span>;
-    }
+    // La "opcion de color" de columna en el header se quito por pedido de Alex: ColorDot no renderiza nada.
+    // (El popup de color y SetColColor quedan sin uso; los colores ya aplicados, si los hubiera, siguen via ColBg.)
+    private RenderFragment ColorDot(string key) => (__b) => { };
 
     // Color de texto (blanco / oscuro) para una etiqueta segun la luminancia de su color de fondo,
     // para que el texto quede legible sobre el chip relleno.
@@ -4886,21 +4842,34 @@ else
         </div>
     };
 
-    @* Fila-aviso bajo la fila de alta (clases compartidas .tbl-nf-*; definidas en tabla-base.css). Misma
-       estructura de celdas que la fila CTA de Tareas (tb-row-selc + tb-row-exp vacias + tb-nf-ctacell). *@
+    @* Fila-aviso bajo la fila de alta. Renderiza la MISMA estructura de celdas (vacias) que NuevaFilaFlat para
+       que mida el ancho completo (como las filas de datos) y su banda violeta cubra toda la tabla sin blanco al
+       scrollear. El texto de ayuda vive en la celda de titulo y puede desbordar a la celda vecina sin recorte. *@
     private RenderFragment FilaAvisoAlta => __builder =>
     {
         if (_board is null || _board.Estados.Count == 0) { return; }
         <div class="tb-newrow tbl-nf-hintrow">
             <div class="tb-row-selc"></div>
             <div class="tb-row-exp"></div>
-            <div class="tb-nf-ctacell">
+            <div class="tb-row-tit">
                 <span class="tbl-nf-hint-txt">
                     <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
                     <span class="tbl-nf-hint-sep">&middot;</span>
                     <kbd class="tbl-kbd">Esc</kbd> para cancelar
                 </span>
             </div>
+            @if (_colDesc) { <div class="tb-row-desc"></div> }
+            @if (_colCodigo) { <div class="tb-row-cod"></div> }
+            <div class="tb-row-cell-est"></div>
+            @if (_colResp) { <div class="tb-row-resp"></div> }
+            <div class="tb-row-prog"></div>
+            @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+            @if (_colPrio) { <div class="tb-row-prio"></div> }
+            @if (_colDue) { <div class="tb-row-due"></div> }
+            @if (_colValor) { <div class="tb-row-valor tb-num"></div> }
+            @if (_colOrigen) { <div class="tb-row-orig"></div> }
+            @foreach (var c in CamposVisibles) { <div class="tb-row-campo tb-cc-@c.Id"></div> }
+            <div class="tb-row-acc"></div>
         </div>
     };
 
