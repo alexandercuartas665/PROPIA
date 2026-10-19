@@ -766,14 +766,9 @@ else
                             </div>
                         }
                         <div class="tb-search-wrap">
-                            @if (_tenants.Count > 1)
-                            {
-                                <label class="tbcfg-cross">
-                                    <input type="checkbox" checked="@_tbCross" @onchange="e => { _tbCross = (bool)e.Value!; _tbResultados.Clear(); _tbResultCopro.Clear(); }" />
-                                    <span>Buscar también en mis otras copropiedades (solo usuarios del sistema)</span>
-                                </label>
-                            }
-                            <input class="tb-input" placeholder="@(_tbCross ? "Buscar persona en todas mis copropiedades..." : "Buscar persona por nombre, documento o correo...")" @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
+                            @* Compartir con usuarios de OTRA copropiedad/cliente se retiro (pedido de Alex): solo se
+                               agregan miembros del directorio de ESTA copropiedad. *@
+                            <input class="tb-input" placeholder="Buscar persona por nombre, documento o correo..." @bind="_tbBuscar" @bind:event="oninput" @onkeyup="BuscarPersonasTb" autocomplete="off" />
                             @if (_tbResultados.Count > 0)
                             {
                                 <div class="tb-search-drop">
@@ -791,10 +786,6 @@ else
                                                 <span class="tb-ava tb-ava-sm">@Iniciales(nombre)</span>
                                             }
                                             <span class="tb-search-nom">@nombre</span>
-                                            @if (_tbResultCopro.TryGetValue(p.Id, out var coproOrigen))
-                                            {
-                                                <span class="tbcfg-copro-chip">@coproOrigen</span>
-                                            }
                                             <span class="tb-search-doc">@p.Documento</span>
                                         </button>
                                     }
@@ -807,36 +798,9 @@ else
                         </div>
                     </div>
                 </div>
-                @if (_tableroDraft.Id is not null)
-                {
-                    <div class="tb-fld tb-invite">
-                        <label>Invitar a un externo por correo</label>
-                        <div class="tb-invite-hint">Se crea su cuenta y queda con acceso a este tablero. Recibe un enlace por correo que vence en 72 horas.</div>
-                        <div class="tb-invite-grid">
-                            <input class="tb-input" type="email" placeholder="correo@@ejemplo.com" @bind="_extEmail" autocomplete="off" />
-                            <input class="tb-input" placeholder="Nombre y apellido" @bind="_extNombre" autocomplete="off" />
-                            <select class="tb-input" @bind="_extRolId">
-                                <option value="">Rol...</option>
-                                @foreach (var r in _rolesInv) { <option value="@r.Id">@r.Nombre</option> }
-                            </select>
-                            <button class="tb-btn tb-btn-primary" @onclick="InvitarExterno"
-                                    disabled="@(_extBusy || string.IsNullOrWhiteSpace(_extEmail) || string.IsNullOrWhiteSpace(_extNombre) || string.IsNullOrEmpty(_extRolId))">
-                                @(_extBusy ? "Enviando..." : "Invitar")
-                            </button>
-                        </div>
-                        @if (_extMsg is not null)
-                        {
-                            <div class="tb-invite-msg @(_extError ? "err" : "ok")">@_extMsg</div>
-                        }
-                        @if (!string.IsNullOrEmpty(_extLink))
-                        {
-                            <div class="tb-invite-link">
-                                <input class="tb-input" readonly value="@_extLink" />
-                                <button class="tb-btn tb-btn-ghost" @onclick="CopiarLinkExt">Copiar</button>
-                            </div>
-                        }
-                    </div>
-                }
+                @* "Invitar a un externo por correo" se retiro (pedido de Alex: no compartir el tablero con
+                   usuarios de otra copropiedad/cliente). Al tablero solo se agregan miembros de ESTA
+                   copropiedad (buscador de arriba); el acceso al modulo lo gobierna Roles y Permisos. *@
             </div>
             <div class="tb-modal-foot">
                 @if (_tableroDraft.Id is not null) { <button class="tb-btn-danger" @onclick="EliminarTablero"><i class="fi fi-rr-trash"></i>Eliminar</button> }
@@ -4921,7 +4885,7 @@ else
         await RecargarBoard();
     }
 
-    private async Task AbrirTableroDraft(TableroDto? b)
+    private void AbrirTableroDraft(TableroDto? b)
     {
         _tableroDraft = b is null
             ? new TableroDraft()
@@ -4929,20 +4893,6 @@ else
         // Info de display de los miembros ya seleccionados (nombre + iniciales; sin foto en el DTO del tablero).
         _tbSelInfo = b?.Usuarios.ToDictionary(u => u.PersonaId, u => (u.Nombre, (string?)null)) ?? new();
         _tbBuscar = ""; _tbResultados.Clear();
-        // Reset del bloque "invitar externo"
-        _extEmail = ""; _extNombre = ""; _extRolId = ""; _extLink = null; _extMsg = null; _extError = false;
-        // El bloque solo aplica a tableros que ya existen (se necesita su Id).
-        if (b is not null)
-        {
-            if (_rolesInv.Count == 0)
-            {
-                try { _rolesInv = await Auth().GetFromJsonAsync<List<RolMini>>("/api/roles") ?? new(); }
-                catch { _rolesInv = new(); }
-            }
-            // Rol por defecto: el primero que no sea Administrador (o el primero disponible).
-            _extRolId = (_rolesInv.FirstOrDefault(r => r.Nombre != "Administrador")?.Id
-                         ?? _rolesInv.FirstOrDefault()?.Id)?.ToString() ?? "";
-        }
     }
     private void ToggleUsuario(Guid pid) { if (_tableroDraft is null) return; if (!_tableroDraft.UsuarioIds.Add(pid)) _tableroDraft.UsuarioIds.Remove(pid); }
 
@@ -4954,35 +4904,16 @@ else
     private (string Nombre, string? Foto) SelInfo(Guid pid)
         => _tbSelInfo.TryGetValue(pid, out var v) ? v : (PersonaNombre(pid), (string?)null);
 
-    // Modo cross-tenant del picker: busca en el directorio de TODAS mis copropiedades
-    // administradas (invitacion de usuarios de otras copros al tablero). Los ids de persona
-    // son globales, asi que TableroUsuario los acepta sin cambios de esquema.
-    private bool _tbCross;
-    private readonly Dictionary<Guid, string> _tbResultCopro = new();
-    private sealed record PersonaCrossMini(Guid Id, string Nombres, string Apellidos, string Documento, string? FotoUrl, Guid TenantId, string TenantNombre);
-
+    // El picker de miembros del tablero busca SOLO en el directorio de esta copropiedad (el modo
+    // cross-tenant "otras copropiedades" se retiro: no se comparte el tablero fuera del tenant).
     private async Task BuscarPersonasTb()
     {
         var q = _tbBuscar?.Trim() ?? "";
-        if (q.Length < 2) { _tbResultados.Clear(); _tbResultCopro.Clear(); return; }
+        if (q.Length < 2) { _tbResultados.Clear(); return; }
         try
         {
-            if (_tbCross)
-            {
-                var cross = await Auth().GetFromJsonAsync<List<PersonaCrossMini>>(
-                    $"/api/tablero-compartido/personas?q={Uri.EscapeDataString(q)}") ?? new();
-                _tbResultCopro.Clear();
-                foreach (var p in cross) { _tbResultCopro[p.Id] = p.TenantNombre; }
-                _tbResultados = cross
-                    .Select(p => new PersonaResumenDto(p.Id, TipoDocumento.CC, p.Documento, p.Nombres, p.Apellidos, null, null, p.FotoUrl, false, EstadoDirectorio.Activo))
-                    .ToList();
-            }
-            else
-            {
-                _tbResultCopro.Clear();
-                _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
-                    $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
-            }
+            _tbResultados = await Auth().GetFromJsonAsync<List<PersonaResumenDto>>(
+                $"/api/directorio/personas?q={Uri.EscapeDataString(q)}") ?? new();
         }
         catch { _tbResultados.Clear(); }
     }
@@ -5222,61 +5153,9 @@ else
         finally { _busy = false; }
     }
 
-    // ---- Invitar externo al tablero (crea cuenta + acceso, envia correo) ----
-    private record RolMini(Guid Id, string Nombre);
-    private record InvitacionResultMini(string LinkAceptacion);
-    private List<RolMini> _rolesInv = new();
-    private string _extEmail = "";
-    private string _extNombre = "";
-    private string _extRolId = "";
-    private bool _extBusy;
-    private bool _extError;
-    private string? _extMsg;
-    private string? _extLink;
-
-    private async Task InvitarExterno()
-    {
-        if (_tableroDraft?.Id is not Guid tableroId) return;
-        var email = _extEmail?.Trim() ?? "";
-        var nombre = _extNombre?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || string.IsNullOrWhiteSpace(nombre))
-        {
-            _extError = true; _extMsg = "Completa un correo valido y el nombre."; return;
-        }
-        if (!Guid.TryParse(_extRolId, out var rolId))
-        {
-            _extError = true; _extMsg = "Selecciona un rol para el invitado."; return;
-        }
-        _extBusy = true; _extError = false; _extMsg = null; _extLink = null;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync(
-                $"/api/tareas/tableros/{tableroId}/invitar-externo",
-                new { Email = email, Nombre = nombre, RolId = rolId });
-            if (resp.IsSuccessStatusCode)
-            {
-                var inv = await resp.Content.ReadFromJsonAsync<InvitacionResultMini>();
-                _extLink = Nav.BaseUri.TrimEnd('/') + (inv?.LinkAceptacion ?? "");
-                _extMsg = $"Invitacion enviada por correo a {email}.";
-                _extError = false;
-                _extEmail = ""; _extNombre = "";
-            }
-            else
-            {
-                _extError = true;
-                var body = await resp.Content.ReadAsStringAsync();
-                _extMsg = "No se pudo invitar. " + body;
-            }
-        }
-        catch (Exception ex) { _extError = true; _extMsg = "Error: " + ex.Message; }
-        finally { _extBusy = false; }
-    }
-
-    private async Task CopiarLinkExt()
-    {
-        if (string.IsNullOrEmpty(_extLink)) return;
-        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _extLink); } catch { }
-    }
+    // "Invitar a un externo por correo" al tablero se retiro (pedido de Alex: no compartir el tablero con
+    // usuarios de otra copropiedad/cliente). Solo se agregan miembros del directorio de esta copropiedad; el
+    // acceso al modulo lo gobierna Roles y Permisos. El endpoint invitar-externo queda sin uso desde aqui.
     private async Task GuardarTablero()
     {
         if (_tableroDraft is null || string.IsNullOrWhiteSpace(_tableroDraft.Nombre)) return;
