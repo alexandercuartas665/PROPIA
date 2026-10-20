@@ -106,6 +106,25 @@ vive en `propiaTablaColReorder` (propia-ui.js) + clases `.tbl-col-*` (tabla-base
 cablee `OnColReorder`: dispararia el cursor grab sin drag real. El drag NO es parte del "diseño del header";
 no se agrega en modulos que no lo tengan ya.
 
+## 6B. Chevron "Opciones de columna" del header (canon: `.tbl-th-edit` de tabla-base.css)
+
+Cada celda de header lleva, al BORDE DERECHO, el boton que abre el menu de columna (Editar/Duplicar/Ordenar/
+Filtrar/Agrupar/Ocultar/Eliminar). Mismo SVG en todos: `<svg width="11" height="11" ... stroke-width="2"><path
+d="M6 9l6 6 6-6"/></svg>` (chevron "v"). Referencia canonica: `.tbl-th-edit` (Unidades/Roles). Valores (medir
+computed, deben coincidir 1:1):
+- color reposo `var(--propia-text-muted)` (rgb 124,152,182); opacity 1 (SIEMPRE visible, no solo al hover);
+  svg render 11x11.
+- **HOVER (NO olvidar): `color:var(--propia-brand); background:var(--propia-brand-soft);`** (la "sombra violeta"
+  del chevron) + `transition: background .12s, color .12s`. Un hover que solo cambia el color del icono (sin el
+  fondo violeta) es un BUG de homogeneidad (le paso a Tareas con su clase propia `.tb-lc-ed`, Alex lo cazo 2026-10).
+- **Gotcha de tamaño:** si el boton tiene `width` fijo + `box-sizing:border-box` y NO declara `padding`, hereda el
+  padding por defecto de `<button>` (~1px 6px) y la caja de contenido se encoge -> el svg sale APLASTADO (6-8px de
+  ancho) y el chevron se ve como una rayita. Fix: `padding: 0` (y opcional `flex-shrink:0` en el svg). Ver memoria
+  [[chevron-columna-aplastado]].
+- Los modulos con clase propia (`tb-lc-ed`, `dtab-th-gear`, `ea/mas/res/seg/ctr/zc/veh-th-edit`, `utb-th-gear`,
+  `pk-th-edit`) DEBEN replicar reposo + hover + padding:0 del canon. Al crear una vista-tabla nueva, reusar
+  `.tbl-th-edit` o copiar sus 3 reglas (base, :hover, svg) tal cual.
+
 ## 7. Sin KPIs / indicadores (decision de producto)
 
 Los modulos de vista tabla **NO** llevan tarjetas de indicadores (KPI). Se eliminaron por decision
@@ -247,6 +266,9 @@ Referencia canonica: Distribucion.razor (Unidades) y ZonasComunes.razor.
 3. Persistencia: confirmar en BD/recarga que se guardaron listas/persona/unidad.
 4. Flotante: con la fila al fondo, verificar position:fixed y flip.
 5. Header: con scroll, el header queda arriba OPACO y las filas pasan por debajo (no por detras).
+5b. Chevron "Opciones de columna" (ver 6B): medir el svg render = 11x11 (si da 6-8 esta aplastado -> padding:0);
+   y el HOVER: pasar el puntero y confirmar `background: var(--propia-brand-soft)` (rgb 245,241,254) + color brand
+   (rgb 109,79,227), igual que Unidades `.tbl-th-edit:hover`. Sin ese fondo violeta = BUG de homogeneidad.
 6. Limpieza: eliminar SIEMPRE los registros de prueba. Si hay triggers append-only, en una transaccion
    `SET LOCAL session_replication_role='replica'` antes de los DELETE (solo dev).
 7. Entregar compilando y con resumen de lo medido por punto. NO marcar listo sin auditar en Chrome.
