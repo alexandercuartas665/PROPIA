@@ -392,6 +392,55 @@ public class UnidadesPlantillaRoundTripTests
         finally { await CleanupTenantAsync(tenantId); }
     }
 
+    [Fact]
+    public async Task Plantilla_guardada_como_xls_97_2003_se_importa_igual_que_xlsx()
+    {
+        // Plantilla REAL (388 unidades, 10 zonas, 10 equipos) guardada desde Excel como "Libro de
+        // Excel 97-2003". ClosedXML no lee ese formato: ExcelEntrada lo convierte en memoria.
+        var ruta = Path.Combine(AppContext.BaseDirectory, "Recursos", "plantilla-carga.xls");
+        Assert.True(File.Exists(ruta), "Falta el recurso de prueba " + ruta);
+
+        // 1. Conversion: mismas hojas, encabezados en la fila 2, datos desde la 4 y hojas ocultas respetadas.
+        using (var xls = File.OpenRead(ruta))
+        using (var wb = ExcelEntrada.Abrir(xls))
+        {
+            var ws = wb.Worksheet("UNIDADES PRIVADAS");
+            Assert.Equal("UNIDAD PRIVADA", ws.Cell(2, 1).GetString());
+            Assert.Equal("102", ws.Cell(4, 1).GetString());
+            Assert.Equal(0.42093, ws.Cell(4, 5).GetDouble(), 6);   // COEFICIENTE con 5 decimales (numerico)
+            Assert.True(wb.Worksheets.Contains("ZONAS COMUNES"));
+            Assert.True(wb.Worksheets.Contains("EQUIPOS"));
+            Assert.Equal(XLWorksheetVisibility.Hidden, wb.Worksheet("PROPIA_LISTAS").Visibility);
+        }
+
+        // 2. Un archivo que no es Excel se rechaza con mensaje claro (no con el generico).
+        var ex = Assert.Throws<ExcelEntradaException>(() => ExcelEntrada.Abrir(new MemoryStream(System.Text.Encoding.ASCII.GetBytes("a;b;c|1;2;3|"))));
+        Assert.Contains(".xls", ex.Message);
+
+        // 3. Importacion completa por el mismo camino del API.
+        var tenantId = await SeedTenantAsync("CP Plantilla XLS");
+        try
+        {
+            ResultadoCargaUnidades res;
+            await using (var xls = File.OpenRead(ruta))
+                res = await ImportarStreamAsync(tenantId, xls);
+
+            Assert.Equal(388, res.Unidades);
+            Assert.Equal(186, res.Anexos);
+            Assert.Equal(10, res.Zonas);
+            Assert.Equal(10, res.Equipos);
+            var err = Assert.Single(res.Errores);
+            Assert.Contains("G001", err.Motivo);   // anexo sin PRINCIPAL: rechazado, como en .xlsx
+
+            var u = await GetUnidadAsync(tenantId, "102");
+            Assert.Equal(0.42093m, u.CoeficientePropiedad);
+            Assert.Equal(0.44m, u.ModuloContributivo1);
+            var anexo = await GetUnidadAsync(tenantId, "D088 G083");
+            Assert.Equal(TipoUnidad.ParqueaderoDeposito, anexo.Tipo);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
     private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
     {
         var col = ColumnaDe(ws, encabezado);
@@ -461,7 +510,12 @@ public class UnidadesPlantillaRoundTripTests
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         ms.Position = 0;
+        return await ImportarStreamAsync(tenantId, ms);
+    }
 
+    // Importa el contenido tal cual lo subiria el usuario (.xlsx o .xls): es el mismo camino del API.
+    private async Task<ResultadoCargaUnidades> ImportarStreamAsync(Guid tenantId, Stream ms)
+    {
         var (db, tenantCtx) = BuildDb(tenantId);
         var http = new HttpContextAccessor();
         var blob = new NoopBlobStorage();
@@ -572,6 +626,11 @@ public class UnidadesPlantillaRoundTripTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_campos_config WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_coeficientes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_coeficiente WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM zona_franjas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM zona_config_reserva WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM zona_bloqueos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM zonas_comunes WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM equipos_activos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_vinculos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_unidad_custom WHERE tenant_id = {tenantId}");

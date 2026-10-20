@@ -42,7 +42,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false, bool reemplazarDependientes = false)
     {
         var errores = new List<CargaUnidadesError>();
-        using var wb = new XLWorkbook(contenidoXlsx);
+        using var wb = ExcelEntrada.Abrir(contenidoXlsx);   // .xlsx o .xls
 
         var copros = await CopropiedadesDelClienteAsync(ct);   // nombreLower -> tenantId
         var tenantOriginal = _tenant.CurrentTenantId;
@@ -889,7 +889,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var any = false;
             foreach (var (col, h) in headers)
             {
-                var v = ws.Cell(r, col).GetString().Trim();
+                // Las celdas NUMERICAS se emiten en cultura invariante ("1234.5"): GetString() usa la
+                // cultura del servidor y en es-CO devolvia "1.234,5", que ParseDecimal no entendia
+                // (el punto de miles sobrevivia al cambio de coma por punto). Texto y fechas siguen igual.
+                var celda = ws.Cell(r, col);
+                var v = celda.DataType == XLDataType.Number
+                    ? celda.GetDouble().ToString("0.############", CultureInfo.InvariantCulture)
+                    : celda.GetString().Trim();
                 dict[h] = v;
                 if (v.Length > 0) any = true;
             }

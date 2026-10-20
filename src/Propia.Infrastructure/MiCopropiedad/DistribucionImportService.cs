@@ -237,7 +237,7 @@ public class DistribucionImportService : IDistribucionImportService
         var errores = new List<ImportarErrorFila>();
         int unidadesCreadas = 0, personasVinculadas = 0, vinculosCreados = 0;
 
-        using var wb = new XLWorkbook(contenidoXlsx);
+        using var wb = ExcelEntrada.Abrir(contenidoXlsx);   // .xlsx o .xls
 
         // Mapa Numero -> unidadId (para resolver los inmuebles vinculados al final). Se siembra
         // con las unidades ya existentes por si una fila vincula una unidad que ya estaba.
