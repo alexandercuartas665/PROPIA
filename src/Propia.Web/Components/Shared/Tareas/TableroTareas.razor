@@ -878,7 +878,7 @@ else
 @if (_cardDraft is not null && _board is not null)
 {
     var d = _cardDraft;
-    <div class="tb-modal-bd" @onclick="CerrarCard">
+    <div class="tb-modal-bd" @onclick="CerrarCardUi">
         <div class="tbc-modal" @onclick:stopPropagation="true">
             @* ----- Cabecera con color de la tarjeta ----- *@
             <div class="tbc-head">
@@ -896,7 +896,7 @@ else
                         @(d.Id is null ? "Nueva tarea" : "Detalle de la tarea")
                     </div>
                 </div>
-                <button class="tbc-head-x" @onclick="CerrarCard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                <button class="tbc-head-x" @onclick="CerrarCardUi"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
 
             @* ----- Pestanas: Detalle (incluye actividad tipo chat) / Archivos / Historial ----- *@
@@ -1321,10 +1321,10 @@ else
                             </table>
                             @if (!EsBoardForaneo)
                             {
-                                <div class="tbc-sub-add" style="margin-top:10px">
-                                    <input @bind="_subtareaNew" @bind:event="oninput" placeholder="+ Agregar subtarea..."
-                                           @onkeydown="@(async e => { if (e.Key == "Enter") await CrearSubtareaRapida(); })" />
-                                    <button class="tbc-add-btn" @onclick="CrearSubtareaRapida" disabled="@(_busy || string.IsNullOrWhiteSpace(_subtareaNew))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar</button>
+                                @* Crear subtarea = abrir el modal COMPLETO (como "+ Nueva tarea" de PQRSD crea una
+                                   tarea vinculada). Al guardar/cancelar se vuelve aqui con la nueva subtarea en la lista. *@
+                                <div class="tbc-sub-newbar">
+                                    <button class="tb-btn tb-btn-primary" @onclick="NuevaSubtareaDesdeModal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Nueva subtarea</button>
                                 </div>
                             }
                         </div>
@@ -1474,7 +1474,7 @@ else
                 {
                     <button class="tb-btn tb-btn-ghost" @onclick="() => AbrirCopiaDialog(d.Id!.Value, d.Titulo, d.EstadoId)" title="Crear una copia de esta tarea"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copiar</button>
                 }
-                <button class="tb-btn tb-btn-ghost" @onclick="CerrarCard">Cancelar</button>
+                <button class="tb-btn tb-btn-ghost" @onclick="CerrarCardUi">Cancelar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="GuardarCard" disabled="@(_busy || string.IsNullOrWhiteSpace(d.Titulo))">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>@(_busy ? "Guardando..." : "Guardar")
                 </button>
@@ -5538,7 +5538,33 @@ else
     }
 
 
-    private void CerrarCard() { _cardDraft = null; _subNew = ""; _respPick = ""; }
+    private Guid? _subtareaRetornoPadreId; // al crear una subtarea desde el modal del padre, a quien volver
+    private void CerrarCard() { _subtareaRetornoPadreId = null; _cardDraft = null; _subNew = ""; _respPick = ""; }
+
+    // Cierre desde la UI (X / Cancelar / clic fuera). Si venimos de crear una subtarea desde el modal del
+    // padre, volvemos al modal del padre en la pestana Sub-tareas (como PQRSD vuelve a su board); si no, cierra.
+    private async Task CerrarCardUi()
+    {
+        if (_subtareaRetornoPadreId is Guid retorno)
+        {
+            _subtareaRetornoPadreId = null;
+            var padre = _tareas.FirstOrDefault(t => t.Id == retorno);
+            if (padre is not null) { await AbrirCardDraft(padre, null); _cardTab = "subtareas"; return; }
+        }
+        CerrarCard();
+    }
+
+    // Abre el modal COMPLETO de creacion como subtarea del padre actual (igual que "+ Nueva tarea" de PQRSD
+    // crea una tarea vinculada), recordando a quien volver al guardar/cancelar.
+    private void NuevaSubtareaDesdeModal()
+    {
+        if (_cardDraft?.Id is not Guid padreId) return;
+        var padre = _tareas.FirstOrDefault(t => t.Id == padreId);
+        if (padre is null) return;
+        _subtareaRetornoPadreId = padreId;
+        AbrirSubtareaDraft(padre);
+        _cardTab = "detalle";
+    }
 
     // ---- Copiar tarea (mini-modal): copia INDEPENDIENTE con traza; se invoca desde modal/tabla/tarjeta ----
     private class CopiaDialog
@@ -5727,6 +5753,20 @@ else
 
             // Si era una tarea hija, deja el padre expandido para verla en la lista.
             if (d.PadreId is { } pid) { _expandidas.Add(pid); if (_boardMode == "tablero") _boardMode = "lista"; }
+
+            // Subtarea creada desde el modal del padre: refrescar y VOLVER al padre en la pestana Sub-tareas
+            // (como PQRSD vuelve a su board), para ver la nueva subtarea y poder seguir agregando.
+            if (_subtareaRetornoPadreId is Guid retornoPid)
+            {
+                _subtareaRetornoPadreId = null;
+                await RecargarBoard();
+                await CargarAsync();
+                var padre = _tareas.FirstOrDefault(t => t.Id == retornoPid);
+                if (padre is not null) { await AbrirCardDraft(padre, null); _cardTab = "subtareas"; }
+                else CerrarCard();
+                return;
+            }
+
             CerrarCard();
             await RecargarBoard();
             await CargarAsync();
