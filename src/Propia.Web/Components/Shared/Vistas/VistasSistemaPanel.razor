@@ -29,7 +29,7 @@
 
     @if (_builderOpen)
     {
-        var ds = Datasets[_draft.DsKey];
+        var ds = Resolved(_draft.DsKey);
         <div class="pv-sum-card pv-build">
             <div class="pv-row">
                 <span class="pv-lbl">Fuente</span>
@@ -199,6 +199,57 @@
             }
         </div>
     }
+
+    @* Modal de edicion de un registro (nativos + campos personalizados). Solo tarjetas/tabla. *@
+    @if (_editOpen)
+    {
+        var flds = EditFieldsDe(_editDsKey);
+        <div class="pv-modal-ov" @onclick="CerrarEdicion">
+            <div class="pv-modal" @onclick:stopPropagation="true">
+                <div class="pv-modal-hd"><div class="pv-title">Editar @_editTitulo</div></div>
+                <div class="pv-modal-bd">
+                    @if (_editErr is not null) { <div class="pv-section-err">@_editErr</div> }
+                    <div class="pv-editgrid">
+                        @foreach (var f in flds)
+                        {
+                            <label class="pv-field">
+                                <span class="pv-field-l">@f.Label</span>
+                                @if (f.Input == "bool")
+                                {
+                                    <select class="pv-in pv-in-full" @onchange="e => _editVals[f.Key] = e.Value?.ToString()">
+                                        <option value="" selected="@(string.IsNullOrEmpty(_editVals.GetValueOrDefault(f.Key)))">(sin valor)</option>
+                                        <option value="true" selected="@(_editVals.GetValueOrDefault(f.Key) == "true")">Si</option>
+                                        <option value="false" selected="@(_editVals.GetValueOrDefault(f.Key) == "false")">No</option>
+                                    </select>
+                                }
+                                else if (f.Input == "select" && f.Options is not null)
+                                {
+                                    <select class="pv-in pv-in-full" @onchange="e => _editVals[f.Key] = e.Value?.ToString()">
+                                        <option value="" selected="@(string.IsNullOrEmpty(_editVals.GetValueOrDefault(f.Key)))">(sin valor)</option>
+                                        @foreach (var op in f.Options)
+                                        {
+                                            <option value="@op" selected="@(_editVals.GetValueOrDefault(f.Key) == op)">@op</option>
+                                        }
+                                    </select>
+                                }
+                                else
+                                {
+                                    <input class="pv-in pv-in-full"
+                                           type="@(f.Input is "number" or "money" ? "number" : f.Input == "date" ? "date" : "text")"
+                                           value="@_editVals.GetValueOrDefault(f.Key)"
+                                           @oninput="e => _editVals[f.Key] = e.Value?.ToString()" />
+                                }
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="pv-modal-ft">
+                    <button class="pv-btn pv-btn--ghost" @onclick="CerrarEdicion">Cancelar</button>
+                    <button class="pv-btn pv-btn--primary" @onclick="GuardarEdicion" disabled="@_busy">Guardar cambios</button>
+                </div>
+            </div>
+        </div>
+    }
 </section>
 
 @code {
@@ -273,6 +324,54 @@
     private string? _err;
     private readonly List<VistaItem> _vistas = new();
     private readonly Dictionary<string, List<Dictionary<string, object?>>> _cache = new();
+
+    // ----------------- Campos dinamicos (EAV) -----------------
+    // Un registro-fila lleva claves fijas + "cd:{defId}" por cada campo personalizado. _id = id de la entidad
+    // (edicion nativa); _eavId = id del registro para valores EAV (= _id salvo residentes, que usa UnidadPersonaId).
+    private sealed record EavDef(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion = null);
+    private sealed record EavConfig(string DefsUrl, string ValuesUrl, string RecordIdKey);
+
+    // Datasets con EAV por endpoints planos (MiCopropiedad). RecordIdKey = prop camelCase del id en el flat DTO.
+    private static readonly Dictionary<string, EavConfig> Eav = new()
+    {
+        ["unidades"] = new("/api/mi-copropiedad/unidades-campos", "/api/mi-copropiedad/unidades-campos-valores", "unidadId"),
+        ["zonas"] = new("/api/mi-copropiedad/zonas-campos", "/api/mi-copropiedad/zonas-campos-valores", "zonaComunId"),
+        ["equipos"] = new("/api/mi-copropiedad/equipos-campos", "/api/mi-copropiedad/equipos-campos-valores", "equipoActivoId"),
+        ["contratos"] = new("/api/mi-copropiedad/contratos-campos", "/api/mi-copropiedad/contratos-campos-valores", "contratoId"),
+        ["residentes"] = new("/api/mi-copropiedad/personas-campos", "/api/mi-copropiedad/personas-campos-valores", "unidadPersonaId"),
+    };
+
+    private readonly Dictionary<string, List<EavDef>> _eavDefs = new();
+    private readonly Dictionary<string, Dictionary<Guid, Dictionary<Guid, string?>>> _eavVals = new();
+    private readonly Dictionary<string, Dataset> _resolved = new();
+
+    private static bool EsNumerico(TipoCampoTablero t) =>
+        t is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje or TipoCampoTablero.Total;
+    private static bool EsDimension(TipoCampoTablero t) =>
+        t is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano;
+
+    // Dataset "resuelto": fijo + campos EAV mezclados (dims/meas/fields). La maquina de pivote/grafico lo usa igual.
+    private Dataset Resolved(string key)
+    {
+        if (_resolved.TryGetValue(key, out var cached)) return cached;
+        var ds = Datasets[key];
+        if (!_eavDefs.TryGetValue(key, out var defs) || defs.Count == 0) { _resolved[key] = ds; return ds; }
+        var dims = ds.Dims.ToList();
+        var meas = ds.Meas.ToList();
+        var fields = ds.Fields.ToList();
+        foreach (var d in defs.OrderBy(x => x.Orden))
+        {
+            if (d.Tipo == TipoCampoTablero.Separador) continue;
+            var campo = new Campo("cd:" + d.Id, d.Label);
+            fields.Add(campo);
+            if (EsDimension(d.Tipo)) dims.Add(campo);
+            if (EsNumerico(d.Tipo)) meas.Add(new Medida("cd:" + d.Id, d.Label,
+                d.Tipo == TipoCampoTablero.Moneda ? "money" : d.Tipo == TipoCampoTablero.Porcentaje ? "pct" : "num"));
+        }
+        var res = ds with { Dims = dims, Meas = meas, Fields = fields };
+        _resolved[key] = res;
+        return res;
+    }
 
     private bool _builderOpen;
     private Guid? _draftId;
@@ -361,6 +460,60 @@
     // ----------------- Loaders: proyectan los DTOs reales a filas (dict). Enums -> ToString(). -----------------
     private async Task<List<Dictionary<string, object?>>> CargarDataset(string ds)
     {
+        await AsegurarEav(ds);
+        var rows = await CargarRows(ds);
+        AttachEav(ds, rows);
+        return rows;
+    }
+
+    // Carga definiciones + valores planos de campos personalizados del tenant para el dataset (una vez).
+    private async Task AsegurarEav(string ds)
+    {
+        if (!Eav.TryGetValue(ds, out var cfg) || _eavDefs.ContainsKey(ds)) return;
+        _eavDefs[ds] = await GetJsonAsync<List<EavDef>>(cfg.DefsUrl) ?? new();
+        _resolved.Remove(ds); // forzar recomputo del dataset resuelto con los campos nuevos
+        var map = new Dictionary<Guid, Dictionary<Guid, string?>>();
+        try
+        {
+            var arr = await GetJsonAsync<List<Dictionary<string, JsonElement>>>(cfg.ValuesUrl) ?? new();
+            foreach (var row in arr)
+            {
+                if (!row.TryGetValue(cfg.RecordIdKey, out var ridEl) || !row.TryGetValue("definicionId", out var didEl)) continue;
+                if (!Guid.TryParse(ridEl.ValueKind == JsonValueKind.String ? ridEl.GetString() : ridEl.ToString(), out var rid)) continue;
+                if (!Guid.TryParse(didEl.ValueKind == JsonValueKind.String ? didEl.GetString() : didEl.ToString(), out var did)) continue;
+                string? val = row.TryGetValue("valor", out var vEl) && vEl.ValueKind == JsonValueKind.String ? vEl.GetString() : null;
+                if (!map.TryGetValue(rid, out var inner)) { inner = new(); map[rid] = inner; }
+                inner[did] = val;
+            }
+        }
+        catch { }
+        _eavVals[ds] = map;
+    }
+
+    // Pega los valores EAV en cada fila bajo "cd:{defId}" (numericos -> double para poder agregar).
+    private void AttachEav(string ds, List<Dictionary<string, object?>> rows)
+    {
+        if (!_eavDefs.TryGetValue(ds, out var defs) || defs.Count == 0) return;
+        _eavVals.TryGetValue(ds, out var map);
+        foreach (var row in rows)
+        {
+            Dictionary<Guid, string?>? vals = null;
+            if (map is not null && row.TryGetValue("_eavId", out var idObj) && idObj is Guid rid) map.TryGetValue(rid, out vals);
+            foreach (var d in defs)
+            {
+                if (d.Tipo == TipoCampoTablero.Separador) continue;
+                string? v = vals is not null && vals.TryGetValue(d.Id, out var vv) ? vv : null;
+                object? stored = v;
+                if (EsNumerico(d.Tipo) && v is not null &&
+                    double.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+                    stored = num;
+                row["cd:" + d.Id] = stored;
+            }
+        }
+    }
+
+    private async Task<List<Dictionary<string, object?>>> CargarRows(string ds)
+    {
         switch (ds)
         {
             case "residentes":
@@ -369,7 +522,8 @@
                     {
                         ["nombre"] = r.Nombre, ["documento"] = r.Documento, ["relacion"] = r.Parentesco,
                         ["unidad"] = r.UnidadNumero, ["rol"] = r.Rol.ToString(), ["celular"] = r.Telefono,
-                        ["email"] = r.Email, ["estado"] = r.Activo ? "Activo" : "Inactivo"
+                        ["email"] = r.Email, ["estado"] = r.Activo ? "Activo" : "Inactivo",
+                        ["_id"] = r.PersonaId, ["_eavId"] = r.UnidadPersonaId, ["_dto"] = r
                     }).ToList();
 
             case "unidades":
@@ -377,7 +531,8 @@
                     .Select(u => new Dictionary<string, object?>
                     {
                         ["numero"] = u.Numero, ["tipo"] = u.Tipo.ToString(), ["estado"] = u.Estado,
-                        ["piso"] = u.Piso, ["area"] = u.AreaM2, ["coef"] = u.CoeficientePropiedad
+                        ["piso"] = u.Piso, ["area"] = u.AreaM2, ["coef"] = u.CoeficientePropiedad,
+                        ["_id"] = u.Id, ["_eavId"] = u.Id, ["_dto"] = u
                     }).ToList();
 
             case "cartera":
@@ -411,7 +566,8 @@
                     .Select(k => new Dictionary<string, object?>
                     {
                         ["numero"] = k.NumeroContrato, ["proveedor"] = k.Proveedor, ["tipocontrato"] = k.TipoContrato,
-                        ["categoria"] = k.Categoria, ["estado"] = k.Estado.ToString(), ["valormensual"] = k.ValorMensual, ["valortotal"] = k.ValorTotal
+                        ["categoria"] = k.Categoria, ["estado"] = k.Estado.ToString(), ["valormensual"] = k.ValorMensual, ["valortotal"] = k.ValorTotal,
+                        ["_id"] = k.Id, ["_eavId"] = k.Id, ["_dto"] = k
                     }).ToList();
 
             case "zonas":
@@ -419,7 +575,8 @@
                     .Select(z => new Dictionary<string, object?>
                     {
                         ["nombre"] = z.Nombre, ["tipo"] = z.Categoria.ToString(), ["estado"] = z.Estado.ToString(),
-                        ["reservable"] = z.EsReservable, ["aforo"] = z.CapacidadPersonas
+                        ["reservable"] = z.EsReservable, ["aforo"] = z.CapacidadPersonas,
+                        ["_id"] = z.Id, ["_eavId"] = z.Id, ["_dto"] = z
                     }).ToList();
 
             case "equipos":
@@ -427,7 +584,8 @@
                     .Select(e => new Dictionary<string, object?>
                     {
                         ["nombre"] = e.Nombre, ["tipo"] = e.Categoria.ToString(), ["estado"] = e.Estado.ToString(),
-                        ["marca"] = e.Marca, ["ubicacion"] = e.Ubicacion, ["valoradq"] = e.ValorAdquisicion
+                        ["marca"] = e.Marca, ["ubicacion"] = e.Ubicacion, ["valoradq"] = e.ValorAdquisicion,
+                        ["_id"] = e.Id, ["_eavId"] = e.Id, ["_dto"] = e
                     }).ToList();
 
             default: return new();
@@ -457,14 +615,14 @@
 
     private string TituloAuto(VistaDef d)
     {
-        var ds = Datasets[d.DsKey];
+        var ds = Resolved(d.DsKey);
         return d.Kind is "pivot" or "chart" ? VistasEngine.AutoTitle(ds, d.RowDim, d.ColDim, d.Measure) : ds.Label;
     }
     private string Titulo(VistaDef d) => string.IsNullOrWhiteSpace(d.Title) ? TituloAuto(d) : d.Title.Trim();
 
     private string Meta(VistaDef d)
     {
-        var ds = Datasets[d.DsKey];
+        var ds = Resolved(d.DsKey);
         return d.Kind switch
         {
             "cards" => ds.Label + " · tarjetas",
@@ -477,7 +635,7 @@
 
     private RenderFragment RenderBody(VistaDef d) => __builder =>
     {
-        var ds = Datasets[d.DsKey];
+        var ds = Resolved(d.DsKey);
         if (!_cache.ContainsKey(d.DsKey))
         {
             __builder.OpenElement(0, "div");
@@ -505,14 +663,15 @@
         else
         {
             var fields = EffectiveFields(d, ds);
+            var editable = EdicionDe(d.DsKey) is not null;
             if (d.Kind is "cards")
-                RenderCards(__builder, ds, data, fields);
+                RenderCards(__builder, ds, data, fields, editable);
             else
-                RenderTable(__builder, ds, data, fields);
+                RenderTable(__builder, ds, data, fields, editable);
         }
     };
 
-    private static void RenderCards(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields)
+    private void RenderCards(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields, bool editable)
     {
         b.OpenElement(0, "div"); b.AddAttribute(1, "class", "pv-cards");
         int seq = 2;
@@ -534,12 +693,22 @@
                 b.CloseElement();
             }
             b.CloseElement(); // lines
+            if (editable)
+            {
+                var rowRef = row;
+                b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-acts");
+                b.OpenElement(seq++, "button"); b.AddAttribute(seq++, "class", "pv-rowbtn");
+                b.AddAttribute(seq++, "onclick", Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => AbrirEdicion(ds.Key, rowRef)));
+                b.AddContent(seq++, "✎ Editar");
+                b.CloseElement();
+                b.CloseElement();
+            }
             b.CloseElement(); // pcard
         }
         b.CloseElement(); // cards
     }
 
-    private static void RenderTable(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields)
+    private void RenderTable(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields, bool editable)
     {
         b.OpenElement(0, "div"); b.AddAttribute(1, "class", "pv-tablewrap");
         b.OpenElement(2, "table"); b.AddAttribute(3, "class", "pv-table");
@@ -552,6 +721,7 @@
             b.AddContent(seq++, CampoLabel(ds, f));
             b.CloseElement();
         }
+        if (editable) { b.OpenElement(seq++, "th"); b.AddAttribute(seq++, "class", "pv-rowact"); b.CloseElement(); }
         b.CloseElement(); b.CloseElement(); // tr thead
         b.OpenElement(seq++, "tbody");
         foreach (var row in data.Take(200))
@@ -562,6 +732,16 @@
                 b.OpenElement(seq++, "td");
                 if (IsNum(ds, f)) b.AddAttribute(seq++, "class", "pv-num");
                 b.AddContent(seq++, DisplayField(ds, row, f));
+                b.CloseElement();
+            }
+            if (editable)
+            {
+                var rowRef = row;
+                b.OpenElement(seq++, "td"); b.AddAttribute(seq++, "class", "pv-rowact");
+                b.OpenElement(seq++, "button"); b.AddAttribute(seq++, "class", "pv-rowbtn"); b.AddAttribute(seq++, "title", "Editar");
+                b.AddAttribute(seq++, "onclick", Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => AbrirEdicion(ds.Key, rowRef)));
+                b.AddContent(seq++, "✎");
+                b.CloseElement();
                 b.CloseElement();
             }
             b.CloseElement();
@@ -599,7 +779,7 @@
 
     private void AplicarFuente(string key)
     {
-        var ds = Datasets[key];
+        var ds = Resolved(key);
         _draft.DsKey = key;
         _draft.Filters.Clear();
         _draft.RowDim = ds.Dims.FirstOrDefault()?.Key ?? "";
@@ -613,7 +793,7 @@
     private void CambiarTipo(string kind)
     {
         _draft.Kind = kind;
-        var ds = Datasets[_draft.DsKey];
+        var ds = Resolved(_draft.DsKey);
         if (kind is "pivot" or "chart" && string.IsNullOrEmpty(_draft.RowDim))
             _draft.RowDim = ds.Dims.FirstOrDefault()?.Key ?? "";
     }
@@ -741,6 +921,152 @@
     }
 
     private string TituloGuardar(VistaDef d) => string.IsNullOrWhiteSpace(d.Title) ? TituloAuto(d) : d.Title.Trim();
+
+    // ----------------- Edicion de registros (nativos + EAV) -----------------
+    private sealed record EditField(string Key, string Label, string Input, IReadOnlyList<string>? Options = null);
+    private sealed record DsEdit(
+        List<EditField> Natives,
+        Func<Dictionary<string, object?>, Dictionary<string, string?>, Task<bool>> SaveNatives,
+        Func<Guid, Guid, string?, Task<bool>> SaveEav);
+
+    private bool _editOpen;
+    private string _editDsKey = "", _editTitulo = "";
+    private Dictionary<string, object?>? _editRowRef;
+    private string? _editErr;
+    private readonly Dictionary<string, string?> _editVals = new();
+    private readonly Dictionary<string, string?> _editOrig = new();
+
+    // Campos nativos editables de equipos (ActualizarEquipoActivoRequest; Estado va por endpoint propio y queda fuera).
+    private static readonly List<EditField> EquipoNativos = new()
+    {
+        new("nombre", "Nombre", "text"),
+        new("marca", "Marca", "text"),
+        new("ubicacion", "Ubicacion", "text"),
+        new("valoradq", "Valor de adquisicion", "money"),
+    };
+
+    private DsEdit? EdicionDe(string ds) => ds switch
+    {
+        "equipos" => new DsEdit(EquipoNativos, GuardarEquipoNativos, (id, def, val) => SetEavMiCopropiedad("equipos", id, def, val)),
+        _ => null
+    };
+
+    // Campos editables del modal: nativos del dataset + personalizados (EAV) editables (se omiten computados).
+    private List<EditField> EditFieldsDe(string ds)
+    {
+        var list = new List<EditField>();
+        var cfg = EdicionDe(ds);
+        if (cfg is not null) list.AddRange(cfg.Natives);
+        if (_eavDefs.TryGetValue(ds, out var defs))
+            foreach (var d in defs.OrderBy(x => x.Orden))
+            {
+                if (d.Tipo is TipoCampoTablero.Separador or TipoCampoTablero.Total or TipoCampoTablero.Formula) continue;
+                list.Add(new EditField("cd:" + d.Id, d.Label, EavInput(d.Tipo), null));
+            }
+        return list;
+    }
+
+    private static string EavInput(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje => "number",
+        TipoCampoTablero.Booleano => "bool",
+        TipoCampoTablero.Fecha => "date",
+        _ => "text"
+    };
+
+    private static string? CurrentEditVal(Dictionary<string, object?> row, EditField f)
+    {
+        var v = row.TryGetValue(f.Key, out var x) ? x : null;
+        return v switch
+        {
+            null => null,
+            bool b => b ? "true" : "false",
+            double dd => dd.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            decimal de => de.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => v.ToString()
+        };
+    }
+
+    private void AbrirEdicion(string dsKey, Dictionary<string, object?> row)
+    {
+        _editDsKey = dsKey; _editRowRef = row; _editErr = null;
+        _editTitulo = VistasEngine.KeyVal(row, Resolved(dsKey).TitleField);
+        _editVals.Clear(); _editOrig.Clear();
+        foreach (var f in EditFieldsDe(dsKey))
+        {
+            var cur = CurrentEditVal(row, f);
+            _editVals[f.Key] = cur;
+            _editOrig[f.Key] = cur;
+        }
+        _editOpen = true;
+    }
+
+    private void CerrarEdicion() { _editOpen = false; _editRowRef = null; _editErr = null; }
+
+    private async Task GuardarEdicion()
+    {
+        if (_editRowRef is null) return;
+        var cfg = EdicionDe(_editDsKey);
+        if (cfg is null) { CerrarEdicion(); return; }
+        _busy = true; _editErr = null;
+        try
+        {
+            var nativeKeys = cfg.Natives.Select(n => n.Key).ToHashSet();
+            if (nativeKeys.Any(k => _editVals.GetValueOrDefault(k) != _editOrig.GetValueOrDefault(k)))
+            {
+                var natEdits = nativeKeys.ToDictionary(k => k, k => _editVals.GetValueOrDefault(k));
+                if (!await cfg.SaveNatives(_editRowRef, natEdits))
+                { _editErr = "No se pudieron guardar los campos del registro (se requiere permiso de edicion)."; return; }
+            }
+            if (_editRowRef.TryGetValue("_eavId", out var eidObj) && eidObj is Guid eid && _eavDefs.TryGetValue(_editDsKey, out var defs))
+            {
+                foreach (var d in defs)
+                {
+                    var key = "cd:" + d.Id;
+                    if (!_editVals.ContainsKey(key) || _editVals[key] == _editOrig.GetValueOrDefault(key)) continue;
+                    var val = string.IsNullOrEmpty(_editVals[key]) ? null : _editVals[key];
+                    if (!await cfg.SaveEav(eid, d.Id, val))
+                    { _editErr = "No se pudo guardar un campo personalizado (se requiere permiso de edicion)."; return; }
+                }
+            }
+            _cache.Remove(_editDsKey);
+            _eavDefs.Remove(_editDsKey); _eavVals.Remove(_editDsKey); _resolved.Remove(_editDsKey);
+            await AsegurarDatos(_editDsKey);
+            CerrarEdicion();
+        }
+        catch (Exception ex) { _editErr = "Error al guardar: " + ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static string? NzNull(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    private static decimal? ParseDec(string? s) =>
+        decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+
+    // EAV set-value para entidades MiCopropiedad con ruta /{prefijo}/{id}/campos/{defId} (equipos, unidades, zonas).
+    private async Task<bool> SetEavMiCopropiedad(string prefix, Guid id, Guid defId, string? val)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{prefix}/{id}/campos/{defId}",
+            new Propia.Application.MiCopropiedad.SetCampoValorRequest(val));
+        return resp.IsSuccessStatusCode;
+    }
+
+    // Reconstruye el request completo desde el DTO cargado + ediciones (sin perder campos no mostrados).
+    private async Task<bool> GuardarEquipoNativos(Dictionary<string, object?> row, Dictionary<string, string?> edits)
+    {
+        if (row["_dto"] is not EquipoActivoDto e) return false;
+        var req = new ActualizarEquipoActivoRequest(
+            Nombre: string.IsNullOrWhiteSpace(edits.GetValueOrDefault("nombre")) ? e.Nombre : edits["nombre"]!.Trim(),
+            Categoria: e.Categoria, Tipo: e.Tipo, Cantidad: e.Cantidad, EsReservable: e.EsReservable,
+            Modelo: e.Modelo, NumeroSerie: e.NumeroSerie, FechaInstalacion: e.FechaInstalacion, GarantiaHasta: e.GarantiaHasta,
+            Ubicacion: edits.ContainsKey("ubicacion") ? NzNull(edits["ubicacion"]) : e.Ubicacion,
+            Observaciones: e.Observaciones, VidaUtilAnios: e.VidaUtilAnios, FechaAdquisicion: e.FechaAdquisicion,
+            ValorAdquisicion: edits.ContainsKey("valoradq") ? ParseDec(edits["valoradq"]) : e.ValorAdquisicion,
+            Proveedor: e.Proveedor, NumeroFactura: e.NumeroFactura,
+            CodigoBarra: e.CodigoBarra, CondicionesUso: e.CondicionesUso,
+            Marca: edits.ContainsKey("marca") ? NzNull(edits["marca"]) : e.Marca);
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{e.Id}", req);
+        return resp.IsSuccessStatusCode;
+    }
 
     // ----------------- Semillas (8 vistas de ejemplo, sin "Torre") -----------------
     private static List<GuardarVistaRequest> SemillasReq()
