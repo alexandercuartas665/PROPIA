@@ -2110,37 +2110,103 @@ else
     }
 
     // ===== Subtareas como sub-registros (Ola C): alta INLINE de subtarea al expandir la fila padre. =====
-    private readonly Dictionary<Guid, string> _subInline = new();
+    // Fila de alta COMPLETA (misma estructura de columnas que NuevaFilaFlat): deja diligenciar TODOS los
+    // campos de la subtarea, no solo el titulo. Estado y prioridad nacen heredados del padre; se crea con
+    // PadreId = padre.Id. Draft por padre (una fila de alta independiente por cada fila expandida).
+    private readonly Dictionary<Guid, NuevaFilaDraft> _nuevaSubfilas = new();
+    private NuevaFilaDraft SubfilaDe(TareaListaDto padre)
+    {
+        if (!_nuevaSubfilas.TryGetValue(padre.Id, out var d))
+        {
+            d = new NuevaFilaDraft { EstadoId = padre.EstadoId, PrioridadId = padre.PrioridadId };
+            _nuevaSubfilas[padre.Id] = d;
+        }
+        return d;
+    }
     private RenderFragment FilaNuevaSubtarea(TareaListaDto padre, int depth) => __builder =>
     {
-        var pid = padre.Id;
-        var val = _subInline.GetValueOrDefault(pid, "");
-        <div class="tb-newrow tb-subadd-row">
+        if (_board is null) { return; }
+        var sf = SubfilaDe(padre);
+        <div class="tb-newrow tb-subadd-row" @key="sf">
             <div class="tb-row-selc"></div>
-            <div class="tb-row-exp"></div>
+            <div class="tb-row-exp">
+                <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la subtarea" @onclick="() => CrearSubfila(padre, true)" disabled="@string.IsNullOrWhiteSpace(sf.Titulo)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                </button>
+            </div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
-                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." value="@val"
-                       @oninput="e => _subInline[pid] = e.Value?.ToString() ?? string.Empty"
-                       @onkeydown="e => SubInlineKeydown(e, padre)" />
+                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." value="@sf.Titulo"
+                       @oninput="e => sf.Titulo = e.Value?.ToString() ?? string.Empty"
+                       @onkeydown="e => SubfilaKeydown(e, padre)" />
             </div>
+            @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))" /></div> }
+            @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
+            <div class="tb-row-cell-est">
+                <select class="tb-est-sel" style="background:var(--propia-brand)" @bind="sf.EstadoId">
+                    @foreach (var es in _board.Estados) { <option value="@es.Id" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@es.Nombre</option> }
+                </select>
+            </div>
+            @if (_colResp)
+            {
+                <div class="tb-row-resp">
+                    <select class="tb-nf-inp" value="@(sf.Asignados.Count > 0 ? sf.Asignados[0].ToString() : "")" @onchange="@(e => SetNuevaFilaAsignado(sf, e))">
+                        <option value="">Sin asignar</option>
+                        @foreach (var p in _personas ?? new List<PersonaMini>()) { <option value="@p.Id">@p.Nombre</option> }
+                    </select>
+                </div>
+            }
+            <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
+            @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+            @if (_colPrio)
+            {
+                <div class="tb-row-prio">
+                    @{ var _sfPrioId = sf.PrioridadId ?? PrioridadBaseId; }
+                    <select class="tb-prio-sel" style="color:@PrioFgById(_sfPrioId);background:@PrioBgById(_sfPrioId)" value="@_sfPrioId" @onchange="@(e => sf.PrioridadId = ParsePrio(e))">
+                        @foreach (var pr in PrioridadesDelBoard) { <option value="@pr.Id" selected="@(_sfPrioId == pr.Id)" style="background:var(--propia-bg-card);color:var(--propia-text-body)">@pr.Nombre</option> }
+                    </select>
+                </div>
+            }
+            @if (_colDue) { <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="sf.FechaVencimiento" /></div> }
+            @if (_colValor) { <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="sf.Valor" @bind:event="oninput" /></div> }
+            @if (_colOrigen) { <div class="tb-row-orig"></div> }
+            @foreach (var c in CamposVisibles) { <div class="tb-row-campo tb-cc-@c.Id"></div> }
+            <div class="tb-row-acc"></div>
         </div>
     };
-    private async Task SubInlineKeydown(KeyboardEventArgs e, TareaListaDto padre)
+    private async Task SubfilaKeydown(KeyboardEventArgs e, TareaListaDto padre)
     {
-        if (e.Key == "Enter") await CrearSubtareaInline(padre);
-        else if (e.Key == "Escape") _subInline[padre.Id] = "";
+        if (e.Key == "Enter") await CrearSubfila(padre);
+        else if (e.Key == "Escape") _nuevaSubfilas[padre.Id] = new NuevaFilaDraft { EstadoId = padre.EstadoId, PrioridadId = padre.PrioridadId };
     }
-    private async Task CrearSubtareaInline(TareaListaDto padre)
+    private async Task CrearSubfila(TareaListaDto padre, bool abrir = false)
     {
         if (EsBoardForaneo || _board is null) return;
-        var titulo = _subInline.GetValueOrDefault(padre.Id, "").Trim();
-        if (string.IsNullOrWhiteSpace(titulo)) return;
-        var req = new CrearTareaRequest(titulo, null, PrioridadTarea.Normal, padre.EstadoId, null, null, null, padre.Id, new List<Guid>(), _board.Tablero.Id,
-            PrioridadId: padre.PrioridadId ?? PrioridadBaseId);
+        var sf = SubfilaDe(padre);
+        if (string.IsNullOrWhiteSpace(sf.Titulo)) return;
+        var camposValores = sf.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
+        var oTipo = string.IsNullOrWhiteSpace(sf.OrigenTipo) ? null : sf.OrigenTipo;
+        var oRef = oTipo is null || string.IsNullOrWhiteSpace(sf.OrigenReferencia) ? null : sf.OrigenReferencia;
+        var req = new CrearTareaRequest(sf.Titulo.Trim(), string.IsNullOrWhiteSpace(sf.Descripcion) ? null : sf.Descripcion.Trim(),
+            sf.Prioridad, sf.EstadoId, null, null, sf.FechaVencimiento, padre.Id, new List<Guid>(), _board.Tablero.Id,
+            null, false, sf.Valor, null, null, oTipo, oRef, sf.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
+            PrioridadId: sf.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
-        if (resp.IsSuccessStatusCode) { _subInline[padre.Id] = ""; _expandidas.Add(padre.Id); await RecargarBoard(); }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+        _nuevaSubfilas[padre.Id] = new NuevaFilaDraft { EstadoId = padre.EstadoId, PrioridadId = padre.PrioridadId };
+        _expandidas.Add(padre.Id);
+        await RecargarBoard();
+        if (abrir)
+        {
+            try
+            {
+                var det = await resp.Content.ReadFromJsonAsync<TareaDetalleDto>();
+                var t = det is null ? null : _tareas.FirstOrDefault(x => x.Id == det.Id);
+                if (t is not null) await AbrirCardDraft(t, null);
+            }
+            catch { }
+        }
     }
 
     private void OnGruposTChanged() { _ = PersistGroupAsync(); StateHasChanged(); }
