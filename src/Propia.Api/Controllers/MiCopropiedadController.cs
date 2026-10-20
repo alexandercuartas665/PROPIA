@@ -119,6 +119,7 @@ public class MiCopropiedadController : ControllerBase
             var res = await _cargaImport.ImportarAsync(s, ct, tenantActual, reemplazar);
             return Ok(res);
         }
+        catch (Propia.Infrastructure.MiCopropiedad.ExcelEntradaException ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
         catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
@@ -135,6 +136,7 @@ public class MiCopropiedadController : ControllerBase
             var res = await _import.ImportarAsync(s, ct);
             return Ok(res);
         }
+        catch (Propia.Infrastructure.MiCopropiedad.ExcelEntradaException ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
         catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
@@ -150,6 +152,7 @@ public class MiCopropiedadController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarZonasAsync(s, ct)); }
+        catch (Propia.Infrastructure.MiCopropiedad.ExcelEntradaException ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
         catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 
@@ -165,6 +168,7 @@ public class MiCopropiedadController : ControllerBase
     {
         if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
         try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarEquiposAsync(s, ct)); }
+        catch (Propia.Infrastructure.MiCopropiedad.ExcelEntradaException ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
         catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
     }
 

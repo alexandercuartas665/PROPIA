@@ -44,9 +44,9 @@
                 {
                     <label class="cg-drop">
                         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16" /></svg>
-                        <span class="cg-drop-t">@(_fileName ?? "Selecciona el archivo .xlsx")</span>
-                        <span class="cg-drop-h">Usa la plantilla descargada. Formato .xlsx</span>
-                        <InputFile OnChange="OnFileSelected" accept=".xlsx" style="display:none" disabled="@_busy" />
+                        <span class="cg-drop-t">@(_fileName ?? "Selecciona el archivo Excel (.xlsx o .xls)")</span>
+                        <span class="cg-drop-h">Usa la plantilla descargada. Formato .xlsx, o .xls de Excel 97-2003</span>
+                        <InputFile OnChange="OnFileSelected" accept=".xlsx,.xls" style="display:none" disabled="@_busy" />
                     </label>
                     <div class="cg-note">@NotaReemplazo</div>
                     <div class="cg-actions">
@@ -171,7 +171,17 @@
     {
         _fileName = null; _bytes = null; _result = null; _confirm = false; _confirmChecked = false; _showModal = true;
     }
-    private void CerrarModal() { if (!_busy) _showModal = false; }
+    // Si en esta apertura del modal hubo una carga que proceso el archivo (respuesta OK del API, con o
+    // sin avisos por fila), al cerrar se recarga la pagina completa: asi la tabla del hub muestra lo
+    // recien cargado sin que el usuario tenga que refrescar a mano. "Cargar otro" no recarga (sigue en
+    // el modal); el refresco se hace al cerrar para que el resumen y los avisos se puedan leer antes.
+    private bool _recargarAlCerrar;
+    private void CerrarModal()
+    {
+        if (_busy) return;
+        _showModal = false;
+        if (_recargarAlCerrar) { _recargarAlCerrar = false; Nav.NavigateTo(Nav.Uri, forceLoad: true); }
+    }
     private void Reiniciar() { _result = null; _fileName = null; _bytes = null; _confirm = false; _confirmChecked = false; }
     private void PedirConfirmacion() { if (_bytes is not null) { _confirmChecked = false; _confirm = true; } }
 
@@ -231,6 +241,7 @@
             {
                 _result = await resp.Content.ReadFromJsonAsync<Propia.Application.MiCopropiedad.ResultadoCargaUnidades>();
                 _confirm = false;
+                _recargarAlCerrar = true;
             }
             else
             {

@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PENDIENTE DE INTEGRAR 2026-10-20 (rama `equipo/carga-plantilla`, carga masiva de unidades): 1 MIGRACION**
+> `EquipoCarga_CoeficientesCincoDecimales`: `coeficiente_propiedad` y `modulo_contributivo_1..5` de
+> `unidades_privadas` pasan de `numeric(7,4)` a `numeric(8,5)` (ampliacion, sin perdida de datos; aplicada en
+> `propia_dev` el 2026-10-20). Va con cambios de codigo en el importador (anexo sin PRINCIPAL o con principal
+> inexistente se rechaza y no se crea; vinculos de anexos nacen con "incluye en facturacion"), 5 decimales en
+> la tabla de unidades y en el rebalanceo. Al desplegar: `dotnet ef database update` (o el SQL equivalente:
+> `ALTER TABLE unidades_privadas ALTER COLUMN coeficiente_propiedad TYPE numeric(8,5)` y lo mismo para
+> `modulo_contributivo_1..5`). Sin config nueva. **Paquete NuGet nuevo** en `Propia.Infrastructure`: `ExcelDataReader 3.7.0` (MIT), para que la carga
+> masiva acepte tambien `.xls` (Excel 97-2003): `ExcelEntrada` detecta la firma binaria y convierte el .xls a un
+> XLWorkbook en memoria; los importadores no cambian. `dotnet restore` normal; sin dependencias nativas.
+>
 > **ULTIMA ACTUALIZACION 2026-10-14: VERSION A DESPLEGAR = 0.0.147** (`main` HEAD `0969b57f`, rama
 > `equipo/alex-header-zonas-equipos` ya mergeada a `main`). Tanda grande **SOLO CODIGO (SIN MIGRACION, SIN
 > CONFIG)**: homogenizacion de la vista-tabla (Filtros y Agrupar con TODOS los campos incl. dinamicos en todos

@@ -42,7 +42,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
     public async Task<ResultadoCargaUnidades> ImportarAsync(Stream contenidoXlsx, CancellationToken ct, bool forzarTenantActual = false, bool reemplazarDependientes = false)
     {
         var errores = new List<CargaUnidadesError>();
-        using var wb = new XLWorkbook(contenidoXlsx);
+        using var wb = ExcelEntrada.Abrir(contenidoXlsx);   // .xlsx o .xls
 
         var copros = await CopropiedadesDelClienteAsync(ct);   // nombreLower -> tenantId
         var tenantOriginal = _tenant.CurrentTenantId;
@@ -145,13 +145,44 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var anexosPend = new List<(int Fila, string Principal, string Asociada)>();
 
             // ---- Unidades ----
-            foreach (var (row, fila) in unidades.Where(r => Coincide(r.Row)))
+            // Los ANEXOS (AGRUPACION=3) se procesan al final: asi su principal, si viene en este mismo
+            // archivo, ya existe cuando les toca, y un anexo sin donde colgarse se rechaza ANTES de
+            // crearlo. OrderBy es estable: dentro de cada bloque se conserva el orden del archivo.
+            var filasUnidades = unidades.Where(r => Coincide(r.Row))
+                .OrderBy(r => EsAnexo(r.Row) ? 1 : 0).ToList();
+            foreach (var (row, fila) in filasUnidades)
             {
                 try
                 {
                     _db.ChangeTracker.Clear();   // evita que el tracker crezca (DetectChanges O(n^2))
                     var numero = Val(row, "UNIDAD PRIVADA").Trim();
                     if (numero.Length == 0) { errores.Add(new("UNIDADES PRIVADAS", fila, "Falta UNIDAD PRIVADA")); continue; }
+                    // Anexo: la PRINCIPAL es obligatoria y tiene que resolver (creada en esta carga o ya
+                    // existente). Sin eso la fila NO se carga y se reporta. Antes, sin PRINCIPAL la unidad
+                    // entraba como individual en silencio, y con una principal inexistente quedaba creada
+                    // y suelta (el error solo salia en la pasada de vinculos).
+                    var principal = Val(row, "PRINCIPAL").Trim();
+                    var esAnexo = EsAnexo(row);
+                    if (esAnexo)
+                    {
+                        if (principal.Length == 0)
+                        {
+                            errores.Add(new("UNIDADES PRIVADAS", fila,
+                                $"Anexo '{numero}' sin PRINCIPAL: no se cargo. Indica el codigo de su unidad principal."));
+                            continue;
+                        }
+                        if (Eq(principal, numero))
+                        {
+                            errores.Add(new("UNIDADES PRIVADAS", fila, $"Anexo '{numero}': no puede ser su propia principal. No se cargo."));
+                            continue;
+                        }
+                        if (ResolverUnidad(principal, numeroToId, idxCodigo) == Guid.Empty)
+                        {
+                            errores.Add(new("UNIDADES PRIVADAS", fila,
+                                $"Anexo '{numero}': la principal '{principal}' no existe en el archivo ni en la copropiedad. No se cargo."));
+                            continue;
+                        }
+                    }
                     // TIPO puede ser del sistema (por nombre de enum o por su etiqueta, "Cuarto util")
                     // o PROPIO de la copropiedad. null = la columna no vino o vino vacia -> no se toca
                     // el tipo que ya tiene la unidad. Un texto que no resuelve es un ERROR de la fila:
@@ -251,10 +282,7 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                         (d, v) => _mi.SetCampoValorUnidadAsync(unidadId, d, new SetCampoValorRequest(v), ct),
                         errores, avisados);
 
-                    var agr = Val(row, "AGRUPACION").Trim();
-                    var principal = Val(row, "PRINCIPAL").Trim();
-                    if (agr.StartsWith("3") && principal.Length > 0)
-                        anexosPend.Add((fila, principal, numero));
+                    if (esAnexo) anexosPend.Add((fila, principal, numero));
                 }
                 catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Fallo(ex))); }
             }
@@ -292,7 +320,11 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
                             errores.Add(new("UNIDADES PRIVADAS", fila, $"La unidad {asociada} ya esta asociada a otra unidad.")); continue;
                         }
                     }
-                    await _mi.CrearVinculoAsync(pid, new CrearVinculoUnidadRequest(aid, false), ct);
+                    // El anexo trae su propio coeficiente en la plantilla y ese coeficiente debe sumar en
+                    // la cuota consolidada de su principal (RN-09): el vinculo nace con "incluye en
+                    // facturacion", igual que al crearlo desde la ficha. Antes nacia en false y el
+                    // coeficiente del anexo quedaba por fuera de la cuota.
+                    await _mi.CrearVinculoAsync(pid, new CrearVinculoUnidadRequest(aid, true), ct);
                     nAnexo++;
                 }
                 catch (Exception ex) { errores.Add(new("UNIDADES PRIVADAS", fila, Fallo(ex))); }
@@ -652,6 +684,9 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
         }
     }
 
+    // Fila de UNIDADES PRIVADAS marcada como anexo (AGRUPACION = 3). Se tolera "3 - Anexo" y similares.
+    private static bool EsAnexo(Dictionary<string, string> row) => Val(row, "AGRUPACION").Trim().StartsWith("3");
+
     // Resuelve una referencia de unidad de la plantilla (columna UNIDAD PRIVADA). La plantilla pide el
     // "Codigo de la unidad" (TORRE-NUMERO, ej. B-101), pero las unidades guardan Numero suelto ("101") con
     // su torre aparte. Por eso el indice mapea AMBAS claves: el Numero crudo y el codigo TORRE-NUMERO.
@@ -854,7 +889,13 @@ public sealed class UnidadesCargaImportService : IUnidadesCargaImportService
             var any = false;
             foreach (var (col, h) in headers)
             {
-                var v = ws.Cell(r, col).GetString().Trim();
+                // Las celdas NUMERICAS se emiten en cultura invariante ("1234.5"): GetString() usa la
+                // cultura del servidor y en es-CO devolvia "1.234,5", que ParseDecimal no entendia
+                // (el punto de miles sobrevivia al cambio de coma por punto). Texto y fechas siguen igual.
+                var celda = ws.Cell(r, col);
+                var v = celda.DataType == XLDataType.Number
+                    ? celda.GetDouble().ToString("0.############", CultureInfo.InvariantCulture)
+                    : celda.GetString().Trim();
                 dict[h] = v;
                 if (v.Length > 0) any = true;
             }

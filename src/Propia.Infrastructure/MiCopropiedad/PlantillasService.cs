@@ -79,7 +79,7 @@ public class PlantillasService : IPlantillasService
     {
         var errores = new List<ImportarErrorFila>();
         int creados = 0, actualizados = 0, campos = 0;
-        using var wb = new XLWorkbook(xlsx);
+        using var wb = ExcelEntrada.Abrir(xlsx);   // .xlsx o .xls
         if (!wb.TryGetWorksheet("Zonas", out var ws))
             return new(0, 0, 0, 1, new[] { new ImportarErrorFila("Zonas", 0, "No se encontro la hoja 'Zonas'.") });
 
@@ -193,7 +193,7 @@ public class PlantillasService : IPlantillasService
     {
         var errores = new List<ImportarErrorFila>();
         int creados = 0, actualizados = 0, campos = 0;
-        using var wb = new XLWorkbook(xlsx);
+        using var wb = ExcelEntrada.Abrir(xlsx);   // .xlsx o .xls
         if (!wb.TryGetWorksheet("Equipos", out var ws))
             return new(0, 0, 0, 1, new[] { new ImportarErrorFila("Equipos", 0, "No se encontro la hoja 'Equipos'.") });
 
@@ -300,7 +300,7 @@ public class PlantillasService : IPlantillasService
     {
         var errores = new List<ImportarErrorFila>();
         int creados = 0, actualizados = 0;
-        using var wb = new XLWorkbook(xlsx);
+        using var wb = ExcelEntrada.Abrir(xlsx);   // .xlsx o .xls
         if (!wb.TryGetWorksheet("Personas", out var ws))
             return new(0, 0, 0, 1, new[] { new ImportarErrorFila("Personas", 0, "No se encontro la hoja 'Personas'.") });
 
