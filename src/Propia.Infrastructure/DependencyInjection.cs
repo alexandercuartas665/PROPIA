@@ -152,6 +152,7 @@ public static class DependencyInjection
 
         // Modulo 2.3 Mi Copropiedad
         services.AddScoped<Application.MiCopropiedad.IMiCopropiedadService, MiCopropiedad.MiCopropiedadService>();
+        services.AddScoped<Application.MiCopropiedad.IVistaSistemaService, MiCopropiedad.VistaSistemaService>();
         services.AddScoped<Application.MiCopropiedad.IDistribucionImportService, MiCopropiedad.DistribucionImportService>();
         services.AddScoped<Application.MiCopropiedad.IUnidadesPlantillaService, MiCopropiedad.UnidadesPlantillaService>();
         services.AddScoped<Application.MiCopropiedad.IUnidadesCargaImportService, MiCopropiedad.UnidadesCargaImportService>();

@@ -83,6 +83,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<UnidadTitularidad> UnidadTitularidades => Set<UnidadTitularidad>();
     public DbSet<UnidadPersonaCampo> UnidadPersonaCampos => Set<UnidadPersonaCampo>();
     public DbSet<BitacoraMiCopropiedad> BitacoraMiCopropiedad => Set<BitacoraMiCopropiedad>();
+    public DbSet<VistaSistema> VistasSistema => Set<VistaSistema>();
     public DbSet<ZonaComun> ZonasComunes => Set<ZonaComun>();
     public DbSet<EquipoActivo> EquiposActivos => Set<EquipoActivo>();
     public DbSet<ContratoServicio> ContratosServicio => Set<ContratoServicio>();

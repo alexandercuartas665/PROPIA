@@ -77,6 +77,15 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        modelBuilder.Entity<VistaSistema>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Definicion).IsRequired().HasColumnType("jsonb");
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<UnidadVinculo>(b =>
         {
             b.HasOne(x => x.UnidadPrincipal).WithMany().HasForeignKey(x => x.UnidadPrincipalId).OnDelete(DeleteBehavior.Cascade);

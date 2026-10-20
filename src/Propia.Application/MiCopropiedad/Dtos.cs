@@ -700,3 +700,9 @@ public record GuardarZonaFichaRequest(
 
 public record AgregarZonaFacturaRequest(string Concepto, decimal? Valor, DateOnly? Fecha);
 public record AgregarZonaCampoRequest(string Label, string? Valor);
+
+// ===== Explorador de "Vistas del sistema" (modulo 2.3) =====
+// La vista guarda SOLO su definicion (JSON opaco para el backend); los datos se recalculan en vivo.
+public record VistaSistemaDto(Guid Id, string Nombre, int Orden, string Definicion);
+public record GuardarVistaRequest(string Nombre, int Orden, string Definicion);
+public record ReordenarVistasRequest(List<Guid> Ids);

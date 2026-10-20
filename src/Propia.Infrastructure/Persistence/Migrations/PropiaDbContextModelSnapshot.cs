@@ -19706,6 +19706,57 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("visitantes_frecuentes", (string)null);
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.VistaSistema", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Definicion")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("definicion");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Orden");
+
+                    b.ToTable("vistas_sistema");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.Votacion", b =>
                 {
                     b.Property<Guid>("Id")
