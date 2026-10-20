@@ -1,0 +1,766 @@
+@* ================= Explorador "Vistas del sistema" (Mi Copropiedad, modulo 2.3) =================
+   Arma tableros (widgets) sobre 8 datasets reales de la copropiedad. Las vistas se guardan COMPARTIDAS
+   por copropiedad (/api/mi-copropiedad/vistas). Render client-side con VistasEngine. Ola 1: 4 tipos de
+   vista (tarjetas / tabla / tabla pivote / grafico SVG), filtros, pivote, ancho + reorden, 8 semillas. *@
+@using System.Text.Json
+@using Propia.Application.Cartera
+@using Propia.Application.Pqrsd
+@using Propia.Application.Tareas
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<section class="pv-section">
+    <div class="pv-topbar">
+        <div>
+            <div class="pv-title">Vistas del sistema</div>
+            <div class="pv-sub">Explora y arma tableros a partir de los datos de tu copropiedad.</div>
+        </div>
+        <div class="pv-topbar-acts">
+            <button class="pv-btn" @onclick="Restablecer" disabled="@_busy">Restablecer ejemplos</button>
+            <button class="pv-btn pv-btn--primary" @onclick="NuevaVista" disabled="@_busy">+ Nueva vista</button>
+        </div>
+    </div>
+
+    @if (_err is not null)
+    {
+        <div class="pv-section-err">@_err</div>
+    }
+
+    @if (_builderOpen)
+    {
+        var ds = Datasets[_draft.DsKey];
+        <div class="pv-sum-card pv-build">
+            <div class="pv-row">
+                <span class="pv-lbl">Fuente</span>
+                <div class="pv-src">
+                    @foreach (var d in Datasets.Values)
+                    {
+                        <button class="pv-src-btn @(d.Key == _draft.DsKey ? "is-on" : null)" @onclick="() => CambiarFuente(d.Key)">@d.Label</button>
+                    }
+                </div>
+            </div>
+            <div class="pv-row">
+                <span class="pv-lbl">Tipo</span>
+                <div class="pv-seg">
+                    @foreach (var (k, lbl) in Tipos)
+                    {
+                        <button class="pv-seg-b @(k == _draft.Kind ? "is-on" : null)" @onclick="() => CambiarTipo(k)">@lbl</button>
+                    }
+                </div>
+            </div>
+            <div class="pv-row">
+                <span class="pv-lbl">Titulo</span>
+                <input class="pv-in" style="flex:1;min-width:220px" placeholder="@TituloAuto(_draft)"
+                       value="@_draft.Title" @oninput="e => _draft.Title = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <div class="pv-row">
+                <span class="pv-lbl">Filtros</span>
+                @foreach (var f in _draft.Filters)
+                {
+                    <div class="pv-filter">
+                        <select class="pv-in" @onchange="e => CambiarFiltroCampo(f, e.Value?.ToString())">
+                            @foreach (var c in ds.Fields)
+                            {
+                                <option value="@c.Key" selected="@(c.Key == f.Field)">@c.Label</option>
+                            }
+                        </select>
+                        <span class="pv-filter-eq">=</span>
+                        <select class="pv-in" @onchange="e => f.Value = e.Value?.ToString() ?? string.Empty">
+                            <option value="" selected="@(string.IsNullOrEmpty(f.Value))">(cualquiera)</option>
+                            @foreach (var val in ValoresDe(ds, f.Field))
+                            {
+                                <option value="@val" selected="@(val == f.Value)">@val</option>
+                            }
+                        </select>
+                        <button class="pv-filter-x" @onclick="() => _draft.Filters.Remove(f)">&times;</button>
+                    </div>
+                }
+                <button class="pv-addf" @onclick="() => AgregarFiltro(ds)">+ Filtro</button>
+            </div>
+
+            @if (_draft.Kind == "pivot" || _draft.Kind == "chart")
+            {
+                <div class="pv-editgrid">
+                    <div class="pv-field">
+                        <span class="pv-field-l">Filas (agrupar por)</span>
+                        <select class="pv-in" @onchange="e => _draft.RowDim = e.Value?.ToString() ?? string.Empty">
+                            @foreach (var dim in ds.Dims)
+                            {
+                                <option value="@dim.Key" selected="@(dim.Key == _draft.RowDim)">@dim.Label</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pv-field">
+                        <span class="pv-field-l">Columnas (opcional)</span>
+                        <select class="pv-in" @onchange="e => _draft.ColDim = e.Value?.ToString() ?? string.Empty">
+                            <option value="" selected="@(string.IsNullOrEmpty(_draft.ColDim))">&mdash; ninguna &mdash;</option>
+                            @foreach (var dim in ds.Dims)
+                            {
+                                <option value="@dim.Key" selected="@(dim.Key == _draft.ColDim)">@dim.Label</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pv-field">
+                        <span class="pv-field-l">Metrica</span>
+                        @{ var opts = VistasEngine.MeasureOptions(ds); }
+                        <select class="pv-in" @onchange="e => SetMetrica(ds, e.Value?.ToString())">
+                            @for (int i = 0; i < opts.Count; i++)
+                            {
+                                <option value="@i" selected="@(VistasEngine.SameM(opts[i].M, _draft.Measure))">@opts[i].L</option>
+                            }
+                        </select>
+                    </div>
+                    @if (_draft.Kind == "chart")
+                    {
+                        <div class="pv-field">
+                            <span class="pv-field-l">Grafico</span>
+                            <div class="pv-seg">
+                                @foreach (var (k, lbl) in Graficos)
+                                {
+                                    <button class="pv-seg-b @(k == _draft.Chart ? "is-on" : null)" @onclick="() => _draft.Chart = k">@lbl</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="pv-row" style="align-items:flex-start">
+                    <span class="pv-lbl">Campos</span>
+                    <div style="flex:1;min-width:240px">
+                        <div class="pv-fieldgrid">
+                            @foreach (var c in ds.Fields)
+                            {
+                                var on = EffectiveFields(_draft, ds).Contains(c.Key);
+                                <div class="pv-fitem @(on ? "is-on" : null)" @onclick="() => ToggleCampo(ds, c.Key)">
+                                    <span class="pv-fcb">&check;</span>
+                                    <span class="pv-fitem-l">@c.Label</span>
+                                </div>
+                            }
+                        </div>
+                        <div class="pv-fieldhint">El primer campo (@CampoLabel(ds, ds.TitleField)) encabeza cada tarjeta.</div>
+                    </div>
+                </div>
+            }
+
+            <div class="pv-row">
+                <span class="pv-lbl">Ancho</span>
+                <div class="pv-seg">
+                    @foreach (var (k, lbl) in VistasEngine.Anchos)
+                    {
+                        <button class="pv-seg-b @(k == _draft.Width ? "is-on" : null)" @onclick="() => _draft.Width = k">@lbl</button>
+                    }
+                </div>
+            </div>
+
+            <div class="pv-prev">
+                <div class="pv-prev-l">Vista previa</div>
+                @RenderBody(_draft)
+            </div>
+
+            <div class="pv-acts">
+                <button class="pv-btn pv-btn--ghost" @onclick="CerrarBuilder">Cancelar</button>
+                <button class="pv-btn pv-btn--primary" @onclick="GuardarDraft" disabled="@_busy">
+                    @(_draftId is null ? "Crear vista" : "Guardar cambios")
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (!_ready)
+    {
+        <div class="pv-sum-empty">Cargando vistas&hellip;</div>
+    }
+    else if (_vistas.Count == 0 && !_builderOpen)
+    {
+        <div class="pv-sum-empty">Aun no hay vistas. Crea una con &ldquo;Nueva vista&rdquo; o restablece los ejemplos.</div>
+    }
+    else
+    {
+        <div class="pv-sum-grid">
+            @foreach (var v in _vistas.OrderBy(x => x.Orden).ToList())
+            {
+                var d = v.Def;
+                <div class="pv-sum-card pv-w-@d.Width" @key="v.Id">
+                    <div class="pv-sum-top">
+                        <div class="pv-sum-t">
+                            <div class="pv-sum-tt">@Titulo(d)</div>
+                            <div class="pv-sum-meta">@Meta(d)</div>
+                        </div>
+                        <button class="pv-icbtn" title="Subir" disabled="@(EsPrimera(v))" @onclick="() => Mover(v, -1)">&uarr;</button>
+                        <button class="pv-icbtn" title="Bajar" disabled="@(EsUltima(v))" @onclick="() => Mover(v, 1)">&darr;</button>
+                        <button class="pv-icbtn" title="Editar" @onclick="() => EditarVista(v)">&#9998;</button>
+                        <button class="pv-icbtn pv-icbtn--x" title="Eliminar" @onclick="() => EliminarVista(v)">&times;</button>
+                    </div>
+                    @RenderBody(d)
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    // ----------------- Catalogo de datasets (dims para pivotar/filtrar, meas numericas, fields mostrables) -----------------
+    private static readonly Dictionary<string, Dataset> Datasets = new()
+    {
+        ["residentes"] = new Dataset("residentes", "Residentes", "",
+            Dims: new[] { new Campo("relacion", "Relacion"), new Campo("estado", "Estado"), new Campo("rol", "Rol") },
+            Meas: Array.Empty<Medida>(),
+            TitleField: "nombre",
+            Fields: new[] { new Campo("nombre", "Nombre"), new Campo("documento", "Documento"), new Campo("relacion", "Relacion"), new Campo("unidad", "Unidad"), new Campo("rol", "Rol"), new Campo("celular", "Celular"), new Campo("email", "Correo"), new Campo("estado", "Estado") },
+            DefFields: new[] { "relacion", "unidad", "celular", "email", "estado" }),
+
+        ["unidades"] = new Dataset("unidades", "Unidades", "",
+            Dims: new[] { new Campo("tipo", "Tipo"), new Campo("estado", "Estado"), new Campo("piso", "Piso") },
+            Meas: new[] { new Medida("area", "Area (m2)", "num"), new Medida("coef", "Coeficiente", "num") },
+            TitleField: "numero",
+            Fields: new[] { new Campo("numero", "Numero"), new Campo("tipo", "Tipo"), new Campo("estado", "Estado"), new Campo("piso", "Piso"), new Campo("area", "Area (m2)"), new Campo("coef", "Coeficiente") },
+            DefFields: new[] { "tipo", "estado", "piso", "area" }),
+
+        ["cartera"] = new Dataset("cartera", "Cartera", "",
+            Dims: new[] { new Campo("estado", "Estado de gestion") },
+            Meas: new[] { new Medida("saldo", "Saldo total", "money"), new Medida("diasMora", "Dias de mora", "num") },
+            TitleField: "unidad",
+            Fields: new[] { new Campo("unidad", "Unidad"), new Campo("propietario", "Propietario"), new Campo("estado", "Estado de gestion"), new Campo("saldo", "Saldo total"), new Campo("diasMora", "Dias de mora") },
+            DefFields: new[] { "unidad", "propietario", "saldo", "diasMora" }),
+
+        ["pqrsd"] = new Dataset("pqrsd", "PQRSD", "",
+            Dims: new[] { new Campo("tipo", "Tipo"), new Campo("estado", "Estado"), new Campo("categoria", "Categoria") },
+            Meas: new[] { new Medida("dias", "Dias para vencer", "num") },
+            TitleField: "radicado",
+            Fields: new[] { new Campo("radicado", "Radicado"), new Campo("tipo", "Tipo"), new Campo("categoria", "Categoria"), new Campo("estado", "Estado"), new Campo("asunto", "Asunto"), new Campo("dias", "Dias para vencer") },
+            DefFields: new[] { "radicado", "tipo", "estado", "asunto" }),
+
+        ["tareas"] = new Dataset("tareas", "Tareas", "",
+            Dims: new[] { new Campo("etapa", "Etapa"), new Campo("prioridad", "Prioridad") },
+            Meas: new[] { new Medida("valor", "Valor", "money"), new Medida("progreso", "Progreso", "pct") },
+            TitleField: "titulo",
+            Fields: new[] { new Campo("numero", "Numero"), new Campo("titulo", "Titulo"), new Campo("etapa", "Etapa"), new Campo("prioridad", "Prioridad"), new Campo("valor", "Valor"), new Campo("progreso", "Progreso") },
+            DefFields: new[] { "etapa", "prioridad", "progreso" }),
+
+        ["contratos"] = new Dataset("contratos", "Contratos", "",
+            Dims: new[] { new Campo("tipocontrato", "Tipo de contrato"), new Campo("categoria", "Categoria"), new Campo("estado", "Estado") },
+            Meas: new[] { new Medida("valortotal", "Valor total", "money"), new Medida("valormensual", "Valor mensual", "money") },
+            TitleField: "proveedor",
+            Fields: new[] { new Campo("numero", "Numero"), new Campo("proveedor", "Proveedor"), new Campo("tipocontrato", "Tipo"), new Campo("categoria", "Categoria"), new Campo("estado", "Estado"), new Campo("valormensual", "Valor mensual"), new Campo("valortotal", "Valor total") },
+            DefFields: new[] { "proveedor", "categoria", "estado", "valormensual" }),
+
+        ["zonas"] = new Dataset("zonas", "Zonas comunes", "",
+            Dims: new[] { new Campo("tipo", "Categoria"), new Campo("estado", "Estado"), new Campo("reservable", "Reservable") },
+            Meas: new[] { new Medida("aforo", "Aforo", "num") },
+            TitleField: "nombre",
+            Fields: new[] { new Campo("nombre", "Nombre"), new Campo("tipo", "Categoria"), new Campo("estado", "Estado"), new Campo("reservable", "Reservable"), new Campo("aforo", "Aforo") },
+            DefFields: new[] { "tipo", "estado", "aforo" }),
+
+        ["equipos"] = new Dataset("equipos", "Equipos y activos", "",
+            Dims: new[] { new Campo("tipo", "Categoria"), new Campo("estado", "Estado"), new Campo("marca", "Marca") },
+            Meas: new[] { new Medida("valoradq", "Valor de adquisicion", "money") },
+            TitleField: "nombre",
+            Fields: new[] { new Campo("nombre", "Nombre"), new Campo("tipo", "Categoria"), new Campo("estado", "Estado"), new Campo("marca", "Marca"), new Campo("ubicacion", "Ubicacion"), new Campo("valoradq", "Valor de adquisicion") },
+            DefFields: new[] { "tipo", "estado", "ubicacion" }),
+    };
+
+    private static readonly (string, string)[] Tipos = { ("cards", "Tarjetas"), ("table", "Tabla"), ("pivot", "Tabla pivote"), ("chart", "Grafico") };
+    private static readonly (string, string)[] Graficos = { ("bars", "Barras"), ("lines", "Lineas"), ("donut", "Dona") };
+    private static readonly JsonSerializerOptions JsonWeb = new(JsonSerializerDefaults.Web);
+
+    private sealed class VistaItem { public Guid Id; public string Nombre = ""; public int Orden; public VistaDef Def = new(); }
+
+    private string? _jwt;
+    private bool _ready, _busy;
+    private string? _err;
+    private readonly List<VistaItem> _vistas = new();
+    private readonly Dictionary<string, List<Dictionary<string, object?>>> _cache = new();
+
+    private bool _builderOpen;
+    private Guid? _draftId;
+    private VistaDef _draft = new();
+
+    // ----------------- Ciclo de vida / carga -----------------
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            if (string.IsNullOrWhiteSpace(stored)) { _ready = true; StateHasChanged(); return; }
+            _jwt = stored;
+            await CargarVistasAsync();
+            await CargarDatosNecesariosAsync();
+            _ready = true;
+            StateHasChanged();
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task<T?> GetJsonAsync<T>(string url)
+    {
+        try
+        {
+            var resp = await Auth().GetAsync(url);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (nuevo is null) return default;
+                _jwt = nuevo;
+                resp = await Auth().GetAsync(url);
+            }
+            if (!resp.IsSuccessStatusCode) return default;
+            return await resp.Content.ReadFromJsonAsync<T>();
+        }
+        catch { return default; }
+    }
+
+    private async Task CargarVistasAsync()
+    {
+        var dtos = await GetJsonAsync<List<VistaSistemaDto>>("/api/mi-copropiedad/vistas") ?? new();
+        if (dtos.Count == 0)
+        {
+            // Primer arranque: sembrar los 8 ejemplos (reemplazar=false es atomico: solo si esta vacio).
+            try
+            {
+                var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vistas/sembrar?reemplazar=false", SemillasReq());
+                if (resp.IsSuccessStatusCode) dtos = await resp.Content.ReadFromJsonAsync<List<VistaSistemaDto>>() ?? new();
+            }
+            catch { }
+        }
+        _vistas.Clear();
+        foreach (var dto in dtos) _vistas.Add(FromDto(dto));
+    }
+
+    private async Task CargarDatosNecesariosAsync()
+    {
+        foreach (var k in _vistas.Select(v => v.Def.DsKey).Distinct().ToList())
+            await AsegurarDatos(k);
+    }
+
+    private async Task AsegurarDatos(string ds)
+    {
+        if (_cache.ContainsKey(ds)) return;
+        _cache[ds] = await CargarDataset(ds);
+    }
+
+    private static VistaItem FromDto(VistaSistemaDto dto) => new()
+    {
+        Id = dto.Id,
+        Nombre = dto.Nombre,
+        Orden = dto.Orden,
+        Def = (string.IsNullOrWhiteSpace(dto.Definicion) ? null : JsonSerializer.Deserialize<VistaDef>(dto.Definicion, JsonWeb)) ?? new VistaDef()
+    };
+
+    // ----------------- Loaders: proyectan los DTOs reales a filas (dict). Enums -> ToString(). -----------------
+    private async Task<List<Dictionary<string, object?>>> CargarDataset(string ds)
+    {
+        switch (ds)
+        {
+            case "residentes":
+                return (await GetJsonAsync<List<ResidenteResumenDto>>("/api/mi-copropiedad/residentes") ?? new())
+                    .Select(r => new Dictionary<string, object?>
+                    {
+                        ["nombre"] = r.Nombre, ["documento"] = r.Documento, ["relacion"] = r.Parentesco,
+                        ["unidad"] = r.UnidadNumero, ["rol"] = r.Rol.ToString(), ["celular"] = r.Telefono,
+                        ["email"] = r.Email, ["estado"] = r.Activo ? "Activo" : "Inactivo"
+                    }).ToList();
+
+            case "unidades":
+                return (await GetJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new())
+                    .Select(u => new Dictionary<string, object?>
+                    {
+                        ["numero"] = u.Numero, ["tipo"] = u.Tipo.ToString(), ["estado"] = u.Estado,
+                        ["piso"] = u.Piso, ["area"] = u.AreaM2, ["coef"] = u.CoeficientePropiedad
+                    }).ToList();
+
+            case "cartera":
+                var cart = await GetJsonAsync<CarteraTableroDto>("/api/cartera/tablero");
+                return (cart?.UnidadesEnMora ?? Array.Empty<CarteraUnidadListaDto>())
+                    .Select(c => new Dictionary<string, object?>
+                    {
+                        ["unidad"] = c.UnidadNumero, ["propietario"] = c.PropietarioNombre, ["estado"] = c.EstadoGestionNombre,
+                        ["saldo"] = c.SaldoTotal, ["diasMora"] = c.DiasMora
+                    }).ToList();
+
+            case "pqrsd":
+                var band = await GetJsonAsync<PqrsdBandejaDto>("/api/pqrsd/bandeja");
+                return (band?.Items ?? Array.Empty<PqrsdBandejaItemDto>())
+                    .Select(p => new Dictionary<string, object?>
+                    {
+                        ["radicado"] = p.NumeroRadicado, ["tipo"] = p.TipoNombre ?? p.Tipo.ToString(), ["categoria"] = p.CategoriaNombre,
+                        ["estado"] = p.Estado.ToString(), ["asunto"] = p.DescripcionResumen, ["dias"] = p.DiasHastaVencimiento
+                    }).ToList();
+
+            case "tareas":
+                return (await GetJsonAsync<List<TareaListaDto>>("/api/tareas") ?? new())
+                    .Select(t => new Dictionary<string, object?>
+                    {
+                        ["numero"] = t.NumeroTarea, ["titulo"] = t.Titulo, ["etapa"] = t.EstadoNombre,
+                        ["prioridad"] = t.Prioridad.ToString(), ["valor"] = t.Valor, ["progreso"] = t.Progreso
+                    }).ToList();
+
+            case "contratos":
+                return (await GetJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new())
+                    .Select(k => new Dictionary<string, object?>
+                    {
+                        ["numero"] = k.NumeroContrato, ["proveedor"] = k.Proveedor, ["tipocontrato"] = k.TipoContrato,
+                        ["categoria"] = k.Categoria, ["estado"] = k.Estado.ToString(), ["valormensual"] = k.ValorMensual, ["valortotal"] = k.ValorTotal
+                    }).ToList();
+
+            case "zonas":
+                return (await GetJsonAsync<List<ZonaComunDto>>("/api/mi-copropiedad/zonas") ?? new())
+                    .Select(z => new Dictionary<string, object?>
+                    {
+                        ["nombre"] = z.Nombre, ["tipo"] = z.Categoria.ToString(), ["estado"] = z.Estado.ToString(),
+                        ["reservable"] = z.EsReservable, ["aforo"] = z.CapacidadPersonas
+                    }).ToList();
+
+            case "equipos":
+                return (await GetJsonAsync<List<EquipoActivoDto>>("/api/mi-copropiedad/equipos") ?? new())
+                    .Select(e => new Dictionary<string, object?>
+                    {
+                        ["nombre"] = e.Nombre, ["tipo"] = e.Categoria.ToString(), ["estado"] = e.Estado.ToString(),
+                        ["marca"] = e.Marca, ["ubicacion"] = e.Ubicacion, ["valoradq"] = e.ValorAdquisicion
+                    }).ToList();
+
+            default: return new();
+        }
+    }
+
+    // ----------------- Helpers de render -----------------
+    private List<Dictionary<string, object?>> Filtered(VistaDef d) =>
+        _cache.TryGetValue(d.DsKey, out var rows) ? VistasEngine.ApplyFilters(rows, d.Filters) : new();
+
+    private static List<string> EffectiveFields(VistaDef d, Dataset ds) =>
+        d.Fields is { Count: > 0 } ? d.Fields : ds.DefFields.ToList();
+
+    private static string CampoLabel(Dataset ds, string key) =>
+        ds.Fields.FirstOrDefault(f => f.Key == key)?.Label ?? ds.Dims.FirstOrDefault(f => f.Key == key)?.Label ?? key;
+
+    private static bool IsNum(Dataset ds, string key) => ds.Meas.Any(m => m.Key == key);
+
+    private static string DisplayField(Dataset ds, IDictionary<string, object?> row, string key)
+    {
+        var med = ds.Meas.FirstOrDefault(m => m.Key == key);
+        if (med is not null) return VistasEngine.FmtField(row.TryGetValue(key, out var x) ? x : null, med.Fmt);
+        return VistasEngine.KeyVal(row, key);
+    }
+
+    private static string Inicial(string s) => string.IsNullOrWhiteSpace(s) || s == "(vacío)" ? "?" : s.Trim().Substring(0, 1).ToUpper();
+
+    private string TituloAuto(VistaDef d)
+    {
+        var ds = Datasets[d.DsKey];
+        return d.Kind is "pivot" or "chart" ? VistasEngine.AutoTitle(ds, d.RowDim, d.ColDim, d.Measure) : ds.Label;
+    }
+    private string Titulo(VistaDef d) => string.IsNullOrWhiteSpace(d.Title) ? TituloAuto(d) : d.Title.Trim();
+
+    private string Meta(VistaDef d)
+    {
+        var ds = Datasets[d.DsKey];
+        return d.Kind switch
+        {
+            "cards" => ds.Label + " · tarjetas",
+            "table" => ds.Label + " · tabla",
+            "pivot" => VistasEngine.MeasureLabel(d.Measure) + " por " + VistasEngine.DimLabel(ds, d.RowDim) + (string.IsNullOrEmpty(d.ColDim) ? "" : " y " + VistasEngine.DimLabel(ds, d.ColDim)),
+            "chart" => (d.Chart == "donut" ? "Dona" : d.Chart == "lines" ? "Líneas" : "Barras") + " · " + ds.Label,
+            _ => ds.Label
+        };
+    }
+
+    private RenderFragment RenderBody(VistaDef d) => __builder =>
+    {
+        var ds = Datasets[d.DsKey];
+        if (!_cache.ContainsKey(d.DsKey))
+        {
+            __builder.OpenElement(0, "div");
+            __builder.AddAttribute(1, "class", "pv-empty");
+            __builder.AddContent(2, "Cargando datos…");
+            __builder.CloseElement();
+            return;
+        }
+        var data = Filtered(d);
+        if (d.Kind is "pivot")
+        {
+            __builder.AddMarkupContent(10, VistasEngine.PivotTable(ds, data, d.RowDim, d.ColDim, d.Measure));
+        }
+        else if (d.Kind is "chart")
+        {
+            __builder.AddMarkupContent(11, VistasEngine.ChartSvg(ds, data, d.RowDim, d.ColDim, d.Measure, d.Chart));
+        }
+        else if (data.Count == 0)
+        {
+            __builder.OpenElement(12, "div");
+            __builder.AddAttribute(13, "class", "pv-empty");
+            __builder.AddContent(14, "Sin registros para los filtros seleccionados.");
+            __builder.CloseElement();
+        }
+        else
+        {
+            var fields = EffectiveFields(d, ds);
+            if (d.Kind is "cards")
+                RenderCards(__builder, ds, data, fields);
+            else
+                RenderTable(__builder, ds, data, fields);
+        }
+    };
+
+    private static void RenderCards(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields)
+    {
+        b.OpenElement(0, "div"); b.AddAttribute(1, "class", "pv-cards");
+        int seq = 2;
+        foreach (var row in data.Take(60))
+        {
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pcard");
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-top");
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-av"); b.AddContent(seq++, Inicial(VistasEngine.KeyVal(row, ds.TitleField))); b.CloseElement();
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-id");
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-nm"); b.AddContent(seq++, VistasEngine.KeyVal(row, ds.TitleField)); b.CloseElement();
+            b.CloseElement(); // id
+            b.CloseElement(); // top
+            b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-lines");
+            foreach (var f in fields.Where(f => f != ds.TitleField))
+            {
+                b.OpenElement(seq++, "div"); b.AddAttribute(seq++, "class", "pv-pc-line");
+                b.OpenElement(seq++, "span"); b.AddAttribute(seq++, "class", "pv-pc-ll"); b.AddContent(seq++, CampoLabel(ds, f)); b.CloseElement();
+                b.OpenElement(seq++, "span"); b.AddAttribute(seq++, "class", "pv-pc-lv"); b.AddContent(seq++, DisplayField(ds, row, f)); b.CloseElement();
+                b.CloseElement();
+            }
+            b.CloseElement(); // lines
+            b.CloseElement(); // pcard
+        }
+        b.CloseElement(); // cards
+    }
+
+    private static void RenderTable(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder b, Dataset ds, List<Dictionary<string, object?>> data, List<string> fields)
+    {
+        b.OpenElement(0, "div"); b.AddAttribute(1, "class", "pv-tablewrap");
+        b.OpenElement(2, "table"); b.AddAttribute(3, "class", "pv-table");
+        b.OpenElement(4, "thead"); b.OpenElement(5, "tr");
+        int seq = 6;
+        foreach (var f in fields)
+        {
+            b.OpenElement(seq++, "th");
+            if (IsNum(ds, f)) b.AddAttribute(seq++, "class", "pv-num");
+            b.AddContent(seq++, CampoLabel(ds, f));
+            b.CloseElement();
+        }
+        b.CloseElement(); b.CloseElement(); // tr thead
+        b.OpenElement(seq++, "tbody");
+        foreach (var row in data.Take(200))
+        {
+            b.OpenElement(seq++, "tr");
+            foreach (var f in fields)
+            {
+                b.OpenElement(seq++, "td");
+                if (IsNum(ds, f)) b.AddAttribute(seq++, "class", "pv-num");
+                b.AddContent(seq++, DisplayField(ds, row, f));
+                b.CloseElement();
+            }
+            b.CloseElement();
+        }
+        b.CloseElement(); // tbody
+        b.CloseElement(); // table
+        b.CloseElement(); // wrap
+    }
+
+    private List<string> ValoresDe(Dataset ds, string field) =>
+        _cache.TryGetValue(ds.Key, out var rows) ? VistasEngine.Distinct(rows, field) : new();
+
+    // ----------------- Builder -----------------
+    private void NuevaVista()
+    {
+        _err = null;
+        _draftId = null;
+        _draft = new VistaDef { Kind = "table" };
+        AplicarFuente("residentes");
+        _builderOpen = true;
+        _ = AsegurarDatosYRefrescar("residentes");
+    }
+
+    private async Task AsegurarDatosYRefrescar(string ds)
+    {
+        await AsegurarDatos(ds);
+        StateHasChanged();
+    }
+
+    private void CambiarFuente(string key)
+    {
+        AplicarFuente(key);
+        _ = AsegurarDatosYRefrescar(key);
+    }
+
+    private void AplicarFuente(string key)
+    {
+        var ds = Datasets[key];
+        _draft.DsKey = key;
+        _draft.Filters.Clear();
+        _draft.RowDim = ds.Dims.FirstOrDefault()?.Key ?? "";
+        _draft.ColDim = "";
+        _draft.Measure = new Metrica("count");
+        _draft.Fields = ds.DefFields.ToList();
+        // Si el dataset no tiene dimensiones utiles para pivote/grafico (no deberia pasar), cae a tabla.
+        if (_draft.Kind is "pivot" or "chart" && ds.Dims.Count == 0) _draft.Kind = "table";
+    }
+
+    private void CambiarTipo(string kind)
+    {
+        _draft.Kind = kind;
+        var ds = Datasets[_draft.DsKey];
+        if (kind is "pivot" or "chart" && string.IsNullOrEmpty(_draft.RowDim))
+            _draft.RowDim = ds.Dims.FirstOrDefault()?.Key ?? "";
+    }
+
+    private void CambiarFiltroCampo(Filtro f, string? field)
+    {
+        f.Field = field ?? "";
+        f.Value = "";
+    }
+
+    private void AgregarFiltro(Dataset ds)
+    {
+        var first = ds.Fields.FirstOrDefault()?.Key ?? "";
+        _draft.Filters.Add(new Filtro { Field = first, Value = "" });
+    }
+
+    private void SetMetrica(Dataset ds, string? idxStr)
+    {
+        if (int.TryParse(idxStr, out var i))
+        {
+            var opts = VistasEngine.MeasureOptions(ds);
+            if (i >= 0 && i < opts.Count) _draft.Measure = opts[i].M;
+        }
+    }
+
+    private void ToggleCampo(Dataset ds, string key)
+    {
+        _draft.Fields ??= new();
+        if (_draft.Fields.Count == 0) _draft.Fields = ds.DefFields.ToList();
+        if (_draft.Fields.Contains(key)) _draft.Fields.Remove(key);
+        else _draft.Fields.Add(key);
+    }
+
+    private void CerrarBuilder()
+    {
+        _builderOpen = false;
+        _draftId = null;
+        _err = null;
+    }
+
+    private void EditarVista(VistaItem v)
+    {
+        _err = null;
+        _draftId = v.Id;
+        _draft = JsonSerializer.Deserialize<VistaDef>(JsonSerializer.Serialize(v.Def, JsonWeb), JsonWeb) ?? new VistaDef();
+        _builderOpen = true;
+        _ = AsegurarDatosYRefrescar(_draft.DsKey);
+    }
+
+    private async Task GuardarDraft()
+    {
+        _busy = true; _err = null;
+        try
+        {
+            var json = JsonSerializer.Serialize(_draft, JsonWeb);
+            if (_draftId is null)
+            {
+                var orden = _vistas.Count == 0 ? 0 : _vistas.Max(v => v.Orden) + 1;
+                var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vistas", new GuardarVistaRequest(TituloGuardar(_draft), orden, json));
+                if (!resp.IsSuccessStatusCode) { _err = "No se pudo crear la vista. Verifica que tengas permiso de edicion de Mi Copropiedad."; return; }
+                var dto = await resp.Content.ReadFromJsonAsync<VistaSistemaDto>();
+                if (dto is not null) _vistas.Add(FromDto(dto));
+            }
+            else
+            {
+                var item = _vistas.FirstOrDefault(v => v.Id == _draftId);
+                if (item is null) { CerrarBuilder(); return; }
+                var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/vistas/{_draftId}", new GuardarVistaRequest(TituloGuardar(_draft), item.Orden, json));
+                if (!resp.IsSuccessStatusCode) { _err = "No se pudo guardar la vista. Verifica que tengas permiso de edicion de Mi Copropiedad."; return; }
+                item.Nombre = TituloGuardar(_draft);
+                item.Def = _draft;
+            }
+            await AsegurarDatos(_draft.DsKey);
+            CerrarBuilder();
+        }
+        catch (Exception ex) { _err = "Error al guardar: " + ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarVista(VistaItem v)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Eliminar la vista \"{Titulo(v.Def)}\"?")) return;
+        _busy = true; _err = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/vistas/{v.Id}");
+            if (resp.IsSuccessStatusCode) _vistas.Remove(v);
+            else _err = "No se pudo eliminar la vista (permiso de edicion requerido).";
+        }
+        catch (Exception ex) { _err = "Error al eliminar: " + ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private bool EsPrimera(VistaItem v) => _vistas.OrderBy(x => x.Orden).FirstOrDefault() == v;
+    private bool EsUltima(VistaItem v) => _vistas.OrderBy(x => x.Orden).LastOrDefault() == v;
+
+    private async Task Mover(VistaItem v, int dir)
+    {
+        var ord = _vistas.OrderBy(x => x.Orden).ToList();
+        var i = ord.IndexOf(v);
+        var j = i + dir;
+        if (i < 0 || j < 0 || j >= ord.Count) return;
+        (ord[i], ord[j]) = (ord[j], ord[i]);
+        for (int k = 0; k < ord.Count; k++) ord[k].Orden = k;
+        try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/vistas/orden", new ReordenarVistasRequest(ord.Select(x => x.Id).ToList())); }
+        catch { }
+    }
+
+    private async Task Restablecer()
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", "Esto reemplaza las vistas actuales por los 8 ejemplos. Continuar?")) return;
+        _busy = true; _err = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/vistas/sembrar?reemplazar=true", SemillasReq());
+            if (!resp.IsSuccessStatusCode) { _err = "No se pudo restablecer (permiso de edicion requerido)."; return; }
+            var dtos = await resp.Content.ReadFromJsonAsync<List<VistaSistemaDto>>() ?? new();
+            _vistas.Clear();
+            foreach (var dto in dtos) _vistas.Add(FromDto(dto));
+            CerrarBuilder();
+            await CargarDatosNecesariosAsync();
+        }
+        catch (Exception ex) { _err = "Error al restablecer: " + ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private string TituloGuardar(VistaDef d) => string.IsNullOrWhiteSpace(d.Title) ? TituloAuto(d) : d.Title.Trim();
+
+    // ----------------- Semillas (8 vistas de ejemplo, sin "Torre") -----------------
+    private static List<GuardarVistaRequest> SemillasReq()
+    {
+        var defs = Semillas();
+        var list = new List<GuardarVistaRequest>();
+        for (int i = 0; i < defs.Count; i++)
+            list.Add(new GuardarVistaRequest(defs[i].Item1, i, JsonSerializer.Serialize(defs[i].Item2, JsonWeb)));
+        return list;
+    }
+
+    private static List<(string, VistaDef)> Semillas() => new()
+    {
+        ("Unidades por tipo", new VistaDef { Kind = "chart", DsKey = "unidades", RowDim = "tipo", Measure = new Metrica("count"), Chart = "bars", Width = "half" }),
+        ("Cartera por estado de gestion", new VistaDef { Kind = "pivot", DsKey = "cartera", RowDim = "estado", Measure = new Metrica("sum", "saldo", "Saldo total", "money"), Width = "half" }),
+        ("PQRSD por estado", new VistaDef { Kind = "chart", DsKey = "pqrsd", RowDim = "estado", Measure = new Metrica("count"), Chart = "donut", Width = "third" }),
+        ("Tareas por etapa", new VistaDef { Kind = "pivot", DsKey = "tareas", RowDim = "etapa", Measure = new Metrica("count"), Width = "third" }),
+        ("Directorio de residentes", new VistaDef { Kind = "table", DsKey = "residentes", Fields = new() { "relacion", "unidad", "celular", "email", "estado" }, Width = "third" }),
+        ("Unidades por tipo y estado", new VistaDef { Kind = "pivot", DsKey = "unidades", RowDim = "tipo", ColDim = "estado", Measure = new Metrica("count"), Width = "full" }),
+        ("Contratos por categoria (valor mensual)", new VistaDef { Kind = "chart", DsKey = "contratos", RowDim = "categoria", Measure = new Metrica("sum", "valormensual", "Valor mensual", "money"), Chart = "bars", Width = "half" }),
+        ("Zonas comunes", new VistaDef { Kind = "cards", DsKey = "zonas", Fields = new() { "tipo", "estado", "aforo" }, Width = "half" }),
+    };
+}
