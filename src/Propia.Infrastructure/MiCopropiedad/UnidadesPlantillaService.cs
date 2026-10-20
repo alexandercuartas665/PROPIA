@@ -225,7 +225,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
             // PRINCIPAL va pegada a AGRUPACION y es estructural: es la que vincula un anexo con su
             // unidad principal, asi que se emite este oculta o no la agrupacion.
             if (campo.Clave == "agrupacion")
-                cols.Add(("PRINCIPAL", "Si es Anexo (3): codigo de la unidad principal"));
+                cols.Add(("PRINCIPAL", "Obligatorio si es Anexo (3): codigo de la unidad principal (del archivo o ya existente). Sin ella, el anexo no se carga"));
         }
         AgregarColumnasDinamicas(cols, camposUnidad);   // ya vienen filtrados por visibilidad
 

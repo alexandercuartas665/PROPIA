@@ -33,14 +33,15 @@ public partial class MiCopropiedadService
             return new RebalanceoCoeficientesDto(unidades.Count, sumaAnterior, 0m, 0m, 0, noPagan.Count);
         }
 
-        var coefBase = Math.Round(100m / pagan.Count, 4, MidpointRounding.ToZero);
+        // 5 decimales: la misma escala que la columna (numeric(8,5)) y que la plantilla de carga.
+        var coefBase = Math.Round(100m / pagan.Count, 5, MidpointRounding.ToZero);
         decimal acumulado = 0m;
         for (int i = 0; i < pagan.Count; i++)
         {
             if (i == pagan.Count - 1)
             {
                 // Compensacion en la ultima para evitar floating drift y forzar suma=100
-                pagan[i].CoeficientePropiedad = Math.Round(100m - acumulado, 4);
+                pagan[i].CoeficientePropiedad = Math.Round(100m - acumulado, 5);
             }
             else
             {

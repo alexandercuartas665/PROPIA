@@ -157,7 +157,9 @@ public class UnidadesPlantillaRoundTripTests
             // 2. Se importa como tipo PROPIO, no como Apartamento.
             LlenarFila(ws, 5, "CP Tipos Propios", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-770", ["TIPO"] = "Duplex", ["COEFICIENTE"] = "1.00",
+                ["UNIDAD PRIVADA"] = "T1-770",
+                ["TIPO"] = "Duplex",
+                ["COEFICIENTE"] = "1.00",
             });
             var alta = await ImportarAsync(tenantId, ws.Workbook);
             Assert.Empty(alta.Errores);
@@ -172,7 +174,8 @@ public class UnidadesPlantillaRoundTripTests
             Assert.DoesNotContain("TIPO", Encabezados(ws2));
             LlenarFila(ws2, 5, "CP Tipos Propios", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-770", ["COEFICIENTE"] = "2.00",
+                ["UNIDAD PRIVADA"] = "T1-770",
+                ["COEFICIENTE"] = "2.00",
             });
             var recarga = await ImportarAsync(tenantId, ws2.Workbook);
             Assert.Empty(recarga.Errores);
@@ -193,7 +196,9 @@ public class UnidadesPlantillaRoundTripTests
             var ws = await GenerarHojaUnidadesAsync(tenantId);
             LlenarFila(ws, 5, "CP Tipos Etiqueta", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-771", ["TIPO"] = "Duplex", ["COEFICIENTE"] = "1.00",
+                ["UNIDAD PRIVADA"] = "T1-771",
+                ["TIPO"] = "Duplex",
+                ["COEFICIENTE"] = "1.00",
             });
             Assert.Empty((await ImportarAsync(tenantId, ws.Workbook)).Errores);
             Assert.Equal(tipoId, (await GetUnidadAsync(tenantId, "T1-771")).TipoCustomId);
@@ -203,7 +208,9 @@ public class UnidadesPlantillaRoundTripTests
             var ws2 = await GenerarHojaUnidadesAsync(tenantId);
             LlenarFila(ws2, 5, "CP Tipos Etiqueta", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-771", ["TIPO"] = "Cuarto util", ["COEFICIENTE"] = "1.00",
+                ["UNIDAD PRIVADA"] = "T1-771",
+                ["TIPO"] = "Cuarto util",
+                ["COEFICIENTE"] = "1.00",
             });
             Assert.Empty((await ImportarAsync(tenantId, ws2.Workbook)).Errores);
 
@@ -223,7 +230,9 @@ public class UnidadesPlantillaRoundTripTests
             var ws = await GenerarHojaUnidadesAsync(tenantId);
             LlenarFila(ws, 5, "CP Tipos Desconocido", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-772", ["TIPO"] = "Penthouse inventado", ["COEFICIENTE"] = "1.00",
+                ["UNIDAD PRIVADA"] = "T1-772",
+                ["TIPO"] = "Penthouse inventado",
+                ["COEFICIENTE"] = "1.00",
             });
             var res = await ImportarAsync(tenantId, ws.Workbook);
 
@@ -273,7 +282,9 @@ public class UnidadesPlantillaRoundTripTests
             // Y el valor con coma se importa bien (es un solo tipo, no dos opciones).
             LlenarFila(ws, 5, "CP Listas Largas", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-880", ["TIPO"] = "Duplex, esquinero", ["COEFICIENTE"] = "1.00",
+                ["UNIDAD PRIVADA"] = "T1-880",
+                ["TIPO"] = "Duplex, esquinero",
+                ["COEFICIENTE"] = "1.00",
             });
             Assert.Empty((await ImportarAsync(tenantId, ws.Workbook)).Errores);
             Assert.NotNull((await GetUnidadAsync(tenantId, "T1-880")).TipoCustomId);
@@ -285,6 +296,102 @@ public class UnidadesPlantillaRoundTripTests
 
     // Formula de la lista desplegable de una columna: un nombre definido ("=LISTA_TIPO_UNIDAD")
     // que apunta a la hoja oculta de listas.
+    [Fact]
+    public async Task Anexo_sin_principal_o_con_principal_inexistente_no_se_carga_y_el_valido_vincula_con_facturacion()
+    {
+        var tenantId = await SeedTenantAsync("CP Plantilla Anexos");
+        try
+        {
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            // La plantilla NO lleva columna COPROPIEDAD: cada archivo carga en la copropiedad activa.
+            Assert.DoesNotContain("COPROPIEDAD", Encabezados(ws));
+            // El anexo valido va ANTES que su principal a proposito: el importador debe procesar los
+            // anexos al final para que la principal del mismo archivo ya exista.
+            LlenarFila(ws, 5, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "A-P-1",
+                ["TIPO"] = "Parqueadero",
+                ["AGRUPACION"] = "3",
+                ["PRINCIPAL"] = "A-101",
+                ["COEFICIENTE"] = "0.1",
+            });
+            LlenarFila(ws, 6, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "A-101",
+                ["TIPO"] = "Apartamento",
+                ["COEFICIENTE"] = "1.5",
+            });
+            // Anexo SIN principal: no debe subir (antes entraba como individual en silencio).
+            LlenarFila(ws, 7, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "G001",
+                ["TIPO"] = "Parqueadero",
+                ["AGRUPACION"] = "3",
+                ["COEFICIENTE"] = "0",
+            });
+            // Anexo con principal INEXISTENTE: tampoco (antes quedaba creado y suelto).
+            LlenarFila(ws, 8, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "D-9",
+                ["TIPO"] = "Deposito",
+                ["AGRUPACION"] = "3",
+                ["PRINCIPAL"] = "NOEXISTE",
+                ["COEFICIENTE"] = "0.05",
+            });
+
+            var res = await ImportarAsync(tenantId, ws.Workbook);
+
+            Assert.Equal(2, res.Errores.Count);
+            Assert.Contains(res.Errores, e => e.Fila == 7 && e.Motivo.Contains("G001") && e.Motivo.Contains("sin PRINCIPAL"));
+            Assert.Contains(res.Errores, e => e.Fila == 8 && e.Motivo.Contains("NOEXISTE"));
+            Assert.Equal(2, res.Unidades);
+            Assert.Equal(1, res.Anexos);
+
+            await using var ctx = OwnerCtx();
+            var numeros = await ctx.UnidadesPrivadas.IgnoreQueryFilters().AsNoTracking()
+                .Where(u => u.TenantId == tenantId).Select(u => u.Numero).ToListAsync();
+            Assert.Equal(new[] { "A-101", "A-P-1" }, numeros.OrderBy(n => n).ToArray());
+
+            var principal = await GetUnidadAsync(tenantId, "A-101");
+            var anexo = await GetUnidadAsync(tenantId, "A-P-1");
+            var vinculo = await ctx.UnidadVinculos.IgnoreQueryFilters().AsNoTracking()
+                .SingleAsync(v => v.TenantId == tenantId);
+            Assert.Equal(principal.Id, vinculo.UnidadPrincipalId);
+            Assert.Equal(anexo.Id, vinculo.UnidadAsociadaId);
+            Assert.True(vinculo.IncluyeEnFacturacion, "el coeficiente propio del anexo debe sumar en la cuota de su principal");
+            Assert.Equal(0.1m, anexo.CoeficientePropiedad);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
+    [Fact]
+    public async Task Coeficiente_y_modulos_contributivos_conservan_cinco_decimales()
+    {
+        var tenantId = await SeedTenantAsync("CP Plantilla Decimales");
+        try
+        {
+            await MarcarVisiblesAsync(tenantId, new[] { "modcontrib1", "modcontrib2" });
+            var ws = await GenerarHojaUnidadesAsync(tenantId);
+            LlenarFila(ws, 5, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "T1-905",
+                ["TIPO"] = "Apartamento",
+                ["COEFICIENTE"] = "0.42093",
+                ["MODULO CONTRIBUTIVO 1"] = "0.12345",
+                ["MODULO CONTRIBUTIVO 2"] = "12.91605",
+            });
+            var res = await ImportarAsync(tenantId, ws.Workbook);
+            Assert.Empty(res.Errores);
+
+            // Se lee de la BD: con numeric(7,4) el quinto decimal se perdia en silencio.
+            var u = await GetUnidadAsync(tenantId, "T1-905");
+            Assert.Equal(0.42093m, u.CoeficientePropiedad);
+            Assert.Equal(0.12345m, u.ModuloContributivo1);
+            Assert.Equal(12.91605m, u.ModuloContributivo2);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
     private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
     {
         var col = ColumnaDe(ws, encabezado);
@@ -320,7 +427,10 @@ public class UnidadesPlantillaRoundTripTests
         {
             ctx.UnidadCamposConfig.Add(new UnidadCampoConfig
             {
-                TenantId = tenantId, Entidad = "unidad", CampoClave = clave, Oculto = true
+                TenantId = tenantId,
+                Entidad = "unidad",
+                CampoClave = clave,
+                Oculto = true
             });
         }
         else { fila.Oculto = true; }
@@ -462,6 +572,7 @@ public class UnidadesPlantillaRoundTripTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_campos_config WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_coeficientes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_coeficiente WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_vinculos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_unidad_custom WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");

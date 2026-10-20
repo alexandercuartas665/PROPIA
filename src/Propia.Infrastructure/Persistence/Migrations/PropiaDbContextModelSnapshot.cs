@@ -17,7 +17,7 @@ namespace Propia.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.20")
+                .HasAnnotation("ProductVersion", "9.0.21")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "citext");
@@ -18573,8 +18573,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("banos");
 
                     b.Property<decimal>("CoeficientePropiedad")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("coeficiente_propiedad");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -18605,28 +18605,28 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("matricula_inmobiliaria");
 
                     b.Property<decimal?>("ModuloContributivo1")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("modulo_contributivo_1");
 
                     b.Property<decimal?>("ModuloContributivo2")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("modulo_contributivo_2");
 
                     b.Property<decimal?>("ModuloContributivo3")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("modulo_contributivo_3");
 
                     b.Property<decimal?>("ModuloContributivo4")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("modulo_contributivo_4");
 
                     b.Property<decimal?>("ModuloContributivo5")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)")
+                        .HasPrecision(8, 5)
+                        .HasColumnType("numeric(8,5)")
                         .HasColumnName("modulo_contributivo_5");
 
                     b.Property<string>("Numero")
