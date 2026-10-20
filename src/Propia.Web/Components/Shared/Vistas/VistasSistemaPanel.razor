@@ -203,7 +203,7 @@
     @* Modal de edicion de un registro (nativos + campos personalizados). Solo tarjetas/tabla. *@
     @if (_editOpen)
     {
-        var flds = EditFieldsDe(_editDsKey);
+        var flds = _editFields;
         <div class="pv-modal-ov" @onclick="CerrarEdicion">
             <div class="pv-modal" @onclick:stopPropagation="true">
                 <div class="pv-modal-hd"><div class="pv-title">Editar @_editTitulo</div></div>
@@ -466,10 +466,18 @@
         return rows;
     }
 
-    // Carga definiciones + valores planos de campos personalizados del tenant para el dataset (una vez).
+    // Carga las definiciones de campos personalizados del dataset (una vez). Valores: planos (flat) para
+    // MiCopropiedad, o inline (en el DTO del listado) para pqrsd/tareas.
     private async Task AsegurarEav(string ds)
     {
-        if (!Eav.TryGetValue(ds, out var cfg) || _eavDefs.ContainsKey(ds)) return;
+        if (_eavDefs.ContainsKey(ds)) return;
+        if (Eav.TryGetValue(ds, out var cfg)) { await CargarEavFlat(ds, cfg); return; }
+        if (ds == "pqrsd") { _eavDefs[ds] = await GetJsonAsync<List<EavDef>>("/api/pqrsd/pqrsd-campos") ?? new(); _resolved.Remove(ds); return; }
+        if (ds == "tareas") { await CargarEavTareas(); return; }
+    }
+
+    private async Task CargarEavFlat(string ds, EavConfig cfg)
+    {
         _eavDefs[ds] = await GetJsonAsync<List<EavDef>>(cfg.DefsUrl) ?? new();
         _resolved.Remove(ds); // forzar recomputo del dataset resuelto con los campos nuevos
         var map = new Dictionary<Guid, Dictionary<Guid, string?>>();
@@ -490,9 +498,50 @@
         _eavVals[ds] = map;
     }
 
-    // Pega los valores EAV en cada fila bajo "cd:{defId}" (numericos -> double para poder agregar).
+    // Tareas: los campos son por tablero. Se cargan todos los tableros y se unen sus definiciones (sin repetir).
+    private async Task CargarEavTareas()
+    {
+        var defs = new List<EavDef>();
+        var seen = new HashSet<Guid>();
+        try
+        {
+            var boards = await GetJsonAsync<List<TableroRef>>("/api/tareas/tableros") ?? new();
+            foreach (var b in boards)
+            {
+                var bd = await GetJsonAsync<List<EavDef>>($"/api/tareas/tableros/{b.Id}/campos") ?? new();
+                foreach (var d in bd) if (seen.Add(d.Id)) defs.Add(d);
+            }
+        }
+        catch { }
+        _eavDefs["tareas"] = defs;
+        _resolved.Remove("tareas");
+    }
+
+    private sealed record TableroRef(Guid Id, string Nombre);
+
+    // Pega valores EAV "inline" (los que vienen en el DTO del listado) en la fila, bajo "cd:{campoId}".
+    private void AttachInline(string ds, Dictionary<string, object?> row, IEnumerable<(Guid CampoId, string? Valor)> campos)
+    {
+        if (!_eavDefs.TryGetValue(ds, out var defs) || defs.Count == 0) return;
+        var byId = new Dictionary<Guid, string?>();
+        foreach (var c in campos) byId[c.CampoId] = c.Valor;
+        foreach (var d in defs)
+        {
+            if (d.Tipo == TipoCampoTablero.Separador) continue;
+            string? v = byId.TryGetValue(d.Id, out var vv) ? vv : null;
+            object? stored = v;
+            if (EsNumerico(d.Tipo) && v is not null &&
+                double.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+                stored = num;
+            row["cd:" + d.Id] = stored;
+        }
+    }
+
+    // Pega los valores EAV planos en cada fila bajo "cd:{defId}" (numericos -> double para poder agregar).
+    // Solo datasets con valores planos (Eav); pqrsd/tareas traen los valores inline y usan AttachInline.
     private void AttachEav(string ds, List<Dictionary<string, object?>> rows)
     {
+        if (!Eav.ContainsKey(ds)) return;
         if (!_eavDefs.TryGetValue(ds, out var defs) || defs.Count == 0) return;
         _eavVals.TryGetValue(ds, out var map);
         foreach (var row in rows)
@@ -545,21 +594,40 @@
                     }).ToList();
 
             case "pqrsd":
+            {
                 var band = await GetJsonAsync<PqrsdBandejaDto>("/api/pqrsd/bandeja");
-                return (band?.Items ?? Array.Empty<PqrsdBandejaItemDto>())
-                    .Select(p => new Dictionary<string, object?>
+                var list = new List<Dictionary<string, object?>>();
+                foreach (var p in band?.Items ?? Array.Empty<PqrsdBandejaItemDto>())
+                {
+                    var row = new Dictionary<string, object?>
                     {
                         ["radicado"] = p.NumeroRadicado, ["tipo"] = p.TipoNombre ?? p.Tipo.ToString(), ["categoria"] = p.CategoriaNombre,
-                        ["estado"] = p.Estado.ToString(), ["asunto"] = p.DescripcionResumen, ["dias"] = p.DiasHastaVencimiento
-                    }).ToList();
+                        ["estado"] = p.Estado.ToString(), ["asunto"] = p.DescripcionResumen, ["dias"] = p.DiasHastaVencimiento,
+                        ["_id"] = p.Id, ["_eavId"] = p.Id, ["_dto"] = p
+                    };
+                    AttachInline("pqrsd", row, (p.Campos ?? Enumerable.Empty<PqrsdCampoValorDto>()).Select(c => (c.CampoId, c.Valor)));
+                    list.Add(row);
+                }
+                return list;
+            }
 
             case "tareas":
-                return (await GetJsonAsync<List<TareaListaDto>>("/api/tareas") ?? new())
-                    .Select(t => new Dictionary<string, object?>
+            {
+                var tareas = await GetJsonAsync<List<TareaListaDto>>("/api/tareas") ?? new();
+                var list = new List<Dictionary<string, object?>>();
+                foreach (var t in tareas)
+                {
+                    var row = new Dictionary<string, object?>
                     {
                         ["numero"] = t.NumeroTarea, ["titulo"] = t.Titulo, ["etapa"] = t.EstadoNombre,
-                        ["prioridad"] = t.Prioridad.ToString(), ["valor"] = t.Valor, ["progreso"] = t.Progreso
-                    }).ToList();
+                        ["prioridad"] = t.Prioridad.ToString(), ["valor"] = t.Valor, ["progreso"] = t.Progreso,
+                        ["_id"] = t.Id, ["_eavId"] = t.Id, ["_dto"] = t
+                    };
+                    AttachInline("tareas", row, (t.CamposValores ?? Enumerable.Empty<TareaCampoValorDto>()).Select(c => (c.CampoId, c.Valor)));
+                    list.Add(row);
+                }
+                return list;
+            }
 
             case "contratos":
                 return (await GetJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new())
@@ -927,12 +995,13 @@
     private sealed record DsEdit(
         List<EditField> Natives,
         Func<Dictionary<string, object?>, Dictionary<string, string?>, Task<bool>> SaveNatives,
-        Func<Guid, Guid, string?, Task<bool>> SaveEav);
+        Func<Dictionary<string, object?>, Guid, string?, Task<bool>> SaveEav); // (row, defId, valor)
 
     private bool _editOpen;
     private string _editDsKey = "", _editTitulo = "";
     private Dictionary<string, object?>? _editRowRef;
     private string? _editErr;
+    private List<EditField> _editFields = new();
     private readonly Dictionary<string, string?> _editVals = new();
     private readonly Dictionary<string, string?> _editOrig = new();
 
@@ -961,15 +1030,20 @@
         new("valormensual", "Valor mensual", "money"), new("valortotal", "Valor total", "money"),
     };
 
+    private static readonly Func<Dictionary<string, object?>, Dictionary<string, string?>, Task<bool>> SinNativos = (_, _) => Task.FromResult(true);
+
     private DsEdit? EdicionDe(string ds) => ds switch
     {
-        "equipos" => new(EquipoNativos, GuardarEquipoNativos, (id, def, val) => SetEavMiCopropiedad("equipos", id, def, val)),
-        "unidades" => new(UnidadNativos, GuardarUnidadNativos, (id, def, val) => SetEavMiCopropiedad("unidades", id, def, val)),
-        "zonas" => new(ZonaNativos, GuardarZonaNativos, (id, def, val) => SetEavMiCopropiedad("zonas", id, def, val)),
+        "equipos" => new(EquipoNativos, GuardarEquipoNativos, (r, def, val) => SetEavMiCopropiedad("equipos", r, def, val)),
+        "unidades" => new(UnidadNativos, GuardarUnidadNativos, (r, def, val) => SetEavMiCopropiedad("unidades", r, def, val)),
+        "zonas" => new(ZonaNativos, GuardarZonaNativos, (r, def, val) => SetEavMiCopropiedad("zonas", r, def, val)),
         "contratos" => new(ContratoNativos, GuardarContratoNativos, SetEavContrato),
-        // Residentes: solo campos personalizados. Los datos de la persona (nombre, foto, nacimiento...) no
-        // vienen completos en el listado, asi que se editan en el Directorio para no perder informacion.
-        "residentes" => new(new List<EditField>(), (_, _) => Task.FromResult(true), SetEavPersonas),
+        // Residentes / Tareas / PQRSD: solo campos personalizados. Sus datos nativos no vienen completos en el
+        // listado (persona: nombre/foto; tarea: hora inicio/fin; pqrsd: descripcion truncada), asi que se editan
+        // en su propio modulo para no perder informacion.
+        "residentes" => new(new List<EditField>(), SinNativos, SetEavPersonas),
+        "tareas" => new(new List<EditField>(), SinNativos, SetEavTarea),
+        "pqrsd" => new(new List<EditField>(), SinNativos, SetEavPqrsd),
         _ => null
     };
 
@@ -1009,12 +1083,30 @@
         };
     }
 
-    private void AbrirEdicion(string dsKey, Dictionary<string, object?> row)
+    private async Task AbrirEdicion(string dsKey, Dictionary<string, object?> row)
     {
         _editDsKey = dsKey; _editRowRef = row; _editErr = null;
         _editTitulo = VistasEngine.KeyVal(row, Resolved(dsKey).TitleField);
+
+        // Tareas: los campos son por tablero. Solo se muestran los del tablero de ESTA tarea (el resto darian
+        // 400 al guardar). Hace falta el detalle porque el listado no trae el TableroId.
+        HashSet<Guid>? permitidos = null;
+        if (dsKey == "tareas" && row.TryGetValue("_id", out var tidObj) && tidObj is Guid tid)
+        {
+            var det = await GetJsonAsync<Dictionary<string, JsonElement>>($"/api/tareas/{tid}");
+            if (det is not null && det.TryGetValue("tableroId", out var tbEl) &&
+                tbEl.ValueKind == JsonValueKind.String && Guid.TryParse(tbEl.GetString(), out var tableroId))
+            {
+                var campos = await GetJsonAsync<List<EavDef>>($"/api/tareas/tableros/{tableroId}/campos") ?? new();
+                permitidos = campos.Select(c => c.Id).ToHashSet();
+            }
+        }
+
+        _editFields = EditFieldsDe(dsKey)
+            .Where(f => !f.Key.StartsWith("cd:") || permitidos is null || permitidos.Contains(Guid.Parse(f.Key[3..])))
+            .ToList();
         _editVals.Clear(); _editOrig.Clear();
-        foreach (var f in EditFieldsDe(dsKey))
+        foreach (var f in _editFields)
         {
             var cur = CurrentEditVal(row, f);
             _editVals[f.Key] = cur;
@@ -1040,14 +1132,13 @@
                 if (!await cfg.SaveNatives(_editRowRef, natEdits))
                 { _editErr = "No se pudieron guardar los campos del registro (se requiere permiso de edicion)."; return; }
             }
-            if (_editRowRef.TryGetValue("_eavId", out var eidObj) && eidObj is Guid eid && _eavDefs.TryGetValue(_editDsKey, out var defs))
+            if (_editRowRef.TryGetValue("_eavId", out var eidObj) && eidObj is Guid)
             {
-                foreach (var d in defs)
+                foreach (var f in _editFields.Where(f => f.Key.StartsWith("cd:")))
                 {
-                    var key = "cd:" + d.Id;
-                    if (!_editVals.ContainsKey(key) || _editVals[key] == _editOrig.GetValueOrDefault(key)) continue;
-                    var val = string.IsNullOrEmpty(_editVals[key]) ? null : _editVals[key];
-                    if (!await cfg.SaveEav(eid, d.Id, val))
+                    if (_editVals.GetValueOrDefault(f.Key) == _editOrig.GetValueOrDefault(f.Key)) continue;
+                    var val = string.IsNullOrEmpty(_editVals[f.Key]) ? null : _editVals[f.Key];
+                    if (!await cfg.SaveEav(_editRowRef, Guid.Parse(f.Key[3..]), val))
                     { _editErr = "No se pudo guardar un campo personalizado (se requiere permiso de edicion)."; return; }
                 }
             }
@@ -1066,11 +1157,34 @@
     private static int? ParseInt(string? s) =>
         int.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
 
+    private static Guid RowEavId(Dictionary<string, object?> row) =>
+        row.TryGetValue("_eavId", out var x) && x is Guid g ? g : Guid.Empty;
+
     // EAV set-value para entidades MiCopropiedad con ruta /{prefijo}/{id}/campos/{defId} (equipos, unidades, zonas).
-    private async Task<bool> SetEavMiCopropiedad(string prefix, Guid id, Guid defId, string? val)
+    private async Task<bool> SetEavMiCopropiedad(string prefix, Dictionary<string, object?> row, Guid defId, string? val)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{prefix}/{id}/campos/{defId}",
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{prefix}/{RowEavId(row)}/campos/{defId}",
             new Propia.Application.MiCopropiedad.SetCampoValorRequest(val));
+        return resp.IsSuccessStatusCode;
+    }
+
+    // Tareas: endpoint propio por campo (limpio; valida que el campo pertenezca al tablero de la tarea).
+    private async Task<bool> SetEavTarea(Dictionary<string, object?> row, Guid defId, string? val)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/{RowEavId(row)}/campo-valor/{defId}",
+            new Propia.Application.Tareas.SetCampoValorRequest(val));
+        return resp.IsSuccessStatusCode;
+    }
+
+    // PQRSD: no hay set-value por campo; se escribe con el update del expediente enviando solo ese campo
+    // (upsert: solo toca lo enviado). Hay que re-enviar UnidadPrivadaId actual (si va null, borra la unidad).
+    private async Task<bool> SetEavPqrsd(Dictionary<string, object?> row, Guid defId, string? val)
+    {
+        Guid? unidad = row.TryGetValue("_dto", out var dto) && dto is PqrsdBandejaItemDto it ? it.UnidadPrivadaId : null;
+        var body = new ActualizarExpedienteRequest(
+            UnidadPrivadaId: unidad, RadicadorPersonaId: null, Descripcion: null,
+            Campos: new List<PqrsdCampoValorDto> { new(defId, val) });
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/{RowEavId(row)}/actualizar", body);
         return resp.IsSuccessStatusCode;
     }
 
@@ -1145,18 +1259,18 @@
     }
 
     // EAV set-value de contratos: misma ruta /{id}/campos/{def} pero request propio (GuardarContratoCampoValorRequest).
-    private async Task<bool> SetEavContrato(Guid id, Guid defId, string? val)
+    private async Task<bool> SetEavContrato(Dictionary<string, object?> row, Guid defId, string? val)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{id}/campos/{defId}",
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{RowEavId(row)}/campos/{defId}",
             new GuardarContratoCampoValorRequest(val));
         return resp.IsSuccessStatusCode;
     }
 
     // EAV set-value de personas (Directorio): ruta plana /personas-campos-valores/{registroId}/{def}.
     // registroId = UnidadPersona.Id (el vinculo), que es el _eavId de la fila de residentes.
-    private async Task<bool> SetEavPersonas(Guid registroId, Guid defId, string? val)
+    private async Task<bool> SetEavPersonas(Dictionary<string, object?> row, Guid defId, string? val)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{registroId}/{defId}",
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{RowEavId(row)}/{defId}",
             new Propia.Application.MiCopropiedad.SetCampoValorRequest(val));
         return resp.IsSuccessStatusCode;
     }
