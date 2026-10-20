@@ -663,7 +663,7 @@
         else
         {
             var fields = EffectiveFields(d, ds);
-            var editable = EdicionDe(d.DsKey) is not null;
+            var editable = EdicionDe(d.DsKey) is not null && EditFieldsDe(d.DsKey).Count > 0;
             if (d.Kind is "cards")
                 RenderCards(__builder, ds, data, fields, editable);
             else
@@ -936,18 +936,40 @@
     private readonly Dictionary<string, string?> _editVals = new();
     private readonly Dictionary<string, string?> _editOrig = new();
 
-    // Campos nativos editables de equipos (ActualizarEquipoActivoRequest; Estado va por endpoint propio y queda fuera).
+    private static readonly string[] EstadosContrato = Enum.GetNames<EstadoContrato>();
+    private static readonly string[] EstadosZona = Enum.GetNames<EstadoZonaComunMantenimiento>();
+
+    // Campos nativos editables por dataset (solo los que ya cargamos en la fila; el resto se preserva via _dto).
     private static readonly List<EditField> EquipoNativos = new()
     {
-        new("nombre", "Nombre", "text"),
-        new("marca", "Marca", "text"),
-        new("ubicacion", "Ubicacion", "text"),
-        new("valoradq", "Valor de adquisicion", "money"),
+        new("nombre", "Nombre", "text"), new("marca", "Marca", "text"),
+        new("ubicacion", "Ubicacion", "text"), new("valoradq", "Valor de adquisicion", "money"),
+    };
+    private static readonly List<EditField> UnidadNativos = new()
+    {
+        new("estado", "Estado", "text"), new("piso", "Piso", "number"), new("area", "Area (m2)", "number"),
+    };
+    private static readonly List<EditField> ZonaNativos = new()
+    {
+        new("nombre", "Nombre", "text"), new("estado", "Estado", "select", EstadosZona),
+        new("reservable", "Reservable", "bool"), new("aforo", "Aforo", "number"),
+    };
+    private static readonly List<EditField> ContratoNativos = new()
+    {
+        new("proveedor", "Proveedor", "text"), new("tipocontrato", "Tipo de contrato", "text"),
+        new("categoria", "Categoria", "text"), new("estado", "Estado", "select", EstadosContrato),
+        new("valormensual", "Valor mensual", "money"), new("valortotal", "Valor total", "money"),
     };
 
     private DsEdit? EdicionDe(string ds) => ds switch
     {
-        "equipos" => new DsEdit(EquipoNativos, GuardarEquipoNativos, (id, def, val) => SetEavMiCopropiedad("equipos", id, def, val)),
+        "equipos" => new(EquipoNativos, GuardarEquipoNativos, (id, def, val) => SetEavMiCopropiedad("equipos", id, def, val)),
+        "unidades" => new(UnidadNativos, GuardarUnidadNativos, (id, def, val) => SetEavMiCopropiedad("unidades", id, def, val)),
+        "zonas" => new(ZonaNativos, GuardarZonaNativos, (id, def, val) => SetEavMiCopropiedad("zonas", id, def, val)),
+        "contratos" => new(ContratoNativos, GuardarContratoNativos, SetEavContrato),
+        // Residentes: solo campos personalizados. Los datos de la persona (nombre, foto, nacimiento...) no
+        // vienen completos en el listado, asi que se editan en el Directorio para no perder informacion.
+        "residentes" => new(new List<EditField>(), (_, _) => Task.FromResult(true), SetEavPersonas),
         _ => null
     };
 
@@ -1041,6 +1063,8 @@
     private static string? NzNull(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     private static decimal? ParseDec(string? s) =>
         decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+    private static int? ParseInt(string? s) =>
+        int.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
 
     // EAV set-value para entidades MiCopropiedad con ruta /{prefijo}/{id}/campos/{defId} (equipos, unidades, zonas).
     private async Task<bool> SetEavMiCopropiedad(string prefix, Guid id, Guid defId, string? val)
@@ -1065,6 +1089,75 @@
             CodigoBarra: e.CodigoBarra, CondicionesUso: e.CondicionesUso,
             Marca: edits.ContainsKey("marca") ? NzNull(edits["marca"]) : e.Marca);
         var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{e.Id}", req);
+        return resp.IsSuccessStatusCode;
+    }
+
+    private async Task<bool> GuardarUnidadNativos(Dictionary<string, object?> row, Dictionary<string, string?> edits)
+    {
+        if (row["_dto"] is not UnidadDto u) return false;
+        var req = new ActualizarUnidadRequest(
+            Numero: u.Numero, Tipo: u.Tipo,
+            Piso: edits.ContainsKey("piso") ? ParseInt(edits["piso"]) : u.Piso,
+            CoeficientePropiedad: u.CoeficientePropiedad,
+            AreaM2: edits.ContainsKey("area") ? ParseDec(edits["area"]) : u.AreaM2,
+            Habitaciones: u.Habitaciones, Banos: u.Banos, Parqueaderos: u.Parqueaderos,
+            Estado: edits.ContainsKey("estado") ? NzNull(edits["estado"]) : u.Estado,
+            Observaciones: u.Observaciones, MatriculaInmobiliaria: u.MatriculaInmobiliaria,
+            PagaAdministracion: u.PagaAdministracion, CuotaMensual: u.CuotaMensual,
+            ReferenciaPago: u.ReferenciaPago, TipoCustomId: u.TipoCustomId,
+            ModuloContributivo1: u.ModuloContributivo1, ModuloContributivo2: u.ModuloContributivo2,
+            ModuloContributivo3: u.ModuloContributivo3, ModuloContributivo4: u.ModuloContributivo4,
+            ModuloContributivo5: u.ModuloContributivo5);
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{u.Id}", req);
+        return resp.IsSuccessStatusCode;
+    }
+
+    private async Task<bool> GuardarZonaNativos(Dictionary<string, object?> row, Dictionary<string, string?> edits)
+    {
+        if (row["_dto"] is not ZonaComunDto z) return false;
+        var estado = edits.ContainsKey("estado") && Enum.TryParse<EstadoZonaComunMantenimiento>(edits["estado"], out var es) ? es : z.Estado;
+        bool? reservable = z.EsReservable;
+        if (edits.TryGetValue("reservable", out var rv)) reservable = rv == "true" ? true : rv == "false" ? false : z.EsReservable;
+        var req = new ActualizarZonaComunRequest(
+            Nombre: string.IsNullOrWhiteSpace(edits.GetValueOrDefault("nombre")) ? z.Nombre : edits["nombre"]!.Trim(),
+            Categoria: z.Categoria, Descripcion: z.Descripcion,
+            TarifaReserva: z.TarifaReserva, ReglasUso: z.ReglasUso, Estado: estado,
+            EsReservable: reservable,
+            CapacidadPersonas: edits.ContainsKey("aforo") ? ParseInt(edits["aforo"]) : z.CapacidadPersonas);
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/zonas/{z.Id}", req);
+        return resp.IsSuccessStatusCode;
+    }
+
+    private async Task<bool> GuardarContratoNativos(Dictionary<string, object?> row, Dictionary<string, string?> edits)
+    {
+        if (row["_dto"] is not ContratoServicioDto k) return false;
+        var estado = edits.ContainsKey("estado") && Enum.TryParse<EstadoContrato>(edits["estado"], out var es) ? es : k.Estado;
+        var req = new ActualizarContratoRequest(
+            Estado: estado, DiasAnticipacionAlerta: k.DiasAnticipacionAlerta,
+            Proveedor: edits.ContainsKey("proveedor") ? NzNull(edits["proveedor"]) : k.Proveedor,
+            ValorMensual: edits.ContainsKey("valormensual") ? ParseDec(edits["valormensual"]) : k.ValorMensual,
+            NumeroContrato: k.NumeroContrato,
+            TipoContrato: edits.ContainsKey("tipocontrato") ? NzNull(edits["tipocontrato"]) : k.TipoContrato,
+            Categoria: edits.ContainsKey("categoria") ? NzNull(edits["categoria"]) : k.Categoria,
+            ValorTotal: edits.ContainsKey("valortotal") ? ParseDec(edits["valortotal"]) : k.ValorTotal);
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{k.Id}", req);
+        return resp.IsSuccessStatusCode;
+    }
+
+    // EAV set-value de contratos: misma ruta /{id}/campos/{def} pero request propio (GuardarContratoCampoValorRequest).
+    private async Task<bool> SetEavContrato(Guid id, Guid defId, string? val)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/{id}/campos/{defId}",
+            new GuardarContratoCampoValorRequest(val));
+        return resp.IsSuccessStatusCode;
+    }
+
+    // EAV set-value de personas (Directorio): ruta plana /personas-campos-valores/{registroId}/{def}.
+    // registroId = UnidadPersona.Id (el vinculo), que es el _eavId de la fila de residentes.
+    private async Task<bool> SetEavPersonas(Guid registroId, Guid defId, string? val)
+    {
+        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/personas-campos-valores/{registroId}/{defId}",
+            new Propia.Application.MiCopropiedad.SetCampoValorRequest(val));
         return resp.IsSuccessStatusCode;
     }
 
