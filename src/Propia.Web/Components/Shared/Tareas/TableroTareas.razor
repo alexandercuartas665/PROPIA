@@ -878,8 +878,27 @@ else
 @if (_cardDraft is not null && _board is not null)
 {
     var d = _cardDraft;
-    <div class="tb-modal-bd" @onclick="CerrarCardUi">
-        <div class="tbc-modal" @onclick:stopPropagation="true">
+    <div class="tb-modal-bd @(_cardFondo is not null ? "tbc-stacked" : "")" @onclick="CerrarCardUi">
+        @* Tarjeta "fantasma" del padre: atenuada y en diagonal detras, para no perder el contexto
+           cuando se abre una subtarea sobre el modal del padre. No es interactiva (pointer-events off). *@
+        @if (_cardFondo is not null)
+        {
+            var pf = _cardFondo;
+            <div class="tbc-modal tbc-modal-fondo" aria-hidden="true">
+                <div class="tbc-head">
+                    <div class="tbc-head-id">
+                        <div class="tbc-head-bc">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+                            <span>@_coNombre</span>
+                            @if (_board.Tablero is not null) { <span class="tbc-sep">&rsaquo;</span><span>Tablero @_board.Tablero.Nombre</span> }
+                            @if (pf.PadreId is not null) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">Subtarea de @pf.PadreTitulo</span> }
+                        </div>
+                        <div class="tbc-head-tt"><span class="tbc-padre-pill">Tarea padre</span>@(string.IsNullOrWhiteSpace(pf.Titulo) ? "Detalle de la tarea" : pf.Titulo)</div>
+                    </div>
+                </div>
+            </div>
+        }
+        <div class="tbc-modal @(_cardFondo is not null ? "tbc-modal-front" : "")" @onclick:stopPropagation="true">
             @* ----- Cabecera con color de la tarjeta ----- *@
             <div class="tbc-head">
                 <div class="tbc-head-id">
@@ -893,7 +912,9 @@ else
                         @if (!string.IsNullOrEmpty(d.OrigenReferencia)) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">@d.OrigenReferencia</span> }
                     </div>
                     <div class="tbc-head-tt">
-                        @(d.Id is null ? "Nueva tarea" : "Detalle de la tarea")
+                        @(d.Id is null
+                            ? (d.PadreId is not null ? "Nueva subtarea" : "Nueva tarea")
+                            : (d.PadreId is not null ? "Detalle de la subtarea" : "Detalle de la tarea"))
                     </div>
                 </div>
                 <button class="tbc-head-x" @onclick="CerrarCardUi"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -1303,7 +1324,7 @@ else
                                     @foreach (var k in kids)
                                     {
                                         var kid = k; ki++;
-                                        <tr class="tbc-subtr" @onclick="() => AbrirCardDraft(kid, null)" title="Abrir subtarea">
+                                        <tr class="tbc-subtr" @onclick="() => AbrirSubtareaDesdeModal(kid)" title="Abrir subtarea">
                                             <td class="nom">@k.Titulo</td>
                                             <td class="mut">@(string.IsNullOrWhiteSpace(padreCod) ? (string.IsNullOrWhiteSpace(k.NumeroTarea) ? "-" : k.NumeroTarea) : $"{padreCod}.{ki}")</td>
                                             <td><span class="tbc-sub-est">@k.EstadoNombre</span></td>
@@ -5605,7 +5626,8 @@ else
 
 
     private Guid? _subtareaRetornoPadreId; // al crear una subtarea desde el modal del padre, a quien volver
-    private void CerrarCard() { _subtareaRetornoPadreId = null; _cardDraft = null; _subNew = ""; _respPick = ""; }
+    private CardDraft? _cardFondo; // tarjeta "fantasma" del padre, atenuada y en diagonal detras del modal de la subtarea
+    private void CerrarCard() { _subtareaRetornoPadreId = null; _cardFondo = null; _cardDraft = null; _subNew = ""; _respPick = ""; }
 
     // Cierre desde la UI (X / Cancelar / clic fuera). Si venimos de crear una subtarea desde el modal del
     // padre, volvemos al modal del padre en la pestana Sub-tareas (como PQRSD vuelve a su board); si no, cierra.
@@ -5627,9 +5649,20 @@ else
         if (_cardDraft?.Id is not Guid padreId) return;
         var padre = _tareas.FirstOrDefault(t => t.Id == padreId);
         if (padre is null) return;
+        _cardFondo = _cardDraft;        // el padre pasa a fantasma de fondo (modal apilado)
         _subtareaRetornoPadreId = padreId;
         AbrirSubtareaDraft(padre);
         _cardTab = "detalle";
+    }
+
+    // Abre una subtarea EXISTENTE desde el modal del padre, dejando al padre como fantasma de fondo
+    // (modal apilado) y recordando a quien volver al cerrar.
+    private async Task AbrirSubtareaDesdeModal(TareaListaDto kid)
+    {
+        if (_cardDraft is null) { await AbrirCardDraft(kid, null); return; }
+        _cardFondo = _cardDraft;             // el padre queda como fantasma de fondo
+        _subtareaRetornoPadreId = _cardDraft.Id;  // al cerrar, volver al padre
+        await AbrirCardDraft(kid, null, conservarFondo: true);
     }
 
     // ---- Copiar tarea (mini-modal): copia INDEPENDIENTE con traza; se invoca desde modal/tabla/tarjeta ----
@@ -5693,8 +5726,11 @@ else
         if (t is not null) await AbrirCardDraft(t, null);
     }
 
-    private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault)
+    private async Task AbrirCardDraft(TareaListaDto? t, Guid? estadoIdDefault, bool conservarFondo = false)
     {
+        // Abrir una tarjeta "fresca" (tabla, calendario, gantt, cerrar->volver) descarta el fantasma de fondo;
+        // solo los flujos de subtarea-sobre-el-padre lo conservan explicitamente.
+        if (!conservarFondo) _cardFondo = null;
         if (EsBoardForaneo)
         {
             if (t is not null) await AbrirTareaCompartidaAsync(t);
