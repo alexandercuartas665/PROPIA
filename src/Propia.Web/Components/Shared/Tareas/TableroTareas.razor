@@ -882,18 +882,18 @@ else
         <div class="tbc-modal" @onclick:stopPropagation="true">
             @* ----- Cabecera con color de la tarjeta ----- *@
             <div class="tbc-head">
-                <div class="tbc-head-bar"></div>
                 <div class="tbc-head-id">
-                    <div class="tbc-head-tt">
-                        @(d.Id is null ? "Nueva tarea" : "Detalle de la tarea")
-                    </div>
                     <div class="tbc-head-bc">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
                         <span>@_coNombre</span>
+                        @if (_board.Tablero is not null) { <span class="tbc-sep">&rsaquo;</span><span>Tablero @_board.Tablero.Nombre</span> }
                         @if (d.PadreId is not null) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">Subtarea de @d.PadreTitulo</span> }
                         @if (d.CopiadaDeTareaId is not null) { <span class="tbc-sep">&rsaquo;</span><button type="button" class="tbc-copia-bc" title="Abrir tarea original" @onclick="AbrirCopiaOriginal"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copia de @d.CopiadaDeTitulo</button> }
                         @if (!string.IsNullOrEmpty(d.OrigenTipo)) { <span class="tbc-sep">&rsaquo;</span><span>@OrigenTipoLabel(d.OrigenTipo)</span> }
                         @if (!string.IsNullOrEmpty(d.OrigenReferencia)) { <span class="tbc-sep">&rsaquo;</span><span class="tbc-bold">@d.OrigenReferencia</span> }
+                    </div>
+                    <div class="tbc-head-tt">
+                        @(d.Id is null ? "Nueva tarea" : "Detalle de la tarea")
                     </div>
                 </div>
                 <button class="tbc-head-x" @onclick="CerrarCard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -944,55 +944,51 @@ else
                         </div>
                     </div>
 
-                    <div class="tbc-origen">
-                        <div class="tbc-origen-h">ORIGEN DE LA TAREA</div>
-                        <div class="tbc-origen-row">
+                    <div class="tbc-sec-lbl">Origen de la tarea</div>
+                    <div class="tbc-row2">
+                        <div class="tbc-fld tbc-grow">
+                            <label>Relacionado con</label>
+                            <select value="@(d.OrigenTipo ?? "")" @onchange="CardSetOrigenTipo">
+                                <option value="">Sin relación</option>
+                                <option value="inmueble">Inmueble / unidad</option>
+                                <option value="zona">Zona común</option>
+                                <option value="equipo">Equipo / activo</option>
+                            </select>
+                        </div>
+                        @if (!string.IsNullOrEmpty(d.OrigenTipo))
+                        {
                             <div class="tbc-fld tbc-grow">
-                                <label>Relacionado con</label>
-                                <select value="@(d.OrigenTipo ?? "")" @onchange="CardSetOrigenTipo">
-                                    <option value="">Sin relación</option>
-                                    <option value="inmueble">Inmueble / unidad</option>
-                                    <option value="zona">Zona común</option>
-                                    <option value="equipo">Equipo / activo</option>
-                                </select>
+                                <label>Origen</label>
+                                <SelectorOrigenReferencia InputClass="tbc-origen-sel"
+                                                          Placeholder="@OrigenPlaceholder(d.OrigenTipo)"
+                                                          Opciones="@OrigenBusquedaDe(d.OrigenTipo)"
+                                                          Value="@d.OrigenReferencia"
+                                                          ValueChanged="@(v => d.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
                             </div>
-                            @if (!string.IsNullOrEmpty(d.OrigenTipo))
+                        }
+                    </div>
+
+                    @if (d.Id is not null)
+                    {
+                        <div class="tbc-fld">
+                            <label>Progreso @if (d.TieneHijos) { <span class="tbc-mut">- se calcula desde las subtareas</span> }</label>
+                            @if (d.TieneHijos)
                             {
-                                <div class="tbc-fld tbc-grow">
-                                    <label>Origen</label>
-                                    <SelectorOrigenReferencia InputClass="tbc-origen-sel"
-                                                              Placeholder="@OrigenPlaceholder(d.OrigenTipo)"
-                                                              Opciones="@OrigenBusquedaDe(d.OrigenTipo)"
-                                                              Value="@d.OrigenReferencia"
-                                                              ValueChanged="@(v => d.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
+                                <div class="tbc-prog-ro">
+                                    <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")"></div></div>
+                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="tbc-prog-edit">
+                                    <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")" />
+                                    <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
                                 </div>
                             }
                         </div>
-                    </div>
-
-                    <div class="tbc-row2">
-                        @if (d.Id is not null)
-                        {
-                            <div class="tbc-fld tbc-grow">
-                                <label>Progreso @if (d.TieneHijos) { <span class="tbc-mut">- se calcula desde las subtareas</span> }</label>
-                                @if (d.TieneHijos)
-                                {
-                                    <div class="tbc-prog-ro">
-                                        <div class="tb-prog-bar"><div class="tb-prog-fill" style="width:@(d.Progreso)%;background:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")"></div></div>
-                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="tbc-prog-edit">
-                                        <input type="range" min="0" max="100" step="5" @bind="d.Progreso" @bind:event="oninput" style="accent-color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-brand)")" />
-                                        <span class="tbc-prog-v" style="color:@(d.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@d.Progreso%</span>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        <div class="tbc-fld tbc-grow"><label>Valor (COP)</label><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div>
-                    </div>
+                    }
+                    <div class="tbc-fld"><label>Valor (COP)</label><div class="tbc-money"><span class="tbc-money-sym">$</span><input type="number" @bind="d.Valor" placeholder="Ej. 1200000" /></div></div>
 
                     @* Ola D: Etiquetas sueltas retiradas del modal (van como campos de lista del tablero). *@
 
@@ -1035,7 +1031,7 @@ else
                             <button class="tbc-add-sq" @onclick="CardAddResp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
                         </div>
                     </div>
-                    <div class="tbc-row2">
+                    <div class="tbc-row4">
                         <div class="tbc-fld tbc-grow"><label>Inicio</label><input type="date" @bind="d.FechaInicio" /></div>
                         <div class="tbc-fld tbc-w80"><label>Hora</label><input type="time" @bind="d.HoraInicio" /></div>
                         <div class="tbc-fld tbc-grow"><label>Fin</label><input type="date" @bind="d.FechaVencimiento" /></div>
@@ -1087,18 +1083,12 @@ else
                         </div>
                     </div>
 
-                    <div class="tbc-fld">
-                        <div class="tbc-campos-h">
-                            <label>Campos personalizados</label>
-                            @* Misma potencia de configuracion que "Configurar tablero", pero desde la tarjeta:
-                               por eso pide el mismo permiso. *@
-                            @if (PuedeConfigurar)
-                            {
-                                <button type="button" class="tbc-addcampo" @onclick="AbrirEditorCampo" title="Agregar y configurar un campo del tablero"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Agregar campo</button>
-                            }
-                        </div>
-                        @if (_board.Tablero.Campos is { Count: > 0 })
-                        {
+                    @* Campos personalizados / DINAMICOS: se MUESTRAN y se diligencian aqui, pero NO se crean ni
+                       configuran desde el modal (eso vive en la configuracion del tablero). Por eso no hay
+                       "Agregar campo" ni acciones por campo; solo la pill del tipo y la nota. *@
+                    @if (_board.Tablero.Campos is { Count: > 0 })
+                    {
+                        <div class="tbc-sec-lbl">Campos personalizados</div>
                             <div class="tbc-campos">
                                 @foreach (var c in _board.Tablero.Campos)
                                 {
@@ -1108,26 +1098,12 @@ else
                                         {
                                             <div class="tbc-sep">
                                                 <span>@(string.IsNullOrWhiteSpace(c.Descripcion) ? c.Label : c.Descripcion)</span>
-                                                <div class="tbc-campo-acts">
-                                                    <button type="button" class="tbc-campo-mv" title="Subir" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, -1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 15l-6-6-6 6"/></svg></button>
-                                                    <button type="button" class="tbc-campo-mv" title="Bajar" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, 1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
-                                                    <button type="button" class="tbc-campo-ed2" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                                                    <button type="button" class="tbc-campo-mv" title="Archivar (ocultar sin borrar los datos)" @onclick:stopPropagation="true" @onclick="() => ArchivarCampo(campo.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg></button>
-                                                    <button type="button" class="tbc-campo-del" title="Eliminar campo (borra los datos)" @onclick:stopPropagation="true" @onclick="() => CfgRemoveCampo(campo.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                                                </div>
                                             </div>
                                         }
                                         else
                                         {
                                             <div class="tbc-campo-lblrow">
-                                                <label class="tbc-campo-lbl" title="@c.Descripcion">@c.Label@(c.Requerido ? " *" : "")</label>
-                                                <div class="tbc-campo-acts">
-                                                    <button type="button" class="tbc-campo-mv" title="Subir" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, -1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 15l-6-6-6 6"/></svg></button>
-                                                    <button type="button" class="tbc-campo-mv" title="Bajar" @onclick:stopPropagation="true" @onclick="() => MoverCampo(campo.Id, 1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
-                                                    <button type="button" class="tbc-campo-ed2" title="Editar campo" @onclick:stopPropagation="true" @onclick="(e) => EditarCampoPop(e, campo)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                                                    <button type="button" class="tbc-campo-mv" title="Archivar (ocultar sin borrar los datos)" @onclick:stopPropagation="true" @onclick="() => ArchivarCampo(campo.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg></button>
-                                                    <button type="button" class="tbc-campo-del" title="Eliminar campo (borra los datos)" @onclick:stopPropagation="true" @onclick="() => CfgRemoveCampo(campo.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                                                </div>
+                                                <label class="tbc-campo-lbl" title="@c.Descripcion">@c.Label@(c.Requerido ? " *" : "")<span class="tbc-cf-tag">@TipoPill(c.Tipo)</span></label>
                                             </div>
                                             @if (c.Tipo == TipoCampoTablero.Total)
                                             {
@@ -1181,8 +1157,8 @@ else
                                     </div>
                                 }
                             </div>
+                            <div class="tbc-cf-note">Los campos personalizados los define el administrador en la configuración del tablero; en la tarea solo se diligencian. No se crean desde este modal.</div>
                         }
-                        </div>
                 </div>
 
                 @* ----- Columna 3: actividad como CHAT (comentarios + adjuntos inline, estilo Airtable) ----- *@
@@ -1485,17 +1461,17 @@ else
             }
 
             <div class="tbc-foot">
-                @if (d.Id is not null)
+                @* En la pestana Historial no se muestra "Eliminar": el historial es una bitacora de solo lectura y no se debe poder borrar. *@
+                @if (d.Id is not null && _cardTab != "historial")
                 {
-                    @* En la pestana Historial no se muestra "Eliminar": el historial es una bitacora de solo lectura y no se debe poder borrar. *@
-                    @if (_cardTab != "historial")
-                    {
-                        <button class="tb-btn-danger" @onclick="EliminarCard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Eliminar</button>
-                    }
-                    <button class="tb-btn tb-btn-ghost" @onclick="() => AbrirCopiaDialog(d.Id!.Value, d.Titulo, d.EstadoId)" title="Crear una copia de esta tarea"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copiar</button>
+                    <button class="tb-btn-danger" @onclick="EliminarCard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Eliminar</button>
                 }
                 <div class="tb-flex"></div>
                 @if (!string.IsNullOrEmpty(_cardMsg)) { <span class="tbc-cardmsg">@_cardMsg</span> }
+                @if (d.Id is not null)
+                {
+                    <button class="tb-btn tb-btn-ghost" @onclick="() => AbrirCopiaDialog(d.Id!.Value, d.Titulo, d.EstadoId)" title="Crear una copia de esta tarea"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>Copiar</button>
+                }
                 <button class="tb-btn tb-btn-ghost" @onclick="CerrarCard">Cancelar</button>
                 <button class="tb-btn tb-btn-primary" @onclick="GuardarCard" disabled="@(_busy || string.IsNullOrWhiteSpace(d.Titulo))">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>@(_busy ? "Guardando..." : "Guardar")
@@ -5499,6 +5475,29 @@ else
         TipoCampoTablero.Telefono => "Telefono", TipoCampoTablero.Seleccion => "Seleccion", TipoCampoTablero.Booleano => "Si/No",
         TipoCampoTablero.Url => "URL", TipoCampoTablero.Email => "Email",
         TipoCampoTablero.Separador => "Separador", TipoCampoTablero.Total => "Total (suma)", _ => "Texto"
+    };
+
+    // Pill de TIPO para los campos personalizados del modal de tarea (nombres de la maqueta, con ortografia real).
+    private static string TipoPill(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto",
+        TipoCampoTablero.AreaTexto => "Párrafo",
+        TipoCampoTablero.Numero => "Número",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.FechaHora => "Fecha y hora",
+        TipoCampoTablero.Telefono => "Teléfono",
+        TipoCampoTablero.Url => "URL",
+        TipoCampoTablero.Email => "Correo",
+        TipoCampoTablero.Seleccion => "Selección",
+        TipoCampoTablero.Booleano => "Casilla",
+        TipoCampoTablero.Total => "Total",
+        TipoCampoTablero.Porcentaje => "Porcentaje",
+        TipoCampoTablero.Formula => "Fórmula",
+        TipoCampoTablero.Usuario => "Usuario",
+        TipoCampoTablero.Directorio => "Directorio",
+        _ => "Texto"
     };
 
     private string CampoDeTarea(TareaListaDto t, Guid campoId) => t.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor ?? "";
