@@ -68,7 +68,7 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var defsUnidad = await _db.UnidadCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
         // Los campos dinamicos guardan su visibilidad con la clave "cd:{id}" de la definicion.
-        var camposUnidad = defsUnidad.Where(d => cfgUnidad.Visible("cd:" + d.Id)).Select(d => d.Label).ToList();
+        var camposUnidad = defsUnidad.Where(d => cfgUnidad.Visible("cd:" + d.Id)).Select(d => (d.Id, d.Label)).ToList();
         // Tipos de unidad PROPIOS de la copropiedad: van en el desplegable de TIPO junto a los del sistema.
         var tiposPropios = (await _db.TiposUnidadCustom.AsNoTracking()
                 .OrderBy(t => t.Nombre).Select(t => new { t.Id, t.Nombre }).ToListAsync(ct))
@@ -81,17 +81,23 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         var cfgMascota = await ConfigCamposAsync("mascotas", ct);
         var defsPersona = await _db.PersonaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
-        var camposPersona = defsPersona.Where(d => cfgPersona.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
+        var camposPersona = defsPersona.Where(d => cfgPersona.VisibleConDefault("cd:" + d.Id, true)).Select(d => (d.Id, d.Label)).ToList();
         var defsVehiculo = await _db.VehiculoCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
-        var camposVehiculo = defsVehiculo.Where(d => cfgVehiculo.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
+        var camposVehiculo = defsVehiculo.Where(d => cfgVehiculo.VisibleConDefault("cd:" + d.Id, true)).Select(d => (d.Id, d.Label)).ToList();
         var defsMascota = await _db.MascotaCamposDefiniciones.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct);
-        var camposMascota = defsMascota.Where(d => cfgMascota.VisibleConDefault("cd:" + d.Id, true)).Select(d => d.Label).ToList();
-        var camposZona = await _db.ZonaCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
-        var camposEquipo = await _db.EquipoCamposDefiniciones.AsNoTracking()
-            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => c.Label).ToListAsync(ct);
+        var camposMascota = defsMascota.Where(d => cfgMascota.VisibleConDefault("cd:" + d.Id, true)).Select(d => (d.Id, d.Label)).ToList();
+        // ZONAS/EQUIPOS: sus tablas tambien guardan orden (y alias/oculto) en unidad_campos_config con
+        // entidad 'zona' / 'equipo'; la plantilla lo usa para emitir las columnas en el mismo orden.
+        var cfgZona = await ConfigCamposAsync("zona", ct);
+        var cfgEquipo = await ConfigCamposAsync("equipo", ct);
+        var camposZona = (await _db.ZonaCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct))
+            .Select(d => (d.Id, d.Label)).ToList();
+        var camposEquipo = (await _db.EquipoCamposDefiniciones.AsNoTracking()
+            .OrderBy(c => c.Orden).ThenBy(c => c.Label).Select(c => new { c.Id, c.Label }).ToListAsync(ct))
+            .Select(d => (d.Id, d.Label)).ToList();
 
         using var wb = new XLWorkbook();
 
@@ -109,8 +115,8 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         if (incVehiculos) HojaVehiculos(wb, listas, unidadesList, camposVehiculo, cfgVehiculo);
         if (incMascotas) HojaMascotas(wb, listas, unidadesList, camposMascota, cfgMascota);
         if (incTerceros) HojaTerceros(wb, listas);
-        if (incZonas) HojaZonasComunes(wb, listas, camposZona);
-        if (incEquipos) HojaEquipos(wb, listas, camposEquipo);
+        if (incZonas) HojaZonasComunes(wb, listas, camposZona, cfgZona);
+        if (incEquipos) HojaEquipos(wb, listas, camposEquipo, cfgEquipo);
         listas.Cerrar();
 
         var (titulo, archivo) = scope switch
@@ -211,23 +217,24 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // y PRINCIPAL es la que vincula un anexo con su unidad principal. Sin ellas la plantilla quedaria
     // inservible, asi que no dependen de la configuracion.
     private static void HojaUnidades(XLWorkbook wb, HojaListas listas,
-        List<string> camposUnidad, ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
+        List<(Guid Id, string Label)> camposUnidad, ConfigCamposUnidad cfg, List<(Guid Id, string Nombre)> tiposPropios)
     {
         // Las columnas salen del catalogo UNICO de campos de sistema (UnidadCamposSistema), el mismo
         // que alimenta la tabla de unidades. Antes esta lista estaba duplicada aqui y se quedo corta:
         // area, estado, piso, habitaciones, banos, parqueaderos, paga admin, cuota y observaciones se
         // podian activar en la copropiedad pero NO salian en la plantilla ni se podian importar.
-        var cols = new List<(string H, string Ayuda)>();
+        var cand = new List<ColP>();
         foreach (var campo in UnidadCamposSistema.Todos)
         {
             if (campo.SiempreEnPlantilla || cfg.Visible(campo.Clave))
-                cols.Add((campo.Encabezado, AyudaDe(campo, cfg)));
+                cand.Add(new(campo.Clave, campo.Encabezado, AyudaDe(campo, cfg)));
             // PRINCIPAL va pegada a AGRUPACION y es estructural: es la que vincula un anexo con su
             // unidad principal, asi que se emite este oculta o no la agrupacion.
             if (campo.Clave == "agrupacion")
-                cols.Add(("PRINCIPAL", "Obligatorio si es Anexo (3): codigo de la unidad principal (del archivo o ya existente). Sin ella, el anexo no se carga"));
+                cand.Add(new(ClavePrincipal, "PRINCIPAL", "Obligatorio si es Anexo (3): codigo de la unidad principal (del archivo o ya existente). Sin ella, el anexo no se carga"));
         }
-        AgregarColumnasDinamicas(cols, camposUnidad);   // ya vienen filtrados por visibilidad
+        AgregarColumnasDinamicas(cand, camposUnidad);   // ya vienen filtrados por visibilidad
+        var cols = OrdenarComoTabla(cand, cfg, "UNIDAD PRIVADA");
 
         var ws = Encabezado(wb, "UNIDADES PRIVADAS", cols);
         // Dropdowns y ejemplo POR ENCABEZADO (no por posicion): al filtrar columnas los indices se
@@ -268,16 +275,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // UNIDAD PRIVADA es estructural (el importador la necesita) y trae un desplegable con las unidades ya
     // cargadas de la copropiedad; no depende de config.
     private static void HojaPersonas(XLWorkbook wb, HojaListas listas, string? unidadesRange,
-        List<string> camposPersona, ConfigCamposUnidad cfg)
+        List<(Guid Id, string Label)> camposPersona, ConfigCamposUnidad cfg)
     {
-        var cols = new List<(string H, string Ayuda)>
+        var cand = new List<ColP>
         {
-            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
+            new("unidad", "UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in PersonaCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
-                cols.Add((campo.Encabezado, AyudaConAlias(campo.Encabezado, campo.Ayuda, cfg.Alias(campo.Clave))));
-        AgregarColumnasDinamicas(cols, camposPersona);
+                cand.Add(new(ClaveTablaPersona(campo.Clave), campo.Encabezado, AyudaConAlias(campo.Encabezado, campo.Ayuda, cfg.Alias(campo.Clave))));
+        AgregarColumnasDinamicas(cand, camposPersona);
+        var cols = OrdenarComoTabla(cand, cfg, "UNIDAD PRIVADA");
 
         var ws = Encabezado(wb, "PERSONAS", cols);
         Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
@@ -292,16 +300,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     private static void HojaVehiculos(XLWorkbook wb, HojaListas listas, string? unidadesRange,
-        List<string> camposVehiculo, ConfigCamposUnidad cfg)
+        List<(Guid Id, string Label)> camposVehiculo, ConfigCamposUnidad cfg)
     {
-        var cols = new List<(string H, string Ayuda)>
+        var cand = new List<ColP>
         {
-            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
+            new("unidad", "UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in VehiculoCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
-                cols.Add((campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
-        AgregarColumnasDinamicas(cols, camposVehiculo);
+                cand.Add(new(campo.Clave, campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
+        AgregarColumnasDinamicas(cand, camposVehiculo);
+        var cols = OrdenarComoTabla(cand, cfg, "UNIDAD PRIVADA");
 
         var ws = Encabezado(wb, "VEHICULOS", cols);
         Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
@@ -313,16 +322,17 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     private static void HojaMascotas(XLWorkbook wb, HojaListas listas, string? unidadesRange,
-        List<string> camposMascota, ConfigCamposUnidad cfg)
+        List<(Guid Id, string Label)> camposMascota, ConfigCamposUnidad cfg)
     {
-        var cols = new List<(string H, string Ayuda)>
+        var cand = new List<ColP>
         {
-            ("UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
+            new("unidad", "UNIDAD PRIVADA", "Elige la unidad de la lista (o escribe su codigo si aun no existe)"),
         };
         foreach (var campo in MascotaCamposSistema.Todos)
             if (campo.SiempreEnPlantilla || cfg.VisibleConDefault(campo.Clave, campo.VisiblePorDefecto))
-                cols.Add((campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
-        AgregarColumnasDinamicas(cols, camposMascota);
+                cand.Add(new(campo.Clave, campo.EncabezadoPlantilla, AyudaConAlias(campo.EncabezadoPlantilla, campo.Ayuda, cfg.Alias(campo.Clave))));
+        AgregarColumnasDinamicas(cand, camposMascota);
+        var cols = OrdenarComoTabla(cand, cfg, "UNIDAD PRIVADA");
 
         var ws = Encabezado(wb, "MASCOTAS", cols);
         Dropdown(ws, Indice(cols, "UNIDAD PRIVADA"), unidadesRange);
@@ -355,20 +365,23 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     }
 
     // ===================== Hojas nuevas: Zonas comunes y Equipos =====================
-    private static void HojaZonasComunes(XLWorkbook wb, HojaListas listas, List<string> camposZona)
+    private static void HojaZonasComunes(XLWorkbook wb, HojaListas listas, List<(Guid Id, string Label)> camposZona, ConfigCamposUnidad cfg)
     {
-        var cols = new List<(string H, string Ayuda)>
+        // Las claves son las de ZonaCamposSistema (las mismas con las que la tabla de zonas guarda
+        // alias/oculto/orden en unidad_campos_config, entidad 'zona').
+        var cand = new List<ColP>
         {
-            ("NOMBRE", "Nombre de la zona (obligatorio)"),
-            ("CATEGORIA", "Elige de la lista"),
-            ("RESERVABLE", "Si / No"),
-            ("AFORO", "Capacidad en personas (numero)"),
-            ("ESTADO", "Elige de la lista"),
-            ("DESCRIPCION", ""),
-            ("TARIFA RESERVA", "Valor de la reserva (numero)"),
-            ("REGLAS DE USO", ""),
+            new("nombre", "NOMBRE", "Nombre de la zona (obligatorio)"),
+            new("categoria", "CATEGORIA", "Elige de la lista"),
+            new("reservable", "RESERVABLE", "Si / No"),
+            new("aforo", "AFORO", "Capacidad en personas (numero)"),
+            new("estado", "ESTADO", "Elige de la lista"),
+            new("descripcion", "DESCRIPCION", ""),
+            new("tarifa", "TARIFA RESERVA", "Valor de la reserva (numero)"),
+            new("reglas", "REGLAS DE USO", ""),
         };
-        AgregarColumnasDinamicas(cols, camposZona);
+        AgregarColumnasDinamicas(cand, camposZona);
+        var cols = OrdenarComoTabla(cand, cfg, "NOMBRE");
 
         var ws = Encabezado(wb, "ZONAS COMUNES", cols);
         Dropdown(ws, Indice(cols, "CATEGORIA"), listas.Definir("CATEGORIA_ZONA", EnumNombres<CategoriaZonaComun>()));
@@ -382,26 +395,29 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
         Ajustar(ws, cols.Count);
     }
 
-    private static void HojaEquipos(XLWorkbook wb, HojaListas listas, List<string> camposEquipo)
+    private static void HojaEquipos(XLWorkbook wb, HojaListas listas, List<(Guid Id, string Label)> camposEquipo, ConfigCamposUnidad cfg)
     {
-        var cols = new List<(string H, string Ayuda)>
+        // Las claves son las de EquipoCamposSistema (las mismas con las que la tabla de equipos guarda
+        // alias/oculto/orden en unidad_campos_config, entidad 'equipo').
+        var cand = new List<ColP>
         {
-            ("NOMBRE", "Nombre del equipo/activo (obligatorio)"),
-            ("CATEGORIA", "Elige de la lista"),
-            ("TIPO", "Equipo / Activo"),
-            ("CANTIDAD", "Numero (>=1)"),
-            ("RESERVABLE", "Si / No"),
-            ("MODELO", ""),
-            ("NUMERO DE SERIE", ""),
-            ("UBICACION", ""),
-            ("ESTADO", "Elige de la lista"),
-            ("OBSERVACIONES", ""),
-            ("VIDA UTIL", "Anios (numero)"),
-            ("VALOR ADQUISICION", "Numero"),
-            ("PROVEEDOR", ""),
-            ("NUMERO FACTURA", ""),
+            new("nombre", "NOMBRE", "Nombre del equipo/activo (obligatorio)"),
+            new("categoria", "CATEGORIA", "Elige de la lista"),
+            new("tipo", "TIPO", "Equipo / Activo"),
+            new("cantidad", "CANTIDAD", "Numero (>=1)"),
+            new("reservable", "RESERVABLE", "Si / No"),
+            new("modelo", "MODELO", ""),
+            new("serie", "NUMERO DE SERIE", ""),
+            new("ubicacion", "UBICACION", ""),
+            new("estado", "ESTADO", "Elige de la lista"),
+            new("observaciones", "OBSERVACIONES", ""),
+            new("vidautil", "VIDA UTIL", "Anios (numero)"),
+            new("valoradq", "VALOR ADQUISICION", "Numero"),
+            new("proveedor", "PROVEEDOR", ""),
+            new("numfactura", "NUMERO FACTURA", ""),
         };
-        AgregarColumnasDinamicas(cols, camposEquipo);
+        AgregarColumnasDinamicas(cand, camposEquipo);
+        var cols = OrdenarComoTabla(cand, cfg, "NOMBRE");
 
         var ws = Encabezado(wb, "EQUIPOS", cols);
         Dropdown(ws, Indice(cols, "CATEGORIA"), listas.Definir("CATEGORIA_EQUIPO", EnumNombres<CategoriaEquipo>()));
@@ -426,10 +442,50 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     // label contra el catalogo de la entidad y guarda el valor. Van al final para no mover los
     // indices de columna de los dropdowns ni de la fila de ejemplo (Ejemplo escribe solo el prefijo
     // de valores que recibe, asi que las columnas dinamicas quedan sin muestra).
-    private static void AgregarColumnasDinamicas(List<(string H, string Ayuda)> cols, List<string> campos)
+    private static void AgregarColumnasDinamicas(List<ColP> cols, List<(Guid Id, string Label)> campos)
     {
-        foreach (var lbl in campos) cols.Add(($"[{lbl}]", "Campo dinamico de la copropiedad"));
+        // La clave "cd:{id}" es la misma con la que la tabla guarda el orden/visibilidad del campo propio.
+        foreach (var (id, lbl) in campos) cols.Add(new("cd:" + id, $"[{lbl}]", "Campo dinamico de la copropiedad"));
     }
+
+    // ===================== Orden de columnas = orden de la tabla =====================
+    // Una columna candidata de una hoja: la CLAVE con la que la tabla del modulo guarda su orden en
+    // unidad_campos_config ("coef", "nombre", "cd:{id}"...), el encabezado y la ayuda.
+    private readonly record struct ColP(string Clave, string H, string Ayuda);
+    private const string ClavePrincipal = "__principal";
+
+    // Ordena las columnas de una hoja IGUAL que la tabla de ese modulo: manda el 'orden' guardado por
+    // campo (Configurar / arrastre de columnas); los campos sin orden van despues conservando el orden
+    // del catalogo (OrderBy es estable), que es exactamente la regla de los paneles. Asi la plantilla
+    // descargada trae las columnas en la misma posicion que ve el usuario y puede pegar datos "a ojo"
+    // sin que caigan bajo otro titulo. El importador lee por encabezado, asi que cualquier orden carga.
+    // 'primera' (UNIDAD PRIVADA / NOMBRE) queda siempre de primera, como su columna fija en la tabla;
+    // PRINCIPAL se pega a AGRUPACION porque solo tiene sentido a su lado.
+    private static List<(string H, string Ayuda)> OrdenarComoTabla(List<ColP> cand, ConfigCamposUnidad cfg, string primera)
+    {
+        var ordenadas = cand.Select((c, i) => (c, ord: cfg.Orden(c.Clave) ?? 1000 + i))
+            .OrderBy(x => x.ord).Select(x => x.c).ToList();
+        var ip = ordenadas.FindIndex(c => c.H == primera);
+        if (ip > 0) { var f = ordenadas[ip]; ordenadas.RemoveAt(ip); ordenadas.Insert(0, f); }
+        var ipr = ordenadas.FindIndex(c => c.Clave == ClavePrincipal);
+        if (ipr >= 0)
+        {
+            var pr = ordenadas[ipr];
+            ordenadas.RemoveAt(ipr);
+            var ia = ordenadas.FindIndex(c => c.Clave == "agrupacion");
+            ordenadas.Insert(ia >= 0 ? ia + 1 : ipr, pr);
+        }
+        return ordenadas.Select(c => (c.H, c.Ayuda)).ToList();
+    }
+
+    // La tabla de Residentes guarda el orden con sus propias claves para dos campos del catalogo de
+    // persona: IDENTIFICACION es la columna "documento" y TIPO RESIDENTE es "rol".
+    private static string ClaveTablaPersona(string clave) => clave switch
+    {
+        "identificacion" => "documento",
+        "tiporesidente" => "rol",
+        _ => clave
+    };
 
     private static IXLWorksheet Encabezado(XLWorkbook wb, string nombre, List<(string H, string Ayuda)> cols)
     {
@@ -558,9 +614,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     /// </summary>
     private sealed class ConfigCamposUnidad
     {
-        private readonly Dictionary<string, (bool Oculto, string? Alias, string? Opciones)> _filas;
-
-        public ConfigCamposUnidad(Dictionary<string, (bool, string?, string?)> filas) => _filas = filas;
+        private readonly Dictionary<string, (bool Oculto, string? Alias, string? Opciones, int? Orden)> _filas;
+        public ConfigCamposUnidad(Dictionary<string, (bool, string?, string?, int?)> filas) => _filas = filas;
+        /// <summary>Posicion guardada de la columna en la tabla (Configurar / arrastre); null si nadie la movio.</summary>
+        public int? Orden(string clave) => _filas.TryGetValue(clave, out var f) ? f.Orden : null;
 
         public bool Visible(string clave)
         {
@@ -667,10 +724,10 @@ public sealed class UnidadesPlantillaService : IUnidadesPlantillaService
     {
         var filas = await _db.UnidadCamposConfig.AsNoTracking()
             .Where(c => c.Entidad == entidad)
-            .Select(c => new { c.CampoClave, c.Oculto, c.Alias, c.Opciones })
+            .Select(c => new { c.CampoClave, c.Oculto, c.Alias, c.Opciones, c.Orden })
             .ToListAsync(ct);
-        var map = new Dictionary<string, (bool, string?, string?)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var f in filas) map[(f.CampoClave ?? "").Trim()] = (f.Oculto, f.Alias, f.Opciones);
+        var map = new Dictionary<string, (bool, string?, string?, int?)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in filas) map[(f.CampoClave ?? "").Trim()] = (f.Oculto, f.Alias, f.Opciones, f.Orden);
         return new ConfigCamposUnidad(map);
     }
 
