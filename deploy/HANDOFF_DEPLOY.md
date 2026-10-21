@@ -1,6 +1,14 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.211** (`main` HEAD `b8130b39`, merge de `equipo/carga-plantilla` = CARGA 01,
+> **VERSION A DESPLEGAR = 0.0.212** (`main` HEAD `4a042760`, merge de CARGA 02 = la plantilla de carga sale en
+> el orden de columnas configurado de cada tabla). **SOLO CODIGO, SIN MIGRACION, SIN CONFIG.** Afecta solo la
+> generacion de la plantilla Excel (6 hojas): manda el `orden` guardado en `unidad_campos_config` por entidad;
+> UNIDAD PRIVADA/NOMBRE fija de primera y PRINCIPAL pegada a AGRUPACION; los campos propios se intercalan donde
+> el usuario los puso. El importador no cambia (lee por encabezado). Encima de 0.0.211, que SI trae la migracion
+> `EquipoCarga_CoeficientesCincoDecimales` (ver banner de abajo): si prod venia de <=0.0.209, esa migracion
+> sigue pendiente de aplicar.
+>
+> **VERSION PREVIA = 0.0.211** (`main` HEAD `b8130b39`, merge de `equipo/carga-plantilla` = CARGA 01,
 > carga masiva de unidades; incluye tambien los ajustes del modal de Tareas/subtarea, solo codigo). **1 MIGRACION**
 > `EquipoCarga_CoeficientesCincoDecimales`: `coeficiente_propiedad` y `modulo_contributivo_1..5` de
 > `unidades_privadas` pasan de `numeric(7,4)` a `numeric(8,5)` (ampliacion, sin perdida de datos; aplicada en
