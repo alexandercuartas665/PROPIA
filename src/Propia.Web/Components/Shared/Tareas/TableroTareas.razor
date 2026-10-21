@@ -2189,7 +2189,7 @@ else
             }
             @if (_colDue) { <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="sf.FechaVencimiento" /></div> }
             @if (_colValor) { <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="sf.Valor" @bind:event="oninput" /></div> }
-            @if (_colOrigen) { <div class="tb-row-orig"></div> }
+            @if (_colOrigen) { @AltaOrigenCell(sf) }
             @foreach (var c in CamposVisibles) { @AltaCampoCell(sf, c) }
             <div class="tb-row-acc"></div>
         </div>
@@ -4857,7 +4857,7 @@ else
             }
             @if (_colDue) { <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="nf.FechaVencimiento" /></div> }
             @if (_colValor) { <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" /></div> }
-            @if (_colOrigen) { <div class="tb-row-orig"></div> }
+            @if (_colOrigen) { @AltaOrigenCell(nf) }
             @foreach (var c in CamposVisibles) { @AltaCampoCell(nf, c) }
             @* Sin boton +/x (A4): la fila de alta se guarda al salir de la fila (blur) o con Enter; Esc cancela. *@
             <div class="tb-row-acc"></div>
@@ -5643,6 +5643,27 @@ else
     private void SetCampoValAlta(NuevaFilaDraft d, Guid id, ChangeEventArgs e) => d.Campos[id] = e.Value?.ToString();
     private bool CampoBoolAlta(NuevaFilaDraft d, Guid id) => string.Equals(d.Campos.GetValueOrDefault(id), "true", StringComparison.OrdinalIgnoreCase);
     private void SetCampoBoolAlta(NuevaFilaDraft d, Guid id, ChangeEventArgs e) => d.Campos[id] = (e.Value is bool b && b) ? "true" : "false";
+    // ===== Ola C-3: Origen ("Relacionado con") editable en la fila de alta =====
+    // Usa <select> NATIVOS (el navegador los pinta fuera del overflow de la tabla, sin clip); el de referencia
+    // lista OrigenBusquedaDe (unidades/zonas/equipos). Guarda OrigenTipo + OrigenReferencia en el borrador.
+    private RenderFragment AltaOrigenCell(NuevaFilaDraft d) => __builder =>
+    {
+        <div class="tb-row-orig tb-orig-cell">
+            <select class="tb-nf-inp" @onchange="@(e => { d.OrigenTipo = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString(); d.OrigenReferencia = null; })">
+                <option value="" selected="@(d.OrigenTipo is null)">Sin relación</option>
+                <option value="inmueble" selected="@(d.OrigenTipo == "inmueble")">Inmueble / unidad</option>
+                <option value="zona" selected="@(d.OrigenTipo == "zona")">Zona común</option>
+                <option value="equipo" selected="@(d.OrigenTipo == "equipo")">Equipo / activo</option>
+            </select>
+            @if (!string.IsNullOrEmpty(d.OrigenTipo))
+            {
+                <select class="tb-nf-inp" value="@(d.OrigenReferencia ?? "")" @onchange="@(e => d.OrigenReferencia = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())">
+                    <option value="">@OrigenPlaceholder(d.OrigenTipo)</option>
+                    @foreach (var op in OrigenBusquedaDe(d.OrigenTipo)) { <option value="@op.Value">@op.Display</option> }
+                </select>
+            }
+        </div>
+    };
     // Celda de un campo dinamico en la fila de alta: input por tipo, bindeado al borrador. Los calculados
     // (Separador/Total/Formula) y los relacionales (Usuario/Directorio) salen como "-" (se llenan en la ficha).
     private RenderFragment AltaCampoCell(NuevaFilaDraft d, TableroCampoDto c) => __builder =>
