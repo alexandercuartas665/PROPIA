@@ -1,6 +1,7 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **PENDIENTE DE INTEGRAR 2026-10-20 (rama `equipo/carga-plantilla`, carga masiva de unidades): 1 MIGRACION**
+> **VERSION A DESPLEGAR = 0.0.211** (`main` HEAD `b8130b39`, merge de `equipo/carga-plantilla` = CARGA 01,
+> carga masiva de unidades; incluye tambien los ajustes del modal de Tareas/subtarea, solo codigo). **1 MIGRACION**
 > `EquipoCarga_CoeficientesCincoDecimales`: `coeficiente_propiedad` y `modulo_contributivo_1..5` de
 > `unidades_privadas` pasan de `numeric(7,4)` a `numeric(8,5)` (ampliacion, sin perdida de datos; aplicada en
 > `propia_dev` el 2026-10-20). Va con cambios de codigo en el importador (anexo sin PRINCIPAL o con principal
