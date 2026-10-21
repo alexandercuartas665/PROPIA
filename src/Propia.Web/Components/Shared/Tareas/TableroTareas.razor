@@ -2122,7 +2122,6 @@ else
         if (!EsBoardForaneo)
         {
             items.Add(new("Copiar", "fi-rr-copy", OnClick: () => { AbrirCopiaDialog(tarea.Id, tarea.Titulo, tarea.EstadoId); return Task.CompletedTask; }));
-            items.Add(new("Agregar subtarea", "fi-rr-plus", OnClick: () => { AbrirSubtareaDraft(tarea); return Task.CompletedTask; }));
             items.Add(new(Sep: true));
             items.Add(new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => EliminarFila(tarea.Id)));
         }
@@ -4185,7 +4184,9 @@ else
     {
         var cod = string.IsNullOrWhiteSpace(codigo) ? t.NumeroTarea : codigo;
         @RenderFila(t, depth, cod)
-        @if (t.CantidadSubtareas > 0 && _expandidas.Contains(t.Id) && depth < 3)
+        @* Expandida: muestra las hijas (si hay) + la fila de alta inline. Se gatea SOLO por _expandidas,
+           asi una tarea SIN hijas tambien puede abrir la linea de alta (clic en el + del titulo). *@
+        @if (_expandidas.Contains(t.Id) && depth < 3)
         {
             var kids = Hijos(t.Id).ToList();
             @* Subtareas = sub-registros: filas hijas completas con codigo .N (padre + indice). *@
@@ -4194,7 +4195,7 @@ else
                 @RenderArbol(kids[i], depth + 1, $"{cod}.{i + 1}")
             }
             @* Alta INLINE de subtarea al final de las hijas (Enter crea, Esc/vacio descarta). *@
-            @if (depth < 3 && !EsBoardForaneo) { @FilaNuevaSubtarea(t, depth + 1) }
+            @if (!EsBoardForaneo) { @FilaNuevaSubtarea(t, depth + 1) }
         }
     };
 
@@ -4215,17 +4216,23 @@ else
             </div>
             @* ---- TITULO (editable inline) ---- *@
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")" style="padding-left:@(depth * 22)px">
-                @if (t.CantidadSubtareas > 0)
+                @* Marcador de subtarea (solo filas hija). *@
+                @if (esHija) { <span class="tb-row-kidmark" title="Subtarea">&#x2514;</span> }
+                @* Control unificado de subtareas (SOLO columna del titulo; el expander de abrir el modal no
+                   se toca): con hijas = contador SIEMPRE visible que expande; sin hijas = + que aparece al
+                   hover y abre la linea de alta inline. Hasta 3 niveles. *@
+                @if (depth < 3)
                 {
-                    <button class="tb-exp" @onclick="() => ToggleExp(tarea.Id)" title="Ver tareas hijas">
-                        @if (_expandidas.Contains(t.Id))
-                        { <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg> }
-                        else { <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg> }
-                    </button>
-                }
-                else if (esHija)
-                {
-                    <span class="tb-row-kidmark" title="Subtarea">&#x2514;</span>
+                    @if (t.CantidadSubtareas > 0)
+                    {
+                        <button class="tb-subctl tb-subctl-count @(_expandidas.Contains(t.Id) ? "open" : "")" @onclick="() => ToggleExp(tarea.Id)" title="@(t.CantidadSubtareas) subtarea(s) - ver / agregar">
+                            <svg class="tb-subctl-car" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><span class="tb-subctl-n">@t.CantidadSubtareas</span>
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="tb-subctl tb-subctl-add" title="Agregar subtarea" @onclick="() => ToggleExp(tarea.Id)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                    }
                 }
                 @if (EnEd(t.Id, "titulo"))
                 {
@@ -4235,10 +4242,6 @@ else
                 else
                 {
                     <div class="tb-row-t tb-editable" title="@TooltipEstado(t) - Click para editar" @onclick='() => IniciarEd(tarea.Id, "titulo", tarea.Titulo)'>@t.Titulo</div>
-                }
-                @if (depth < 3)
-                {
-                    <button class="tb-row-addsub" title="Agregar tarea hija" @onclick="() => AbrirSubtareaDraft(tarea)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></button>
                 }
             </div>
             @* ---- DESCRIPCION (click -> caja expandible) ---- *@
