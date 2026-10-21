@@ -2177,7 +2177,7 @@ else
                 </div>
             }
             <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
-            @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+            @if (_colEtiq) { @AltaEtqCell(sf, padre.Id) }
             @if (_colPrio)
             {
                 <div class="tb-row-prio">
@@ -2209,7 +2209,7 @@ else
         var oTipo = string.IsNullOrWhiteSpace(sf.OrigenTipo) ? null : sf.OrigenTipo;
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(sf.OrigenReferencia) ? null : sf.OrigenReferencia;
         var req = new CrearTareaRequest(sf.Titulo.Trim(), string.IsNullOrWhiteSpace(sf.Descripcion) ? null : sf.Descripcion.Trim(),
-            sf.Prioridad, sf.EstadoId, null, null, sf.FechaVencimiento, padre.Id, new List<Guid>(), _board.Tablero.Id,
+            sf.Prioridad, sf.EstadoId, null, null, sf.FechaVencimiento, padre.Id, sf.Etiquetas.ToList(), _board.Tablero.Id,
             null, false, sf.Valor, null, null, oTipo, oRef, sf.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: sf.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
@@ -4349,6 +4349,23 @@ else
                             }
                         </span>
                     }
+                    <button type="button" class="tb-etq-add" title="Agregar etiqueta" @onclick:stopPropagation="true" @onclick="(e) => ToggleEtqPicker(tarea.Id, false, e)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                    @if (_etqPickKey == tarea.Id && !_etqPickAlta)
+                    {
+                        <div class="tb-tagpop-bd" @onclick="() => _etqPickKey = null"></div>
+                        <div class="tb-etqpop" style="left:min(@(_etqPickX)px, calc(100vw - 230px));top:min(@(_etqPickY)px, calc(100vh - 290px))" @onclick:stopPropagation="true">
+                            @foreach (var etq in EtiquetasActivas())
+                            {
+                                var col = string.IsNullOrWhiteSpace(etq.Color) ? "#6D4FE3" : etq.Color!;
+                                var sel = t.Etiquetas.Any(x => x.Id == etq.Id);
+                                <button type="button" class="tb-etqopt @(sel ? "on" : "")" @onclick="() => ToggleEtqTarea(tarea, etq.Id)">
+                                    <span class="tb-etqopt-dot" style="background:@col"></span><span class="tb-etqopt-tx">@etq.Nombre</span>
+                                    @if (sel) { <svg class="tb-etqopt-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> }
+                                </button>
+                            }
+                            @if (!EtiquetasActivas().Any()) { <div class="tb-etqpop-empty">No hay etiquetas. Crea en Configurar.</div> }
+                        </div>
+                    }
                 </div>
             }
             @* ---- PRIORIDAD (inline select) ---- *@
@@ -4666,6 +4683,7 @@ else
         public DateOnly? FechaVencimiento;
         public decimal? Valor;
         public List<Guid> Asignados = new();
+        public List<Guid> Etiquetas = new();   // Ola C: etiquetas asignadas en el alta
         public Dictionary<Guid, string?> Campos = new();
         public string? OrigenTipo;
         public string? OrigenReferencia;
@@ -4679,6 +4697,65 @@ else
     }
     private void SetNuevaFilaAsignado(NuevaFilaDraft d, ChangeEventArgs e)
         => d.Asignados = Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? new List<Guid> { g } : new List<Guid>();
+
+    // ===== Ola C: etiquetas asignables inline (alta y filas existentes) =====
+    // _etqPickKey = key del picker abierto (id de tarea para filas, o del borrador para el alta);
+    // _etqPickAlta distingue alta (borrador) de tarea existente para que no colisionen por el mismo Guid.
+    private Guid? _etqPickKey;
+    private bool _etqPickAlta;
+    private int _etqPickX, _etqPickY;   // ancla del popover (coords del clic); el popover es position:fixed para
+                                        // escapar el overflow de la lista (si no, lo recorta .tb-list/.tb-listbox).
+    private IEnumerable<EtiquetaTareaDto> EtiquetasActivas()
+        => _etiquetasCat.Where(e => e.Activo && (e.TableroId is null || _board is null || e.TableroId == _board.Tablero.Id));
+    private void ToggleEtqPicker(Guid key, bool alta, MouseEventArgs e)
+    {
+        if (_etqPickKey == key && _etqPickAlta == alta) { _etqPickKey = null; return; }
+        _etqPickKey = key; _etqPickAlta = alta; _etqPickX = (int)e.ClientX; _etqPickY = (int)e.ClientY;
+    }
+    private void ToggleEtqAlta(NuevaFilaDraft d, Guid etqId)
+    {
+        if (!d.Etiquetas.Remove(etqId)) d.Etiquetas.Add(etqId);
+    }
+    private async Task ToggleEtqTarea(TareaListaDto t, Guid etqId)
+    {
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
+        var tiene = t.Etiquetas.Any(e => e.Id == etqId);
+        var resp = tiene
+            ? await Auth().DeleteAsync($"/api/tareas/{t.Id}/etiquetas/{etqId}")
+            : await Auth().PostAsJsonAsync($"/api/tareas/{t.Id}/etiquetas", new Propia.Application.Tareas.AsignarEtiquetaRequest(etqId));
+        if (resp.IsSuccessStatusCode) await RecargarBoard();
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+    }
+    // Celda de etiquetas de la fila de alta: chips seleccionados + boton "+" que abre el picker (toggle local).
+    private RenderFragment AltaEtqCell(NuevaFilaDraft d, Guid key) => __builder =>
+    {
+        <div class="tb-row-etiq tb-etq-cell">
+            @foreach (var id in d.Etiquetas)
+            {
+                var et = _etiquetasCat.FirstOrDefault(x => x.Id == id);
+                if (et is null) { continue; }
+                var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
+                <span class="tb-tag tb-tag-sm" style="background:@col;border-color:@col;color:@TagTextColor(col)">@et.Nombre</span>
+            }
+            <button type="button" class="tb-etq-add" title="Agregar etiqueta" @onclick="(e) => ToggleEtqPicker(key, true, e)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            @if (_etqPickKey == key && _etqPickAlta)
+            {
+                <div class="tb-tagpop-bd" @onclick="() => _etqPickKey = null"></div>
+                <div class="tb-etqpop" style="left:min(@(_etqPickX)px, calc(100vw - 230px));top:min(@(_etqPickY)px, calc(100vh - 290px))" @onclick:stopPropagation="true">
+                    @foreach (var et in EtiquetasActivas())
+                    {
+                        var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
+                        var sel = d.Etiquetas.Contains(et.Id);
+                        <button type="button" class="tb-etqopt @(sel ? "on" : "")" @onclick="() => ToggleEtqAlta(d, et.Id)">
+                            <span class="tb-etqopt-dot" style="background:@col"></span><span class="tb-etqopt-tx">@et.Nombre</span>
+                            @if (sel) { <svg class="tb-etqopt-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> }
+                        </button>
+                    }
+                    @if (!EtiquetasActivas().Any()) { <div class="tb-etqpop-empty">No hay etiquetas. Crea en Configurar.</div> }
+                </div>
+            }
+        </div>
+    };
 
     private async Task NuevaFilaKeydown(KeyboardEventArgs e, Guid estadoId)
     {
@@ -4695,7 +4772,7 @@ else
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
-            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
+            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, d.Etiquetas.ToList(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
@@ -4716,7 +4793,7 @@ else
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(d.OrigenReferencia) ? null : d.OrigenReferencia;
         var req = new CrearTareaRequest(d.Titulo.Trim(), string.IsNullOrWhiteSpace(d.Descripcion) ? null : d.Descripcion.Trim(),
-            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, new List<Guid>(), _board.Tablero.Id,
+            d.Prioridad, d.EstadoId, null, null, d.FechaVencimiento, null, d.Etiquetas.ToList(), _board.Tablero.Id,
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
@@ -4768,7 +4845,7 @@ else
                 </div>
             }
             <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
-            @if (_colEtiq) { <div class="tb-row-etiq"></div> }
+            @if (_colEtiq) { @AltaEtqCell(nf, estadoId) }
             @if (_colPrio)
             {
                 <div class="tb-row-prio">
