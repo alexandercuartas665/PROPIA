@@ -441,6 +441,61 @@ public class UnidadesPlantillaRoundTripTests
         finally { await CleanupTenantAsync(tenantId); }
     }
 
+    [Fact]
+    public async Task La_plantilla_emite_las_columnas_en_el_orden_configurado_de_cada_tabla()
+    {
+        // El usuario reordena columnas en la tabla (Configurar / arrastre) y pega datos "a ojo" en la
+        // plantilla: cada hoja debe salir en ESE orden, con la columna identificadora fija de primera.
+        var tenantId = await SeedTenantAsync("CP Plantilla Orden");
+        try
+        {
+            // Unidades: coeficiente de primera, un campo propio en medio y tipo despues.
+            var medidorId = await SeedCampoPropioUnidadAsync(tenantId, "N de medidor");
+            await ConfigurarOrdenAsync(tenantId, "unidad", ("coef", 1), ("cd:" + medidorId, 2), ("tipo", 3), ("num", 9));
+            await ConfigurarOrdenAsync(tenantId, "zona", ("estado", 1), ("categoria", 5));
+            await ConfigurarOrdenAsync(tenantId, "equipo", ("ubicacion", 1), ("nombre", 7));
+            await ConfigurarOrdenAsync(tenantId, "personas", ("email", 1), ("documento", 2));
+            await ConfigurarOrdenAsync(tenantId, "vehiculos", ("tipovehiculo", 1), ("placa", 2));
+            await ConfigurarOrdenAsync(tenantId, "mascotas", ("raza", 1));
+
+            using var cfg = await GenerarPlantillaAsync(tenantId, PlantillaCargaScope.Config);
+            var uni = EncabezadosOrdenados(cfg.Worksheet("UNIDADES PRIVADAS"));
+            // UNIDAD PRIVADA fija de primera aunque le pongan orden 9; PRINCIPAL pegada a AGRUPACION.
+            Assert.Equal(new[] { "UNIDAD PRIVADA", "COEFICIENTE", "[N DE MEDIDOR]", "TIPO", "AGRUPACION", "PRINCIPAL" }, uni.Take(6).ToArray());
+            var zon = EncabezadosOrdenados(cfg.Worksheet("ZONAS COMUNES"));
+            Assert.Equal(new[] { "NOMBRE", "ESTADO", "CATEGORIA", "RESERVABLE", "AFORO" }, zon.Take(5).ToArray());
+            var equ = EncabezadosOrdenados(cfg.Worksheet("EQUIPOS"));
+            Assert.Equal(new[] { "NOMBRE", "UBICACION", "CATEGORIA", "TIPO" }, equ.Take(4).ToArray());
+
+            using var res = await GenerarPlantillaAsync(tenantId, PlantillaCargaScope.Residentes);
+            var per = EncabezadosOrdenados(res.Worksheet("PERSONAS"));
+            Assert.Equal("UNIDAD PRIVADA", per[0]);
+            Assert.Equal("EMAIL", per[1]);
+            Assert.Equal("IDENTIFICACION", per[2]);   // la tabla lo llama "documento"
+            Assert.True(per.IndexOf("TIPO RESIDENTE") > per.IndexOf("IDENTIFICACION"), "TIPO RESIDENTE sin orden va despues");
+            var veh = EncabezadosOrdenados(res.Worksheet("VEHICULOS"));
+            Assert.Equal(new[] { "UNIDAD PRIVADA", "TIPO DE VEHICULO", "PLACA" }, veh.Take(3).ToArray());
+            var mas = EncabezadosOrdenados(res.Worksheet("MASCOTAS"));
+            Assert.Equal(new[] { "UNIDAD PRIVADA", "RAZA", "NOMBRE" }, mas.Take(3).ToArray());
+
+            // El importador lee por ENCABEZADO: la hoja reordenada carga igual (coef en la 2a columna).
+            var ws = cfg.Worksheet("UNIDADES PRIVADAS");
+            LlenarFila(ws, 5, "", new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UNIDAD PRIVADA"] = "ORD-1",
+                ["COEFICIENTE"] = "2.5",
+                ["TIPO"] = "Local",
+                ["[N de medidor]"] = "M-77",
+            });
+            var r = await ImportarAsync(tenantId, cfg);
+            Assert.Empty(r.Errores);
+            var u = await GetUnidadAsync(tenantId, "ORD-1");
+            Assert.Equal(2.5m, u.CoeficientePropiedad);
+            Assert.Equal(TipoUnidad.Local, u.Tipo);
+        }
+        finally { await CleanupTenantAsync(tenantId); }
+    }
+
     private static string ListaDeValidacion(IXLWorksheet ws, string encabezado)
     {
         var col = ColumnaDe(ws, encabezado);
@@ -493,6 +548,36 @@ public class UnidadesPlantillaRoundTripTests
         ctx.TiposUnidadCustom.Add(t);
         await ctx.SaveChangesAsync();
         return t.Id;
+    }
+
+    private async Task<XLWorkbook> GenerarPlantillaAsync(Guid tenantId, PlantillaCargaScope scope)
+    {
+        var (db, tenantCtx) = BuildDb(tenantId);
+        var svc = new UnidadesPlantillaService(db, tenantCtx, new HttpContextAccessor());
+        var (bytes, _) = await svc.GenerarPlantillaCargaAsync(scope, CancellationToken.None);
+        return new XLWorkbook(new MemoryStream(bytes));
+    }
+
+    // Encabezados de la fila 2 en su orden, normalizados (MAYUS sin acentos).
+    private static List<string> EncabezadosOrdenados(IXLWorksheet ws)
+        => ws.Row(2).CellsUsed().OrderBy(c => c.Address.ColumnNumber).Select(c => NormH(c.GetString())).ToList();
+
+    // Guarda el orden de columnas como lo hace la tabla del modulo (unidad_campos_config, por entidad).
+    private async Task ConfigurarOrdenAsync(Guid tenantId, string entidad, params (string Clave, int Orden)[] cols)
+    {
+        await using var ctx = OwnerCtx();
+        foreach (var (clave, orden) in cols)
+            ctx.UnidadCamposConfig.Add(new UnidadCampoConfig { TenantId = tenantId, Entidad = entidad, CampoClave = clave, Oculto = false, Orden = orden });
+        await ctx.SaveChangesAsync();
+    }
+
+    private async Task<Guid> SeedCampoPropioUnidadAsync(Guid tenantId, string label)
+    {
+        await using var ctx = OwnerCtx();
+        var d = new UnidadCampoDefinicion { TenantId = tenantId, Label = label, Orden = 1, Tipo = TipoCampoTablero.Texto };
+        ctx.UnidadCamposDefiniciones.Add(d);
+        await ctx.SaveChangesAsync();
+        return d.Id;
     }
 
     private async Task<IXLWorksheet> GenerarHojaUnidadesAsync(Guid tenantId)
@@ -632,7 +717,9 @@ public class UnidadesPlantillaRoundTripTests
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM zonas_comunes WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM equipos_activos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_vinculos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_campos_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_campos_definiciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tipos_unidad_custom WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }
