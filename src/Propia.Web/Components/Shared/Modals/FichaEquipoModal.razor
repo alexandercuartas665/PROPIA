@@ -39,19 +39,20 @@ else
             </div>
         </div>
         <span class="fem-estado fem-estado--@EstadoBadge(eq.Estado)">@EstadoTxt(eq.Estado)</span>
-        <button class="fem-close" @onclick="@(() => Close(_dirty))" type="button" aria-label="Cerrar">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
+        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
+                            MostrarEliminar="false" MostrarCancelar="true" Guardando="_busy"
+                            TituloEditar="Editar datos" TituloGuardar="Guardar cambios"
+                            OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
+                            OnCancelarEdicion="@(() => _editMode = false)" OnCerrar="@(() => Close(_dirty))" />
     </div>
 
     <div class="fem-tabs">
-        @* Solo dos pestanas, como en zonas: los horarios se editan dentro de la ficha. *@
+        @* El lapiz del header alterna la pestana Ficha entre vista y edicion (canon). *@
         <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del activo</button>
-        <button class="fem-tab @(_tab == "editar" ? "fem-tab--on" : "")" type="button" @onclick="IniciarEdicion">Editar datos</button>
         <button class="fem-tab @(_tab == "historial" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
     </div>
 
-    @if (_tab == "ficha")
+    @if (_tab == "ficha" && !_editMode)
     {
         <div class="fem-grid">
             @* ===== IZQUIERDA ===== *@
@@ -200,7 +201,7 @@ else
             </div>
         </div>
     }
-    else if (_tab == "editar")
+    else if (_tab == "ficha" && _editMode)
     {
         <div class="fem-body">
             <div class="fem-section">Identificación</div>
@@ -407,10 +408,6 @@ else
                     }
                 }
             </div>
-        </div>
-        <div class="fem-footer">
-            <button class="fem-btn-ghost" type="button" @onclick="@(() => _tab = "ficha")">Cancelar</button>
-            <button class="fem-btn-brand" type="button" @onclick="GuardarDatosAsync" disabled="@_busy">Guardar cambios</button>
         </div>
     }
     else if (_tab == "historial")
@@ -628,6 +625,7 @@ else
     [Parameter] public EquipoActivoDto? Equipo { get; set; }
 
     private string _tab = "ficha";
+    private bool _editMode;
     private bool _busy;
     private bool _dirty;
     private string? _msg;
@@ -706,7 +704,7 @@ else
     private void IniciarEdicion()
     {
         if (_ficha is not null) _form = FormState.From(_ficha.Equipo);
-        _tab = "editar";
+        _editMode = true; _tab = "ficha";
     }
 
     private async Task GuardarDatosAsync()
@@ -716,7 +714,7 @@ else
         {
             var req = _form.ToRequest();
             var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}", req);
-            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); _tab = "ficha"; Toast("Datos guardados.", false); }
+            if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); _editMode = false; _tab = "ficha"; Toast("Datos guardados.", false); }
             else Toast($"Error: {(int)r.StatusCode}", true);
         }
         catch (Exception ex) { Toast(ex.Message, true); }

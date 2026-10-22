@@ -25,17 +25,21 @@ else
         <div class="fz-head-s">@_ficha.Zona.Categoria &middot; Aforo @(_aforo?.ToString() ?? "-") &middot; @_ficha.Zona.Estado</div>
     </div>
     @if (_reservable) { <span class="fz-badge-res">Reservable</span> }
-    <button class="fz-x" @onclick="Cerrar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
+                        MostrarEliminar="false" MostrarCancelar="true" Guardando="_busy"
+                        PuedeGuardar="@(!string.IsNullOrWhiteSpace(_form.Nombre))"
+                        TituloEditar="Editar datos" TituloGuardar="Guardar cambios"
+                        OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
+                        OnCancelarEdicion="@(() => _editMode = false)" OnCerrar="Cerrar" />
 </div>
 
-@* Pestanas: mismo patron que FichaEquipoModal (el editor de datos vive detras, en su propia pestana). *@
+@* El lapiz del header alterna la pestana Ficha entre vista y edicion (canon). *@
 <div class="fz-tabs">
     <button class="fz-tab @(_tab == "ficha" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha de la zona</button>
-    <button class="fz-tab @(_tab == "editar" ? "fz-tab--on" : "")" type="button" @onclick="IniciarEdicion">Editar datos</button>
     <button class="fz-tab @(_tab == "historial" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
 </div>
 
-@if (_tab == "ficha")
+@if (_tab == "ficha" && !_editMode)
 {
 <div class="fz-grid">
     @* ===================== IZQUIERDA ===================== *@
@@ -137,7 +141,7 @@ else
     </div>
 </div>
 }
-else if (_tab == "editar")
+else if (_tab == "ficha" && _editMode)
 {
 <div class="fz-ebody">
     <div class="fz-section">Identificación</div>
@@ -221,11 +225,7 @@ else if (_tab == "editar")
 
     <div class="fz-ehint">La disponibilidad (reservable, aforo y horarios), la imagen y el programa de mantenimiento se configuran en la pestana "Ficha de la zona".</div>
 </div>
-<div class="fz-foot">
-    @if (!string.IsNullOrEmpty(_msg)) { <span class="fz-foot-msg">@_msg</span> }
-    <button class="fz-btn-ghost" type="button" @onclick='() => _tab = "ficha"'>Cancelar</button>
-    <button class="fz-btn-brand" type="button" @onclick="GuardarDatosAsync" disabled="@_busy">@(_busy ? "Guardando..." : "Guardar cambios")</button>
-</div>
+@if (!string.IsNullOrEmpty(_msg)) { <div class="fz-foot"><span class="fz-foot-msg">@_msg</span></div> }
 }
 else if (_tab == "historial")
 {
@@ -431,6 +431,7 @@ else if (_tab == "historial")
     private DisponibilidadHorariosEditor? _horariosEditor;
 
     private string _tab = "ficha";
+    private bool _editMode;
     private readonly ZonaDatosForm _form = new();
 
     // Cuando se abre recien creada (ojito), arranca en "Editar datos" para completar y guardar.
@@ -610,7 +611,7 @@ else if (_tab == "historial")
         _form.TarifaReserva = z.TarifaReserva;
         _form.ReglasUso = z.ReglasUso;
         _msg = "";
-        _tab = "editar";
+        _editMode = true; _tab = "ficha";
     }
 
     private async Task GuardarDatosAsync()
@@ -630,7 +631,7 @@ else if (_tab == "historial")
             if (!resp.IsSuccessStatusCode) { _msg = "Error: " + await resp.Content.ReadAsStringAsync(); return; }
             _dirty = true;
             await Recargar();
-            _tab = "ficha";
+            _editMode = false; _tab = "ficha";
             _msg = "Datos guardados.";
         }
         catch (Exception ex) { _msg = ex.Message; }
