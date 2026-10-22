@@ -190,6 +190,9 @@
                                         case TipoCampoTablero.Moneda:
                                             <input class="cpe-fin" type="number" step="any" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
                                             break;
+                                        case TipoCampoTablero.ModuloContributivo:
+                                            <input class="cpe-fin" type="number" step="0.00001" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
+                                            break;
                                         case TipoCampoTablero.Fecha:
                                             <input class="cpe-fin" type="date" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" />
                                             break;
@@ -319,6 +322,45 @@
                                     <label class="cpe-flabel"><i class="fi fi-rr-calculator"></i> Coeficiente</label>
                                     <input type="number" step="0.00001" class="cpe-fin" @bind="_anx.CoeficientePropiedad" />
                                 </div>
+                                @* Campos propios del tablero de Unidades: la anexa tiene los MISMOS campos. *@
+                                @foreach (var c in _campos)
+                                {
+                                    var cc = c;
+                                    var av = _anxCampos.GetValueOrDefault(cc.DefinicionId);
+                                    <div class="cpe-field">
+                                        <label class="cpe-flabel"><i class="fi fi-rr-table-columns"></i> @cc.Label</label>
+                                        @switch (cc.Tipo)
+                                        {
+                                            case TipoCampoTablero.Seleccion:
+                                                <select class="cpe-fin" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()">
+                                                    <option value="">- elegir -</option>
+                                                    @foreach (var op in cc.OpcionesLista) { <option value="@op">@op</option> }
+                                                </select>
+                                                break;
+                                            case TipoCampoTablero.Numero:
+                                            case TipoCampoTablero.Moneda:
+                                                <input class="cpe-fin" type="number" step="any" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato" />
+                                                break;
+                                            case TipoCampoTablero.ModuloContributivo:
+                                                <input class="cpe-fin" type="number" step="0.00001" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato" />
+                                                break;
+                                            case TipoCampoTablero.Fecha:
+                                                <input class="cpe-fin" type="date" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" />
+                                                break;
+                                            case TipoCampoTablero.Booleano:
+                                                <select class="cpe-fin" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()">
+                                                    <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
+                                                </select>
+                                                break;
+                                            case TipoCampoTablero.AreaTexto:
+                                                <textarea class="cpe-fin" rows="2" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato">@av</textarea>
+                                                break;
+                                            default:
+                                                <input class="cpe-fin" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato" />
+                                                break;
+                                        }
+                                    </div>
+                                }
                                 <div class="cpe-anx-actions">
                                     <button class="gum-btn-ghost" type="button" @onclick="CerrarAnxForm" disabled="@_busy">Cancelar</button>
                                     <button class="gum-btn-brand" type="button" @onclick="GuardarAnexa" disabled="@(_busy || string.IsNullOrWhiteSpace(_anx.Numero))">
@@ -547,6 +589,7 @@
     private bool _anxFormOpen;
     private Guid? _anxEditId;              // null = alta; id de la Unidad anexa en edicion
     private EditUnidadForm _anx = new();
+    private Dictionary<Guid, string?> _anxCampos = new();   // valores de campos propios para la anexa en el form
     private Guid? _anxMenu;                // vinculo con el menu ... abierto
     private bool _anxMoveOpen;             // submenu "Mover" abierto
     private ElementReference _anxFirstInput;
@@ -894,10 +937,11 @@
     {
         _anxEditId = null;
         _anx = new EditUnidadForm { Tipo = TipoUnidad.Parqueadero, TipoKey = "e:Parqueadero" };
+        _anxCampos = new();
         _anxFormOpen = true; _anxMenu = null; _anxFocusPending = true;
     }
 
-    private void AbrirEditarAnexa(UnidadVinculoDto v)
+    private async Task AbrirEditarAnexa(UnidadVinculoDto v)
     {
         var u = AnexaUnidad(v.UnidadAsociadaId);
         _anxEditId = v.UnidadAsociadaId;
@@ -911,10 +955,25 @@
             AreaM2 = u?.AreaM2,
             CoeficientePropiedad = u?.CoeficientePropiedad ?? 0m,
         };
+        // Cargar los valores de campos propios de la anexa (los mismos campos de Unidades).
+        _anxCampos = new();
+        try
+        {
+            var dtos = await Auth().GetFromJsonAsync<List<UnidadCampoDto>>($"/api/mi-copropiedad/unidades/{v.UnidadAsociadaId}/campos") ?? new();
+            foreach (var d in dtos) _anxCampos[d.DefinicionId] = d.Valor;
+        }
+        catch { }
         _anxFormOpen = true; _anxMenu = null; _anxFocusPending = true;
     }
 
-    private void CerrarAnxForm() { _anxFormOpen = false; _anxEditId = null; }
+    private void CerrarAnxForm() { _anxFormOpen = false; _anxEditId = null; _anxCampos = new(); }
+
+    // Guarda los valores de los campos propios capturados en el form de la anexa (mismos campos de Unidades).
+    private async Task GuardarAnexaCamposAsync(Guid unidadId)
+    {
+        foreach (var kv in _anxCampos.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+            await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{unidadId}/campos/{kv.Key}", new SetCampoValorRequest(kv.Value));
+    }
 
     private async Task RefrescarFichaSelAsync()
     {
@@ -943,6 +1002,7 @@
                     null, null, null, null, null, null, true, null, null, custom);
                 var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades/{editId}", req);
                 if (!resp.IsSuccessStatusCode) { ShowMsg("No se pudo guardar: " + await resp.Content.ReadAsStringAsync(), true); return; }
+                await GuardarAnexaCamposAsync(editId);
                 _huboCambios = true;
                 await RefrescarFichaSelAsync();
                 ShowMsg("Unidad anexa actualizada.", false);
@@ -960,6 +1020,7 @@
                 {
                     await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{_selected.Id}/vinculos",
                         new CrearVinculoUnidadRequest(creada.Id, false));
+                    await GuardarAnexaCamposAsync(creada.Id);
                 }
                 _huboCambios = true;
                 await RefrescarFichaSelAsync();

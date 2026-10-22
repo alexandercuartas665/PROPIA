@@ -127,7 +127,11 @@ public enum TipoCampoTablero
     Usuario = 16,
     /// <summary>Vincula a UNA persona/empresa del Directorio (Fase 2, Unidades). El valor guarda el Guid;
     /// personas es GLOBAL, se valida pertenencia al tenant. Se agrega al FINAL para no renumerar.</summary>
-    Directorio = 17
+    Directorio = 17,
+    /// <summary>Numero con 5 decimales, EXCLUSIVO de Unidades Privadas. Se comporta igual que
+    /// <see cref="Numero"/> en captura/tabla/filtros/agrupar/reportes; la identidad propia (este valor) queda
+    /// para engancharlo mas adelante al calculo de coeficientes/rebalanceo. Se agrega al FINAL para no renumerar.</summary>
+    ModuloContributivo = 18
 }
 
 /// <summary>

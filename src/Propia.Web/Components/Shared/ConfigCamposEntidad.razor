@@ -608,9 +608,18 @@ else
     // Categorias del picker: agrega "Avanzados" (Formula/Usuario/Directorio) SOLO si TiposAvanzados.
     // Con el gate OFF devuelve exactamente TiposPorCategoria -> los demas consumidores no ven cambios.
     private IEnumerable<(string Categoria, TipoCampoTablero[] Tipos)> CategoriasTipos
-        => TiposAvanzados
-            ? TiposPorCategoria.Append(("Avanzados", new[] { TipoCampoTablero.Formula, TipoCampoTablero.Usuario, TipoCampoTablero.Directorio }))
-            : TiposPorCategoria;
+    {
+        get
+        {
+            // "Modulo contributivo" es EXCLUSIVO de Unidades: se suma a Basicos solo cuando Prefijo="unidades".
+            var esUnidades = string.Equals(Prefijo, "unidades", StringComparison.OrdinalIgnoreCase);
+            var cats = TiposPorCategoria.Select(c => esUnidades && c.Categoria == "Basicos"
+                ? (c.Categoria, c.Tipos.Append(TipoCampoTablero.ModuloContributivo).ToArray())
+                : c).ToList();
+            if (TiposAvanzados) cats.Add(("Avanzados", new[] { TipoCampoTablero.Formula, TipoCampoTablero.Usuario, TipoCampoTablero.Directorio }));
+            return cats;
+        }
+    }
 
     // Candidatos a FUENTE de una formula: campos Numero/Moneda del catalogo de sistema + campos propios
     // Numero/Moneda. Key = clave de sistema o "cd:{id}"; Label = alias/etiqueta. Excluye por tipo cualquier
@@ -656,6 +665,7 @@ else
         TipoCampoTablero.Formula => "Formula",
         TipoCampoTablero.Usuario => "Usuario",
         TipoCampoTablero.Directorio => "Directorio",
+        TipoCampoTablero.ModuloContributivo => "Modulo contributivo",
         _ => "Texto"
     };
 
@@ -678,6 +688,7 @@ else
         TipoCampoTablero.Formula => "Se calcula desde otros campos",
         TipoCampoTablero.Usuario => "Un usuario de la copropiedad",
         TipoCampoTablero.Directorio => "Una persona del directorio",
+        TipoCampoTablero.ModuloContributivo => "Numero con 5 decimales",
         _ => ""
     };
 
