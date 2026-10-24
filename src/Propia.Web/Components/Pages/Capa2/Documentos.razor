@@ -2,6 +2,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Documentos
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Folders
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
@@ -9,8 +10,10 @@
 
 <PageTitle>Documentos - PROPIA</PageTitle>
 
-@* Modulo 2.15 Documentos. Estilo prototipo PROPIA.dc.html: 2 vistas (Expedientes TRD + Archivo central).
-   Expedientes -> /api/expedientes ; Archivo central -> /api/documentos. *@
+@* Modulo 2.15 Documentos (v2 "Folders", maqueta expedientes-v2). 2 vistas:
+     Folders  -> /api/folders  (tarjetas de los folders raiz; "Configurar folders" y "Nuevo folder")
+     Archivo central -> /api/documentos (sin cambios).
+   CSS del modulo en css/modules/folders.css, acotado bajo el wrapper .xpd (igual que la maqueta). *@
 
 @if (!_authChecked)
 {
@@ -24,74 +27,74 @@
 }
 else
 {
+<div class="xpd">
 <div class="doc-wrap">
     <div class="doc-head">
         <div>
             <h1 class="doc-title">Documentos</h1>
-            <p class="doc-sub">Archivo digital de la copropiedad &mdash; expedientes por serie documental y archivo central.</p>
+            <p class="doc-sub">Archivo digital de la copropiedad &mdash; folders de documentos y archivo central.</p>
         </div>
-        @if (_view == "expedientes")
+        @if (_view == "folders")
         {
             <div class="doc-head-actions">
-                <button class="doc-btn-soft" @onclick="AbrirCfg"><i class="fi fi-rr-settings"></i> Configuración documental</button>
-                <button class="doc-btn-primary" @onclick="AbrirNuevoExp"><i class="fi fi-rr-folder-open"></i> Nuevo expediente</button>
+                <button type="button" class="doc-btn-soft" @onclick="() => _showCfg = true"><i class="fi fi-rr-settings"></i> Configurar folders</button>
+                <button type="button" class="doc-btn-primary" @onclick="AbrirNuevoFolder"><i class="fi fi-rr-folder-open"></i> Nuevo folder</button>
             </div>
         }
         else
         {
-            <button class="doc-btn-primary" @onclick="AbrirSubir"><i class="fi fi-rr-cloud-upload"></i> Subir documento</button>
+            <button type="button" class="doc-btn-primary" @onclick="AbrirSubir"><i class="fi fi-rr-cloud-upload"></i> Subir documento</button>
         }
     </div>
 
     @* Toggle de vistas *@
-    <div class="doc-tabs">
-        <button class="doc-tab @(_view == "expedientes" ? "on" : "")" @onclick='() => SetView("expedientes")'><i class="fi fi-rr-folder"></i> Expedientes</button>
-        <button class="doc-tab @(_view == "archivo" ? "on" : "")" @onclick='() => SetView("archivo")'><i class="fi fi-rr-box"></i> Archivo central</button>
+    <div class="doc-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="@((_view == "folders").ToString().ToLowerInvariant())" class="doc-tab @(_view == "folders" ? "on" : "")" @onclick='() => SetView("folders")'><i class="fi fi-rr-folder"></i> Folders</button>
+        <button type="button" role="tab" aria-selected="@((_view == "archivo").ToString().ToLowerInvariant())" class="doc-tab @(_view == "archivo" ? "on" : "")" @onclick='() => SetView("archivo")'><i class="fi fi-rr-box"></i> Archivo central</button>
     </div>
 
     @if (!string.IsNullOrEmpty(_msg))
     {
-        <div class="doc-banner @(_msgClass == "alert-danger" ? "err" : (_msgClass == "alert-success" ? "ok" : "info"))">@_msg</div>
+        <div class="doc-banner @(_msgClass == "alert-danger" ? "err" : (_msgClass == "alert-success" ? "ok" : "info"))" role="status">@_msg</div>
     }
 
-    @* ====================== VISTA EXPEDIENTES ====================== *@
-    @if (_view == "expedientes")
+    @* ====================== VISTA FOLDERS ====================== *@
+    @if (_view == "folders")
     {
-        @if (_expedientes is null)
+        @if (_tarjetas is null)
         {
             <div class="doc-loading"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
         }
-        else if (_expedientes.Count == 0)
+        else if (_tarjetas.Count == 0)
         {
-            <div class="doc-empty"><i class="fi fi-rr-folder-open"></i><div>Aun no hay expedientes. Crea el primero con "Nuevo expediente".</div></div>
+            <div class="doc-empty"><i class="fi fi-rr-folder-open"></i><div>Aún no hay folders. Crea el primero con "Nuevo folder" o configura la estructura.</div></div>
         }
         else
         {
             <div class="exp-grid">
-                @foreach (var e in _expedientes)
+                @foreach (var t in _tarjetas)
                 {
-                    var ee = e;
-                    var (sFg, sBg) = SerieColor(e.Serie);
-                    var pct = e.Total > 0 ? (int)Math.Round(e.Cargadas * 100.0 / e.Total) : 0;
-                    <button class="exp-card" @onclick="() => AbrirExpediente(ee.Id)">
+                    var tt = t;
+                    var pct = t.Total > 0 ? (int)Math.Round(t.Cargados * 100.0 / t.Total) : 0;
+                    <button type="button" class="exp-card" @onclick="() => AbrirFolder(tt)" title="Abrir el folder @t.Nombre">
                         <div class="exp-card-top">
-                            <span class="exp-serie" style="color:@sFg;background:@sBg">@e.Serie</span>
-                            <span class="exp-codigo">@e.Codigo</span>
+                            <span class="exp-serie xpd-brand-pill"><i class="fi fi-rr-folder" style="margin-right:4px"></i>@(t.Subfolders == 1 ? "1 subfolder" : $"{t.Subfolders} subfolders")</span>
+                            @if (!string.IsNullOrEmpty(t.Codigo)) { <span class="exp-codigo">@t.Codigo</span> }
                         </div>
-                        <div class="exp-nombre">@e.Nombre</div>
-                        <div class="exp-subserie">@e.Subserie</div>
+                        <div class="exp-nombre">@t.Nombre</div>
+                        <div class="exp-subserie">@(t.Total == 1 ? "1 documento" : $"{t.Total} documentos")@(t.UltimaCarga is { } uc ? $" · última carga {uc.LocalDateTime:dd MMM yyyy}" : "")</div>
                         <div class="exp-progress">
-                            <div class="exp-bar"><div class="exp-bar-fill" style="width:@pct%"></div></div>
-                            <span class="exp-count">@e.Cargadas/@e.Total</span>
+                            <div class="exp-bar" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100"><div class="exp-bar-fill" style="width:@pct%"></div></div>
+                            <span class="exp-count">@t.Cargados/@t.Total</span>
                         </div>
                         <div class="exp-badges">
-                            @if (e.Cargadas == e.Total && e.Total > 0)
+                            @if (t.Cargados == t.Total && t.Total > 0)
                             {
-                                <span class="exp-badge ok"><i class="fi fi-rr-check"></i> Expediente completo</span>
+                                <span class="exp-badge ok"><i class="fi fi-rr-check"></i> Folder completo</span>
                             }
-                            else if (e.PendientesObligatorias > 0)
+                            else if (t.PendientesObligatorios > 0)
                             {
-                                <span class="exp-badge pend"><i class="fi fi-rr-exclamation"></i> @e.PendientesObligatorias obligatoria(s) sin cargar</span>
+                                <span class="exp-badge pend"><i class="fi fi-rr-exclamation"></i> @(t.PendientesObligatorios == 1 ? "1 obligatorio sin cargar" : $"{t.PendientesObligatorios} obligatorios sin cargar")</span>
                             }
                         </div>
                     </button>
@@ -186,7 +189,7 @@ else
                         <span>@_documentos.Items.Count de @_documentos.Total</span>
                         <div class="doc-pager-btns">
                             <button class="doc-btn-ghost sm" disabled="@(_page <= 1)" @onclick="() => CambiarPagina(_page - 1)">Anterior</button>
-                            <span class="doc-pager-page">Pagina @_page</span>
+                            <span class="doc-pager-page">Página @_page</span>
                             <button class="doc-btn-ghost sm" disabled="@(_page * _documentos.PageSize >= _documentos.Total)" @onclick="() => CambiarPagina(_page + 1)">Siguiente</button>
                         </div>
                     </div>
@@ -196,332 +199,22 @@ else
     }
 </div>
 
-@* ===================== Modal: detalle de expediente (3 columnas) ===================== *@
-@if (_expDetalle is not null)
+@* ===================== Modal: nuevo folder ===================== *@
+@if (_showNuevo)
 {
-    var ed = _expDetalle;
-    var selTip = ed.Tipologias.FirstOrDefault(t => t.Id == _expSelTip && t.Cargado);
-    var (edFg, edBg) = SerieColor(ed.Serie);
-    <div class="doc-ov" @onclick="CerrarExpediente"></div>
-    <div class="exp-modal">
-        <div class="exp-modal-head">
-            <div class="d-flex align-items-center gap-3" style="min-width:0;">
-                <div class="exp-modal-icon" style="color:@edFg;background:@edBg"><i class="fi fi-rr-folder"></i></div>
-                <div style="min-width:0;">
-                    <div class="exp-modal-title">@ed.Nombre</div>
-                    <div class="doc-sub" style="margin:2px 0 0;">@ed.Serie &rsaquo; @ed.Subserie &middot; @ed.Codigo &middot; @ed.Cargadas/@ed.Total documentos</div>
-                </div>
-            </div>
-            <button class="doc-x" @onclick="CerrarExpediente"><i class="fi fi-rr-cross-small"></i></button>
-        </div>
-        <div class="exp-cols">
-            @* IZQUIERDA: metadatos + campos *@
-            <div class="exp-col-left">
-                @if (selTip is not null)
-                {
-                    <div class="exp-sec-title">Metadatos del documento</div>
-                    <div class="exp-doc-name">@selTip.Nombre</div>
-                    @if (selTip.Meta.Count > 0)
-                    {
-                        <div class="exp-meta-list">
-                            @foreach (var mp in selTip.Meta)
-                            {
-                                <div class="exp-meta-row"><div class="exp-meta-k">@mp.Label</div><div class="exp-meta-v">@mp.Valor</div></div>
-                            }
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="doc-sub" style="margin-bottom:16px;">Este documento no tiene metadatos diligenciados.</div>
-                    }
-                }
-                <div class="exp-sec-title">Campos del expediente</div>
-                <div class="doc-sub" style="margin-bottom:8px;">Se solicitan al cargar cada documento.</div>
-                <div class="exp-chips">
-                    @foreach (var cp in ed.Campos)
-                    {
-                        var cpId = cp.Id;
-                        <span class="exp-chip">@cp.Label<button class="exp-chip-x" @onclick="() => EliminarCampoExp(cpId)"><i class="fi fi-rr-cross-small"></i></button></span>
-                    }
-                </div>
-                <div class="exp-add">
-                    <input class="doc-input" placeholder="Nuevo metadato..." @bind="_nuevoCampoExp" @bind:event="oninput" />
-                    <button class="doc-btn-soft sm" @onclick="AgregarCampoExp" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoCampoExp))"><i class="fi fi-rr-plus"></i></button>
-                </div>
-            </div>
-
-            @* CENTRO: visor *@
-            <div class="exp-col-center">
-                @if (selTip is not null)
-                {
-                    <div class="exp-viewer-bar">
-                        <div class="doc-ficon sm"><i class="fi fi-rr-document"></i></div>
-                        <div style="flex:1;min-width:0;">
-                            <div class="doc-row-name">@(_visorNombre ?? selTip.ArchivoNombre)</div>
-                            @if (_visorVersionId != Guid.Empty)
-                            {
-                                <div class="doc-sub" style="margin:0;">Versión anterior · <button class="exp-ver-link" @onclick="() => CargarVisorActual(selTip.Id)">volver a la actual</button></div>
-                            }
-                            else if (selTip.NumeroVersiones > 1)
-                            {
-                                <div class="doc-sub" style="margin:0;">Version actual (v@(selTip.NumeroVersiones))</div>
-                            }
-                        </div>
-                        <button class="doc-btn-soft sm" @onclick="() => AbrirCargar(ed.Id, selTip.Id)">Reemplazar</button>
-                        <button class="doc-btn-primary sm" @onclick="() => DescargarTip(selTip.Id)"><i class="fi fi-rr-download"></i> Descargar</button>
-                    </div>
-                    <div class="exp-viewer-body">
-                        @if (_visorCargando)
-                        {
-                            <div class="exp-viewer-empty"><i class="fi fi-rr-spinner"></i><div>Cargando documento...</div></div>
-                        }
-                        else if (_visorKind == "image" && !string.IsNullOrEmpty(_visorDataUri))
-                        {
-                            <img class="exp-viewer-img" src="@_visorDataUri" alt="@_visorNombre" />
-                        }
-                        else if (_visorKind == "pdf" && !string.IsNullOrEmpty(_visorDataUri))
-                        {
-                            <iframe class="exp-viewer-frame" src="@_visorDataUri" title="@_visorNombre"></iframe>
-                        }
-                        else if (_visorKind == "text")
-                        {
-                            <pre class="exp-viewer-text">@_visorTexto</pre>
-                        }
-                        else if (_visorKind == "html" && !string.IsNullOrEmpty(_visorHtml))
-                        {
-                            <div class="exp-viewer-html">@((MarkupString)_visorHtml)</div>
-                        }
-                        else
-                        {
-                            <div class="exp-viewer-empty">
-                                <i class="fi fi-rr-file"></i>
-                                <div>Vista previa no disponible para @(Ext(_visorNombre ?? selTip.ArchivoNombre)). Descarga el archivo para verlo.</div>
-                                <button class="doc-btn-primary sm" @onclick="() => DescargarTip(selTip.Id)"><i class="fi fi-rr-download"></i> Descargar</button>
-                            </div>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="exp-viewer-empty"><i class="fi fi-rr-eye"></i><div>Selecciona un documento cargado a la derecha para verlo aquí.</div></div>
-                }
-            </div>
-
-            @* DERECHA: tipologias *@
-            <div class="exp-col-right">
-                <div class="exp-sec-title" style="padding:15px 16px 8px;">Tipologias documentales</div>
-                <div class="exp-tips">
-                    @foreach (var t in ed.Tipologias)
-                    {
-                        var tt = t;
-                        <div class="exp-tip @(t.Id == _expSelTip ? "sel" : "") @(t.Cargado ? "cargado" : "vacio")">
-                            <div class="exp-tip-top" @onclick="() => SelTip(tt)">
-                                <div class="exp-tip-ic @(t.Cargado ? "ok" : "")"><i class="fi @(t.Cargado ? "fi-rr-check" : "fi-rr-document")"></i></div>
-                                <div style="flex:1;min-width:0;">
-                                    <div class="exp-tip-name">@t.Nombre @if (t.Obligatoria) { <span class="exp-oblig">OBLIG.</span> }</div>
-                                    <div class="exp-tip-sub">@(t.Cargado ? t.ArchivoNombre : "Sin cargar")</div>
-                                </div>
-                                <button class="exp-tip-dup" title="Duplicar tipologia (agregar otro documento del mismo tipo)" @onclick:stopPropagation="true" @onclick="() => DuplicarTipologiaExp(tt.Id)"><i class="fi fi-rr-copy-alt"></i></button>
-                                <button class="exp-tip-del" title="Eliminar tipologia" @onclick:stopPropagation="true" @onclick="() => EliminarTipologiaExp(tt.Id)"><i class="fi fi-rr-cross-small"></i></button>
-                            </div>
-                            <div class="exp-tip-acts">
-                                @if (t.Cargado)
-                                {
-                                    <button class="doc-btn-soft sm" @onclick="() => AbrirCargar(ed.Id, tt.Id)">Reemplazar</button>
-                                    <button class="doc-btn-soft sm @(_versionesTipId == t.Id ? "on" : "")" @onclick="() => ToggleVersiones(tt.Id)"><i class="fi fi-rr-time-past"></i> Versiones@(tt.NumeroVersiones > 0 ? $" ({tt.NumeroVersiones})" : "")</button>
-                                    <button class="doc-btn-danger sm" @onclick="() => QuitarArchivoTip(tt.Id)">Quitar</button>
-                                }
-                                else
-                                {
-                                    <button class="doc-btn-primary sm full" @onclick="() => AbrirCargar(ed.Id, tt.Id)">Cargar documento</button>
-                                }
-                            </div>
-                            @if (_versionesTipId == t.Id)
-                            {
-                                <div class="exp-tip-vers">
-                                    @if (_versionesCargando) { <div class="doc-sub" style="margin:0;">Cargando versiones...</div> }
-                                    else if (_versionesLista.Count == 0) { <div class="doc-sub" style="margin:0;">Sin versiones registradas.</div> }
-                                    else
-                                    {
-                                        @foreach (var v in _versionesLista)
-                                        {
-                                            var vv = v;
-                                            <div class="exp-ver-row @(_visorVersionId == v.Id ? "sel" : "")">
-                                                <span class="exp-ver-badge">v@(v.Numero)</span>
-                                                <div style="flex:1;min-width:0;">
-                                                    <div class="exp-ver-name">@v.ArchivoNombre</div>
-                                                    <div class="exp-ver-meta">@v.CreadoAt.ToCo().ToString("dd MMM yyyy, HH:mm")@(string.IsNullOrEmpty(v.NotasCambio) ? "" : " · " + v.NotasCambio)</div>
-                                                </div>
-                                                <button class="exp-ver-btn" title="Ver esta versión" @onclick="() => VerVersion(tt.Id, vv.Id)"><i class="fi fi-rr-eye"></i></button>
-                                                <button class="exp-ver-btn" title="Descargar" @onclick="() => DescargarVersionTip(tt.Id, vv.Id)"><i class="fi fi-rr-download"></i></button>
-                                            </div>
-                                        }
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-                <div class="exp-add" style="padding:12px 16px;border-top:1px solid var(--propia-border-divider);">
-                    <input class="doc-input" placeholder="Nueva tipologia..." @bind="_nuevaTipExp" @bind:event="oninput" />
-                    <button class="doc-btn-primary sm" @onclick="AgregarTipologiaExp" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaTipExp))"><i class="fi fi-rr-plus"></i></button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <NuevoFolderModal Jwt="@_jwt" Arbol="@(_arbol ?? new())" Creado="OnFolderCreado" Cerrado="() => _showNuevo = false" />
 }
 
-@* ===================== Modal: nuevo expediente ===================== *@
-@if (_showNuevoExp)
-{
-    <div class="doc-ov" @onclick="() => _showNuevoExp = false"></div>
-    <div class="doc-modal" style="width:min(560px,96vw);">
-        <div class="doc-modal-head"><h5 class="mb-0">Nuevo expediente</h5><button class="doc-x" @onclick="() => _showNuevoExp = false"><i class="fi fi-rr-cross-small"></i></button></div>
-        <div class="doc-modal-body">
-            <label class="doc-lbl">Nombre del expediente *</label>
-            <input class="doc-input mb-2" placeholder="Ej. Asamblea Ordinaria 2026" @bind="_neNombre" @bind:event="oninput" />
-            <div class="doc-grid2">
-                <div>
-                    <label class="doc-lbl">Serie *</label>
-                    <select class="doc-input" @bind="_neSerieId" @bind:after="OnNeSerieChange">
-                        <option value="">Seleccionar...</option>
-                        @if (_trd is not null) { @foreach (var s in _trd) { <option value="@s.Id">@s.Nombre</option> } }
-                    </select>
-                </div>
-                <div>
-                    <label class="doc-lbl">Subserie *</label>
-                    <select class="doc-input" @bind="_neSubserieId">
-                        <option value="">Seleccionar...</option>
-                        @foreach (var ss in NeSubseries()) { <option value="@ss.Id">@ss.Nombre</option> }
-                    </select>
-                </div>
-            </div>
-            @{ var neSub = NeSubseries().FirstOrDefault(x => x.Id == _neSubserieId); }
-            @if (neSub is not null && neSub.Tipologias.Count > 0)
-            {
-                <div class="exp-preview">
-                    <div class="doc-lbl">Tipologias de la subserie</div>
-                    <div class="d-flex flex-wrap gap-1 mt-1">
-                        @foreach (var t in neSub.Tipologias) { <span class="exp-chip">@t.Nombre</span> }
-                    </div>
-                    <div class="doc-sub" style="margin-top:6px;">Podras agregar o quitar tipologias y metadatos despues.</div>
-                </div>
-            }
-            @if (_neError is not null) { <div class="text-danger small mt-2">@_neError</div> }
-            <div class="d-flex gap-2 justify-content-end mt-3">
-                <button class="doc-btn-ghost" @onclick="() => _showNuevoExp = false">Cancelar</button>
-                <button class="doc-btn-primary" @onclick="CrearExpediente" disabled="@(_busy || string.IsNullOrWhiteSpace(_neNombre) || _neSubserieId == Guid.Empty)">Crear expediente</button>
-            </div>
-        </div>
-    </div>
-}
-
-@* ===================== Modal: configuracion documental (TRD) ===================== *@
+@* ===================== Modal: configurar folders (3 columnas) ===================== *@
 @if (_showCfg)
 {
-    <div class="doc-ov" @onclick="() => _showCfg = false"></div>
-    <div class="doc-modal" style="width:min(1000px,96vw); max-height:90vh;">
-        <div class="doc-modal-head">
-            <div><h5 class="mb-0">Configuración documental</h5><div class="doc-sub" style="margin:2px 0 0;">Tabla de retencion: series, subseries, tipologias y metadatos.</div></div>
-            <button class="doc-x" @onclick="() => _showCfg = false"><i class="fi fi-rr-cross-small"></i></button>
-        </div>
-        <div class="cfg-cols">
-            @{ var cfgSerie = _trd?.FirstOrDefault(s => s.Id == _cfgSerieSel); var cfgSub = cfgSerie?.Subseries.FirstOrDefault(x => x.Id == _cfgSubSel); }
-            <div class="cfg-col">
-                <div class="cfg-col-title">Series</div>
-                <div class="cfg-list">
-                    @if (_trd is not null) { @foreach (var s in _trd)
-                    {
-                        var ss = s;
-                        <div class="cfg-item @(s.Id == _cfgSerieSel ? "sel" : "")" @onclick="() => { _cfgSerieSel = ss.Id; _cfgSubSel = ss.Subseries.FirstOrDefault()?.Id ?? Guid.Empty; }">
-                            <div style="flex:1;min-width:0;"><div class="cfg-item-name">@s.Nombre</div><div class="cfg-item-sub">@s.Subseries.Count subserie(s)</div></div>
-                            <button class="exp-chip-x" @onclick:stopPropagation="true" @onclick="() => CfgDelSerie(ss.Id)"><i class="fi fi-rr-trash"></i></button>
-                        </div>
-                    } }
-                </div>
-                <div class="exp-add"><input class="doc-input" placeholder="Nueva serie..." @bind="_cfgNuevaSerie" @bind:event="oninput" /><button class="doc-btn-soft sm" @onclick="CfgAddSerie" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgNuevaSerie))"><i class="fi fi-rr-plus"></i></button></div>
-            </div>
-            <div class="cfg-col">
-                <div class="cfg-col-title">Subseries @if (cfgSerie is not null) { <span class="doc-sub">&middot; @cfgSerie.Nombre</span> }</div>
-                <div class="cfg-list">
-                    @if (cfgSerie is not null) { @foreach (var s in cfgSerie.Subseries)
-                    {
-                        var sb = s;
-                        <div class="cfg-item @(s.Id == _cfgSubSel ? "sel" : "")" @onclick="() => _cfgSubSel = sb.Id">
-                            <div style="flex:1;min-width:0;"><div class="cfg-item-name">@s.Nombre</div><div class="cfg-item-sub">@s.Tipologias.Count tipologia(s) &middot; @s.Campos.Count metadato(s)</div></div>
-                            <button class="exp-chip-x" @onclick:stopPropagation="true" @onclick="() => CfgDelSub(sb.Id)"><i class="fi fi-rr-trash"></i></button>
-                        </div>
-                    } }
-                    @if (cfgSerie is null) { <div class="doc-sub" style="padding:10px;">Selecciona una serie.</div> }
-                </div>
-                @if (cfgSerie is not null) { <div class="exp-add"><input class="doc-input" placeholder="Nueva subserie..." @bind="_cfgNuevaSub" @bind:event="oninput" /><button class="doc-btn-soft sm" @onclick="CfgAddSub" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgNuevaSub))"><i class="fi fi-rr-plus"></i></button></div> }
-            </div>
-            <div class="cfg-col">
-                <div class="cfg-col-title">Tipologias y metadatos @if (cfgSub is not null) { <span class="doc-sub">&middot; @cfgSub.Nombre</span> }</div>
-                @if (cfgSub is not null)
-                {
-                    <div class="cfg-list" style="max-height:200px;">
-                        @foreach (var t in cfgSub.Tipologias)
-                        {
-                            var tt = t;
-                            <div class="cfg-item"><div style="flex:1;min-width:0;"><div class="cfg-item-name">@t.Nombre</div></div><button class="exp-chip-x" @onclick="() => CfgDelTip(tt.Id)"><i class="fi fi-rr-trash"></i></button></div>
-                        }
-                    </div>
-                    <div class="exp-add"><input class="doc-input" placeholder="Nueva tipologia..." @bind="_cfgNuevaTip" @bind:event="oninput" /><button class="doc-btn-soft sm" @onclick="CfgAddTip" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgNuevaTip))"><i class="fi fi-rr-plus"></i></button></div>
-                    <div class="cfg-col-title" style="margin-top:8px;">Metadatos</div>
-                    <div class="exp-chips">
-                        @foreach (var c in cfgSub.Campos)
-                        {
-                            var cc = c;
-                            <span class="exp-chip">@c.Label<button class="exp-chip-x" @onclick="() => CfgDelCampo(cc.Id)"><i class="fi fi-rr-cross-small"></i></button></span>
-                        }
-                    </div>
-                    <div class="exp-add"><input class="doc-input" placeholder="Nuevo metadato..." @bind="_cfgNuevoCampo" @bind:event="oninput" /><button class="doc-btn-soft sm" @onclick="CfgAddCampo" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgNuevoCampo))"><i class="fi fi-rr-plus"></i></button></div>
-                }
-                else { <div class="doc-sub" style="padding:10px;">Selecciona una subserie.</div> }
-            </div>
-        </div>
-        <div class="doc-modal-foot"><span class="doc-sub">Los cambios se aplican al crear nuevos expedientes.</span><button class="doc-btn-primary" @onclick="() => _showCfg = false">Listo</button></div>
-    </div>
+    <ConfigurarFoldersModal Jwt="@_jwt" Cambio="CargarFoldersAsync" Cerrado="() => _showCfg = false" />
 }
 
-@* ===================== Modal: cargar documento en tipologia ===================== *@
-@if (_showCargar)
+@* ===================== Modal: explorador de folders (5 columnas) ===================== *@
+@if (_explorarId is { } xid)
 {
-    <div class="doc-ov" @onclick="() => _showCargar = false"></div>
-    <div class="doc-modal" style="width:min(520px,96vw); max-height:90vh;">
-        <div class="doc-modal-head"><div><h5 class="mb-0">Cargar documento</h5><div class="doc-sub" style="margin:2px 0 0;">@_cargarTipNombre</div></div><button class="doc-x" @onclick="() => _showCargar = false"><i class="fi fi-rr-cross-small"></i></button></div>
-        <div class="doc-modal-body">
-            <label class="doc-dropzone">
-                <i class="fi fi-rr-cloud-upload"></i>
-                <span>@(string.IsNullOrEmpty(_cargarNombre) ? "Arrastra o selecciona el archivo" : _cargarNombre)</span>
-                <small>@(string.IsNullOrEmpty(_cargarNombre) ? "PDF, imagen o documento (max 20MB)" : FormatBytes(_cargarTamano))</small>
-                <InputFile OnChange="OnCargarArchivo" style="display:none" />
-            </label>
-            @if (_cargarCampos.Count > 0)
-            {
-                <label class="doc-lbl mt-2">Metadatos</label>
-                @foreach (var cp in _cargarCampos)
-                {
-                    var clave = cp.Clave;
-                    <div class="mb-2">
-                        <label class="doc-lbl">@cp.Label</label>
-                        <input class="doc-input" value="@(_cargarMeta.TryGetValue(clave, out var v) ? v : "")" @oninput="(e) => _cargarMeta[clave] = e.Value?.ToString() ?? string.Empty" />
-                    </div>
-                }
-            }
-            <div class="mb-2 mt-2">
-                <label class="doc-lbl">Notas del cambio (opcional)</label>
-                <input class="doc-input" placeholder="Ej. versión firmada, corrección de anexo..." @bind="_cargarNotas" @bind:event="oninput" />
-            </div>
-            <div class="doc-sub" style="margin-top:4px;"><i class="fi fi-rr-info"></i> Si la tipologia ya tenia un archivo, el nuevo se guarda como una <strong>versión nueva</strong> y la anterior queda consultable.</div>
-            @if (_cargarError is not null) { <div class="text-danger small mt-1">@_cargarError</div> }
-            <div class="d-flex gap-2 justify-content-end mt-3">
-                <button class="doc-btn-ghost" @onclick="() => _showCargar = false">Cancelar</button>
-                <button class="doc-btn-primary" @onclick="GuardarCargar" disabled="@(_busy || string.IsNullOrEmpty(_cargarB64))">Guardar en el expediente</button>
-            </div>
-        </div>
-    </div>
+    <ExploradorFoldersModal Jwt="@_jwt" FolderInicial="xid" @bind-ChatOculto="_chatOculto" Cambio="CargarFoldersAsync" Cerrado="() => _explorarId = null" />
 }
 
 @* ===================== Modal: subir documento (Archivo central) ===================== *@
@@ -624,7 +317,7 @@ else
                     <div class="doc-lbl mb-1">Nueva versión</div>
                     <label class="doc-dropzone sm"><i class="fi fi-rr-cloud-upload"></i><span>@(string.IsNullOrEmpty(_nuevaVersionNombre) ? "Selecciona el archivo" : _nuevaVersionNombre)</span><InputFile OnChange="OnNuevaVersionArchivo" style="display:none" /></label>
                     <input class="doc-input my-2" placeholder="Notas del cambio (opcional)" @bind="_nuevaVersionNotas" @bind:event="oninput" />
-                    <div class="d-flex gap-2"><button class="doc-btn-primary sm" @onclick="ConfirmarNuevaVersion" disabled="@(_busy || string.IsNullOrEmpty(_nuevaVersionContenidoB64))">@(_busy ? "Subiendo..." : "Guardar version")</button><button class="doc-btn-ghost sm" @onclick="() => _subirNuevaVersionVisible = false">Cancelar</button></div>
+                    <div class="d-flex gap-2"><button class="doc-btn-primary sm" @onclick="ConfirmarNuevaVersion" disabled="@(_busy || string.IsNullOrEmpty(_nuevaVersionContenidoB64))">@(_busy ? "Subiendo..." : "Guardar versión")</button><button class="doc-btn-ghost sm" @onclick="() => _subirNuevaVersionVisible = false">Cancelar</button></div>
                 </div>
             }
             @if (d.Historial.Count > 0)
@@ -646,7 +339,7 @@ else
             }
             @if (_auditoria is not null && _auditoria.Count > 0)
             {
-                <div class="doc-section-title">Auditoria</div>
+                <div class="doc-section-title">Auditoría</div>
                 <div class="doc-audit">
                     @foreach (var a in _auditoria.Take(15)) { <div class="doc-audit-row"><span class="doc-audit-ev">@a.TipoEvento</span><span class="doc-audit-at">@a.OcurridoAt.LocalDateTime.ToString("dd MMM yyyy HH:mm")</span></div> }
                 </div>
@@ -654,227 +347,8 @@ else
         </div>
     </div>
 }
+</div>
 }
-
-<style>
-    /* Canon margen lateral (= Unidades): sin padding horizontal propio ni max-width/centrado. */
-    .doc-wrap { width: 100%; max-width: none; margin: 0; padding: 6px 0 60px; box-sizing: border-box; font-family: 'Lexend', sans-serif; }
-    .doc-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
-    .doc-title { font-size: 26px; font-weight: 700; letter-spacing: -.4px; color: var(--propia-text-h1); margin: 0 0 2px; }
-    .doc-sub { font-size: 13.5px; color: var(--propia-text-muted); margin: 0; }
-    .doc-head-actions { margin-left: auto; display: flex; gap: 9px; }
-    .doc-btn-primary { display: inline-flex; align-items: center; gap: 7px; border: 0; background: var(--propia-primary, var(--propia-brand)); color: var(--propia-text-inverse); font-weight: 600; font-size: 13.5px; padding: 9px 16px; border-radius: 10px; cursor: pointer; white-space: nowrap; box-shadow: 0 6px 16px rgba(109,79,227,.25); }
-    .doc-btn-primary:hover:not(:disabled) { background: var(--propia-brand-hover); }
-    .doc-btn-primary:disabled { opacity: .55; cursor: default; box-shadow: none; }
-    .doc-btn-primary.sm { padding: 6px 12px; font-size: 12.5px; box-shadow: none; }
-    .doc-btn-primary.full { width: 100%; justify-content: center; }
-    .doc-btn-soft { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--propia-brand-border); background: var(--propia-brand-soft); color: var(--propia-brand); font-weight: 600; font-size: 13px; padding: 9px 15px; border-radius: 10px; cursor: pointer; }
-    .doc-btn-soft:hover:not(:disabled) { background: #E6DEFA; }
-    .doc-btn-soft.sm { padding: 6px 11px; font-size: 12px; }
-    .doc-btn-soft:disabled { opacity: .5; cursor: default; }
-    .doc-btn-ghost { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); font-weight: 600; font-size: 13px; padding: 8px 14px; border-radius: 10px; cursor: pointer; }
-    .doc-btn-ghost:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
-    .doc-btn-ghost.sm { padding: 6px 12px; font-size: 12.5px; }
-    .doc-btn-ghost:disabled { opacity: .5; cursor: default; }
-    .doc-btn-danger { border: 1px solid #F0D2D2; background: var(--propia-bg-card); color: #C0392B; font-weight: 600; font-size: 12.5px; padding: 6px 12px; border-radius: 10px; cursor: pointer; }
-    .doc-btn-danger:hover { background: #FDF3F3; }
-    .doc-btn-danger.sm { padding: 6px 11px; }
-
-    .doc-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-    .doc-tab { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; padding: 9px 16px; border-radius: 10px; border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); background: var(--propia-bg-card); cursor: pointer; }
-    .doc-tab:hover { border-color: var(--propia-brand); }
-    .doc-tab.on { background: var(--propia-brand); color: var(--propia-text-inverse); border-color: var(--propia-brand); }
-
-    .doc-banner { border-radius: 11px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; margin-bottom: 12px; }
-    .doc-banner.ok { background: var(--propia-ok-soft); border: 1px solid #B6E2C9; color: #15703F; }
-    .doc-banner.err { background: var(--propia-danger-soft); border: 1px solid #F5C2C2; color: #A1352E; }
-    .doc-banner.info { background: #EAF1FB; border: 1px solid #C9DCF5; color: #2E5AA1; }
-    .doc-loading { text-align: center; padding: 50px 0; }
-    .doc-empty { background: var(--propia-bg-card); border: 1px dashed #D6DEE6; border-radius: 14px; padding: 40px 20px; text-align: center; color: var(--propia-text-faint); font-size: 13.5px; }
-    .doc-empty i { display: block; font-size: 30px; margin-bottom: 10px; color: var(--propia-text-faint); }
-
-    /* Expedientes grid */
-    .exp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-    .exp-card { text-align: left; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); cursor: pointer; }
-    .exp-card:hover { border-color: var(--propia-brand); box-shadow: 0 12px 28px rgba(109,79,227,.12); }
-    .exp-card-top { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
-    .exp-serie { font-size: 10px; font-weight: 800; padding: 4px 9px; border-radius: 7px; }
-    .exp-codigo { font-size: 11px; color: var(--propia-text-faint); font-family: ui-monospace, monospace; }
-    .exp-nombre { font-size: 15.5px; font-weight: 800; color: var(--propia-text-h1); letter-spacing: -.3px; }
-    .exp-subserie { font-size: 12px; color: var(--propia-text-muted); margin-top: 2px; }
-    .exp-progress { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-    .exp-bar { flex: 1; height: 7px; border-radius: 5px; background: var(--propia-border-divider); overflow: hidden; }
-    .exp-bar-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg,#8366F0,var(--propia-brand)); }
-    .exp-count { font-size: 11.5px; font-weight: 800; color: var(--propia-text-secondary); }
-    .exp-badges { margin-top: 10px; }
-    .exp-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; padding: 4px 9px; border-radius: 7px; }
-    .exp-badge.ok { color: #1A8754; background: var(--propia-ok-soft); }
-    .exp-badge.pend { color: #B45309; background: var(--propia-warn-soft); }
-
-    /* Modales base */
-    .doc-ov { position: fixed; inset: 0; background: rgba(27,42,58,.55); z-index: 1200; }
-    .doc-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: var(--propia-bg-card); border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.4); display: flex; flex-direction: column; max-height: 94vh; }
-    .doc-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
-    .doc-modal-head h5 { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); letter-spacing: -.3px; }
-    .doc-modal-body { padding: 18px 20px; overflow-y: auto; }
-    .doc-modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--propia-border-divider); flex-shrink: 0; }
-    .doc-x { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 17px; }
-    .doc-x:hover { background: var(--propia-bg-app); color: var(--propia-text-body); }
-    .doc-lbl { display: block; font-size: 11px; color: var(--propia-text-muted); font-weight: 700; margin-bottom: 5px; }
-    .doc-input { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 9px 12px; font-size: 13.5px; color: var(--propia-text-body); outline: 0; background: var(--propia-bg-card); box-sizing: border-box; }
-    .doc-input:focus { border-color: var(--propia-brand); }
-    .doc-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .doc-dropzone { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px dashed var(--propia-brand-border); border-radius: 12px; padding: 22px; cursor: pointer; text-align: center; color: #9A86E8; background: var(--propia-brand-soft-2); }
-    .doc-dropzone.sm { padding: 14px; }
-    .doc-dropzone:hover { border-color: var(--propia-brand); }
-    .doc-dropzone i { font-size: 26px; }
-    .doc-dropzone span { font-size: 13px; font-weight: 700; color: var(--propia-text-body); }
-    .doc-dropzone small { font-size: 10.5px; color: #9A86E8; }
-    .doc-tagbtn { font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 999px; border: 1px solid; background: var(--propia-bg-card); cursor: pointer; }
-    .exp-preview { background: var(--propia-brand-soft-2); border: 1px solid #EEE9FB; border-radius: 11px; padding: 11px 13px; margin-top: 12px; }
-    .exp-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
-    .exp-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--propia-text-secondary); background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); padding: 5px 9px; border-radius: 8px; }
-    .exp-chip-x { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; display: flex; font-size: 13px; padding: 0; }
-    .exp-chip-x:hover { color: #D7263D; }
-    .exp-add { display: flex; gap: 7px; }
-
-    /* Expediente detail (3 cols) */
-    .exp-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1210; background: var(--propia-bg-card); border-radius: 16px; box-shadow: 0 30px 70px rgba(27,42,58,.45); width: 96vw; height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
-    .exp-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 22px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
-    .exp-modal-icon { width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-    .exp-modal-title { font-size: 18px; font-weight: 800; color: var(--propia-text-h1); letter-spacing: -.3px; }
-    .exp-cols { flex: 1; display: grid; grid-template-columns: 320px 1fr 360px; min-height: 0; }
-    .exp-col-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--propia-border-divider); background: var(--propia-bg-card-soft); padding: 18px 20px; overflow-y: auto; }
-    .exp-col-center { display: flex; flex-direction: column; min-height: 0; background: #EEF1F5; }
-    .exp-col-right { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--propia-border-divider); }
-    .exp-sec-title { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; margin-bottom: 8px; text-transform: uppercase; }
-    .exp-doc-name { font-size: 13px; font-weight: 700; color: var(--propia-text-body); margin-bottom: 12px; }
-    .exp-meta-list { display: flex; flex-direction: column; gap: 1px; background: var(--propia-border-divider); border: 1px solid var(--propia-border-divider); border-radius: 10px; overflow: hidden; margin-bottom: 18px; }
-    .exp-meta-row { background: var(--propia-bg-card); padding: 10px 13px; }
-    .exp-meta-k { font-size: 10.5px; color: var(--propia-text-faint); font-weight: 600; }
-    .exp-meta-v { font-size: 13px; font-weight: 600; color: var(--propia-text-body); margin-top: 1px; }
-    .exp-viewer-bar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 12px 18px; background: var(--propia-bg-card); border-bottom: 1px solid var(--propia-border-card); }
-    .exp-viewer-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; justify-content: center; }
-    .exp-viewer-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--propia-text-faint); font-size: 12.5px; text-align: center; padding: 20px; }
-    .exp-viewer-empty i { font-size: 26px; color: var(--propia-text-faint); }
-    /* Visor inline real (imagen / PDF via data URI) */
-    .exp-viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); background: var(--propia-bg-card); }
-    .exp-viewer-frame { flex: 1 1 auto; width: 100%; align-self: stretch; min-height: 560px; border: 0; border-radius: 6px; background: var(--propia-bg-card); box-shadow: 0 8px 30px rgba(27,42,58,.15); }
-    /* Visor de texto plano (txt/csv/md/log/json) */
-    .exp-viewer-text { width: 100%; align-self: stretch; margin: 0; background: var(--propia-bg-card); border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); padding: 22px 26px; font-family: 'JetBrains Mono','Cascadia Code',Consolas,monospace; font-size: 12.5px; line-height: 1.55; color: var(--propia-text-body); white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
-    /* Visor de Excel / Word renderizados a HTML */
-    .exp-viewer-html { width: 100%; align-self: stretch; background: var(--propia-bg-card); border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); padding: 22px 26px; overflow-x: auto; color: var(--propia-text-body); }
-    .exp-viewer-html .prev-sheet { margin-bottom: 22px; }
-    .exp-viewer-html .prev-sheet-name { font-size: 11px; font-weight: 800; color: var(--propia-brand); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 7px; }
-    .exp-viewer-html .prev-table { border-collapse: collapse; width: auto; max-width: 100%; font-size: 12px; margin-bottom: 6px; }
-    .exp-viewer-html .prev-table td { border: 1px solid var(--propia-border-card); padding: 5px 9px; vertical-align: top; white-space: pre-wrap; }
-    .exp-viewer-html .prev-table tr:first-child td { background: var(--propia-bg-app); font-weight: 700; color: var(--propia-text-h1); }
-    .exp-viewer-html .prev-empty, .exp-viewer-html .prev-more { font-size: 11.5px; color: var(--propia-text-faint); margin: 4px 0 14px; }
-    .exp-viewer-html .prev-doc h2 { font-size: 18px; font-weight: 800; color: var(--propia-text-h1); margin: 14px 0 8px; }
-    .exp-viewer-html .prev-doc h3 { font-size: 14.5px; font-weight: 800; color: var(--propia-text-body); margin: 12px 0 6px; }
-    .exp-viewer-html .prev-doc p { font-size: 13px; line-height: 1.6; margin: 0 0 8px; }
-    .exp-ver-link { border: 0; background: transparent; color: var(--propia-brand); font-weight: 700; cursor: pointer; padding: 0; font-size: inherit; text-decoration: underline; }
-    .exp-page { width: 100%; max-width: 520px; background: var(--propia-bg-card); border-radius: 6px; box-shadow: 0 8px 30px rgba(27,42,58,.15); padding: 44px 48px; min-height: 560px; }
-    .exp-page-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--propia-text-h1); padding-bottom: 12px; margin-bottom: 22px; }
-    .exp-page-co { font-size: 13px; font-weight: 800; color: var(--propia-text-h1); }
-    .exp-page-ext { font-size: 9px; font-weight: 800; color: var(--propia-brand); background: var(--propia-brand-soft); padding: 3px 8px; border-radius: 5px; }
-    .exp-page-title { font-size: 17px; font-weight: 800; color: var(--propia-text-h1); margin-bottom: 6px; }
-    .exp-page-sub { font-size: 11px; color: var(--propia-text-faint); margin-bottom: 22px; }
-    .exp-page-lines { display: flex; flex-direction: column; gap: 9px; }
-    .exp-page-lines > div { height: 9px; border-radius: 3px; background: var(--propia-border-divider); }
-    .exp-tips { flex: 1; overflow-y: auto; padding: 4px 16px; display: flex; flex-direction: column; gap: 9px; }
-    .exp-tip { border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 12px 13px; background: var(--propia-bg-card); }
-    .exp-tip.sel { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
-    .exp-tip-top { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-    .exp-tip-ic { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--propia-bg-app); color: var(--propia-text-faint); }
-    .exp-tip-ic.ok { background: var(--propia-ok-soft); color: #1A8754; }
-    .exp-tip-name { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); }
-    .exp-oblig { font-size: 8.5px; font-weight: 800; color: #B45309; background: var(--propia-warn-soft); padding: 2px 5px; border-radius: 4px; }
-    .exp-tip-sub { font-size: 10.5px; color: var(--propia-text-faint); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .exp-tip-dup { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; display: flex; font-size: 13px; flex-shrink: 0; }
-    .exp-tip-dup:hover { color: var(--propia-brand); }
-    .exp-tip-del { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; display: flex; font-size: 14px; flex-shrink: 0; }
-    .exp-tip-del:hover { color: #D7263D; }
-    .exp-tip-acts { display: flex; gap: 6px; margin-top: 9px; }
-    .doc-btn-soft.on { background: var(--propia-brand-soft); border-color: var(--propia-brand); color: var(--propia-brand); }
-    /* Panel de versiones de una tipologia */
-    .exp-tip-vers { margin-top: 9px; border-top: 1px dashed var(--propia-border-card); padding-top: 9px; display: flex; flex-direction: column; gap: 6px; }
-    .exp-ver-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--propia-bg-table-head); }
-    .exp-ver-row.sel { background: var(--propia-brand-soft); }
-    .exp-ver-badge { font-size: 10px; font-weight: 800; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 6px; padding: 2px 6px; flex-shrink: 0; }
-    .exp-ver-name { font-size: 11.5px; font-weight: 700; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .exp-ver-meta { font-size: 10px; color: #94A7BA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .exp-ver-btn { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 6px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--propia-text-secondary); cursor: pointer; flex-shrink: 0; }
-    .exp-ver-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
-
-    /* Config (3 cols) */
-    .cfg-cols { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); min-height: 0; overflow: hidden; }
-    .cfg-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--propia-border-divider); padding: 14px 14px 0; }
-    .cfg-col:last-child { border-right: 0; }
-    .cfg-col-title { font-size: 12px; font-weight: 800; color: var(--propia-text-h1); margin-bottom: 8px; }
-    .cfg-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; max-height: 360px; }
-    .cfg-item { display: flex; align-items: center; gap: 8px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; cursor: pointer; }
-    .cfg-item:hover { border-color: var(--propia-brand); }
-    .cfg-item.sel { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
-    .cfg-item-name { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); }
-    .cfg-item-sub { font-size: 11px; color: var(--propia-text-faint); }
-
-    /* KPIs / Archivo central (compartido) */
-    .doc-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
-    @@media (max-width: 1000px) { .doc-kpis { grid-template-columns: repeat(2, 1fr); } .exp-cols { grid-template-columns: 1fr; } .cfg-cols { grid-template-columns: 1fr; } .doc-meta-grid { grid-template-columns: 1fr; } }
-    .doc-kpi { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(45,62,80,.05); }
-    .doc-kpi-label { font-size: 12px; font-weight: 700; color: var(--propia-text-muted); }
-    .doc-kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -1px; color: var(--propia-text-h1); margin-top: 4px; }
-    .doc-kpi-foot { font-size: 11.5px; color: var(--propia-text-faint); margin-top: 2px; }
-    .doc-toolbar { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-    .doc-search { flex: 1; min-width: 240px; display: flex; align-items: center; gap: 9px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 9px 14px; }
-    .doc-search:focus-within { border-color: var(--propia-brand); }
-    .doc-search i { color: var(--propia-text-faint); font-size: 15px; }
-    .doc-search input { flex: 1; border: 0; outline: 0; font-size: 13.5px; color: var(--propia-text-body); background: transparent; }
-    .doc-search-count { font-size: 11px; color: var(--propia-text-faint); font-weight: 600; white-space: nowrap; }
-    .doc-select { border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 9px 12px; font-size: 13px; color: var(--propia-text-secondary); background: var(--propia-bg-card); outline: 0; }
-    .doc-select:focus { border-color: var(--propia-brand); }
-    .doc-star-toggle { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 8px 13px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-secondary); cursor: pointer; background: var(--propia-bg-card); }
-    .doc-star-toggle input { display: none; }
-    .doc-star-toggle.on { border-color: var(--propia-brand); color: var(--propia-brand); background: var(--propia-brand-soft); }
-    .doc-cats { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
-    .doc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 7px 13px; border-radius: 20px; border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); background: var(--propia-bg-card); cursor: pointer; }
-    .doc-chip:hover { border-color: var(--propia-brand); }
-    .doc-chip.on { background: var(--propia-brand); color: var(--propia-text-inverse); border-color: var(--propia-brand); }
-    .doc-chip-dot { width: 8px; height: 8px; border-radius: 50%; }
-    .doc-chip-n { font-size: 10.5px; opacity: .7; }
-    .doc-listcard { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; }
-    .doc-row { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid var(--propia-border-divider); }
-    .doc-row:last-child { border-bottom: 0; }
-    .doc-row:hover { background: var(--propia-brand-soft-2); }
-    .doc-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: transparent; text-align: left; cursor: pointer; padding: 0; }
-    .doc-ficon { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
-    .doc-ficon.sm { width: 30px; height: 30px; font-size: 14px; }
-    .doc-ficon.lg { width: 44px; height: 44px; font-size: 20px; }
-    .doc-row-body { min-width: 0; flex: 1; }
-    .doc-row-name { font-size: 13.5px; font-weight: 700; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .doc-row-meta { font-size: 11px; color: var(--propia-text-faint); margin-top: 1px; }
-    .doc-row-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
-    .doc-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
-    .doc-star { font-size: 12px; margin-right: 3px; }
-    .doc-star.copro { color: #F59E0B; }
-    .doc-star.pers { color: var(--propia-brand); }
-    .doc-estado { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
-    .doc-row-act { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-    .doc-row-act:hover { background: var(--propia-brand-soft); }
-    .doc-pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; font-size: 12px; color: var(--propia-text-faint); border-top: 1px solid var(--propia-border-divider); }
-    .doc-pager-btns { display: flex; align-items: center; gap: 8px; }
-    .doc-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--propia-border-divider); border: 1px solid var(--propia-border-divider); border-radius: 11px; overflow: hidden; margin-bottom: 14px; }
-    .doc-meta-grid > div { background: var(--propia-bg-card); padding: 11px 13px; }
-    .doc-meta-k { font-size: 10.5px; color: var(--propia-text-faint); font-weight: 600; margin-bottom: 3px; }
-    .doc-meta-v { font-size: 13.5px; font-weight: 600; color: var(--propia-text-body); }
-    .doc-newver { background: var(--propia-brand-soft-2); border: 1px solid var(--propia-border-divider); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
-    .doc-section-title { font-size: 13px; font-weight: 800; color: var(--propia-text-h1); margin: 16px 0 9px; }
-    .doc-audit { display: flex; flex-direction: column; gap: 1px; }
-    .doc-audit-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--propia-border-divider); }
-    .doc-audit-ev { font-size: 11px; font-weight: 700; color: var(--propia-text-secondary); background: var(--propia-border-divider); padding: 2px 9px; border-radius: 6px; }
-    .doc-audit-at { font-size: 11.5px; color: var(--propia-text-faint); }
-</style>
 
 <ModalHost />
 
@@ -884,47 +358,16 @@ else
     private bool _busy;
     private string? _msg;
     private string _msgClass = "alert-info";
-    private string _view = "expedientes";
+    private string _view = "folders";
 
-    // ---- Expedientes (TRD) ----
-    private List<ExpedienteListaDto>? _expedientes;
-    private List<TrdSerieDto>? _trd;
-    private ExpedienteDetalleDto? _expDetalle;
-    private Guid _expSelTip;
-    private string? _nuevoCampoExp;
-    private string? _nuevaTipExp;
-
-    // Nuevo expediente
-    private bool _showNuevoExp;
-    private string? _neNombre;
-    private Guid _neSerieId;
-    private Guid _neSubserieId;
-    private string? _neError;
-
-    // Configuracion (TRD)
+    // ---- Folders (v2) ----
+    private List<FolderTarjetaDto>? _tarjetas;
+    private List<FolderNodoDto>? _arbol;
+    private bool _showNuevo;
     private bool _showCfg;
-    private Guid _cfgSerieSel;
-    private Guid _cfgSubSel;
-    private string? _cfgNuevaSerie, _cfgNuevaSub, _cfgNuevaTip, _cfgNuevoCampo;
-
-    // Cargar tipologia
-    private bool _showCargar;
-    private Guid _cargarTipId;
-    private string? _cargarTipNombre;
-    private string? _cargarNombre, _cargarMime, _cargarB64, _cargarError, _cargarNotas;
-    private long _cargarTamano;
-    private List<ExpedienteCampoDto> _cargarCampos = new();
-    private readonly Dictionary<string, string> _cargarMeta = new();
-
-    // Visor central inline (data URI / texto / html) + panel de versiones
-    private string? _visorDataUri, _visorMime, _visorNombre;
-    private string _visorKind = "none";       // image | pdf | text | html | none
-    private string? _visorHtml, _visorTexto;
-    private bool _visorCargando;
-    private Guid _visorVersionId; // Guid.Empty = version actual
-    private Guid _versionesTipId;
-    private List<TipologiaVersionDto> _versionesLista = new();
-    private bool _versionesCargando;
+    private Guid? _explorarId;
+    // El chat del explorador persiste en el API (por copropiedad + folder raiz + usuario); aqui solo la preferencia de ocultarlo.
+    private bool _chatOculto;
 
     // ---- Archivo central ----
     private List<CategoriaDto>? _categorias;
@@ -956,266 +399,44 @@ else
         {
             var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
             _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarExpedientesAsync(); StateHasChanged(); }
+            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarFoldersAsync(); StateHasChanged(); }
         }
         catch { }
     }
 
     private async Task SetView(string v)
     {
-        _view = v;
-        if (v == "expedientes" && _expedientes is null) await CargarExpedientesAsync();
+        _view = v; _msg = null;
+        if (v == "folders" && _tarjetas is null) await CargarFoldersAsync();
         if (v == "archivo" && _documentos is null) await CargarArchivoAsync();
     }
 
-    // ===================== Expedientes =====================
-    private async Task CargarExpedientesAsync()
-    {
-        try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteListaDto>>("/api/expedientes") ?? new(); }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
-
-    private async Task EnsureTrdAsync()
-    {
-        if (_trd is null) { try { _trd = await Auth().GetFromJsonAsync<List<TrdSerieDto>>("/api/expedientes/trd") ?? new(); } catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; } }
-    }
-
-    private async Task AbrirExpediente(Guid id)
-    {
-        _expDetalle = await Auth().GetFromJsonAsync<ExpedienteDetalleDto>($"/api/expedientes/{id}");
-        _expSelTip = _expDetalle?.Tipologias.FirstOrDefault(t => t.Cargado)?.Id ?? Guid.Empty;
-        _versionesTipId = Guid.Empty; _visorDataUri = null; _visorVersionId = Guid.Empty;
-        if (_expSelTip != Guid.Empty) await CargarVisorActual(_expSelTip);
-    }
-
-    private void CerrarExpediente() { _expDetalle = null; _expSelTip = Guid.Empty; _visorDataUri = null; _versionesTipId = Guid.Empty; }
-
-    private async Task SelTip(ExpedienteTipologiaDto t)
-    {
-        if (!t.Cargado) return;
-        _expSelTip = t.Id;
-        await CargarVisorActual(t.Id);
-    }
-
-    private async Task RecargarDetalleAsync()
-    {
-        if (_expDetalle is null) return;
-        _expDetalle = await Auth().GetFromJsonAsync<ExpedienteDetalleDto>($"/api/expedientes/{_expDetalle.Id}");
-        await CargarExpedientesAsync();
-    }
-
-    // ---- Visor central inline (renderiza el documento via data URI) ----
-    private static bool EsImagenMime(string? mime) => !string.IsNullOrEmpty(mime) && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
-    private static bool EsPdfMime(string? mime, string? nombre) =>
-        (mime?.Contains("pdf", StringComparison.OrdinalIgnoreCase) ?? false) || (nombre?.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ?? false);
-
-    private Task CargarVisorActual(Guid tipId)
-    {
-        _visorVersionId = Guid.Empty;
-        return CargarVisorDesde($"/api/expedientes/tipologias/{tipId}/preview");
-    }
-
-    private async Task VerVersion(Guid tipId, Guid versionId)
-    {
-        _expSelTip = tipId;
-        _visorVersionId = versionId;
-        await CargarVisorDesde($"/api/expedientes/tipologias/{tipId}/versiones/{versionId}/preview");
-    }
-
-    private async Task CargarVisorDesde(string url)
-    {
-        _visorCargando = true; _visorDataUri = null; _visorNombre = null; _visorMime = null;
-        _visorKind = "none"; _visorHtml = null; _visorTexto = null;
-        StateHasChanged();
-        try
-        {
-            var dto = await Auth().GetFromJsonAsync<TipologiaPreviewDto>(url);
-            if (dto is not null)
-            {
-                _visorNombre = dto.Nombre;
-                _visorMime = dto.Mime;
-                _visorKind = dto.Kind;
-                _visorDataUri = dto.DataUri;
-                _visorHtml = dto.Html;
-                _visorTexto = dto.Texto;
-            }
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-        finally { _visorCargando = false; }
-    }
-
-    // ---- Panel de versiones de una tipologia ----
-    private async Task ToggleVersiones(Guid tipId)
-    {
-        if (_versionesTipId == tipId) { _versionesTipId = Guid.Empty; return; }
-        _versionesTipId = tipId;
-        _versionesCargando = true; _versionesLista = new();
-        StateHasChanged();
-        try { _versionesLista = await Auth().GetFromJsonAsync<List<TipologiaVersionDto>>($"/api/expedientes/tipologias/{tipId}/versiones") ?? new(); }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-        finally { _versionesCargando = false; }
-    }
-
-    private async Task DescargarVersionTip(Guid tipId, Guid versionId)
+    // ===================== Folders =====================
+    private async Task CargarFoldersAsync()
     {
         try
         {
-            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>($"/api/expedientes/tipologias/{tipId}/versiones/{versionId}/descargar");
-            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+            var http = Auth();
+            _tarjetas = await http.GetFromJsonAsync<List<FolderTarjetaDto>>("/api/folders/tarjetas") ?? new();
+            _arbol = await http.GetFromJsonAsync<List<FolderNodoDto>>("/api/folders/arbol") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
 
-    private async Task AbrirNuevoExp()
+    private async Task AbrirNuevoFolder()
     {
-        await EnsureTrdAsync();
-        _neNombre = null; _neSerieId = Guid.Empty; _neSubserieId = Guid.Empty; _neError = null;
-        _showNuevoExp = true;
+        if (_arbol is null) await CargarFoldersAsync();
+        _showNuevo = true;
     }
 
-    private void OnNeSerieChange() => _neSubserieId = Guid.Empty;
-    private IReadOnlyList<TrdSubserieDto> NeSubseries() => _trd?.FirstOrDefault(s => s.Id == _neSerieId)?.Subseries ?? new List<TrdSubserieDto>();
-
-    private async Task CrearExpediente()
+    private async Task OnFolderCreado(FolderNodoDto f)
     {
-        _neError = null;
-        if (string.IsNullOrWhiteSpace(_neNombre) || _neSubserieId == Guid.Empty) { _neError = "Indica nombre, serie y subserie."; return; }
-        _busy = true;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync("/api/expedientes", new CrearExpedienteRequest(_neSubserieId, _neNombre!));
-            if (!resp.IsSuccessStatusCode) { _neError = await resp.Content.ReadAsStringAsync(); return; }
-            var dto = await resp.Content.ReadFromJsonAsync<ExpedienteDetalleDto>();
-            _showNuevoExp = false;
-            await CargarExpedientesAsync();
-            if (dto is not null) { _expDetalle = dto; _expSelTip = Guid.Empty; }
-        }
-        catch (Exception ex) { _neError = ex.Message; }
-        finally { _busy = false; }
+        _showNuevo = false;
+        _msg = $"Folder “{f.Nombre}” creado."; _msgClass = "alert-success";
+        await CargarFoldersAsync();
     }
 
-    private async Task AgregarCampoExp()
-    {
-        if (_expDetalle is null || string.IsNullOrWhiteSpace(_nuevoCampoExp)) return;
-        _busy = true;
-        try { await Auth().PostAsJsonAsync($"/api/expedientes/{_expDetalle.Id}/campos", new AgregarCampoExpRequest(_nuevoCampoExp!)); _nuevoCampoExp = null; await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarCampoExp(Guid id)
-    {
-        _busy = true;
-        try { await Auth().DeleteAsync($"/api/expedientes/campos/{id}"); await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    private async Task AgregarTipologiaExp()
-    {
-        if (_expDetalle is null || string.IsNullOrWhiteSpace(_nuevaTipExp)) return;
-        _busy = true;
-        try { await Auth().PostAsJsonAsync($"/api/expedientes/{_expDetalle.Id}/tipologias", new AgregarTipologiaExpRequest(_nuevaTipExp!, false)); _nuevaTipExp = null; await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    private async Task EliminarTipologiaExp(Guid id)
-    {
-        _busy = true;
-        try { await Auth().DeleteAsync($"/api/expedientes/tipologias/{id}"); if (_expSelTip == id) _expSelTip = Guid.Empty; await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    // Duplica la tipologia: crea otra casilla del mismo tipo (vacia) para cargar varios documentos iguales.
-    private async Task DuplicarTipologiaExp(Guid id)
-    {
-        _busy = true;
-        try { await Auth().PostAsync($"/api/expedientes/tipologias/{id}/duplicar", null); await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    private void AbrirCargar(Guid expId, Guid tipId)
-    {
-        var tip = _expDetalle?.Tipologias.FirstOrDefault(t => t.Id == tipId);
-        _cargarTipId = tipId;
-        _cargarTipNombre = (_expDetalle?.Nombre ?? "") + " - " + (tip?.Nombre ?? "");
-        _cargarNombre = _cargarMime = _cargarB64 = _cargarError = _cargarNotas = null;
-        _cargarTamano = 0;
-        _cargarCampos = _expDetalle?.Campos.ToList() ?? new();
-        _cargarMeta.Clear();
-        if (tip is not null) foreach (var mp in tip.Meta) _cargarMeta[mp.Clave] = mp.Valor;
-        _showCargar = true;
-    }
-
-    private async Task OnCargarArchivo(InputFileChangeEventArgs e)
-    {
-        var f = e.File;
-        if (f.Size > 20_000_000) { _cargarError = "El archivo excede 20MB"; return; }
-        _cargarNombre = f.Name;
-        _cargarMime = string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType;
-        _cargarTamano = f.Size;
-        using var ms = new MemoryStream();
-        await f.OpenReadStream(20_000_000).CopyToAsync(ms);
-        _cargarB64 = Convert.ToBase64String(ms.ToArray());
-    }
-
-    private async Task GuardarCargar()
-    {
-        if (string.IsNullOrEmpty(_cargarB64)) return;
-        _busy = true; _cargarError = null;
-        try
-        {
-            var meta = _cargarMeta.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).Select(kv => new ExpedienteMetaValorDto(kv.Key, kv.Value)).ToList();
-            var req = new CargarTipologiaRequest(_cargarNombre!, _cargarMime!, _cargarTamano, _cargarB64!, meta, _cargarNotas);
-            var resp = await Auth().PostAsJsonAsync($"/api/expedientes/tipologias/{_cargarTipId}/cargar", req);
-            if (!resp.IsSuccessStatusCode) { _cargarError = await resp.Content.ReadAsStringAsync(); return; }
-            _showCargar = false;
-            var tipId = _cargarTipId;
-            await RecargarDetalleAsync();
-            _expSelTip = tipId;
-            // si el panel de versiones estaba abierto para esta tipologia, refrescalo
-            if (_versionesTipId == tipId) { _versionesTipId = Guid.Empty; await ToggleVersiones(tipId); }
-            await CargarVisorActual(tipId);
-        }
-        catch (Exception ex) { _cargarError = ex.Message; }
-        finally { _busy = false; }
-    }
-
-    private async Task QuitarArchivoTip(Guid id)
-    {
-        if (!await Modals.ConfirmAsync("Quitar el archivo de esta tipologia?", "Quitar archivo")) return;
-        _busy = true;
-        try { await Auth().DeleteAsync($"/api/expedientes/tipologias/{id}/archivo"); if (_expSelTip == id) _expSelTip = Guid.Empty; await RecargarDetalleAsync(); }
-        finally { _busy = false; }
-    }
-
-    private async Task DescargarTip(Guid id)
-    {
-        try
-        {
-            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>($"/api/expedientes/tipologias/{id}/descargar");
-            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
-        }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
-    }
-
-    // ===================== Configuracion documental (TRD) =====================
-    private async Task AbrirCfg()
-    {
-        await EnsureTrdAsync();
-        _cfgSerieSel = _trd?.FirstOrDefault()?.Id ?? Guid.Empty;
-        _cfgSubSel = _trd?.FirstOrDefault()?.Subseries.FirstOrDefault()?.Id ?? Guid.Empty;
-        _showCfg = true;
-    }
-
-    private async Task ReloadTrdAsync() { _trd = await Auth().GetFromJsonAsync<List<TrdSerieDto>>("/api/expedientes/trd") ?? new(); }
-
-    private async Task CfgAddSerie() { if (string.IsNullOrWhiteSpace(_cfgNuevaSerie)) return; _busy = true; try { await Auth().PostAsJsonAsync("/api/expedientes/trd/series", new CrearSerieRequest(_cfgNuevaSerie!)); _cfgNuevaSerie = null; await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgDelSerie(Guid id) { _busy = true; try { await Auth().DeleteAsync($"/api/expedientes/trd/series/{id}"); if (_cfgSerieSel == id) { _cfgSerieSel = Guid.Empty; _cfgSubSel = Guid.Empty; } await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgAddSub() { if (_cfgSerieSel == Guid.Empty || string.IsNullOrWhiteSpace(_cfgNuevaSub)) return; _busy = true; try { await Auth().PostAsJsonAsync("/api/expedientes/trd/subseries", new CrearSubserieRequest(_cfgSerieSel, _cfgNuevaSub!)); _cfgNuevaSub = null; await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgDelSub(Guid id) { _busy = true; try { await Auth().DeleteAsync($"/api/expedientes/trd/subseries/{id}"); if (_cfgSubSel == id) _cfgSubSel = Guid.Empty; await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgAddTip() { if (_cfgSubSel == Guid.Empty || string.IsNullOrWhiteSpace(_cfgNuevaTip)) return; _busy = true; try { await Auth().PostAsJsonAsync("/api/expedientes/trd/tipologias", new CrearTipologiaCfgRequest(_cfgSubSel, _cfgNuevaTip!)); _cfgNuevaTip = null; await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgDelTip(Guid id) { _busy = true; try { await Auth().DeleteAsync($"/api/expedientes/trd/tipologias/{id}"); await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgAddCampo() { if (_cfgSubSel == Guid.Empty || string.IsNullOrWhiteSpace(_cfgNuevoCampo)) return; _busy = true; try { await Auth().PostAsJsonAsync("/api/expedientes/trd/campos", new CrearCampoCfgRequest(_cfgSubSel, _cfgNuevoCampo!)); _cfgNuevoCampo = null; await ReloadTrdAsync(); } finally { _busy = false; } }
-    private async Task CfgDelCampo(Guid id) { _busy = true; try { await Auth().DeleteAsync($"/api/expedientes/trd/campos/{id}"); await ReloadTrdAsync(); } finally { _busy = false; } }
+    private void AbrirFolder(FolderTarjetaDto t) { _msg = null; _explorarId = t.Id; }
 
     // ===================== Archivo central =====================
     private async Task CargarArchivoAsync()
@@ -1362,7 +583,7 @@ else
 
     private async Task EliminarDocumento(Guid id)
     {
-        if (!await Modals.ConfirmAsync("Eliminar este documento? Quedara archivado (no se borra fisicamente).", "Eliminar documento")) return;
+        if (!await Modals.ConfirmAsync("¿Eliminar este documento? Quedará archivado (no se borra físicamente).", "Eliminar documento")) return;
         var resp = await Auth().DeleteAsync($"/api/documentos/{id}");
         if (resp.IsSuccessStatusCode) { _ficha = null; await CargarArchivoAsync(); }
     }
@@ -1375,17 +596,6 @@ else
         var i = 0; double size = bytes;
         while (size >= 1024 && i < units.Length - 1) { size /= 1024; i++; }
         return $"{size:0.#} {units[i]}";
-    }
-
-    private static string Ext(string? nombre) => string.IsNullOrEmpty(nombre) ? "" : (nombre.Contains('.') ? nombre[(nombre.LastIndexOf('.') + 1)..].ToUpperInvariant() : "");
-
-    private static (string, string) SerieColor(string serie)
-    {
-        if (serie.StartsWith("Actas", StringComparison.OrdinalIgnoreCase)) return ("#6D4FE3", "#F1ECFD");
-        if (serie.StartsWith("Contratos", StringComparison.OrdinalIgnoreCase)) return ("#2563EB", "#E6F2FB");
-        if (serie.StartsWith("Financ", StringComparison.OrdinalIgnoreCase)) return ("#1A8754", "#E6F6EE");
-        if (serie.StartsWith("Legal", StringComparison.OrdinalIgnoreCase)) return ("#B45309", "#FEF3DC");
-        return ("#516F90", "#EEF3F8");
     }
 
     private static string EstadoTexto(EstadoDocumento e) => e switch

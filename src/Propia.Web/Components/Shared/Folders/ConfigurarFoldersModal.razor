@@ -1,0 +1,529 @@
+@* ============================================================================================
+   Modal "Configurar folders" (Documentos v2, maqueta expedientes-v2 · abrirConfig). MASTER-DETAIL de
+   3 columnas:
+     Col 1 FOLDERS: arbol de profundidad arbitraria (expandir/colapsar/seleccionar). Acciones al hover:
+           agregar subfolder, renombrar, eliminar (inline: Enter confirma, Esc cancela, blur confirma).
+           "Agregar folder raiz" al pie.
+     Col 2 DOCUMENTOS del folder seleccionado: lista + "Nuevo documento" (casilla) + quitar.
+     Col 3 METADATOS de la ENTIDAD seleccionada (folder o documento): fichas nombre + pill de tipo (color por
+           categoria) + descripcion (tooltip al completo) + editar/eliminar al hover; "+ Agregar campo" abre
+           el CrearCampoModal real con el catalogo /api/folders/campos-catalogo/{folder|documento}/{id}.
+   Markup/CSS 1:1 con la maqueta (.cfg-* / .ftree-*). Todo persiste en el API al instante.
+   ============================================================================================ *@
+@using Propia.Application.Documentos
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject IModalService Modals
+
+<div class="doc-ov" @onclick="Cerrar"></div>
+<div class="doc-modal cf-modal" style="width:min(1200px,97vw); max-height:92vh;" role="dialog" aria-modal="true" aria-labelledby="cf-title" @onkeydown="OnKey">
+    <div class="doc-modal-head">
+        <div>
+            <h5 class="mb-0" id="cf-title" style="margin:0">Configurar folders</h5>
+            <div class="doc-sub" style="margin:2px 0 0;">Folders y subfolders (árbol a cualquier profundidad) &middot; documentos del folder &middot; metadatos de cada entidad.</div>
+        </div>
+        <button type="button" class="doc-x" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+    </div>
+    <div class="cfg-cols">
+        @* ---------------- COLUMNA 1: folders ---------------- *@
+        <div class="cfg-col">
+            <div class="cfg-col-title">Folders</div>
+            <div class="cfg-list ftree-scroll" role="tree" aria-label="Folders">
+                @if (_arbol is null)
+                {
+                    <div class="doc-sub" style="padding:10px;">Cargando...</div>
+                }
+                else
+                {
+                    @foreach (var f in _arbol) { @Nodo(f, 0) }
+                    @if (IsEd("__root__", "addroot"))
+                    {
+                        <div class="ftree-add"><i class="fi fi-rr-folder ftree-ic"></i><input class="ftree-inp cf-edit" placeholder="Nombre del folder raíz... (Enter)" @bind="_editValor" @bind:event="oninput" @onkeydown="OnEditKey" @onblur="OnEditBlur" /></div>
+                    }
+                }
+            </div>
+            <button type="button" class="ftree-rootadd" @onclick='() => Editar("__root__", "addroot")'><i class="fi fi-rr-add-folder"></i> Agregar folder raíz</button>
+        </div>
+
+        @* ---------------- COLUMNA 2: documentos del folder ---------------- *@
+        <div class="cfg-col">
+            <div class="cfg-col-title">Documentos @if (Sel is not null) { <span class="doc-sub">&middot; @Sel.Nombre</span> }</div>
+            @if (Sel is null)
+            {
+                <div class="doc-sub" style="padding:10px;">Selecciona un folder.</div>
+            }
+            else
+            {
+                <div class="cfg-list">
+                    @if (_detalle is null)
+                    {
+                        <div class="doc-sub" style="padding:10px;">Cargando...</div>
+                    }
+                    else if (_detalle.Documentos.Count == 0)
+                    {
+                        <div class="doc-sub" style="padding:10px;">Sin documentos en este folder.</div>
+                    }
+                    else
+                    {
+                        @foreach (var d in _detalle.Documentos)
+                        {
+                            var dd = d;
+                            <div class="cfg-item @(_docSel == d.Id ? "sel" : "")" role="button" tabindex="0" @onclick="() => SelDoc(dd.Id)" @onkeydown="@(e => { if (e.Key == "Enter") SelDoc(dd.Id); })">
+                                <span class="ftree-doc-ic"><i class="fi fi-rr-document"></i></span>
+                                <div style="flex:1;min-width:0;">
+                                    <div class="cfg-item-name">@d.Nombre</div>
+                                    <div class="cfg-item-sub">@d.CamposPropios.Count metadato(s)@(d.Cargado ? " · con archivo" : "")</div>
+                                </div>
+                                <button type="button" class="exp-chip-x" title="@(d.Cargado ? "Tiene archivo: se archiva desde el explorador" : "Quitar documento")" disabled="@d.Cargado" @onclick:stopPropagation="true" @onclick="() => QuitarDoc(dd.Id)"><i class="fi fi-rr-trash"></i></button>
+                            </div>
+                        }
+                    }
+                </div>
+                @if (IsEd("__doc__", "adddoc"))
+                {
+                    <div class="ftree-add"><span class="ftree-doc-ic"><i class="fi fi-rr-document"></i></span><input class="ftree-inp cf-edit" placeholder="Nombre del documento... (Enter)" @bind="_editValor" @bind:event="oninput" @onkeydown="OnEditKey" @onblur="OnEditBlur" /></div>
+                }
+                else
+                {
+                    <button type="button" class="ftree-rootadd" @onclick='() => Editar("__doc__", "adddoc")'><i class="fi fi-rr-plus"></i> Nuevo documento</button>
+                }
+            }
+        </div>
+
+        @* ---------------- COLUMNA 3: metadatos de la entidad ---------------- *@
+        <div class="cfg-col">
+            @{
+                var docSel = _detalle?.Documentos.FirstOrDefault(d => d.Id == _docSel);
+                var quien = docSel is not null ? "documento · " + docSel.Nombre : (Sel is not null ? "folder · " + Sel.Nombre : null);
+                var campos = docSel is not null ? docSel.CamposPropios : (_detalle?.CamposPropios ?? Array.Empty<FolderCampoDto>());
+            }
+            <div class="cfg-col-title">Metadatos @if (quien is not null) { <span class="doc-sub">&middot; @quien</span> }</div>
+            @if (Sel is null)
+            {
+                <div class="doc-sub" style="padding:10px;">Selecciona un folder o documento.</div>
+            }
+            else
+            {
+                @if (campos.Count == 0)
+                {
+                    <div class="doc-sub" style="padding:6px 2px 10px;">Sin metadatos. Agrégalos con el catálogo de tipos.</div>
+                }
+                else
+                {
+                    <div class="cfg-list" style="flex:0 1 auto">
+                        <div class="ftree-meta-list">
+                            @foreach (var c in campos)
+                            {
+                                var cc = c;
+                                <button type="button" class="ftree-meta-chip" title="@(string.IsNullOrEmpty(c.Descripcion) ? "Editar " + c.Label : c.Descripcion)" @onclick="() => EditarCampo(cc)">
+                                    <span class="ftree-meta-ic @CatClase(c.Tipo)"><i class="fi @TipoIcon(c.Tipo)"></i></span>
+                                    <span class="ftree-meta-txt">
+                                        <span class="ftree-meta-head"><span class="ftree-meta-name">@c.Label@(c.Obligatorio ? " *" : "")</span><span class="ftree-meta-type @CatClase(c.Tipo)">@TipoCorto(c.Tipo)</span></span>
+                                        @if (!string.IsNullOrEmpty(c.Descripcion))
+                                        {
+                                            <span class="ftree-meta-desc"><i class="fi fi-rr-sparkles"></i><span>@c.Descripcion</span></span>
+                                        }
+                                        else
+                                        {
+                                            <span class="ftree-meta-desc ftree-meta-desc--empty"><span>Sin descripción &middot; agrégala para la IA</span></span>
+                                        }
+                                    </span>
+                                    <span class="ftree-meta-acts">
+                                        <span class="ftree-meta-act @(c.Obligatorio ? "is-on" : "")" title="@(c.Obligatorio ? "Obligatorio: quitar" : "Marcar como obligatorio")" @onclick:stopPropagation="true" @onclick="() => ToggleObligatorio(cc)"><i class="fi @(c.Obligatorio ? "fi-sr-star" : "fi-rr-star")"></i></span>
+                                        <span class="ftree-meta-act" title="Editar"><i class="fi fi-rr-pencil"></i></span>
+                                        <span class="ftree-meta-act ftree-meta-x" title="Quitar" @onclick:stopPropagation="true" @onclick="() => QuitarCampo(cc)"><i class="fi fi-rr-trash"></i></span>
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                <button type="button" class="ftree-meta-add" @onclick="NuevoCampo"><i class="fi fi-rr-plus"></i> Agregar campo</button>
+            }
+        </div>
+    </div>
+    <div class="doc-modal-foot">
+        <span class="doc-sub">@(_error ?? "Los cambios se guardan al instante.")</span>
+        <button type="button" class="doc-btn-primary" @onclick="Cerrar">Listo</button>
+    </div>
+</div>
+
+@if (_campoModal)
+{
+    <CrearCampoModal Prefijo="folders"
+                     RutaCatalogo="@CatalogoUrl"
+                     TituloSingular="@EntidadLabel"
+                     Subtitulo="@((_campoEditar is null ? "Elige el tipo y su configuración. Nuevo metadato para " : "Modifica el tipo y su configuración. Metadato de ") + EntidadLabel + ".")"
+                     Ejemplo="Ej. Fecha de firma"
+                     DescripcionPlaceholder="@("Describe qué contiene este metadato para que una IA lo encuentre dentro del documento. Ej: “Fecha en que se firmó el acta”.")"
+                     NotaPie="@("El metadato queda disponible para " + EntidadLabel + ". Además de ayudar en la captura, su descripción permite que una IA lo identifique y lo busque dentro del documento.")"
+                     Jwt="@Jwt"
+                     Editar="@_campoEditar"
+                     Guardado="OnCampoGuardado"
+                     Cerrado="() => _campoModal = false" />
+}
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Se dispara cuando cambia algo (para que la pagina recargue tarjetas/arbol).</summary>
+    [Parameter] public EventCallback Cambio { get; set; }
+
+    private List<FolderNodoDto>? _arbol;
+    private readonly HashSet<Guid> _abiertos = new();
+    private Guid _sel;
+    private Guid _docSel;
+    private FolderDetalleDto? _detalle;
+    private string? _error;
+    private bool _hubo;
+
+    // Edicion inline: (id, kind) con kind = ren | addsub | addroot | adddoc
+    private string? _editId;
+    private string? _editKind;
+    private string _editValor = "";
+    private bool _editFocusPendiente;
+
+    // CrearCampoModal
+    private bool _campoModal;
+    private CampoDinDef? _campoEditar;
+
+    private FolderNodoDto? Sel => _sel == Guid.Empty ? null : Buscar(_arbol, _sel);
+    private string EntidadLabel
+    {
+        get
+        {
+            var d = _detalle?.Documentos.FirstOrDefault(x => x.Id == _docSel);
+            return d is not null ? $"el documento “{d.Nombre}”" : (Sel is not null ? $"el folder “{Sel.Nombre}”" : "la entidad");
+        }
+    }
+    private string CatalogoUrl => _docSel != Guid.Empty ? $"/api/folders/campos-catalogo/documento/{_docSel}" : $"/api/folders/campos-catalogo/folder/{_sel}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarArbolAsync();
+        if (_arbol is { Count: > 0 })
+        {
+            foreach (var r in _arbol) _abiertos.Add(r.Id); // raices abiertas por defecto (maqueta)
+            await Seleccionar(_arbol[0].Id);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) { try { await Js.InvokeVoidAsync("propiaUI.modalFocus", ".cf-modal"); } catch { } }
+        if (_editFocusPendiente)
+        {
+            _editFocusPendiente = false;
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".cf-modal .cf-edit"); } catch { }
+        }
+    }
+
+    // ===================== Arbol =====================
+    private RenderFragment Nodo(FolderNodoDto f, int depth) => __builder =>
+    {
+        var pad = depth * 16;
+        var tieneHijos = f.Hijos.Count > 0;
+        var abierto = _abiertos.Contains(f.Id);
+        <div class="ftree-node" role="treeitem" aria-expanded="@(tieneHijos ? abierto.ToString().ToLowerInvariant() : null)" aria-selected="@((_sel == f.Id).ToString().ToLowerInvariant())">
+            <div class="ftree-row @(_sel == f.Id ? "sel" : "")" style="padding-left:@(pad)px" tabindex="0" @onclick="() => Seleccionar(f.Id)" @onkeydown="@(e => OnNodoKey(e, f))">
+                @if (tieneHijos)
+                {
+                    <button type="button" class="ftree-caret" aria-label="@(abierto ? "Colapsar" : "Expandir")" @onclick:stopPropagation="true" @onclick="() => Toggle(f.Id)"><i class="fi @(abierto ? "fi-rr-angle-small-down" : "fi-rr-angle-small-right")"></i></button>
+                }
+                else
+                {
+                    <span class="ftree-caret"></span>
+                }
+                <i class="fi fi-rr-folder ftree-ic"></i>
+                @if (IsEd(f.Id.ToString(), "ren"))
+                {
+                    <input class="ftree-inp cf-edit" @bind="_editValor" @bind:event="oninput" @onkeydown="OnEditKey" @onblur="OnEditBlur" @onclick:stopPropagation="true" />
+                }
+                else
+                {
+                    <span class="ftree-name">@f.Nombre</span>
+                }
+                @if (f.Documentos > 0) { <span class="ftree-count">@f.Documentos</span> }
+                <span class="ftree-acts">
+                    <button type="button" class="ftree-act" title="Agregar subfolder" @onclick:stopPropagation="true" @onclick='() => Editar(f.Id.ToString(), "addsub")'><i class="fi fi-rr-add-folder"></i></button>
+                    <button type="button" class="ftree-act" title="Renombrar" @onclick:stopPropagation="true" @onclick='() => Editar(f.Id.ToString(), "ren", f.Nombre)'><i class="fi fi-rr-pencil"></i></button>
+                    <button type="button" class="ftree-act ftree-act--del" title="Eliminar folder" @onclick:stopPropagation="true" @onclick="() => EliminarFolder(f)"><i class="fi fi-rr-trash"></i></button>
+                </span>
+            </div>
+            @if (abierto || IsEd(f.Id.ToString(), "addsub"))
+            {
+                <div class="ftree-kids" role="group">
+                    @if (IsEd(f.Id.ToString(), "addsub"))
+                    {
+                        <div class="ftree-add" style="padding-left:@(pad + 34)px"><i class="fi fi-rr-folder ftree-ic"></i><input class="ftree-inp cf-edit" placeholder="Nombre del subfolder... (Enter)" @bind="_editValor" @bind:event="oninput" @onkeydown="OnEditKey" @onblur="OnEditBlur" /></div>
+                    }
+                    @foreach (var h in f.Hijos) { @Nodo(h, depth + 1) }
+                </div>
+            }
+        </div>
+    };
+
+    private static FolderNodoDto? Buscar(IEnumerable<FolderNodoDto>? lista, Guid id)
+    {
+        if (lista is null) return null;
+        foreach (var n in lista)
+        {
+            if (n.Id == id) return n;
+            var h = Buscar(n.Hijos, id);
+            if (h is not null) return h;
+        }
+        return null;
+    }
+
+    private void Toggle(Guid id) { if (!_abiertos.Remove(id)) _abiertos.Add(id); }
+
+    private async Task Seleccionar(Guid id)
+    {
+        if (_editId is not null) { _editId = null; _editKind = null; }
+        _sel = id; _docSel = Guid.Empty; _detalle = null; _error = null;
+        await CargarDetalleAsync();
+    }
+
+    private async Task OnNodoKey(KeyboardEventArgs e, FolderNodoDto f)
+    {
+        if (e.Key == "Enter" || e.Key == " ") await Seleccionar(f.Id);
+        else if (e.Key == "ArrowRight" && f.Hijos.Count > 0) _abiertos.Add(f.Id);
+        else if (e.Key == "ArrowLeft") _abiertos.Remove(f.Id);
+        else if (e.Key == "F2") Editar(f.Id.ToString(), "ren", f.Nombre);
+        else if (e.Key == "Delete") await EliminarFolder(f);
+    }
+
+    private async Task CargarArbolAsync()
+    {
+        try { _arbol = await Auth().GetFromJsonAsync<List<FolderNodoDto>>("/api/folders/arbol") ?? new(); }
+        catch (Exception ex) { _error = ex.Message; _arbol = new(); }
+    }
+
+    private async Task CargarDetalleAsync()
+    {
+        if (_sel == Guid.Empty) { _detalle = null; return; }
+        try { _detalle = await Auth().GetFromJsonAsync<FolderDetalleDto>($"/api/folders/{_sel}"); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task Recargar(bool arbol = true)
+    {
+        _hubo = true;
+        if (arbol) await CargarArbolAsync();
+        await CargarDetalleAsync();
+    }
+
+    // ===================== Edicion inline =====================
+    private bool IsEd(string id, string kind) => _editId == id && _editKind == kind;
+
+    private void Editar(string id, string kind, string? valorInicial = null)
+    {
+        _editId = id; _editKind = kind; _editValor = valorInicial ?? ""; _editFocusPendiente = true;
+        if (kind == "addsub" && Guid.TryParse(id, out var g)) _abiertos.Add(g);
+    }
+
+    private async Task OnEditKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CommitEdit();
+        else if (e.Key == "Escape") { _editId = null; _editKind = null; }
+    }
+
+    private async Task OnEditBlur()
+    {
+        // Pequeno retraso: si el blur viene de un clic en otro control que tambien repinta, no pisar su accion.
+        await Task.Delay(130);
+        if (_editId is not null) { await CommitEdit(); StateHasChanged(); }
+    }
+
+    private async Task CommitEdit()
+    {
+        var id = _editId; var kind = _editKind; var valor = (_editValor ?? "").Trim();
+        _editId = null; _editKind = null;
+        if (id is null || kind is null || valor.Length == 0) return;
+        _error = null;
+        try
+        {
+            HttpResponseMessage r;
+            switch (kind)
+            {
+                case "ren":
+                    r = await Auth().PutAsJsonAsync($"/api/folders/{id}", new ActualizarFolderRequest(Nombre: valor));
+                    break;
+                case "addsub":
+                    r = await Auth().PostAsJsonAsync("/api/folders", new CrearFolderRequest(valor, Guid.Parse(id)));
+                    break;
+                case "addroot":
+                    r = await Auth().PostAsJsonAsync("/api/folders", new CrearFolderRequest(valor));
+                    break;
+                case "adddoc":
+                    r = await Auth().PostAsJsonAsync($"/api/folders/{_sel}/documentos", new CrearDocumentoRequest(valor));
+                    if (r.IsSuccessStatusCode)
+                    {
+                        var nuevo = await r.Content.ReadFromJsonAsync<FolderDocumentoDto>();
+                        await Recargar();
+                        if (nuevo is not null) _docSel = nuevo.Id;
+                        return;
+                    }
+                    break;
+                default: return;
+            }
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            await Recargar();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    // ===================== Folders =====================
+    private async Task EliminarFolder(FolderNodoDto f)
+    {
+        var msg = f.Hijos.Count > 0 || f.Documentos > 0 || f.Archivados > 0
+            ? $"¿Eliminar el folder “{f.Nombre}” y sus subfolders? Solo se permite si ningún documento tiene archivo."
+            : $"¿Eliminar el folder “{f.Nombre}”?";
+        if (!await Modals.ConfirmAsync(msg, "Eliminar folder")) return;
+        _error = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/folders/{f.Id}");
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            if (_sel == f.Id) { _sel = Guid.Empty; _docSel = Guid.Empty; _detalle = null; }
+            await Recargar();
+            if (_sel == Guid.Empty && _arbol is { Count: > 0 }) await Seleccionar(_arbol[0].Id);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    // ===================== Documentos =====================
+    private void SelDoc(Guid id) { _docSel = _docSel == id ? Guid.Empty : id; _error = null; }
+
+    private async Task QuitarDoc(Guid id)
+    {
+        _error = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/folders/documentos/{id}");
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            if (_docSel == id) _docSel = Guid.Empty;
+            await Recargar();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    // ===================== Metadatos =====================
+    private void NuevoCampo() { _campoEditar = null; _campoModal = true; }
+
+    private void EditarCampo(FolderCampoDto c)
+    {
+        _campoEditar = new CampoDinDef(c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.Descripcion);
+        _campoModal = true;
+    }
+
+    /// <summary>Obligatorio bloquea la carga/guardado de valores del documento mientras quede vacio.</summary>
+    private async Task ToggleObligatorio(FolderCampoDto c)
+    {
+        _error = null;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/folders/campos/{c.Id}", new ActualizarFolderCampoRequest(Obligatorio: !c.Obligatorio));
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            await Recargar(arbol: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task QuitarCampo(FolderCampoDto c)
+    {
+        if (!await Modals.ConfirmAsync($"¿Quitar el metadato “{c.Label}”? Se pierden los valores capturados.", "Quitar metadato")) return;
+        _error = null;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/folders/campos/{c.Id}");
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            await Recargar(arbol: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task OnCampoGuardado() { _campoModal = false; await Recargar(arbol: true); }
+
+    // Color por CATEGORIA del tipo (Basicos / Fecha / Seleccion / Relacion / Otros), via clases con tokens.
+    private static string CatClase(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje or TipoCampoTablero.ModuloContributivo => "cat-basico",
+        TipoCampoTablero.Fecha or TipoCampoTablero.FechaHora or TipoCampoTablero.Hora => "cat-fecha",
+        TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano => "cat-sel",
+        TipoCampoTablero.Usuario or TipoCampoTablero.Directorio => "cat-rel",
+        _ => "cat-otro"
+    };
+
+    private static string TipoCorto(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "Texto",
+        TipoCampoTablero.AreaTexto => "Texto largo",
+        TipoCampoTablero.Numero => "Número",
+        TipoCampoTablero.Moneda => "Moneda",
+        TipoCampoTablero.Porcentaje => "Porcentaje",
+        TipoCampoTablero.Fecha => "Fecha",
+        TipoCampoTablero.FechaHora => "Fecha y hora",
+        TipoCampoTablero.Hora => "Hora",
+        TipoCampoTablero.Seleccion => "Selección",
+        TipoCampoTablero.Booleano => "Sí / No",
+        TipoCampoTablero.Telefono => "Teléfono",
+        TipoCampoTablero.Email => "Email",
+        TipoCampoTablero.Url => "URL",
+        TipoCampoTablero.Usuario => "Usuario",
+        TipoCampoTablero.Directorio => "Directorio",
+        TipoCampoTablero.Formula => "Fórmula",
+        _ => t.ToString()
+    };
+
+    private static string TipoIcon(TipoCampoTablero t) => t switch
+    {
+        TipoCampoTablero.Texto => "fi-rr-text",
+        TipoCampoTablero.AreaTexto => "fi-rr-align-left",
+        TipoCampoTablero.Numero => "fi-rr-calculator",
+        TipoCampoTablero.Moneda => "fi-rr-usd-circle",
+        TipoCampoTablero.Porcentaje => "fi-rr-percentage",
+        TipoCampoTablero.Fecha => "fi-rr-calendar",
+        TipoCampoTablero.FechaHora => "fi-rr-clock",
+        TipoCampoTablero.Hora => "fi-rr-clock",
+        TipoCampoTablero.Seleccion => "fi-rr-caret-circle-down",
+        TipoCampoTablero.Booleano => "fi-rr-checkbox",
+        TipoCampoTablero.Telefono => "fi-rr-phone-call",
+        TipoCampoTablero.Email => "fi-rr-envelope",
+        TipoCampoTablero.Url => "fi-rr-link-alt",
+        TipoCampoTablero.Usuario => "fi-rr-user",
+        TipoCampoTablero.Directorio => "fi-rr-address-book",
+        TipoCampoTablero.Formula => "fi-rr-calculator-money",
+        _ => "fi-rr-text"
+    };
+
+    // ===================== Infra =====================
+    private async Task Cerrar()
+    {
+        if (_hubo) await Cambio.InvokeAsync();
+        await Cerrado.InvokeAsync();
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_editId is not null) { _editId = null; _editKind = null; return; }
+        if (_campoModal) return; // lo cierra el propio CrearCampoModal
+        await Cerrar();
+    }
+
+    private static async Task<string> LeerError(HttpResponseMessage r)
+    {
+        var txt = await r.Content.ReadAsStringAsync();
+        try { var d = System.Text.Json.JsonDocument.Parse(txt); if (d.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? txt; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)r.StatusCode}" : txt;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+}

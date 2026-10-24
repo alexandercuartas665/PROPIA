@@ -387,23 +387,23 @@ public partial class MiCopropiedadService
             .Select(v => v.ExpedienteId)
             .ToListAsync(ct);
         if (ids.Count == 0) return Array.Empty<ContratoExpedienteDto>();
-        return await _db.Expedientes.AsNoTracking()
+        return await _db.Folders.AsNoTracking()
             .Where(e => ids.Contains(e.Id))
-            .OrderBy(e => e.Codigo)
-            .Select(e => new ContratoExpedienteDto(e.Id, e.Codigo, e.Nombre))
+            .OrderBy(e => e.Codigo).ThenBy(e => e.Nombre)
+            .Select(e => new ContratoExpedienteDto(e.Id, e.Codigo ?? "", e.Nombre))
             .ToListAsync(ct);
     }
 
     public async Task<bool> VincularExpedienteContratoAsync(Guid contratoId, Guid expedienteId, CancellationToken ct)
     {
         if (!await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct)) return false;
-        if (!await _db.Expedientes.AnyAsync(e => e.Id == expedienteId, ct)) return false;
+        if (!await _db.Folders.AnyAsync(e => e.Id == expedienteId, ct)) return false;
         if (await _db.ContratoExpedientes.AnyAsync(v => v.ContratoId == contratoId && v.ExpedienteId == expedienteId, ct))
             return true;   // ya vinculado, idempotente
         _db.ContratoExpedientes.Add(new ContratoExpediente { ContratoId = contratoId, ExpedienteId = expedienteId });
         await _db.SaveChangesAsync(ct);
-        var cod = await _db.Expedientes.Where(e => e.Id == expedienteId).Select(e => e.Codigo).FirstOrDefaultAsync(ct);
-        await RegistrarBitacoraAsync("Contrato", $"Expediente '{cod}' conectado al contrato.", ct, contratoId);
+        var nom = await _db.Folders.Where(e => e.Id == expedienteId).Select(e => (e.Codigo ?? "") + " " + e.Nombre).FirstOrDefaultAsync(ct);
+        await RegistrarBitacoraAsync("Contrato", $"Folder '{nom?.Trim()}' conectado al contrato.", ct, contratoId);
         return true;
     }
 

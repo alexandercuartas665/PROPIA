@@ -1,0 +1,129 @@
+@* ============================================================================================
+   Modal "Nuevo folder" (Documentos v2, maqueta expedientes-v2 · abrirNuevo). Nombre + Folder padre +
+   Subfolder (opcional) + preview de los documentos del subfolder. Crea el folder bajo el subfolder si
+   se eligio uno; si no, bajo el folder. Markup/CSS 1:1 con la maqueta (.doc-modal / .doc-grid2 / .exp-preview).
+   Accesibilidad: role=dialog, foco inicial en el nombre, trap de foco (propiaUI.modalFocus), Esc cierra.
+   ============================================================================================ *@
+@using Propia.Application.Documentos
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<div class="doc-ov" @onclick="Cerrar"></div>
+<div class="doc-modal nf-modal" style="width:min(560px,96vw);" role="dialog" aria-modal="true" aria-labelledby="nf-title" @onkeydown="OnKey">
+    <div class="doc-modal-head">
+        <h5 class="mb-0" id="nf-title" style="margin:0">Nuevo folder</h5>
+        <button type="button" class="doc-x" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+    </div>
+    <div class="doc-modal-body">
+        <label class="doc-lbl" for="nf-nombre">Nombre del folder *</label>
+        <input id="nf-nombre" class="doc-input mb-2" style="margin-bottom:10px" placeholder="Ej. Asamblea Ordinaria 2026" @bind="_nombre" @bind:event="oninput" maxlength="200" />
+        <div class="doc-grid2">
+            <div>
+                <label class="doc-lbl" for="nf-padre">Folder *</label>
+                <select id="nf-padre" class="doc-input" @bind="_padreId" @bind:after="OnPadreChange">
+                    <option value="@Guid.Empty">Seleccionar...</option>
+                    @foreach (var r in Arbol) { <option value="@r.Id">@r.Nombre</option> }
+                </select>
+            </div>
+            <div>
+                <label class="doc-lbl" for="nf-sub">Subfolder</label>
+                <select id="nf-sub" class="doc-input" @bind="_subId" @bind:after="OnSubChange" disabled="@(Padre is null || Padre.Hijos.Count == 0)">
+                    <option value="@Guid.Empty">@(Padre is null || Padre.Hijos.Count == 0 ? "Sin subfolders" : "Seleccionar...")</option>
+                    @if (Padre is not null) { @foreach (var s in Padre.Hijos) { <option value="@s.Id">@s.Nombre</option> } }
+                </select>
+            </div>
+        </div>
+        @if (_docsPreview is { Count: > 0 })
+        {
+            <div class="exp-preview">
+                <div class="doc-lbl">Documentos del subfolder</div>
+                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+                    @foreach (var d in _docsPreview) { <span class="exp-chip">@d</span> }
+                </div>
+                <div class="doc-sub" style="margin-top:6px;">Podrás agregar o quitar documentos y metadatos después.</div>
+            </div>
+        }
+        @if (_error is not null) { <div class="doc-banner err" style="margin-top:10px;">@_error</div> }
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+            <button type="button" class="doc-btn-ghost" @onclick="Cerrar">Cancelar</button>
+            <button type="button" class="doc-btn-primary" @onclick="CrearAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nombre) || _padreId == Guid.Empty)">@(_busy ? "Creando..." : "Crear folder")</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Arbol completo (raices con hijos) para los selectores.</summary>
+    [Parameter] public IReadOnlyList<FolderNodoDto> Arbol { get; set; } = Array.Empty<FolderNodoDto>();
+    /// <summary>Folder preseleccionado (opcional).</summary>
+    [Parameter] public Guid? PadreInicial { get; set; }
+    [Parameter] public EventCallback<FolderNodoDto> Creado { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+
+    private string? _nombre;
+    private Guid _padreId;
+    private Guid _subId;
+    private List<string>? _docsPreview;
+    private string? _error;
+    private bool _busy;
+
+    private FolderNodoDto? Padre => Arbol.FirstOrDefault(r => r.Id == _padreId);
+
+    protected override void OnInitialized()
+    {
+        if (PadreInicial is { } p && Arbol.Any(r => r.Id == p)) _padreId = p;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) { try { await Js.InvokeVoidAsync("propiaUI.modalFocus", ".nf-modal"); } catch { } }
+    }
+
+    private async Task OnPadreChange() { _subId = Guid.Empty; _docsPreview = null; await Task.CompletedTask; }
+
+    private async Task OnSubChange()
+    {
+        _docsPreview = null;
+        if (_subId == Guid.Empty) return;
+        try
+        {
+            var det = await Auth().GetFromJsonAsync<FolderDetalleDto>($"/api/folders/{_subId}");
+            _docsPreview = det?.Documentos.Select(d => d.Nombre).ToList();
+        }
+        catch { _docsPreview = null; }
+    }
+
+    private async Task CrearAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre) || _padreId == Guid.Empty) return;
+        _busy = true; _error = null;
+        try
+        {
+            var parent = _subId != Guid.Empty ? _subId : _padreId;
+            var resp = await Auth().PostAsJsonAsync("/api/folders", new CrearFolderRequest(_nombre!.Trim(), parent));
+            if (!resp.IsSuccessStatusCode) { _error = await LeerError(resp); return; }
+            var nodo = await resp.Content.ReadFromJsonAsync<FolderNodoDto>();
+            if (nodo is not null) await Creado.InvokeAsync(nodo);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private Task Cerrar() => Cerrado.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") await Cerrar(); }
+
+    private static async Task<string> LeerError(HttpResponseMessage r)
+    {
+        var txt = await r.Content.ReadAsStringAsync();
+        try { var d = System.Text.Json.JsonDocument.Parse(txt); if (d.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? txt; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)r.StatusCode}" : txt;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+}

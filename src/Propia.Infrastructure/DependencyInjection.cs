@@ -245,7 +245,8 @@ public static class DependencyInjection
 
         // Modulo 2.15 Documentos y Archivo Digital
         services.AddScoped<Application.Documentos.IDocumentosService, Documentos.DocumentosService>();
-        services.AddScoped<Application.Documentos.IExpedientesService, Documentos.ExpedientesService>();
+        services.AddScoped<Application.Documentos.IFoldersService, Documentos.FoldersService>();
+        services.AddScoped<Application.Documentos.IFolderChatService, Documentos.FolderChatService>();
 
         // Modulo 2.16 Reportes e Indicadores (consumidor puro - depende de IndicadoresService cross-modulo)
         services.AddScoped<Application.Reportes.IIndicadoresService, Reportes.IndicadoresService>();
