@@ -413,69 +413,112 @@ else
                     <div class="mas-cg-title">Ficha de la mascota</div>
                     <div class="mas-cg-sub">@(string.IsNullOrWhiteSpace(fm.Nombre) ? "Sin nombre" : fm.Nombre) &middot; @fm.UnidadCodigo</div>
                 </div>
-                <ModalHeaderActions MostrarEditar="false" MostrarEliminar="false" MostrarCancelar="false"
-                                    OnCerrar="CerrarFichaM" />
+                <ModalHeaderActions EnEdicion="_editM" MostrarEditar="true" MostrarEliminar="true"
+                                    MostrarCancelar="true" Guardando="_savingM"
+                                    TituloEditar="Editar" TituloGuardar="Guardar cambios" TituloEliminar="Quitar mascota"
+                                    OnEntrarEdicion="() => IniciarEdicionM(fm)" OnGuardar="() => GuardarFichaMAsync(fm)"
+                                    OnEliminar="AbrirConfirmDelM" OnCancelarEdicion="CancelarEdicionM" OnCerrar="CerrarFichaM" />
             </div>
             <div class="mas-cg-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Nombre</span>
-                        <input class="mas-row-inp" value="@fm.Nombre" @onchange="e => FichaGuardarNombre(fm, e.Value?.ToString())" /></label>
+                        @if (_editM) { <input class="mas-row-inp" @bind="_emNombre" /> }
+                        else { <input class="mas-row-inp" value="@fm.Nombre" disabled /> }</label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Tipo</span>
-                        <select class="mas-row-inp" @onchange="e => FichaGuardarTipo(fm, e.Value?.ToString())">
-                            @foreach (var o in OpcionesTipoFila(fm)) { <option value="@o" selected="@(string.Equals(EfectivoTipoLabel(fm), o, StringComparison.OrdinalIgnoreCase))">@o</option> }
-                        </select></label>
+                        @if (_editM)
+                        {
+                            <select class="mas-row-inp" @bind="_emTipoSel">
+                                @foreach (var o in OpcionesTipoFila(fm)) { <option value="@o">@o</option> }
+                            </select>
+                        }
+                        else { <input class="mas-row-inp" value="@EfectivoTipoLabel(fm)" disabled /> }</label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Raza</span>
-                        <input class="mas-row-inp" value="@fm.Raza" @onchange="e => FichaGuardarRaza(fm, e.Value?.ToString())" /></label>
+                        @if (_editM) { <input class="mas-row-inp" @bind="_emRaza" /> }
+                        else { <input class="mas-row-inp" value="@fm.Raza" disabled /> }</label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
                         <input class="mas-row-inp" value="@fm.UnidadCodigo" disabled /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
                         <div class="mas-prop-cur">
-                            <span>@(string.IsNullOrWhiteSpace(fm.PropietarioNombre) ? "-" : fm.PropietarioNombre)</span>
-                            <span class="mas-prop-src">@(fm.PropietarioPersonaId is null ? "según la unidad" : "del Directorio")</span>
-                            @if (fm.PropietarioPersonaId is not null)
+                            <span>@PropietarioDisplayM(fm)</span>
+                            <span class="mas-prop-src">@PropietarioSrcM(fm)</span>
+                            @if (_editM && (_emPropChanged ? _emPropPersonaId is not null : fm.PropietarioPersonaId is not null))
                             {
-                                <button type="button" class="mas-prop-clear" @onclick="() => FichaCambiarPropietario(fm, null)">Quitar</button>
+                                <button type="button" class="mas-prop-clear" @onclick="QuitarPropietarioM">Quitar</button>
                             }
                         </div>
-                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="@(sel => FichaCambiarPropietario(fm, sel))"
-                                         PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" /></label>
+                        @if (_editM)
+                        {
+                            <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="SeleccionarPropietarioM"
+                                             PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" />
+                        }</label>
                     @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
                     {
-                        var d = def; var val = ValorDe(fm.MascotaId, def.Id);
+                        var d = def; var val = _editM ? _emDin.GetValueOrDefault(def.Id) : ValorDe(fm.MascotaId, def.Id);
                         <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>@def.Label</span>
                             @if (def.Tipo == TipoCampoTablero.Formula)
                             {
                                 <input class="mas-row-inp" value="@(string.IsNullOrWhiteSpace(val) ? "(se calcula)" : val)" disabled />
                             }
+                            else if (!_editM)
+                            {
+                                <input class="mas-row-inp" value="@val" disabled />
+                            }
                             else if (def.Tipo == TipoCampoTablero.Seleccion)
                             {
-                                <select class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())">
+                                <select class="mas-row-inp" value="@val" @onchange="e => _emDin[d.Id] = e.Value?.ToString()">
                                     <option value="">-</option>
                                     @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
                                 </select>
                             }
                             else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
                             {
-                                <input class="mas-row-inp" type="number" step="any" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                                <input class="mas-row-inp" type="number" step="any" value="@val" @onchange="e => _emDin[d.Id] = e.Value?.ToString()" />
                             }
                             else if (def.Tipo == TipoCampoTablero.Fecha)
                             {
-                                <input class="mas-row-inp" type="date" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                                <input class="mas-row-inp" type="date" value="@val" @onchange="e => _emDin[d.Id] = e.Value?.ToString()" />
                             }
                             else if (def.Tipo == TipoCampoTablero.Usuario)
                             {
-                                <select class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())">
+                                <select class="mas-row-inp" value="@val" @onchange="e => _emDin[d.Id] = e.Value?.ToString()">
                                     <option value="">-</option>
                                     @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
                                 </select>
                             }
                             else
                             {
-                                <input class="mas-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fm.MascotaId, d.Id, e.Value?.ToString())" />
+                                <input class="mas-row-inp" value="@val" @onchange="e => _emDin[d.Id] = e.Value?.ToString()" />
                             }
                         </label>
                     }
                 </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Confirmacion de "Quitar mascota" (type-to-confirm, patron compartido mha-cdel-*). *@
+@if (_confirmDelM && _fichaM is { } fmd)
+{
+    <div class="mha-cdel-overlay" @onclick="CerrarConfirmDelM">
+        <div class="mha-cdel-card" @onclick:stopPropagation="true">
+            <div class="mha-cdel-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="mha-cdel-title">Quitar mascota</div>
+            <div class="mha-cdel-sub">
+                Vas a quitar a <b>@(string.IsNullOrWhiteSpace(fmd.Nombre) ? "esta mascota" : fmd.Nombre)</b> de la unidad <b>@fmd.UnidadCodigo</b>.
+                Esta accion es <b>permanente</b> y no se puede deshacer.
+            </div>
+            <div class="mha-cdel-confirm">
+                <label class="mha-cdel-lbl">Para confirmar, escribe el nombre: <b>@(string.IsNullOrWhiteSpace(fmd.Nombre) ? "(sin nombre)" : fmd.Nombre)</b></label>
+                <input class="mha-cdel-inp" @bind="_confirmTextM" @bind:event="oninput" placeholder="@fmd.Nombre" autocomplete="off" disabled="@_savingM" />
+            </div>
+            @if (!string.IsNullOrEmpty(_delErrorM)) { <div class="mha-cdel-err">@_delErrorM</div> }
+            <div class="mha-cdel-actions">
+                <button class="mha-cdel-cancel" type="button" @onclick="CerrarConfirmDelM" disabled="@_savingM">Cancelar</button>
+                <button class="mha-cdel-go" type="button" @onclick="() => ConfirmarEliminarM(fmd)"
+                        disabled="@(_savingM || !ConfirmCoincideM(fmd))">@(_savingM ? "Quitando..." : "Quitar mascota")</button>
             </div>
         </div>
     </div>
@@ -826,15 +869,6 @@ else
     private void OnPropietarioNuevo(PersonaCandidatoDto? sel) { _propSelNuevo = sel; _nuPropietarioId = sel?.PersonaId; }
 
     // Ficha: setear (sel) o limpiar (null) el propietario override de la mascota; refresca tabla y ficha.
-    private async Task FichaCambiarPropietario(MascotaResumenDto v, PersonaCandidatoDto? sel)
-    {
-        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-mascotas/{v.MascotaId}/propietario",
-            new ActualizarPropietarioRequest(sel?.PersonaId));
-        if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
-        await CargarAsync();
-        RefrescarFichaM(v.MascotaId);
-        Mensaje(sel is null ? "Propietario: se usa el dueno de la unidad." : "Propietario actualizado.", false);
-    }
     private void AbrirUnidad(MascotaResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnNombreNuevo(ChangeEventArgs e) => _nuNombre = e.Value?.ToString() ?? string.Empty;
     private void OnRazaNueva(ChangeEventArgs e) => _nuRaza = e.Value?.ToString() ?? string.Empty;
@@ -1036,13 +1070,109 @@ else
     // ===== Ficha de la mascota (modal simple): campos fijos + propios, con los endpoints de la edicion inline.
     // La abre el expander (de la fila de datos, o del alta tras crear). =====
     private MascotaResumenDto? _fichaM;
-    private void AbrirFichaM(MascotaResumenDto v) => _fichaM = v;
-    private void CerrarFichaM() => _fichaM = null;
+    private void AbrirFichaM(MascotaResumenDto v) { _fichaM = v; _editM = false; _confirmDelM = false; }
+    private void CerrarFichaM() { _fichaM = null; _editM = false; _confirmDelM = false; }
     private void RefrescarFichaM(Guid mascotaId) { if (_fichaM is not null) _fichaM = _mascotas.FirstOrDefault(x => x.MascotaId == mascotaId) ?? _fichaM; }
-    private async Task FichaGuardarNombre(MascotaResumenDto v, string? valor) { await GuardarNombreAsync(v, valor); RefrescarFichaM(v.MascotaId); }
-    private async Task FichaGuardarRaza(MascotaResumenDto v, string? valor) { await GuardarRazaAsync(v, valor); RefrescarFichaM(v.MascotaId); }
-    private async Task FichaGuardarTipo(MascotaResumenDto v, string? valor) { await GuardarTipoAsync(v, valor); RefrescarFichaM(v.MascotaId); }
-    private async Task FichaGuardarDinamico(Guid mascotaId, Guid defId, string? valor) { await GuardarDinamicoAsync(mascotaId, defId, valor); RefrescarFichaM(mascotaId); }
+
+    // ===== Ficha de mascota: modo vista/edicion (canon igual a Unidades: lapiz -> editar -> guardar/cancelar) =====
+    private bool _editM;
+    private bool _savingM;
+    private string _emNombre = "", _emRaza = "", _emTipoSel = "";
+    private readonly Dictionary<Guid, string?> _emDin = new();
+    private bool _emPropChanged;
+    private Guid? _emPropPersonaId;
+    private string? _emPropNombre;
+    private bool _confirmDelM;
+    private string _confirmTextM = "";
+    private string? _delErrorM;
+    private bool ConfirmCoincideM(MascotaResumenDto v) => string.Equals(_confirmTextM?.Trim(), (v.Nombre ?? "").Trim(), StringComparison.Ordinal);
+
+    private void IniciarEdicionM(MascotaResumenDto v)
+    {
+        _emNombre = v.Nombre ?? "";
+        _emRaza = v.Raza ?? "";
+        _emTipoSel = EfectivoTipoLabel(v);
+        _emDin.Clear();
+        foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador && d.Tipo != TipoCampoTablero.Formula))
+            _emDin[def.Id] = ValorDe(v.MascotaId, def.Id);
+        _emPropChanged = false; _emPropPersonaId = v.PropietarioPersonaId; _emPropNombre = v.PropietarioNombre;
+        _msg = null; _editM = true;
+    }
+    private void CancelarEdicionM() { _editM = false; _emDin.Clear(); _emPropChanged = false; _msg = null; }
+
+    private void SeleccionarPropietarioM(PersonaCandidatoDto? sel)
+    {
+        _emPropChanged = true; _emPropPersonaId = sel?.PersonaId; _emPropNombre = sel?.NombreCompleto;
+    }
+    private void QuitarPropietarioM() { _emPropChanged = true; _emPropPersonaId = null; _emPropNombre = null; }
+    private string PropietarioDisplayM(MascotaResumenDto v)
+    {
+        var nom = _editM && _emPropChanged ? _emPropNombre : v.PropietarioNombre;
+        return string.IsNullOrWhiteSpace(nom) ? "-" : nom!;
+    }
+    private string PropietarioSrcM(MascotaResumenDto v)
+    {
+        var pid = _editM && _emPropChanged ? _emPropPersonaId : v.PropietarioPersonaId;
+        return pid is null ? "según la unidad" : "del Directorio";
+    }
+
+    private async Task GuardarFichaMAsync(MascotaResumenDto v)
+    {
+        _savingM = true; _msg = null;
+        try
+        {
+            // 1) Campos fijos en un solo PUT (MERGE): solo los que cambiaron.
+            string? nombre = null, raza = null; TipoMascota? tipo = null; string? tipoCustom = null;
+            var nn = (_emNombre ?? "").Trim();
+            if (nn.Length > 0 && !string.Equals(nn, v.Nombre, StringComparison.Ordinal)) nombre = nn;
+            var nr = (_emRaza ?? "").Trim();
+            if (!string.Equals(nr, v.Raza ?? "", StringComparison.Ordinal)) raza = nr;
+            var (tn, tc) = DesdeSelTipo(_emTipoSel);
+            if (tn != v.Tipo || !string.Equals(tc ?? "", v.TipoCustom ?? "", StringComparison.Ordinal)) { tipo = tn; tipoCustom = tc ?? ""; }
+            if (nombre is not null || raza is not null || tipo is not null)
+            {
+                var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-mascotas/{v.MascotaId}",
+                    new ActualizarUnidadMascotaRequest(Nombre: nombre, Tipo: tipo, Raza: raza, TipoCustom: tipoCustom));
+                if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            }
+            // 2) Propietario si cambio.
+            if (_emPropChanged)
+            {
+                var rp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-mascotas/{v.MascotaId}/propietario", new ActualizarPropietarioRequest(_emPropPersonaId));
+                if (!rp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(rp), true); return; }
+            }
+            // 3) Campos dinamicos cambiados.
+            foreach (var kv in _emDin)
+            {
+                var original = ValorDe(v.MascotaId, kv.Key);
+                if (string.Equals(kv.Value ?? "", original ?? "", StringComparison.Ordinal)) continue;
+                var rd = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/mascotas-campos-valores/{v.MascotaId}/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                if (!rd.IsSuccessStatusCode) { Mensaje(await MotivoAsync(rd), true); return; }
+            }
+            await CargarAsync();
+            RefrescarFichaM(v.MascotaId);
+            _editM = false; _emDin.Clear(); _emPropChanged = false;
+            Mensaje("Datos guardados.", false);
+        }
+        catch (Exception ex) { Mensaje("No se pudo guardar: " + ex.Message, true); }
+        finally { _savingM = false; }
+    }
+
+    private void AbrirConfirmDelM() { _confirmTextM = ""; _delErrorM = null; _confirmDelM = true; }
+    private void CerrarConfirmDelM() { _confirmDelM = false; _confirmTextM = ""; _delErrorM = null; }
+    private async Task ConfirmarEliminarM(MascotaResumenDto v)
+    {
+        if (!ConfirmCoincideM(v)) return;
+        _savingM = true; _delErrorM = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-mascotas/{v.MascotaId}");
+            if (resp.IsSuccessStatusCode) { _confirmDelM = false; _fichaM = null; _editM = false; await CargarAsync(); Mensaje("Mascota eliminada.", false); return; }
+            _delErrorM = await MotivoAsync(resp);
+        }
+        catch (Exception ex) { _delErrorM = ex.Message; }
+        finally { _savingM = false; }
+    }
 
     private async Task GuardarNombreAsync(MascotaResumenDto v, string? valor)
     {

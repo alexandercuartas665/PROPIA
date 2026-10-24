@@ -409,67 +409,109 @@ else
                     <div class="veh-cg-title">Ficha del vehículo</div>
                     <div class="veh-cg-sub">@(string.IsNullOrWhiteSpace(fv.Placa) ? "Sin placa" : fv.Placa) &middot; @fv.UnidadCodigo</div>
                 </div>
-                <ModalHeaderActions MostrarEditar="false" MostrarEliminar="false" MostrarCancelar="false"
-                                    OnCerrar="CerrarFichaV" />
+                <ModalHeaderActions EnEdicion="_editV" MostrarEditar="true" MostrarEliminar="true"
+                                    MostrarCancelar="true" Guardando="_savingV"
+                                    TituloEditar="Editar" TituloGuardar="Guardar cambios" TituloEliminar="Quitar vehículo"
+                                    OnEntrarEdicion="() => IniciarEdicionV(fv)" OnGuardar="() => GuardarFichaVAsync(fv)"
+                                    OnEliminar="AbrirConfirmDelV" OnCancelarEdicion="CancelarEdicionV" OnCerrar="CerrarFichaV" />
             </div>
             <div class="veh-cg-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Placa</span>
-                        <input class="veh-row-inp" value="@fv.Placa" @onchange="e => FichaGuardarPlaca(fv, e.Value?.ToString())" /></label>
+                        @if (_editV) { <input class="veh-row-inp" @bind="_evPlaca" /> }
+                        else { <input class="veh-row-inp" value="@fv.Placa" disabled /> }</label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Tipo</span>
-                        <select class="veh-row-inp" value="@fv.TipoVehiculo" @onchange="e => FichaGuardarTipo(fv, e.Value?.ToString())">
-                            @foreach (var t in TiposVehiculo) { <option value="@t" selected="@(t == fv.TipoVehiculo)">@TipoLabel(t)</option> }
-                        </select></label>
+                        @if (_editV)
+                        {
+                            <select class="veh-row-inp" @bind="_evTipo">
+                                @foreach (var t in TiposVehiculo) { <option value="@t">@TipoLabel(t)</option> }
+                            </select>
+                        }
+                        else { <input class="veh-row-inp" value="@TipoLabel(fv.TipoVehiculo)" disabled /> }</label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Unidad</span>
                         <input class="veh-row-inp" value="@fv.UnidadCodigo" disabled /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>Propietario</span>
                         <div class="veh-prop-cur">
-                            <span>@(string.IsNullOrWhiteSpace(fv.PropietarioNombre) ? "-" : fv.PropietarioNombre)</span>
-                            <span class="veh-prop-src">@(fv.PropietarioPersonaId is null ? "según la unidad" : "del Directorio")</span>
-                            @if (fv.PropietarioPersonaId is not null)
+                            <span>@PropietarioDisplayV(fv)</span>
+                            <span class="veh-prop-src">@PropietarioSrcV(fv)</span>
+                            @if (_editV && (_evPropChanged ? _evPropPersonaId is not null : fv.PropietarioPersonaId is not null))
                             {
-                                <button type="button" class="veh-prop-clear" @onclick="() => FichaCambiarPropietario(fv, null)">Quitar</button>
+                                <button type="button" class="veh-prop-clear" @onclick="QuitarPropietarioV">Quitar</button>
                             }
                         </div>
-                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="@(sel => FichaCambiarPropietario(fv, sel))"
-                                         PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" /></label>
+                        @if (_editV)
+                        {
+                            <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="null" SeleccionadaChanged="SeleccionarPropietarioV"
+                                             PermiteEmpresa="false" Placeholder="Cambiar: buscar en el Directorio" />
+                        }</label>
                     @foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador))
                     {
-                        var d = def; var val = ValorDe(fv.PlacaId, def.Id);
+                        var d = def; var val = _editV ? _evDin.GetValueOrDefault(def.Id) : ValorDe(fv.PlacaId, def.Id);
                         <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--propia-text-secondary);"><span>@def.Label</span>
                             @if (def.Tipo == TipoCampoTablero.Formula)
                             {
                                 <input class="veh-row-inp" value="@(string.IsNullOrWhiteSpace(val) ? "(se calcula)" : val)" disabled />
                             }
+                            else if (!_editV)
+                            {
+                                <input class="veh-row-inp" value="@val" disabled />
+                            }
                             else if (def.Tipo == TipoCampoTablero.Seleccion)
                             {
-                                <select class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())">
+                                <select class="veh-row-inp" value="@val" @onchange="e => _evDin[d.Id] = e.Value?.ToString()">
                                     <option value="">-</option>
                                     @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == val)">@op</option> }
                                 </select>
                             }
                             else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
                             {
-                                <input class="veh-row-inp" type="number" step="any" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                                <input class="veh-row-inp" type="number" step="any" value="@val" @onchange="e => _evDin[d.Id] = e.Value?.ToString()" />
                             }
                             else if (def.Tipo == TipoCampoTablero.Fecha)
                             {
-                                <input class="veh-row-inp" type="date" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                                <input class="veh-row-inp" type="date" value="@val" @onchange="e => _evDin[d.Id] = e.Value?.ToString()" />
                             }
                             else if (def.Tipo == TipoCampoTablero.Usuario)
                             {
-                                <select class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())">
+                                <select class="veh-row-inp" value="@val" @onchange="e => _evDin[d.Id] = e.Value?.ToString()">
                                     <option value="">-</option>
                                     @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == val)">@u.NombreCompleto</option> }
                                 </select>
                             }
                             else
                             {
-                                <input class="veh-row-inp" value="@val" @onchange="e => FichaGuardarDinamico(fv.PlacaId, d.Id, e.Value?.ToString())" />
+                                <input class="veh-row-inp" value="@val" @onchange="e => _evDin[d.Id] = e.Value?.ToString()" />
                             }
                         </label>
                     }
                 </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Confirmacion de "Quitar vehículo" (type-to-confirm, patron compartido mha-cdel-*). *@
+@if (_confirmDelV && _fichaV is { } fvd)
+{
+    <div class="mha-cdel-overlay" @onclick="CerrarConfirmDelV">
+        <div class="mha-cdel-card" @onclick:stopPropagation="true">
+            <div class="mha-cdel-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="mha-cdel-title">Quitar vehículo</div>
+            <div class="mha-cdel-sub">
+                Vas a quitar el vehículo <b>@(string.IsNullOrWhiteSpace(fvd.Placa) ? "sin placa" : fvd.Placa)</b> de la unidad <b>@fvd.UnidadCodigo</b>.
+                Esta accion es <b>permanente</b> y no se puede deshacer.
+            </div>
+            <div class="mha-cdel-confirm">
+                <label class="mha-cdel-lbl">Para confirmar, escribe la placa: <b>@(string.IsNullOrWhiteSpace(fvd.Placa) ? "(sin placa)" : fvd.Placa)</b></label>
+                <input class="mha-cdel-inp" @bind="_confirmTextV" @bind:event="oninput" placeholder="@fvd.Placa" autocomplete="off" disabled="@_savingV" />
+            </div>
+            @if (!string.IsNullOrEmpty(_delErrorV)) { <div class="mha-cdel-err">@_delErrorV</div> }
+            <div class="mha-cdel-actions">
+                <button class="mha-cdel-cancel" type="button" @onclick="CerrarConfirmDelV" disabled="@_savingV">Cancelar</button>
+                <button class="mha-cdel-go" type="button" @onclick="() => ConfirmarEliminarV(fvd)"
+                        disabled="@(_savingV || !ConfirmCoincideV(fvd))">@(_savingV ? "Quitando..." : "Quitar vehículo")</button>
             </div>
         </div>
     </div>
@@ -789,15 +831,6 @@ else
     private void OnPropietarioNuevo(PersonaCandidatoDto? sel) { _propSelNuevo = sel; _nuPropietarioId = sel?.PersonaId; }
 
     // Ficha: setear (sel) o limpiar (null) el propietario override del vehiculo; refresca tabla y ficha.
-    private async Task FichaCambiarPropietario(VehiculoResumenDto v, PersonaCandidatoDto? sel)
-    {
-        var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}/propietario",
-            new ActualizarPropietarioRequest(sel?.PersonaId));
-        if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
-        await CargarAsync();
-        RefrescarFichaV(v.PlacaId);
-        Mensaje(sel is null ? "Propietario: se usa el dueno de la unidad." : "Propietario actualizado.", false);
-    }
     private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
     private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
     private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
@@ -995,13 +1028,107 @@ else
     // ===== Ficha del vehiculo (modal simple): campos fijos + propios, con los mismos endpoints de la edicion
     // inline. La abre el expander (de la fila de datos, o del alta tras crear). =====
     private VehiculoResumenDto? _fichaV;
-    private void AbrirFichaV(VehiculoResumenDto v) => _fichaV = v;
-    private void CerrarFichaV() => _fichaV = null;
-    // Tras guardar un campo desde la ficha, CargarAsync recarga _vehiculos; re-apunta _fichaV al registro fresco.
+    private void AbrirFichaV(VehiculoResumenDto v) { _fichaV = v; _editV = false; _confirmDelV = false; }
+    private void CerrarFichaV() { _fichaV = null; _editV = false; _confirmDelV = false; }
+    // Tras guardar, CargarAsync recarga _vehiculos; re-apunta _fichaV al registro fresco.
     private void RefrescarFichaV(Guid placaId) { if (_fichaV is not null) _fichaV = _vehiculos.FirstOrDefault(x => x.PlacaId == placaId) ?? _fichaV; }
-    private async Task FichaGuardarPlaca(VehiculoResumenDto v, string? valor) { await GuardarPlacaAsync(v, valor); RefrescarFichaV(v.PlacaId); }
-    private async Task FichaGuardarTipo(VehiculoResumenDto v, string? valor) { await GuardarTipoAsync(v, valor); RefrescarFichaV(v.PlacaId); }
-    private async Task FichaGuardarDinamico(Guid placaId, Guid defId, string? valor) { await GuardarDinamicoAsync(placaId, defId, valor); RefrescarFichaV(placaId); }
+
+    // ===== Ficha del vehiculo: modo vista/edicion (canon igual a Unidades: lapiz -> editar -> guardar/cancelar) =====
+    private bool _editV;
+    private bool _savingV;
+    private string _evPlaca = "";
+    private TipoVehiculo _evTipo = TipoVehiculo.Automovil;
+    private readonly Dictionary<Guid, string?> _evDin = new();
+    private bool _evPropChanged;
+    private Guid? _evPropPersonaId;
+    private string? _evPropNombre;
+    private bool _confirmDelV;
+    private string _confirmTextV = "";
+    private string? _delErrorV;
+    private bool ConfirmCoincideV(VehiculoResumenDto v) => string.Equals(_confirmTextV?.Trim(), (v.Placa ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private void IniciarEdicionV(VehiculoResumenDto v)
+    {
+        _evPlaca = v.Placa ?? "";
+        _evTipo = v.TipoVehiculo;
+        _evDin.Clear();
+        foreach (var def in _defs.Where(d => d.Tipo != TipoCampoTablero.Separador && d.Tipo != TipoCampoTablero.Formula))
+            _evDin[def.Id] = ValorDe(v.PlacaId, def.Id);
+        _evPropChanged = false; _evPropPersonaId = v.PropietarioPersonaId; _evPropNombre = v.PropietarioNombre;
+        _msg = null; _editV = true;
+    }
+    private void CancelarEdicionV() { _editV = false; _evDin.Clear(); _evPropChanged = false; _msg = null; }
+
+    private void SeleccionarPropietarioV(PersonaCandidatoDto? sel)
+    {
+        _evPropChanged = true; _evPropPersonaId = sel?.PersonaId; _evPropNombre = sel?.NombreCompleto;
+    }
+    private void QuitarPropietarioV() { _evPropChanged = true; _evPropPersonaId = null; _evPropNombre = null; }
+    private string PropietarioDisplayV(VehiculoResumenDto v)
+    {
+        var nom = _editV && _evPropChanged ? _evPropNombre : v.PropietarioNombre;
+        return string.IsNullOrWhiteSpace(nom) ? "-" : nom!;
+    }
+    private string PropietarioSrcV(VehiculoResumenDto v)
+    {
+        var pid = _editV && _evPropChanged ? _evPropPersonaId : v.PropietarioPersonaId;
+        return pid is null ? "según la unidad" : "del Directorio";
+    }
+
+    private async Task GuardarFichaVAsync(VehiculoResumenDto v)
+    {
+        _savingV = true; _msg = null;
+        try
+        {
+            // 1) Campos fijos en un solo PUT (MERGE): solo los que cambiaron.
+            string? placa = null; TipoVehiculo? tipo = null;
+            var np = (_evPlaca ?? "").Trim();
+            if (np.Length > 0 && !string.Equals(np, v.Placa, StringComparison.OrdinalIgnoreCase)) placa = np;
+            if (_evTipo != v.TipoVehiculo) tipo = _evTipo;
+            if (placa is not null || tipo is not null)
+            {
+                var resp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}",
+                    new ActualizarUnidadPlacaRequest(Placa: placa, TipoVehiculo: tipo));
+                if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            }
+            // 2) Propietario si cambio.
+            if (_evPropChanged)
+            {
+                var rp = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}/propietario", new ActualizarPropietarioRequest(_evPropPersonaId));
+                if (!rp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(rp), true); return; }
+            }
+            // 3) Campos dinamicos cambiados.
+            foreach (var kv in _evDin)
+            {
+                var original = ValorDe(v.PlacaId, kv.Key);
+                if (string.Equals(kv.Value ?? "", original ?? "", StringComparison.Ordinal)) continue;
+                var rd = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/vehiculos-campos-valores/{v.PlacaId}/{kv.Key}", new SetCampoValorRequest(kv.Value));
+                if (!rd.IsSuccessStatusCode) { Mensaje(await MotivoAsync(rd), true); return; }
+            }
+            await CargarAsync();
+            RefrescarFichaV(v.PlacaId);
+            _editV = false; _evDin.Clear(); _evPropChanged = false;
+            Mensaje("Datos guardados.", false);
+        }
+        catch (Exception ex) { Mensaje("No se pudo guardar: " + ex.Message, true); }
+        finally { _savingV = false; }
+    }
+
+    private void AbrirConfirmDelV() { _confirmTextV = ""; _delErrorV = null; _confirmDelV = true; }
+    private void CerrarConfirmDelV() { _confirmDelV = false; _confirmTextV = ""; _delErrorV = null; }
+    private async Task ConfirmarEliminarV(VehiculoResumenDto v)
+    {
+        if (!ConfirmCoincideV(v)) return;
+        _savingV = true; _delErrorV = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-placas/{v.PlacaId}");
+            if (resp.IsSuccessStatusCode) { _confirmDelV = false; _fichaV = null; _editV = false; await CargarAsync(); Mensaje("Vehiculo eliminado.", false); return; }
+            _delErrorV = await MotivoAsync(resp);
+        }
+        catch (Exception ex) { _delErrorV = ex.Message; }
+        finally { _savingV = false; }
+    }
 
     private async Task GuardarPlacaAsync(VehiculoResumenDto v, string? valor)
     {
