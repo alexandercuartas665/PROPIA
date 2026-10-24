@@ -1499,10 +1499,10 @@ else
             if (r.EmpresaId is Guid eid) await AbrirFichaEmpresaAsync(eid, r.Nombre);
             return;
         }
-        if (r.PersonaId is Guid pid) await AbrirFichaPersonaAsync(pid, r.Nombre, RolLabel(r.Rol), r.UnidadCodigo);
+        if (r.PersonaId is Guid pid) await AbrirFichaPersonaAsync(pid, r.Nombre, RolLabel(r.Rol), r.UnidadCodigo, r.UnidadPersonaId);
     }
 
-    private async Task AbrirFichaPersonaAsync(Guid personaId, string? nombre, string? relacion = null, string? unidad = null)
+    private async Task AbrirFichaPersonaAsync(Guid personaId, string? nombre, string? relacion = null, string? unidad = null, Guid? unidadPersonaId = null)
     {
         // Lista de navegacion ‹ › dentro del modal: personas visibles (en orden), sin empresas.
         var lista = Filtrados
@@ -1513,25 +1513,27 @@ else
 
         Guid? actual = personaId;
         string? rel = relacion, uni = unidad;
+        Guid? upid = unidadPersonaId;
         var refrescar = false;
         while (actual is Guid pid)
         {
-            // Al navegar a un vecino, resolver su relacion/unidad desde la lista cargada.
+            // Al navegar a un vecino, resolver su relacion/unidad/vinculo desde la lista cargada.
             if (rel is null && uni is null)
             {
                 var row = _residentes.FirstOrDefault(x => x.PersonaId == pid && x.EntidadTipo != EntidadDirectorio.Empresa);
-                if (row is not null) { rel = RolLabel(row.Rol); uni = row.UnidadCodigo; }
+                if (row is not null) { rel = RolLabel(row.Rol); uni = row.UnidadCodigo; upid = row.UnidadPersonaId; }
             }
             var parameters = new ModalParameters()
                 .Set("Jwt", _jwt).Set("PersonaId", pid).Set("NombreInicial", nombre)
                 .Set("Relacion", rel).Set("UnidadCodigo", uni)
+                .Set("UnidadPersonaId", upid ?? Guid.Empty)
                 .Set("ListaPersonaIds", lista);
             var options = new ModalOptions { Width = "1056px", Height = "86vh", CssClass = "is-fixedh" };
             var res = await Modals.OpenAsync<FichaResidenteModal, FichaResidenteModal.Resultado>(parameters, options);
             // Si se edito algo (datos/foto/documentos) se refresca la tabla para reflejar el cambio global.
             if (res?.Cambio == true) refrescar = true;
             actual = res?.IrA;            // navegacion a otro registro (null = cerrar)
-            rel = null; uni = null; nombre = null;  // el vecino resuelve su propio contexto
+            rel = null; uni = null; upid = null; nombre = null;  // el vecino resuelve su propio contexto
         }
         if (refrescar) await CargarAsync();
     }

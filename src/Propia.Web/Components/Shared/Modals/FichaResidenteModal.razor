@@ -34,13 +34,16 @@ else
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
     </div>
     <div class="pm-head-tt">
-        <input class="pm-head-h-edit" @bind="TituloNombre" @bind:event="oninput" title="Nombre del residente (editable)" />
+        <input class="pm-head-h-edit" @bind="TituloNombre" @bind:event="oninput" readonly="@(!_editMode)" title="Nombre del residente (editable en modo edicion)" />
         <div class="pm-head-s">@SubtituloRelacion</div>
     </div>
     <div class="pm-head-acts">
-        <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false" MostrarCancelar="false"
-                            Guardando="_guardando" TituloGuardar="Guardar cambios"
-                            OnGuardar="GuardarAsync" OnCerrar="Cerrar" />
+        <ModalHeaderActions EnEdicion="_editMode" MostrarEditar="true"
+                            MostrarEliminar="@(UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
+                            Guardando="_guardando" TituloEditar="Editar" TituloGuardar="Guardar cambios"
+                            TituloEliminar="Quitar de la unidad"
+                            OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarAsync"
+                            OnEliminar="AbrirConfirmEliminar" OnCancelarEdicion="CancelarEdicion" OnCerrar="Cerrar" />
     </div>
 </div>
 
@@ -57,10 +60,13 @@ else
             {
                 <div class="fr-avatar-ini">@Iniciales</div>
             }
-            <label class="fr-img-change">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoFoto ? "Subiendo..." : "Cambiar foto")
-                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
-            </label>
+            @if (_editMode)
+            {
+                <label class="fr-img-change">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoFoto ? "Subiendo..." : "Cambiar foto")
+                    <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
+                </label>
+            }
             @* Chips: relacion con la unidad + roles de acceso (maqueta). La unidad va en la grilla DATOS, no como chip. *@
             <div class="fr-tags">
                 @if (!string.IsNullOrWhiteSpace(Relacion)) { <span class="chip chip--rel">@Relacion</span> }
@@ -74,27 +80,27 @@ else
             <div class="fr-grid">
                 <div class="fr-fld">
                     <label>Nombres</label>
-                    <input class="fr-in" @bind="_nombres" @bind:event="oninput" />
+                    <input class="fr-in @(_editMode ? "" : "fr-in--ro")" readonly="@(!_editMode)" @bind="_nombres" @bind:event="oninput" />
                 </div>
                 <div class="fr-fld">
                     <label>Apellidos</label>
-                    <input class="fr-in" @bind="_apellidos" @bind:event="oninput" />
+                    <input class="fr-in @(_editMode ? "" : "fr-in--ro")" readonly="@(!_editMode)" @bind="_apellidos" @bind:event="oninput" />
                 </div>
                 <div class="fr-fld">
                     <label>Correo</label>
-                    <input class="fr-in" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
+                    <input class="fr-in @(_editMode ? "" : "fr-in--ro")" readonly="@(!_editMode)" type="email" @bind="_email" placeholder="correo@ejemplo.com" />
                 </div>
                 <div class="fr-fld">
                     <label>Teléfono</label>
-                    <input class="fr-in" @bind="_telefono" placeholder="Opcional" />
+                    <input class="fr-in @(_editMode ? "" : "fr-in--ro")" readonly="@(!_editMode)" @bind="_telefono" placeholder="Opcional" />
                 </div>
                 <div class="fr-fld">
                     <label>Fecha de nacimiento</label>
-                    <input class="fr-in" type="date" value="@(_fechaNac?.ToString("yyyy-MM-dd"))" @onchange="OnFechaNac" />
+                    <input class="fr-in @(_editMode ? "" : "fr-in--ro")" readonly="@(!_editMode)" type="date" value="@(_fechaNac?.ToString("yyyy-MM-dd"))" @onchange="OnFechaNac" />
                 </div>
                 <div class="fr-fld">
                     <label>Genero</label>
-                    <select class="fr-in" @bind="_genero">
+                    <select class="fr-in @(_editMode ? "" : "fr-in--ro")" disabled="@(!_editMode)" @bind="_genero">
                         <option value="">Sin especificar</option>
                         <option value="@GeneroPersona.Masculino">Masculino</option>
                         <option value="@GeneroPersona.Femenino">Femenino</option>
@@ -131,17 +137,23 @@ else
                                 <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
                                 <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
                             </div>
-                            <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                            </button>
+                            @if (_editMode)
+                            {
+                                <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                </button>
+                            }
                         </div>
                     }
                 </div>
             }
-            <label class="fr-doc-add">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
-                <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
-            </label>
+            @if (_editMode)
+            {
+                <label class="fr-doc-add">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
+                    <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
+                </label>
+            }
 
             @* ===== Comentarios (panel estandar de la ficha) ===== *@
             <div class="fr-sectlbl fr-sectlbl--sep">COMENTARIOS</div>
@@ -193,11 +205,11 @@ else
                     @foreach (var rid in _rolIdsAsignados)
                     {
                         var id = rid;
-                        <span class="fr-rolchip">@RolNombre(id)<button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button></span>
+                        <span class="fr-rolchip">@RolNombre(id)@if (_editMode) { <button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button>}</span>
                     }
                 }
             </div>
-            @if (RolesDisponibles() is { Count: > 0 } disp)
+            @if (_editMode && RolesDisponibles() is { Count: > 0 } disp)
             {
                 <div class="fr-roles-disp">
                     <span class="fr-disp-lbl">Clic para asignar:</span>
@@ -208,7 +220,7 @@ else
                     }
                 </div>
             }
-            @if (_usuarioTenantId is null && _rolIdsAsignados.Count > 0)
+            @if (_editMode && _usuarioTenantId is null && _rolIdsAsignados.Count > 0)
             {
                 <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
             }
@@ -221,6 +233,32 @@ else
     }
 </div>
 
+@* Confirmacion de "Quitar de la unidad" (type-to-confirm, patron compartido mha-cdel-*). *@
+@if (_confirmDel)
+{
+    <div class="mha-cdel-overlay" @onclick="CerrarConfirmEliminar">
+        <div class="mha-cdel-card" @onclick:stopPropagation="true">
+            <div class="mha-cdel-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="mha-cdel-title">Quitar de la unidad</div>
+            <div class="mha-cdel-sub">
+                Vas a quitar a <b>@TituloNombre</b> de la unidad <b>@UnidadCodigo</b>. La persona <b>permanece en el Directorio</b>;
+                solo se elimina su vinculo con esta unidad. Si tiene cartera, PQRSD o reservas, el sistema puede bloquear la accion.
+            </div>
+            <div class="mha-cdel-confirm">
+                <label class="mha-cdel-lbl">Para confirmar, escribe el nombre: <b>@TituloNombre</b></label>
+                <input class="mha-cdel-inp" @bind="_confirmText" @bind:event="oninput" placeholder="@TituloNombre" autocomplete="off" disabled="@_guardando" />
+            </div>
+            @if (!string.IsNullOrEmpty(_delError)) { <div class="mha-cdel-err">@_delError</div> }
+            <div class="mha-cdel-actions">
+                <button class="mha-cdel-cancel" type="button" @onclick="CerrarConfirmEliminar" disabled="@_guardando">Cancelar</button>
+                <button class="mha-cdel-go" type="button" @onclick="ConfirmarEliminar"
+                        disabled="@(_guardando || !ConfirmCoincide)">@(_guardando ? "Quitando..." : "Quitar de la unidad")</button>
+            </div>
+        </div>
+    </div>
+}
 
 @* Lightbox de la foto completa (sin recorte). *@
 @if (!string.IsNullOrWhiteSpace(_verImagen))
@@ -353,6 +391,8 @@ else
 @code {
     [Parameter] public string? Jwt { get; set; }
     [Parameter] public Guid PersonaId { get; set; }
+    /// <summary>Id del vinculo persona-unidad (para "Quitar de la unidad"). Si viene vacio, no se muestra la papelera.</summary>
+    [Parameter] public Guid UnidadPersonaId { get; set; }
     [Parameter] public string? NombreInicial { get; set; }
     /// <summary>Relacion con la unidad (Propietario/Residente/...). Se muestra en el subtitulo y como chip.</summary>
     [Parameter] public string? Relacion { get; set; }
@@ -365,6 +405,11 @@ else
     public record Resultado(bool Cambio, Guid? IrA);
 
     private bool _cargando = true;
+    private bool _editMode;
+    private bool _confirmDel;
+    private string _confirmText = "";
+    private string? _delError;
+    private bool ConfirmCoincide => string.Equals(_confirmText?.Trim(), TituloNombre.Trim(), StringComparison.Ordinal);
     private bool _guardando;
     private bool _subiendoFoto;
     private bool _subiendoDoc;
@@ -530,6 +575,42 @@ else
     private void OnFechaNac(ChangeEventArgs e)
         => _fechaNac = DateOnly.TryParse(e.Value?.ToString(), out var d) ? d : null;
 
+    // ----- Modo vista / edicion (canon igual a Unidades: lapiz -> editar -> guardar/cancelar) -----
+    private (string n, string a, string? e, string? t, DateOnly? f, GeneroPersona? g, List<Guid> roles)? _snap;
+    private void IniciarEdicion()
+    {
+        _snap = (_nombres, _apellidos, _email, _telefono, _fechaNac, _genero, new List<Guid>(_rolIdsAsignados));
+        _msg = ""; _editMode = true;
+    }
+    private void CancelarEdicion()
+    {
+        if (_snap is { } s)
+        {
+            _nombres = s.n; _apellidos = s.a; _email = s.e; _telefono = s.t;
+            _fechaNac = s.f; _genero = s.g;
+            _rolIdsAsignados.Clear(); _rolIdsAsignados.AddRange(s.roles);
+        }
+        _msg = ""; _editMode = false;
+    }
+
+    private void AbrirConfirmEliminar() { _confirmText = ""; _delError = null; _confirmDel = true; }
+    private void CerrarConfirmEliminar() { _confirmDel = false; _confirmText = ""; _delError = null; }
+    private async Task ConfirmarEliminar()
+    {
+        if (UnidadPersonaId == Guid.Empty || !ConfirmCoincide) return;
+        _guardando = true; _delError = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-personas/{UnidadPersonaId}");
+            if (resp.IsSuccessStatusCode) { _confirmDel = false; Close(new Resultado(true, null)); return; }
+            try { var err = await resp.Content.ReadFromJsonAsync<ErrorResp>(); _delError = err?.Error ?? "No se pudo quitar a la persona de la unidad."; }
+            catch { _delError = "No se pudo quitar a la persona de la unidad."; }
+        }
+        catch (Exception ex) { _delError = ex.Message; }
+        finally { _guardando = false; }
+    }
+    private sealed record ErrorResp(string? Error);
+
     private async Task GuardarAsync()
     {
         if (string.IsNullOrWhiteSpace(_nombres) || string.IsNullOrWhiteSpace(_apellidos))
@@ -547,6 +628,7 @@ else
             // Acceso al sistema: invitar como usuario (si no lo es) o actualizar sus roles.
             var (rolesOk, nota) = await GuardarRolesAsync();
             _msg = "Datos guardados." + nota; _msgError = !rolesOk;
+            if (rolesOk) _editMode = false;
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _guardando = false; }
