@@ -272,15 +272,14 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<DocumentoDestacadoPersonal> DocumentoDestacadosPersonal => Set<DocumentoDestacadoPersonal>();
     public DbSet<DocumentoAuditoria> DocumentoAuditorias => Set<DocumentoAuditoria>();
     public DbSet<DocumentoConsumo> DocumentoConsumos => Set<DocumentoConsumo>();
-    // Documentos 2.15 - vista Expedientes (TRD)
-    public DbSet<SerieDocumental> SeriesDocumentales => Set<SerieDocumental>();
-    public DbSet<SubserieDocumental> SubseriesDocumentales => Set<SubserieDocumental>();
-    public DbSet<SubserieTipologia> SubserieTipologias => Set<SubserieTipologia>();
-    public DbSet<SubserieCampo> SubserieCampos => Set<SubserieCampo>();
-    public DbSet<Expediente> Expedientes => Set<Expediente>();
-    public DbSet<ExpedienteTipologia> ExpedienteTipologias => Set<ExpedienteTipologia>();
-    public DbSet<ExpedienteTipologiaVersion> ExpedienteTipologiaVersiones => Set<ExpedienteTipologiaVersion>();
-    public DbSet<ExpedienteCampo> ExpedienteCampos => Set<ExpedienteCampo>();
+    // Documentos 2.15 - vista Folders (v2, reemplaza TRD/Expedientes)
+    public DbSet<Folder> Folders => Set<Folder>();
+    public DbSet<FolderDocumento> FolderDocumentos => Set<FolderDocumento>();
+    public DbSet<FolderDocumentoVersion> FolderDocumentoVersiones => Set<FolderDocumentoVersion>();
+    public DbSet<FolderCampoDefinicion> FolderCampoDefiniciones => Set<FolderCampoDefinicion>();
+    public DbSet<FolderDocumentoCampoValor> FolderDocumentoCampoValores => Set<FolderDocumentoCampoValor>();
+    public DbSet<FolderDocumentoTexto> FolderDocumentoTextos => Set<FolderDocumentoTexto>();
+    public DbSet<FolderChatMensaje> FolderChatMensajes => Set<FolderChatMensaje>();
 
     // Modulo 2.16 Reportes e Indicadores
     // (Categoria y Catalogo con TenantId nullable para mezclar globales PropIA + tenant)

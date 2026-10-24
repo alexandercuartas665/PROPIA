@@ -1,0 +1,766 @@
+@* ============================================================================================
+   EXPLORADOR DE FOLDERS (Documentos v2, maqueta expedientes-v2 · abrirExpediente). Modal casi pantalla
+   completa (98vw x 95vh) con 5 columnas y separadores REDIMENSIONABLES (grip con puntos; anchos persisten
+   en localStorage via propiaUI.explorerSplits):
+     Col 1 ESTRUCTURA: arbol de folders (navegar / seleccionar / expandir).
+     Col 2 DOCUMENTOS del folder como MINIATURAS tipo pagina (badge de extension por color, badge de
+           versiones, acciones al hover: duplicar / ver versiones / archivar; seccion "Archivados (N)"
+           colapsable con restaurar) + "Cargar documento" (abre CargarDocumentoModal) + ZIP del folder.
+     Col 3 VISOR: vista previa del documento (imagen / PDF / texto / Excel-Word) + Reemplazar / Descargar.
+     Col 4 METADATOS: captura por documento (ficha por campo con pill de tipo + control + descripcion); se
+           guarda por campo al cambiar; aviso de obligatorios pendientes.
+     Col 5 CHAT: conversar con los documentos del folder. OCULTABLE desde la cabecera; la conversacion vive
+           en la pagina (persiste al ocultar/mostrar, cambiar de folder y reabrir). La respuesta de la IA
+           se conecta en la Ola 3: hoy responde un asistente de vista previa con datos reales del folder.
+   Un documento con archivo NUNCA se elimina: se archiva y se puede restaurar.
+   ============================================================================================ *@
+@using Propia.Application.Documentos
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<div class="doc-ov" @onclick="Cerrar"></div>
+<div class="exp-modal fbrowse xf-modal" role="dialog" aria-modal="true" aria-labelledby="xf-title" @onkeydown="OnKey" tabindex="-1">
+    <div class="exp-modal-head">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+            <div class="exp-modal-icon" style="color:var(--propia-brand);background:var(--propia-brand-soft)"><i class="fi fi-rr-folder-tree"></i></div>
+            <div style="min-width:0;">
+                <div class="exp-modal-title" id="xf-title">Folders de la copropiedad</div>
+                <div class="doc-sub" style="margin:2px 0 0;">Navega la estructura, selecciona un documento y conversa con la IA.</div>
+            </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+            <button type="button" class="doc-btn-ghost sm" @onclick="ToggleChat" title="@(ChatOculto ? "Mostrar chat" : "Ocultar chat")">
+                <i class="fi @(ChatOculto ? "fi-rr-comment-alt" : "fi-rr-angle-double-small-right")"></i> @(ChatOculto ? "Mostrar chat" : "Ocultar chat")
+            </button>
+            <button type="button" class="doc-x" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+    </div>
+
+    <div class="exp-cols fbrowse-flex @(ChatOculto ? "chat-hidden" : "")">
+        @* ---------------- Col 1: estructura ---------------- *@
+        <div class="exp-col exp-col-struct" style="flex:0 0 222px">
+            <div class="exp-col-head"><div class="exp-sec-title">Estructura de folders</div></div>
+            <div class="exp-struct-tree" role="tree" aria-label="Estructura de folders">
+                @if (_arbol is null) { <div class="doc-sub" style="padding:8px;">Cargando...</div> }
+                else { @foreach (var f in _arbol) { @Nodo(f, 0) } }
+            </div>
+        </div>
+        <div class="exp-split" data-resize="struct" data-side="left" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
+
+        @* ---------------- Col 2: documentos (miniaturas) ---------------- *@
+        <div class="exp-col exp-col-docs" style="flex:0 0 262px">
+            <div class="exp-col-head">
+                <div class="exp-sec-title">Documentos @if (_detalle is not null) { <span class="doc-sub">&middot; @_detalle.Nombre</span> }</div>
+                <button type="button" class="exp-ico-btn" title="Descargar el folder y sus subfolders en un ZIP" @onclick="DescargarZip" disabled="@(_detalle is null || _busyZip)"><i class="fi @(_busyZip ? "fi-rr-spinner" : "fi-rr-folder-download")"></i></button>
+            </div>
+            @if (_detalle is null)
+            {
+                <div class="doc-sub" style="padding:10px 16px;">Selecciona un folder en la estructura.</div>
+            }
+            else
+            {
+                <div class="exp-docs-scroll">
+                    @if (_detalle.Documentos.Count == 0)
+                    {
+                        <div class="doc-sub" style="padding:14px;">Este folder no tiene documentos activos. Cárgalos abajo.</div>
+                    }
+                    else
+                    {
+                        <div class="exp-thumbs">
+                            @foreach (var d in _detalle.Documentos) { @Miniatura(d, false) }
+                        </div>
+                    }
+                    @if (_detalle.Archivados.Count > 0)
+                    {
+                        <div class="exp-arch">
+                            <button type="button" class="exp-arch-tog" @onclick="() => _verArchivados = !_verArchivados" aria-expanded="@_verArchivados.ToString().ToLowerInvariant()">
+                                <i class="fi @(_verArchivados ? "fi-rr-angle-small-down" : "fi-rr-angle-small-right")"></i> Archivados (@_detalle.Archivados.Count)
+                            </button>
+                            @if (_verArchivados)
+                            {
+                                <div class="exp-thumbs exp-thumbs--arch">
+                                    @foreach (var d in _detalle.Archivados) { @Miniatura(d, true) }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="exp-add" style="padding:12px 16px;border-top:1px solid var(--propia-border-divider);">
+                    <button type="button" class="doc-btn-primary sm full" @onclick="AbrirCargarNuevo"><i class="fi fi-rr-cloud-upload"></i> Cargar documento</button>
+                </div>
+            }
+        </div>
+        <div class="exp-split" data-resize="docs" data-side="left" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
+
+        @* ---------------- Col 3: visor ---------------- *@
+        <div class="exp-col exp-col-center" style="flex:1 1 0">
+            @if (Doc is null)
+            {
+                <div class="exp-viewer-empty"><i class="fi fi-rr-eye"></i><div>Selecciona un documento para verlo.</div></div>
+            }
+            else
+            {
+                <div class="exp-viewer-bar">
+                    <div class="doc-ficon sm"><i class="fi fi-rr-document"></i></div>
+                    <div style="flex:1;min-width:0;">
+                        <div class="doc-row-name">@(Doc.ArchivoNombre ?? Doc.Nombre)</div>
+                        <div class="doc-sub" style="margin:0;">
+                            @_detalle!.Nombre
+                            @if (_visorVersionNum > 0) { <text> &middot; versión @_visorVersionNum (anterior) &middot; </text><button type="button" class="exp-ver-link" @onclick="() => CargarVisorActual(Doc)">volver a la actual</button> }
+                            else if (Doc.NumeroVersiones > 1) { <text> &middot; versión actual (v@(Doc.NumeroVersiones))</text> }
+                            else if (!Doc.Cargado) { <text> &middot; sin archivo</text> }
+                        </div>
+                    </div>
+                    @if (!Doc.Archivado)
+                    {
+                        <button type="button" class="doc-btn-soft sm" @onclick="() => AbrirCargarVersion(Doc)">@(Doc.Cargado ? "Reemplazar" : "Cargar archivo")</button>
+                    }
+                    <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(Doc)" disabled="@(!Doc.Cargado)"><i class="fi fi-rr-download"></i> Descargar</button>
+                </div>
+                <div class="exp-viewer-body">
+                    @if (!Doc.Cargado)
+                    {
+                        <div class="exp-viewer-empty">
+                            <i class="fi fi-rr-cloud-upload"></i>
+                            <div>Esta casilla aún no tiene archivo.@(Doc.Obligatorio ? " Es obligatoria en el folder." : "")</div>
+                            @if (!Doc.Archivado) { <button type="button" class="doc-btn-primary sm" @onclick="() => AbrirCargarVersion(Doc)"><i class="fi fi-rr-cloud-upload"></i> Cargar archivo</button> }
+                        </div>
+                    }
+                    else if (_visorCargando)
+                    {
+                        <div class="exp-viewer-empty"><i class="fi fi-rr-spinner"></i><div>Cargando documento...</div></div>
+                    }
+                    else if (_visorKind == "image" && !string.IsNullOrEmpty(_visorDataUri))
+                    {
+                        <img class="exp-viewer-img" src="@_visorDataUri" alt="@_visorNombre" />
+                    }
+                    else if (_visorKind == "pdf" && !string.IsNullOrEmpty(_visorDataUri))
+                    {
+                        <iframe class="exp-viewer-frame" src="@_visorDataUri" title="@_visorNombre"></iframe>
+                    }
+                    else if (_visorKind == "text")
+                    {
+                        <pre class="exp-viewer-text">@_visorTexto</pre>
+                    }
+                    else if (_visorKind == "html" && !string.IsNullOrEmpty(_visorHtml))
+                    {
+                        <div class="exp-viewer-html">@((MarkupString)_visorHtml)</div>
+                    }
+                    else
+                    {
+                        <div class="exp-viewer-empty">
+                            <i class="fi fi-rr-file"></i>
+                            <div>Vista previa no disponible para este tipo de archivo. Descárgalo para verlo.</div>
+                            <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(Doc)"><i class="fi fi-rr-download"></i> Descargar</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="exp-split" data-resize="meta" data-side="right" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
+
+        @* ---------------- Col 4: metadatos (captura) ---------------- *@
+        <div class="exp-col exp-col-meta" style="flex:0 0 306px">
+            <div class="exp-col-head" style="padding:14px 4px 6px;"><div class="exp-sec-title">Metadatos del documento</div></div>
+            @if (Doc is null)
+            {
+                <div class="doc-sub" style="padding:8px 4px;">Selecciona un documento para capturar sus metadatos.</div>
+            }
+            else
+            {
+                <div class="doc-sub" style="padding:0 4px 10px;">Captura los valores. Una IA los usa para indexar y buscar dentro del documento.</div>
+                @if (_faltan.Count > 0)
+                {
+                    <div class="exp-cap-warn"><i class="fi fi-rr-exclamation"></i><span>Obligatorios sin valor: @string.Join(", ", _faltan).</span></div>
+                }
+                @if (_guardadoOk) { <div class="exp-cap-saved"><i class="fi fi-rr-check"></i> Guardado.</div> }
+                @if (_capError is not null) { <div class="doc-banner err" style="margin:0 4px 10px;">@_capError</div> }
+                <div class="exp-cap-scroll">
+                    @if (_esquema is null) { <div class="doc-sub" style="padding:0 4px;">Cargando...</div> }
+                    else if (_esquema.Count == 0) { <div class="doc-sub" style="padding:0 4px;">Este documento no tiene metadatos definidos. Agrégalos en "Configurar folders".</div> }
+                    else
+                    {
+                        <div class="exp-cap">
+                            @foreach (var c in _esquema)
+                            {
+                                var cc = c;
+                                <div class="exp-cap-fld">
+                                    <div class="exp-cap-head">
+                                        <span class="exp-cap-name">@c.Label@(c.Obligatorio ? " *" : "")</span>
+                                        <span class="exp-cap-type @FolderUi.CatClase(c.Tipo)">@FolderUi.TipoCorto(c.Tipo)</span>
+                                    </div>
+                                    <FolderCampoInput Campo="cc" Valor="@ValorDe(cc.Id)" ValorChanged="v => GuardarValor(cc, v)" />
+                                    @if (!string.IsNullOrEmpty(c.Descripcion)) { <div class="exp-cap-desc"><i class="fi fi-rr-sparkles"></i><span>@c.Descripcion</span></div> }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @* ---------------- Col 5: chat (ocultable) ---------------- *@
+        @if (!ChatOculto)
+        {
+            <div class="exp-split" data-resize="chat" data-side="right" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
+            <div class="exp-col exp-col-chat" style="flex:0 0 322px">
+                <div class="act-panel">
+                    <div class="act-h">
+                        <i class="fi fi-rr-comment-alt"></i> Conversar con los documentos
+                        <span style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                            @if (_chatInfo is not null && !_chatInfo.IaDisponible) { <span class="exp-cap-type cat-otro" title="La IA no está configurada en Super Admin">Sin IA</span> }
+                            else if (_chatInfo?.Modelo is not null) { <span class="exp-cap-type cat-sel" title="@($"{_chatInfo.Proveedor} · {_chatInfo.Modelo}")">IA</span> }
+                            <button type="button" class="exp-ico-btn" title="Limpiar la conversación" @onclick="LimpiarChat" disabled="@(_chatMsgs.Count == 0 || _chatPensando)"><i class="fi fi-rr-trash"></i></button>
+                        </span>
+                    </div>
+                    <div class="act-chat xf-chat" role="log" aria-live="polite">
+                        @if (_chatMsgs.Count == 0 && !_chatCargando)
+                        {
+                            <div class="act-msg"><span class="act-av">IA</span><div class="act-msg-b"><div class="act-who">Asistente</div><div class="act-bubble">Hola. Puedo responder sobre los documentos de este folder: resumir, decir qué falta o buscar datos dentro de los archivos. Pregúntame lo que necesites.</div></div></div>
+                        }
+                        @foreach (var m in _chatMsgs)
+                        {
+                            var mio = m.Rol == "user";
+                            <div class="act-msg @(mio ? "mine" : "")">
+                                <span class="act-av">@(mio ? "TÚ" : "IA")</span>
+                                <div class="act-msg-b">
+                                    <div class="act-who">@(mio ? "Tú" : "Asistente")</div>
+                                    <div class="act-bubble @(m.Error ? "is-err" : "")">@MdLite(m.Texto)</div>
+                                    <div class="act-time">@m.Cuando.LocalDateTime.ToString("dd MMM HH:mm")</div>
+                                </div>
+                            </div>
+                        }
+                        @if (_chatPensando) { <div class="act-typing">El asistente está leyendo los documentos...</div> }
+                    </div>
+                    <div class="act-qr-row">
+                        <span class="act-qr-lbl">Respuesta rápida</span>
+                        <button type="button" class="act-qr" @onclick='() => EnviarChat("Resume el folder")'>Resume el folder</button>
+                        <button type="button" class="act-qr" @onclick='() => EnviarChat("Qué documentos faltan")'>Qué documentos faltan</button>
+                        <button type="button" class="act-qr" @onclick='() => EnviarChat("Extrae las fechas clave")'>Extrae las fechas clave</button>
+                    </div>
+                    <div class="act-composer">
+                        <input class="fr-in act-input" placeholder="Pregunta sobre los documentos..." @bind="_chatTexto" @bind:event="oninput" @onkeydown="OnChatKey" aria-label="Mensaje" />
+                        <button type="button" class="act-cbtn act-send" title="Enviar" @onclick="() => EnviarChat(null)" disabled="@(string.IsNullOrWhiteSpace(_chatTexto) || _chatPensando)"><i class="fi fi-rr-paper-plane"></i></button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_cargarAbierto)
+{
+    <CargarDocumentoModal Jwt="@Jwt" FolderId="@_cargarFolderId" DocumentoId="@_cargarDocId" NombreContexto="@_cargarNombre"
+                          Cargado="OnCargado" Cerrado="() => _cargarAbierto = false" />
+}
+
+@if (_versionesDoc is not null)
+{
+    var vd = _versionesDoc;
+    <div class="doc-ov" @onclick="() => _versionesDoc = null"></div>
+    <div class="doc-modal xv-modal" style="width:min(460px,96vw);" role="dialog" aria-modal="true" aria-labelledby="xv-title" @onkeydown="@(e => { if (e.Key == "Escape") _versionesDoc = null; })">
+        <div class="doc-modal-head">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                <div class="doc-ficon sm"><i class="fi fi-rr-time-past"></i></div>
+                <div style="min-width:0;"><h5 class="mb-0" id="xv-title" style="margin:0">Versiones &middot; @vd.Nombre</h5><div class="doc-sub" style="margin:2px 0 0;">@vd.NumeroVersiones versión(es). Reemplazar el documento crea una nueva y conserva las anteriores.</div></div>
+            </div>
+            <button type="button" class="doc-x" @onclick="() => _versionesDoc = null" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+        <div class="doc-modal-body">
+            @if (_versiones is null) { <div class="doc-sub">Cargando...</div> }
+            else if (_versiones.Count == 0) { <div class="doc-sub">Este documento aún no tiene versiones.</div> }
+            else
+            {
+                <div class="exp-vers-list">
+                    @foreach (var v in _versiones)
+                    {
+                        var vv = v; var cur = v.Numero == vd.NumeroVersiones;
+                        <div class="exp-vers-row">
+                            <span class="exp-vers-ic @(cur ? "cur" : "")"><i class="fi @(cur ? "fi-rr-badge-check" : "fi-rr-time-past")"></i></span>
+                            <div style="flex:1;min-width:0">
+                                <div class="exp-vers-name">Versión @v.Numero @if (cur) { <span class="exp-vers-cur">ACTUAL</span> }</div>
+                                <div class="exp-vers-meta">@v.CreadoAt.LocalDateTime.ToString("dd MMM yyyy HH:mm") &middot; @v.ArchivoNombre &middot; @FolderUi.FormatBytes(v.ArchivoTamano)@(string.IsNullOrEmpty(v.NotasCambio) ? "" : " · " + v.NotasCambio)</div>
+                            </div>
+                            <button type="button" class="exp-ico-btn" title="Ver esta versión" @onclick="() => VerVersion(vd, vv)"><i class="fi fi-rr-eye"></i></button>
+                            <button type="button" class="exp-ico-btn" title="Descargar esta versión" @onclick="() => DescargarVersion(vd, vv)"><i class="fi fi-rr-download"></i></button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="doc-modal-foot">
+            <button type="button" class="doc-btn-soft" @onclick="() => { var d = vd; _versionesDoc = null; AbrirCargarVersion(d); }" disabled="@vd.Archivado"><i class="fi fi-rr-cloud-upload"></i> Subir nueva versión</button>
+            <button type="button" class="doc-btn-primary" @onclick="() => _versionesDoc = null">Cerrar</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Folder con el que abre (tarjeta pulsada).</summary>
+    [Parameter] public Guid FolderInicial { get; set; }
+    [Parameter] public bool ChatOculto { get; set; }
+    [Parameter] public EventCallback<bool> ChatOcultoChanged { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Hubo cambios (cargas, archivados...) para que la pagina recargue tarjetas.</summary>
+    [Parameter] public EventCallback Cambio { get; set; }
+
+    private List<FolderNodoDto>? _arbol;
+    private readonly HashSet<Guid> _abiertos = new();
+    private Guid _sel;
+    private FolderDetalleDto? _detalle;
+    private Guid _docSel;
+    private bool _verArchivados;
+    private bool _hubo;
+    private bool _busyZip;
+
+    // Visor
+    private bool _visorCargando;
+    private string _visorKind = "none";
+    private string? _visorDataUri, _visorHtml, _visorTexto, _visorNombre;
+    private int _visorVersionNum;
+
+    // Captura
+    private List<FolderCampoDto>? _esquema;
+    private readonly Dictionary<Guid, string?> _valores = new();
+    private List<string> _faltan = new();
+    private bool _guardadoOk;
+    private string? _capError;
+
+    // Cargar / versiones
+    private bool _cargarAbierto;
+    private Guid? _cargarFolderId, _cargarDocId;
+    private string? _cargarNombre;
+    private FolderDocumentoDto? _versionesDoc;
+    private List<FolderVersionDto>? _versiones;
+
+    // Chat (persistente en el API por copropiedad + folder raiz + usuario)
+    private string? _chatTexto;
+    private bool _chatPensando, _chatCargando, _chatScroll;
+    private Guid _chatRaiz;
+    private FolderChatDto? _chatInfo;
+    private List<FolderChatMensajeDto> _chatMsgs = new();
+
+    private FolderDocumentoDto? Doc => _detalle?.Documentos.Concat(_detalle.Archivados).FirstOrDefault(d => d.Id == _docSel);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarArbolAsync();
+        if (_arbol is { Count: > 0 })
+        {
+            foreach (var r in _arbol) _abiertos.Add(r.Id);
+            var inicial = Buscar(_arbol, FolderInicial) is not null ? FolderInicial : _arbol[0].Id;
+            AbrirCadena(inicial);
+            await Seleccionar(inicial);
+        }
+        _chatScroll = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("propiaUI.explorerSplits", ".xf-modal", "propia.folders.colw");
+            if (first) await Js.InvokeVoidAsync("propiaUI.modalFocus", ".xf-modal");
+            if (_chatScroll) { _chatScroll = false; await Js.InvokeVoidAsync("propiaUI.scrollBottom", ".xf-chat"); }
+        }
+        catch { }
+    }
+
+    // ===================== Arbol =====================
+    private RenderFragment Nodo(FolderNodoDto f, int depth) => __builder =>
+    {
+        var pad = 8 + depth * 16;
+        var tieneHijos = f.Hijos.Count > 0;
+        var abierto = _abiertos.Contains(f.Id);
+        <div class="ftree-node" role="treeitem" aria-expanded="@(tieneHijos ? abierto.ToString().ToLowerInvariant() : null)" aria-selected="@((_sel == f.Id).ToString().ToLowerInvariant())">
+            <div class="ftree-row @(_sel == f.Id ? "sel" : "")" style="padding-left:@(pad)px" tabindex="0" @onclick="() => Seleccionar(f.Id)" @onkeydown="@(e => OnNodoKey(e, f))">
+                @if (tieneHijos)
+                {
+                    <button type="button" class="ftree-caret" aria-label="@(abierto ? "Colapsar" : "Expandir")" @onclick:stopPropagation="true" @onclick="() => Toggle(f.Id)"><i class="fi @(abierto ? "fi-rr-angle-small-down" : "fi-rr-angle-small-right")"></i></button>
+                }
+                else { <span class="ftree-caret"></span> }
+                <i class="fi fi-rr-folder ftree-ic"></i>
+                <span class="ftree-name">@f.Nombre</span>
+                @if (f.Documentos > 0) { <span class="ftree-count">@f.Documentos</span> }
+            </div>
+            @if (abierto && tieneHijos)
+            {
+                <div class="ftree-kids" role="group">@foreach (var h in f.Hijos) { @Nodo(h, depth + 1) }</div>
+            }
+        </div>
+    };
+
+    private static FolderNodoDto? Buscar(IEnumerable<FolderNodoDto>? lista, Guid id)
+    {
+        if (lista is null) return null;
+        foreach (var n in lista) { if (n.Id == id) return n; var h = Buscar(n.Hijos, id); if (h is not null) return h; }
+        return null;
+    }
+
+    private void AbrirCadena(Guid id)
+    {
+        // Abre todos los ancestros del folder inicial para que quede visible en el arbol.
+        bool Visitar(FolderNodoDto n)
+        {
+            if (n.Id == id) return true;
+            foreach (var h in n.Hijos) if (Visitar(h)) { _abiertos.Add(n.Id); return true; }
+            return false;
+        }
+        foreach (var r in _arbol ?? new()) Visitar(r);
+    }
+
+    private void Toggle(Guid id) { if (!_abiertos.Remove(id)) _abiertos.Add(id); }
+
+    private async Task OnNodoKey(KeyboardEventArgs e, FolderNodoDto f)
+    {
+        if (e.Key == "Enter" || e.Key == " ") await Seleccionar(f.Id);
+        else if (e.Key == "ArrowRight" && f.Hijos.Count > 0) _abiertos.Add(f.Id);
+        else if (e.Key == "ArrowLeft") _abiertos.Remove(f.Id);
+    }
+
+    private async Task CargarArbolAsync()
+    {
+        try { _arbol = await Auth().GetFromJsonAsync<List<FolderNodoDto>>("/api/folders/arbol") ?? new(); }
+        catch { _arbol = new(); }
+    }
+
+    private async Task Seleccionar(Guid id)
+    {
+        _sel = id; _docSel = Guid.Empty; _detalle = null; _esquema = null; _verArchivados = false;
+        LimpiarVisor();
+        await CargarDetalleAsync();
+        var raiz = RaizDe(id);
+        if (raiz != _chatRaiz) { _chatRaiz = raiz; await CargarChatAsync(); }
+    }
+
+    /// <summary>Folder raiz (de primer nivel) al que pertenece un folder: la conversacion del chat se guarda por raiz.</summary>
+    private Guid RaizDe(Guid id)
+    {
+        foreach (var r in _arbol ?? new()) if (r.Id == id || Buscar(r.Hijos, id) is not null) return r.Id;
+        return id;
+    }
+
+    private async Task CargarDetalleAsync()
+    {
+        try { _detalle = await Auth().GetFromJsonAsync<FolderDetalleDto>($"/api/folders/{_sel}"); }
+        catch { _detalle = null; }
+    }
+
+    private async Task Recargar()
+    {
+        _hubo = true;
+        await CargarArbolAsync();
+        await CargarDetalleAsync();
+        if (_docSel != Guid.Empty && Doc is null) { _docSel = Guid.Empty; LimpiarVisor(); _esquema = null; }
+    }
+
+    // ===================== Documentos (miniaturas) =====================
+    private RenderFragment Miniatura(FolderDocumentoDto d, bool archivado) => __builder =>
+    {
+        var (ext, extClase) = FolderUi.ExtBadge(d.ArchivoNombre);
+        var sel = _docSel == d.Id;
+        var titulo = archivado ? d.Nombre + " (archivado)" : d.Nombre;
+        var clases = "exp-thumb" + (sel ? " sel" : "") + (archivado ? " exp-thumb--arch" : "") + (d.Cargado ? "" : " exp-thumb--vacio");
+        <div class="@clases" role="button" tabindex="0" title="@titulo" @onclick="() => SelDoc(d)" @onkeydown="e => OnThumbKey(e, d)">
+            <div class="exp-thumb-paper">
+                <div class="exp-thumb-head"><span class="exp-thumb-ext @extClase">@(d.Cargado ? ext : "VACÍO")</span></div>
+                <div class="exp-thumb-title">@d.Nombre</div>
+                <div class="exp-thumb-lines">@for (var k = 0; k < (archivado ? 5 : 6); k++) { <i style="width:@(52 + (k * 17) % 43)%"></i> }</div>
+                @if (archivado)
+                {
+                    <div class="exp-thumb-archtag"><i class="fi fi-rr-archive"></i> Archivado</div>
+                    <div class="exp-thumb-hacts"><button type="button" class="exp-thumb-hact" title="Restaurar documento" @onclick:stopPropagation="true" @onclick="() => Restaurar(d)"><i class="fi fi-rr-rotate-right"></i></button></div>
+                }
+                else
+                {
+                    <div class="exp-thumb-hacts">
+                        @if (!d.Cargado) { <button type="button" class="exp-thumb-hact is-up" title="Cargar archivo" @onclick:stopPropagation="true" @onclick="() => AbrirCargarVersion(d)"><i class="fi fi-rr-cloud-upload"></i></button> }
+                        <button type="button" class="exp-thumb-hact" title="Duplicar documento" @onclick:stopPropagation="true" @onclick="() => Duplicar(d)"><i class="fi fi-rr-copy-alt"></i></button>
+                        <button type="button" class="exp-thumb-hact" title="Ver versiones (@d.NumeroVersiones)" @onclick:stopPropagation="true" @onclick="() => VerVersiones(d)"><i class="fi fi-rr-time-past"></i></button>
+                        @if (d.Cargado) { <button type="button" class="exp-thumb-hact is-arch" title="Archivar (no se elimina)" @onclick:stopPropagation="true" @onclick="() => Archivar(d)"><i class="fi fi-rr-archive"></i></button> }
+                        else { <button type="button" class="exp-thumb-hact is-arch" title="Quitar casilla vacía" @onclick:stopPropagation="true" @onclick="() => QuitarCasilla(d)"><i class="fi fi-rr-trash"></i></button> }
+                    </div>
+                    @if (d.NumeroVersiones > 1) { <span class="exp-thumb-vbadge" title="@d.NumeroVersiones versiones"><i class="fi fi-rr-time-past"></i> @d.NumeroVersiones</span> }
+                    @if (!d.Cargado && d.Obligatorio) { <span class="exp-thumb-oblig">Obligatorio</span> }
+                }
+            </div>
+            <div class="exp-thumb-name">@d.Nombre</div>
+            <div class="exp-thumb-sub">@(archivado ? "Archivado" + (d.NumeroVersiones > 1 ? " · v" + d.NumeroVersiones : "") : (d.Cargado ? $"{d.CamposPropios.Count + (d.Valores.Count)} metadato(s)" : "Sin archivo"))</div>
+        </div>
+    };
+
+    private async Task OnThumbKey(KeyboardEventArgs e, FolderDocumentoDto d) { if (e.Key == "Enter" || e.Key == " ") await SelDoc(d); }
+
+    private async Task SelDoc(FolderDocumentoDto d)
+    {
+        _docSel = d.Id; _guardadoOk = false; _capError = null;
+        LimpiarVisor();
+        await CargarEsquemaAsync(d);
+        if (d.Cargado) await CargarVisorActual(d);
+    }
+
+    private async Task Duplicar(FolderDocumentoDto d)
+    {
+        var r = await Auth().PostAsync($"/api/folders/documentos/{d.Id}/duplicar", null);
+        if (r.IsSuccessStatusCode)
+        {
+            var nuevo = await r.Content.ReadFromJsonAsync<FolderDocumentoDto>();
+            await Recargar();
+            if (nuevo is not null) { var n = _detalle?.Documentos.FirstOrDefault(x => x.Id == nuevo.Id); if (n is not null) await SelDoc(n); }
+        }
+    }
+
+    private async Task Archivar(FolderDocumentoDto d)
+    {
+        var r = await Auth().PostAsync($"/api/folders/documentos/{d.Id}/archivar", null);
+        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; LimpiarVisor(); _esquema = null; } _verArchivados = true; await Recargar(); }
+    }
+
+    private async Task Restaurar(FolderDocumentoDto d)
+    {
+        var r = await Auth().PostAsync($"/api/folders/documentos/{d.Id}/restaurar", null);
+        if (r.IsSuccessStatusCode) await Recargar();
+    }
+
+    private async Task QuitarCasilla(FolderDocumentoDto d)
+    {
+        var r = await Auth().DeleteAsync($"/api/folders/documentos/{d.Id}");
+        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; _esquema = null; } await Recargar(); }
+    }
+
+    private void AbrirCargarNuevo()
+    {
+        if (_detalle is null) return;
+        _cargarFolderId = _detalle.Id; _cargarDocId = null; _cargarNombre = _detalle.Nombre; _cargarAbierto = true;
+    }
+
+    private void AbrirCargarVersion(FolderDocumentoDto d)
+    {
+        _cargarFolderId = null; _cargarDocId = d.Id; _cargarNombre = d.Nombre; _cargarAbierto = true;
+    }
+
+    private async Task OnCargado(FolderDocumentoDto d)
+    {
+        _cargarAbierto = false;
+        // Indexacion en segundo plano (texto para la IA) para que la primera pregunta no tenga que esperar la extraccion.
+        _ = Task.Run(async () => { try { await Auth().PostAsync($"/api/folders/documentos/{d.Id}/indexar", null); } catch { } });
+        await Recargar();
+        var n = _detalle?.Documentos.FirstOrDefault(x => x.Id == d.Id);
+        if (n is not null) await SelDoc(n);
+    }
+
+    private async Task DescargarZip()
+    {
+        if (_detalle is null) return;
+        _busyZip = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync($"/api/folders/{_detalle.Id}/zip");
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", Sanitize(_detalle.Nombre) + ".zip", "application/zip", Convert.ToBase64String(bytes));
+        }
+        catch { }
+        finally { _busyZip = false; }
+    }
+
+    // ===================== Visor =====================
+    private void LimpiarVisor() { _visorKind = "none"; _visorDataUri = _visorHtml = _visorTexto = _visorNombre = null; _visorVersionNum = 0; _visorCargando = false; }
+
+    private Task CargarVisorActual(FolderDocumentoDto d) { _visorVersionNum = 0; return CargarVisorDesde($"/api/folders/documentos/{d.Id}/preview"); }
+
+    private async Task VerVersion(FolderDocumentoDto d, FolderVersionDto v)
+    {
+        _versionesDoc = null;
+        if (_docSel != d.Id) { _docSel = d.Id; await CargarEsquemaAsync(d); }
+        _visorVersionNum = v.Numero;
+        await CargarVisorDesde($"/api/folders/documentos/{d.Id}/versiones/{v.Id}/preview");
+    }
+
+    private async Task CargarVisorDesde(string url)
+    {
+        _visorCargando = true; _visorKind = "none"; _visorDataUri = _visorHtml = _visorTexto = null;
+        StateHasChanged();
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<DocumentoPreviewDto>(url);
+            if (dto is not null) { _visorNombre = dto.Nombre; _visorKind = dto.Kind; _visorDataUri = dto.DataUri; _visorHtml = dto.Html; _visorTexto = dto.Texto; }
+        }
+        catch { _visorKind = "none"; }
+        finally { _visorCargando = false; }
+    }
+
+    private async Task Descargar(FolderDocumentoDto d)
+    {
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>($"/api/folders/documentos/{d.Id}/descargar");
+            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+        }
+        catch { }
+    }
+
+    private async Task DescargarVersion(FolderDocumentoDto d, FolderVersionDto v)
+    {
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<DescargaDocumentoDto>($"/api/folders/documentos/{d.Id}/versiones/{v.Id}/descargar");
+            if (dto is not null) await Js.InvokeVoidAsync("propiaUI.downloadBase64", dto.NombreArchivo, dto.TipoMime, dto.ContenidoBase64);
+        }
+        catch { }
+    }
+
+    private async Task VerVersiones(FolderDocumentoDto d)
+    {
+        _versionesDoc = d; _versiones = null;
+        try { _versiones = await Auth().GetFromJsonAsync<List<FolderVersionDto>>($"/api/folders/documentos/{d.Id}/versiones") ?? new(); }
+        catch { _versiones = new(); }
+    }
+
+    // ===================== Captura de metadatos =====================
+    private async Task CargarEsquemaAsync(FolderDocumentoDto d)
+    {
+        _esquema = null; _valores.Clear(); _faltan = new();
+        try
+        {
+            _esquema = await Auth().GetFromJsonAsync<List<FolderCampoDto>>($"/api/folders/documentos/{d.Id}/campos") ?? new();
+            var fresco = await Auth().GetFromJsonAsync<FolderDocumentoDto>($"/api/folders/documentos/{d.Id}");
+            foreach (var v in (fresco ?? d).Valores) _valores[v.DefinicionId] = v.Valor;
+            RecalcularFaltan();
+        }
+        catch (Exception ex) { _capError = ex.Message; _esquema = new(); }
+    }
+
+    private string? ValorDe(Guid id) => _valores.TryGetValue(id, out var v) ? v : null;
+
+    private async Task GuardarValor(FolderCampoDto c, string? v)
+    {
+        if (Doc is null) return;
+        _valores[c.Id] = v; _guardadoOk = false; _capError = null;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/folders/documentos/{Doc.Id}/valores",
+                new GuardarValoresRequest(new[] { new CampoValorRequest(c.Id, v) }, ValidarObligatorios: false));
+            if (!r.IsSuccessStatusCode) { _capError = await LeerError(r); return; }
+            _guardadoOk = true; _hubo = true;
+            RecalcularFaltan();
+        }
+        catch (Exception ex) { _capError = ex.Message; }
+    }
+
+    private void RecalcularFaltan()
+        => _faltan = (_esquema ?? new()).Where(c => c.Obligatorio && string.IsNullOrWhiteSpace(ValorDe(c.Id))).Select(c => c.Label).ToList();
+
+    // ===================== Chat =====================
+    private async Task ToggleChat()
+    {
+        ChatOculto = !ChatOculto;
+        await ChatOcultoChanged.InvokeAsync(ChatOculto);
+        _chatScroll = !ChatOculto;
+    }
+
+    private async Task OnChatKey(KeyboardEventArgs e) { if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_chatTexto)) await EnviarChat(null); }
+
+    private async Task CargarChatAsync()
+    {
+        if (_chatRaiz == Guid.Empty) return;
+        _chatCargando = true; _chatMsgs = new();
+        try
+        {
+            _chatInfo = await Auth().GetFromJsonAsync<FolderChatDto>($"/api/folders/{_chatRaiz}/chat");
+            _chatMsgs = _chatInfo?.Mensajes.ToList() ?? new();
+        }
+        catch { _chatInfo = null; }
+        finally { _chatCargando = false; _chatScroll = true; }
+    }
+
+    private async Task EnviarChat(string? texto)
+    {
+        var t = (texto ?? _chatTexto ?? "").Trim();
+        if (t.Length == 0 || _chatPensando || _chatRaiz == Guid.Empty) return;
+        _chatTexto = null;
+        _chatMsgs.Add(new FolderChatMensajeDto(Guid.Empty, "user", t, DateTimeOffset.Now, false));
+        _chatPensando = true; _chatScroll = true;
+        StateHasChanged();
+        try
+        {
+            var r = await Auth().PostAsJsonAsync($"/api/folders/{_chatRaiz}/chat", new EnviarFolderChatRequest(t, _sel == Guid.Empty ? null : _sel));
+            if (r.IsSuccessStatusCode)
+            {
+                var dto = await r.Content.ReadFromJsonAsync<FolderChatRespuestaDto>();
+                if (dto is not null)
+                {
+                    _chatMsgs.RemoveAll(m => m.Id == Guid.Empty);
+                    _chatMsgs.Add(dto.Usuario); _chatMsgs.Add(dto.Asistente);
+                }
+            }
+            else _chatMsgs.Add(new FolderChatMensajeDto(Guid.NewGuid(), "assistant", "No pude enviar la pregunta: " + await LeerError(r), DateTimeOffset.Now, true));
+        }
+        catch (Exception ex) { _chatMsgs.Add(new FolderChatMensajeDto(Guid.NewGuid(), "assistant", "No pude enviar la pregunta: " + ex.Message, DateTimeOffset.Now, true)); }
+        finally { _chatPensando = false; _chatScroll = true; }
+    }
+
+    /// <summary>
+    /// Render minimo y seguro de la respuesta de la IA: escapa HTML y luego convierte **negrita**, `codigo`,
+    /// viñetas ("- " / "* " al inicio de linea) y saltos de linea. Sin enlaces ni HTML del modelo.
+    /// </summary>
+    private static MarkupString MdLite(string? texto)
+    {
+        if (string.IsNullOrEmpty(texto)) return new MarkupString("");
+        var t = System.Net.WebUtility.HtmlEncode(texto.Replace("\r\n", "\n"));
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"\*\*(.+?)\*\*", "<b>$1</b>");
+        t = System.Text.RegularExpressions.Regex.Replace(t, @"`([^`]+)`", "<code>$1</code>");
+        var lineas = t.Split('\n');
+        var sb = new System.Text.StringBuilder();
+        var enLista = false;
+        foreach (var l in lineas)
+        {
+            var esItem = l.StartsWith("- ") || l.StartsWith("* ") || l.StartsWith("• ");
+            if (esItem && !enLista) { sb.Append("<ul>"); enLista = true; }
+            if (!esItem && enLista) { sb.Append("</ul>"); enLista = false; }
+            if (esItem) sb.Append("<li>").Append(l[2..]).Append("</li>");
+            else sb.Append(l).Append("<br/>");
+        }
+        if (enLista) sb.Append("</ul>");
+        var html = sb.ToString();
+        if (html.EndsWith("<br/>")) html = html[..^5];
+        return new MarkupString(html);
+    }
+
+    private async Task LimpiarChat()
+    {
+        if (_chatRaiz == Guid.Empty) return;
+        var r = await Auth().DeleteAsync($"/api/folders/{_chatRaiz}/chat");
+        if (r.IsSuccessStatusCode) _chatMsgs = new();
+    }
+
+    // ===================== Infra =====================
+    private async Task Cerrar()
+    {
+        if (_hubo) await Cambio.InvokeAsync();
+        await Cerrado.InvokeAsync();
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_cargarAbierto || _versionesDoc is not null) return; // los cierra su propio modal
+        await Cerrar();
+    }
+
+    private static string Sanitize(string s) { var inv = System.IO.Path.GetInvalidFileNameChars(); return new string(s.Select(c => inv.Contains(c) ? '_' : c).ToArray()); }
+
+    private static async Task<string> LeerError(HttpResponseMessage r)
+    {
+        var txt = await r.Content.ReadAsStringAsync();
+        try { var d = System.Text.Json.JsonDocument.Parse(txt); if (d.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? txt; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)r.StatusCode}" : txt;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+}

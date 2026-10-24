@@ -1,0 +1,63 @@
+@* Control de captura de UN metadato segun su tipo (Documentos v2). Emite el valor al cambiar (onchange),
+   para que el padre guarde por campo sin repintar en cada tecla (no pierde el foco). <input type=date> va con
+   value + onchange (el @bind sobre string falla; gotcha del proyecto). *@
+@using Propia.Application.Documentos
+@using Propia.Domain.Enums
+
+@switch (Campo.Tipo)
+{
+    case TipoCampoTablero.AreaTexto:
+        <textarea class="fr-in" style="min-height:52px;resize:vertical" placeholder="Escribe..." value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label"></textarea>
+        break;
+    case TipoCampoTablero.Numero:
+    case TipoCampoTablero.Moneda:
+    case TipoCampoTablero.Porcentaje:
+        <input class="fr-in" type="number" step="any" placeholder="0" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Fecha:
+        <input class="fr-in" type="date" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.FechaHora:
+        <input class="fr-in" type="datetime-local" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Hora:
+        <input class="fr-in" type="time" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Booleano:
+        <label class="exp-cap-chk"><input type="checkbox" checked="@(Valor == "true")" @onchange="OnCheck" /> Marcado</label>
+        break;
+    case TipoCampoTablero.Seleccion:
+        <select class="fr-in" value="@(Valor ?? "")" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label">
+            <option value="">Selecciona...</option>
+            @foreach (var o in Opciones()) { <option value="@o">@o</option> }
+        </select>
+        break;
+    case TipoCampoTablero.Email:
+        <input class="fr-in" type="email" placeholder="correo@dominio.com" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Telefono:
+        <input class="fr-in" type="tel" placeholder="300 000 0000" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Url:
+        <input class="fr-in" type="url" placeholder="https://" value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    case TipoCampoTablero.Usuario:
+    case TipoCampoTablero.Directorio:
+        <input class="fr-in" type="text" placeholder="Buscar..." value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+    default:
+        <input class="fr-in" type="text" placeholder="Escribe..." value="@Valor" @onchange="e => Emitir(e.Value?.ToString())" aria-label="@Campo.Label" />
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public FolderCampoDto Campo { get; set; } = null!;
+    [Parameter] public string? Valor { get; set; }
+    [Parameter] public EventCallback<string?> ValorChanged { get; set; }
+
+    private IEnumerable<string> Opciones()
+        => (Campo.Opciones ?? "").Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private Task Emitir(string? v) => ValorChanged.InvokeAsync(string.IsNullOrWhiteSpace(v) ? null : v);
+    private Task OnCheck(ChangeEventArgs e) => Emitir(e.Value is bool b && b ? "true" : "false");
+}

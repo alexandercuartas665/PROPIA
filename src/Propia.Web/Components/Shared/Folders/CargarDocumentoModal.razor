@@ -1,0 +1,182 @@
+@* ============================================================================================
+   Modal "Cargar documento" / "Nueva version" (Documentos v2). Selector de archivo (dropzone, InputFile
+   bufferizado a bytes al elegir) + captura de los METADATOS del esquema efectivo (folder + documento);
+   los obligatorios bloquean (lo valida el API y se muestra el error). Max 20 MB.
+   Modos: FolderId (crea documento + v1) · DocumentoId (nueva version de un documento existente o primera
+   carga de una casilla vacia).
+   ============================================================================================ *@
+@using Propia.Application.Documentos
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<div class="doc-ov" @onclick="Cerrar"></div>
+<div class="doc-modal cd-modal" style="width:min(560px,96vw); max-height:92vh;" role="dialog" aria-modal="true" aria-labelledby="cd-title" @onkeydown="OnKey">
+    <div class="doc-modal-head">
+        <div>
+            <h5 class="mb-0" id="cd-title" style="margin:0">@(EsVersion ? "Nueva versión" : "Cargar documento")</h5>
+            <div class="doc-sub" style="margin:2px 0 0;">@Subtitulo</div>
+        </div>
+        <button type="button" class="doc-x" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+    </div>
+    <div class="doc-modal-body">
+        <label class="doc-lbl">Archivo *</label>
+        <label class="doc-dropzone @(string.IsNullOrEmpty(_nombreArchivo) ? "" : "has-file")" tabindex="0">
+            <i class="fi fi-rr-cloud-upload"></i>
+            <span>@(string.IsNullOrEmpty(_nombreArchivo) ? "Arrastra o selecciona el archivo" : _nombreArchivo)</span>
+            <small>@(string.IsNullOrEmpty(_nombreArchivo) ? "PDF, imagen, Office o texto (máx. 20 MB)" : FormatBytes(_tamano))</small>
+            <InputFile OnChange="OnArchivo" style="display:none" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.ppt,.pptx,.odt,.ods,.txt,.csv,.tsv,.md,.rtf,.json,.xml" />
+        </label>
+        @if (!EsVersion)
+        {
+            <label class="doc-lbl" style="margin-top:10px" for="cd-nombre">Nombre del documento</label>
+            <input id="cd-nombre" class="doc-input" placeholder="@(string.IsNullOrEmpty(_nombreArchivo) ? "Se toma del archivo si lo dejas vacío" : System.IO.Path.GetFileNameWithoutExtension(_nombreArchivo))" @bind="_nombre" @bind:event="oninput" maxlength="200" />
+        }
+        <label class="doc-lbl" style="margin-top:10px" for="cd-notas">Notas del cambio (opcional)</label>
+        <input id="cd-notas" class="doc-input" placeholder="@(EsVersion ? "Ej. Versión firmada" : "Ej. Original escaneado")" @bind="_notas" @bind:event="oninput" maxlength="300" />
+
+        @if (_campos is null)
+        {
+            <div class="doc-sub" style="margin-top:12px;">Cargando metadatos...</div>
+        }
+        else if (_campos.Count > 0)
+        {
+            <div class="exp-sec-title" style="margin:14px 0 6px;">Metadatos</div>
+            <div class="doc-sub" style="margin:0 0 8px;">Una IA los usa para indexar y buscar dentro del documento. Los marcados con * son obligatorios.</div>
+            <div class="exp-cap">
+                @foreach (var c in _campos)
+                {
+                    var cc = c;
+                    <div class="exp-cap-fld">
+                        <div class="exp-cap-head">
+                            <span class="exp-cap-name">@c.Label@(c.Obligatorio ? " *" : "")</span>
+                            <span class="exp-cap-type @FolderUi.CatClase(c.Tipo)">@FolderUi.TipoCorto(c.Tipo)</span>
+                            @if (c.HeredadoDe is not null) { <span class="doc-sub" style="font-size:10.5px;">· @c.HeredadoDe</span> }
+                        </div>
+                        <FolderCampoInput Campo="cc" Valor="@Valor(cc.Id)" ValorChanged="v => SetValor(cc.Id, v)" />
+                        @if (!string.IsNullOrEmpty(c.Descripcion)) { <div class="exp-cap-desc"><i class="fi fi-rr-sparkles"></i><span>@c.Descripcion</span></div> }
+                    </div>
+                }
+            </div>
+        }
+        @if (_error is not null) { <div class="doc-banner err" style="margin-top:12px;">@_error</div> }
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+            <button type="button" class="doc-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
+            <button type="button" class="doc-btn-primary" @onclick="CargarAsync" disabled="@(_busy || string.IsNullOrEmpty(_b64))">@(_busy ? "Cargando..." : (EsVersion ? "Subir versión" : "Cargar documento"))</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Folder destino (modo crear documento).</summary>
+    [Parameter] public Guid? FolderId { get; set; }
+    /// <summary>Documento existente (modo nueva version).</summary>
+    [Parameter] public Guid? DocumentoId { get; set; }
+    [Parameter] public string? NombreContexto { get; set; }
+    [Parameter] public EventCallback<FolderDocumentoDto> Cargado { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+
+    private bool EsVersion => DocumentoId.HasValue;
+    private string Subtitulo => EsVersion
+        ? $"Reemplazar “{NombreContexto}”: se guarda una versión nueva y las anteriores se conservan."
+        : $"El documento queda dentro del folder “{NombreContexto}”.";
+
+    private string? _nombreArchivo, _mime, _b64, _nombre, _notas, _error;
+    private long _tamano;
+    private bool _busy;
+    private List<FolderCampoDto>? _campos;
+    private readonly Dictionary<Guid, string?> _valores = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (EsVersion)
+            {
+                _campos = await Auth().GetFromJsonAsync<List<FolderCampoDto>>($"/api/folders/documentos/{DocumentoId}/campos") ?? new();
+                var doc = await Auth().GetFromJsonAsync<FolderDocumentoDto>($"/api/folders/documentos/{DocumentoId}");
+                if (doc is not null) foreach (var v in doc.Valores) _valores[v.DefinicionId] = v.Valor;
+            }
+            else
+            {
+                var det = await Auth().GetFromJsonAsync<FolderDetalleDto>($"/api/folders/{FolderId}");
+                _campos = det is null ? new() : det.CamposHeredados.Concat(det.CamposPropios.Select(c => c with { HeredadoDe = null })).ToList();
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; _campos = new(); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) { try { await Js.InvokeVoidAsync("propiaUI.modalFocus", ".cd-modal"); } catch { } }
+    }
+
+    private string? Valor(Guid id) => _valores.TryGetValue(id, out var v) ? v : null;
+    private void SetValor(Guid id, string? v) => _valores[id] = v;
+
+    private async Task OnArchivo(InputFileChangeEventArgs e)
+    {
+        var f = e.File; _error = null;
+        if (f.Size > 20L * 1024 * 1024) { _error = "El archivo supera el máximo de 20 MB."; return; }
+        try
+        {
+            using var ms = new MemoryStream();
+            await f.OpenReadStream(20L * 1024 * 1024).CopyToAsync(ms);
+            _b64 = Convert.ToBase64String(ms.ToArray());
+            _nombreArchivo = f.Name;
+            _mime = string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType;
+            _tamano = f.Size;
+        }
+        catch (Exception ex) { _error = "No se pudo leer el archivo: " + ex.Message; }
+    }
+
+    private async Task CargarAsync()
+    {
+        if (string.IsNullOrEmpty(_b64) || string.IsNullOrEmpty(_nombreArchivo)) return;
+        _busy = true; _error = null;
+        try
+        {
+            var valores = _valores.Select(kv => new CampoValorRequest(kv.Key, kv.Value)).ToList();
+            HttpResponseMessage r;
+            if (EsVersion)
+                r = await Auth().PostAsJsonAsync($"/api/folders/documentos/{DocumentoId}/versiones",
+                    new CargarVersionRequest(_nombreArchivo, _mime!, _tamano, _b64, valores, _notas));
+            else
+                r = await Auth().PostAsJsonAsync($"/api/folders/{FolderId}/documentos/cargar",
+                    new CargarDocumentoRequest(_nombreArchivo, _mime!, _tamano, _b64, string.IsNullOrWhiteSpace(_nombre) ? null : _nombre, false, valores, _notas));
+            if (!r.IsSuccessStatusCode) { _error = await LeerError(r); return; }
+            var dto = await r.Content.ReadFromJsonAsync<FolderDocumentoDto>();
+            if (dto is not null) await Cargado.InvokeAsync(dto);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private Task Cerrar() => _busy ? Task.CompletedTask : Cerrado.InvokeAsync();
+    private async Task OnKey(KeyboardEventArgs e) { if (e.Key == "Escape") await Cerrar(); }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "-";
+        string[] units = { "B", "KB", "MB", "GB" };
+        var i = 0; double size = bytes;
+        while (size >= 1024 && i < units.Length - 1) { size /= 1024; i++; }
+        return $"{size:0.#} {units[i]}";
+    }
+
+    private static async Task<string> LeerError(HttpResponseMessage r)
+    {
+        var txt = await r.Content.ReadAsStringAsync();
+        try { var d = System.Text.Json.JsonDocument.Parse(txt); if (d.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? txt; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)r.StatusCode}" : txt;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+}

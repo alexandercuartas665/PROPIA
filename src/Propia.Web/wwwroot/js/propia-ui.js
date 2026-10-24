@@ -811,3 +811,65 @@ window.propiaUI.altaAutoSaveOff = function () {
         window.__altaFocusIn = null; window.__altaMouseDown = null;
     } catch (e) { }
 };
+
+// Accesibilidad de modales (Folders v2): foco inicial en el primer campo del dialogo y trap de foco con
+// Tab / Shift+Tab dentro del contenedor. Esc lo maneja Blazor (@onkeydown). Idempotente por elemento.
+window.propiaUI.modalFocus = function (selector) {
+    try {
+        var root = document.querySelector(selector); if (!root) return;
+        var q = 'input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        var first = root.querySelector('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])') || root.querySelector(q);
+        if (first) first.focus();
+        if (root.__propiaTrap) return;
+        root.__propiaTrap = true;
+        root.addEventListener('keydown', function (e) {
+            if (e.key !== 'Tab') return;
+            var items = Array.prototype.filter.call(root.querySelectorAll(q), function (el) { return el.offsetParent !== null; });
+            if (!items.length) return;
+            var a = items[0], z = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+            else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+        });
+    } catch (e) { }
+};
+
+// Explorador de folders (Documentos v2): columnas redimensionables arrastrando los separadores .exp-split.
+// data-resize = struct|docs|meta|chat (columna que cambia), data-side = left (la anterior) | right (la siguiente).
+// El visor (centro) es elastico y absorbe. Los anchos persisten en localStorage y se re-aplican en cada
+// llamada (Blazor repinta las columnas al mostrar/ocultar el chat). Idempotente por separador.
+window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
+    try {
+        var root = document.querySelector(rootSelector); if (!root) return;
+        var key = storageKey || 'propia.folders.colw';
+        var MIN = { struct: 170, docs: 210, meta: 240, chat: 280 }, MAX = 720;
+        var sel = { struct: '.exp-col-struct', docs: '.exp-col-docs', meta: '.exp-col-meta', chat: '.exp-col-chat' };
+        var saved = {};
+        try { saved = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { saved = {}; }
+        Object.keys(sel).forEach(function (k) {
+            var col = root.querySelector(sel[k]); if (!col) return;
+            var w = saved[k]; if (w) col.style.flex = '0 0 ' + w + 'px';
+        });
+        root.querySelectorAll('.exp-split').forEach(function (sp) {
+            if (sp.__propiaSplit) return; sp.__propiaSplit = true;
+            sp.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                var k = sp.getAttribute('data-resize'), side = sp.getAttribute('data-side');
+                var col = root.querySelector(sel[k]); if (!col) return;
+                var startX = e.clientX, startW = col.getBoundingClientRect().width, min = MIN[k] || 180;
+                sp.classList.add('dragging'); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+                function mm(ev) {
+                    var dx = ev.clientX - startX; var w = (side === 'left') ? (startW + dx) : (startW - dx);
+                    w = Math.max(min, Math.min(MAX, w)); col.style.flex = '0 0 ' + Math.round(w) + 'px';
+                }
+                function mu() {
+                    document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu);
+                    sp.classList.remove('dragging'); document.body.style.cursor = ''; document.body.style.userSelect = '';
+                    try { saved = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e2) { saved = {}; }
+                    saved[k] = Math.round(col.getBoundingClientRect().width);
+                    try { localStorage.setItem(key, JSON.stringify(saved)); } catch (e3) { }
+                }
+                document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+            });
+        });
+    } catch (e) { }
+};

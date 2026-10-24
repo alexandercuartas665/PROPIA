@@ -71,6 +71,77 @@
 
 ---
 
+## ESTADO 2026-10-22 Documentos v2 "Folders" - Ola 0 (modelo + API)  [RAMA `equipo/expedientes`, NO en main]
+
+Evolucion del modulo 2.15 Expedientes/TRD al concepto "Folders y documentos" (maqueta `expedientes-v2`).
+Ola 0 = backend solamente; la UI vieja (`Documentos.razor` -> `/api/expedientes`) sigue funcionando sin cambios.
+
+### 1 MIGRACION NUEVA - ADITIVA CON COPIA DE DATOS - APLICAR EN PROD (owner `propia`, `dotnet ef database update`)
+`20261022105420_AddFoldersDocumentos`: crea `folders` (arbol, `parent_id`), `folder_documentos`,
+`folder_documento_versiones`, `folder_campo_definiciones` (metadatos tipados de folder o documento, check XOR),
+`folder_documento_campo_valores` (EAV). Las 5 con RLS FORCE + policy + GRANT a `propia_app`.
+**Copia los datos v1 conservando Ids**: serie -> folder raiz; subserie -> subfolder; expediente -> subfolder
+(mismo Id, por eso `contrato_expedientes.expediente_id` y `polizas.expediente_id` siguen validos); tipologias ->
+documentos (archivo, versiones; si habia archivo sin fila de version se sintetiza la v1); campos -> metadatos
+Texto (los del expediente que duplicaban a los de la subserie no se copian: ya se heredan); `meta_json` -> valores.
+Durante la copia se quita `FORCE` RLS a las 8 tablas v1 (el owner no es superuser en prod) y se restaura al final,
+todo en la misma transaccion. **No borra las tablas v1** (se retiran en la Ola 4, cuando la UI v2 este en main).
+Rollback = `Down` (dropea las 5 tablas nuevas; las v1 quedan intactas). Ensayada el 2026-10-22 sobre una copia
+de `propia_dev` (`propia_folders_test`, borrada despues): 2 expedientes, 3 archivos, 5 versiones, 3 valores migrados.
+Sin config nueva. Sin paquetes nuevos (`System.IO.Compression` para el ZIP).
+
+### API nueva `api/folders` (`FoldersController` / `FoldersService`)
+Arbol, tarjetas, detalle con ruta y campos heredados, CRUD de folders (mover sin ciclos; eliminar solo vacio),
+documentos (casilla, cargar, versionar, archivar/restaurar, duplicar, descargar, preview, versiones), metadatos
+(crear/editar/eliminar; valores con validacion por tipo y obligatorios que bloquean) y `GET {id}/zip` recursivo.
+Limite 20 MB, extensiones PDF/imagen/Office/texto. RBAC: `Documentos` Crear/Editar/Eliminar; GET abiertos al tenant.
+Tests: `FoldersFlowTests` (6) + `RlsCoverageTests` verdes.
+
+### Ola 1 (misma rama, solo codigo, sin migracion): UI "Folders"
+`Documentos.razor` pasa a la vista v2: tarjetas de folders raiz + modales "Configurar folders" (3 columnas, arbol de
+profundidad arbitraria, documentos, metadatos con `CrearCampoModal`) y "Nuevo folder". La vista Expedientes/TRD
+v1 desaparece de la UI (el API `/api/expedientes` sigue vivo hasta la Ola 4). Archivo central sin cambios.
+Archivos nuevos: `Components/Shared/Folders/*.razor`, `wwwroot/css/modules/folders.css` (link en `App.razor`),
+`propiaUI.modalFocus` en `propia-ui.js` (`?v=25`). Contratos y Seguros conectan ahora FOLDERS (`/api/folders/lista`;
+`GobiernoYServicios` consulta `Folders`, mismos Ids que los expedientes migrados).
+
+### Ola 2 (misma rama, solo codigo): explorador de folders
+Clic en una tarjeta abre `ExploradorFoldersModal` (98vw x 95vh): estructura | documentos como miniaturas | visor |
+captura de metadatos | chat ocultable, con separadores redimensionables (`propiaUI.explorerSplits`, anchos en
+localStorage `propia.folders.colw`). Cargar / reemplazar (versiones) / duplicar / archivar-restaurar / ZIP desde la
+UI contra `api/folders`. El chat responde con datos del folder (vista previa); la IA real entra en la Ola 3.
+Archivos: `Components/Shared/Folders/{ExploradorFoldersModal,CargarDocumentoModal,FolderCampoInput}.razor`,
+`FolderUi.cs`; `folders.css?v=2`; `propia-ui.js?v=26`.
+
+### Ola 3 (misma rama): chat con IA real + 1 MIGRACION NUEVA - ADITIVA
+`20261022170331_AddFolderChatIndexacion`: tablas `folder_chat_mensajes` (conversacion por copropiedad + folder raiz +
+usuario) y `folder_documento_textos` (texto extraido del archivo actual, una fila por documento) con RLS FORCE +
+policy + GRANT a `propia_app`. Sin datos que migrar. Rollback = `Down`.
+`FolderChatService`: proveedor = el habilitado en Super Admin (`ai_provider_configs`, prioridad Claude > Gemini >
+ChatGPT > DeepSeek; modelo de la config o el del catalogo), cuota del plan via `IAiUsageService` (se registra con
+source `folders-chat`). Contexto = estructura del folder raiz + por documento nombre/archivo/metadatos (con su
+descripcion) + texto extraido (txt/csv/md directo; docx/xlsx en local; PDF e imagenes via el extractor de IA de
+Super Admin, `IAiDocumentExtractor`, modulo `folders`). Limites: 4.000 caracteres por documento, 48.000 de contexto,
+12 indexaciones por turno, 16 turnos de historial. API: `GET/POST/DELETE api/folders/{raiz}/chat`,
+`POST api/folders/documentos/{id}/indexar?forzar=`. Sin IA configurada el chat responde un aviso y no rompe.
+**Config necesaria en prod**: un proveedor habilitado con API key en Super Admin > Servidores de IA (ya existe para
+los agentes) y, para leer PDF/imagenes, el motor de extraccion de IA (el mismo que usa Seguros/OCR).
+
+### Ola 4 (misma rama): cierre + 1 MIGRACION NUEVA - DESTRUCTIVA
+`20261023210234_DropExpedientesV1`: elimina las 8 tablas v1 (`series_documentales`, `subseries_documentales`,
+`subserie_tipologias`, `subserie_campos`, `expedientes`, `expediente_tipologias`, `expediente_tipologia_versiones`,
+`expediente_campos`). Sus datos ya estan copiados en las tablas `folder*` por `AddFoldersDocumentos` (mismos Ids).
+Orden en prod: backup -> `AddFoldersDocumentos` -> validar en la UI que los expedientes aparecen como folders ->
+`AddFolderChatIndexacion` -> `DropExpedientesV1`. El codigo v1 (controller `api/expedientes`, servicio, entidades)
+ya no existe en esta rama. Rollback real = backup previo (el `Down` recrea el esquema vacio).
+**Resumen de las 3 migraciones de esta rama (en orden):** `20261022105420_AddFoldersDocumentos` (aditiva + copia),
+`20261022170331_AddFolderChatIndexacion` (aditiva), `20261023210234_DropExpedientesV1` (destructiva).
+**Nota de entorno (dev):** la API key del proveedor Gemini de agentes en `propia_dev` esta cifrada con una llave de
+Data Protection que ya no existe en `data_protection_keys` (`a0384552-...`); vuelve a guardarla en Super Admin >
+Servidores de IA. Mientras tanto el chat de Folders usa el motor de documentos (OCR Gemini), cuya clave si descifra.
+**Menu lateral:** el catalogo base dice "Documentos" (`MenuCatalog.cs`); si una copropiedad ve "Expedientes" es su
+menu personalizado (editable desde la app), no codigo.
+
 ## ESTADO 2026-10-13 Subida de imagenes Identidad (logo/fachada) + drag & drop  [VERSION ACTUAL 0.0.146]
 
 Version **0.0.146**. Commit `0e64eaf4`. Rama `equipo/alex-header-zonas-equipos` (ya en `main`). **SIN migracion, SIN config obligatoria.**

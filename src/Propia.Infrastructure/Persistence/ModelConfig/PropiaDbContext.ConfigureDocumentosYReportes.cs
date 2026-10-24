@@ -15,91 +15,92 @@ namespace Propia.Infrastructure.Persistence;
 // capturando la misma instancia). El orden de invocacion lo fija OnModelCreating.
 public partial class PropiaDbContext
 {
-    // Modulos 2.15 Documentos (Expedientes TRD + Archivo Digital) y 2.16 Reportes e Indicadores.
+    // Modulos 2.15 Documentos (Folders v2 + Archivo Digital) y 2.16 Reportes e Indicadores.
     private void ConfigureDocumentosYReportes(ModelBuilder modelBuilder)
     {
-        // -------------------- Modulo 2.15 Documentos - vista Expedientes (TRD) --------------------
-
-        modelBuilder.Entity<SerieDocumental>(b =>
+        // -------------------- Modulo 2.15 Documentos - vista Folders (v2) --------------------
+        modelBuilder.Entity<Folder>(b =>
         {
-            b.ToTable("series_documentales");
-            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
-            b.HasIndex(x => new { x.TenantId, x.Orden });
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
-        });
-
-        modelBuilder.Entity<SubserieDocumental>(b =>
-        {
-            b.ToTable("subseries_documentales");
-            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
-            b.HasOne(x => x.Serie).WithMany(s => s.Subseries).HasForeignKey(x => x.SerieId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.TenantId, x.SerieId, x.Orden });
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
-        });
-
-        modelBuilder.Entity<SubserieTipologia>(b =>
-        {
-            b.ToTable("subserie_tipologias");
-            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
-            b.HasOne(x => x.Subserie).WithMany(s => s.Tipologias).HasForeignKey(x => x.SubserieId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.TenantId, x.SubserieId, x.Orden });
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
-        });
-
-        modelBuilder.Entity<SubserieCampo>(b =>
-        {
-            b.ToTable("subserie_campos");
-            b.Property(x => x.Clave).IsRequired().HasMaxLength(80);
-            b.Property(x => x.Label).IsRequired().HasMaxLength(150);
-            b.HasOne(x => x.Subserie).WithMany(s => s.Campos).HasForeignKey(x => x.SubserieId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.TenantId, x.SubserieId, x.Orden });
-            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
-        });
-
-        modelBuilder.Entity<Expediente>(b =>
-        {
-            b.ToTable("expedientes");
-            b.Property(x => x.Codigo).IsRequired().HasMaxLength(40);
+            b.ToTable("folders");
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
-            b.Property(x => x.Serie).IsRequired().HasMaxLength(150);
-            b.Property(x => x.Subserie).IsRequired().HasMaxLength(150);
+            b.Property(x => x.Codigo).HasMaxLength(40);
+            b.Property(x => x.Descripcion).HasMaxLength(1000);
+            b.HasOne(x => x.Parent).WithMany(p => p.Hijos).HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => new { x.TenantId, x.ParentId, x.Orden });
             b.HasIndex(x => new { x.TenantId, x.Codigo });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
-        modelBuilder.Entity<ExpedienteTipologia>(b =>
+        modelBuilder.Entity<FolderDocumento>(b =>
         {
-            b.ToTable("expediente_tipologias");
-            b.Property(x => x.Nombre).IsRequired().HasMaxLength(150);
+            b.ToTable("folder_documentos");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
             b.Property(x => x.ArchivoUrl).HasMaxLength(1024);
             b.Property(x => x.ArchivoNombre).HasMaxLength(255);
             b.Property(x => x.ArchivoMime).HasMaxLength(150);
-            b.Property(x => x.MetaJson).HasColumnType("text");
-            b.HasOne(x => x.Expediente).WithMany(e => e.Tipologias).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.TenantId, x.ExpedienteId, x.Orden });
+            b.HasOne(x => x.Folder).WithMany(f => f.Documentos).HasForeignKey(x => x.FolderId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(x => new { x.TenantId, x.FolderId, x.Archivado, x.Orden });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
-        modelBuilder.Entity<ExpedienteTipologiaVersion>(b =>
+        modelBuilder.Entity<FolderDocumentoVersion>(b =>
         {
-            b.ToTable("expediente_tipologia_versiones");
+            b.ToTable("folder_documento_versiones");
             b.Property(x => x.ArchivoUrl).IsRequired().HasMaxLength(1024);
             b.Property(x => x.ArchivoNombre).IsRequired().HasMaxLength(255);
             b.Property(x => x.ArchivoMime).IsRequired().HasMaxLength(150);
+            b.Property(x => x.HashSha256).HasMaxLength(64);
             b.Property(x => x.NotasCambio).HasColumnType("text");
-            b.HasOne(x => x.Tipologia).WithMany(t => t.Versiones).HasForeignKey(x => x.ExpedienteTipologiaId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.ExpedienteTipologiaId, x.Numero }).IsUnique();
+            b.HasOne(x => x.Documento).WithMany(d => d.Versiones).HasForeignKey(x => x.DocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.DocumentoId, x.Numero }).IsUnique();
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
-        modelBuilder.Entity<ExpedienteCampo>(b =>
+        modelBuilder.Entity<FolderCampoDefinicion>(b =>
         {
-            b.ToTable("expediente_campos");
-            b.Property(x => x.Clave).IsRequired().HasMaxLength(80);
+            b.ToTable("folder_campo_definiciones", t => t.HasCheckConstraint("ck_folder_campo_definiciones_dueno",
+                "(folder_id IS NOT NULL AND documento_id IS NULL) OR (folder_id IS NULL AND documento_id IS NOT NULL)"));
             b.Property(x => x.Label).IsRequired().HasMaxLength(150);
-            b.HasOne(x => x.Expediente).WithMany(e => e.Campos).HasForeignKey(x => x.ExpedienteId).OnDelete(DeleteBehavior.Cascade);
-            b.HasIndex(x => new { x.TenantId, x.ExpedienteId, x.Orden });
+            b.Property(x => x.Opciones).HasColumnType("text");
+            b.Property(x => x.Descripcion).HasMaxLength(1000);
+            b.HasOne(x => x.Folder).WithMany(f => f.Campos).HasForeignKey(x => x.FolderId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Documento).WithMany(d => d.Campos).HasForeignKey(x => x.DocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.FolderId, x.Orden });
+            b.HasIndex(x => new { x.TenantId, x.DocumentoId, x.Orden });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<FolderDocumentoCampoValor>(b =>
+        {
+            b.ToTable("folder_documento_campo_valores");
+            b.Property(x => x.Valor).HasColumnType("text");
+            b.HasOne(x => x.Documento).WithMany(d => d.Valores).HasForeignKey(x => x.DocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.DocumentoId, x.DefinicionId }).IsUnique();
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<FolderDocumentoTexto>(b =>
+        {
+            b.ToTable("folder_documento_textos");
+            b.Property(x => x.Fuente).IsRequired().HasMaxLength(20);
+            b.Property(x => x.Texto).HasColumnType("text");
+            b.Property(x => x.Error).HasMaxLength(500);
+            b.HasOne(x => x.Documento).WithMany().HasForeignKey(x => x.DocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.DocumentoId).IsUnique();
+            b.HasIndex(x => x.TenantId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
+        modelBuilder.Entity<FolderChatMensaje>(b =>
+        {
+            b.ToTable("folder_chat_mensajes");
+            b.Property(x => x.Rol).IsRequired().HasMaxLength(12);
+            b.Property(x => x.Texto).IsRequired().HasColumnType("text");
+            b.HasOne(x => x.Folder).WithMany().HasForeignKey(x => x.FolderId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.FolderId, x.UsuarioId, x.CreatedAt });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
