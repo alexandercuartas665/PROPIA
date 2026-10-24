@@ -40,9 +40,10 @@ else
         </div>
         <span class="fem-estado fem-estado--@EstadoBadge(eq.Estado)">@EstadoTxt(eq.Estado)</span>
         <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
-                            MostrarEliminar="false" MostrarCancelar="true" Guardando="_busy"
-                            TituloEditar="Editar datos" TituloGuardar="Guardar cambios"
+                            MostrarEliminar="true" MostrarCancelar="true" Guardando="_busy"
+                            TituloEditar="Editar datos" TituloGuardar="Guardar cambios" TituloEliminar="Eliminar equipo"
                             OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
+                            OnEliminar="AbrirConfirmEliminar"
                             OnCancelarEdicion="@(() => _editMode = false)" OnCerrar="@(() => Close(_dirty))" />
     </div>
 
@@ -99,17 +100,8 @@ else
                     </button>
                 </div>
 
-                @* Mantenimiento y horarios viven en esta columna, igual que en la ficha de
-                   zonas comunes. Una sola entrada: el programador compartido, cuyas reglas
-                   cuelgan de este activo y las materializa el job. *@
-                <div class="fem-prog fem-sectlbl--sep">
-                    <ProgramacionesPanel Jwt="@Jwt"
-                                         ModuloOrigenCodigo="equipo"
-                                         EntidadOrigenId="@EqId"
-                                         OrigenReferencia="@($"Activo: {eq.Nombre}")"
-                                         PrefillTitulo="@($"Mantenimiento: {eq.Nombre}")"
-                                         Titulo="PROGRAMA DE MANTENIMIENTO" />
-                </div>
+                @* El programa de mantenimiento se gestiona ahora solo desde el modulo principal
+                   (/mantenimiento); se retiro de la ficha para no duplicar el flujo. *@
 
                 @if (eq.EsReservable)
                 {
@@ -423,6 +415,33 @@ else
     <div class="fem-toast @(_msgError ? "fem-toast--err" : "fem-toast--ok")">@_msg</div>
 }
 
+@* Confirmacion de borrado del equipo (type-to-confirm, patron compartido mha-cdel-*). *@
+@if (_confirmDel && _ficha is not null)
+{
+    <div class="mha-cdel-overlay" @onclick="CerrarConfirmEliminar">
+        <div class="mha-cdel-card" @onclick:stopPropagation="true">
+            <div class="mha-cdel-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="mha-cdel-title">Eliminar equipo</div>
+            <div class="mha-cdel-sub">
+                Vas a eliminar <b>@_ficha.Equipo.Nombre</b>. Esta accion es <b>permanente</b> y no se puede deshacer.
+                Si el equipo tiene intervenciones o programaciones asociadas, el sistema no lo eliminara.
+            </div>
+            <div class="mha-cdel-confirm">
+                <label class="mha-cdel-lbl">Para confirmar, escribe el nombre del equipo: <b>@_ficha.Equipo.Nombre</b></label>
+                <input class="mha-cdel-inp" @bind="_confirmText" @bind:event="oninput" placeholder="@_ficha.Equipo.Nombre" autocomplete="off" disabled="@_busy" />
+            </div>
+            @if (!string.IsNullOrEmpty(_delError)) { <div class="mha-cdel-err">@_delError</div> }
+            <div class="mha-cdel-actions">
+                <button class="mha-cdel-cancel" type="button" @onclick="CerrarConfirmEliminar" disabled="@_busy">Cancelar</button>
+                <button class="mha-cdel-go" type="button" @onclick="ConfirmarEliminarEquipo"
+                        disabled="@(_busy || !ConfirmCoincide)">@(_busy ? "Eliminando..." : "Eliminar definitivamente")</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .fem-header { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
     .fem-header-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--propia-border-divider); color: var(--propia-text-secondary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -626,6 +645,11 @@ else
 
     private string _tab = "ficha";
     private bool _editMode;
+    private bool _confirmDel;
+    private string _confirmText = "";
+    private string? _delError;
+    private bool ConfirmCoincide => _ficha is not null &&
+        string.Equals(_confirmText?.Trim(), _ficha.Equipo.Nombre?.Trim(), StringComparison.Ordinal);
     private bool _busy;
     private bool _dirty;
     private string? _msg;
@@ -706,6 +730,30 @@ else
         if (_ficha is not null) _form = FormState.From(_ficha.Equipo);
         _editMode = true; _tab = "ficha";
     }
+
+    private void AbrirConfirmEliminar() { _confirmText = ""; _delError = null; _confirmDel = true; }
+    private void CerrarConfirmEliminar() { _confirmDel = false; _confirmText = ""; _delError = null; }
+
+    private async Task ConfirmarEliminarEquipo()
+    {
+        if (EqId == Guid.Empty || !ConfirmCoincide) return;
+        _busy = true; _delError = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/{EqId}");
+            if (resp.IsSuccessStatusCode) { _confirmDel = false; _dirty = true; Close(_dirty); return; }
+            try
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ErrorResp>();
+                _delError = err?.Error ?? "No se pudo eliminar el equipo.";
+            }
+            catch { _delError = "No se pudo eliminar el equipo."; }
+        }
+        catch (Exception ex) { _delError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private sealed record ErrorResp(string? Error);
 
     private async Task GuardarDatosAsync()
     {

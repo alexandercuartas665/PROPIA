@@ -26,10 +26,11 @@ else
     </div>
     @if (_reservable) { <span class="fz-badge-res">Reservable</span> }
     <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
-                        MostrarEliminar="false" MostrarCancelar="true" Guardando="_busy"
+                        MostrarEliminar="true" MostrarCancelar="true" Guardando="_busy"
                         PuedeGuardar="@(!string.IsNullOrWhiteSpace(_form.Nombre))"
-                        TituloEditar="Editar datos" TituloGuardar="Guardar cambios"
+                        TituloEditar="Editar datos" TituloGuardar="Guardar cambios" TituloEliminar="Eliminar zona"
                         OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
+                        OnEliminar="AbrirConfirmEliminar"
                         OnCancelarEdicion="@(() => _editMode = false)" OnCerrar="Cerrar" />
 </div>
 
@@ -82,17 +83,8 @@ else
             </div>
         </div>
 
-        @* Mantenimiento: una sola entrada. Los selects de tipo/frecuencia y el boton de
-           "generar tarea ahora" salieron de aqui porque la frecuencia ahora la define la
-           regla del programador; tener las tres cosas a la vez era redundante. *@
-        <div class="fz-block">
-            <ProgramacionesPanel Jwt="@Jwt"
-                                 ModuloOrigenCodigo="zona"
-                                 EntidadOrigenId="@ZonaId"
-                                 OrigenReferencia="@($"Zona: {_ficha.Zona.Nombre}")"
-                                 PrefillTitulo="@($"Mantenimiento: {_ficha.Zona.Nombre}")"
-                                 Titulo="PROGRAMA DE MANTENIMIENTO" />
-        </div>
+        @* El programa de mantenimiento se gestiona ahora solo desde el modulo principal
+           (/mantenimiento); se retiro de la ficha para no duplicar el flujo. *@
 
         @* Condiciones de uso: reglas para los residentes (consumo de licor, ruido, mascotas,
            horarios, aseo, responsabilidad por danos). Se redacta a mano o se genera con el
@@ -233,6 +225,33 @@ else if (_tab == "historial")
     <HistorialRelacionadoPanel Jwt="@Jwt" Tipo="TipoEntidadHistorial.ZonaComun" EntidadId="@ZonaId" />
 </div>
 }
+}
+
+@* Confirmacion de borrado de la zona (type-to-confirm, patron compartido mha-cdel-*). *@
+@if (_confirmDel && _ficha is not null)
+{
+    <div class="mha-cdel-overlay" @onclick="CerrarConfirmEliminar">
+        <div class="mha-cdel-card" @onclick:stopPropagation="true">
+            <div class="mha-cdel-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>
+            </div>
+            <div class="mha-cdel-title">Eliminar zona</div>
+            <div class="mha-cdel-sub">
+                Vas a eliminar <b>@_ficha.Zona.Nombre</b>. Esta accion es <b>permanente</b> y no se puede deshacer.
+                Si la zona tiene reservas o programaciones asociadas, el sistema no la eliminara.
+            </div>
+            <div class="mha-cdel-confirm">
+                <label class="mha-cdel-lbl">Para confirmar, escribe el nombre de la zona: <b>@_ficha.Zona.Nombre</b></label>
+                <input class="mha-cdel-inp" @bind="_confirmText" @bind:event="oninput" placeholder="@_ficha.Zona.Nombre" autocomplete="off" disabled="@_busy" />
+            </div>
+            @if (!string.IsNullOrEmpty(_delError)) { <div class="mha-cdel-err">@_delError</div> }
+            <div class="mha-cdel-actions">
+                <button class="mha-cdel-cancel" type="button" @onclick="CerrarConfirmEliminar" disabled="@_busy">Cancelar</button>
+                <button class="mha-cdel-go" type="button" @onclick="ConfirmarEliminarZona"
+                        disabled="@(_busy || !ConfirmCoincide)">@(_busy ? "Eliminando..." : "Eliminar definitivamente")</button>
+            </div>
+        </div>
+    </div>
 }
 
 <style>
@@ -432,6 +451,11 @@ else if (_tab == "historial")
 
     private string _tab = "ficha";
     private bool _editMode;
+    private bool _confirmDel;
+    private string _confirmText = "";
+    private string? _delError;
+    private bool ConfirmCoincide => _ficha is not null &&
+        string.Equals(_confirmText?.Trim(), _ficha.Zona.Nombre?.Trim(), StringComparison.Ordinal);
     private readonly ZonaDatosForm _form = new();
 
     // Cuando se abre recien creada (ojito), arranca en "Editar datos" para completar y guardar.
@@ -639,6 +663,30 @@ else if (_tab == "historial")
     }
 
     private void Cerrar() => Close(_dirty);
+
+    private void AbrirConfirmEliminar() { _confirmText = ""; _delError = null; _confirmDel = true; }
+    private void CerrarConfirmEliminar() { _confirmDel = false; _confirmText = ""; _delError = null; }
+
+    private async Task ConfirmarEliminarZona()
+    {
+        if (Zona is null || !ConfirmCoincide) return;
+        _busy = true; _delError = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/{Zona.Id}");
+            if (resp.IsSuccessStatusCode) { _confirmDel = false; _dirty = true; Close(true); return; }
+            try
+            {
+                var err = await resp.Content.ReadFromJsonAsync<ErrorResp>();
+                _delError = err?.Error ?? "No se pudo eliminar la zona.";
+            }
+            catch { _delError = "No se pudo eliminar la zona."; }
+        }
+        catch (Exception ex) { _delError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private sealed record ErrorResp(string? Error);
 
     private sealed class ZonaDatosForm
     {
