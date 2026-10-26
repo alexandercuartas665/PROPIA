@@ -81,6 +81,30 @@ public partial class MiCopropiedadService
         var porContrato = valores.GroupBy(v => v.ContratoId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<ContratoCampoValorDto>)g
                 .Select(v => new ContratoCampoValorDto(v.ContratoCampoId, v.Valor)).ToList());
+        // Campos Formula: se calculan por contrato (cd: de sus valores + sistema inicio/fin/valortotal/valor/
+        // cuotas/dias) y se agregan a CamposValores (de ahi los lee la tabla).
+        var formulaDefsContrato = await _db.ContratoCampos.AsNoTracking().Where(d => d.Activo && d.Tipo == TipoCampoTablero.Formula)
+            .Select(d => new { d.Id, d.Opciones }).ToListAsync(ct);
+        if (formulaDefsContrato.Count > 0)
+        {
+            porContrato = contratos.ToDictionary(c => c.Id, c =>
+            {
+                var lista = porContrato.TryGetValue(c.Id, out var bv) ? bv.ToList() : new List<ContratoCampoValorDto>();
+                var cd = (IReadOnlyDictionary<Guid, string?>)lista.ToDictionary(v => v.CampoId, v => v.Valor);
+                var sistema = (IReadOnlyDictionary<string, decimal?>)new Dictionary<string, decimal?>(StringComparer.Ordinal)
+                {
+                    ["inicio"] = c.FechaInicio.DayNumber, ["fin"] = c.FechaFin?.DayNumber,
+                    ["valortotal"] = c.ValorTotal, ["valor"] = c.ValorMensual,
+                    ["cuotas"] = c.FormaPagoCuotas, ["dias"] = c.DiasAnticipacionAlerta,
+                };
+                foreach (var fd in formulaDefsContrato)
+                {
+                    var txt = ComputarFormulaPropiaUno(fd.Opciones, cd, sistema);
+                    if (txt is not null) lista.Add(new ContratoCampoValorDto(fd.Id, txt));
+                }
+                return (IReadOnlyList<ContratoCampoValorDto>)lista;
+            });
+        }
 
         // "Asociado a": resolver nombres de equipos/zonas referenciados, en batch.
         var equipoIds = contratos.Where(c => c.AsociadoTipo == TipoActivoMantenimiento.Equipo && c.AsociadoId.HasValue).Select(c => c.AsociadoId!.Value).Distinct().ToList();
@@ -429,18 +453,72 @@ public partial class MiCopropiedadService
             .ToListAsync(ct);
     }
 
+    // ---- Fuentes de SISTEMA para las Formulas de contratos (estilo Equipos/Zonas; fechas -> DayNumber) ----
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaContrato =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        {
+            ["inicio"] = TipoCampoTablero.Fecha, ["fin"] = TipoCampoTablero.Fecha,
+            ["valortotal"] = TipoCampoTablero.Moneda, ["valor"] = TipoCampoTablero.Moneda,
+            ["cuotas"] = TipoCampoTablero.Numero, ["dias"] = TipoCampoTablero.Numero,
+        };
+
+    // Opciones polimorfica: Formula (JSON validado contra campos propios cd: + sistema) o, para el resto, el
+    // texto tal cual (Seleccion = lineas). Reusa el helper compartido de los partials de campos.
+    private async Task<string?> OpcionesContratoAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo != TipoCampoTablero.Formula)
+            return string.IsNullOrWhiteSpace(opciones) ? null : opciones.Trim();
+        var defs = (await _db.ContratoCampos.AsNoTracking().Where(c => c.Activo && (excluirId == null || c.Id != excluirId))
+            .Select(c => new { c.Id, c.Tipo }).ToListAsync(ct)).ToDictionary(c => c.Id, c => c.Tipo);
+        return PrepararOpcionesFormulaPropios(tipo, opciones, defs, FuentesSistemaContrato);
+    }
+
     // Selector de Campos (Fase 1): valores en la forma estandar (espejo de ListTodosCamposValoresEquipoAsync
     // / ListCamposDinEquipoAsync). Proyecciones finas; la logica de campos no se duplica.
     public async Task<IReadOnlyList<ContratoCampoValorFlatDto>> ListTodosCamposValoresContratoAsync(CancellationToken ct)
-        => await _db.ContratoCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
-            .Select(v => new ContratoCampoValorFlatDto(v.ContratoId, v.ContratoCampoId, v.Valor)).ToListAsync(ct);
+    {
+        var valores = await _db.ContratoCampoValores.AsNoTracking().Where(v => v.Valor != null && v.Valor != "")
+            .Select(v => new { v.ContratoId, v.ContratoCampoId, v.Valor }).ToListAsync(ct);
+        var res = valores.Select(v => new ContratoCampoValorFlatDto(v.ContratoId, v.ContratoCampoId, v.Valor)).ToList();
+        var defs = await _db.ContratoCampos.AsNoTracking().Where(c => c.Activo).Select(d => new { d.Id, d.Tipo, d.Opciones }).ToListAsync(ct);
+        if (defs.Any(d => d.Tipo == TipoCampoTablero.Formula))
+        {
+            var cs = await _db.ContratosServicio.AsNoTracking().Select(c => new { c.Id, c.FechaInicio, c.FechaFin,
+                c.ValorTotal, c.ValorMensual, c.FormaPagoCuotas, c.DiasAnticipacionAlerta }).ToListAsync(ct);
+            var ids = cs.Select(c => c.Id).ToList();
+            var sistema = cs.ToDictionary(c => c.Id, c => (IReadOnlyDictionary<string, decimal?>)new Dictionary<string, decimal?>(StringComparer.Ordinal)
+            {
+                ["inicio"] = c.FechaInicio.DayNumber, ["fin"] = c.FechaFin?.DayNumber,
+                ["valortotal"] = c.ValorTotal, ["valor"] = c.ValorMensual,
+                ["cuotas"] = c.FormaPagoCuotas, ["dias"] = c.DiasAnticipacionAlerta,
+            });
+            var calc = ComputarFormulasPropiasFlat(
+                defs.Select(d => (d.Id, d.Tipo, d.Opciones)).ToList(),
+                valores.Select(v => (v.ContratoId, v.ContratoCampoId, v.Valor)).ToList(), ids, sistema);
+            res.AddRange(calc.Select(c => new ContratoCampoValorFlatDto(c.RegistroId, c.DefId, c.Valor)));
+        }
+        return res;
+    }
 
     public async Task<IReadOnlyList<ContratoCampoDinDto>> ListCamposDinContratoAsync(Guid contratoId, CancellationToken ct)
     {
         var defs = await _db.ContratoCampos.AsNoTracking().Where(c => c.Activo).OrderBy(d => d.Orden).ThenBy(d => d.Label).ToListAsync(ct);
         var vals = await _db.ContratoCampoValores.AsNoTracking().Where(v => v.ContratoId == contratoId).ToListAsync(ct);
+        var dict = (IReadOnlyDictionary<Guid, string?>)vals.GroupBy(v => v.ContratoCampoId).ToDictionary(g => g.Key, g => g.First().Valor);
+        IReadOnlyDictionary<string, decimal?>? sistema = null;
+        if (defs.Any(d => d.Tipo == TipoCampoTablero.Formula))
+        {
+            var c = await _db.ContratosServicio.AsNoTracking().FirstOrDefaultAsync(x => x.Id == contratoId, ct);
+            if (c is not null) sistema = new Dictionary<string, decimal?>(StringComparer.Ordinal)
+            {
+                ["inicio"] = c.FechaInicio.DayNumber, ["fin"] = c.FechaFin?.DayNumber,
+                ["valortotal"] = c.ValorTotal, ["valor"] = c.ValorMensual,
+                ["cuotas"] = c.FormaPagoCuotas, ["dias"] = c.DiasAnticipacionAlerta,
+            };
+        }
         return defs.Select(d => new ContratoCampoDinDto(d.Id, d.Label, d.Orden,
-            vals.FirstOrDefault(v => v.ContratoCampoId == d.Id)?.Valor, d.Tipo, d.Opciones)).ToList();
+            d.Tipo == TipoCampoTablero.Formula ? ComputarFormulaPropiaUno(d.Opciones, dict, sistema) : vals.FirstOrDefault(v => v.ContratoCampoId == d.Id)?.Valor,
+            d.Tipo, d.Opciones)).ToList();
     }
 
     public async Task<ContratoCampoDto> CrearContratoCampoAsync(CrearContratoCampoRequest req, CancellationToken ct)
@@ -452,7 +530,7 @@ public partial class MiCopropiedadService
         {
             Label = req.Label.Trim(),
             Tipo = req.Tipo,
-            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            Opciones = await OpcionesContratoAsync(req.Tipo, req.Opciones, null, ct),
             Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
             Orden = maxOrden + 1,
             Activo = true
@@ -471,7 +549,7 @@ public partial class MiCopropiedadService
         // (asi el edit del componente no borra la descripcion ni oculta el campo con Activo=false).
         if (!string.IsNullOrWhiteSpace(req.Label)) campo.Label = req.Label.Trim();
         campo.Tipo = req.Tipo;
-        campo.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        campo.Opciones = await OpcionesContratoAsync(req.Tipo, req.Opciones, campoId, ct);
         campo.Orden = req.Orden;
         if (req.Descripcion is not null)
             campo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();

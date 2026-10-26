@@ -52,6 +52,7 @@ public partial class TareasService
             select new
             {
                 t.Id,
+                t.TableroId,
                 t.NumeroTarea,
                 t.Titulo,
                 PrioridadBaseValor = pr == null ? (int?)null : pr.BaseValor,
@@ -100,6 +101,14 @@ public partial class TareasService
             .Select(v => new { v.TareaId, v.TableroCampoId, v.Valor }).ToListAsync(ct);
         var camposMap = camposVals.GroupBy(x => x.TareaId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<TareaCampoValorDto>)g.Select(x => new TareaCampoValorDto(x.TableroCampoId, x.Valor)).ToList());
+        // Campos Formula por tablero (se calculan por tarea: cd: de sus valores + sistema progreso/vence/valor).
+        var tableroIdsLista = rows.Where(r => r.TableroId.HasValue).Select(r => r.TableroId!.Value).Distinct().ToList();
+        var formulasPorTablero = (await _db.TableroCampos.AsNoTracking()
+            .Where(c => c.Activo && c.Tipo == TipoCampoTablero.Formula && tableroIdsLista.Contains(c.TableroId))
+            .Select(c => new { c.TableroId, c.Id, c.Opciones }).ToListAsync(ct))
+            .GroupBy(c => c.TableroId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<(Guid Id, string? Opciones)>)g.Select(x => (x.Id, x.Opciones)).ToList());
+        IReadOnlyList<(Guid Id, string? Opciones)> sinFormulas = Array.Empty<(Guid, string?)>();
 
         // Responsables (asignado principal + colaboradores) para la vista tabla editable.
         var colabs = await (
@@ -125,7 +134,7 @@ public partial class TareasService
                 coms.GetValueOrDefault(r.Id, 0),
                 etiquetasMap.GetValueOrDefault(r.Id, new List<EtiquetaTareaDto>()),
                 r.Progreso, r.Color, r.EsProyecto, r.Valor, r.FechaInicio,
-                camposMap.GetValueOrDefault(r.Id),
+                ConFormulasTarea(camposMap.GetValueOrDefault(r.Id), r.Progreso, r.FechaVencimiento, r.Valor, r.TableroId is Guid _tid && formulasPorTablero.TryGetValue(_tid, out var _fl) ? _fl : sinFormulas),
                 resp, r.Descripcion, r.OrigenTipo, r.OrigenReferencia, r.EstadoDesde,
                 r.MotivoCancelacion, r.CerradaAt,
                 ModuloOrigenCodigo: r.ModuloOrigenCodigo,
@@ -234,10 +243,14 @@ public partial class TareasService
             .Select(s => new SubtareaCheckDto(s.Id, s.Titulo, s.Hecho, s.Orden))
             .ToListAsync(ct);
 
-        var camposValores = await _db.TareaCampoValores.AsNoTracking()
+        var camposValoresBase = await _db.TareaCampoValores.AsNoTracking()
             .Where(v => v.TareaId == id)
             .Select(v => new TareaCampoValorDto(v.TableroCampoId, v.Valor))
             .ToListAsync(ct);
+        var formulaDefsTarea = (await _db.TableroCampos.AsNoTracking()
+            .Where(c => c.Activo && c.Tipo == TipoCampoTablero.Formula && c.TableroId == t.TableroId)
+            .Select(c => new { c.Id, c.Opciones }).ToListAsync(ct)).Select(d => (d.Id, d.Opciones)).ToList();
+        var camposValores = ConFormulasTarea(camposValoresBase, t.Progreso, t.FechaVencimiento, t.Valor, formulaDefsTarea);
 
         // Traza: copias hechas a partir de esta tarea (copias independientes, no subtareas).
         // Fase 3: se materializa a anonimo (con la opcion de prioridad unida) y se mapea en memoria para

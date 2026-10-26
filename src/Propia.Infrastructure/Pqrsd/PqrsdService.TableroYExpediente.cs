@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
+using Propia.Application.MiCopropiedad;
 using Propia.Application.Pqrsd;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -148,6 +149,52 @@ public partial class PqrsdService
         c.Id, c.Label, c.Orden, c.Tipo, c.Opciones, c.MostrarEnFiltro, c.Columna,
         c.Descripcion, c.Requerido, c.ValorPorDefecto, c.PermiteVarios, c.CamposSuma, c.Activo);
 
+    // ---- Formula: fuentes de sistema (solo 'vence' = fecha de vencimiento) + validacion + computo ----
+    // PqrsdService no es partial de MiCopropiedadService -> usa el motor compartido CampoFormulaConfig directo.
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaPqrsd =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal) { ["vence"] = TipoCampoTablero.Fecha };
+
+    private async Task<string?> PrepararOpcionesPqrsdAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo != TipoCampoTablero.Formula) return opciones;
+        var cfg = CampoFormulaConfig.Parse(opciones)
+            ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+        var defs = (await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo && (excluirId == null || c.Id != excluirId))
+            .Select(c => new { c.Id, c.Tipo }).ToListAsync(ct)).ToDictionary(c => c.Id, c => c.Tipo);
+        var err = CampoFormulaConfig.Validar(cfg, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && defs.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+            return FuentesSistemaPqrsd.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+        });
+        if (err is not null) throw new InvalidOperationException(err);
+        return cfg.Serializar();
+    }
+
+    private static string? ComputarFormulaPqrsd(string? opciones, IReadOnlyDictionary<Guid, string?> cd, DateOnly fechaVence)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && cd.TryGetValue(g, out var v) ? CampoFormulaConfig.ParseFuente(v) : (decimal?)null;
+            return clave == "vence" ? fechaVence.DayNumber : (decimal?)null;
+        });
+
+    // Agrega al listado de valores (cd:) de UN expediente los valores CALCULADOS de los campos Formula.
+    private static IReadOnlyList<PqrsdCampoValorDto> ConFormulasPqrsd(
+        IReadOnlyList<PqrsdCampoValorDto> valores, DateOnly fechaVence,
+        IReadOnlyList<(Guid Id, string? Opciones)> formulaDefs)
+    {
+        if (formulaDefs.Count == 0) return valores;
+        var cd = (IReadOnlyDictionary<Guid, string?>)valores.ToDictionary(v => v.CampoId, v => v.Valor);
+        var res = valores.ToList();
+        foreach (var fd in formulaDefs)
+        {
+            var txt = ComputarFormulaPqrsd(fd.Opciones, cd, fechaVence);
+            if (txt is not null) res.Add(new PqrsdCampoValorDto(fd.Id, txt));
+        }
+        return res;
+    }
+
     public async Task<IReadOnlyList<PqrsdCampoDto>> ListarCamposAsync(CancellationToken ct)
     {
         return await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo)
@@ -178,7 +225,7 @@ public partial class PqrsdService
             Label = label,
             Orden = maxOrden + 1,
             Tipo = req.Tipo,
-            Opciones = req.Opciones,
+            Opciones = await PrepararOpcionesPqrsdAsync(req.Tipo, req.Opciones, null, ct),
             MostrarEnFiltro = req.MostrarEnFiltro,
             Columna = Math.Clamp(req.Columna, 1, 3),
             Descripcion = req.Descripcion,
@@ -203,7 +250,7 @@ public partial class PqrsdService
             throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta.");
         c.Label = label;
         c.Tipo = req.Tipo;
-        c.Opciones = req.Opciones;
+        c.Opciones = await PrepararOpcionesPqrsdAsync(req.Tipo, req.Opciones, id, ct);
         c.MostrarEnFiltro = req.MostrarEnFiltro;
         c.Columna = Math.Clamp(req.Columna, 1, 3);
         c.Descripcion = req.Descripcion;
@@ -237,7 +284,7 @@ public partial class PqrsdService
             throw new InvalidOperationException("Ya existe un campo activo con esta etiqueta.");
         c.Label = label;
         c.Tipo = req.Tipo;
-        c.Opciones = req.Opciones;
+        c.Opciones = await PrepararOpcionesPqrsdAsync(req.Tipo, req.Opciones, id, ct);
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

@@ -129,6 +129,57 @@ public partial class TareasService
 
     private static int ClampColumna(int c) => c < 1 ? 1 : (c > 2 ? 2 : c);
 
+    // ---- Formula: fuentes de SISTEMA de la tarea + validacion + computo (motor compartido CampoFormulaConfig) ----
+    // OJO: las claves son las del catalogo de la UI (ColumnasSistemaCatalogo en TableroTareas.razor), NO las
+    // de TareaCamposSistema: 'due' = fecha de vencimiento, 'valor' = Moneda. 'prog' es Texto en ese catalogo
+    // (porcentaje calculado para mostrar), asi que no es fuente de formula.
+    private static readonly IReadOnlyDictionary<string, TipoCampoTablero> FuentesSistemaTarea =
+        new Dictionary<string, TipoCampoTablero>(StringComparer.Ordinal)
+        { ["due"] = TipoCampoTablero.Fecha, ["valor"] = TipoCampoTablero.Moneda };
+
+    // Las fuentes cd: son los OTROS campos del MISMO tablero Numero/Moneda/Fecha; mas los de sistema.
+    private async Task<string?> PrepararOpcionesTareaAsync(Guid tableroId, TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
+    {
+        if (tipo != TipoCampoTablero.Formula) return string.IsNullOrWhiteSpace(opciones) ? null : opciones.Trim();
+        var cfg = CampoFormulaConfig.Parse(opciones)
+            ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+        var defs = (await _db.TableroCampos.AsNoTracking().Where(c => c.TableroId == tableroId && c.Activo && (excluirId == null || c.Id != excluirId))
+            .Select(c => new { c.Id, c.Tipo }).ToListAsync(ct)).ToDictionary(c => c.Id, c => c.Tipo);
+        var err = CampoFormulaConfig.Validar(cfg, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && defs.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+            return FuentesSistemaTarea.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+        });
+        if (err is not null) throw new InvalidOperationException(err);
+        return cfg.Serializar();
+    }
+
+    private static string? ComputarFormulaTarea(string? opciones, IReadOnlyDictionary<Guid, string?> cd, int progreso, DateOnly? vence, decimal? valor)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && cd.TryGetValue(g, out var v) ? CampoFormulaConfig.ParseFuente(v) : (decimal?)null;
+            return clave switch { "due" => vence?.DayNumber, "valor" => valor, _ => (decimal?)null };
+        });
+
+    // Agrega a los valores (cd:) de UNA tarea los valores CALCULADOS de los campos Formula de su tablero.
+    private IReadOnlyList<TareaCampoValorDto> ConFormulasTarea(
+        IReadOnlyList<TareaCampoValorDto>? valores, int progreso, DateOnly? vence, decimal? valor,
+        IReadOnlyList<(Guid Id, string? Opciones)> formulaDefs)
+    {
+        var baseList = valores ?? Array.Empty<TareaCampoValorDto>();
+        if (formulaDefs.Count == 0) return baseList;
+        var cd = (IReadOnlyDictionary<Guid, string?>)baseList.ToDictionary(v => v.CampoId, v => v.Valor);
+        var res = baseList.ToList();
+        foreach (var fd in formulaDefs)
+        {
+            var txt = ComputarFormulaTarea(fd.Opciones, cd, progreso, vence, valor);
+            if (txt is not null) res.Add(new TareaCampoValorDto(fd.Id, txt));
+        }
+        return res;
+    }
+
     public async Task<TableroCampoDto> AgregarCampoAsync(Guid tableroId, GuardarCampoRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Label) || req.Label.Trim().Length < 2)
@@ -145,7 +196,7 @@ public partial class TareasService
             Label = lab,
             Orden = orden,
             Tipo = req.Tipo,
-            Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim(),
+            Opciones = await PrepararOpcionesTareaAsync(tableroId, req.Tipo, req.Opciones, null, ct),
             MostrarEnFiltro = req.MostrarEnFiltro,
             Columna = ClampColumna(req.Columna),
             Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
@@ -175,7 +226,7 @@ public partial class TareasService
             throw new InvalidOperationException("Ya existe un campo con esa etiqueta.");
         c.Label = lab;
         c.Tipo = req.Tipo;
-        c.Opciones = string.IsNullOrWhiteSpace(req.Opciones) ? null : req.Opciones.Trim();
+        c.Opciones = await PrepararOpcionesTareaAsync(tableroId, req.Tipo, req.Opciones, campoId, ct);
         c.Orden = req.Orden;
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

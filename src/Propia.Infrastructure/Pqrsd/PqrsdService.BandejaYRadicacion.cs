@@ -53,6 +53,9 @@ public partial class PqrsdService
         var valoresPorExp = valores.GroupBy(v => v.ExpedienteId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<PqrsdCampoValorDto>)g
                 .Select(v => new PqrsdCampoValorDto(v.PqrsdCampoId, v.Valor)).ToList());
+        // Campos Formula: se calculan por expediente (cd: de sus valores + sistema 'vence').
+        var formulaDefsPqrsd = (await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo && c.Tipo == TipoCampoTablero.Formula)
+            .Select(c => new { c.Id, c.Opciones }).ToListAsync(ct)).Select(d => (d.Id, d.Opciones)).ToList();
 
         // Numero de unidad relacionada (si el expediente la tiene fijada).
         var unidadIds = rows.Where(r => r.x.UnidadPrivadaId.HasValue).Select(r => r.x.UnidadPrivadaId!.Value).Distinct().ToList();
@@ -82,7 +85,7 @@ public partial class PqrsdService
                 r.x.FechaVencimiento, diasHasta, urgencia,
                 sesionesActivas.Contains(r.x.Id), r.x.CreatedAt,
                 r.x.EstadoId, r.x.Archivado, r.x.UnidadPrivadaId, radId,
-                valoresPorExp.GetValueOrDefault(r.x.Id), tipoNombre);
+                ConFormulasPqrsd(valoresPorExp.GetValueOrDefault(r.x.Id) ?? Array.Empty<PqrsdCampoValorDto>(), r.x.FechaVencimiento, formulaDefsPqrsd), tipoNombre);
         }).ToList();
 
         var kpis = new PqrsdKpisDto(
@@ -113,8 +116,11 @@ public partial class PqrsdService
         string? unidadNumero = x.UnidadPrivadaId.HasValue
             ? await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == x.UnidadPrivadaId).Select(u => u.Numero).FirstOrDefaultAsync(ct)
             : null;
-        var camposValores = x.CamposValores
+        var camposValoresBase = x.CamposValores
             .Select(v => new PqrsdCampoValorDto(v.PqrsdCampoId, v.Valor)).ToList();
+        var formulaDefsFicha = (await _db.PqrsdCampos.AsNoTracking().Where(c => c.Activo && c.Tipo == TipoCampoTablero.Formula)
+            .Select(c => new { c.Id, c.Opciones }).ToListAsync(ct)).Select(d => (d.Id, d.Opciones)).ToList();
+        var camposValores = ConFormulasPqrsd(camposValoresBase, x.FechaVencimiento, formulaDefsFicha);
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var fechaCreacion = DateOnly.FromDateTime(x.CreatedAt.UtcDateTime);
