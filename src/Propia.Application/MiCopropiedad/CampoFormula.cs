@@ -145,45 +145,132 @@ public sealed record CampoFormulaConfig(
         };
 
         var operandos = paso.Operandos ?? Array.Empty<OperandoFormula>();
-        // Agregados: sobre los operandos CON valor. Binarias: exigen 2 operandos, ambos con valor.
-        switch (paso.Operacion)
+
+        // Unaria: exige 1 operando con valor.
+        if (EsUnaria(paso.Operacion))
         {
-            case OperacionFormula.Resta:
-            case OperacionFormula.Multiplicacion:
-            case OperacionFormula.Division:
+            if (operandos.Count < 1) return null;
+            var a = Resolver(operandos[0]);
+            if (a is null) return null;
+            return paso.Operacion switch
             {
-                if (operandos.Count != 2) return null;
-                var a = Resolver(operandos[0]);
-                var b = Resolver(operandos[1]);
-                if (a is null || b is null) return null;
-                return paso.Operacion switch
-                {
-                    OperacionFormula.Resta => a - b,
-                    OperacionFormula.Multiplicacion => a * b,
-                    OperacionFormula.Division => b.Value == 0m ? null : Math.Round(a.Value / b.Value, 4, MidpointRounding.AwayFromZero),
-                    _ => null
-                };
-            }
-            default:
+                OperacionFormula.ValorAbsoluto => Math.Abs(a.Value),
+                // La fuente Fecha ya se resolvio a DayNumber: dias transcurridos = hoy - fecha.
+                OperacionFormula.DiasDesdeHoy => HoyDayNumber() - a.Value,
+                _ => null
+            };
+        }
+
+        // Binarias: exigen 2 operandos (A op B), ambos con valor.
+        if (EsBinaria(paso.Operacion))
+        {
+            if (operandos.Count != 2) return null;
+            var a = Resolver(operandos[0]);
+            var b = Resolver(operandos[1]);
+            if (a is null || b is null) return null;
+            return paso.Operacion switch
             {
-                var valores = operandos.Select(Resolver).Where(v => v.HasValue).Select(v => v!.Value).ToList();
-                return paso.Operacion switch
-                {
-                    OperacionFormula.Conteo => valores.Count,
-                    _ when valores.Count == 0 => null,
-                    OperacionFormula.Suma => valores.Sum(),
-                    OperacionFormula.Promedio => Math.Round(valores.Average(), 4, MidpointRounding.AwayFromZero),
-                    OperacionFormula.Minimo => valores.Min(),
-                    OperacionFormula.Maximo => valores.Max(),
-                    _ => null
-                };
-            }
+                OperacionFormula.Resta => a - b,
+                OperacionFormula.Multiplicacion => a * b,
+                OperacionFormula.Division => b.Value == 0m ? null : Math.Round(a.Value / b.Value, 4, MidpointRounding.AwayFromZero),
+                OperacionFormula.Porcentaje => b.Value == 0m ? null : Math.Round(a.Value / b.Value * 100m, 4, MidpointRounding.AwayFromZero),
+                OperacionFormula.Potencia => Potencia(a.Value, b.Value),
+                OperacionFormula.Redondeo => Math.Round(a.Value, ClampDecimales(b.Value), MidpointRounding.AwayFromZero),
+                // Ambas fuentes Fecha resueltas a DayNumber: dias de A a B = fechaB - fechaA.
+                OperacionFormula.DiasEntre => b - a,
+                _ => null
+            };
+        }
+
+        // Condicionales: [A, B, valorSi, valorNo]. Si A o B no tienen valor no se puede comparar -> null.
+        if (EsCondicional(paso.Operacion))
+        {
+            if (operandos.Count != 4) return null;
+            var a = Resolver(operandos[0]);
+            var b = Resolver(operandos[1]);
+            if (a is null || b is null) return null;
+            var cond = paso.Operacion switch
+            {
+                OperacionFormula.SiIgual => a.Value == b.Value,
+                OperacionFormula.SiDistinto => a.Value != b.Value,
+                OperacionFormula.SiMayor => a.Value > b.Value,
+                OperacionFormula.SiMayorIgual => a.Value >= b.Value,
+                OperacionFormula.SiMenor => a.Value < b.Value,
+                OperacionFormula.SiMenorIgual => a.Value <= b.Value,
+                _ => false
+            };
+            return Resolver(operandos[cond ? 2 : 3]);   // la rama no elegida no se exige (puede quedar vacia)
+        }
+
+        // Agregados: sobre los operandos CON valor.
+        {
+            var valores = operandos.Select(Resolver).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            return paso.Operacion switch
+            {
+                OperacionFormula.Conteo => valores.Count,
+                _ when valores.Count == 0 => null,
+                OperacionFormula.Suma => valores.Sum(),
+                OperacionFormula.Promedio => Math.Round(valores.Average(), 4, MidpointRounding.AwayFromZero),
+                OperacionFormula.Minimo => valores.Min(),
+                OperacionFormula.Maximo => valores.Max(),
+                _ => null
+            };
         }
     }
 
-    /// <summary>Tipos de campo fuente admitidos en una Formula (sin anidamiento de otras formulas).</summary>
+    /// <summary>Operaciones binarias (exactamente 2 operandos, en orden A op B).</summary>
+    public static bool EsBinaria(OperacionFormula op) => op is
+        OperacionFormula.Resta or OperacionFormula.Multiplicacion or OperacionFormula.Division
+        or OperacionFormula.Porcentaje or OperacionFormula.Potencia or OperacionFormula.Redondeo
+        or OperacionFormula.DiasEntre;
+
+    /// <summary>Operaciones unarias (exactamente 1 operando).</summary>
+    public static bool EsUnaria(OperacionFormula op) => op is
+        OperacionFormula.ValorAbsoluto or OperacionFormula.DiasDesdeHoy;
+
+    /// <summary>Operaciones condicionales (exactamente 4 operandos: A, B, valorSi, valorNo).</summary>
+    public static bool EsCondicional(OperacionFormula op) => op is
+        OperacionFormula.SiIgual or OperacionFormula.SiDistinto
+        or OperacionFormula.SiMayor or OperacionFormula.SiMayorIgual
+        or OperacionFormula.SiMenor or OperacionFormula.SiMenorIgual;
+
+    // A^B acotada: usa double y descarta resultados no finitos o fuera del rango decimal (-> null, "sin dato").
+    private static decimal? Potencia(decimal a, decimal b)
+    {
+        var r = Math.Pow((double)a, (double)b);
+        if (double.IsNaN(r) || double.IsInfinity(r) || r > (double)decimal.MaxValue || r < (double)decimal.MinValue) return null;
+        try { return Math.Round((decimal)r, 6, MidpointRounding.AwayFromZero); } catch { return null; }
+    }
+
+    // Decimales de Redondeo: entero 0..10 (limite de Math.Round para decimal es 28, pero 10 cubre el uso real).
+    private static int ClampDecimales(decimal b)
+        => (int)Math.Clamp(Math.Round(b, MidpointRounding.AwayFromZero), 0m, 10m);
+
+    /// <summary>Tipos de campo fuente admitidos en una Formula (sin anidamiento de otras formulas).
+    /// Numero/Moneda se usan tal cual; Fecha/FechaHora se resuelven a numero de dia para las operaciones de fecha.</summary>
     public static bool EsFuenteValida(TipoCampoTablero tipo)
-        => tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda;
+        => tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda
+            or TipoCampoTablero.Fecha or TipoCampoTablero.FechaHora;
+
+    /// <summary>Numero de dia (DayNumber) de HOY (UTC): base para las operaciones de fecha.</summary>
+    private static int HoyDayNumber() => DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+
+    /// <summary>
+    /// Resuelve el valor de una fuente a decimal para el motor: numeros tal cual; una FECHA (ISO u otra que
+    /// .NET parsee) a su numero de dia (DayNumber), para que DiasDesdeHoy/DiasEntre operen en dias. Cada
+    /// superficie debe usar ESTE helper (no un parse propio) en el resolver de campos propios, si no las
+    /// fuentes Fecha quedan en null. Devuelve null si no es ni numero ni fecha.
+    /// </summary>
+    public static decimal? ParseFuente(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) return null;
+        var t = valor.Trim();
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (decimal.TryParse(t.Replace(",", "."), System.Globalization.NumberStyles.Any, inv, out var d)) return d;
+        if (DateOnly.TryParse(t, inv, System.Globalization.DateTimeStyles.None, out var f)) return f.DayNumber;
+        if (DateTime.TryParse(t, inv, System.Globalization.DateTimeStyles.None, out var dt)) return DateOnly.FromDateTime(dt).DayNumber;
+        return null;
+    }
 
     /// <summary>
     /// Computa el TEXTO de un campo Formula en lectura (helper COMPARTIDO por todas las superficies): parsea
@@ -217,10 +304,13 @@ public sealed record CampoFormulaConfig(
         {
             var paso = pasos[i];
             var operandos = paso.Operandos ?? Array.Empty<OperandoFormula>();
-            var esBinaria = paso.Operacion is OperacionFormula.Resta or OperacionFormula.Multiplicacion or OperacionFormula.Division;
             if (operandos.Count == 0) return $"El paso {i + 1} no tiene operandos.";
-            if (esBinaria && operandos.Count != 2)
+            if (EsBinaria(paso.Operacion) && operandos.Count != 2)
                 return $"El paso {i + 1} ({paso.Operacion}) necesita exactamente 2 operandos.";
+            if (EsUnaria(paso.Operacion) && operandos.Count != 1)
+                return $"El paso {i + 1} ({paso.Operacion}) necesita exactamente 1 operando.";
+            if (EsCondicional(paso.Operacion) && operandos.Count != 4)
+                return $"El paso {i + 1} ({paso.Operacion}) necesita 4 operandos (A, B, valor si se cumple, valor si no).";
             foreach (var o in operandos)
             {
                 switch (o.Tipo)

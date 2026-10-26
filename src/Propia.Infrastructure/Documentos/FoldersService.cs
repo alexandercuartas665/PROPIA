@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Documentos;
+using Propia.Application.MiCopropiedad;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -558,7 +559,9 @@ public class FoldersService : IFoldersService
             DocumentoId = req.DocumentoId,
             Label = label,
             Tipo = req.Tipo,
-            Opciones = NormalizarOpciones(req.Opciones),
+            Opciones = req.Tipo == TipoCampoTablero.Formula
+                ? await PrepararOpcionesFormulaFolderAsync(req.Opciones, req.FolderId, req.DocumentoId, null, ct)
+                : NormalizarOpciones(req.Opciones),
             Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim(),
             Obligatorio = req.Obligatorio,
             Orden = orden,
@@ -580,7 +583,13 @@ public class FoldersService : IFoldersService
             c.Label = l;
         }
         if (req.Tipo.HasValue) c.Tipo = req.Tipo.Value;
-        if (req.Opciones is not null) c.Opciones = NormalizarOpciones(req.Opciones);
+        if (c.Tipo == TipoCampoTablero.Formula)
+        {
+            // Solo re-parsea si viene una formula nueva; vacio = conservar la actual (edits de alias/orden/etc.).
+            if (!string.IsNullOrWhiteSpace(req.Opciones))
+                c.Opciones = await PrepararOpcionesFormulaFolderAsync(req.Opciones, c.FolderId, c.DocumentoId, c.Id, ct);
+        }
+        else if (req.Opciones is not null) c.Opciones = NormalizarOpciones(req.Opciones);
         ValidarTipo(c.Tipo, c.Opciones);
         if (req.Descripcion is not null) c.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         if (req.Obligatorio.HasValue) c.Obligatorio = req.Obligatorio.Value;
@@ -756,10 +765,29 @@ public class FoldersService : IFoldersService
 
     private static void ValidarTipo(TipoCampoTablero tipo, string? opciones)
     {
-        if (tipo is TipoCampoTablero.Separador or TipoCampoTablero.Total or TipoCampoTablero.Formula or TipoCampoTablero.ModuloContributivo)
+        if (tipo is TipoCampoTablero.Separador or TipoCampoTablero.Total or TipoCampoTablero.ModuloContributivo)
             throw new InvalidOperationException("Ese tipo de campo no aplica a metadatos de documentos.");
         if (tipo == TipoCampoTablero.Seleccion && string.IsNullOrWhiteSpace(opciones))
             throw new InvalidOperationException("Un metadato de selección necesita al menos una opción.");
+    }
+
+    // Opciones de un metadato Formula: valida la formula contra los metadatos del MISMO ambito (folder o
+    // documento) que sean Numero/Moneda/Fecha (las fuentes cd: que ofrece el editor) y la guarda serializada.
+    // Reusa el motor compartido CampoFormulaConfig (Application). No hay fuentes de SISTEMA en Folders: los
+    // metadatos intrinsecos del documento (tamano/versiones) no se exponen como campos de formula.
+    private async Task<string?> PrepararOpcionesFormulaFolderAsync(string? opciones, Guid? folderId, Guid? documentoId, Guid? excluirId, CancellationToken ct)
+    {
+        var cfg = CampoFormulaConfig.Parse(opciones)
+            ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
+        var defs = (await _db.FolderCampoDefiniciones.AsNoTracking()
+            .Where(c => c.FolderId == folderId && c.DocumentoId == documentoId && (excluirId == null || c.Id != excluirId))
+            .Select(c => new { c.Id, c.Tipo }).ToListAsync(ct))
+            .ToDictionary(c => c.Id, c => c.Tipo);
+        var err = CampoFormulaConfig.Validar(cfg, clave =>
+            clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g) && defs.TryGetValue(g, out var t)
+                ? t : (TipoCampoTablero?)null);
+        if (err is not null) throw new InvalidOperationException(err);
+        return cfg.Serializar();
     }
 
     private static string? NormalizarOpciones(string? opciones)
@@ -851,6 +879,22 @@ public class FoldersService : IFoldersService
             .Where(v => esquema.ContainsKey(v.DefinicionId))
             .Select(v => new FolderCampoValorDto(v.DefinicionId, esquema[v.DefinicionId].Label, esquema[v.DefinicionId].Tipo, v.Valor))
             .ToList();
+        // Campos Formula: valor CALCULADO (read-only) desde los otros metadatos del documento (cd: Numero/
+        // Moneda/Fecha). Se agrega a .Valores para que la UI lo muestre como un valor mas. ParseFuente convierte
+        // fecha->DayNumber igual que en las otras superficies.
+        var formulas = esquema.Values.Where(e => e.Tipo == TipoCampoTablero.Formula).ToList();
+        if (formulas.Count > 0)
+        {
+            var porDef = valores.Where(v => esquema.ContainsKey(v.DefinicionId))
+                .ToDictionary(v => v.DefinicionId, v => v.Valor);
+            foreach (var def in formulas)
+            {
+                var txt = CampoFormulaConfig.ComputarTexto(def.Opciones, clave =>
+                    clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g) && porDef.TryGetValue(g, out var vv)
+                        ? CampoFormulaConfig.ParseFuente(vv) : (decimal?)null);
+                if (txt is not null) vals.Add(new FolderCampoValorDto(def.Id, def.Label, def.Tipo, txt));
+            }
+        }
         return new FolderDocumentoDto(d.Id, d.FolderId, d.Nombre, d.Obligatorio, d.Archivado, d.ArchivoUrl != null,
             d.ArchivoNombre, d.ArchivoMime, d.ArchivoTamano, d.NumeroVersiones, ultimaVersion, propios, vals);
     }

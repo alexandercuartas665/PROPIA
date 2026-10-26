@@ -1,0 +1,309 @@
+@* ============================================================================================
+   Editor de una FORMULA por pasos (multi-paso), autocontenido y COMPARTIDO. Recibe las FUENTES
+   (campos Numero/Moneda/Fecha disponibles como {Key, Label}) y expone Construir()/Validar() para que
+   el padre arme el CampoFormulaConfig. Lo usan CrearCampoModal (inline, al crear) y ConfigCamposEntidad
+   (gestor avanzado). Asi la "caja de formula" (operacion + campo) vive donde se necesita, sin duplicar
+   la logica de las operaciones. CSS: clases cga-fx-* en css/modules/config-campos.css (global).
+   ============================================================================================ *@
+@using Propia.Domain.Enums
+@using Propia.Application.MiCopropiedad
+
+@if (Fuentes is null || Fuentes.Count == 0)
+{
+    <div class="cga-cfg-hint">No hay campos Número, Moneda o Fecha para calcular. Crea primero un campo de esos tipos.</div>
+}
+else
+{
+    <div class="cga-fx">
+        @for (var i = 0; i < _pasos.Count; i++)
+        {
+            var pi = i;
+            var paso = _pasos[pi];
+            var esBin = EsOpBinaria(paso.Op);
+            var esUn = EsOpUnaria(paso.Op);
+            var esCond = EsOpCondicional(paso.Op);
+            <div class="cga-fx-paso">
+                <div class="cga-fx-paso-head">
+                    <span class="cga-fx-paso-n">Paso @(pi + 1)</span>
+                    <select class="cga-inp cga-fx-op" value="@paso.Op" @onchange="e => CambiarOpPaso(pi, e.Value?.ToString())">
+                        @foreach (var op in Enum.GetValues<OperacionFormula>()) { <option value="@op" selected="@(op == paso.Op)">@OperacionLabel(op)</option> }
+                    </select>
+                    @if (_pasos.Count > 1)
+                    {
+                        <button type="button" class="cga-opt-x" title="Quitar paso" @onclick="() => QuitarPaso(pi)">&times;</button>
+                    }
+                </div>
+                @for (var j = 0; j < paso.Operandos.Count; j++)
+                {
+                    var oj = j;
+                    var o = paso.Operandos[oj];
+                    <div class="cga-fx-op-row">
+                        @if (esBin || esCond) { <span class="cga-fx-ab" title="@(esCond ? "Si A comparado con B se cumple -> valor, si no el otro" : $"Orden: A {OperacionSimbolo(paso.Op)} B")">@OperandoLabelBin(paso.Op, oj)</span> }
+                        <select class="cga-inp cga-fx-otipo" value="@o.Tipo" @onchange="e => CambiarTipoOperando(pi, oj, e.Value?.ToString())">
+                            <option value="@OperandoFormula.TipoCampo">Campo</option>
+                            <option value="@OperandoFormula.TipoConstante">Constante</option>
+                            @if (pi > 0) { <option value="@OperandoFormula.TipoPaso">Resultado de paso</option> }
+                        </select>
+                        @if (o.Tipo == OperandoFormula.TipoConstante)
+                        {
+                            <input class="cga-inp" type="number" step="any" placeholder="Valor" value="@o.Valor" @onchange="e => SetOperandoValor(pi, oj, e.Value?.ToString())" />
+                        }
+                        else if (o.Tipo == OperandoFormula.TipoPaso)
+                        {
+                            <select class="cga-inp" value="@o.Paso" @onchange="e => SetOperandoPaso(pi, oj, e.Value?.ToString())">
+                                <option value="">- elige paso -</option>
+                                @for (var k = 0; k < pi; k++) { <option value="@k" selected="@(k == o.Paso)">Paso @(k + 1)</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <select class="cga-inp" value="@o.Campo" @onchange="e => SetOperandoCampo(pi, oj, e.Value?.ToString())">
+                                <option value="">- elige campo -</option>
+                                @foreach (var f in Fuentes) { <option value="@f.Key" selected="@(f.Key == o.Campo)">@f.Label</option> }
+                            </select>
+                        }
+                        @if (!esBin && !esUn && !esCond && paso.Operandos.Count > 1)
+                        {
+                            <button type="button" class="cga-opt-x" title="Quitar operando" @onclick="() => QuitarOperando(pi, oj)">&times;</button>
+                        }
+                    </div>
+                }
+                @if (!esBin && !esUn && !esCond)
+                {
+                    <button type="button" class="cga-add-btn cga-fx-addop" @onclick="() => AgregarOperando(pi)">+ operando</button>
+                }
+            </div>
+        }
+        <div class="cga-fx-foot">
+            <button type="button" class="dst-btn-soft" @onclick="AgregarPaso">+ Agregar paso</button>
+            <span class="cga-cfg-hint">El resultado del campo es el último paso.</span>
+        </div>
+        @* Vista EN VIVO: la formula se escribe sola a medida que se eligen operacion / campos / constantes. *@
+        <div class="cga-fx-preview">
+            <div class="cga-fx-preview-lbl">Así queda la fórmula</div>
+            @if (_pasos.Count == 1)
+            {
+                <code class="cga-fx-preview-code">@ExprPaso(_pasos[0])</code>
+            }
+            else
+            {
+                @for (var i = 0; i < _pasos.Count; i++)
+                {
+                    <div><span class="cga-fx-preview-step">Paso @(i + 1):</span> <code class="cga-fx-preview-code">@ExprPaso(_pasos[i])</code></div>
+                }
+                <div class="cga-fx-preview-res">Resultado = Paso @_pasos.Count</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Campos fuente disponibles (Numero/Moneda/Fecha) como {Key, Label}. Key = clave de sistema o "cd:{id}".</summary>
+    [Parameter] public IReadOnlyList<(string Key, string Label)> Fuentes { get; set; } = Array.Empty<(string, string)>();
+    /// <summary>Config inicial (JSON de Opciones) a cargar en el editor; null = formula nueva vacia (1 paso).</summary>
+    [Parameter] public string? OpcionesIniciales { get; set; }
+
+    private sealed class OperandoEdit
+    {
+        public string Tipo = OperandoFormula.TipoCampo;
+        public string? Campo;
+        public decimal? Valor;
+        public int? Paso;
+    }
+    private sealed class PasoEdit
+    {
+        public OperacionFormula Op = OperacionFormula.Suma;
+        public List<OperandoEdit> Operandos = new() { new OperandoEdit() };
+    }
+    private readonly List<PasoEdit> _pasos = new();
+
+    protected override void OnInitialized()
+    {
+        // Precarga (editar): mapea el JSON a pasos editables. Si no hay, arranca con un paso vacio.
+        if (!string.IsNullOrWhiteSpace(OpcionesIniciales))
+        {
+            var cfg = CampoFormulaConfig.Parse(OpcionesIniciales);
+            if (cfg?.Pasos is { Count: > 0 } pasos)
+            {
+                foreach (var p in pasos)
+                {
+                    var pe = new PasoEdit { Op = p.Operacion, Operandos = new() };
+                    foreach (var o in p.Operandos)
+                        pe.Operandos.Add(new OperandoEdit { Tipo = o.Tipo, Campo = o.Campo, Valor = o.Valor, Paso = o.Paso });
+                    if (pe.Operandos.Count == 0) pe.Operandos.Add(new OperandoEdit());
+                    _pasos.Add(pe);
+                }
+            }
+        }
+        if (_pasos.Count == 0) _pasos.Add(new PasoEdit());
+    }
+
+    // ---- Aridad (reusa la del motor para que UI y computo no se desincronicen) ----
+    private static bool EsOpBinaria(OperacionFormula op) => CampoFormulaConfig.EsBinaria(op);
+    private static bool EsOpUnaria(OperacionFormula op) => CampoFormulaConfig.EsUnaria(op);
+    private static bool EsOpCondicional(OperacionFormula op) => CampoFormulaConfig.EsCondicional(op);
+
+    private static string OperacionSimbolo(OperacionFormula op) => op switch
+    {
+        OperacionFormula.Resta => "-",
+        OperacionFormula.Multiplicacion => "x",
+        OperacionFormula.Division => "/",
+        OperacionFormula.Suma => "+",
+        OperacionFormula.Porcentaje => "%",
+        OperacionFormula.Potencia => "^",
+        OperacionFormula.Redondeo => "~",
+        _ => "op"
+    };
+    // Etiqueta de cada operando: binarias (A/B o nombres propios) y condicionales (A, B, ramas si/no).
+    private static string OperandoLabelBin(OperacionFormula op, int idx)
+    {
+        if (EsOpCondicional(op))
+            return idx switch { 0 => "A", 1 => "B", 2 => "→ si se cumple", _ => "→ si no" };
+        return op switch
+        {
+            OperacionFormula.Redondeo => idx == 0 ? "valor" : "decimales",
+            OperacionFormula.Potencia => idx == 0 ? "base" : "exponente",
+            OperacionFormula.DiasEntre => idx == 0 ? "desde" : "hasta",
+            _ => idx == 0 ? "A" : "B"
+        };
+    }
+
+    private void AgregarPaso() => _pasos.Add(new PasoEdit());
+    private void QuitarPaso(int i)
+    {
+        if (i < 0 || i >= _pasos.Count) return;
+        _pasos.RemoveAt(i);
+        // Ref a un paso que ya no existe (o que se corrio) -> se limpia para no dejar la formula rota.
+        foreach (var p in _pasos)
+            foreach (var o in p.Operandos)
+                if (o.Tipo == OperandoFormula.TipoPaso && (o.Paso is null || o.Paso >= _pasos.Count)) o.Paso = null;
+    }
+    private void CambiarOpPaso(int i, string? v)
+    {
+        if (!Enum.TryParse<OperacionFormula>(v, out var op)) return;
+        var paso = _pasos[i];
+        paso.Op = op;
+        // Ajusta operandos a la aridad: binaria = 2 (A op B), unaria = 1, condicional = 4, agregado = al menos 1.
+        if (EsOpBinaria(op))
+        {
+            while (paso.Operandos.Count < 2) paso.Operandos.Add(new OperandoEdit());
+            if (paso.Operandos.Count > 2) paso.Operandos.RemoveRange(2, paso.Operandos.Count - 2);
+        }
+        else if (EsOpUnaria(op))
+        {
+            while (paso.Operandos.Count < 1) paso.Operandos.Add(new OperandoEdit());
+            if (paso.Operandos.Count > 1) paso.Operandos.RemoveRange(1, paso.Operandos.Count - 1);
+        }
+        else if (EsOpCondicional(op))
+        {
+            while (paso.Operandos.Count < 4) paso.Operandos.Add(new OperandoEdit());
+            if (paso.Operandos.Count > 4) paso.Operandos.RemoveRange(4, paso.Operandos.Count - 4);
+        }
+        else if (paso.Operandos.Count == 0) paso.Operandos.Add(new OperandoEdit());
+    }
+    private void AgregarOperando(int i) => _pasos[i].Operandos.Add(new OperandoEdit());
+    private void QuitarOperando(int i, int j) { if (_pasos[i].Operandos.Count > 1) _pasos[i].Operandos.RemoveAt(j); }
+    private void CambiarTipoOperando(int i, int j, string? v)
+    {
+        var o = _pasos[i].Operandos[j];
+        o.Tipo = string.IsNullOrWhiteSpace(v) ? OperandoFormula.TipoCampo : v!;
+        o.Campo = null; o.Valor = null; o.Paso = null;   // reset el valor al cambiar el tipo de operando
+    }
+    private void SetOperandoCampo(int i, int j, string? v) => _pasos[i].Operandos[j].Campo = string.IsNullOrWhiteSpace(v) ? null : v;
+    private void SetOperandoValor(int i, int j, string? v)
+        => _pasos[i].Operandos[j].Valor = decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+    private void SetOperandoPaso(int i, int j, string? v) => _pasos[i].Operandos[j].Paso = int.TryParse(v, out var p) ? p : null;
+
+    private static string OperacionLabel(OperacionFormula op) => op switch
+    {
+        OperacionFormula.Suma => "Suma",
+        OperacionFormula.Promedio => "Promedio",
+        OperacionFormula.Conteo => "Conteo (campos con valor)",
+        OperacionFormula.Minimo => "Mínimo",
+        OperacionFormula.Maximo => "Máximo",
+        OperacionFormula.Resta => "Resta (A - B)",
+        OperacionFormula.Multiplicacion => "Multiplicación (A x B)",
+        OperacionFormula.Division => "División (A / B)",
+        OperacionFormula.Porcentaje => "Porcentaje (A / B x 100)",
+        OperacionFormula.Potencia => "Potencia (base ^ exponente)",
+        OperacionFormula.Redondeo => "Redondear (valor a N decimales)",
+        OperacionFormula.ValorAbsoluto => "Valor absoluto (|A|)",
+        OperacionFormula.SiIgual => "Si A = B → valor, si no otro",
+        OperacionFormula.SiDistinto => "Si A ≠ B → valor, si no otro",
+        OperacionFormula.SiMayor => "Si A > B → valor, si no otro",
+        OperacionFormula.SiMayorIgual => "Si A ≥ B → valor, si no otro",
+        OperacionFormula.SiMenor => "Si A < B → valor, si no otro",
+        OperacionFormula.SiMenorIgual => "Si A ≤ B → valor, si no otro",
+        OperacionFormula.DiasDesdeHoy => "Días desde hoy (antigüedad de una fecha)",
+        OperacionFormula.DiasEntre => "Días entre 2 fechas (hasta − desde)",
+        _ => op.ToString()
+    };
+
+    // ---- Vista EN VIVO de la formula (texto legible que se arma a medida que se edita) ----
+    private string ExprOperando(OperandoEdit o) => o.Tipo switch
+    {
+        OperandoFormula.TipoConstante => o.Valor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "…",
+        OperandoFormula.TipoPaso => o.Paso is int p ? $"Paso {p + 1}" : "…",
+        _ => string.IsNullOrWhiteSpace(o.Campo) ? "…" : (Fuentes.FirstOrDefault(f => f.Key == o.Campo).Label ?? o.Campo!)
+    };
+    private string ExprPaso(PasoEdit p)
+    {
+        var ops = p.Operandos;
+        string A() => ops.Count > 0 ? ExprOperando(ops[0]) : "…";
+        string B() => ops.Count > 1 ? ExprOperando(ops[1]) : "…";
+        string C() => ops.Count > 2 ? ExprOperando(ops[2]) : "…";
+        string D() => ops.Count > 3 ? ExprOperando(ops[3]) : "…";
+        return p.Op switch
+        {
+            OperacionFormula.Suma => $"({string.Join(" + ", ops.Select(ExprOperando))})",
+            OperacionFormula.Promedio => $"promedio({string.Join(", ", ops.Select(ExprOperando))})",
+            OperacionFormula.Conteo => $"conteo({string.Join(", ", ops.Select(ExprOperando))})",
+            OperacionFormula.Minimo => $"mín({string.Join(", ", ops.Select(ExprOperando))})",
+            OperacionFormula.Maximo => $"máx({string.Join(", ", ops.Select(ExprOperando))})",
+            OperacionFormula.Resta => $"({A()} − {B()})",
+            OperacionFormula.Multiplicacion => $"({A()} × {B()})",
+            OperacionFormula.Division => $"({A()} ÷ {B()})",
+            OperacionFormula.Porcentaje => $"(({A()} ÷ {B()}) × 100)",
+            OperacionFormula.Potencia => $"({A()} ^ {B()})",
+            OperacionFormula.Redondeo => $"redondear({A()}, {B()} dec.)",
+            OperacionFormula.ValorAbsoluto => $"|{A()}|",
+            OperacionFormula.SiIgual => $"si {A()} = {B()} → {C()}, si no {D()}",
+            OperacionFormula.SiDistinto => $"si {A()} ≠ {B()} → {C()}, si no {D()}",
+            OperacionFormula.SiMayor => $"si {A()} > {B()} → {C()}, si no {D()}",
+            OperacionFormula.SiMayorIgual => $"si {A()} ≥ {B()} → {C()}, si no {D()}",
+            OperacionFormula.SiMenor => $"si {A()} < {B()} → {C()}, si no {D()}",
+            OperacionFormula.SiMenorIgual => $"si {A()} ≤ {B()} → {C()}, si no {D()}",
+            OperacionFormula.DiasDesdeHoy => $"días desde hoy({A()})",
+            OperacionFormula.DiasEntre => $"días de {A()} a {B()}",
+            _ => p.Op.ToString()
+        };
+    }
+
+    // ---- API publica para el padre ----
+    /// <summary>Arma el CampoFormulaConfig desde el editor (preserva nulls para que Validar cace huecos).</summary>
+    public CampoFormulaConfig Construir()
+    {
+        var pasos = _pasos.Select(p => new PasoFormula(p.Op, p.Operandos.Select(o => o.Tipo switch
+        {
+            OperandoFormula.TipoConstante => new OperandoFormula(OperandoFormula.TipoConstante, Valor: o.Valor),
+            OperandoFormula.TipoPaso => new OperandoFormula(OperandoFormula.TipoPaso, Paso: o.Paso),
+            _ => new OperandoFormula(OperandoFormula.TipoCampo, Campo: o.Campo)
+        }).ToList())).ToList();
+        return new CampoFormulaConfig(pasos);
+    }
+
+    /// <summary>Valida la formula contra las fuentes disponibles; devuelve el motivo del rechazo, o null si es valida.</summary>
+    public string? Validar()
+    {
+        var validas = Fuentes.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        return CampoFormulaConfig.Validar(Construir(), k => validas.Contains(k) ? TipoCampoTablero.Numero : (TipoCampoTablero?)null);
+    }
+}
+
+<style>
+    .cga-fx-preview { margin-top: 12px; padding: 9px 11px; border-radius: 9px; background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); }
+    .cga-fx-preview-lbl { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); margin-bottom: 5px; }
+    .cga-fx-preview-code { font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12.5px; color: var(--propia-brand-text-2, var(--propia-brand)); word-break: break-word; line-height: 1.5; }
+    .cga-fx-preview-step { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; margin-right: 4px; }
+    .cga-fx-preview-res { margin-top: 5px; padding-top: 5px; border-top: 1px dashed var(--propia-brand-border); font-size: 11.5px; font-weight: 700; color: var(--propia-text-body); }
+</style>

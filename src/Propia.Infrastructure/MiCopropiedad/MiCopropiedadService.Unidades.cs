@@ -895,7 +895,7 @@ public partial class MiCopropiedadService
         => CampoFormulaConfig.ComputarTexto(opciones, clave =>
         {
             if (clave.StartsWith("cd:", StringComparison.Ordinal))
-                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? ParseDecimalInv(v) : null;
+                return Guid.TryParse(clave[3..], out var g) && valoresPorDef.TryGetValue(g, out var v) ? CampoFormulaConfig.ParseFuente(v) : null;
             return nums is not null ? ValorSistemaUnidad(clave, nums) : null;
         });
 

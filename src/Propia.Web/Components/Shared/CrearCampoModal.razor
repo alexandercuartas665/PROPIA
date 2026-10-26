@@ -10,6 +10,7 @@
    ============================================================================================ *@
 @inject IHttpClientFactory HttpFactory
 @using Propia.Domain.Enums
+@using Propia.Application.MiCopropiedad
 
 <div class="ccm-back" @onclick="Cerrar">
     <div class="ccm-shell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
@@ -59,8 +60,8 @@
                     }
                     else if (_tipo == TipoCampoTablero.Formula)
                     {
-                        <div class="ccm-note">La formula (operaciones y campos fuente) se arma en el gestor avanzado.</div>
-                        <div class="ccm-adv"><button type="button" class="ccm-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Configurar formula en el gestor</button></div>
+                        @* La "caja de formula" (operacion + campo) + vista en vivo viven aqui mismo. *@
+                        <EditorFormulaPasos @ref="_editorFx" Fuentes="@FuentesFormula()" />
                     }
                     else
                     {
@@ -88,16 +89,9 @@
             <button type="button" class="ccm-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
             @if (!(EsEdicion && EsAvanzado(Editar!.Tipo)))
             {
-                @if (_tipo == TipoCampoTablero.Formula && !EsEdicion)
-                {
-                    <button type="button" class="ccm-btn-brand" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Abrir gestor</button>
-                }
-                else
-                {
-                    <button type="button" class="ccm-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_label))">
-                        <i class="fi @(EsEdicion ? "fi-rr-check" : "fi-rr-plus")"></i> @(_busy ? "Guardando..." : (EsEdicion ? "Guardar cambios" : "Crear campo"))
-                    </button>
-                }
+                <button type="button" class="ccm-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_label))">
+                    <i class="fi @(EsEdicion ? "fi-rr-check" : "fi-rr-plus")"></i> @(_busy ? "Guardando..." : (EsEdicion ? "Guardar cambios" : "Crear campo"))
+                </button>
             }
         </div>
     </div>
@@ -118,6 +112,10 @@
     /// <summary>Subtitulo de la cabecera; null = texto por defecto (lenguaje de columna de tabla).</summary>
     [Parameter] public string? Subtitulo { get; set; }
     [Parameter] public string? Jwt { get; set; }
+    /// <summary>Catalogo de campos de SISTEMA (opcional). Sus campos Numero/Moneda/Fecha se ofrecen como
+    /// fuentes de una Formula (p.ej. Coeficiente, Modulo Contributivo en Unidades). Sin catalogo, la Formula
+    /// solo usa los campos propios (cd:) Numero/Moneda/Fecha.</summary>
+    [Parameter] public IReadOnlyList<CampoSistemaDef>? Catalogo { get; set; }
     /// <summary>Campo a editar; null = crear uno nuevo.</summary>
     [Parameter] public CampoDinDef? Editar { get; set; }
     /// <summary>true = ofrece los tipos avanzados (Formula/Usuario/Directorio) al CREAR.</summary>
@@ -133,8 +131,23 @@
     private TipoCampoTablero _tipo = TipoCampoTablero.Texto;
     private readonly List<OpcionCampo> _opcs = new();
     private List<CampoDinDef> _defs = new();
+    private EditorFormulaPasos? _editorFx;   // editor de formula inline (al crear tipo Formula)
     private bool _busy;
     private string? _msg;
+
+    // Fuentes de una Formula: campos de SISTEMA (del Catalogo) + campos PROPIOS (cd:) que sean Numero/Moneda/Fecha.
+    private IReadOnlyList<(string Key, string Label)> FuentesFormula()
+    {
+        var list = new List<(string, string)>();
+        if (Catalogo is not null)
+            foreach (var c in Catalogo)
+                if (CampoFormulaConfig.EsFuenteValida(c.Tipo))
+                    list.Add((c.Clave, c.Label));
+        foreach (var d in _defs)
+            if (CampoFormulaConfig.EsFuenteValida(d.Tipo))
+                list.Add(("cd:" + d.Id, d.Label));
+        return list;
+    }
 
     private string CatUrl => string.IsNullOrWhiteSpace(RutaCatalogo) ? $"/api/mi-copropiedad/{Prefijo}-campos" : RutaCatalogo!;
 
@@ -260,9 +273,17 @@
         if (_defs.Any(d => (Editar is null || d.Id != Editar.Id) && string.Equals(d.Label, label, StringComparison.OrdinalIgnoreCase)))
         { _msg = $"Ya existe un campo \"{label}\"."; return; }
 
-        string? opciones = _tipo == TipoCampoTablero.Seleccion
-            ? (_opcs.Any(o => !string.IsNullOrWhiteSpace(o.K)) ? OpcionCampo.Serializar(_opcs.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList()) : null)
-            : null;
+        // Opciones es polimorfica: lineas (Seleccion) o JSON de formula (Formula); null para el resto.
+        string? opciones = null;
+        if (_tipo == TipoCampoTablero.Seleccion)
+            opciones = _opcs.Any(o => !string.IsNullOrWhiteSpace(o.K)) ? OpcionCampo.Serializar(_opcs.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList()) : null;
+        else if (_tipo == TipoCampoTablero.Formula && !EsEdicion)
+        {
+            if (_editorFx is null) { _msg = "Configura la fórmula."; return; }
+            var errFx = _editorFx.Validar();
+            if (errFx is not null) { _msg = errFx; return; }
+            opciones = _editorFx.Construir().Serializar();
+        }
 
         _busy = true; _msg = null;
         try
@@ -336,6 +357,8 @@
     .ccm-note-txt { font-size: 11.5px; color: var(--propia-text-muted); margin: 12px 0 0; line-height: 1.55; }
     .ccm-note { font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
     .ccm-adv { margin-top: 10px; }
+    .ccm-adv-link { border: 0; background: transparent; color: var(--propia-text-muted); font-size: 11.5px; font-family: inherit; cursor: pointer; padding: 2px 0; text-decoration: underline; text-underline-offset: 2px; }
+    .ccm-adv-link:hover { color: var(--propia-brand); }
     .ccm-msg { margin-top: 12px; font-size: 12.5px; font-weight: 600; color: var(--propia-danger); }
     /* Botones (.btn-brand / .btn-ghost) */
     .ccm-btn-brand { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: 0; background: var(--propia-brand); color: #fff; box-shadow: var(--propia-glow-brand-sm); }

@@ -151,7 +151,25 @@ public enum OperacionFormula
     // asi que agregarlas al final no rompe el JSON ya guardado de las formulas de 1-op existentes.
     Resta = 5,
     Multiplicacion = 6,
-    Division = 7
+    Division = 7,
+    // Fase 2b (Ola A): mas funciones aritmeticas. Binarias (A,B): Porcentaje = A/B*100; Potencia = A^B;
+    // Redondeo = A redondeado a B decimales. Unaria (1 operando): ValorAbsoluto = |A|. Siguen al final.
+    Porcentaje = 8,
+    Potencia = 9,
+    Redondeo = 10,
+    ValorAbsoluto = 11,
+    // Fase 2b (Ola B): condicionales. Cada una toma EXACTAMENTE 4 operandos [A, B, valorSi, valorNo]:
+    // si (A <comparador> B) -> valorSi, si no -> valorNo. El comparador va en el nombre de la operacion.
+    SiIgual = 12,
+    SiDistinto = 13,
+    SiMayor = 14,
+    SiMayorIgual = 15,
+    SiMenor = 16,
+    SiMenorIgual = 17,
+    // Fase 2b (Ola C): fechas. DiasDesdeHoy (unaria, 1 fecha) = hoy - fecha (dias, negativo si es futura).
+    // DiasEntre (binaria, 2 fechas) = fechaB - fechaA. Las fuentes Fecha se resuelven a numero de dia (DayNumber).
+    DiasDesdeHoy = 18,
+    DiasEntre = 19
 }
 
 /// <summary>Tipo de dependencia entre dos tareas. Spec 2.10 v1.0 Fase 2.</summary>

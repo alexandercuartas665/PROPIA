@@ -286,26 +286,35 @@ public partial class MiCopropiedadService
     // la validacion de valor (Usuario/Directorio/Formula) usa CamposAvanzados.ValidarValorAsync.
 
     // Opciones polimorfica: Seleccion (lineas) o Formula (JSON validado contra los campos propios). El
-    // resolver de Tipo solo conoce campos propios (cd:{guid}) -> una fuente de sistema o no-numerica se rechaza.
+    // resolver de Tipo conoce campos propios (cd:{guid}); 'sistema' (opcional) aporta las fuentes de SISTEMA
+    // de la superficie (clave simple -> Tipo), para que Equipos/Zonas puedan usar sus columnas fijas numericas/
+    // fecha. Sin 'sistema' (Persona/Vehiculo/Mascota/Usuario) una clave que no sea cd: se rechaza.
     private static string? PrepararOpcionesFormulaPropios(TipoCampoTablero tipo, string? opciones,
-        IReadOnlyDictionary<Guid, TipoCampoTablero> defsPropios)
+        IReadOnlyDictionary<Guid, TipoCampoTablero> defsPropios,
+        IReadOnlyDictionary<string, TipoCampoTablero>? sistema = null)
     {
         if (tipo != TipoCampoTablero.Formula) return NormalizarOpcionesCampo(tipo, opciones);
         var cfg = CampoFormulaConfig.Parse(opciones)
             ?? throw new InvalidOperationException("La formula necesita una operacion y al menos un campo fuente.");
         var err = CampoFormulaConfig.Validar(cfg, clave =>
-            clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g) && defsPropios.TryGetValue(g, out var t)
-                ? t : (TipoCampoTablero?)null);
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && defsPropios.TryGetValue(g, out var t) ? t : (TipoCampoTablero?)null;
+            return sistema is not null && sistema.TryGetValue(clave, out var ts) ? ts : (TipoCampoTablero?)null;
+        });
         if (err is not null) throw new InvalidOperationException(err);
         return cfg.Serializar();
     }
 
     // Filas flat computadas de los campos Formula, para TODOS los registros (asi Conteo=0/agregado vacio
-    // se ven bien). valores = {registro -> {defId -> valor}} de los campos propios. Fuentes: solo cd:{guid}.
+    // se ven bien). valores = {registro -> {defId -> valor}} de los campos propios. Fuentes: cd:{guid} y,
+    // si se pasa 'valoresSistema' ({registro -> {clave -> valor}}), las columnas fijas de SISTEMA de la
+    // superficie (Equipos/Zonas); las fechas ya vienen como DayNumber. Sin 'valoresSistema' = solo cd:.
     private static List<(Guid RegistroId, Guid DefId, string Valor)> ComputarFormulasPropiasFlat(
         List<(Guid Id, TipoCampoTablero Tipo, string? Opciones)> defs,
         List<(Guid RegistroId, Guid DefId, string? Valor)> valores,
-        IReadOnlyList<Guid> registroIds)
+        IReadOnlyList<Guid> registroIds,
+        IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, decimal?>>? valoresSistema = null)
     {
         var res = new List<(Guid, Guid, string)>();
         var formulaDefs = defs.Where(d => d.Tipo == TipoCampoTablero.Formula).ToList();
@@ -313,14 +322,19 @@ public partial class MiCopropiedadService
         var porReg = valores.GroupBy(v => v.RegistroId)
             .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<Guid, string?>)g.ToDictionary(x => x.DefId, x => x.Valor));
         IReadOnlyDictionary<Guid, string?> vacio = new Dictionary<Guid, string?>();
+        IReadOnlyDictionary<string, decimal?> sistVacio = new Dictionary<string, decimal?>();
         foreach (var rid in registroIds)
         {
             var dict = porReg.TryGetValue(rid, out var d0) ? d0 : vacio;
+            var sist = valoresSistema is not null && valoresSistema.TryGetValue(rid, out var s0) ? s0 : sistVacio;
             foreach (var fd in formulaDefs)
             {
                 var txt = CampoFormulaConfig.ComputarTexto(fd.Opciones, clave =>
-                    clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g) && dict.TryGetValue(g, out var v)
-                        ? ParseDecimalInvVinc(v) : (decimal?)null);
+                {
+                    if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                        return Guid.TryParse(clave[3..], out var g) && dict.TryGetValue(g, out var v) ? CampoFormulaConfig.ParseFuente(v) : (decimal?)null;
+                    return sist.TryGetValue(clave, out var sv) ? sv : (decimal?)null;
+                });
                 if (txt is not null) res.Add((rid, fd.Id, txt));
             }
         }
@@ -333,6 +347,18 @@ public partial class MiCopropiedadService
         s = s.Trim().Replace(",", ".");
         return decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : (decimal?)null;
     }
+
+    // Computa UNA formula propia para UN registro, dado su mapa {defId -> valor}. Para las fichas de
+    // Equipos/Zonas (ListCamposDin*). 'valoresSistema' (opcional) resuelve las columnas fijas de SISTEMA del
+    // registro (clave -> valor, fechas como DayNumber). Compartido por ser partial de la misma clase.
+    private static string? ComputarFormulaPropiaUno(string? opciones, IReadOnlyDictionary<Guid, string?> valoresDelRegistro,
+        IReadOnlyDictionary<string, decimal?>? valoresSistema = null)
+        => CampoFormulaConfig.ComputarTexto(opciones, clave =>
+        {
+            if (clave.StartsWith("cd:", StringComparison.Ordinal))
+                return Guid.TryParse(clave[3..], out var g) && valoresDelRegistro.TryGetValue(g, out var v) ? CampoFormulaConfig.ParseFuente(v) : (decimal?)null;
+            return valoresSistema is not null && valoresSistema.TryGetValue(clave, out var sv) ? sv : (decimal?)null;
+        });
 
     private async Task<string?> OpcionesPersonaAsync(TipoCampoTablero tipo, string? opciones, Guid? excluirId, CancellationToken ct)
     {

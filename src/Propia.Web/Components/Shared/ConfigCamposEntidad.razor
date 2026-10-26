@@ -272,79 +272,9 @@ else
                Numero/Moneda, una constante, o el resultado de un paso anterior). El resultado del campo es
                el ULTIMO paso; se calcula en lectura (read-only). Las binarias (Resta/Division/
                Multiplicacion) operan sobre EXACTAMENTE 2 operandos, A op B, en orden. *@
-            var fuentesFx = FuentesFormula().ToList();
             <div style="margin-top:8px;">
                 <label class="dst-nfc-lbl">Formula (pasos)</label>
-                @if (fuentesFx.Count == 0)
-                {
-                    <div class="cga-cfg-hint">No hay campos Número o Moneda para calcular. Crea primero un campo numérico.</div>
-                }
-                else
-                {
-                    <div class="cga-fx">
-                        @for (var i = 0; i < _nvPasos.Count; i++)
-                        {
-                            var pi = i;
-                            var paso = _nvPasos[pi];
-                            var esBin = EsOpBinaria(paso.Op);
-                            <div class="cga-fx-paso">
-                                <div class="cga-fx-paso-head">
-                                    <span class="cga-fx-paso-n">Paso @(pi + 1)</span>
-                                    <select class="cga-inp cga-fx-op" value="@paso.Op" @onchange="e => CambiarOpPaso(pi, e.Value?.ToString())">
-                                        @foreach (var op in Enum.GetValues<OperacionFormula>()) { <option value="@op" selected="@(op == paso.Op)">@OperacionLabel(op)</option> }
-                                    </select>
-                                    @if (_nvPasos.Count > 1)
-                                    {
-                                        <button type="button" class="cga-opt-x" title="Quitar paso" @onclick="() => QuitarPaso(pi)">&times;</button>
-                                    }
-                                </div>
-                                @for (var j = 0; j < paso.Operandos.Count; j++)
-                                {
-                                    var oj = j;
-                                    var o = paso.Operandos[oj];
-                                    <div class="cga-fx-op-row">
-                                        @if (esBin) { <span class="cga-fx-ab" title="Orden: A @(OperacionSimbolo(paso.Op)) B">@(oj == 0 ? "A" : "B")</span> }
-                                        <select class="cga-inp cga-fx-otipo" value="@o.Tipo" @onchange="e => CambiarTipoOperando(pi, oj, e.Value?.ToString())">
-                                            <option value="@OperandoFormula.TipoCampo">Campo</option>
-                                            <option value="@OperandoFormula.TipoConstante">Constante</option>
-                                            @if (pi > 0) { <option value="@OperandoFormula.TipoPaso">Resultado de paso</option> }
-                                        </select>
-                                        @if (o.Tipo == OperandoFormula.TipoConstante)
-                                        {
-                                            <input class="cga-inp" type="number" step="any" placeholder="Valor" value="@o.Valor" @onchange="e => SetOperandoValor(pi, oj, e.Value?.ToString())" />
-                                        }
-                                        else if (o.Tipo == OperandoFormula.TipoPaso)
-                                        {
-                                            <select class="cga-inp" value="@o.Paso" @onchange="e => SetOperandoPaso(pi, oj, e.Value?.ToString())">
-                                                <option value="">- elige paso -</option>
-                                                @for (var k = 0; k < pi; k++) { <option value="@k" selected="@(k == o.Paso)">Paso @(k + 1)</option> }
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            <select class="cga-inp" value="@o.Campo" @onchange="e => SetOperandoCampo(pi, oj, e.Value?.ToString())">
-                                                <option value="">- elige campo -</option>
-                                                @foreach (var f in fuentesFx) { <option value="@f.Key" selected="@(f.Key == o.Campo)">@f.Label</option> }
-                                            </select>
-                                        }
-                                        @if (!esBin && paso.Operandos.Count > 1)
-                                        {
-                                            <button type="button" class="cga-opt-x" title="Quitar operando" @onclick="() => QuitarOperando(pi, oj)">&times;</button>
-                                        }
-                                    </div>
-                                }
-                                @if (!esBin)
-                                {
-                                    <button type="button" class="cga-add-btn cga-fx-addop" @onclick="() => AgregarOperando(pi)">+ operando</button>
-                                }
-                            </div>
-                        }
-                        <div class="cga-fx-foot">
-                            <button type="button" class="dst-btn-soft" @onclick="AgregarPaso">+ Agregar paso</button>
-                            <span class="cga-cfg-hint">El resultado del campo es el último paso.</span>
-                        </div>
-                    </div>
-                }
+                <EditorFormulaPasos @ref="_editorFx" Fuentes="@FuentesFormula().ToList()" />
             </div>
         }
         @if (!string.IsNullOrEmpty(_msg)) { <div class="dst-cfg-msg">@_msg</div> }
@@ -515,75 +445,11 @@ else
     private readonly List<OpcionCampo> _nvOpcs = new();
 
     // Lo llama CampoTipoPicker (que maneja su propio abrir/cerrar) al elegir el tipo del campo nuevo.
-    private void ElegirTipoNuevo(TipoCampoTablero t)
-    {
-        _nvTipo = t;
-        if (t == TipoCampoTablero.Formula && _nvPasos.Count == 0) _nvPasos.Add(new PasoEdit());
-    }
+    private void ElegirTipoNuevo(TipoCampoTablero t) => _nvTipo = t;
 
-    // ---- Editor del tipo Formula (Fase 2 MULTI-PASO): pasos editables en la UI que se mapean a
-    // PasoFormula/OperandoFormula al crear. Un operando es un campo fuente (Numero/Moneda), una constante,
-    // o el resultado de un paso anterior. El resultado del campo = ultimo paso. ----
-    private sealed class OperandoEdit
-    {
-        public string Tipo = OperandoFormula.TipoCampo;
-        public string? Campo;
-        public decimal? Valor;
-        public int? Paso;
-    }
-    private sealed class PasoEdit
-    {
-        public OperacionFormula Op = OperacionFormula.Suma;
-        public List<OperandoEdit> Operandos = new() { new OperandoEdit() };
-    }
-    private readonly List<PasoEdit> _nvPasos = new();
-
-    private static bool EsOpBinaria(OperacionFormula op)
-        => op is OperacionFormula.Resta or OperacionFormula.Multiplicacion or OperacionFormula.Division;
-    private static string OperacionSimbolo(OperacionFormula op) => op switch
-    {
-        OperacionFormula.Resta => "-",
-        OperacionFormula.Multiplicacion => "x",
-        OperacionFormula.Division => "/",
-        OperacionFormula.Suma => "+",
-        _ => "op"
-    };
-
-    private void AgregarPaso() => _nvPasos.Add(new PasoEdit());
-    private void QuitarPaso(int i)
-    {
-        if (i < 0 || i >= _nvPasos.Count) return;
-        _nvPasos.RemoveAt(i);
-        // Ref a un paso que ya no existe (o que se corrio) -> se limpia para no dejar la formula rota.
-        foreach (var p in _nvPasos)
-            foreach (var o in p.Operandos)
-                if (o.Tipo == OperandoFormula.TipoPaso && (o.Paso is null || o.Paso >= _nvPasos.Count)) o.Paso = null;
-    }
-    private void CambiarOpPaso(int i, string? v)
-    {
-        if (!Enum.TryParse<OperacionFormula>(v, out var op)) return;
-        var paso = _nvPasos[i];
-        paso.Op = op;
-        // Las binarias operan sobre EXACTAMENTE 2 operandos (A op B): se ajusta la lista al cambiar de op.
-        if (EsOpBinaria(op))
-        {
-            while (paso.Operandos.Count < 2) paso.Operandos.Add(new OperandoEdit());
-            if (paso.Operandos.Count > 2) paso.Operandos.RemoveRange(2, paso.Operandos.Count - 2);
-        }
-        else if (paso.Operandos.Count == 0) paso.Operandos.Add(new OperandoEdit());
-    }
-    private void AgregarOperando(int i) => _nvPasos[i].Operandos.Add(new OperandoEdit());
-    private void QuitarOperando(int i, int j) { if (_nvPasos[i].Operandos.Count > 1) _nvPasos[i].Operandos.RemoveAt(j); }
-    private void CambiarTipoOperando(int i, int j, string? v)
-    {
-        var o = _nvPasos[i].Operandos[j];
-        o.Tipo = string.IsNullOrWhiteSpace(v) ? OperandoFormula.TipoCampo : v!;
-        o.Campo = null; o.Valor = null; o.Paso = null;   // reset el valor al cambiar el tipo de operando
-    }
-    private void SetOperandoCampo(int i, int j, string? v) => _nvPasos[i].Operandos[j].Campo = string.IsNullOrWhiteSpace(v) ? null : v;
-    private void SetOperandoValor(int i, int j, string? v)
-        => _nvPasos[i].Operandos[j].Valor = decimal.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
-    private void SetOperandoPaso(int i, int j, string? v) => _nvPasos[i].Operandos[j].Paso = int.TryParse(v, out var p) ? p : null;
+    // El editor de Formula (operacion + campos) vive en el componente compartido EditorFormulaPasos; aqui
+    // solo guardamos la referencia para leer su config al crear. Las fuentes se arman con FuentesFormula().
+    private EditorFormulaPasos? _editorFx;
 
     // Tipos ofrecidos al crear un campo propio, AGRUPADOS por categoria (0.3). Usuario y Funcion
     // calculada quedan para Fase 2; Archivo/Imagen quedan fuera del plan (decision de Alex 2026-09-13).
@@ -692,15 +558,6 @@ else
         _ => ""
     };
 
-    private static string OperacionLabel(OperacionFormula op) => op switch
-    {
-        OperacionFormula.Suma => "Suma",
-        OperacionFormula.Promedio => "Promedio",
-        OperacionFormula.Conteo => "Conteo (campos con valor)",
-        OperacionFormula.Minimo => "Minimo",
-        OperacionFormula.Maximo => "Maximo",
-        _ => op.ToString()
-    };
 
     private HttpClient Auth()
     {
@@ -1048,20 +905,12 @@ else
         }
         else if (_nvTipo == TipoCampoTablero.Formula)
         {
-            // Mapea los pasos del editor a PasoFormula/OperandoFormula PRESERVANDO nulls (asi Validar caza
-            // un campo/constante/paso sin elegir). Valida client-side; el server re-valida en PrepararOpciones*.
-            var pasos = _nvPasos.Select(p => new PasoFormula(p.Op, p.Operandos.Select(o => o.Tipo switch
-            {
-                OperandoFormula.TipoConstante => new OperandoFormula(OperandoFormula.TipoConstante, Valor: o.Valor),
-                OperandoFormula.TipoPaso => new OperandoFormula(OperandoFormula.TipoPaso, Paso: o.Paso),
-                _ => new OperandoFormula(OperandoFormula.TipoCampo, Campo: o.Campo)
-            }).ToList())).ToList();
-            var cfg = new CampoFormulaConfig(pasos);
-            // Fuentes validas = campos Numero/Moneda que ofrece el picker (por construccion todas lo son).
-            var validas = FuentesFormula().Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
-            var errFx = CampoFormulaConfig.Validar(cfg, k => validas.Contains(k) ? TipoCampoTablero.Numero : (TipoCampoTablero?)null);
+            // La formula la arma el componente EditorFormulaPasos; aqui solo validamos y serializamos.
+            // El server re-valida en PrepararOpciones*.
+            if (_editorFx is null) { _msg = "Configura la formula."; return; }
+            var errFx = _editorFx.Validar();
             if (errFx is not null) { _msg = errFx; return; }
-            opciones = cfg.Serializar();
+            opciones = _editorFx.Construir().Serializar();
         }
         _busy = true; _msg = null;
         try
@@ -1071,7 +920,7 @@ else
             if (r.IsSuccessStatusCode)
             {
                 _nvLabel = ""; _nvOpcs.Clear(); _nvTipo = TipoCampoTablero.Texto;
-                _nvPasos.Clear();
+                // _editorFx se desmonta al cambiar _nvTipo; la proxima vez monta fresco.
                 await CargarAsync(); await Cambiado.InvokeAsync();
             }
             else { _msg = "No se pudo crear el campo."; }
