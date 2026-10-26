@@ -45,41 +45,50 @@
             {
                 <div class="ecs-fld">
                     <label>Opciones de la lista</label>
-                    <div class="ecs-opts">
-                        @if (EfectivasOpciones.Count == 0)
-                        {
-                            <div class="ecs-opt-empty">Esta lista aun no tiene opciones.</div>
-                        }
-                        else
-                        {
-                            @foreach (var o in EfectivasOpciones)
-                            {
-                                <div class="ecs-opt ecs-opt--ro" title="Opcion existente (no se puede quitar)">
-                                    <span class="ecs-opt-color" style="background:@(string.IsNullOrWhiteSpace(o.Color) ? "var(--propia-border-divider)" : o.Color)"></span>
-                                    <span class="ecs-opt-txt">@o.Texto</span>
-                                </div>
-                            }
-                        }
-                    </div>
-                    @if (PermiteAgregar)
+                    @if (EditableInline)
                     {
-                        <div class="ecs-opt-add">
-                            <input class="ecs-in" placeholder="Nueva opción..." @bind="_nuevaOpcion" @bind:event="oninput"
-                                   @onkeydown="OnNuevaOpcionKey" disabled="@_busy" />
-                            <button type="button" class="ecs-btn-soft" @onclick="AgregarOpcionAsync"
-                                    disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpcion))"><i class="fi fi-rr-plus"></i> Añadir</button>
-                        </div>
-                        <span class="ecs-hint">No se pueden quitar opciones existentes (pueden estar en uso); solo agregar.</span>
+                        @* Lista auto-servida (catalogo): editor completo inline (reordenar/color/ocultar/renombrar/
+                           agregar). Persiste el override del tenant (config Opciones) -> ya NO delega al gestor. *@
+                        <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" />
                     }
                     else
                     {
-                        <span class="ecs-hint">@HintReadOnly</span>
-                    }
-                    @if (AbrirGestorAvanzado.HasDelegate)
-                    {
-                        <div class="ecs-adv" style="margin-top:8px;">
-                            <button type="button" class="ecs-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings-sliders"></i> Gestionar colores y orden</button>
+                        <div class="ecs-opts">
+                            @if (EfectivasOpciones.Count == 0)
+                            {
+                                <div class="ecs-opt-empty">Esta lista aun no tiene opciones.</div>
+                            }
+                            else
+                            {
+                                @foreach (var o in EfectivasOpciones)
+                                {
+                                    <div class="ecs-opt ecs-opt--ro" title="Opcion existente (no se puede quitar)">
+                                        <span class="ecs-opt-color" style="background:@(string.IsNullOrWhiteSpace(o.Color) ? "var(--propia-border-divider)" : o.Color)"></span>
+                                        <span class="ecs-opt-txt">@o.Texto</span>
+                                    </div>
+                                }
+                            }
                         </div>
+                        @if (PermiteAgregar)
+                        {
+                            <div class="ecs-opt-add">
+                                <input class="ecs-in" placeholder="Nueva opción..." @bind="_nuevaOpcion" @bind:event="oninput"
+                                       @onkeydown="OnNuevaOpcionKey" disabled="@_busy" />
+                                <button type="button" class="ecs-btn-soft" @onclick="AgregarOpcionAsync"
+                                        disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaOpcion))"><i class="fi fi-rr-plus"></i> Añadir</button>
+                            </div>
+                            <span class="ecs-hint">No se pueden quitar opciones existentes (pueden estar en uso); solo agregar.</span>
+                        }
+                        else
+                        {
+                            <span class="ecs-hint">@HintReadOnly</span>
+                        }
+                        @if (AbrirGestorAvanzado.HasDelegate)
+                        {
+                            <div class="ecs-adv" style="margin-top:8px;">
+                                <button type="button" class="ecs-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings-sliders"></i> Gestionar colores y orden</button>
+                            </div>
+                        }
                     }
                 </div>
             }
@@ -233,6 +242,12 @@
     // Lista efectiva a mostrar: la del padre (modo clasico) o la auto-servida (modo E0).
     private List<OpcionVista>? EfectivasOpciones => OpcionesLista ?? _opcionesSelf;
 
+    // Edicion inline COMPLETA (reordenar/color/ocultar) SOLO en el modo auto-servido (catalogo): ahi el override
+    // usa el formato OpcionCampo [{K,Oculta,Color}] y el modal ya lo persiste. En el modo clasico los formatos
+    // de override son heterogeneos por modulo (p.ej. Directorio etiquetas = List<string>), por eso NO se generaliza.
+    private bool EditableInline => AutoServido && PermiteAgregar;
+    private readonly List<OpcionCampo> _opcsEdit = new();   // lista editable (full, incl ocultas) del modo auto-servido
+
     private string CfgUrl => RutaConfig.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
         ? RutaConfig : $"/api/mi-copropiedad/{RutaConfig}";
 
@@ -260,6 +275,36 @@
         _fmtDec = fmt.Dec ?? 2; _fmtMiles = fmt.Miles; _fmtMax = fmt.Max;
 
         if (AutoServido) await ConstruirOpcionesSelfAsync();
+        if (EditableInline)
+        {
+            _opcsEdit.Clear();
+            if (!string.IsNullOrWhiteSpace(_opcionesJson)) _opcsEdit.AddRange(OpcionCampo.Parse(_opcionesJson));
+            else _opcsEdit.AddRange((_opcionesSelf ?? new()).Select(v => new OpcionCampo(v.Texto, false, v.Color)));
+        }
+    }
+
+    // Persiste la lista EDITADA (full, incl ocultas) como override del tenant (config Opciones). Mismo write que
+    // AgregarOpcionSelfAsync pero con reordenar/color/ocultar. Preserva alias/formato/oculto/orden de la fila.
+    private async Task PersistirOpcsAsync()
+    {
+        var json = OpcionCampo.Serializar(_opcsEdit.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList());
+        _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync(CfgUrl, new GuardarUnidadCampoConfigRequest(
+                CampoClave: Clave, Alias: _actual?.Alias, Opciones: json, Tipo: _actual?.Tipo,
+                Formato: _actual?.Formato, Oculto: _actual?.Oculto ?? false, Orden: _actual?.Orden,
+                Entidad: EntidadConfig, Descripcion: _actual?.Descripcion));
+            if (r.IsSuccessStatusCode)
+            {
+                _opcionesJson = json;
+                _opcionesSelf = _opcsEdit.Where(o => !o.Oculta).Select(o => new OpcionVista(o.K, o.Color)).ToList();
+                await Guardado.InvokeAsync();   // el padre recarga su config -> la celda ofrece la lista nueva
+            }
+            else { _msg = "No se pudo guardar la lista."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
     }
 
     // Arma la lista auto-servida: si la copropiedad ya personalizo (config Opciones no vacia) esa es la
