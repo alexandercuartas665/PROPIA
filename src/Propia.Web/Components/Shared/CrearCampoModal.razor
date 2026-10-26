@@ -24,32 +24,39 @@
         </div>
 
         <div class="ccm-body">
-            @if (EsEdicion && EsAvanzado(Editar!.Tipo))
-            {
-                <div class="ccm-note">Este campo es de tipo <b>@TipoLabel(Editar!.Tipo)</b> y se edita en el gestor avanzado de campos.</div>
-                <div class="ccm-adv"><button type="button" class="ccm-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings"></i> Abrir gestor avanzado</button></div>
-            }
-            else
-            {
                 <div class="ccm-fld">
                     <label>Nombre del campo</label>
                     <input class="ccm-in" @bind="_label" @bind:event="oninput" placeholder="@(string.IsNullOrWhiteSpace(Ejemplo) ? "Ej. Responsable" : Ejemplo)" />
                 </div>
 
                 <div class="ccm-sect-lbl">Tipo de campo</div>
-                @foreach (var (categoria, tipos) in CategoriasVisibles())
+                @if (EsEdicion && EsAvanzado(_tipo))
                 {
-                    <div class="ccm-cat-lbl">@categoria</div>
+                    @* Al editar un campo avanzado (Formula/Usuario/Directorio) el tipo queda FIJO; si es Formula se
+                       edita abajo con el MISMO editor de pasos (precargado). No se cambia el tipo de un campo existente. *@
                     <div class="ccm-types">
-                        @foreach (var t in tipos)
-                        {
-                            var tt = t;
-                            <button type="button" class="ccm-type @(_tipo == tt ? "on" : "")" @onclick="() => ElegirTipo(tt)">
-                                <span class="ccm-type-ic"><i class="fi @TipoIcon(tt)"></i></span>
-                                <span class="ccm-type-tt"><b>@TipoLabel(tt)</b><span>@TipoDescripcion(tt)</span></span>
-                            </button>
-                        }
+                        <button type="button" class="ccm-type on" disabled>
+                            <span class="ccm-type-ic"><i class="fi @TipoIcon(_tipo)"></i></span>
+                            <span class="ccm-type-tt"><b>@TipoLabel(_tipo)</b><span>@TipoDescripcion(_tipo)</span></span>
+                        </button>
                     </div>
+                }
+                else
+                {
+                    @foreach (var (categoria, tipos) in CategoriasVisibles())
+                    {
+                        <div class="ccm-cat-lbl">@categoria</div>
+                        <div class="ccm-types">
+                            @foreach (var t in tipos)
+                            {
+                                var tt = t;
+                                <button type="button" class="ccm-type @(_tipo == tt ? "on" : "")" @onclick="() => ElegirTipo(tt)">
+                                    <span class="ccm-type-ic"><i class="fi @TipoIcon(tt)"></i></span>
+                                    <span class="ccm-type-tt"><b>@TipoLabel(tt)</b><span>@TipoDescripcion(tt)</span></span>
+                                </button>
+                            }
+                        </div>
+                    }
                 }
 
                 <div class="ccm-sect-lbl">Configuración del tipo</div>
@@ -60,8 +67,29 @@
                     }
                     else if (_tipo == TipoCampoTablero.Formula)
                     {
-                        @* La "caja de formula" (operacion + campo) + vista en vivo viven aqui mismo. *@
-                        <EditorFormulaPasos @ref="_editorFx" Fuentes="@FuentesFormula()" />
+                        @* La "caja de formula" (operacion + campo) + vista en vivo viven aqui mismo. Al EDITAR se
+                           precarga con la formula actual (OpcionesIniciales) -> mismos pasos que se calcularon. *@
+                        <EditorFormulaPasos @ref="_editorFx" Fuentes="@FuentesFormula()" OpcionesIniciales="@(EsEdicion ? Editar!.Opciones : null)" />
+                    }
+                    else if (OfreceFormato && EsNumerico(_tipo))
+                    {
+                        @* Formato numerico (antes solo en el gestor avanzado). *@
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                            <select class="ccm-in" style="width:130px;" value="@_fmtDec" @onchange="e => _fmtDec = int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 0, 6) : 2">
+                                @foreach (var d in new[] { 0, 1, 2, 3, 4 }) { <option value="@d" selected="@(_fmtDec == d)">@d decimales</option> }
+                            </select>
+                            <label class="ccm-chk" title="Separador de miles (en las vistas de solo lectura)">
+                                <input type="checkbox" checked="@_fmtMiles" @onchange="e => _fmtMiles = (bool)(e.Value ?? false)" /> Separador de miles
+                            </label>
+                            @if (_tipo == TipoCampoTablero.Moneda) { <span class="ccm-tag">COP</span> }
+                            else if (_tipo == TipoCampoTablero.Porcentaje) { <span class="ccm-tag">%</span> }
+                        </div>
+                    }
+                    else if (OfreceFormato)
+                    {
+                        @* Formato de texto: maximo de caracteres. *@
+                        <input class="ccm-in" type="number" min="1" max="4000" placeholder="Máximo de caracteres (sin límite)"
+                               value="@(_fmtMax?.ToString() ?? "")" @onchange="e => _fmtMax = int.TryParse(e.Value?.ToString(), out var n) && n > 0 ? n : (int?)null" />
                     }
                     else
                     {
@@ -75,24 +103,20 @@
                 </div>
 
                 <p class="ccm-note-txt">@(NotaPie ?? $"El campo se agrega como una columna al final de la tabla y queda disponible en la ficha de {TituloSingular.ToLowerInvariant()}. Es exclusivo de esta copropiedad y se comporta como un campo fijo en filtros, agrupar, ordenar y reportes.")</p>
-            }
 
             @if (!string.IsNullOrEmpty(_msg)) { <div class="ccm-msg">@_msg</div> }
         </div>
 
         <div class="ccm-foot">
-            @if (EsEdicion && !EsAvanzado(Editar!.Tipo))
+            @if (EsEdicion)
             {
                 <button type="button" class="ccm-btn-ghost ccm-del" @onclick="EliminarAsync" disabled="@_busy"><i class="fi fi-rr-trash"></i> Eliminar campo</button>
             }
             <span class="ccm-spacer"></span>
             <button type="button" class="ccm-btn-ghost" @onclick="Cerrar" disabled="@_busy">Cancelar</button>
-            @if (!(EsEdicion && EsAvanzado(Editar!.Tipo)))
-            {
-                <button type="button" class="ccm-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_label))">
-                    <i class="fi @(EsEdicion ? "fi-rr-check" : "fi-rr-plus")"></i> @(_busy ? "Guardando..." : (EsEdicion ? "Guardar cambios" : "Crear campo"))
-                </button>
-            }
+            <button type="button" class="ccm-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_label))">
+                <i class="fi @(EsEdicion ? "fi-rr-check" : "fi-rr-plus")"></i> @(_busy ? "Guardando..." : (EsEdicion ? "Guardar cambios" : "Crear campo"))
+            </button>
         </div>
     </div>
 </div>
@@ -124,6 +148,12 @@
     [Parameter] public EventCallback Cerrado { get; set; }
     /// <summary>Abrir el gestor avanzado (para Formula u otros ajustes que no cubre este modal).</summary>
     [Parameter] public EventCallback AbrirGestorAvanzado { get; set; }
+    /// <summary>Entidad de la config de columna (p.ej. "unidad", "equipo"). Si se pasa, el modal muestra y
+    /// guarda el FORMATO del campo (decimales/miles en numericos, max en texto) en {RutaConfig}. Sin esto no
+    /// se ofrece el editor de formato (lo tenia solo el gestor avanzado).</summary>
+    [Parameter] public string? EntidadConfig { get; set; }
+    /// <summary>Ruta base del endpoint de config de columna (igual que ConfigCamposEntidad). Default unidades-config.</summary>
+    [Parameter] public string RutaConfig { get; set; } = "unidades-config";
 
     private bool EsEdicion => Editar is not null;
     private string _label = "";
@@ -134,6 +164,35 @@
     private EditorFormulaPasos? _editorFx;   // editor de formula inline (al crear tipo Formula)
     private bool _busy;
     private string? _msg;
+
+    // Formato del campo propio (mismo JSON {Dec,Miles,Max} que escribia el gestor avanzado, en la config de columna).
+    private int _fmtDec = 2;
+    private bool _fmtMiles;
+    private int? _fmtMax;
+    private UnidadCampoConfigDto? _cfgActual;   // fila de config actual (para preservar alias/oculto/orden al editar)
+    private bool OfreceFormato => !string.IsNullOrWhiteSpace(EntidadConfig) && UsaFormato(_tipo);
+    private static bool UsaFormato(TipoCampoTablero t)
+        => t is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje
+             or TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url;
+    private static bool EsNumerico(TipoCampoTablero t) => t is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    private string CfgUrl => RutaConfig.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ? RutaConfig : $"/api/mi-copropiedad/{RutaConfig}";
+    private sealed record FmtCfg(int? Dec = null, bool Miles = false, string? Moneda = null, int? Max = null);
+    private static FmtCfg ParseFmt(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new FmtCfg();
+        try { return System.Text.Json.JsonSerializer.Deserialize<FmtCfg>(json) ?? new FmtCfg(); } catch { return new FmtCfg(); }
+    }
+    // FUSIONA el formato con el JSON existente (preserva "w" = ancho de columna y cualquier otra clave), igual
+    // que ConAncho hace al reves. Numerico -> Dec/Miles; texto -> Max.
+    private string? FormatoActual()
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(_cfgActual?.Formato) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(_cfgActual!.Formato!) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (EsNumerico(_tipo)) { o["Dec"] = _fmtDec; o["Miles"] = _fmtMiles; o.Remove("Max"); }
+        else { if (_fmtMax is int m) o["Max"] = m; else o.Remove("Max"); o.Remove("Dec"); o.Remove("Miles"); o.Remove("Moneda"); }
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
 
     // Fuentes de una Formula: campos de SISTEMA (del Catalogo) + campos PROPIOS (cd:) que sean Numero/Moneda/Fecha.
     private IReadOnlyList<(string Key, string Label)> FuentesFormula()
@@ -167,6 +226,18 @@
             _descripcion = Editar.Descripcion ?? "";
             _tipo = Editar.Tipo;
             if (Editar.Tipo == TipoCampoTablero.Seleccion) { _opcs.Clear(); _opcs.AddRange(Editar.OpcionesDetalle()); }
+            // Formato del campo propio (config de columna): se carga para preservar la fila y precargar decimales/max.
+            if (!string.IsNullOrWhiteSpace(EntidadConfig))
+            {
+                try
+                {
+                    var filas = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"{CfgUrl}?entidad={EntidadConfig}") ?? new();
+                    _cfgActual = filas.FirstOrDefault(f => string.Equals(f.CampoClave, "cd:" + Editar.Id, StringComparison.OrdinalIgnoreCase));
+                    var fmt = ParseFmt(_cfgActual?.Formato);
+                    _fmtDec = fmt.Dec ?? 2; _fmtMiles = fmt.Miles; _fmtMax = fmt.Max;
+                }
+                catch { }
+            }
         }
         try { _defs = await Auth().GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new(); } catch { _defs = new(); }
     }
@@ -196,6 +267,8 @@
         return cats;
     }
 
+    // Avanzados = Formula/Usuario/Directorio. Al EDITAR un campo existente el tipo queda fijo (no se cambia de
+    // tipo); la Formula ademas se edita inline con EditorFormulaPasos (precarga). Ya no se delega al gestor viejo.
     private static bool EsAvanzado(TipoCampoTablero t)
         => t is TipoCampoTablero.Formula or TipoCampoTablero.Usuario or TipoCampoTablero.Directorio;
 
@@ -264,7 +337,6 @@
     };
 
     private async Task Cerrar() => await Cerrado.InvokeAsync();
-    private async Task AbrirGestor() => await AbrirGestorAvanzado.InvokeAsync();
 
     private async Task GuardarAsync()
     {
@@ -277,8 +349,9 @@
         string? opciones = null;
         if (_tipo == TipoCampoTablero.Seleccion)
             opciones = _opcs.Any(o => !string.IsNullOrWhiteSpace(o.K)) ? OpcionCampo.Serializar(_opcs.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList()) : null;
-        else if (_tipo == TipoCampoTablero.Formula && !EsEdicion)
+        else if (_tipo == TipoCampoTablero.Formula)
         {
+            // Crear O editar: la formula se arma con el editor de pasos inline (al editar viene precargada).
             if (_editorFx is null) { _msg = "Configura la fórmula."; return; }
             var errFx = _editorFx.Validar();
             if (errFx is not null) { _msg = errFx; return; }
@@ -295,11 +368,41 @@
             else
                 r = await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones, descripcion));
 
-            if (r.IsSuccessStatusCode) { await Guardado.InvokeAsync(); await Cerrado.InvokeAsync(); }
+            if (r.IsSuccessStatusCode)
+            {
+                await GuardarFormatoAsync(r);   // formato de columna (decimales/miles/max) si el modulo lo soporta
+                await Guardado.InvokeAsync();
+                await Cerrado.InvokeAsync();
+            }
             else { _msg = EsEdicion ? "No se pudo guardar el campo." : "No se pudo crear el campo."; }
         }
         catch (Exception ex) { _msg = ex.Message; }
         finally { _busy = false; }
+    }
+
+    // Persiste el FORMATO del campo propio en la config de columna (unidades-config), si el modulo pasa
+    // EntidadConfig. En crear, el id del campo nuevo viene en la respuesta del POST. No bloquea el guardado.
+    private async Task GuardarFormatoAsync(HttpResponseMessage saveResponse)
+    {
+        if (!OfreceFormato) return;
+        Guid? id = Editar?.Id;
+        if (id is null)
+        {
+            try
+            {
+                var el = await saveResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                if (el.ValueKind == System.Text.Json.JsonValueKind.Object
+                    && (el.TryGetProperty("id", out var idp) || el.TryGetProperty("Id", out idp))
+                    && Guid.TryParse(idp.GetString(), out var g)) id = g;
+            }
+            catch { }
+        }
+        if (id is null) return;
+        var req = new GuardarUnidadCampoConfigRequest(
+            CampoClave: "cd:" + id, Alias: _cfgActual?.Alias, Opciones: _cfgActual?.Opciones, Tipo: _cfgActual?.Tipo,
+            Formato: FormatoActual(), Oculto: _cfgActual?.Oculto ?? false, Orden: _cfgActual?.Orden,
+            Entidad: EntidadConfig!, Descripcion: _cfgActual?.Descripcion);
+        try { await Auth().PutAsJsonAsync(CfgUrl, req); } catch { }
     }
 
     private async Task EliminarAsync()
@@ -354,6 +457,8 @@
     /* Config por tipo (.cn-cfg / .cn-hint / .wz-note) */
     .ccm-cfg { border: 1px solid var(--propia-border-divider); border-radius: 12px; padding: 14px; background: var(--propia-bg-card-soft); min-height: 60px; }
     .ccm-hint { font-size: 11.5px; color: var(--propia-text-muted); }
+    .ccm-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--propia-text-body); cursor: pointer; }
+    .ccm-tag { font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 6px; }
     .ccm-note-txt { font-size: 11.5px; color: var(--propia-text-muted); margin: 12px 0 0; line-height: 1.55; }
     .ccm-note { font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
     .ccm-adv { margin-top: 10px; }

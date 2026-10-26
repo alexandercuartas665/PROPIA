@@ -104,6 +104,33 @@
                 </label>
             </div>
 
+            @* Formato (antes solo estaba en el gestor avanzado): decimales/miles en numericos, max en texto. *@
+            @if (Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje)
+            {
+                <div class="ecs-fld">
+                    <label>Formato</label>
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <select class="ecs-in" style="width:120px;" value="@_fmtDec" @onchange="e => _fmtDec = int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 0, 6) : 2">
+                            @foreach (var d in new[] { 0, 1, 2, 3, 4 }) { <option value="@d" selected="@(_fmtDec == d)">@d decimales</option> }
+                        </select>
+                        <label class="ecs-tog" style="margin:0;" title="Separador de miles (en las vistas de solo lectura)">
+                            <input type="checkbox" checked="@_fmtMiles" @onchange="e => _fmtMiles = (bool)(e.Value ?? false)" />
+                            <span>Separador de miles</span>
+                        </label>
+                        @if (Tipo == TipoCampoTablero.Moneda) { <span class="ecs-req">COP</span> }
+                        else if (Tipo == TipoCampoTablero.Porcentaje) { <span class="ecs-req">%</span> }
+                    </div>
+                </div>
+            }
+            else if (Tipo is TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url)
+            {
+                <div class="ecs-fld">
+                    <label>Máximo de caracteres</label>
+                    <input class="ecs-in" type="number" min="1" max="4000" placeholder="sin límite"
+                           value="@(_fmtMax?.ToString() ?? "")" @onchange="e => _fmtMax = int.TryParse(e.Value?.ToString(), out var n) && n > 0 ? n : (int?)null" />
+                </div>
+            }
+
             @if (!string.IsNullOrEmpty(_msg)) { <div class="ecs-msg">@_msg</div> }
         </div>
 
@@ -169,9 +196,34 @@
     private string _alias = "";
     private string _descripcion = "";
     private bool _oculto;
+    private int _fmtDec = 2;      // decimales (numericos)
+    private bool _fmtMiles;       // separador de miles (numericos)
+    private int? _fmtMax;         // max caracteres (texto)
     private UnidadCampoConfigDto? _actual;   // fila actual (para preservar opciones/tipo/formato/orden)
     private bool _busy;
     private string? _msg;
+
+    // Formato del campo (mismo JSON que escribia el gestor avanzado): {Dec, Miles, Max}.
+    private sealed record FmtCfg(int? Dec = null, bool Miles = false, string? Moneda = null, int? Max = null);
+    private static FmtCfg ParseFmt(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new FmtCfg();
+        try { return System.Text.Json.JsonSerializer.Deserialize<FmtCfg>(json) ?? new FmtCfg(); } catch { return new FmtCfg(); }
+    }
+    // FUSIONA el formato con el JSON existente (preserva "w" = ancho de columna y otras claves). Numerico ->
+    // Dec/Miles; texto -> Max; otros tipos conservan el formato previo intacto.
+    private string? FormatoActual()
+    {
+        bool num = Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        bool txt = Tipo is TipoCampoTablero.Texto or TipoCampoTablero.AreaTexto or TipoCampoTablero.Telefono or TipoCampoTablero.Email or TipoCampoTablero.Url;
+        if (!num && !txt) return _actual?.Formato;
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(_actual?.Formato) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(_actual!.Formato!) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (num) { o["Dec"] = _fmtDec; o["Miles"] = _fmtMiles; o.Remove("Max"); }
+        else { if (_fmtMax is int m) o["Max"] = m; else o.Remove("Max"); o.Remove("Dec"); o.Remove("Miles"); o.Remove("Moneda"); }
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
 
     // Modo E0: lista que arma el propio modal (null = no auto-servido) + JSON de override vigente.
     private List<OpcionVista>? _opcionesSelf;
@@ -204,6 +256,8 @@
         _descripcion = _actual?.Descripcion ?? "";
         _oculto = _actual?.Oculto ?? false;
         _opcionesJson = _actual?.Opciones;
+        var fmt = ParseFmt(_actual?.Formato);
+        _fmtDec = fmt.Dec ?? 2; _fmtMiles = fmt.Miles; _fmtMax = fmt.Max;
 
         if (AutoServido) await ConstruirOpcionesSelfAsync();
     }
@@ -283,7 +337,7 @@
             Alias: string.IsNullOrWhiteSpace(_alias) ? null : _alias.Trim(),
             Opciones: opcionesJson,
             Tipo: _actual?.Tipo,
-            Formato: _actual?.Formato,
+            Formato: FormatoActual(),
             Oculto: _oculto,
             Orden: _actual?.Orden,
             Entidad: EntidadConfig,
