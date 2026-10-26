@@ -59,9 +59,19 @@ else
                         <div class="usr-modal-title">@_detalleEdit.Nombre</div>
                         <div class="usr-modal-subtitle">Rol y matriz de permisos</div>
                     </div>
-                    <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false"
-                                        MostrarCancelar="false" Guardando="_busy" TituloGuardar="Guardar rol"
-                                        OnGuardar="GuardarConfigRol" OnCerrar="VolverALista" />
+                    @* Canon completo: Guardar + Eliminar (bote) + Cancelar + Cerrar. Los 4 se dejan SIEMPRE
+                       visibles por homogeneidad; en roles de sistema/base/no-eliminables se DESHABILITAN (no se
+                       ocultan): Guardar off si el rol no es editable (Base/Sistema: nombre+categoria fijos),
+                       papelera off si !EsEliminable. *@
+                    <ModalHeaderActions EnEdicion="true" MostrarEditar="false"
+                                        MostrarEliminar="true" MostrarCancelar="true" Guardando="_busy"
+                                        PuedeGuardar="@(_detalleEdit.Tipo != TipoRol.Base && _detalleEdit.Tipo != TipoRol.Sistema)"
+                                        PuedeEliminar="@_detalleEdit.EsEliminable"
+                                        TituloGuardar="@(_detalleEdit.Tipo is TipoRol.Base or TipoRol.Sistema ? "Este rol no se edita (es de sistema/base)" : "Guardar rol")"
+                                        TituloEliminar="@(_detalleEdit.EsEliminable ? "Eliminar rol" : "Este rol no se puede eliminar")"
+                                        TituloCancelar="Cancelar"
+                                        OnGuardar="GuardarConfigRol" OnEliminar="PedirEliminarRolFicha"
+                                        OnCancelarEdicion="VolverALista" OnCerrar="VolverALista" />
                 </div>
                 <div class="usr-modal-body">
 
@@ -919,6 +929,14 @@ else
     private bool _eliminandoRol;
     private Task PedirEliminarRol(RolDto r) { _confirmDelRol = r; return Task.CompletedTask; }
 
+    // 🗑 del cluster del modal: reusa el confirm global (_confirmDelRol es RolDto) buscando el rol en la lista.
+    // No hace nada si el rol no es eliminable (el boton ya va deshabilitado, esto es un cinturon extra).
+    private void PedirEliminarRolFicha()
+    {
+        if (_detalleEdit is null || !_detalleEdit.EsEliminable) return;
+        _confirmDelRol = _roles?.FirstOrDefault(r => r.Id == _detalleEdit.Id);
+    }
+
     private async Task EliminarRolConfirmadoAsync()
     {
         if (_confirmDelRol is not { } rol) return;
@@ -929,6 +947,7 @@ else
             if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; _confirmDelRol = null; return; }
             _msg = "Rol eliminado."; _msgClass = "alert-success";
             _confirmDelRol = null;
+            if (_rolEditando == rol.Id) VolverALista(); // si se borro desde la ficha, cerrar el modal
             await CargarRolesAsync();
         }
         finally { _eliminandoRol = false; }

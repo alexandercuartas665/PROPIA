@@ -13,8 +13,6 @@
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
-@inject IJSRuntime Js
-@inject NavigationManager Nav
 
 @if (_cargando)
 {
@@ -44,29 +42,14 @@ else
         <div class="pm-head-s">@Subtitulo</div>
     </div>
     <div class="pm-head-acts">
-        <button class="pm-head-act" type="button" title="Copiar enlace al registro" @onclick="CopiarEnlace">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-        </button>
-        <div class="fr-menu-wrap">
-            <button class="pm-head-act" type="button" title="Más acciones" @onclick="() => _menu = !_menu">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-            </button>
-            @if (_menu)
-            {
-                <div class="fr-menu" tabindex="-1">
-                    <button class="fr-menu-it" type="button" @onclick="CopiarEnlace">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-                        Copiar enlace al registro
-                    </button>
-                </div>
-            }
-        </div>
+        @* Botones de "copiar enlace / compartir URL del registro" retirados (decision Alex). *@
         <ModalHeaderActions EnEdicion="@(_editando && _tab == "Perfil")"
                             MostrarEditar="@(_tab == "Perfil")"
-                            MostrarEliminar="false" MostrarCancelar="true"
+                            MostrarEliminar="@(_vinculoId is not null)" MostrarCancelar="true"
                             Guardando="_guardando" TituloEditar="Editar perfil" TituloGuardar="Guardar cambios"
-                            OnEntrarEdicion="Editar" OnGuardar="GuardarAsync" OnCancelarEdicion="CancelarEdicion"
-                            OnCerrar="Cerrar" />
+                            TituloEliminar="Quitar de la copropiedad"
+                            OnEntrarEdicion="Editar" OnGuardar="GuardarAsync" OnEliminar="AbrirConfirmEliminar"
+                            OnCancelarEdicion="CancelarEdicion" OnCerrar="Cerrar" />
     </div>
 </div>
 
@@ -312,6 +295,22 @@ else
     </button>
 </div>
 
+@* Confirmacion del bote del cluster: quitar el tercero de la copropiedad (inactiva el vinculo; REVERSIBLE,
+   por eso confirmacion simple, no type-to-confirm). Reusa .usr-cfg-back/.usr-confirm globales. *@
+@if (_confirmEliminar)
+{
+    <div class="usr-cfg-back" @onclick="() => { if (!_eliminandoVinculo) _confirmEliminar = false; }">
+        <div class="usr-confirm" @onclick:stopPropagation="true">
+            <div class="usr-confirm-t">Quitar de la copropiedad</div>
+            <div class="usr-confirm-s">Se quita "@_titulo" de @(EsEmpresa ? "las empresas" : "los terceros") de esta copropiedad (se inactiva su vinculo). La identidad se conserva en el Directorio y se puede volver a vincular.</div>
+            <div class="usr-confirm-acts">
+                <button type="button" class="usr-btn-ghost" @onclick="() => _confirmEliminar = false" disabled="@_eliminandoVinculo">Cancelar</button>
+                <button type="button" class="usr-selbar-del" @onclick="EliminarVinculoAsync" disabled="@_eliminandoVinculo">@(_eliminandoVinculo ? "Quitando..." : "Si, quitar")</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (!string.IsNullOrWhiteSpace(_verImagen))
 {
     <div class="fr-lb" @onclick="() => _verImagen = null">
@@ -460,8 +459,12 @@ else
     private bool _guardandoAcceso;
     private bool _subiendoImg;
     private bool _subiendoDoc;
-    private bool _menu;
-    private bool _editando;
+    // Confirmacion de "quitar de la copropiedad" (bote del cluster).
+    private bool _confirmEliminar;
+    private bool _eliminandoVinculo;
+    // Canon (v0.0.219): la ficha ABRE directamente en edicion. Cancelar/Guardar vuelven a vista; el lapiz reedita.
+    // Solo el valor inicial: NO se re-fuerza en OnInitializedAsync porque RecargarAsync (Cancelar) lo reusa.
+    private bool _editando = true;
     private string? _msg;
     private bool _msgError;
     private bool _dirty;
@@ -679,6 +682,24 @@ else
     private void Editar() { _editando = true; _msg = ""; }
     private async Task CancelarEdicion() { _editando = false; _msg = ""; await RecargarAsync(); }
 
+    // Bote del cluster -> abre la confirmacion (no quita directo).
+    private void AbrirConfirmEliminar() { if (_vinculoId is not null) _confirmEliminar = true; }
+
+    // Confirmado: inactiva el vinculo del tercero con la copropiedad (reversible) y cierra el modal.
+    private async Task EliminarVinculoAsync()
+    {
+        if (_vinculoId is null) { _confirmEliminar = false; return; }
+        _eliminandoVinculo = true;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/directorio/vinculos/{_vinculoId.Value}/inactivar", null);
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; return; }
+            _confirmEliminar = false;
+            Close(new Resultado(true, null)); // _dirty=true para que la lista recargue
+        }
+        finally { _eliminandoVinculo = false; }
+    }
+
     private async Task RecargarAsync()
     {
         _cargando = true; StateHasChanged();
@@ -856,14 +877,6 @@ else
             if (resp.IsSuccessStatusCode) { _dirty = true; _adjuntos.RemoveAll(a => a.Id == id); }
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
-    }
-
-    private async Task CopiarEnlace()
-    {
-        _menu = false;
-        var url = $"{Nav.BaseUri.TrimEnd('/')}/directorio";
-        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", url); _msg = "Enlace al registro copiado."; _msgError = false; }
-        catch { _msg = "No se pudo copiar el enlace."; _msgError = true; }
     }
 
     private void Anterior() { if (ListaIds is not null && _idx > 0) Close(new Resultado(_dirty, ListaIds[_idx - 1])); }
