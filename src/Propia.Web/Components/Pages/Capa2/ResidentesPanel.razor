@@ -258,7 +258,7 @@ else
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaRTpl. *@
             @if (_agrupadoR)
             {
-                <TablaGruposRender T="ResidenteResumenDto" Nodos="TablaAgrupador.Agrupar<ResidenteResumenDto>(Filtrados, _gruposR, ValorGrupoR)" FilaTemplate="FilaRTpl" />
+                <TablaGruposRender T="ResidenteResumenDto" Nodos="TablaAgrupador.Agrupar<ResidenteResumenDto>(Filtrados, _gruposR, ValorGrupoR)" FilaTemplate="FilaRTpl" CabeceraTemplate="CabeceraGrupoRTpl" />
             }
             else
             {
@@ -462,7 +462,7 @@ else
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
 @* Menu de columna estilo Airtable (flecha del header) + toast, replica de Tareas. *@
-<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaR" />
 @if (_colToast is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -788,6 +788,12 @@ else
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggR(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggR(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggR(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggR(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggR(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggR(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 if (campo is not null) AbrirEditarCampoR(campo);
                 else AbrirEditarCampoSistema(col.Key, col.Label);   // sistema: editor focalizado
@@ -1048,6 +1054,7 @@ else
                 if (string.IsNullOrWhiteSpace(stored)) { Nav.NavigateTo("/login?returnUrl=%2Fresidentes", true); return; }
                 _jwt = stored;
                 await RestaurarVistaAsync();
+                try { CargarAggR(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyR)); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -1284,6 +1291,119 @@ else
            seleccion multiple. Celda de acciones vacia (conserva la alineacion). *@
         <div class="res-list-act"></div>
         <div class="res-addcol-cell"></div>
+    </div>;
+
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/Contratos/PQRSD): la flecha de columna ofrece el modo y, agrupado,
+    // la cabecera (CabeceraGrupoRTpl) pinta el total por columna sobre TODAS las filas del grupo. Persistido
+    // por copropiedad en localStorage. Numericas = solo campos propios Numero/Moneda/Porcentaje (los de sistema
+    // de Residentes son texto). Contar reusa SortStrR (resuelve toda clave fija + "cd:").
+    private const string AggKeyR = "propia_agregado_residentes";
+    private readonly Dictionary<string, string> _aggR = new(StringComparer.Ordinal);
+    private bool EsNumericaR(string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return cd.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        var sys = SistemaR.FirstOrDefault(c => c.Clave == k);
+        return sys is not null && sys.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    }
+    private decimal? ValorNumR(ResidenteResumenDto r, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return decimal.TryParse(ValorDe(r.UnidadPersonaId, cd.Id), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+        return null;
+    }
+    private string ModoActivoR(string k) => _aggR.TryGetValue(k, out var m) ? m : (EsNumericaR(k) ? "suma" : "off");
+    private static int ModoCodigoR(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaR(string k) => new(EsNumericaR(k), ModoCodigoR(ModoActivoR(k)));
+    private async Task FijarAggR(string k, string modo)
+    {
+        _aggR[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyR, string.Join(";", _aggR.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggR(string? raw)
+    {
+        _aggR.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggR[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<ResidenteResumenDto> TodasFilasR(NodoGrupo<ResidenteResumenDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<ResidenteResumenDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasR(s));
+        return acc;
+    }
+    private string FmtNumR(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = CampoCustom(k)?.Tipo;
+        if (tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaR(IReadOnlyList<ResidenteResumenDto> miembros, string k)
+    {
+        var modo = ModoActivoR(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(r => !string.IsNullOrWhiteSpace(SortStrR(r, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var r in miembros) if (ValorNumR(r, k) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumR(res, k), tag);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    // Cabecera de grupo alineada al grid (sel 38 + exp 34 + columnas + act 60 + addcol 40). Franja en el
+    // contenedor para cubrir toda la fila; lead abarca hasta la 1a columna con total y el resto son celdas.
+    private RenderFragment<NodoGrupo<ResidenteResumenDto>> CabeceraGrupoRTpl => nodo =>
+    @<div class="res-grouprow res-listgrid res-gl@(nodo.Nivel > 2 ? 2 : nodo.Nivel)" style="@PerGridStyle">
+        @{
+            var colsG = ColsVisibles().ToList();
+            var idxAgg = colsG.FindIndex(k => ModoActivoR(k) != "off");
+        }
+        <div class="res-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + nodo.Nivel * 16)px;">
+            <span class="tgr-tit">@nodo.Titulo</span>
+            <span class="tgr-cnt">@nodo.Conteo</span>
+        </div>
+        @if (idxAgg >= 0)
+        {
+            var miembros = TodasFilasR(nodo);
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var kG = colsG[ci];
+                @if (ModoActivoR(kG) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaR(miembros, kG);
+                    <div class="res-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="res-aggtag">@tagG</span> }</span> }</div>
+                }
+                else
+                {
+                    <div></div>
+                }
+            }
+            <div></div>
+            <div></div>
+        }
     </div>;
 
     private readonly record struct FilaR(bool EsGrupo, string? GrupoTitulo, int GrupoCount, ResidenteResumenDto? Fila);
@@ -1646,6 +1766,15 @@ else
     .res-table .res-head.res-listgrid > div:first-child, .res-table .res-head.res-listgrid > div:nth-last-child(2), .res-table .res-head.res-listgrid > div:last-child { border-right: 0; }
 
     .res-listrow { border-bottom: 1px solid var(--propia-border-divider); font-size: 13.5px; }
+    /* Cabecera de grupo con totales por columna: mismo grid que las filas (PerGridStyle inline); franja al
+       nivel del contenedor para cubrir toda la fila; totales alineados a la derecha de su columna. */
+    .res-grouprow { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--propia-border-divider); }
+    .res-grouprow.res-gl0 { background: var(--propia-brand-soft-2, var(--propia-brand-soft)); }
+    .res-grouprow.res-gl1 { background: var(--propia-bg-card-soft); }
+    .res-grouprow.res-gl2 { background: var(--propia-bg-card); }
+    .res-grouplead { display: flex; align-items: center; gap: 8px; }
+    .res-groupagg { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .res-groupagg .res-aggtag { margin-left: 5px; font-size: 9px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
     .res-listrow:hover { background: var(--propia-bg-hover); }
     .res-row-sel { background: var(--propia-brand-soft) !important; }
     .res-row-nuevo { background: var(--propia-brand-soft-2) !important; box-shadow: inset 3px 0 0 var(--propia-brand); }

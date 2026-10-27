@@ -1,6 +1,20 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.240 (Web)** (base `main` HEAD `e2973c0b` = 0.0.239, 2026-10-27). **SOLO
+> **VERSION A DESPLEGAR = 0.0.241 (Web)** (sigue a 0.0.240, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.212). **Ola 2 de "totales por columna en grupos"**: se extiende la funcion
+> (Suma/Promedio/Minimo/Maximo/Contar, opt-in desde la flecha de columna, persistido por modulo en
+> localStorage) a **Equipos/Activos** (`/equipos-activos`), **Residentes** (`/residentes`) y **Polizas/Seguros**
+> (`/seguros`). Estos usan render de grupo **div-grid** (no `<table>`): se agrega un `CabeceraTemplate` opcional
+> y retrocompatible al componente compartido `TablaGruposRender` (los consumidores que no lo pasan siguen con
+> el banner clasico); Seguros, que tiene su propio aplanado, lleva el nodo del grupo en su record `Fila`. La
+> cabecera de grupo pasa a ser una fila en el MISMO grid que las filas, con la franja a nivel del contenedor
+> (cubre toda la fila) y el total alineado bajo cada columna. "Contar (no vacios)" usa getters dedicados por
+> clave de columna en Seguros (`TextoAggColS`), y `SortStr*` en Equipos/Residentes. Verificado en runtime:
+> Equipos (suma de Cantidad 2/2 + Contar), Residentes (Contar 1/591), Seguros (VALOR $147M/$273M, cuotas 18/19).
+> Sin advertencias nuevas (las de `EquiposActivosPanel:888`/`ResidentesPanel:639` son campos sin usar previos).
+> Pendiente Ola 3: Zonas, Directorio, Mascotas, Vehiculos, Usuarios, Roles.
+>
+> **VERSION PREVIA = 0.0.240 (Web)** (base `main` HEAD `e2973c0b` = 0.0.239, 2026-10-27). **SOLO
 > CODIGO, SIN MIGRACION, SIN CONFIG, SIN PAQUETES NUEVOS.** API sin cambios (sigue 0.0.212). Tanda de
 > vista-tabla: (1) **decimales hasta 6** (antes 4) en el formato numerico de campos, en TODOS los modulos
 > (CrearCampoModal/EditarCampoSistemaModal/ConfigCamposEntidad); (2) **totales por columna en grupos**

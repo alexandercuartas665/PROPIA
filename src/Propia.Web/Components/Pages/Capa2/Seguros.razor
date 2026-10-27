@@ -185,7 +185,7 @@
         @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
            Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
            eliminar/ocultar abren ese gestor con un aviso; orden, copiar URL y agrupar actuan directo. *@
-        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaS" />
 
         @if (_editSisClave is not null)
         {
@@ -232,9 +232,31 @@
                     {
                         if (item.EsGrupo)
                         {
-                            <div class="seg-group" style="padding-left:@(14 + item.Nivel * 16)px;">
-                                @if (item.Color is not null) { <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:@item.Color;margin-right:6px;flex:0 0 auto;"></span> }
-                                <span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span>
+                            var colsSG = ColsVisibles().ToList();
+                            var idxAggS = colsSG.FindIndex(k => ModoActivoS(k) != "off");
+                            <div class="seg-grouprow seg-grid seg-gl@(item.Nivel > 2 ? 2 : item.Nivel)" style="@GridStyle()">
+                                <div class="seg-grouplead" style="grid-column:1 / @(idxAggS < 0 ? "-1" : (3 + idxAggS).ToString()); padding-left:@(14 + item.Nivel * 16)px;">
+                                    @if (item.Color is not null) { <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:@item.Color;margin-right:6px;flex:0 0 auto;"></span> }
+                                    <span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span>
+                                </div>
+                                @if (idxAggS >= 0 && item.Nodo is { } nodoS)
+                                {
+                                    var miembrosS = TodasFilasS(nodoS);
+                                    @for (int ci = idxAggS; ci < colsSG.Count; ci++)
+                                    {
+                                        var kG = colsSG[ci];
+                                        @if (ModoActivoS(kG) != "off")
+                                        {
+                                            var (hayG, txtG, tagG) = AggCeldaS(miembrosS, kG);
+                                            <div class="seg-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="seg-aggtag">@tagG</span> }</span> }</div>
+                                        }
+                                        else
+                                        {
+                                            <div></div>
+                                        }
+                                    }
+                                    <div></div>
+                                }
                             </div>
                             continue;
                         }
@@ -737,6 +759,15 @@
     .seg-group--card { grid-column: 1 / -1; border-top: 0; padding: 6px 2px; }
     .seg-group-t { font-size: 12px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: var(--propia-brand-soft-2); border-radius: 8px; padding: 3px 11px; }
     .seg-group-n { font-size: 11.5px; font-weight: 700; color: var(--propia-text-muted); background: var(--propia-bg-card-soft); border-radius: 10px; padding: 1px 9px; }
+    /* Cabecera de grupo con totales por columna: usa .seg-grid (mismo grid que las filas, via GridStyle inline);
+       la franja va al contenedor para cubrir toda la fila; el lead conserva las pastillas de titulo/conteo. */
+    .seg-grouprow { border-top: 1px solid var(--propia-border-divider); }
+    .seg-grouprow.seg-gl0 { background: var(--propia-brand-soft-2, var(--propia-brand-soft)); }
+    .seg-grouprow.seg-gl1 { background: var(--propia-bg-card-soft); }
+    .seg-grouprow.seg-gl2 { background: var(--propia-bg-card); }
+    .seg-grouplead { display: flex; align-items: center; gap: 10px; }
+    .seg-groupagg { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .seg-groupagg .seg-aggtag { margin-left: 5px; font-size: 9px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
 
     .seg-badge { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: .3px; }
     .seg-badge--verde { color: var(--propia-ok); background: var(--propia-ok-soft); }
@@ -1077,6 +1108,12 @@
                 _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sortsS = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggS(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggS(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggS(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggS(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggS(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggS(col.Key, "off"); break;
             case TablaColMenu.Accion.Agrupar:
                 {
                     if (col.EsDinamico)
@@ -1553,7 +1590,7 @@
         }
     }
 
-    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza, int Nivel = 0, string? Color = null);
+    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, PolizaDto? Poliza, int Nivel = 0, string? Color = null, NodoGrupo<PolizaDto>? Nodo = null);
 
     // ===== Agrupar (multi-nivel; menu compartido TablaAgruparMenu + motor/aplanador TablaAgrupador).
     // _gruposS vacio = sin agrupar (pagina plana). Con niveles = arbol N-niveles aplanado a filas. =====
@@ -1589,6 +1626,125 @@
         yield return new ValorGrupo(t, t);
     }
 
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/Contratos/PQRSD): la flecha de columna ofrece el modo y, agrupado,
+    // la cabecera (seg-grouprow) pinta el total por columna sobre TODAS las filas del grupo. Persistido por
+    // copropiedad en localStorage. Numericas de sistema: valor, reclamaciones, cuotas; dinamicas Numero/Moneda/%.
+    // Nota: el agregado usa CLAVES DE COLUMNA ("valorpoliza"/"reclamaciones"/...), distintas del namespace del
+    // filtro ("valor"/"reclam"), por eso NO reusa ValorNumS/ValorTextoS sino getters por clave de columna.
+    private const string AggKeyS = "propia_agregado_seguros";
+    private readonly Dictionary<string, string> _aggS = new(StringComparer.Ordinal);
+    private bool EsNumericaColS(string k)
+    {
+        var cm = CampoCustom(k);
+        if (cm is not null) return cm.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        return k is "valorpoliza" or "reclamaciones" or "formapagocuotas";
+    }
+    private decimal? ValorNumColS(PolizaDto p, string k)
+    {
+        var cm = CampoCustom(k);
+        if (cm is not null)
+        {
+            var raw = p.CamposValores?.FirstOrDefault(v => v.CampoId == cm.Id)?.Valor;
+            return decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+        }
+        return k switch
+        {
+            "valorpoliza" => p.ValorPoliza,
+            "reclamaciones" => p.ReclamacionesCount,
+            "formapagocuotas" => (decimal?)p.FormaPagoCuotas,
+            _ => null
+        };
+    }
+    // Texto por columna SOLO para Contar (no vacios): devuelve "" en vacio (CeldaTextoP devuelve "-", no sirve).
+    private string TextoAggColS(PolizaDto p, string k)
+    {
+        var cm = CampoCustom(k);
+        if (cm is not null)
+        {
+            var raw = p.CamposValores?.FirstOrDefault(v => v.CampoId == cm.Id)?.Valor;
+            return cm.Tipo == TipoCampoTablero.Booleano ? (raw == "true" ? "Si" : "") : (raw ?? "");
+        }
+        return k switch
+        {
+            "numeropoliza" => p.NumeroPoliza ?? "",
+            "aseguradora" => p.Aseguradora ?? "",
+            "corredor" => p.Corredor ?? "",
+            "fechainicio" => p.FechaInicio?.ToString("yyyy-MM-dd") ?? "",
+            "fechafin" => p.FechaFin?.ToString("yyyy-MM-dd") ?? "",
+            "vencimiento" => SemaforoTexto(p.Semaforo),
+            "valorpoliza" => p.ValorPoliza?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            "reclamaciones" => p.ReclamacionesCount > 0 ? p.ReclamacionesCount.ToString() : "",
+            "formapagocuotas" => p.FormaPagoCuotas?.ToString() ?? "",
+            "pagomensual" => p.PagoMensual ? "Si" : "",
+            "cobertura" => p.Cobertura ?? "",
+            "incluyezonasunidades" => p.IncluyeZonasUnidades ? "Si" : "",
+            "valoresagregados" => p.ValoresAgregados ?? "",
+            "observaciones" => p.Observaciones ?? "",
+            _ => ""
+        };
+    }
+    private string ModoActivoS(string k) => _aggS.TryGetValue(k, out var m) ? m : (EsNumericaColS(k) ? "suma" : "off");
+    private static int ModoCodigoS(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaS(string k) => new(EsNumericaColS(k), ModoCodigoS(ModoActivoS(k)));
+    private async Task FijarAggS(string k, string modo)
+    {
+        _aggS[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyS, string.Join(";", _aggS.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggS(string? raw)
+    {
+        _aggS.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggS[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<PolizaDto> TodasFilasS(NodoGrupo<PolizaDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<PolizaDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasS(s));
+        return acc;
+    }
+    private string FmtNumColS(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = CampoCustom(k)?.Tipo;
+        if (k == "valorpoliza" || tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaS(IReadOnlyList<PolizaDto> miembros, string k)
+    {
+        var modo = ModoActivoS(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(p => !string.IsNullOrWhiteSpace(TextoAggColS(p, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var p in miembros) if (ValorNumColS(p, k) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumColS(res, k), tag);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+
     private IEnumerable<Fila> FilasRender()
     {
         if (_gruposS.Count == 0)
@@ -1600,7 +1756,7 @@
         // Agrupado: arbol N-niveles aplanado (grupos completos, sin paginar).
         foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(Filtradas.ToList(), _gruposS, ValorGrupoS)))
         {
-            if (el.Grupo is { } g) yield return new Fila(true, g.Titulo, g.Conteo, null, g.Nivel, g.Color);
+            if (el.Grupo is { } g) yield return new Fila(true, g.Titulo, g.Conteo, null, g.Nivel, g.Color, g);
             else yield return new Fila(false, null, 0, el.Fila);
         }
     }
@@ -1667,6 +1823,7 @@
                 _jwt = stored;
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
                 try { _gruposS = ParseGruposS(await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey)); } catch { }
+                try { CargarAggS(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyS)); } catch { }
                 await CargarAsync();
             }
             else { Nav.NavigateTo("/login?returnUrl=%2Fseguros", true); return; }

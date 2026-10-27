@@ -304,7 +304,7 @@ else
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaETpl. *@
             @if (_agrupadoE)
             {
-                <TablaGruposRender T="EquipoActivoDto" Nodos="TablaAgrupador.Agrupar<EquipoActivoDto>(Filtrados(), _gruposE, ValorGrupoE)" FilaTemplate="FilaETpl" />
+                <TablaGruposRender T="EquipoActivoDto" Nodos="TablaAgrupador.Agrupar<EquipoActivoDto>(Filtrados(), _gruposE, ValorGrupoE)" FilaTemplate="FilaETpl" CabeceraTemplate="CabeceraGrupoETpl" />
             }
             else
             {
@@ -480,7 +480,7 @@ else
 <TablaCtxMenu Abierto="_ctxOpenE" X="_ctxXE" Y="_ctxYE" Items="_ctxItemsE" Cerrado="() => _ctxOpenE = false" />
 
 @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
-<TablaColMenu @ref="_colMenuE" OnAccion="OnColAccionE" />
+<TablaColMenu @ref="_colMenuE" OnAccion="OnColAccionE" ModoAgregado="AggOfertaE" />
 @if (_colToastE is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToastE = null">@_colToastE</div>
@@ -665,6 +665,7 @@ else
                 }
                 _jwt = stored;
                 await RestaurarVistaAsync();
+                try { CargarAggE(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyE)); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -976,6 +977,12 @@ else
                 _sortsE = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sortsE = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggE(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggE(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggE(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggE(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggE(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggE(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 {
                     var campo = CampoCustom(col.Key);
@@ -1316,6 +1323,123 @@ else
         <div class="ea-list-act"></div>
         <div class="ea-addcol-cell"></div>
     </div>;
+
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Contratos/PQRSD): la flecha de columna ofrece el modo (TablaColMenu
+    // ModoAgregado) y, agrupado, la cabecera de grupo (CabeceraGrupoETpl) pinta el total por columna sobre
+    // TODAS las filas del grupo. Persistido por copropiedad en localStorage ("clave=modo;...").
+    private const string AggKeyE = "propia_agregado_equipos";
+    private readonly Dictionary<string, string> _aggE = new(StringComparer.Ordinal);
+    // Numericas de sistema: cantidad, vida util, valor de adquisicion. Dinamicas: Numero/Moneda/Porcentaje.
+    private bool EsNumericaE(string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return cd.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        return k is "cantidad" or "vidautil" or "valoradq";
+    }
+    private decimal? ValorNumE(EquipoActivoDto e, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return decimal.TryParse(ValorCampo(e.Id, cd.Id), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+        return k switch
+        {
+            "cantidad" => e.Cantidad,
+            "vidautil" => (decimal?)e.VidaUtilAnios,
+            "valoradq" => e.ValorAdquisicion,
+            _ => null
+        };
+    }
+    private string ModoActivoE(string k) => _aggE.TryGetValue(k, out var m) ? m : (EsNumericaE(k) ? "suma" : "off");
+    private static int ModoCodigoE(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaE(string k) => new(EsNumericaE(k), ModoCodigoE(ModoActivoE(k)));
+    private async Task FijarAggE(string k, string modo)
+    {
+        _aggE[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyE, string.Join(";", _aggE.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggE(string? raw)
+    {
+        _aggE.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggE[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<EquipoActivoDto> TodasFilasE(NodoGrupo<EquipoActivoDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<EquipoActivoDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasE(s));
+        return acc;
+    }
+    private string FmtNumE(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        if (k == "valoradq" || CampoCustom(k)?.Tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (CampoCustom(k)?.Tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaE(IReadOnlyList<EquipoActivoDto> miembros, string k)
+    {
+        var modo = ModoActivoE(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(e => !string.IsNullOrWhiteSpace(SortStrE(e, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var e in miembros) if (ValorNumE(e, k) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (r, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumE(r, k), tag);
+    }
+    // Cabecera de grupo alineada al grid (sel 38 + exp 34 + columnas + act 60 + addcol 40). La franja va en el
+    // contenedor para cubrir toda la fila; el lead abarca hasta la 1a columna con total y el resto son celdas.
+    private RenderFragment<NodoGrupo<EquipoActivoDto>> CabeceraGrupoETpl => nodo =>
+    @<div class="ea-grouprow ea-listgrid ea-gl@(nodo.Nivel > 2 ? 2 : nodo.Nivel)" style="@EaGridStyle">
+        @{
+            var colsG = ColsVisibles().ToList();
+            var idxAgg = colsG.FindIndex(k => ModoActivoE(k) != "off");
+        }
+        <div class="ea-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + nodo.Nivel * 16)px;">
+            <span class="tgr-tit">@nodo.Titulo</span>
+            <span class="tgr-cnt">@nodo.Conteo</span>
+        </div>
+        @if (idxAgg >= 0)
+        {
+            var miembros = TodasFilasE(nodo);
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var kG = colsG[ci];
+                @if (ModoActivoE(kG) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaE(miembros, kG);
+                    <div class="ea-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="ea-aggtag">@tagG</span> }</span> }</div>
+                }
+                else
+                {
+                    <div></div>
+                }
+            }
+            <div></div>
+            <div></div>
+        }
+    </div>;
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
 
     // Mover columna por ARRASTRE de puntero (JS propiaTablaColReorder; persiste como el menu Columnas)
     private async Task IniciarReorderE(MouseEventArgs ev, string clave)
@@ -1860,6 +1984,15 @@ else
     /* Expander (2do hijo) con divisor: aisla controles de la 1a columna de datos (homogeneo, Alex 2026-10-08). */
     .ea-list-head.ea-listgrid > div:first-child, .ea-list-head.ea-listgrid > div:nth-last-child(2), .ea-list-head.ea-listgrid > div:last-child { border-right: 0; }
     .ea-list-row { padding: 10px 14px 10px 0; border-bottom: 1px solid #F3F7FA; }
+    /* Cabecera de grupo con totales por columna: mismo grid que las filas (EaGridStyle inline), franja al
+       nivel del contenedor para cubrir toda la fila; lead flexible, celdas de total alineadas a la derecha. */
+    .ea-grouprow { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--propia-border-divider); }
+    .ea-grouprow.ea-gl0 { background: var(--propia-brand-soft-2, var(--propia-brand-soft)); }
+    .ea-grouprow.ea-gl1 { background: var(--propia-bg-card-soft); }
+    .ea-grouprow.ea-gl2 { background: var(--propia-bg-card); }
+    .ea-grouplead { display: flex; align-items: center; gap: 8px; }
+    .ea-groupagg { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .ea-groupagg .ea-aggtag { margin-left: 5px; font-size: 9px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
     .ea-list-row:hover { background: var(--propia-bg-card-soft); }
     .ea-list-link { font-size: 13px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-family: inherit; }
     .ea-list-c { font-size: 12.5px; color: var(--propia-text-secondary); }
