@@ -161,7 +161,7 @@ else
             <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
             <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
         </div>
-        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaRol" />
         @* "Editar campo" de CUALQUIER columna de sistema de roles: UN solo modal canonico focalizado.
            Categoria = lista EXCEPCION en SOLO LECTURA: es el enum cerrado CategoriaRol (ubica al usuario en la
            app); el plan de olas la marca "Protegida" (roles NO agregan/borran opciones). El resto (nombre, base,
@@ -221,7 +221,37 @@ else
                         if (_gField is not null)
                         {
                             var _gv = GrupoValor(r, _gField);
-                            if (_gv != _lastGrp) { _lastGrp = _gv; <tr class="rol-grouprow"><td colspan="7" class="rol-grouphdr">@_gv</td></tr> }
+                            if (_gv != _lastGrp)
+                            {
+                                _lastGrp = _gv;
+                                var _cols = ColsRoles.ToList();
+                                var _idxAgg = _cols.FindIndex(c => ModoActivoRol(c.Clave) != "off");
+                                <tr class="rol-grouprow">
+                                    @if (_idxAgg < 0)
+                                    {
+                                        <td colspan="@(_cols.Count + 3)" class="rol-grouphdr">@_gv</td>
+                                    }
+                                    else
+                                    {
+                                        var _miembros = RolesVista().Where(x => GrupoValor(x, _gField) == _gv).ToList();
+                                        <td colspan="@(2 + _idxAgg)" class="rol-grouphdr">@_gv</td>
+                                        @for (int _ci = _idxAgg; _ci < _cols.Count; _ci++)
+                                        {
+                                            var _ck = _cols[_ci].Clave;
+                                            @if (ModoActivoRol(_ck) != "off")
+                                            {
+                                                var (_hayG, _txtG, _tagG) = AggCeldaRol(_miembros, _ck);
+                                                <td class="rol-td-num rol-groupagg">@if (_hayG) { <span title="@TituloAggRol(_tagG)">@_txtG@if (_tagG.Length > 0) { <span class="rol-aggtag">@_tagG</span> }</span> }</td>
+                                            }
+                                            else
+                                            {
+                                                <td></td>
+                                            }
+                                        }
+                                        <td></td>
+                                    }
+                                </tr>
+                            }
                         }
                         <tr class="rol-tr @(rr.Activo ? "" : "rol-tr-off")" @onclick="() => EditarRol(rr.Id)" @oncontextmenu="e => AbrirCtxRol(e, rr)" @oncontextmenu:preventDefault="true">
                             <td class="tbl-sel">
@@ -458,6 +488,60 @@ else
         _ => "",
     };
 
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/...). En Roles la unica columna numerica es "usuarios" (cantidad de
+    // usuarios activos). Contar reusa ValorCrudo. Persistido por copropiedad en localStorage.
+    private const string AggKeyRol = "propia_agregado_roles";
+    private readonly Dictionary<string, string> _aggRol = new(StringComparer.Ordinal);
+    private static bool EsNumericaRol(string key) => key == "usuarios";
+    private static decimal? ValorNumRol(RolDto r, string key) => key == "usuarios" ? r.CantidadUsuariosActivos : (decimal?)null;
+    private string ModoActivoRol(string key) => _aggRol.TryGetValue(key, out var m) ? m : (EsNumericaRol(key) ? "suma" : "off");
+    private static int ModoCodigoRol(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaRol(string key) => new(EsNumericaRol(key), ModoCodigoRol(ModoActivoRol(key)));
+    private async Task FijarAggRol(string key, string modo)
+    {
+        _aggRol[key] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyRol, string.Join(";", _aggRol.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggRol(string? raw)
+    {
+        _aggRol.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggRol[par[..i]] = par[(i + 1)..]; }
+    }
+    private static string TituloAggRol(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    private (bool Hay, string Texto, string Tag) AggCeldaRol(IReadOnlyList<RolDto> miembros, string key)
+    {
+        var modo = ModoActivoRol(key);
+        if (modo == "off") return (false, "", "");
+        var es = new System.Globalization.CultureInfo("es-CO");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(r => !string.IsNullOrWhiteSpace(ValorCrudo(r, key)));
+            return (true, n.ToString(es), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var r in miembros) if (ValorNumRol(r, key) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, Math.Round(res, 2, MidpointRounding.AwayFromZero).ToString("0.##", es), tag);
+    }
+
     private IEnumerable<RolDto> RolesVista()
     {
         if (_roles is null) return Enumerable.Empty<RolDto>();
@@ -502,6 +586,12 @@ else
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggRol(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggRol(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggRol(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggRol(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggRol(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggRol(col.Key, "off"); break;
             case TablaColMenu.Accion.Filtrar:
                 if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key)) await _fd.AgregarReglaCampo(col.Key);
                 break;
@@ -689,6 +779,7 @@ else
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                try { CargarAggRol(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyRol)); } catch { }
                 await CargarRolesAsync();
                 StateHasChanged();
             }

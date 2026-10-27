@@ -1,6 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.242 (Web)** (sigue a 0.0.241, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.243 (Web)** (sigue a 0.0.242, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 2) de "totales por columna en grupos": Roles**
+> (`/roles`). La tabla de Roles usa la tabla compartida `tbl` con agrupacion manual (un solo nivel, por
+> Categoria o Tipo); la fila de grupo (antes un `<td colspan>` unico) pasa a pintar un total por columna. La
+> unica columna numerica es "usuarios" (usuarios asignados), que suma por grupo; Contar aplica a cualquier
+> columna. **Bump `roles.css?v=16`** en `App.razor`. Verificado en runtime: suma de usuarios por categoria
+> (Administrativo 2, Personal Operativo 0, Portal Residente 244). **Directorio queda fuera de esta tanda**
+> (pendiente de decision: es el de mayor esfuerzo y menor valor del rollout — padre + 2 sub-vistas
+> heterogeneas con grid propio; un directorio de personas/empresas rara vez suma campos numericos).
+>
+> **VERSION PREVIA = 0.0.242 (Web)** (sigue a 0.0.241, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 1) de "totales por columna en grupos"**: se extiende la
 > funcion a **Zonas comunes** (`/zonas-comunes`), **Mascotas** (`/mascotas`), **Vehiculos** (`/vehiculos`) y
 > **Usuarios** (`/usuarios`). Zonas/Mascotas/Vehiculos reusan el `CabeceraTemplate` del `TablaGruposRender`
