@@ -330,7 +330,7 @@
                                     OnReordenarCol="ReordenarColUAsync" OnRedimensionarCol="RedimensionarColUAsync"
                                     Defs="DefsVisiblesU()" Valores="_valoresCampos"
                                     OnGuardarDinamico="GuardarDinamicoU" OnCrearCampo="AbrirCrearCampoU" OnEditarCampoDef="AbrirEditarCampoU"
-                                    OnAbrirColMenu="AbrirColMenuU" />
+                                    OnAbrirColMenu="AbrirColMenuU" CabeceraGrupo="CabeceraGrupoUTpl" />
             }
         }
     }
@@ -338,7 +338,7 @@
 
 @* Menu de columna (chevron del header de la tabla de Usuarios, estilo Airtable): se pinta una sola vez
    y lo abre UsuariosTablaVista via OnAbrirColMenu. Toast inline propio (patron de Tareas) para los avisos. *@
-<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaU" />
 @if (_colToast is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -1019,6 +1019,118 @@
     private int OrdenColU(string clave, int fallback) => _cfgUsr.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
     private IEnumerable<string> ClavesOrdenadasU()
         => ClavesCandidatasU().Select((k, i) => (k, ord: OrdenColU(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/...). Usuarios: las columnas de sistema son texto; solo los campos
+    // propios Numero/Moneda/Porcentaje suman. El menu vive en este padre (ModoAgregado=AggOfertaU) y la cabecera
+    // de grupo (CabeceraGrupoUTpl) se pasa al hijo UsuariosTablaVista. Contar reusa ValorOrdenU (fija + "cd:").
+    private const string AggKeyU = "propia_agregado_usuarios";
+    private readonly Dictionary<string, string> _aggU = new(StringComparer.Ordinal);
+    private CampoDinDef? DefCustomU(string key) => key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var g) ? _defsCampos.FirstOrDefault(d => d.Id == g) : null;
+    private bool EsNumericaU(string key)
+    {
+        var d = DefCustomU(key);
+        return d is not null && d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    }
+    private decimal? ValorNumU(UsuarioListaDto u, string key)
+    {
+        var d = DefCustomU(key);
+        if (d is null) return null;
+        return _valoresCampos.TryGetValue(u.UsuarioTenantId, out var m) && m.TryGetValue(d.Id, out var raw)
+            && decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+    private string ModoActivoU(string key) => _aggU.TryGetValue(key, out var m) ? m : (EsNumericaU(key) ? "suma" : "off");
+    private static int ModoCodigoU(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaU(string key) => new(EsNumericaU(key), ModoCodigoU(ModoActivoU(key)));
+    private async Task FijarAggU(string key, string modo)
+    {
+        _aggU[key] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyU, string.Join(";", _aggU.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggU(string? raw)
+    {
+        _aggU.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggU[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<UsuarioListaDto> TodasFilasU(NodoGrupo<UsuarioListaDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<UsuarioListaDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasU(s));
+        return acc;
+    }
+    private string FmtNumU(decimal v, string key)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = DefCustomU(key)?.Tipo;
+        if (tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private static string TituloAggU(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    private (bool Hay, string Texto, string Tag) AggCeldaU(IReadOnlyList<UsuarioListaDto> miembros, string key)
+    {
+        var modo = ModoActivoU(key);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(u => !string.IsNullOrWhiteSpace(ValorOrdenU(u, key)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var u in miembros) if (ValorNumU(u, key) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumU(res, key), tag);
+    }
+    // Cabecera de grupo con totales, alineada al grid de Usuarios (sel 38 + exp 34 + columnas + dinamicas +
+    // addcol 40 + accion 34). La secuencia de columnas es ColsVisiblesU() seguida de las dinamicas "cd:{id}".
+    private RenderFragment<NodoGrupo<UsuarioListaDto>> CabeceraGrupoUTpl => nodo =>
+    @<div class="utb-grouprow utb-grid utb-gl@(nodo.Nivel > 2 ? 2 : nodo.Nivel)" style="@UtbGridStyleU">
+        @{
+            var allKeys = ColsVisiblesU().Concat(DefsVisiblesU().Select(d => "cd:" + d.Id)).ToList();
+            var idxAgg = allKeys.FindIndex(k => ModoActivoU(k) != "off");
+        }
+        <div class="utb-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + nodo.Nivel * 16)px;">
+            <span class="tgr-tit">@nodo.Titulo</span>
+            <span class="tgr-cnt">@nodo.Conteo</span>
+        </div>
+        @if (idxAgg >= 0)
+        {
+            var miembros = TodasFilasU(nodo);
+            @for (int ci = idxAgg; ci < allKeys.Count; ci++)
+            {
+                var kG = allKeys[ci];
+                @if (ModoActivoU(kG) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaU(miembros, kG);
+                    <div class="utb-groupagg">@if (hayG) { <span title="@TituloAggU(tagG)">@txtG@if (tagG.Length > 0) { <span class="utb-aggtag">@tagG</span> }</span> }</div>
+                }
+                else
+                {
+                    <div></div>
+                }
+            }
+            <div></div>
+            <div></div>
+        }
+    </div>;
+
     private IEnumerable<string> ColsVisiblesU() => ClavesOrdenadasU().Where(VisibleColU);
     private string ColLabelU(string clave)
     {
@@ -1198,6 +1310,7 @@
         {
             var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (v == "lista" || v == "tabla") _vista = v;
+            CargarAggU(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyU));
         }
         catch { }
     }
@@ -1326,6 +1439,12 @@
                 _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sortsU = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggU(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggU(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggU(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggU(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggU(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggU(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 if (campo is not null) AbrirEditarCampoU(campo);
                 else { _editSisClave = col.Key; _editSisLabel = col.Label; }  // TODA columna de sistema -> modal canonico focalizado

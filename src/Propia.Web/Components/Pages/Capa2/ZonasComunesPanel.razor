@@ -292,7 +292,7 @@ else
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaZonaTpl. *@
             @if (_agrupadoZ)
             {
-                <TablaGruposRender T="ZonaComunDto" Nodos="TablaAgrupador.Agrupar<ZonaComunDto>(Filtradas(), _gruposZ, ValorGrupoZona)" FilaTemplate="FilaZonaTpl" />
+                <TablaGruposRender T="ZonaComunDto" Nodos="TablaAgrupador.Agrupar<ZonaComunDto>(Filtradas(), _gruposZ, ValorGrupoZona)" FilaTemplate="FilaZonaTpl" CabeceraTemplate="CabeceraGrupoZTpl" />
             }
             else
             {
@@ -462,7 +462,7 @@ else
 <TablaCtxMenu Abierto="_ctxOpenZ" X="_ctxXZ" Y="_ctxYZ" Items="_ctxItemsZ" Cerrado="() => _ctxOpenZ = false" />
 
 @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
-<TablaColMenu @ref="_colMenuZ" OnAccion="OnColAccionZ" />
+<TablaColMenu @ref="_colMenuZ" OnAccion="OnColAccionZ" ModoAgregado="AggOfertaZ" />
 @if (_colToastZ is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToastZ = null">@_colToastZ</div>
@@ -674,6 +674,12 @@ else
                 _sortsZ = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _paginaZ = 1; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sortsZ = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _paginaZ = 1; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggZ(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggZ(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggZ(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggZ(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggZ(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggZ(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 {
                     var campo = CampoCustom(col.Key);
@@ -1132,6 +1138,114 @@ else
         <div class="zc-addcol-cell"></div>
     </div>;
 
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/...). Numericas de sistema: aforo, tarifa. Dinamicas: Numero/Moneda/%.
+    // Contar reusa SortStrZ (resuelve toda clave fija + "cd:"). Persistido por copropiedad en localStorage.
+    private const string AggKeyZ = "propia_agregado_zonas";
+    private readonly Dictionary<string, string> _aggZ = new(StringComparer.Ordinal);
+    private bool EsNumericaZ(string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return cd.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        return k is "aforo" or "tarifa";
+    }
+    private decimal? ValorNumZ(ZonaComunDto z, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return decimal.TryParse(ValorCampo(z.Id, cd.Id), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+        return k switch { "aforo" => (decimal?)z.CapacidadPersonas, "tarifa" => z.TarifaReserva, _ => null };
+    }
+    private string ModoActivoZ(string k) => _aggZ.TryGetValue(k, out var m) ? m : (EsNumericaZ(k) ? "suma" : "off");
+    private static int ModoCodigoZ(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaZ(string k) => new(EsNumericaZ(k), ModoCodigoZ(ModoActivoZ(k)));
+    private async Task FijarAggZ(string k, string modo)
+    {
+        _aggZ[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyZ, string.Join(";", _aggZ.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggZ(string? raw)
+    {
+        _aggZ.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggZ[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<ZonaComunDto> TodasFilasZ(NodoGrupo<ZonaComunDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<ZonaComunDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasZ(s));
+        return acc;
+    }
+    private string FmtNumZ(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = CampoCustom(k)?.Tipo;
+        if (k == "tarifa" || tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaZ(IReadOnlyList<ZonaComunDto> miembros, string k)
+    {
+        var modo = ModoActivoZ(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(z => !string.IsNullOrWhiteSpace(SortStrZ(z, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var z in miembros) if (ValorNumZ(z, k) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumZ(res, k), tag);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    private RenderFragment<NodoGrupo<ZonaComunDto>> CabeceraGrupoZTpl => nodo =>
+    @<div class="zc-grouprow zc-grid zc-gl@(nodo.Nivel > 2 ? 2 : nodo.Nivel)" style="@ZcGridStyle">
+        @{
+            var colsG = ColsVisibles().ToList();
+            var idxAgg = colsG.FindIndex(k => ModoActivoZ(k) != "off");
+        }
+        <div class="zc-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + nodo.Nivel * 16)px;">
+            <span class="tgr-tit">@nodo.Titulo</span>
+            <span class="tgr-cnt">@nodo.Conteo</span>
+        </div>
+        @if (idxAgg >= 0)
+        {
+            var miembros = TodasFilasZ(nodo);
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var kG = colsG[ci];
+                @if (ModoActivoZ(kG) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaZ(miembros, kG);
+                    <div class="zc-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="zc-aggtag">@tagG</span> }</span> }</div>
+                }
+                else
+                {
+                    <div></div>
+                }
+            }
+            <div></div>
+            <div></div>
+        }
+    </div>;
+
     // Filtros (client-side: la lista de zonas de una copropiedad es corta).
     // Un solo boton "Filtros" con reglas dinamicas (componente compartido FiltroDinamico).
     private string _q = "";
@@ -1249,6 +1363,7 @@ else
                 }
                 _jwt = stored;
                 await RestaurarVistaAsync();
+                try { CargarAggZ(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyZ)); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -1746,6 +1861,15 @@ else
     /* Expander (2do hijo) con divisor: aisla controles de la 1a columna de datos (homogeneo, Alex 2026-10-08). */
     .zc-list-head.zc-grid > div:first-child, .zc-list-head.zc-grid > div:nth-last-child(2), .zc-list-head.zc-grid > div:last-child { border-right: 0; }
     .zc-list-row { padding: 11px 14px 11px 0; border-bottom: 1px solid #F3F7FA; }
+    /* Cabecera de grupo con totales por columna: mismo grid que las filas (ZcGridStyle inline); franja al
+       nivel del contenedor (cubre toda la fila); totales alineados a la derecha de su columna. */
+    .zc-grouprow { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--propia-border-divider); }
+    .zc-grouprow.zc-gl0 { background: var(--propia-brand-soft-2, var(--propia-brand-soft)); }
+    .zc-grouprow.zc-gl1 { background: var(--propia-bg-card-soft); }
+    .zc-grouprow.zc-gl2 { background: var(--propia-bg-card); }
+    .zc-grouplead { display: flex; align-items: center; gap: 8px; }
+    .zc-groupagg { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .zc-groupagg .zc-aggtag { margin-left: 5px; font-size: 9px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
     /* Seleccion multiple + barra bulk (milimetrico maqueta). */
     .zc-sel-cell { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
     .zc-chk { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }

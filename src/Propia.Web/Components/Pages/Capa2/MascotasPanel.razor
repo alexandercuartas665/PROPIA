@@ -177,7 +177,7 @@ else
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaMTpl. *@
             @if (_agrupadoM)
             {
-                <TablaGruposRender T="MascotaResumenDto" Nodos="TablaAgrupador.Agrupar<MascotaResumenDto>(Filtradas, _gruposM, ValorGrupoM)" FilaTemplate="FilaMTpl" />
+                <TablaGruposRender T="MascotaResumenDto" Nodos="TablaAgrupador.Agrupar<MascotaResumenDto>(Filtradas, _gruposM, ValorGrupoM)" FilaTemplate="FilaMTpl" CabeceraTemplate="CabeceraGrupoMTpl" />
             }
             else
             {
@@ -374,7 +374,7 @@ else
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
 @* Menu de columna estilo Airtable (flecha del header) + toast, replica de Tareas. *@
-<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaM" />
 @if (_colToast is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -856,6 +856,113 @@ else
         <div class="mas-acts"></div>
         <div class="mas-addcol-cell"></div>
     </div>;
+
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/...). Numericas = solo campos propios Numero/Moneda/Porcentaje
+    // (las columnas de sistema de Mascotas son texto). Contar reusa SortStr (resuelve toda clave fija + "cd:").
+    private const string AggKeyM = "propia_agregado_mascotas";
+    private readonly Dictionary<string, string> _aggM = new(StringComparer.Ordinal);
+    private bool EsNumericaM(string k)
+    {
+        var cd = CampoCustom(k);
+        return cd is not null && cd.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    }
+    private decimal? ValorNumM(MascotaResumenDto v, string k)
+    {
+        var cd = CampoCustom(k);
+        if (cd is not null) return decimal.TryParse(ValorDe(v.MascotaId, cd.Id), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+        return null;
+    }
+    private string ModoActivoM(string k) => _aggM.TryGetValue(k, out var m) ? m : (EsNumericaM(k) ? "suma" : "off");
+    private static int ModoCodigoM(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaM(string k) => new(EsNumericaM(k), ModoCodigoM(ModoActivoM(k)));
+    private async Task FijarAggM(string k, string modo)
+    {
+        _aggM[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyM, string.Join(";", _aggM.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggM(string? raw)
+    {
+        _aggM.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggM[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<MascotaResumenDto> TodasFilasM(NodoGrupo<MascotaResumenDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<MascotaResumenDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasM(s));
+        return acc;
+    }
+    private string FmtNumM(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = CampoCustom(k)?.Tipo;
+        if (tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaM(IReadOnlyList<MascotaResumenDto> miembros, string k)
+    {
+        var modo = ModoActivoM(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(v => !string.IsNullOrWhiteSpace(SortStr(v, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var v in miembros) if (ValorNumM(v, k) is { } d) vals.Add(d);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumM(res, k), tag);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    private RenderFragment<NodoGrupo<MascotaResumenDto>> CabeceraGrupoMTpl => nodo =>
+    @<div class="mas-grouprow mas-grid mas-gl@(nodo.Nivel > 2 ? 2 : nodo.Nivel)" style="grid-template-columns:@GridCols">
+        @{
+            var colsG = ColsVisibles().ToList();
+            var idxAgg = colsG.FindIndex(k => ModoActivoM(k) != "off");
+        }
+        <div class="mas-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + nodo.Nivel * 16)px;">
+            <span class="tgr-tit">@nodo.Titulo</span>
+            <span class="tgr-cnt">@nodo.Conteo</span>
+        </div>
+        @if (idxAgg >= 0)
+        {
+            var miembros = TodasFilasM(nodo);
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var kG = colsG[ci];
+                @if (ModoActivoM(kG) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaM(miembros, kG);
+                    <div class="mas-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="mas-aggtag">@tagG</span> }</span> }</div>
+                }
+                else
+                {
+                    <div></div>
+                }
+            }
+            <div></div>
+            <div></div>
+        }
+    </div>;
     private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
 
     // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
@@ -887,6 +994,7 @@ else
             if (string.IsNullOrWhiteSpace(_jwt)) { Nav.NavigateTo("/login?returnUrl=%2Fmascotas", true); return; }
             _authChecked = true;
             try { var _vv = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKeyM); if (_vv == "cards" || _vv == "tabla") _view = _vv; } catch { }
+            try { CargarAggM(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyM)); } catch { }
             await CargarAsync();
             StateHasChanged();
             return;
@@ -1416,6 +1524,12 @@ else
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggM(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggM(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggM(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggM(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggM(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggM(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 if (campo is not null) AbrirEditarCampo(campo);
                 else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
@@ -1713,6 +1827,15 @@ else
     .mas-head.mas-grid > div { align-self: stretch; display: flex; align-items: center; padding-top: 10px; padding-bottom: 10px; border-right: 1px solid var(--propia-border-card); }
     .mas-head.mas-grid > div:first-child, .mas-head.mas-grid > div:nth-last-child(2), .mas-head.mas-grid > div:last-child { border-right: 0; }
     .mas-row { border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); }
+    /* Cabecera de grupo con totales por columna: mismo grid que las filas (GridCols inline); franja al
+       nivel del contenedor (cubre toda la fila); totales alineados a la derecha de su columna. */
+    .mas-grouprow { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--propia-border-divider); }
+    .mas-grouprow.mas-gl0 { background: var(--propia-brand-soft-2, var(--propia-brand-soft)); }
+    .mas-grouprow.mas-gl1 { background: var(--propia-bg-card-soft); }
+    .mas-grouprow.mas-gl2 { background: var(--propia-bg-card); }
+    .mas-grouplead { display: flex; align-items: center; gap: 8px; }
+    .mas-groupagg { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--propia-text-h1); }
+    .mas-groupagg .mas-aggtag { margin-left: 5px; font-size: 9px; font-weight: 800; letter-spacing: .4px; color: var(--propia-text-faint); }
     .mas-row:hover { background: var(--propia-bg-hover); }
     .mas-row-nuevo { background: var(--propia-brand-soft-2); box-shadow: inset 3px 0 0 var(--propia-brand); }
     .mas-row-sel { background: var(--propia-brand-soft) !important; }

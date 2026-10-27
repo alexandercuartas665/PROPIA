@@ -1,6 +1,18 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.241 (Web)** (sigue a 0.0.240, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.242 (Web)** (sigue a 0.0.241, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 1) de "totales por columna en grupos"**: se extiende la
+> funcion a **Zonas comunes** (`/zonas-comunes`), **Mascotas** (`/mascotas`), **Vehiculos** (`/vehiculos`) y
+> **Usuarios** (`/usuarios`). Zonas/Mascotas/Vehiculos reusan el `CabeceraTemplate` del `TablaGruposRender`
+> (sin cambios en el componente). Usuarios tiene arquitectura padre/hijo: el menu y el estado de agregado
+> viven en `UsuariosPanel` y la cabecera se pasa al hijo `UsuariosTablaVista` por un nuevo parametro
+> `CabeceraGrupo`. Numericas: Zonas (aforo, tarifa + custom); Mascotas/Vehiculos/Usuarios solo custom
+> Numero/Moneda/Porcentaje (sus columnas de sistema son texto). **Bump `usuarios.css?v=23`** en `App.razor`.
+> Verificado en runtime: Zonas (suma de aforo 20/60), Usuarios (Contar 1/1 por grupo). Sin advertencias nuevas
+> (baseline 45). **Pendiente Ola 3 (parte 2): Directorio y Roles** (render no estandar: Directorio = padre + 2
+> sub-vistas heterogeneas; Roles = tabla con agrupacion manual).
+>
+> **VERSION PREVIA = 0.0.241 (Web)** (sigue a 0.0.240, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.212). **Ola 2 de "totales por columna en grupos"**: se extiende la funcion
 > (Suma/Promedio/Minimo/Maximo/Contar, opt-in desde la flecha de columna, persistido por modulo en
 > localStorage) a **Equipos/Activos** (`/equipos-activos`), **Residentes** (`/residentes`) y **Polizas/Seguros**
