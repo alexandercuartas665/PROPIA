@@ -799,15 +799,18 @@ else
         if (_cfgEquipo.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
         return CampoCustom(clave)?.Label ?? EquipoCamposSistema.Por(clave)?.Label ?? clave;
     }
+    // Cada pista flexible lleva un piso en px (minmax): asi el ancho MINIMO del grid es el mismo en el
+    // header y en las filas (no depende del contenido), evitando que selects/valores largos ensanchen solo
+    // las filas y desalineen las columnas (sintoma: el ultimo valor se iba a la derecha del "+").
     private static string ColWidth(string clave) => clave switch
     {
-        "nombre" => "2fr",
-        "categoria" => "1.2fr",
-        "tipo" => "1fr",
-        "cantidad" or "vidautil" => ".6fr",
-        "estado" => "1.1fr",
-        "reservable" => ".7fr",
-        "valoradq" => ".9fr",
+        "nombre" => "minmax(160px,2fr)",
+        "categoria" => "minmax(130px,1.2fr)",
+        "tipo" => "minmax(100px,1fr)",
+        "cantidad" or "vidautil" => "minmax(70px,.6fr)",
+        "estado" => "minmax(120px,1.1fr)",
+        "reservable" => "minmax(90px,.7fr)",
+        "valoradq" => "minmax(110px,.9fr)",
         "observaciones" => "minmax(140px,1.4fr)",
         "fechainstalacion" or "garantiahasta" or "fechaadquisicion" => "minmax(115px,.9fr)",
         _ when !EsCustom(clave) => "minmax(110px,1fr)",   // modelo, serie, ubicacion, proveedor, ...
@@ -1731,7 +1734,7 @@ else
     .ea-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
     .ea-addcol-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); border-style: solid; }
     /* Engranaje en cabecera de columnas dinamicas: editar/eliminar el campo (aparece al hover del th). */
-    .ea-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .ea-th-dyn { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
     .ea-th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Chevron del header SIEMPRE visible (migrado del diseno de Unidades .tbl-th-edit): abre el menu de
        columna -> Editar campo (modal). Antes era hover-only (opacity:0) y no se descubria la accion. */
@@ -1828,9 +1831,11 @@ else
     .ea-list .tbl-fab { bottom: 54px; }
     .ea-list-row.ea-row-new { background: var(--propia-brand-soft-2); box-shadow: inset 3px 0 0 var(--propia-brand); }
     .ea-list-row.ea-row-new:hover { background: var(--propia-brand-soft-2); }
-    /* min-width:max-content: las columnas mantienen su ancho natural; cuando no caben, el contenedor
-       .ea-scroll (overflow-x:auto) da scroll horizontal en vez de comprimir las columnas (= .veh-grid). */
-    .ea-listgrid { display: grid; grid-template-columns: 34px 2fr 1.2fr 1fr .6fr 1.1fr 60px; gap: 10px; align-items: center; min-width: max-content; }
+    /* Sin min-width:max-content (dependia del contenido y desalineaba header vs filas). Las pistas flexibles
+       llevan piso en px (minmax en ColWidth): cuando la suma de pisos supera el ancho de .ea-scroll, el grid
+       crece a ese minimo (igual en header y filas) y .ea-scroll (overflow:auto) da scroll horizontal; cuando
+       caben, fr reparte el sobrante. Asi header y filas tienen SIEMPRE el mismo ancho y las columnas alinean. */
+    .ea-listgrid { display: grid; grid-template-columns: 34px minmax(160px,2fr) minmax(130px,1.2fr) minmax(100px,1fr) minmax(70px,.6fr) minmax(120px,1.1fr) 60px; gap: 10px; align-items: center; }
     /* Columna del expansor: se ve al pasar el mouse por la fila (o al escribir en la fila de alta). */
     .ea-col-exp { display: flex; align-items: center; justify-content: center; }
     /* expander icono pelado (= .tbl-exp-btn de Unidades): transparente, pad 6, radius 7, color muted; fondo al hover. */
@@ -1841,7 +1846,7 @@ else
     .ea-exp-fijo:disabled { opacity: 0; cursor: default; }
     .ea-list-newrow:hover .ea-exp-fijo:disabled, .ea-list-newrow:focus-within .ea-exp-fijo:disabled { opacity: .35; }
     /* Celdas editables inline: se leen como texto y se marcan al hover/foco. */
-    .ea-cell { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: var(--propia-text-secondary); background: transparent; outline: none; font-family: inherit; }
+    .ea-cell { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid transparent; border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: var(--propia-text-secondary); background: transparent; outline: none; font-family: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ea-cell:hover { border-color: var(--propia-border-card); background: var(--propia-bg-card-soft); }
     .ea-cell:focus { border-color: var(--propia-brand, var(--propia-brand)); background: var(--propia-bg-card); color: var(--propia-text-body); }
     .ea-cell-nom { font-weight: 700; color: var(--propia-text-body); }
@@ -1876,7 +1881,6 @@ else
     /* Movil: la vista Lista (grid de 6 columnas fijas) hace scroll horizontal en vez de recortarse. */
     @@media (max-width: 640px) {
         .ea-list { overflow-x: auto; }
-        .ea-listgrid { min-width: max-content; }
     }
 
     /* Campos dinamicos: celda de valor + modal Configurar */
