@@ -1,6 +1,24 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.243 (Web)** (sigue a 0.0.242, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.244 (Web)** (sigue a 0.0.243, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 3) de "totales por columna en grupos": Directorio**
+> (`/directorio`), ambas sub-vistas (**Personas** y **Empresas**). Con esto el rollout queda COMPLETO en todos
+> los modulos de vista-tabla. Directorio es padre (`DirectorioPanel`) + 2 sub-vistas con grid propio: el menu
+> y el estado (`_aggDir`) viven en el padre y se pasan a cada hija por un nuevo parametro `Agg`; cada hija
+> pinta su cabecera de grupo (antes un banner flex) como una fila en su mismo grid, con la franja al nivel del
+> contenedor y el total alineado bajo cada columna. Numericas = solo campos propios Numero/Moneda/Porcentaje
+> (las columnas de sistema del Directorio son texto; los campos propios se comparten entre ambas pestanas).
+> **Bump `directorio.css?v=13`** en `App.razor`. Verificado en runtime: Personas (Contar 200 por grupo CC),
+> Empresas (Contar 2 por grupo). Sin advertencias nuevas (baseline 45).
+>
+> **Resumen del rollout completo (0.0.240 -> 0.0.244, todo solo codigo):** la funcion "totales por columna en
+> grupos" (Suma/Promedio/Minimo/Maximo/Contar, opt-in por la flecha de columna, persistido por modulo en
+> localStorage) esta ahora en TODOS los modulos de vista-tabla: Unidades y Tareas (previos), Contratos, PQRSD,
+> Equipos/Activos, Residentes, Polizas/Seguros, Zonas, Mascotas, Vehiculos, Usuarios, Roles y Directorio.
+> Componentes compartidos tocados una sola vez: `TablaColMenu` (`ModoAgregado`/`AggOferta`), `TablaGruposRenderTr`
+> y `TablaGruposRender` (`CabeceraTemplate` opcional, retrocompatible). Sin migracion ni config en toda la serie.
+>
+> **VERSION PREVIA = 0.0.243 (Web)** (sigue a 0.0.242, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 2) de "totales por columna en grupos": Roles**
 > (`/roles`). La tabla de Roles usa la tabla compartida `tbl` con agrupacion manual (un solo nivel, por
 > Categoria o Tipo); la fila de grupo (antes un `<td colspan>` unico) pasa a pintar un total por columna. La

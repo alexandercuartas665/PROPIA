@@ -134,9 +134,31 @@ else
                 if (item.EsGrupo)
                 {
                     var g = item.Grupo!;
-                    <div class="dtab-group dtab-group--row">
-                        <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
-                        <span class="dtab-group-n">@g.Items.Count</span>
+                    var allKeys = AllKeysE();
+                    var idxAgg = allKeys.FindIndex(k => ModoActivoE(k) != "off");
+                    <div class="dtab-grouprow dve-grid dtab-group--row" style="grid-template-columns:@GridCols">
+                        <div class="dtab-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString());">
+                            <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
+                            <span class="dtab-group-n">@g.Items.Count</span>
+                        </div>
+                        @if (idxAgg >= 0)
+                        {
+                            @for (int ci = idxAgg; ci < allKeys.Count; ci++)
+                            {
+                                var kG = allKeys[ci];
+                                @if (ModoActivoE(kG) != "off")
+                                {
+                                    var (hayG, txtG, tagG) = AggCeldaE(g.Items, kG);
+                                    <div class="dtab-groupagg">@if (hayG) { <span title="@TituloAggE(tagG)">@txtG@if (tagG.Length > 0) { <span class="dtab-aggtag">@tagG</span> }</span> }</div>
+                                }
+                                else
+                                {
+                                    <div></div>
+                                }
+                            }
+                            <div></div>
+                            <div></div>
+                        }
                     </div>
                     continue;
                 }
@@ -328,6 +350,8 @@ else
 
     /// <summary>Agrupacion por etiqueta que arma la pagina; si es null, la tabla va plana.</summary>
     [Parameter] public List<Grupo>? Grupos { get; set; }
+    /// <summary>Modo de agregado por columna (suma/prom/min/max/cont/off), lo fija el padre desde el menu.</summary>
+    [Parameter] public Dictionary<string, string>? Agg { get; set; }
 
     /// <summary>Config de columnas por usuario (visibilidad + nombre) desde localStorage;
     /// clave = Key de la columna. Reutiliza el tipo ColPref del directorio de personas.</summary>
@@ -431,6 +455,62 @@ else
 
     /// <summary>Un grupo de la vista agrupada: cabecera (etiqueta) + sus empresas.</summary>
     public sealed record Grupo(string Titulo, string? Color, string? Icono, List<EmpresaResumenDto> Items);
+
+    // ===== Totales por columna en grupos: numericas = solo campos propios; Contar sobre cualquier columna. =====
+    private CampoDinDef? DefDeE(string key) => key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var g) && Defs is not null ? Defs.FirstOrDefault(d => d.Id == g) : null;
+    private bool EsNumericaE(string key) { var d = DefDeE(key); return d is not null && d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje; }
+    private string ModoActivoE(string key) => Agg is not null && Agg.TryGetValue(key, out var m) ? m : (EsNumericaE(key) ? "suma" : "off");
+    private decimal? ValorNumE(EmpresaResumenDto e, string key)
+    {
+        var d = DefDeE(key);
+        if (d is null || e.RegistroCamposId is not Guid reg) return null;
+        return decimal.TryParse(ValorDin(reg, d.Id), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    }
+    private string TextoColE(EmpresaResumenDto e, string key) => key switch
+    {
+        "razon" => e.RazonSocial ?? "",
+        "comercial" => e.NombreComercial ?? "",
+        "nit" => e.Nit ?? "",
+        "email" => e.Email ?? "",
+        "telefono" => e.Telefono ?? "",
+        "estado" => e.Estado.ToString(),
+        _ => DefDeE(key) is { } d && e.RegistroCamposId is Guid reg ? (ValorDin(reg, d.Id) ?? "") : ""
+    };
+    private string FmtNumE(decimal v, string key)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = DefDeE(key)?.Tipo;
+        if (tipo == TipoCampoTablero.Moneda) return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private static string TituloAggE(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo", "MIN" => "Minimo del grupo", "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo", _ => "Suma del grupo"
+    };
+    private (bool Hay, string Texto, string Tag) AggCeldaE(IReadOnlyList<EmpresaResumenDto> miembros, string key)
+    {
+        var modo = ModoActivoE(key);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(e => !string.IsNullOrWhiteSpace(TextoColE(e, key)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var e in miembros) if (ValorNumE(e, key) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumE(res, key), tag);
+    }
+    private List<string> AllKeysE() => ColsVisibles.Select(c => c.Key).Concat(Defs is not null ? Defs.Select(d => "cd:" + d.Id) : Enumerable.Empty<string>()).ToList();
 
     private readonly record struct FilaRender(bool EsGrupo, Grupo? Grupo, EmpresaResumenDto? Empresa);
 

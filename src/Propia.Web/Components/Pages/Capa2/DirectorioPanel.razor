@@ -168,7 +168,7 @@
            extraidos para no engrosar esta pagina. *@
         @if (_tab == "personas")
         {
-            <DirectorioPersonasVista Personas="PersonasParaVista()" Recien="_recienP" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view"
+            <DirectorioPersonasVista Personas="PersonasParaVista()" Recien="_recienP" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view" Agg="_aggDir"
                                      Etiquetas="EtiquetasOpciones()"
                                      ColsWidth="_widthPersonas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
@@ -184,7 +184,7 @@
         }
         else
         {
-            <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Recien="_recienE" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view"
+            <DirectorioEmpresasVista Empresas="EmpresasParaVista()" Recien="_recienE" Grupos="GruposEmpresas()" ColsConfig="_colsEmpresas" ColsOrder="_ordenEmpresas" Vista="_view" Agg="_aggDir"
                                      ColsWidth="_widthEmpresas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
@@ -202,7 +202,7 @@
 
 @* Menu de columna (chevron del header de cada bandeja, estilo Airtable): se pinta una sola vez y lo
    abren las vistas hijas via OnAbrirColMenu. Reutiliza el toast de pagina (_dirToast) para los avisos. *@
-<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaDir" />
 
 @* Toast breve a nivel de pagina (p.ej. resultado/error al eliminar un campo desde el menu Columnas). *@
 @if (_dirToast is not null) { <div class="dir-toast">@_dirToast</div> }
@@ -1395,6 +1395,36 @@
         _colMenuX = a.X; _colMenuY = a.Y;
         _colMenu?.Abrir(new TablaColMenu.Ctx(a.Clave, a.Label, a.Dyn), a.X, a.Y);
     }
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo (= Unidades/Equipos/...). El menu vive en este padre; el estado (_aggDir) se pasa a las
+    // dos sub-vistas (Personas/Empresas), que pintan la cabecera con totales sobre su propio grid. Numericas =
+    // solo campos propios Numero/Moneda/Porcentaje (las columnas de sistema del Directorio son texto); los
+    // campos propios se comparten entre ambas pestanas (mismo catalogo _defsCampos). Persistido en localStorage.
+    private const string AggKeyDir = "propia_agregado_directorio";
+    private readonly Dictionary<string, string> _aggDir = new(StringComparer.Ordinal);
+    private CampoDinDef? DefNumDir(string key) => key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var g) ? _defsCampos.FirstOrDefault(d => d.Id == g) : null;
+    private bool EsNumericaDir(string key)
+    {
+        var d = DefNumDir(key);
+        return d is not null && d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    }
+    private string ModoActivoDir(string key) => _aggDir.TryGetValue(key, out var m) ? m : (EsNumericaDir(key) ? "suma" : "off");
+    private static int ModoCodigoDir(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaDir(string key) => new(EsNumericaDir(key), ModoCodigoDir(ModoActivoDir(key)));
+    private async Task FijarAggDir(string key, string modo)
+    {
+        _aggDir[key] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyDir, string.Join(";", _aggDir.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggDir(string? raw)
+    {
+        _aggDir.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggDir[par[..i]] = par[(i + 1)..]; }
+    }
+
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
         var (accion, col) = a;
@@ -1408,6 +1438,12 @@
                 _sortsDir = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
             case TablaColMenu.Accion.OrdenarDesc:
                 _sortsDir = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggDir(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggDir(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggDir(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggDir(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggDir(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggDir(col.Key, "off"); break;
             case TablaColMenu.Accion.Editar:
                 if (campo is not null) AbrirEditarCampoDir(campo);
                 else AbrirEditarCampoSistema(col.Key, col.Label);   // sistema: editor focalizado
@@ -1606,6 +1642,7 @@
                 catch { }
                 await RestaurarVistaAsync();
                 await RestaurarColsAsync();
+                try { CargarAggDir(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyDir)); } catch { }
                 await CargarEtiquetasAsync();
                 await CargarAsync();
                 StateHasChanged();
