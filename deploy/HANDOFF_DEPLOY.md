@@ -1,5 +1,25 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **VERSION A DESPLEGAR = 0.0.238 (Web)** (`main` HEAD `d498d5e2`, 2026-10-26). **MI TANDA (sesion UI) ES
+> SOLO CODIGO, SIN MIGRACION NI CONFIG:** (1) campos **Funcion/calculado** ahora ofrecidos en el "+" de los 8
+> modulos que no exponen relaciones (Vehiculos, Mascotas, Zonas, Equipos, Residentes, Directorio, Contratos,
+> Polizas) via el nuevo parametro `OfreceFuncion` de `CrearCampoModal` (el computo ya estaba en backend);
+> (2) tres **indicadores** en Unidades Privadas (`/distribucion`): total de unidades, apartamentos y suma de
+> coeficientes (con `%`), mismo patron visual que los KPIs de Usuarios. Verificado en runtime + BD. Detalle en
+> **ESTADO 2026-10-26** mas abajo.
+>
+> **CRITICO - el deploy de `main` HEAD NO es solo mi tanda:** entre la version antes documentada (0.0.212) y
+> este HEAD hay ~35 commits que este banner aun no resumia. Lo mas importante para el deploy: el **merge de
+> Folders v2** (modulo 2.15 Documentos, `ffd47588`) YA ESTA EN MAIN y trae **3 MIGRACIONES**:
+> `20261022105420_AddFoldersDocumentos`, `20261022170331_AddFolderChatIndexacion` y
+> **`20261023210234_DropExpedientesV1` (DESTRUCTIVA: elimina las tablas v1 de Expedientes)**. Aplicar con
+> `dotnet ef database update` (owner `propia`), en ese orden. El resto del rango (homogenizacion de
+> modales/fichas "la ficha abre en edicion", `ModalHeaderActions`, limpieza de modales huerfanos de
+> Mantenimiento, tipo "Modulo contributivo" en Unidades) es SOLO CODIGO. **Esas migraciones de Folders y su
+> ensayo las debe confirmar el responsable de ese epico** (ver `ESTADO 2026-10-22 Folders` y su doc per-deploy);
+> la sesion UI que bumpeo a 0.0.238 no las probo. La **API sigue en 0.0.212**; 0.0.238 es la version del Web
+> (la del pie de la app).
+>
 > **VERSION A DESPLEGAR = 0.0.212** (`main` HEAD `4a042760`, merge de CARGA 02 = la plantilla de carga sale en
 > el orden de columnas configurado de cada tabla). **SOLO CODIGO, SIN MIGRACION, SIN CONFIG.** Afecta solo la
 > generacion de la plantilla Excel (6 hojas): manda el `orden` guardado en `unidad_campos_config` por entidad;
@@ -68,6 +88,35 @@
 > Companion: `DEPLOY_CHECKLIST.md` (misma carpeta) con el detalle version por version.
 > Este archivo es el resumen operativo para la sesion de deploy. **Vive en el repo** (`deploy/`) y se
 > copia a la carpeta de trabajo; asi no se pierde.
+
+---
+
+## ESTADO 2026-10-26 Campos Funcion en el "+" (8 modulos) + indicadores de Unidades Privadas  [v0.0.238, SOLO CODIGO]
+
+**SIN MIGRACION, SIN CONFIG.** Tres commits en `main` (HEAD `d498d5e2`): `594819a6` (Funcion), `098bc64f`
+(indicadores), `d498d5e2` (bump 0.0.238).
+
+### 1) Campos Funcion/calculado ofrecidos en el "+" de los 8 modulos sin relaciones
+- `CrearCampoModal.razor` gana el parametro `OfreceFuncion` (default false). El tipo **Funcion/calculado**
+  aparece al CREAR si `(TiposAvanzados || OfreceFuncion) && !EsEdicion`. Usuario/Directorio (tipos de
+  RELACION) siguen gateados SOLO por `TiposAvanzados`, asi que esto NO expone relaciones donde no las habia.
+- Se puso `OfreceFuncion="true"` en el "+" de: Vehiculos, Mascotas, Zonas, Equipos, Residentes, Directorio,
+  Contratos (`Servicios.razor`) y Polizas (`Seguros.razor`). Antes, en esos 8 la unica via para crear un campo
+  Funcion era el gestor viejo `ConfigCamposEntidad`. Los 4 que ya la ofrecian (Unidades/PQRSD/Tareas/Usuarios)
+  no cambian. **El computo de la Funcion ya estaba soportado en backend** para todos; no hay cambio de API/BD.
+- Verificado runtime (copropiedad demo): el "+" ofrece "Funcion / calculado" y NO "Relacion" en Mascotas
+  (vinculado) y Polizas (no-vinculado); piloto Vehiculos con create + computo end-to-end.
+
+### 2) Indicadores en Unidades Privadas (`/distribucion`, `DistribucionPanel.razor`)
+- Tres tarjetas encima de la tabla, mismo patron visual que los KPIs de Usuarios (clases `.dst-kpi*`, tokens de
+  `propia-tokens.css` -> dark mode cubierto; fuente/tamano identicos validados por `getComputedStyle`):
+  **Unidades privadas** (`_unidades.Count`), **Apartamentos** (tipo base Apartamento, `tipo=1` sin tipo custom)
+  y **Suma de coeficientes** (`sum(CoeficientePropiedad)` de TODAS las unidades, sin filtrar, con sufijo `%`).
+- Verificado contra BD (tenant demo): 605 / 264 / 103.626% coinciden 1:1 con count/filter/sum sobre
+  `unidades_privadas`. Solo lectura; no toca endpoints ni esquema.
+
+**Deploy:** redeploy de `Propia.Web` normal (`dotnet publish`), sin pasos de BD para ESTA tanda. Las migraciones
+de Folders del rango 0.0.213-0.0.238 son aparte (ver banner arriba).
 
 ---
 
