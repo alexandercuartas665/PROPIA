@@ -16,14 +16,24 @@
     public enum Accion
     {
         Editar, Duplicar, InsertarIzq, InsertarDer,
-        OrdenarAsc, OrdenarDesc, Filtrar, Agrupar, Ocultar, Eliminar
+        OrdenarAsc, OrdenarDesc, Filtrar, Agrupar, Ocultar, Eliminar,
+        AgregarSuma, AgregarPromedio, AgregarMinimo, AgregarMaximo, AgregarConteo, AgregarNinguno
     }
 
     /// <summary>Columna sobre la que se abrio el menu (clave estable + etiqueta + si es dinamica/propia).</summary>
     public sealed record Ctx(string Key, string Label, bool EsDinamico);
 
+    /// <summary>Oferta de agregado en grupos de una columna: si es numerica (ofrece Suma/Promedio/Min/Max)
+    /// y el modo activo (0=sin total, 1=suma, 2=promedio, 3=contar, 4=minimo, 5=maximo).</summary>
+    public sealed record AggOferta(bool Numerica, int Modo);
+
     /// <summary>El modulo reacciona a la accion elegida sobre la columna.</summary>
     [Parameter] public EventCallback<(Accion Accion, Ctx Col)> OnAccion { get; set; }
+
+    /// <summary>Opt-in (solo modulos que lo pasan): dado el Key de la columna, devuelve null si NO ofrece
+    /// agregado en grupos; si no, la oferta (numerica + modo activo). El menu agrega los items de agregado
+    /// marcando con check el modo activo. "Contar" se ofrece siempre; Suma/Promedio/Min/Max solo si numerica.</summary>
+    [Parameter] public Func<string, AggOferta?>? ModoAgregado { get; set; }
 
     private bool _abierto;
     private double _x, _y;
@@ -51,6 +61,22 @@
         items.Add(new(Sep: true));
         items.Add(new("Filtrar por este campo", "fi-rr-filter", OnClick: () => Emit(Accion.Filtrar)));
         items.Add(new("Agrupar por este campo", "fi-rr-apps", OnClick: () => Emit(Accion.Agrupar)));
+        // Agregado en grupos (opt-in): solo modulos que pasan ModoAgregado. Contar aplica a cualquier
+        // columna; Suma/Promedio/Min/Max solo a numericas. El modo activo se marca con check.
+        var agg = ModoAgregado?.Invoke(col.Key);
+        if (agg is not null)
+        {
+            items.Add(new(Sep: true));
+            if (agg.Numerica)
+            {
+                items.Add(new("Sumar en los grupos", agg.Modo == 1 ? "fi-rr-check" : "fi-rr-calculator", OnClick: () => Emit(Accion.AgregarSuma)));
+                items.Add(new("Promediar en los grupos", agg.Modo == 2 ? "fi-rr-check" : "fi-rr-chart-histogram", OnClick: () => Emit(Accion.AgregarPromedio)));
+                items.Add(new("Minimo del grupo", agg.Modo == 4 ? "fi-rr-check" : "fi-rr-angle-small-down", OnClick: () => Emit(Accion.AgregarMinimo)));
+                items.Add(new("Maximo del grupo", agg.Modo == 5 ? "fi-rr-check" : "fi-rr-angle-small-up", OnClick: () => Emit(Accion.AgregarMaximo)));
+            }
+            items.Add(new("Contar (no vacios)", agg.Modo == 3 ? "fi-rr-check" : "fi-rr-apps-sort", OnClick: () => Emit(Accion.AgregarConteo)));
+            items.Add(new("Sin total en grupos", agg.Modo == 0 ? "fi-rr-check" : "fi-rr-ban", OnClick: () => Emit(Accion.AgregarNinguno)));
+        }
         items.Add(new(Sep: true));
         items.Add(new("Ocultar el campo", "fi-rr-eye-crossed", OnClick: () => Emit(Accion.Ocultar)));
         items.Add(new("Eliminar campo", "fi-rr-trash", Danger: true, OnClick: () => Emit(Accion.Eliminar)));

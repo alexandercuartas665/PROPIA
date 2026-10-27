@@ -261,7 +261,7 @@ else
         @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
            Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
            eliminar/ocultar abren ese gestor y el resto (orden/URL/agrupar) actua directo. *@
-        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaC" />
 
         @if (_editSisClave is not null)
         {
@@ -377,13 +377,39 @@ else
                             {
                                 @if (el.Grupo is { } g)
                                 {
+                                    var keysG = ColsVisibles().ToList();
+                                    var idxAggG = keysG.FindIndex(k => ModoActivoC(k) != "off");
                                     <tr class="tgrt-hd tgrt-l@(g.Nivel > 2 ? 2 : g.Nivel)">
-                                        <td colspan="@(ColsVisibles().Count() + 3)">
-                                            <span class="tgrt-lead" style="padding-left:@(14 + g.Nivel * 16)px;">
-                                                @if (g.Color is not null) { <span class="tgrt-dot" style="background:@g.Color"></span> }
-                                                <span class="tgrt-tit">@g.Titulo</span> <span class="tgrt-cnt">@g.Conteo</span>
-                                            </span>
-                                        </td>
+                                        @if (idxAggG < 0)
+                                        {
+                                            <td colspan="@(keysG.Count + 3)">
+                                                <span class="tgrt-lead" style="padding-left:@(14 + g.Nivel * 16)px;">
+                                                    @if (g.Color is not null) { <span class="tgrt-dot" style="background:@g.Color"></span> }
+                                                    <span class="tgrt-tit">@g.Titulo</span> <span class="tgrt-cnt">@g.Conteo</span>
+                                                </span>
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            var miembrosG = TodasFilasC(g);
+                                            <td colspan="@(2 + idxAggG)">
+                                                <span class="tgrt-lead" style="padding-left:@(14 + g.Nivel * 16)px;">
+                                                    @if (g.Color is not null) { <span class="tgrt-dot" style="background:@g.Color"></span> }
+                                                    <span class="tgrt-tit">@g.Titulo</span> <span class="tgrt-cnt">@g.Conteo</span>
+                                                </span>
+                                            </td>
+                                            @for (var ci = idxAggG; ci < keysG.Count; ci++)
+                                            {
+                                                var kG = keysG[ci];
+                                                if (ModoActivoC(kG) != "off")
+                                                {
+                                                    var (hayG, txtG, tagG) = AggCeldaC(miembrosG, kG);
+                                                    <td class="tgrt-agg">@if (hayG) { <span class="tgrt-aggv" title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="tgrt-aggtag">@tagG</span> }</span> }</td>
+                                                }
+                                                else { <td class="tgrt-agg"></td> }
+                                            }
+                                            <td class="ctr-w2"></td>
+                                        }
                                     </tr>
                                 }
                                 else
@@ -1724,6 +1750,103 @@ else
         if (campo == "vence") return c.FechaFin;
         return DateOnly.TryParse(ValorCampo(c, Guid.TryParse(campo, out var g) ? g : Guid.Empty), out var d) ? d : null;
     }
+
+    // ===== Agregado en grupos por columna (Suma/Promedio/Min/Max/Contar/Sin total), = Unidades =====
+    // Reusa ValorNumC (valor numerico) y ValorTextoC (para Contar no vacios). Default: Suma si numerica.
+    private readonly Dictionary<string, string> _aggC = new(StringComparer.Ordinal);
+    private const string AggKeyC = "propia_agregado_contratos";
+    private async Task FijarAggC(string key, string modo)
+    {
+        _aggC[key] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyC, string.Join(";", _aggC.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggC(string? s)
+    {
+        _aggC.Clear();
+        if (string.IsNullOrWhiteSpace(s)) return;
+        foreach (var par in s.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _aggC[par[..i]] = par[(i + 1)..]; }
+    }
+    private bool EsNumericaC(string key) => FiltroKindC(key) == "num";
+    private string ModoActivoC(string key) => _aggC.TryGetValue(key, out var m) ? m : (EsNumericaC(key) ? "suma" : "off");
+    private TablaColMenu.AggOferta? AggOfertaC(string key)
+    {
+        if (!ColsVisibles().Contains(key)) return null;
+        var code = ModoActivoC(key) switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+        return new TablaColMenu.AggOferta(EsNumericaC(key), code);
+    }
+    // Todas las filas bajo un nodo de grupo (hoja o rama), para el agregado multi-nivel.
+    private static IReadOnlyList<ContratoServicioDto> TodasFilasC(NodoGrupo<ContratoServicioDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<ContratoServicioDto>();
+        foreach (var sg in n.Subgrupos) acc.AddRange(TodasFilasC(sg));
+        return acc;
+    }
+    private (bool Hay, string Texto, string Tag) AggCeldaC(IReadOnlyList<ContratoServicioDto> miembros, string key)
+    {
+        var modo = ModoActivoC(key);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(c => !string.IsNullOrWhiteSpace(TextoAggC(c, key)));
+            return (true, n.ToString("N0"), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var c in miembros) if (ValorNumC(c, key) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (r, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumC(r, key), tag);
+    }
+    // Texto por columna SOLO para "Contar (no vacios)" en grupos. Dedicado al agregado (no lo usa el filtro),
+    // asi cubre TODAS las columnas de sistema por su campo real del DTO sin tocar ValorTextoC. Las columnas
+    // que siempre tienen dato (inicio, estado, dias) cuentan todas las filas; los si/no cuentan los "Si".
+    private string TextoAggC(ContratoServicioDto c, string key) => key switch
+    {
+        "tercero" => c.Proveedor ?? "",
+        "nit" => c.NitProveedor ?? "",
+        "numero" => c.NumeroContrato ?? "",
+        "tipocontrato" => c.TipoContrato ?? "",
+        "tipo" => TipoServTxt(c),
+        "categoria" => c.Categoria ?? "",
+        "asociado" => c.AsociadoNombre ?? "",
+        "inicio" => c.FechaInicio.ToString("yyyy-MM-dd"),
+        "fin" => c.FechaFin?.ToString("yyyy-MM-dd") ?? "",
+        "estado" => EstadoSemantic(c),
+        "valor" => c.ValorMensual?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        "valortotal" => c.ValorTotal?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        "formapago" => c.FormaPago ?? "",
+        "pagomensual" => c.PagoMensual ? "Si" : "",
+        "contacto" => c.Contacto ?? "",
+        "dias" => c.DiasAnticipacionAlerta.ToString(),
+        "obs" => c.Observaciones ?? "",
+        "renov" => c.RenovacionAutomatica ? "Si" : "",
+        "etapa" => c.EtapaId?.ToString() ?? "",
+        _ => ValorCampo(c, Guid.TryParse(key, out var g) ? g : Guid.Empty) ?? ""
+    };
+    private string FmtNumC(decimal v, string key)
+    {
+        var tipoDin = CampoDinC(key)?.Tipo;
+        if (key == "valor" || tipoDin == TipoCampoTablero.Moneda)
+            return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0");
+        var s = Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##");
+        return tipoDin == TipoCampoTablero.Porcentaje ? s + "%" : s;
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
     private bool EvalReglaC(ContratoServicioDto c, ReglaC r)
     {
         var kind = FiltroKindC(r.Campo);
@@ -2006,6 +2129,7 @@ else
             try
             {
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_view_contratos"); if (v == "tarjetas" || v == "tabla") _vistaC = v; } catch { }
+                try { CargarAggC(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyC)); } catch { }
                 var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
                 _authChecked = true;
                 if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
@@ -2272,6 +2396,12 @@ else
             case TablaColMenu.Accion.Filtrar:
                 ColToast("Usa el boton Filtros para filtrar por este campo.");
                 break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggC(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggC(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggC(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggC(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggC(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggC(col.Key, "off"); break;
             case TablaColMenu.Accion.Duplicar:
                 {
                     var campo = col.EsDinamico ? _cCampos.FirstOrDefault(x => x.Id.ToString() == col.Key) : null;

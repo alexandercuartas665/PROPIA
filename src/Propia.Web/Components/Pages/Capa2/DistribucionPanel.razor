@@ -206,7 +206,7 @@
 <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
 @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas. *@
-<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaCol" />
 @if (_colToast is not null)
 {
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -519,7 +519,31 @@ else
                     {
                         if (item.EsGrupo)
                         {
-                            <tr class="tgrt-hd tgrt-l@(item.Nivel > 2 ? 2 : item.Nivel)"><td colspan="@ColSpanTotal"><span class="tgrt-lead" style="padding-left:@(14 + item.Nivel * 16)px;"><span class="tgrt-tit">@item.GrupoTitulo</span> <span class="tgrt-cnt">@item.GrupoConteo</span></span></td></tr>
+                            @* Cabecera de grupo: titulo+conteo a la izquierda y, bajo cada columna con agregado
+                               activo, el total del grupo (Suma/Promedio/Min/Max/Contar, por columna desde su menu). *@
+                            var colsG = ColumnasVisibles.ToList();
+                            var idxAgg = colsG.FindIndex(c => ModoActivo(c) != "off");
+                            <tr class="tgrt-hd tgrt-l@(item.Nivel > 2 ? 2 : item.Nivel)">
+                                @if (idxAgg < 0)
+                                {
+                                    <td colspan="@ColSpanTotal"><span class="tgrt-lead" style="padding-left:@(14 + item.Nivel * 16)px;"><span class="tgrt-tit">@item.GrupoTitulo</span> <span class="tgrt-cnt">@item.GrupoConteo</span></span></td>
+                                }
+                                else
+                                {
+                                    <td colspan="@(2 + idxAgg)"><span class="tgrt-lead" style="padding-left:@(14 + item.Nivel * 16)px;"><span class="tgrt-tit">@item.GrupoTitulo</span> <span class="tgrt-cnt">@item.GrupoConteo</span></span></td>
+                                    @for (var ci = idxAgg; ci < colsG.Count; ci++)
+                                    {
+                                        var colG = colsG[ci];
+                                        if (ModoActivo(colG) != "off")
+                                        {
+                                            var (hayG, txtG, tagG) = AggCeldaGrupo(item.Miembros!, colG);
+                                            <td class="tgrt-agg">@if (hayG) { <span class="tgrt-aggv" title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="tgrt-aggtag">@tagG</span> }</span> }</td>
+                                        }
+                                        else { <td class="tgrt-agg"></td> }
+                                    }
+                                    <td class="tbl-addcol"></td>
+                                }
+                            </tr>
                             continue;
                         }
                         var uu = item.Unidad!;
@@ -1291,6 +1315,12 @@ else
                     await _fd.AgregarReglaCampo(col.Key);
                 else ColToast("Filtrar por este campo aun no esta disponible; usa el boton Filtros.");
                 break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggAsync(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggAsync(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggAsync(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggAsync(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggAsync(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggAsync(col.Key, "off"); break;
             default:
                 ColToast("En construcción: " + accion + ".");
                 break;
@@ -1455,6 +1485,112 @@ else
     private List<string> _gruposU = new();
     private const string GruposKey = "propia_agrupar_unidades";
 
+    // ===== Agregado en grupos por columna (Suma / Promedio / Minimo / Maximo / Contar / Sin total) =====
+    // _aggModo guarda el modo elegido por columna; ausencia = default (Suma si numerica, Sin total si no).
+    // Persistido por copropiedad/usuario en localStorage. Se aplica en la cabecera de cada grupo (vista Tabla).
+    private readonly Dictionary<string, string> _aggModo = new(StringComparer.Ordinal);
+    private const string AggKey = "propia_agregado_unidades";
+    private async Task FijarAggAsync(string clave, string modo)
+    {
+        _aggModo[clave] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKey, string.Join(";", _aggModo.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    // Modo activo de una columna (default: Suma si numerica, Sin total si no).
+    private string ModoActivo(ColItem it)
+        => _aggModo.TryGetValue(it.Key, out var m) ? m : (EsColNumerica(it) ? "suma" : "off");
+    // Oferta para el menu de columna: numerica (ofrece Suma/Promedio/Min/Max) + codigo del modo activo.
+    private TablaColMenu.AggOferta? AggOfertaCol(string clave)
+    {
+        var it = ColumnasVisibles.FirstOrDefault(x => x.Key == clave);
+        if (it is null) return null;
+        var code = ModoActivo(it) switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+        return new TablaColMenu.AggOferta(EsColNumerica(it), code);
+    }
+    // Columna numerica (ofrece Suma/Promedio/Min/Max): fija (coeficiente/area/cuota/piso/habitaciones/banos/
+    // parqueaderos + modulos contributivos) o campo propio numerico (Numero/Moneda/ModuloContributivo/Porcentaje).
+    private bool EsColNumerica(ColItem it)
+    {
+        if (it.EsCustom)
+            return it.Campo is { } c && c.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda
+                or TipoCampoTablero.ModuloContributivo or TipoCampoTablero.Porcentaje;
+        return it.Def!.Key switch
+        {
+            "coef" or "area" or "cuota" or "piso" or "habitaciones" or "banos" or "parqueaderos" => true,
+            { } k when ModContribNumero(k) is not null => true,
+            _ => false
+        };
+    }
+    // Valor numerico de una unidad para una columna (null si la celda esta vacia, para no sesgar el promedio).
+    private decimal? ValorNumU(UnidadDto u, ColItem it)
+    {
+        if (it.EsCustom)
+            return decimal.TryParse(ValorCampo(u.Id, it.Campo!.Id), System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+        return it.Def!.Key switch
+        {
+            "coef" => u.CoeficientePropiedad,
+            "area" => u.AreaM2,
+            "cuota" => u.CuotaMensual,
+            "piso" => u.Piso,
+            "habitaciones" => u.Habitaciones,
+            "banos" => u.Banos,
+            "parqueaderos" => u.Parqueaderos,
+            { } k when ModContribNumero(k) is { } n => ModContribValor(u, n),
+            _ => null
+        };
+    }
+    // Agregado del grupo para una columna segun su modo. Devuelve (hay valor, texto formateado, etiqueta).
+    // Contar = filas con valor no vacio (cualquier tipo); el resto operan sobre los valores numericos presentes.
+    private (bool Hay, string Texto, string Tag) AggCeldaGrupo(IReadOnlyList<UnidadDto> miembros, ColItem it)
+    {
+        var modo = ModoActivo(it);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(u => !string.IsNullOrWhiteSpace(SortStr(u, it.Key)));
+            return (true, n.ToString("N0"), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var u in miembros) if (ValorNumU(u, it) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (r, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumerico(r, it), tag);
+    }
+    // Tooltip de la celda de agregado segun la etiqueta del modo.
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios) del grupo",
+        _ => "Suma del grupo"
+    };
+    // Columna de porcentaje (se sufija con %): coeficiente y modulos contributivos fijos, o campo propio Porcentaje.
+    private bool EsPorcentajeCol(ColItem it)
+        => it.EsCustom ? it.Campo!.Tipo == TipoCampoTablero.Porcentaje
+            : (it.Def!.Key == "coef" || ModContribNumero(it.Def!.Key) is not null);
+    // Formato del agregado numerico respetando los decimales/miles configurados de la columna (cultura actual
+    // = es-CO, coma decimal y punto de miles, igual que el resto de la tabla y las tarjetas).
+    private string FmtNumerico(decimal v, ColItem it)
+    {
+        var tipo = it.EsCustom ? it.Campo!.Tipo : TipoSistema(it.Def!.Key);
+        var fmt = FormatoDe(it.Key);
+        var dec = Math.Clamp(fmt.Dec ?? (tipo == TipoCampoTablero.Moneda ? 0 : 2), 0, 6);
+        var r = Math.Round(v, dec, MidpointRounding.AwayFromZero);
+        var miles = fmt.Miles || tipo == TipoCampoTablero.Moneda;
+        var s = r.ToString((miles ? "N" : "F") + dec);
+        if (tipo == TipoCampoTablero.Moneda) return "$ " + s;
+        if (EsPorcentajeCol(it)) return s + "%";
+        return s;
+    }
+
     // Columnas por las que se puede agrupar: fijas relevantes + campos propios (dinamicos).
     // Agrupar ofrece los MISMOS campos que Ordenar/Columnas: todas las columnas visibles (fijas + dinamicas),
     // no un subconjunto curado (pedido de Alex: que en los 3 menus salgan todos los campos por igual).
@@ -1488,7 +1624,7 @@ else
 
     // Entrada a pintar (vista Lista + sel-all): cabecera de grupo (nivel/conteo) o unidad. La vista Tabla
     // usa el render compartido para los grupos; esta secuencia aplana el mismo arbol para Lista.
-    private readonly record struct FilaUni(bool EsGrupo, string? GrupoTitulo, int GrupoConteo, int Nivel, UnidadDto? Unidad, bool EsAnexo = false);
+    private readonly record struct FilaUni(bool EsGrupo, string? GrupoTitulo, int GrupoConteo, int Nivel, UnidadDto? Unidad, bool EsAnexo = false, IReadOnlyList<UnidadDto>? Miembros = null);
     private IEnumerable<FilaUni> FilasRender()
     {
         if (_gruposU.Count == 0)
@@ -1507,7 +1643,7 @@ else
     {
         foreach (var n in nodos)
         {
-            yield return new FilaUni(true, n.Titulo, n.Conteo, n.Nivel, null);
+            yield return new FilaUni(true, n.Titulo, n.Conteo, n.Nivel, null, false, TodasFilas(n));
             if (n.EsHoja)
             {
                 foreach (var u in n.Filas)
@@ -1520,6 +1656,16 @@ else
                 foreach (var f in AplanarArbol(n.Subgrupos)) yield return f;
             }
         }
+    }
+
+    // Todas las unidades bajo un nodo (hoja = sus filas; rama = todas las de sus subgrupos), para
+    // computar los agregados de la cabecera de grupo tambien en agrupaciones multi-nivel.
+    private static IReadOnlyList<UnidadDto> TodasFilas(NodoGrupo<UnidadDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<UnidadDto>();
+        foreach (var sg in n.Subgrupos) acc.AddRange(TodasFilas(sg));
+        return acc;
     }
 
     // Anexos: se ven y se gestionan desde la ficha de la unidad (modal GestionarUnidadesModal),
@@ -1782,6 +1928,16 @@ else
             var ag = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);
             if (!string.IsNullOrWhiteSpace(ag))
                 _gruposU = ag.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var av = await Js.InvokeAsync<string?>("localStorage.getItem", AggKey);
+            if (!string.IsNullOrWhiteSpace(av))
+            {
+                _aggModo.Clear();
+                foreach (var par in av.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var i = par.IndexOf('=');
+                    if (i > 0) _aggModo[par[..i]] = par[(i + 1)..];
+                }
+            }
         }
         catch { }
     }

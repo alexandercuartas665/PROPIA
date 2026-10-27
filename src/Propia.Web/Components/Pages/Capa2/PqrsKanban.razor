@@ -305,7 +305,7 @@
             @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
                Los campos se gestionan por el boton "Campos" (ConfigCamposEntidad), asi que editar/duplicar/
                eliminar/ocultar abren ese gestor con un aviso; orden, copiar URL y agrupar actuan directo. *@
-            <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+            <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaP" />
             @if (_colToast is not null)
             {
                 <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
@@ -378,7 +378,8 @@
                         {
                             <TablaGruposRenderTr T="PqrsdBandejaItemDto"
                                                  Nodos="TablaAgrupador.Agrupar(RaicesOrdenadasPqr(), _gruposPqr, ValorGrupoPqr)"
-                                                 FilaTemplate="FilaPqrTpl" />
+                                                 FilaTemplate="FilaPqrTpl"
+                                                 CabeceraTemplate="CabeceraGrupoPqrTpl" />
                         }
                         @* Alta inline retirada: en PQRSD la creacion es siempre por el boton "Radicar nueva PQRSD"
                            (proceso de radicacion legal via wizard), no por fila inline en la tabla. *@
@@ -1235,6 +1236,149 @@
         </td>
     </tr>;
 
+    // ===================== Totales por columna en grupos (Suma/Promedio/Min/Max/Contar) =====================
+    // Opt-in homogeneo con Unidades/Contratos/Tareas: la flecha de columna ofrece el modo (TablaColMenu
+    // ModoAgregado); cuando hay agrupacion, la cabecera de grupo (CabeceraGrupoPqrTpl) pinta el total por
+    // columna sobre TODAS las filas del grupo. Persistido por copropiedad en localStorage ("clave=modo;...").
+    private const string AggKeyP = "propia_agregado_pqrsd";
+    private readonly Dictionary<string, string> _aggP = new();
+    // Normaliza la clave de columna ("cd:{id}" -> "{id}") a la forma que usan ValorNum/ValorTexto/FiltroKind.
+    private static string NormCampoKey(string colKey) => colKey.StartsWith("cd:", StringComparison.Ordinal) ? colKey[3..] : colKey;
+    private PqrsdCampoDto? CampoDinCol(string colKey)
+        => colKey.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(colKey.AsSpan(3), out var g) ? _campos.FirstOrDefault(c => c.Id == g) : null;
+    // Numerica para Suma/Promedio/Min/Max: se apoya en la misma definicion que el filtro del modulo.
+    private bool EsNumericaCol(string colKey) => FiltroKind(NormCampoKey(colKey)) == "num";
+    // Modo activo de una columna: lo guardado, o por defecto Suma si es numerica / sin total si no.
+    private string ModoActivoP(string colKey)
+        => _aggP.TryGetValue(colKey, out var m) ? m : (EsNumericaCol(colKey) ? "suma" : "off");
+    private static int ModoCodigoP(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOfertaP(string colKey) => new(EsNumericaCol(colKey), ModoCodigoP(ModoActivoP(colKey)));
+    private async Task FijarAggP(string colKey, string modo)
+    {
+        _aggP[colKey] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKeyP, string.Join(";", _aggP.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAggP(string? raw)
+    {
+        _aggP.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var kv = par.Split('=', 2);
+            if (kv.Length == 2 && kv[0].Length > 0) _aggP[kv[0]] = kv[1];
+        }
+    }
+    // Todas las filas hoja bajo un nodo (para calcular el total del grupo abarcando sus subgrupos).
+    private static IReadOnlyList<PqrsdBandejaItemDto> TodasFilasP(NodoGrupo<PqrsdBandejaItemDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<PqrsdBandejaItemDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilasP(s));
+        return acc;
+    }
+    private string FmtNumP(decimal v, string colKey)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        if (CampoDinCol(colKey)?.Tipo == TipoCampoTablero.Moneda) return "$ " + v.ToString("N0", es);
+        if (colKey == "vence") return v.ToString("0.##", es) + " d";
+        return v.ToString("0.##", es);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Minimo del grupo",
+        "MAX" => "Maximo del grupo",
+        "CONT" => "Conteo (no vacios)",
+        _ => "Suma del grupo"
+    };
+    // Texto por columna SOLO para "Contar (no vacios)" en grupos. Dedicado al agregado (no lo usa el filtro):
+    // cubre "asunto" y "vence", que ValorTexto no mapea por clave de columna. "vence" siempre tiene dato.
+    private string TextoAggP(PqrsdBandejaItemDto it, string colKey) => colKey switch
+    {
+        "radicado" => it.NumeroRadicado ?? "",
+        "asunto" => it.DescripcionResumen ?? "",
+        "tipo" => it.Tipo.ToString(),
+        "categoria" => it.CategoriaNombre ?? "",
+        "estado" => it.EstadoId?.ToString() ?? "",
+        "semaforo" => it.Semaforo.ToString(),
+        "radicador" => it.RadicadorNombre ?? "",
+        "unidad" => it.UnidadNumero ?? "",
+        "vence" => it.DiasHastaVencimiento.ToString(),
+        _ => it.Campos?.FirstOrDefault(v => v.CampoId == GuidDe(NormCampoKey(colKey)))?.Valor ?? ""
+    };
+    private (bool Hay, string Texto, string Tag) AggCeldaP(IReadOnlyList<PqrsdBandejaItemDto> miembros, string colKey)
+    {
+        var modo = ModoActivoP(colKey);
+        if (modo == "off") return (false, "", "");
+        var campo = NormCampoKey(colKey);
+        if (modo == "cont")
+        {
+            var n = miembros.Count(m => !string.IsNullOrWhiteSpace(TextoAggP(m, colKey)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = miembros.Select(m => ValorNum(m, campo)).Where(v => v is not null).Select(v => v!.Value).ToList();
+        if (vals.Count == 0) return (false, "", "");
+        decimal r; string tag;
+        switch (modo)
+        {
+            case "prom": r = vals.Average(); tag = "PROM"; break;
+            case "min": r = vals.Min(); tag = "MIN"; break;
+            case "max": r = vals.Max(); tag = "MAX"; break;
+            default: r = vals.Sum(); tag = ""; break;
+        }
+        return (true, FmtNumP(r, colKey), tag);
+    }
+    // Cabecera de grupo con totales por columna (la aporta este modulo; TablaGruposRenderTr la invoca). El
+    // layout calca la fila hoja: sel (38) + exp (34) + columnas visibles + 1 col de acciones = cols+3.
+    private RenderFragment<NodoGrupo<PqrsdBandejaItemDto>> CabeceraGrupoPqrTpl => nodo =>
+    @<tr class="tgrt-hd tgrt-l@(nodo.Nivel > 2 ? 2 : nodo.Nivel)">
+        @{
+            var colsG = ColumnasVisibles.ToList();
+            var idxAgg = colsG.FindIndex(c => ModoActivoP(c.Key) != "off");
+        }
+        @if (idxAgg < 0)
+        {
+            <td colspan="@(colsG.Count + 3)">
+                <span class="tgrt-lead" style="padding-left:@(14 + nodo.Nivel * 16)px;">
+                    @if (nodo.Color is not null) { <span class="tgrt-dot" style="background:@nodo.Color"></span> }
+                    <span class="tgrt-tit">@nodo.Titulo</span>
+                    <span class="tgrt-cnt">@nodo.Conteo</span>
+                </span>
+            </td>
+        }
+        else
+        {
+            var miembros = TodasFilasP(nodo);
+            <td colspan="@(2 + idxAgg)">
+                <span class="tgrt-lead" style="padding-left:@(14 + nodo.Nivel * 16)px;">
+                    @if (nodo.Color is not null) { <span class="tgrt-dot" style="background:@nodo.Color"></span> }
+                    <span class="tgrt-tit">@nodo.Titulo</span>
+                    <span class="tgrt-cnt">@nodo.Conteo</span>
+                </span>
+            </td>
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var colG = colsG[ci];
+                @if (ModoActivoP(colG.Key) != "off")
+                {
+                    var (hayG, txtG, tagG) = AggCeldaP(miembros, colG.Key);
+                    <td class="tgrt-agg">
+                        @if (hayG)
+                        {
+                            <span class="tgrt-aggv" title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="tgrt-aggtag">@tagG</span> }</span>
+                        }
+                    </td>
+                }
+                else
+                {
+                    <td class="tgrt-agg"></td>
+                }
+            }
+            <td class="pk-td-actions"></td>
+        }
+    </tr>;
+
     // ===================== Ordenamiento (vista Tabla) =====================
     // Orden multi-criterio apilable (boton "Ordenar", canonico de la tabla de ejemplo). El clic en la
     // cabecera es el caso de un solo criterio, sincronizado con esta misma lista (reclic invierte).
@@ -1360,6 +1504,12 @@
             case TablaColMenu.Accion.Filtrar:
                 ColToast("Usa el boton Filtros para filtrar por este campo.");
                 break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAggP(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAggP(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAggP(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAggP(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAggP(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAggP(col.Key, "off"); break;
             case TablaColMenu.Accion.Duplicar:
                 {
                     var campo = col.EsDinamico && col.Key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(col.Key[3..], out var _cid) ? _campos.FirstOrDefault(x => x.Id == _cid) : null;
@@ -1750,6 +1900,7 @@
         {
             _boardMode = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_view") ?? "tabla";
             _gruposPqr = ParseGruposPqr(await Js.InvokeAsync<string?>("localStorage.getItem", "propia_pqrs_group"));
+            CargarAggP(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyP));
             await RestaurarFiltrosAsync();
         }
         catch { }

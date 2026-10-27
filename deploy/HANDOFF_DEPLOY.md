@@ -1,6 +1,18 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.239 (Web)** (`main` HEAD `1b63c211`, 2026-10-26). **MI TANDA (sesion UI) ES
+> **VERSION A DESPLEGAR = 0.0.240 (Web)** (base `main` HEAD `e2973c0b` = 0.0.239, 2026-10-27). **SOLO
+> CODIGO, SIN MIGRACION, SIN CONFIG, SIN PAQUETES NUEVOS.** API sin cambios (sigue 0.0.212). Tanda de
+> vista-tabla: (1) **decimales hasta 6** (antes 4) en el formato numerico de campos, en TODOS los modulos
+> (CrearCampoModal/EditarCampoSistemaModal/ConfigCamposEntidad); (2) **totales por columna en grupos**
+> (Suma/Promedio/Minimo/Maximo/Contar), opt-in desde la flecha de columna, persistido por modulo en
+> localStorage (clave `propia_agregado_<modulo>`), rollout Unidades (piloto, +Contar/Min/Max) + **Ola 1
+> Contratos y PQRSD** (Tareas ya lo tenia); componentes compartidos nuevos: `TablaColMenu.ModoAgregado`
+> + `AggOferta`, `TablaGruposRenderTr.CabeceraTemplate` (opcional, retrocompatible); (3) **fix** de la
+> franja del total de grupo que se cortaba en el primer total (ahora cubre toda la fila). **Bump
+> `tabla-grupos.css?v=3`** en `App.razor`. Toda la persistencia es cliente (localStorage); nada toca BD.
+> Verificado en runtime (demo). Detalle en `deploy/DEPLOY_HANDOFF_2026-10-27_v0.0.240.md`.
+>
+> **VERSION PREVIA = 0.0.239 (Web)** (`main` HEAD `1b63c211`, 2026-10-26). **MI TANDA (sesion UI) ES
 > SOLO CODIGO, SIN MIGRACION NI CONFIG:** (1) campos **Funcion/calculado** ahora ofrecidos en el "+" de los 8
 > modulos que no exponen relaciones (Vehiculos, Mascotas, Zonas, Equipos, Residentes, Directorio, Contratos,
 > Polizas) via el nuevo parametro `OfreceFuncion` de `CrearCampoModal` (el computo ya estaba en backend);
