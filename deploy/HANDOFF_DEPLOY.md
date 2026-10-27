@@ -1,11 +1,13 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.238 (Web)** (`main` HEAD `d498d5e2`, 2026-10-26). **MI TANDA (sesion UI) ES
+> **VERSION A DESPLEGAR = 0.0.239 (Web)** (`main` HEAD `1b63c211`, 2026-10-26). **MI TANDA (sesion UI) ES
 > SOLO CODIGO, SIN MIGRACION NI CONFIG:** (1) campos **Funcion/calculado** ahora ofrecidos en el "+" de los 8
 > modulos que no exponen relaciones (Vehiculos, Mascotas, Zonas, Equipos, Residentes, Directorio, Contratos,
 > Polizas) via el nuevo parametro `OfreceFuncion` de `CrearCampoModal` (el computo ya estaba en backend);
 > (2) tres **indicadores** en Unidades Privadas (`/distribucion`): total de unidades, apartamentos y suma de
-> coeficientes (con `%`), mismo patron visual que los KPIs de Usuarios. Verificado en runtime + BD. Detalle en
+> coeficientes (con `%`), mismo patron visual que los KPIs de Usuarios; (3) **Equipos (tabla): alineacion
+> header/filas** (se quito `min-width:max-content`, pisos px + recorte de celdas) que corregia el valor que se
+> iba a la derecha del "+"; (4) **logo del sidebar** a 68px/max-80px. Verificado en runtime + BD. Detalle en
 > **ESTADO 2026-10-26** mas abajo.
 >
 > **CRITICO - el deploy de `main` HEAD NO es solo mi tanda:** entre la version antes documentada (0.0.212) y
@@ -91,10 +93,10 @@
 
 ---
 
-## ESTADO 2026-10-26 Campos Funcion en el "+" (8 modulos) + indicadores de Unidades Privadas  [v0.0.238, SOLO CODIGO]
+## ESTADO 2026-10-26 Funcion en el "+" + indicadores Unidades + alineacion Equipos + logo  [v0.0.239, SOLO CODIGO]
 
-**SIN MIGRACION, SIN CONFIG.** Tres commits en `main` (HEAD `d498d5e2`): `594819a6` (Funcion), `098bc64f`
-(indicadores), `d498d5e2` (bump 0.0.238).
+**SIN MIGRACION, SIN CONFIG.** Commits en `main` (HEAD `1b63c211`): `594819a6` (Funcion), `098bc64f`
+(indicadores), `d498d5e2` (bump 0.0.238), `80a4c601` (alineacion Equipos), `1b63c211` (logo + bump 0.0.239).
 
 ### 1) Campos Funcion/calculado ofrecidos en el "+" de los 8 modulos sin relaciones
 - `CrearCampoModal.razor` gana el parametro `OfreceFuncion` (default false). El tipo **Funcion/calculado**
@@ -114,6 +116,22 @@
   y **Suma de coeficientes** (`sum(CoeficientePropiedad)` de TODAS las unidades, sin filtrar, con sufijo `%`).
 - Verificado contra BD (tenant demo): 605 / 264 / 103.626% coinciden 1:1 con count/filter/sum sobre
   `unidades_privadas`. Solo lectura; no toca endpoints ni esquema.
+
+### 3) Equipos (tabla): alineacion header vs filas (`EquiposActivosPanel.razor`, solo CSS)
+- Bug: con un campo presente (p.ej. el campo Funcion `ValorTotalAdq`), su valor se pintaba a la DERECHA del
+  "+", bajo ningun titulo. Causa: `.ea-listgrid { min-width: max-content }` se evalua por elemento; el header
+  (labels cortos) quedaba mas angosto que las filas (infladas por `<select>` con texto largo), y las pistas
+  `fr` se resolvian distinto -> celdas del cuerpo corridas.
+- Fix: se quita `min-width:max-content`; cada pista flexible lleva piso en px (`minmax` en `ColWidth` y en el
+  fallback de `.ea-listgrid`) y las celdas recortan (`.ea-cell`/`.ea-th-dyn` con `min-width:0` + `overflow:hidden`
+  + ellipsis). Header y filas quedan al mismo ancho; scroll horizontal cuando no caben. Verificado: ambos a
+  1012px, celda VALORTOTALADQ del header coincide 1:1 con las filas. **Solo Equipos** (no se tocaron los demas
+  `*-listgrid`).
+
+### 4) Logo del sidebar (`NavMenu.razor`, solo CSS)
+- `.pnav-logo`: de 46px/max-170px a **68px/max-80px** (`object-fit:contain`, `display:block`). Cabe en
+  `.pnav-brand` (74px) sin recorte. Verificado render 68x68, maxWidth 80px. El override de sidebar mini
+  (30px/60px) no cambia.
 
 **Deploy:** redeploy de `Propia.Web` normal (`dotnet publish`), sin pasos de BD para ESTA tanda. Las migraciones
 de Folders del rango 0.0.213-0.0.238 son aparte (ver banner arriba).
