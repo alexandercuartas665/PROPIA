@@ -10,6 +10,8 @@
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 @if (_cargando)
 {
@@ -483,6 +485,13 @@ else if (_tab == "acceso")
     protected override async Task OnInitializedAsync()
     {
         _idx = ListaPersonaIds?.IndexOf(PersonaId) ?? -1;
+        await CargarAsync();
+    }
+
+    // Carga la ficha; ante un 401 (JWT snapshot vencido) refresca la sesion (sliding) y reintenta una
+    // vez, igual que las paginas (SessionHelper). Evita mostrar el "401 crudo" si el token ya expiro.
+    private async Task CargarAsync(bool reintento = false)
+    {
         try
         {
             var dto = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{PersonaId}");
@@ -498,6 +507,12 @@ else if (_tab == "acceso")
             await CargarRolesAsync();
             await CargarComentariosAsync();
             IniciarEdicion();   // abre directo en edicion (canon Unidades); ↩ Cancelar vuelve a vista
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
+            // null => SessionHelper limpio la sesion y redirige a /login.
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _cargando = false; }

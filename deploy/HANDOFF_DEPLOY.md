@@ -1,6 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.248 (Web)** (sigue a 0.0.247, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.249 (Web)** (sigue a 0.0.248, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Fix: los modales de ficha de Terceros y Residentes ya recuperan la
+> sesion ante un 401 (token vencido), en vez de mostrar "Response status code does not indicate success: 401".**
+> Causa: el JWT dura 8h; cuando vence, los modales usaban el `Jwt` snapshot y mostraban el 401 crudo (las
+> paginas si refrescan). Fix: `FichaTerceroModal` y `FichaResidenteModal` ahora, ante un 401 en la carga,
+> llaman `SessionHelper.HandleUnauthorizedAsync` (refresh sliding `/connect/refresh` o redireccion a /login),
+> actualizan el `Jwt` y reintentan una vez -- mismo patron que `DirectorioPanel`. Inyectan `IJSRuntime` +
+> `NavigationManager`; la carga se extrajo a `CargarAsync(reintento)`. Sin backend ni BD. Verificado E2E en
+> runtime bajando el token a 2 min: el modal de Terceros dio **401 -> refresh -> 200** (log del API) y cargo
+> los datos en vez del error; sin regresion con token valido (Terceros y Residentes cargan normal). **PENDIENTE
+> (no incluido):** el mismo fix falta en los otros ~18 modales de ficha con `Jwt` snapshot (mismo bug latente);
+> rollout en una ola aparte. Rollback = redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.248 (Web)** (sigue a 0.0.247, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Ficha de Residentes reorganizada en 4 pestanas (canon Terceros):
 > Perfil / Documentos / Comentarios / Acceso.** En `FichaResidenteModal` el tab unico "Ficha del residente"
 > (que amontonaba datos + comentarios + un bloque "Acceso al sistema" en un solo scroll) se partio: el tab
