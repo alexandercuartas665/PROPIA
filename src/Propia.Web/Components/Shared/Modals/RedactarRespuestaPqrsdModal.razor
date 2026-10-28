@@ -471,9 +471,15 @@
         });
     }
 
-    private async Task CargarPlantillasAsync()
+    private async Task CargarPlantillasAsync(bool reintento = false)
     {
         try { _plantillas = (await Auth().GetFromJsonAsync<List<PqrsdPlantillaDto>>("/api/pqrsd/plantillas")) ?? new(); }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarPlantillasAsync(reintento: true); return; }
+            _plantillas = new();
+        }
         catch { _plantillas = new(); }
     }
 

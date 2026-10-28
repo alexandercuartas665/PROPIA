@@ -5,6 +5,7 @@
 @using Propia.Shared.Auth
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 @* Reporte "Contratos proximos a vencer" (2.16). Multi-copropiedad: pildoras para elegir las
    copropiedades del usuario, graficos (dona de semaforo + barras por copropiedad), tabla y
@@ -286,12 +287,22 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await InicializarAsync();
+    }
+
+    private async Task InicializarAsync(bool reintento = false)
+    {
         try
         {
             var me = await Auth().GetFromJsonAsync<MeResponseDto>("/connect/me");
             _copros = me?.AvailableTenants?.ToList() ?? new();
             foreach (var t in _copros) _sel.Add(t.TenantId);
             await CargarAsync();
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await InicializarAsync(reintento: true); return; }
         }
         catch (Exception ex) { _error = "No se pudo cargar las copropiedades: " + ex.Message; }
     }

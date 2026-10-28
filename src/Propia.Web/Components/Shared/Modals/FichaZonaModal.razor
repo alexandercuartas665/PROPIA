@@ -11,6 +11,8 @@
 @using Propia.Web.Components.Shared
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 @if (_ficha is null)
 {
@@ -476,7 +478,7 @@ else if (_tab == "historial")
         return http;
     }
 
-    private async Task CargarAsync()
+    private async Task CargarAsync(bool reintento = false)
     {
         if (Zona is null) return;
         try
@@ -493,6 +495,11 @@ else if (_tab == "historial")
                 _aforo = _ficha.Zona.CapacidadPersonas;
                 _condiciones = _ficha.Zona.ReglasUso;
             }
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
         }
         catch (Exception ex) { _msg = ex.Message; }
     }

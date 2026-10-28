@@ -14,6 +14,7 @@
 
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 
 @* La cabecera del modal es la propia ficha (.cpe-head): identidad de la unidad + acciones + cerrar.
    La maqueta editor-ficha no lleva una barra "Gestionar unidades" separada encima. *@
@@ -615,7 +616,7 @@
         return http;
     }
 
-    private async Task CargarAsync()
+    private async Task CargarAsync(bool reintento = false)
     {
         try
         {
@@ -624,6 +625,11 @@
             try { _tiposCustom = await http.GetFromJsonAsync<List<TipoUnidadCustomDto>>("/api/mi-copropiedad/tipos-unidad") ?? new(); } catch { _tiposCustom = new(); }
             try { _camposConfig = (await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config") ?? new()).ToDictionary(c => c.CampoClave); } catch { _camposConfig = new(); }
             AplicarOrdenTiposCustom();   // mismo orden de tipos propios que en la tabla (config del campo 'tipo')
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
         }
         catch (Exception ex) { ShowMsg(ex.Message, true); }
     }

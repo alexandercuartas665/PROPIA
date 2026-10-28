@@ -1,6 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.249 (Web)** (sigue a 0.0.248, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.250 (Web)** (sigue a 0.0.249, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Rollout del fix de "recuperar sesion ante 401 (token vencido)" al
+> resto de los modales de ficha** (la 0.0.249 ya lo hizo en Terceros+Residentes). Mismo patron: ante un 401
+> en la carga, `SessionHelper.HandleUnauthorizedAsync` (refresh sliding o /login), actualizar `Jwt` y reintentar
+> una vez. **15 modales ahora cubiertos** (los 2 previos + 13 nuevos): FichaEquipo, FichaZona, FichaEmpresa,
+> GestionarUnidades, GestionarFinanzas, GestionarEquipo, GestionarPqrsd, NuevaPqrsdWizard, NuevaTarea,
+> ReporteContratosPorVencer, y GestionarGobierno/GestionarServicios/GestionarPlantillasPqrsd/RedactarRespuestaPqrsd/
+> BitacoraCambios (estos 5 tragaban el 401 en un `catch` sordo -> ahora interceptan el 401 antes de dejar la
+> lista vacia). **3 modales NO necesitaban el fix** (no cargan datos autenticados al abrir): GestionarZonas,
+> GestionarEquiposActivos, EditarIdentidad. Cada cambio es aditivo (inyectar IJSRuntime/NavigationManager si
+> faltaban + extraer/parametrizar el metodo de carga con `reintento` + una clausula catch). Sin backend ni BD;
+> `<style>`/config sin cambios. Verificado: build 0 errores, sin warnings nuevos; GestionarGobierno carga
+> normal en runtime; el patron ya fue probado E2E en Terceros (0.0.249). Rollback = redeploy del artefacto
+> previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.249 (Web)** (sigue a 0.0.248, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Fix: los modales de ficha de Terceros y Residentes ya recuperan la
 > sesion ante un 401 (token vencido), en vez de mostrar "Response status code does not indicate success: 401".**
 > Causa: el JWT dura 8h; cuando vence, los modales usaban el `Jwt` snapshot y mostraban el 401 crudo (las

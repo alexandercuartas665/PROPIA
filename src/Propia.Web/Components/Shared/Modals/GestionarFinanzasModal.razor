@@ -9,6 +9,8 @@
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 <div class="gfin-header">
     <div class="gfin-header-icon">
@@ -386,7 +388,7 @@
         return http;
     }
 
-    private async Task CargarTodoAsync()
+    private async Task CargarTodoAsync(bool reintento = false)
     {
         try
         {
@@ -407,6 +409,11 @@
             _cuentas = await http.GetFromJsonAsync<List<CuentaBancariaDto>>("/api/mi-copropiedad/finanzas/cuentas-bancarias") ?? new();
             _config = await http.GetFromJsonAsync<ConfiguracionFinanzasDto>("/api/mi-copropiedad/finanzas/configuracion");
             if (_config is not null) _configForm = ConfigForm.From(_config);
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarTodoAsync(reintento: true); return; }
         }
         catch (Exception ex) { Toast(ex.Message, true); }
     }

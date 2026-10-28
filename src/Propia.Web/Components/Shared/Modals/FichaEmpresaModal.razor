@@ -7,6 +7,8 @@
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 @if (_cargando)
 {
@@ -184,6 +186,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync(bool reintento = false)
+    {
         try
         {
             var dto = await Auth().GetFromJsonAsync<Empresa360Dto>($"/api/directorio/empresas/{EmpresaId}");
@@ -199,6 +206,11 @@ else
                 _representanteLegalPersonaId = e.RepresentanteLegalPersonaId;
             }
             await CargarAdjuntosAsync();
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _cargando = false; }

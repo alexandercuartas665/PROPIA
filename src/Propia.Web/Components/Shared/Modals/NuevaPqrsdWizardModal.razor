@@ -9,6 +9,8 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inherits ModalBase<bool>
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 <div class="npq">
     <div class="npq-head">
@@ -306,6 +308,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync(bool reintento = false)
+    {
         try
         {
             var http = Auth();
@@ -315,6 +322,11 @@
             _unidades = (await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades")) ?? new();
             foreach (var c in _campos.Where(c => !string.IsNullOrEmpty(c.ValorPorDefecto)))
                 _campoValores[c.Id] = c.ValorPorDefecto!;
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
         }
         catch (Exception ex) { _msg = "No se pudo cargar el catalogo: " + ex.Message; _msgError = true; }
     }

@@ -8,6 +8,8 @@
 @using Propia.Domain.Enums
 
 @inject IHttpClientFactory HttpFactory
+@inject Microsoft.JSInterop.IJSRuntime Js
+@inject NavigationManager Nav
 
 @* ====== HEADER ====== *@
 <div class="gsv-header">
@@ -305,9 +307,15 @@
         return http;
     }
 
-    private async Task CargarAsync()
+    private async Task CargarAsync(bool reintento = false)
     {
         try { _contratos = await Auth().GetFromJsonAsync<List<ContratoServicioDto>>("/api/mi-copropiedad/contratos") ?? new(); }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); return; }
+            _contratos = new();
+        }
         catch { _contratos = new(); }
     }
 
