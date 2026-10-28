@@ -1,6 +1,17 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.246 (Web)** (sigue a 0.0.245, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.247 (Web)** (sigue a 0.0.246, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Documentos de Residentes AHORA en una pestana propia** (canon
+> Zonas/Unidades). En `FichaResidenteModal` los documentos ya no son una seccion inline del scroll de la ficha:
+> se agrego una barra de pestanas (`.fr-tabs`, mismos valores que `.fz-tabs` de Zonas) con **"Ficha del
+> residente"** y **"Documentos (N)"** (contador). La pestana Documentos usa `<DocumentosPanel Fill="true">`
+> (ocupa todo el alto del modal, como la pestana Documentos de Zonas). El lapiz/eliminar del header quedan
+> gateados a la pestana Ficha. Mismo backend de adjuntos de Directorio (sin cambios de API ni BD); `<style>`
+> inline (no toca CSS module ni `?v=`). Verificado en runtime (demo, residente Mariano): dos pestanas, panel
+> Fill a alto completo, subida (por API) + render en visor, borrado por la X con contador 1->0. Rollback =
+> redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.246 (Web)** (sigue a 0.0.245, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Pestana "Documentos" homogenea tambien en Residentes**
 > (`FichaResidenteModal`): la seccion "DOCUMENTOS (CEDULA, RUT, ETC.)" pasa de una lista simple al mismo canon
 > compartido `DocumentosPanel` (miniaturas + visor inline con lightbox / iframe PDF, subida multiple). Reutiliza

@@ -38,8 +38,8 @@ else
         <div class="pm-head-s">@SubtituloRelacion</div>
     </div>
     <div class="pm-head-acts">
-        <ModalHeaderActions EnEdicion="_editMode" MostrarEditar="true"
-                            MostrarEliminar="@(UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
+        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
+                            MostrarEliminar="@(_tab == "ficha" && UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
                             Guardando="_guardando" TituloEditar="Editar" TituloGuardar="Guardar cambios"
                             TituloEliminar="Quitar de la unidad"
                             OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarAsync"
@@ -47,6 +47,14 @@ else
     </div>
 </div>
 
+@* Pestanas (canon Zonas/Unidades): la ficha y la gestion de documentos en tabs. *@
+<div class="fr-tabs">
+    <button class="fr-tab @(_tab == "ficha" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del residente</button>
+    <button class="fr-tab @(_tab == "documentos" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_adjuntos.Count > 0 ? $" ({_adjuntos.Count})" : "")</button>
+</div>
+
+@if (_tab == "ficha")
+{
 <div class="pm-body">
     <div class="fr-body">
         @* ---------- Columna izquierda: foto + chips ---------- *@
@@ -117,11 +125,6 @@ else
                     <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@UnidadCodigo" />
                 </div>
             </div>
-
-            <div class="fr-sectlbl fr-sectlbl--sep">DOCUMENTOS (CEDULA, RUT, ETC.)</div>
-            <DocumentosPanel Documentos="@DocItems()" Subiendo="_subiendoDoc" Padding="0"
-                             EmptyHint="Sube la cedula, el RUT u otros documentos de identidad con el boton Subir archivo."
-                             OnSubir="SubirDocumento" OnEliminar="EliminarAdjunto" />
 
             @* ===== Comentarios (panel estandar de la ficha) ===== *@
             <div class="fr-sectlbl fr-sectlbl--sep">COMENTARIOS</div>
@@ -200,6 +203,21 @@ else
         <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
     }
 </div>
+}
+else if (_tab == "documentos")
+{
+    @* Canon de documentos compartido (miniaturas + visor inline + lightbox). Fill="true": ocupa el
+       alto del contenedor flex del modal, igual que la pestana Documentos de Zonas. *@
+    <DocumentosPanel Fill="true"
+                     Documentos="@DocItems()"
+                     Subiendo="_subiendoDoc"
+                     EmptyHint="Sube la cedula, el RUT u otros documentos de identidad con el boton Subir archivo."
+                     OnSubir="SubirDocumento" OnEliminar="EliminarAdjunto" />
+    @if (!string.IsNullOrWhiteSpace(_msg))
+    {
+        <div class="fr-msg @(_msgError ? "err" : "ok")" style="margin:0 22px 14px">@_msg</div>
+    }
+}
 
 @* Confirmacion de "Quitar de la unidad" (type-to-confirm, patron compartido mha-cdel-*). *@
 @if (_confirmDel)
@@ -242,7 +260,12 @@ else
     .fr-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; }
 
     /* ===== Cabecera Vista Ficha (calca maqueta .pm-*) ===== */
-    .pm-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .pm-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
+
+    /* Pestanas (mismos valores que .fz-tabs de Zonas / .fem-tabs de Equipos). */
+    .fr-tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
+    .fr-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: var(--propia-text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
+    .fr-tab--on { color: var(--propia-brand); border-bottom-color: var(--propia-brand); }
     .pm-head-ic { width: 40px; height: 40px; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .pm-head-tt { flex: 1; min-width: 0; }
     .pm-head-h-edit { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 4px 8px; font-size: 16px; font-weight: 800; color: var(--propia-text-h1); font-family: inherit; line-height: normal; }
@@ -337,6 +360,8 @@ else
     @@media (max-width: 640px) {
         .fr-body { grid-template-columns: 1fr; }
         .fr-grid { grid-template-columns: 1fr; }
+        .fr-tabs { padding: 0 8px; overflow-x: auto; }
+        .fr-tab { flex: 0 0 auto; white-space: nowrap; padding: 11px 13px; }
         /* Cabecera en celular: titulo + subtitulo en su propia fila (ancho completo, sin cortarse);
            nav + icono a la izquierda y acciones a la derecha en la fila superior. */
         .pm-head { flex-wrap: wrap; row-gap: 4px; padding: 12px 14px; }
@@ -363,6 +388,7 @@ else
     public record Resultado(bool Cambio, Guid? IrA);
 
     private bool _cargando = true;
+    private string _tab = "ficha";   // pestanas: "ficha" | "documentos" (canon Zonas/Unidades)
     private bool _editMode;
     private bool _confirmDel;
     private string _confirmText = "";
