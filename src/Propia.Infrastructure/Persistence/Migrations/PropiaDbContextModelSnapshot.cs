@@ -5887,6 +5887,57 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("equipo_contrato_vinculos");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.EquipoDocumento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EquipoActivoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("equipo_activo_id");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EquipoActivoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("equipo_documentos");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.EquipoFoto", b =>
                 {
                     b.Property<Guid>("Id")
@@ -21442,6 +21493,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Definicion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.EquipoDocumento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.EquipoActivo", "Equipo")
+                        .WithMany()
+                        .HasForeignKey("EquipoActivoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Equipo");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Factura", b =>

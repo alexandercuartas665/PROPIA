@@ -50,6 +50,7 @@ else
     <div class="fem-tabs">
         @* El lapiz del header alterna la pestana Ficha entre vista y edicion (canon). *@
         <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del activo</button>
+        <button class="fem-tab @(_tab == "documentos" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_ficha.Documentos.Count > 0 ? $" ({_ficha.Documentos.Count})" : "")</button>
         <button class="fem-tab @(_tab == "historial" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
     </div>
 
@@ -402,6 +403,18 @@ else
             </div>
         </div>
     }
+    else if (_tab == "documentos")
+    {
+        @* Canon de documentos compartido (miniaturas + visor inline), igual que zonas comunes y unidades. *@
+        <div class="fem-body">
+            <DocumentosPanel Documentos="@DocItems()"
+                             Subiendo="_subiendoDoc"
+                             Padding="0"
+                             EmptyHint="Sube imagenes o documentos del activo con el boton Subir archivo."
+                             OnSubir="SubirAdjuntos"
+                             OnEliminar="EliminarDocumento" />
+        </div>
+    }
     else if (_tab == "historial")
     {
         <div class="fem-body">
@@ -656,6 +669,7 @@ else
     private bool _msgError;
     private EquipoFichaDto? _ficha;
     private string? _verImagen;   // url mostrada en el lightbox (null = cerrado)
+    private bool _subiendoDoc;    // subida en curso en la pestana Documentos
     private DisponibilidadHorariosEditor? _editor;
     private List<VentanaDisponibilidadDto>? _ventanasIniciales;
 
@@ -710,6 +724,40 @@ else
         if (!string.IsNullOrEmpty(Jwt))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
         return http;
+    }
+
+    // ----- Pestana Documentos: proyeccion + subir/eliminar (reusa el panel compartido y los endpoints del equipo). -----
+    private List<DocumentosPanel.Item> DocItems() =>
+        _ficha?.Documentos.Select(d => new DocumentosPanel.Item(d.Id, d.Nombre, d.Url)).ToList()
+        ?? new List<DocumentosPanel.Item>();
+
+    private async Task SubirAdjuntos(InputFileChangeEventArgs e)
+    {
+        if (EqId == Guid.Empty) return;
+        _subiendoDoc = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(file.OpenReadStream(20_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+                content.Add(sc, "file", file.Name);
+                var resp = await Auth().PostAsync($"/api/mi-copropiedad/equipos/{EqId}/documentos", content);
+                if (!resp.IsSuccessStatusCode) { Toast("Error: " + await resp.Content.ReadAsStringAsync(), true); break; }
+                _dirty = true;
+            }
+            await CargarAsync();
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        finally { _subiendoDoc = false; }
+    }
+
+    private async Task EliminarDocumento(Guid id)
+    {
+        var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/documentos/{id}");
+        if (resp.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
+        else { Toast("Error: " + await resp.Content.ReadAsStringAsync(), true); }
     }
 
     private async Task CargarAsync()

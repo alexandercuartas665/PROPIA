@@ -246,6 +246,11 @@ public partial class MiCopropiedadService
             .OrderBy(c => c.CreatedAt)
             .Select(c => new EquipoCampoDto(c.Id, c.Label, c.Valor)).ToListAsync(ct);
 
+        var documentos = (await _db.EquipoDocumentos.AsNoTracking().Where(d => d.EquipoActivoId == equipoId)
+            .OrderBy(d => d.CreatedAt)
+            .Select(d => new { d.Id, d.Nombre, d.Url }).ToListAsync(ct))
+            .Select(d => new EquipoDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url)).ToList();
+
         var depreciacion = CalcularDepreciacion(e, mejoras.Sum(m => m.Valor));
 
         // Contratos vinculados + disponibles
@@ -286,7 +291,27 @@ public partial class MiCopropiedadService
             ToEquipoActivoDto(e), depreciacion, fotos, mejoras, campos,
             contratosVinculados, contratosDisponibles,
             activosVinculados, activosDisponibles,
-            mantenimientos, tareas);
+            mantenimientos, tareas, documentos);
+    }
+
+    // ----- Documentos adjuntos del equipo (pestana Documentos). Espejo de los metodos de ZonaDocumento. -----
+    public async Task<EquipoDocumentoDto?> AgregarEquipoDocumentoAsync(Guid equipoId, string nombre, string url, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.EquiposActivos.AnyAsync(x => x.Id == equipoId, ct)) return null;
+        var d = new EquipoDocumento { TenantId = tid, EquipoActivoId = equipoId, Nombre = nombre.Trim(), Url = url };
+        _db.EquipoDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        return new EquipoDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url);
+    }
+
+    public async Task<bool> EliminarEquipoDocumentoAsync(Guid docId, CancellationToken ct)
+    {
+        var d = await _db.EquipoDocumentos.FirstOrDefaultAsync(x => x.Id == docId, ct);
+        if (d is null) return false;
+        _db.EquipoDocumentos.Remove(d);
+        await _db.SaveChangesAsync(ct);
+        return true;
     }
 
     /// <summary>Depreciacion lineal: base = costo + mejoras; depAnual = base/vidaUtil; acumulada por anios de uso.</summary>

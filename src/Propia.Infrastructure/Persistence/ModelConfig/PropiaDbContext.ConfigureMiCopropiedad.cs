@@ -156,6 +156,17 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Documentos adjuntos de un equipo/activo (pestana Documentos de la ficha). Espejo de UnidadDocumento.
+        modelBuilder.Entity<EquipoDocumento>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Url).IsRequired();
+            b.HasOne(x => x.Equipo).WithMany().HasForeignKey(x => x.EquipoActivoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.EquipoActivoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // Campos dinamicos tipados (catalogo + valor) de Equipos y Zonas (analogo a Unidad campos).
         modelBuilder.Entity<EquipoCampoDefinicion>(b =>
         {

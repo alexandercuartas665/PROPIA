@@ -1274,6 +1274,29 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarZonaDocumento(Guid docId, CancellationToken ct)
         => await _svc.EliminarZonaDocumentoAsync(docId, ct) ? NoContent() : NotFound();
 
+    // ----- Documentos adjuntos de un equipo/activo (pestana Documentos). Espejo de zonas/documentos. -----
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("equipos/{id:guid}/documentos")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirEquipoDocumento(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var safe = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/equipos/{id:N}/docs/{Guid.NewGuid():N}{safe}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var dto = await _svc.AgregarEquipoDocumentoAsync(id, file.FileName, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
+    }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("equipos/documentos/{docId:guid}")]
+    public async Task<IActionResult> EliminarEquipoDocumento(Guid docId, CancellationToken ct)
+        => await _svc.EliminarEquipoDocumentoAsync(docId, ct) ? NoContent() : NotFound();
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/campos")]
     public async Task<IActionResult> AgregarZonaCampo(Guid id, [FromBody] AgregarZonaCampoRequest req, CancellationToken ct)

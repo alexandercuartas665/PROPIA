@@ -1,6 +1,24 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.244 (Web)** (sigue a 0.0.243, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.245 (Web) + 0.0.213 (API)** (sigue a 0.0.244, 2026-10-27). **1 MIGRACION NUEVA
+> (ADITIVA), SIN CONFIG.** **Pestana "Documentos" homogenea en Zonas, Unidades privadas y Equipos** (mismo
+> canon PQRSD: columna de miniaturas + visor inline con lightbox para imagenes / iframe para PDF / tarjeta
+> de archivo). Se extrajo un componente compartido `Components/Shared/DocumentosPanel.razor` (clases `.dap-*`,
+> `<style>` global) que consumen los 3 modales (`FichaZonaModal`, `GestionarUnidadesModal`, `FichaEquipoModal`),
+> para no triplicar el markup. **Zonas y Unidades = solo frontend** (sus endpoints de documentos ya existian).
+> **Equipos = backend nuevo** (no existia): entidad `EquipoDocumento`, DbSet, model config (FK cascade +
+> indices + HasQueryFilter) y **1 MIGRACION `20261028010516_AddEquipoDocumentos`** -- crea la tabla
+> `equipo_documentos` con **RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`** (bloque RLS agregado
+> a mano; EF no lo genera). APLICAR en prod con `dotnet ef database update` (owner `propia`). Aditiva, sin
+> backup especial, aplicada en `propia_dev` el 2026-10-27 (OK de Alex). API: DTO `EquipoDocumentoDto` +
+> `Documentos` en `EquipoFichaDto`; servicio `Agregar/EliminarEquipoDocumentoAsync`; endpoints
+> `POST api/mi-copropiedad/equipos/{id}/documentos` (RequierePermiso MiCopropiedad.Crear, max 10MB) y
+> `DELETE api/mi-copropiedad/equipos/documentos/{docId}` (MiCopropiedad.Eliminar). Blobs en
+> `tenants/{tid}/equipos/{id}/docs/`. **Sin config nueva.** Verificado en runtime: los 3 modulos suben/ven/
+> borran documentos (Equipos probado por API real + render en el navegador interno). Rollback = `Down`
+> (dropea `equipo_documentos`; las otras 2 tablas de documentos no se tocan).
+>
+> **VERSION PREVIA = 0.0.244 (Web)** (sigue a 0.0.243, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.212). **Ola 3 (parte 3) de "totales por columna en grupos": Directorio**
 > (`/directorio`), ambas sub-vistas (**Personas** y **Empresas**). Con esto el rollout queda COMPLETO en todos
 > los modulos de vista-tabla. Directorio es padre (`DirectorioPanel`) + 2 sub-vistas con grid propio: el menu

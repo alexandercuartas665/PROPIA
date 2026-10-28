@@ -522,6 +522,9 @@ public record MantenimientoRefDto(Guid Id, string Tipo, string Titulo, string? R
 public record TareaRefDto(Guid Id, string Titulo, string Tablero, string Estado);
 
 /// <summary>Agregado que alimenta el modal de ficha tecnica del activo.</summary>
+// ----- Documento / anexo de un equipo/activo (archivo en blob + nombre). Espejo de ZonaDocumentoDto. -----
+public record EquipoDocumentoDto(Guid Id, string Nombre, string Url);
+
 public record EquipoFichaDto(
     EquipoActivoDto Equipo,
     DepreciacionDto Depreciacion,
@@ -533,7 +536,8 @@ public record EquipoFichaDto(
     IReadOnlyList<EquipoRefDto> ActivosVinculados,
     IReadOnlyList<EquipoRefDto> ActivosDisponibles,
     IReadOnlyList<MantenimientoRefDto> Mantenimientos,
-    IReadOnlyList<TareaRefDto> Tareas);
+    IReadOnlyList<TareaRefDto> Tareas,
+    IReadOnlyList<EquipoDocumentoDto> Documentos);
 
 public record AgregarMejoraRequest(string Descripcion, decimal Valor, DateOnly Fecha);
 public record ToggleVinculoRequest(Guid Id, bool Vincular);

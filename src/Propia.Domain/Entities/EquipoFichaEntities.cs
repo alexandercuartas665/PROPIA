@@ -10,6 +10,16 @@ public class EquipoFoto : TenantEntity
     public string Url { get; set; } = null!;
 }
 
+/// <summary>Documento adjunto de un equipo/activo (pestana Documentos de la ficha). Binario en
+/// IBlobStorage. Espejo de ZonaDocumento/UnidadDocumento.</summary>
+public class EquipoDocumento : TenantEntity
+{
+    public Guid EquipoActivoId { get; set; }
+    public EquipoActivo? Equipo { get; set; }
+    public string Nombre { get; set; } = null!;
+    public string Url { get; set; } = null!;
+}
+
 /// <summary>
 /// Mejora capitalizada sobre un activo (ej. cambio de motor). Suma al valor en libros y
 /// se refleja en la depreciacion. Opcionalmente referencia una factura/documento.

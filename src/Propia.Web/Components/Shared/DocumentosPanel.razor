@@ -1,0 +1,211 @@
+@* DocumentosPanel - panel de documentos/adjuntos con el canon PQRSD: a la izquierda la lista de
+   miniaturas con el boton "Subir archivo"; a la derecha el visor inline del seleccionado (imagen con
+   lightbox, PDF en iframe o tarjeta de archivo). Compartido por la ficha de Zonas, el modal de
+   Unidades y (cuando tenga backend) la ficha de Equipos: reusarlo, no reinventarlo.
+   El tipo se infiere por extension (del nombre o la url); el DTO de cada modulo no trae mime.
+   El padre hace el upload/delete contra sus propios endpoints y recarga la lista: aqui solo se
+   eligen archivos (OnSubir) y se avisa del borrado (OnEliminar). *@
+@using Microsoft.AspNetCore.Components.Forms
+
+<div class="dap-root @(Fill ? "dap-root--fill" : "")" style="padding:@Padding">
+    @{ var sel = Documentos.FirstOrDefault(x => x.Id == _sel) ?? Documentos.FirstOrDefault(); }
+    <div class="dap-files @(Fill ? "dap-files--fill" : "")">
+        @* Columna izquierda: lista de miniaturas + boton "Subir archivo" *@
+        <div class="dap-thumbs">
+            @foreach (var d in Documentos)
+            {
+                var dd = d;
+                var hayImg = EsImagen(d.Url, d.Nombre) && !string.IsNullOrEmpty(d.Url);
+                <div class="dap-thumb @(sel is not null && sel.Id == d.Id ? "on" : "")" @onclick="@(() => _sel = dd.Id)" title="@d.Nombre">
+                    <div class="dap-thumb-ic @ThumbClass(d.Url, d.Nombre)">
+                        @if (hayImg) { <img src="@d.Url" alt="@d.Nombre" /> }
+                        else { <span class="dap-thumb-ext">@Extension(d.Url, d.Nombre)</span> }
+                    </div>
+                    <div class="dap-thumb-meta">
+                        <span class="dap-thumb-nm">@d.Nombre</span>
+                        <span class="dap-thumb-sub">@Extension(d.Url, d.Nombre)@(d.Tamano is long t && t > 0 ? $" · {FmtTamano(t)}" : "")</span>
+                    </div>
+                    @if (PermitirEditar)
+                    {
+                        <button class="dap-thumb-del" type="button" title="Eliminar" @onclick:stopPropagation="true" @onclick="@(() => OnEliminar.InvokeAsync(dd.Id))">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    }
+                </div>
+            }
+            @if (PermitirEditar)
+            {
+                <label class="dap-thumb-up @(Subiendo ? "dap-thumb-up--busy" : "")">
+                    @if (Subiendo)
+                    {
+                        <span class="dap-thumb-up-t">Subiendo...</span>
+                    }
+                    else
+                    {
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                        <span class="dap-thumb-up-t">Subir archivo</span>
+                    }
+                    <InputFile OnChange="OnSubir" multiple style="display:none" disabled="@Subiendo" />
+                </label>
+            }
+            @if (Documentos.Count == 0 && !PermitirEditar)
+            {
+                <div class="dap-thumbs-empty">Sin documentos.</div>
+            }
+        </div>
+        @* Columna derecha: visor grande del documento seleccionado *@
+        <div class="dap-viewer">
+            @if (sel is null)
+            {
+                <div class="dap-viewer-empty">
+                    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
+                    <p>Sin archivos.</p>
+                    <span>@EmptyHint</span>
+                </div>
+            }
+            else if (EsImagen(sel.Url, sel.Nombre))
+            {
+                <div class="dap-viewer-imgwrap" @onclick="@(() => _lightbox = sel.Url)" title="Clic para ampliar">
+                    <img class="dap-viewer-img" src="@sel.Url" alt="@sel.Nombre" />
+                    <span class="dap-viewer-zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg> Ampliar</span>
+                </div>
+                <div class="dap-viewer-bar">
+                    <div class="dap-viewer-meta"><span class="dap-viewer-nm">@sel.Nombre</span></div>
+                    <a class="dap-viewer-open" href="@sel.Url" target="_blank" rel="noopener">Abrir</a>
+                </div>
+            }
+            else if (EsPdf(sel.Url, sel.Nombre))
+            {
+                <div class="dap-viewer-pdfwrap">
+                    <iframe class="dap-viewer-pdf" src="@sel.Url" title="@sel.Nombre"></iframe>
+                </div>
+                <div class="dap-viewer-bar">
+                    <div class="dap-viewer-meta"><span class="dap-viewer-nm">@sel.Nombre</span><span class="dap-viewer-by">PDF</span></div>
+                    <a class="dap-viewer-open" href="@sel.Url" target="_blank" rel="noopener">Abrir en pestana</a>
+                </div>
+            }
+            else
+            {
+                <div class="dap-viewer-file">
+                    <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4"/></svg>
+                    <p class="dap-viewer-nm">@sel.Nombre</p>
+                    <p class="dap-viewer-by">@Extension(sel.Url, sel.Nombre)</p>
+                    <a class="dap-viewer-open" href="@sel.Url" target="_blank" rel="noopener">Abrir / descargar</a>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@* Lightbox de imagen a pantalla completa; position:fixed, funciona desde cualquier contenedor. *@
+@if (!string.IsNullOrWhiteSpace(_lightbox))
+{
+    <div class="dap-lb" @onclick="@(() => _lightbox = null)">
+        <button class="dap-lb-x" type="button" title="Cerrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <img src="@_lightbox" alt="Documento" />
+    </div>
+}
+
+<style>
+    /* ===== Panel de documentos (canon PQRSD): miniaturas a la izquierda, visor inline a la derecha ===== */
+    .dap-root { display: flex; box-sizing: border-box; }
+    .dap-root--fill { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .dap-files { display: grid; grid-template-columns: 300px 1fr; gap: 16px; width: 100%; height: 60vh; min-height: 360px; max-height: 640px; }
+    /* En modo "fill" la altura la da el contenedor flex del padre (como la ficha de zonas). */
+    .dap-files--fill { height: auto; max-height: none; min-height: 0; }
+    .dap-thumbs { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; min-height: 0; }
+    .dap-thumbs-empty { font-size: 12px; color: var(--propia-text-faint); padding: 10px 2px; }
+    .dap-thumb { display: flex; align-items: center; gap: 10px; border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 8px 10px; background: var(--propia-bg-card); cursor: pointer; position: relative; }
+    .dap-thumb:hover { border-color: var(--propia-brand); }
+    .dap-thumb.on { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .dap-thumb-ic { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+    .dap-thumb-ic img { width: 100%; height: 100%; object-fit: cover; }
+    .dap-ic-img { background: #E6F2FB; color: #2563EB; }
+    .dap-ic-pdf { background: var(--propia-danger-soft); color: #D7263D; }
+    .dap-ic-file { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .dap-thumb-ext { font-size: 10px; font-weight: 800; }
+    .dap-thumb-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .dap-thumb-nm { font-size: 12px; font-weight: 700; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dap-thumb-sub { font-size: 10px; color: var(--propia-text-faint); }
+    .dap-thumb-del { width: 24px; height: 24px; border-radius: 6px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+    .dap-thumb-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
+    .dap-thumb-up { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1.5px dashed var(--propia-text-faint); border-radius: 10px; padding: 16px; cursor: pointer; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; background: var(--propia-brand-soft-2); }
+    .dap-thumb-up:hover { border-color: var(--propia-brand); }
+    .dap-thumb-up--busy { opacity: .7; cursor: default; }
+
+    .dap-viewer { border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .dap-viewer-empty, .dap-viewer-file { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--propia-text-faint); text-align: center; padding: 30px; }
+    .dap-viewer-empty p, .dap-viewer-file .dap-viewer-nm { font-size: 13px; font-weight: 700; color: var(--propia-text-body); margin: 0; }
+    .dap-viewer-empty span { font-size: 11.5px; }
+    .dap-viewer-by { font-size: 11px; color: var(--propia-text-faint); margin: 0; }
+    .dap-viewer-imgwrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; background: var(--propia-bg-app); cursor: zoom-in; position: relative; overflow: hidden; }
+    .dap-viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .dap-viewer-zoom { position: absolute; bottom: 10px; right: 10px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--propia-text-inverse); background: rgba(27,42,58,.7); padding: 5px 9px; border-radius: 8px; }
+    .dap-viewer-pdfwrap { flex: 1; min-height: 0; }
+    .dap-viewer-pdf { width: 100%; height: 100%; border: 0; }
+    .dap-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-top: 1px solid var(--propia-border-divider); flex-shrink: 0; }
+    .dap-viewer-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .dap-viewer-nm { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dap-viewer-open { font-size: 11.5px; font-weight: 700; color: var(--propia-brand); text-decoration: none; flex-shrink: 0; padding: 6px 10px; border-radius: 8px; }
+    .dap-viewer-open:hover { background: var(--propia-brand-soft-2); }
+
+    .dap-lb { position: fixed; inset: 0; z-index: 5000; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
+    .dap-lb img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
+    .dap-lb-x { position: absolute; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: var(--propia-text-inverse); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .dap-lb-x:hover { background: rgba(255,255,255,.28); }
+
+    /* Movil: colapsar master/detalle a 1 columna (hasta 640px) y dar altura al visor. */
+    @@media (max-width: 640px) {
+        .dap-files { grid-template-columns: 1fr; height: auto; max-height: none; }
+        .dap-viewer { min-height: 320px; }
+    }
+</style>
+
+@code {
+    // Un documento a mostrar. El tipo se infiere por extension; Tamano es opcional (Unidades lo trae, Zonas no).
+    public record Item(Guid Id, string Nombre, string Url, long? Tamano = null);
+
+    [Parameter] public IReadOnlyList<Item> Documentos { get; set; } = Array.Empty<Item>();
+    [Parameter] public bool Subiendo { get; set; }
+    // Muestra el boton de subir y los botones de borrar. true por defecto (canon zonas).
+    [Parameter] public bool PermitirEditar { get; set; } = true;
+    // true: el panel ocupa el alto del contenedor flex del padre (ficha de zonas). false: alto fijo propio.
+    [Parameter] public bool Fill { get; set; }
+    // Padding exterior del panel; "0" cuando el contenedor del padre ya tiene su propio padding.
+    [Parameter] public string Padding { get; set; } = "18px 22px";
+    [Parameter] public string EmptyHint { get; set; } = "Sube imagenes o documentos con el boton \"Subir archivo\".";
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnSubir { get; set; }
+    [Parameter] public EventCallback<Guid> OnEliminar { get; set; }
+
+    private Guid? _sel;          // documento seleccionado en el visor (null = el primero)
+    private string? _lightbox;   // url de la imagen ampliada a pantalla completa (null = cerrado)
+
+    // ---- El tipo se infiere por extension (el DTO no trae mime): primero el nombre, si no la url. ----
+    private static string ExtSolo(string? url, string? nombre)
+    {
+        var s = !string.IsNullOrWhiteSpace(nombre) && nombre!.Contains('.') ? nombre! : (url ?? "");
+        var q = s.IndexOf('?'); if (q >= 0) s = s.Substring(0, q);
+        var dot = s.LastIndexOf('.');
+        return dot >= 0 && dot < s.Length - 1 ? s.Substring(dot + 1).ToLowerInvariant() : "";
+    }
+    private static string Extension(string? url, string? nombre)
+    {
+        var e = ExtSolo(url, nombre);
+        return e.Length == 0 ? "ARCH" : e.ToUpperInvariant();
+    }
+    private static bool EsImagen(string? url, string? nombre)
+    {
+        var e = ExtSolo(url, nombre);
+        return e is "jpg" or "jpeg" or "png" or "webp" or "gif" or "bmp";
+    }
+    private static bool EsPdf(string? url, string? nombre) => ExtSolo(url, nombre) == "pdf";
+    private static string ThumbClass(string? url, string? nombre) =>
+        EsImagen(url, nombre) ? "dap-ic-img" : (EsPdf(url, nombre) ? "dap-ic-pdf" : "dap-ic-file");
+
+    private static string FmtTamano(long bytes)
+    {
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576d:0.#} MB";
+        if (bytes >= 1024) return $"{bytes / 1024d:0.#} KB";
+        return $"{bytes} B";
+    }
+}

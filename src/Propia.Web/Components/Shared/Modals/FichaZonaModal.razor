@@ -37,6 +37,7 @@ else
 @* El lapiz del header alterna la pestana Ficha entre vista y edicion (canon). *@
 <div class="fz-tabs">
     <button class="fz-tab @(_tab == "ficha" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha de la zona</button>
+    <button class="fz-tab @(_tab == "adjuntos" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "adjuntos"'>Documentos@(_ficha.Documentos.Count > 0 ? $" ({_ficha.Documentos.Count})" : "")</button>
     <button class="fz-tab @(_tab == "historial" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
 </div>
 
@@ -181,22 +182,7 @@ else if (_tab == "ficha" && _editMode)
         </div>
     </div>
 
-    <div class="fz-section">Documentos</div>
-    <div class="fz-block">
-        @foreach (var d in _ficha.Documentos)
-        {
-            var did = d.Id;
-            <div class="fz-row-item">
-                <div class="fz-row-ic fz-ic-violet"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                <a class="fz-row-main fz-doc-link" href="@d.Url" target="_blank"><div class="fz-row-nom">@d.Nombre</div></a>
-                <button class="fz-del-sm" @onclick="() => EliminarDocumento(did)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>
-        }
-        <label class="fz-upload">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Cargar documento")
-            <InputFile OnChange="SubirDocumento" hidden disabled="@_subiendoDoc" />
-        </label>
-    </div>
+    @* Los documentos se gestionan ahora en la pestana "Documentos" (lista + visor inline, canon PQRSD). *@
 
     <div class="fz-section">Campos dinámicos</div>
     <div class="fz-block">
@@ -217,6 +203,17 @@ else if (_tab == "ficha" && _editMode)
 
     <div class="fz-ehint">La disponibilidad (reservable, aforo y horarios), la imagen y el programa de mantenimiento se configuran en la pestana "Ficha de la zona".</div>
 </div>
+@if (!string.IsNullOrEmpty(_msg)) { <div class="fz-foot"><span class="fz-foot-msg">@_msg</span></div> }
+}
+else if (_tab == "adjuntos")
+{
+@* Canon de documentos compartido (miniaturas + visor inline + lightbox). Fill="true": ocupa el
+   alto del contenedor flex del modal, como el resto de la ficha. *@
+<DocumentosPanel Fill="true"
+                 Documentos="@DocItems()"
+                 Subiendo="_subiendoDoc"
+                 OnSubir="SubirAdjuntos"
+                 OnEliminar="EliminarDocumento" />
 @if (!string.IsNullOrEmpty(_msg)) { <div class="fz-foot"><span class="fz-foot-msg">@_msg</span></div> }
 }
 else if (_tab == "historial")
@@ -395,6 +392,8 @@ else if (_tab == "historial")
     .fz-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 22px; border-top: 1px solid var(--propia-border-divider); flex-shrink: 0; }
     .fz-foot-msg { flex: 1; font-size: 12px; color: #15703F; font-weight: 600; }
 
+    /* La pestana "Documentos" usa el componente compartido DocumentosPanel (clases .dap-*). */
+
     /* Movil: colapsar master/detalle y grid de campos a 1 columna (hasta 640px). */
     @@media (max-width: 640px) {
         .fz-head { flex-wrap: wrap; padding: 12px 14px; gap: 8px 10px; }
@@ -535,23 +534,34 @@ else if (_tab == "historial")
         if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
     }
 
-    private async Task SubirDocumento(InputFileChangeEventArgs e)
+    // Subida de adjuntos (uno o varios) desde la pestana "Adjuntos". Reusa el endpoint de documentos.
+    private async Task SubirAdjuntos(InputFileChangeEventArgs e)
     {
-        if (Zona is null || e.File is null) return;
+        if (Zona is null) return;
         _subiendoDoc = true; _msg = "";
         try
         {
-            using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(e.File.OpenReadStream(10_000_000));
-            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
-            content.Add(sc, "file", e.File.Name);
-            var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/documentos", content);
-            if (resp.IsSuccessStatusCode) { _dirty = true; await Recargar(); }
-            else { _msg = await resp.Content.ReadAsStringAsync(); }
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(file.OpenReadStream(20_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+                content.Add(sc, "file", file.Name);
+                var resp = await Auth().PostAsync($"/api/mi-copropiedad/zonas/{Zona.Id}/documentos", content);
+                if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); break; }
+                _dirty = true;
+            }
+            await Recargar();
         }
         catch (Exception ex) { _msg = ex.Message; }
         finally { _subiendoDoc = false; }
     }
+
+    // Proyecta los documentos de la zona al tipo neutro del panel compartido.
+    private List<DocumentosPanel.Item> DocItems() =>
+        _ficha?.Documentos.Select(d => new DocumentosPanel.Item(d.Id, d.Nombre, d.Url)).ToList()
+        ?? new List<DocumentosPanel.Item>();
+
     private async Task EliminarDocumento(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/zonas/documentos/{id}");

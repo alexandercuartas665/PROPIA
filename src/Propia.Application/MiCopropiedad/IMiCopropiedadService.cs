@@ -215,6 +215,8 @@ public interface IMiCopropiedadService
     Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct);
     Task<ZonaDocumentoDto?> AgregarZonaDocumentoAsync(Guid zonaId, string nombre, string url, CancellationToken ct);
     Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct);
+    Task<EquipoDocumentoDto?> AgregarEquipoDocumentoAsync(Guid equipoId, string nombre, string url, CancellationToken ct);
+    Task<bool> EliminarEquipoDocumentoAsync(Guid docId, CancellationToken ct);
     Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct);
     Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct);
 

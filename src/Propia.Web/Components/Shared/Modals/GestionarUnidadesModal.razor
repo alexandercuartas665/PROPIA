@@ -384,54 +384,16 @@
                 </div>
                 }
 
-                @* === DOCUMENTOS: pestana propia (movido desde Historial) === *@
+                @* === DOCUMENTOS: canon compartido (miniaturas + visor inline), igual que zonas comunes === *@
                 @if (_fichaTab == "documentos") {
                 <div class="gum-unit-card">
                     <div class="gum-unit-eyebrow">DOCUMENTOS</div>
-                    @if (_documentos.Count > 0)
-                    {
-                        <div class="gum-doc-list">
-                            @foreach (var d in _documentos)
-                            {
-                                <div class="gum-doc-item">
-                                    <a class="gum-doc-link" href="@d.Url" target="_blank" rel="noopener" title="@d.Nombre">
-                                        @if (EsImagen(d.Nombre))
-                                        {
-                                            <span class="gum-doc-thumb" style="background-image:url('@d.Url')"></span>
-                                        }
-                                        else
-                                        {
-                                            <span class="gum-doc-ic">
-                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                                            </span>
-                                        }
-                                        <span class="gum-doc-meta">
-                                            <span class="gum-doc-name">@d.Nombre</span>
-                                            <span class="gum-doc-sub">@FmtTamano(d.Tamano) · ver</span>
-                                        </span>
-                                    </a>
-                                    @if (_editMode)
-                                    {
-                                        <button class="gum-cf-del gum-doc-x" type="button" @onclick="() => EliminarDocumento(d.Id)" title="Quitar">
-                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                        </button>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                    @if (_editMode)
-                    {
-                        <label class="gum-doc-upload">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-                            @(_subiendoDoc ? "Subiendo..." : "Subir documentos")
-                            <InputFile OnChange="SubirDocumento" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" multiple hidden disabled="@_subiendoDoc" />
-                        </label>
-                    }
-                    @if (_documentos.Count == 0 && !_editMode)
-                    {
-                        <div class="gum-people-empty">Sin documentos. Entra a "Editar ficha" para adjuntar anexos.</div>
-                    }
+                    <DocumentosPanel Documentos="@DocItems()"
+                                     Subiendo="_subiendoDoc"
+                                     Padding="0"
+                                     EmptyHint="Sube imagenes o documentos de la unidad con el boton Subir archivo."
+                                     OnSubir="SubirDocumento"
+                                     OnEliminar="EliminarDocumento" />
                 </div>
                 }
 
@@ -1116,6 +1078,10 @@
         else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
     }
 
+    // Proyecta los documentos de la unidad al tipo neutro del panel compartido (incluye el tamano).
+    private List<DocumentosPanel.Item> DocItems() =>
+        _documentos.Select(d => new DocumentosPanel.Item(d.Id, d.Nombre, d.Url, d.Tamano)).ToList();
+
     private async Task SubirDocumento(InputFileChangeEventArgs e)
     {
         if (_selected is null) return;
@@ -1154,19 +1120,6 @@
         var resp = await Auth().DeleteAsync($"/api/mi-copropiedad/unidades-documentos/{id}");
         if (resp.IsSuccessStatusCode) { _documentos.RemoveAll(d => d.Id == id); _huboCambios = true; }
         else { ShowMsg("Error: " + await resp.Content.ReadAsStringAsync(), true); }
-    }
-
-    private static bool EsImagen(string nombre)
-    {
-        var ext = System.IO.Path.GetExtension(nombre ?? "").ToLowerInvariant();
-        return ext is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" or ".bmp";
-    }
-
-    private static string FmtTamano(long bytes)
-    {
-        if (bytes <= 0) return "archivo";
-        var kb = bytes / 1024.0;
-        return kb >= 1024 ? $"{kb / 1024.0:0.#} MB" : $"{Math.Max(1, (int)Math.Round(kb))} KB";
     }
 
     private async Task Rebalancear()
