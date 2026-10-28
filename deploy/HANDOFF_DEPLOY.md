@@ -1,6 +1,14 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.254 (Web)** (sigue a 0.0.253, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.255 (Web)** (sigue a 0.0.254, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Usuarios - ancho del modal Editar usuario igualado a las fichas.**
+> `.usr-modal-user` pasa de `width:900px` a `width:1056px; max-width:96vw; max-height:86vh`, el mismo ancho
+> intrinseco que las fichas de Residentes/Terceros (is-fixedh 1056 x 86vh) y que la ficha de rol
+> (`.usr-modal-roles`). En viewports anchos ambos miden 1056; en panes estrechas caen a su cap responsive
+> (dif ~7px por el padding del overlay, imperceptible). CSS module (`usuarios.css?v=25`). Verificado en runtime.
+> Rollback = redeploy del artefacto previo.
+>
+> **VERSION PREVIA = 0.0.254 (Web)** (sigue a 0.0.253, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Usuarios - bordes simetricos del modal Editar usuario.** La barra de
 > scroll vertical de `.usr-modal-body` comia ~15px solo del lado derecho (margen izq 24 / der 24+scroll), dejando
 > el formulario visualmente corrido. Fix: `scrollbar-gutter: stable both-edges` reserva el ancho de la barra en
