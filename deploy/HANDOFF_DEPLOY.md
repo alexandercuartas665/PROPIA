@@ -1,6 +1,13 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.253 (Web)** (sigue a 0.0.250, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.254 (Web)** (sigue a 0.0.253, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Usuarios - bordes simetricos del modal Editar usuario.** La barra de
+> scroll vertical de `.usr-modal-body` comia ~15px solo del lado derecho (margen izq 24 / der 24+scroll), dejando
+> el formulario visualmente corrido. Fix: `scrollbar-gutter: stable both-edges` reserva el ancho de la barra en
+> AMBOS lados -> gutters 39/39 simetricos, contenido centrado. CSS module (`usuarios.css?v=24` en App.razor).
+> Verificado en runtime (demo). Rollback = redeploy del artefacto previo.
+>
+> **VERSION PREVIA = 0.0.253 (Web)** (sigue a 0.0.250, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). Homogeneizacion de las fichas Terceros/Residentes (3 cambios acumulados,
 > solo frontend; `<style>` inline, no toca CSS module ni `?v=`):
 > - **0.0.251** - Pestana **Documentos de Terceros** (`FichaTerceroModal`) pasa del listado viejo `.fr-doc*` al
