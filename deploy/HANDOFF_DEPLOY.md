@@ -1,6 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.247 (Web)** (sigue a 0.0.246, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.248 (Web)** (sigue a 0.0.247, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Ficha de Residentes reorganizada en 4 pestanas (canon Terceros):
+> Perfil / Documentos / Comentarios / Acceso.** En `FichaResidenteModal` el tab unico "Ficha del residente"
+> (que amontonaba datos + comentarios + un bloque "Acceso al sistema" en un solo scroll) se partio: el tab
+> **Perfil** queda solo con foto/chips + DATOS; **Comentarios** y **Acceso** pasan a tabs propios; Documentos
+> sigue con `DocumentosPanel` (sin cambios). El lapiz/guardar del header se habilita en Perfil **y** Acceso
+> (el rol se sigue guardando junto con los datos via el checkmark; el modelo de guardado separado queda para
+> una fase futura); la papelera "quitar de la unidad" solo en Perfil. Se quito CSS muerto (`.fr-roles`,
+> `.fr-sectlbl--sep`). Sin cambios de backend ni de datos; `<style>` inline (no toca CSS module ni `?v=`).
+> Verificado en runtime (demo, residente Mariano): 4 tabs, Perfil limpio, Comentarios y Acceso funcionan
+> (chip de rol removible + roles disponibles), Documentos sin regresion. Build 0 errores / 45 warnings
+> (baseline). Rollback = redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.247 (Web)** (sigue a 0.0.246, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Documentos de Residentes AHORA en una pestana propia** (canon
 > Zonas/Unidades). En `FichaResidenteModal` los documentos ya no son una seccion inline del scroll de la ficha:
 > se agrego una barra de pestanas (`.fr-tabs`, mismos valores que `.fz-tabs` de Zonas) con **"Ficha del

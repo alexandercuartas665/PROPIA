@@ -38,8 +38,8 @@ else
         <div class="pm-head-s">@SubtituloRelacion</div>
     </div>
     <div class="pm-head-acts">
-        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
-                            MostrarEliminar="@(_tab == "ficha" && UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
+        <ModalHeaderActions EnEdicion="@(_editMode && (_tab == "perfil" || _tab == "acceso"))" MostrarEditar="@(_tab == "perfil" || _tab == "acceso")"
+                            MostrarEliminar="@(_tab == "perfil" && UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
                             Guardando="_guardando" TituloEditar="Editar" TituloGuardar="Guardar cambios"
                             TituloEliminar="Quitar de la unidad"
                             OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarAsync"
@@ -47,13 +47,15 @@ else
     </div>
 </div>
 
-@* Pestanas (canon Zonas/Unidades): la ficha y la gestion de documentos en tabs. *@
+@* Pestanas (canon Terceros): Perfil / Documentos / Comentarios / Acceso. *@
 <div class="fr-tabs">
-    <button class="fr-tab @(_tab == "ficha" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del residente</button>
+    <button class="fr-tab @(_tab == "perfil" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "perfil"'>Perfil</button>
     <button class="fr-tab @(_tab == "documentos" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_adjuntos.Count > 0 ? $" ({_adjuntos.Count})" : "")</button>
+    <button class="fr-tab @(_tab == "comentarios" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "comentarios"'>Comentarios@(_comentarios.Count > 0 ? $" ({_comentarios.Count})" : "")</button>
+    <button class="fr-tab @(_tab == "acceso" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "acceso"'>Acceso</button>
 </div>
 
-@if (_tab == "ficha")
+@if (_tab == "perfil")
 {
 <div class="pm-body">
     <div class="fr-body">
@@ -125,77 +127,7 @@ else
                     <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@UnidadCodigo" />
                 </div>
             </div>
-
-            @* ===== Comentarios (panel estandar de la ficha) ===== *@
-            <div class="fr-sectlbl fr-sectlbl--sep">COMENTARIOS</div>
-            @if (_comentarios.Count > 0)
-            {
-                <div class="fr-com-list">
-                    @foreach (var c in _comentarios)
-                    {
-                        <div class="fr-com-item">
-                            <span class="fr-com-av">@InicialesAutor(c.AutorNombre)</span>
-                            <div class="fr-com-b">
-                                <div class="fr-com-hd"><b>@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Usuario" : c.AutorNombre)</b><span class="fr-com-time">@c.CreatedAt.ToCo().ToString("dd/MM/yyyy HH:mm")</span></div>
-                                <div class="fr-com-txt">@c.Texto</div>
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="fr-empty">Aun no hay comentarios en este registro.</div>
-            }
-            <div class="fr-com-new">
-                <textarea class="fr-in fr-com-ta" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." rows="2"></textarea>
-                <div class="fr-com-foot">
-                    <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="PublicarComentario" disabled="@(_publicando || string.IsNullOrWhiteSpace(_nuevoComentario))">@(_publicando ? "Publicando..." : "Publicar")</button>
-                </div>
-            </div>
         </div>
-    </div>
-
-    @* ===== Acceso al sistema (Rol): asignar rol = invitar a la persona como usuario (reusa Usuarios/RBAC) ===== *@
-    <div class="fr-roles">
-        <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
-        <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. Portal Residente) y referencia la bandeja Roles y permisos; el detalle de permisos se edita alli. El cargo es descriptivo y no da permisos.</p>
-        @if (_rolesCargando)
-        {
-            <div class="fr-empty">Cargando roles...</div>
-        }
-        else
-        {
-            <div class="fr-chips">
-                @if (_rolIdsAsignados.Count == 0)
-                {
-                    <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
-                }
-                else
-                {
-                    @foreach (var rid in _rolIdsAsignados)
-                    {
-                        var id = rid;
-                        <span class="fr-rolchip">@RolNombre(id)@if (_editMode) { <button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button>}</span>
-                    }
-                }
-            </div>
-            @if (_editMode && RolesDisponibles() is { Count: > 0 } disp)
-            {
-                <div class="fr-roles-disp">
-                    <span class="fr-disp-lbl">Clic para asignar:</span>
-                    @foreach (var r in disp)
-                    {
-                        var rr = r;
-                        <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
-                    }
-                </div>
-            }
-            @if (_editMode && _usuarioTenantId is null && _rolIdsAsignados.Count > 0)
-            {
-                <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
-            }
-        }
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_msg))
@@ -217,6 +149,90 @@ else if (_tab == "documentos")
     {
         <div class="fr-msg @(_msgError ? "err" : "ok")" style="margin:0 22px 14px">@_msg</div>
     }
+}
+else if (_tab == "comentarios")
+{
+<div class="pm-body">
+    <div class="fr-sectlbl">COMENTARIOS</div>
+    @if (_comentarios.Count > 0)
+    {
+        <div class="fr-com-list">
+            @foreach (var c in _comentarios)
+            {
+                <div class="fr-com-item">
+                    <span class="fr-com-av">@InicialesAutor(c.AutorNombre)</span>
+                    <div class="fr-com-b">
+                        <div class="fr-com-hd"><b>@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Usuario" : c.AutorNombre)</b><span class="fr-com-time">@c.CreatedAt.ToCo().ToString("dd/MM/yyyy HH:mm")</span></div>
+                        <div class="fr-com-txt">@c.Texto</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="fr-empty">Aun no hay comentarios en este registro.</div>
+    }
+    <div class="fr-com-new">
+        <textarea class="fr-in fr-com-ta" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." rows="2"></textarea>
+        <div class="fr-com-foot">
+            <button class="fr-btn fr-btn-primary fr-btn-sm" type="button" @onclick="PublicarComentario" disabled="@(_publicando || string.IsNullOrWhiteSpace(_nuevoComentario))">@(_publicando ? "Publicando..." : "Publicar")</button>
+        </div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_msg))
+    {
+        <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
+    }
+</div>
+}
+else if (_tab == "acceso")
+{
+<div class="pm-body">
+    @* Acceso al sistema (Rol): asignar rol = invitar a la persona como usuario (reusa Usuarios/RBAC).
+       Se guarda junto con los datos al presionar Guardar (checkmark del header). *@
+    <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
+    <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. Portal Residente) y referencia la bandeja Roles y permisos; el detalle de permisos se edita alli. El cargo es descriptivo y no da permisos.</p>
+    @if (_rolesCargando)
+    {
+        <div class="fr-empty">Cargando roles...</div>
+    }
+    else
+    {
+        <div class="fr-chips">
+            @if (_rolIdsAsignados.Count == 0)
+            {
+                <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
+            }
+            else
+            {
+                @foreach (var rid in _rolIdsAsignados)
+                {
+                    var id = rid;
+                    <span class="fr-rolchip">@RolNombre(id)@if (_editMode) { <button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button>}</span>
+                }
+            }
+        </div>
+        @if (_editMode && RolesDisponibles() is { Count: > 0 } disp)
+        {
+            <div class="fr-roles-disp">
+                <span class="fr-disp-lbl">Clic para asignar:</span>
+                @foreach (var r in disp)
+                {
+                    var rr = r;
+                    <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
+                }
+            </div>
+        }
+        @if (_editMode && _usuarioTenantId is null && _rolIdsAsignados.Count > 0)
+        {
+            <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
+        }
+    }
+    @if (!string.IsNullOrWhiteSpace(_msg))
+    {
+        <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
+    }
+</div>
 }
 
 @* Confirmacion de "Quitar de la unidad" (type-to-confirm, patron compartido mha-cdel-*). *@
@@ -294,7 +310,6 @@ else if (_tab == "documentos")
     .fr-left .fr-sectlbl { align-self: stretch; }
     .fr-right { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
     .fr-sectlbl { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; }
-    .fr-sectlbl--sep { margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--propia-border-card); }
 
     .fr-avatar { width: 150px; height: 150px; border-radius: 50%; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--propia-border-divider); border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); cursor: zoom-in; margin-top: 4px; }
     .fr-avatar-ini { width: 150px; height: 150px; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 800; border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); margin-top: 4px; }
@@ -314,7 +329,6 @@ else if (_tab == "documentos")
     .fr-empty { font-size: 12px; color: var(--propia-text-muted); padding: 6px 0; }
 
     /* ===== Acceso al sistema (Rol) ===== */
-    .fr-roles { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--propia-border-card); }
     .fr-roles-hint { font-size: 11.5px; color: var(--propia-text-muted); margin: 6px 0 10px; line-height: 1.5; }
     .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .fr-chip-empty { font-size: 12px; color: var(--propia-text-faint); font-style: italic; }
@@ -388,7 +402,7 @@ else if (_tab == "documentos")
     public record Resultado(bool Cambio, Guid? IrA);
 
     private bool _cargando = true;
-    private string _tab = "ficha";   // pestanas: "ficha" | "documentos" (canon Zonas/Unidades)
+    private string _tab = "perfil";  // pestanas: "perfil" | "documentos" | "comentarios" | "acceso" (canon Terceros)
     private bool _editMode;
     private bool _confirmDel;
     private string _confirmText = "";
