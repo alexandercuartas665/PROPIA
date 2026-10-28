@@ -1,6 +1,17 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.245 (Web) + 0.0.213 (API)** (sigue a 0.0.244, 2026-10-27). **1 MIGRACION NUEVA
+> **VERSION A DESPLEGAR = 0.0.246 (Web)** (sigue a 0.0.245, 2026-10-27). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). **Pestana "Documentos" homogenea tambien en Residentes**
+> (`FichaResidenteModal`): la seccion "DOCUMENTOS (CEDULA, RUT, ETC.)" pasa de una lista simple al mismo canon
+> compartido `DocumentosPanel` (miniaturas + visor inline con lightbox / iframe PDF, subida multiple). Reutiliza
+> el backend de adjuntos de Directorio que YA existia (`GET/POST api/directorio/adjuntos/Persona/{id}`,
+> `DELETE api/directorio/adjuntos/{id}`; una persona = un residente), asi que no hay migracion ni cambio de API.
+> La subida/borrado quedan disponibles siempre en el panel (como en los otros modulos), no solo en modo edicion;
+> el RBAC del endpoint (`Directorio` Crear/Eliminar) sigue protegiendo el servidor. Se quito CSS/ayudante muerto
+> (`.fr-doc*`, `FmtTam`). Verificado en runtime (demo): render de PDF+imagen, cambio de visor, borrado con
+> reselección, subida multiple por API. Rollback = redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.245 (Web) + 0.0.213 (API)** (sigue a 0.0.244, 2026-10-27). **1 MIGRACION NUEVA
 > (ADITIVA), SIN CONFIG.** **Pestana "Documentos" homogenea en Zonas, Unidades privadas y Equipos** (mismo
 > canon PQRSD: columna de miniaturas + visor inline con lightbox para imagenes / iframe para PDF / tarjeta
 > de archivo). Se extrajo un componente compartido `Components/Shared/DocumentosPanel.razor` (clases `.dap-*`,
