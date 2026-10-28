@@ -70,7 +70,7 @@ else
         <div class="fr-body">
             @* ---------- Columna izquierda: logo/foto + chips de servicio ---------- *@
             <div class="fr-left">
-                <div class="fr-sectlbl">@(EsEmpresa ? "LOGO" : "FOTO")</div>
+                <div class="fr-sectlbl">@(EsEmpresa ? "LOGO DE LA EMPRESA" : "FOTO DE LA PERSONA")</div>
                 @if (!string.IsNullOrWhiteSpace(_imagenUrl))
                 {
                     <div class="fr-avatar" style="background-image:url('@_imagenUrl')" role="button" title="Ver imagen completa" @onclick="() => _verImagen = _imagenUrl"></div>
@@ -84,33 +84,37 @@ else
                     <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
                 </label>
 
-                <div class="fr-tags">
-                    @if (_servicios.Count == 0)
-                    {
-                        <span class="chip">Sin servicio</span>
-                    }
-                    else
-                    {
-                        @foreach (var s in _servicios)
+                @* ===== Servicio que presta: seccion estructurada bajo la foto (canon Residentes: divisor +
+                   titulo + hint + chips + asignar). Antes eran chips sueltos sin estructura. ===== *@
+                <div class="fr-access">
+                    <div class="fr-sectlbl">SERVICIO QUE PRESTA</div>
+                    <p class="fr-roles-hint">Los servicios describen que le presta este tercero a la copropiedad (p. ej. Mantenimiento, Vigilancia). Se edita aqui o en la grilla.</p>
+                    <div class="fr-chips">
+                        @if (_servicios.Count == 0)
                         {
-                            var sv = s;
-                            <span class="chip">
-                                @sv.Valor
-                                @if (_editando) { <button type="button" class="chip-x" title="Quitar servicio" @onclick="() => QuitarServicio(sv)">&times;</button> }
-                            </span>
+                            <span class="fr-chip-empty">Sin servicio asignado.</span>
                         }
-                    }
-                </div>
-                @if (_editando && _vinculoId is not null)
-                {
-                    <div class="fr-roles-disp" style="justify-content:center">
-                        @foreach (var op in ServiciosDisponibles())
+                        else
                         {
-                            var o = op;
-                            <button type="button" class="fr-rolchip-add" @onclick="() => AgregarServicio(o)">+ @o</button>
+                            @foreach (var s in _servicios)
+                            {
+                                var sv = s;
+                                <span class="fr-rolchip">@sv.Valor@if (_editando) { <button type="button" class="fr-rolchip-x" title="Quitar servicio" @onclick="() => QuitarServicio(sv)">&times;</button> }</span>
+                            }
                         }
                     </div>
-                }
+                    @if (_editando && _vinculoId is not null && ServiciosDisponibles() is { Count: > 0 } disp)
+                    {
+                        <div class="fr-roles-disp">
+                            <span class="fr-disp-lbl">Clic para asignar:</span>
+                            @foreach (var op in disp)
+                            {
+                                var o = op;
+                                <button type="button" class="fr-rolchip-add" @onclick="() => AgregarServicio(o)">+ @o</button>
+                            }
+                        </div>
+                    }
+                </div>
             </div>
 
             @* ---------- Columna derecha: datos ---------- *@
@@ -159,34 +163,13 @@ else
     }
     else if (_tab == "Documentos")
     {
-        <div class="tc-tab">
-            <div class="fr-sectlbl">DOCUMENTOS (RUT, CÁMARA DE COMERCIO, CERTIFICADOS, ETC.)</div>
-            @if (_adjuntos.Count == 0)
-            {
-                <div class="fr-empty">Sin documentos adjuntos.</div>
-            }
-            else
-            {
-                <div class="fr-doclist">
-                    @foreach (var a in _adjuntos)
-                    {
-                        var adj = a;
-                        <div class="fr-doc">
-                            <div class="fr-doc-ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></div>
-                            <div class="fr-doc-txt">
-                                <a class="fr-doc-nom" href="@adj.Url" target="_blank" rel="noopener" title="Abrir">@adj.Nombre</a>
-                                <div class="fr-doc-meta">@FmtTam(adj.TamanoBytes) &middot; @adj.CreatedAt.ToCo().ToString("dd/MM/yyyy")</div>
-                            </div>
-                            <button class="fr-doc-del" type="button" title="Quitar" @onclick="() => EliminarAdjunto(adj.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                        </div>
-                    }
-                </div>
-            }
-            <label class="fr-doc-add">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>@(_subiendoDoc ? "Subiendo..." : "Adjuntar documento")
-                <InputFile OnChange="SubirDocumento" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden disabled="@_subiendoDoc" />
-            </label>
-        </div>
+        @* Canon de documentos compartido (miniaturas + visor inline + lightbox), igual que Residentes/Zonas.
+           Padding="0": el padding exterior ya lo pone .pm-body; alto propio (60vh) dentro del scroll del body. *@
+        <DocumentosPanel Padding="0"
+                         Documentos="@DocItems()"
+                         Subiendo="_subiendoDoc"
+                         EmptyHint="Sube el RUT, la camara de comercio, certificados u otros documentos del tercero con el boton Subir archivo."
+                         OnSubir="SubirDocumento" OnEliminar="EliminarAdjunto" />
     }
     else if (_tab == "Comentarios")
     {
@@ -368,11 +351,9 @@ else
     .fr-avatar { width: 150px; height: 150px; border-radius: 50%; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--propia-border-divider); border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); cursor: zoom-in; margin-top: 4px; }
     .fr-avatar-ini { width: 150px; height: 150px; border-radius: 50%; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 800; border: 3px solid var(--propia-bg-card); box-shadow: 0 2px 10px rgba(27,42,58,.14), 0 0 0 1px var(--propia-border-card); margin-top: 4px; }
     .fr-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand); cursor: pointer; }
-    .fr-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 2px; }
-    /* Chip de servicio = calca maqueta: pill neutro, fondo transparente, texto cuerpo, sin borde. */
-    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px; background: transparent; color: var(--propia-text-body); border: 0; }
-    .chip-x { border: 0; background: transparent; color: inherit; font-size: 14px; line-height: 1; cursor: pointer; padding: 0 1px; opacity: .7; }
-    .chip-x:hover { opacity: 1; color: var(--propia-brand); }
+    /* Servicio que presta bajo la foto (canon Residentes seccion Acceso): estira al ancho de la columna y
+       alinea a la izquierda (la columna centra sus hijos), con divisor que lo separa de la foto. */
+    .fr-access { align-self: stretch; width: 100%; text-align: left; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--propia-border-divider); display: flex; flex-direction: column; gap: 4px; }
 
     .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .fr-fld { display: flex; flex-direction: column; gap: 4px; }
@@ -382,16 +363,6 @@ else
     .fr-in--ro { background: var(--propia-bg-card-soft); color: var(--propia-text-body); min-height: 36px; }
 
     .fr-empty { font-size: 12px; color: var(--propia-text-muted); padding: 6px 0; }
-    .fr-doclist { display: flex; flex-direction: column; gap: 7px; }
-    .fr-doc { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--propia-border-divider); border-radius: 10px; background: var(--propia-bg-card-soft); }
-    .fr-doc-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .fr-doc-txt { flex: 1; min-width: 0; }
-    .fr-doc-nom { font-size: 12.5px; font-weight: 700; color: var(--propia-text-body); text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .fr-doc-nom:hover { color: var(--propia-brand); text-decoration: underline; }
-    .fr-doc-meta { font-size: 10.5px; color: var(--propia-text-faint); }
-    .fr-doc-del { width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-    .fr-doc-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
-    .fr-doc-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start; }
 
     .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .fr-chip-empty { font-size: 12px; color: var(--propia-text-faint); font-style: italic; }
@@ -861,24 +832,34 @@ else
         finally { _subiendoImg = false; }
     }
 
+    // Proyeccion de los adjuntos del tercero al item del panel compartido (el tamano va en la miniatura).
+    private List<DocumentosPanel.Item> DocItems() =>
+        _adjuntos.Select(a => new DocumentosPanel.Item(a.Id, a.Nombre, a.Url, a.TamanoBytes)).ToList();
+
     private async Task SubirDocumento(InputFileChangeEventArgs e)
     {
-        if (e.File is null) return;
+        var files = e.GetMultipleFiles(20);
+        if (files.Count == 0) return;
         _subiendoDoc = true; _msg = "";
         var tipo = EsEmpresa ? "Empresa" : "Persona";
         try
         {
-            using var ms = new MemoryStream();
-            await e.File.OpenReadStream(10_500_000).CopyToAsync(ms);
-            ms.Position = 0;
-            using var content = new MultipartFormDataContent();
-            var sc = new StreamContent(ms);
-            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
-            content.Add(sc, "file", e.File.Name);
-            var resp = await Auth().PostAsync($"/api/directorio/adjuntos/{tipo}/{EntidadId}", content);
-            if (resp.IsSuccessStatusCode) { _dirty = true; _msg = "Documento adjuntado."; _msgError = false; await CargarAdjuntosAsync(); }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgError = true; }
+            int ok = 0; string? err = null;
+            foreach (var f in files)
+            {
+                if (f.Size > 10_000_000) { err = $"{f.Name}: supera 10 MB."; continue; }
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(f.OpenReadStream(10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+                content.Add(sc, "file", f.Name);
+                var resp = await Auth().PostAsync($"/api/directorio/adjuntos/{tipo}/{EntidadId}", content);
+                if (resp.IsSuccessStatusCode) { ok++; }
+                else { err = await resp.Content.ReadAsStringAsync(); }
+            }
+            if (ok > 0) { _dirty = true; await CargarAdjuntosAsync(); }
+            if (err is not null) { _msg = "Error: " + err; _msgError = true; }
+            else { _msg = ok == 1 ? "Documento adjuntado." : $"{ok} documentos adjuntados."; _msgError = false; }
         }
         catch (Exception ex) { _msg = ex.Message; _msgError = true; }
         finally { _subiendoDoc = false; }
@@ -897,8 +878,6 @@ else
     private void Anterior() { if (ListaIds is not null && _idx > 0) Close(new Resultado(_dirty, ListaIds[_idx - 1])); }
     private void Siguiente() { if (ListaIds is not null && _idx >= 0 && _idx < ListaIds.Count - 1) Close(new Resultado(_dirty, ListaIds[_idx + 1])); }
     private void Cerrar() => Close(new Resultado(_dirty, null));
-
-    private static string FmtTam(long b) => b >= 1_048_576 ? $"{b / 1_048_576.0:0.0} MB" : $"{b / 1024.0:0} KB";
 
     private record UrlResp(string? url);
     private record AltaResp(Guid id);

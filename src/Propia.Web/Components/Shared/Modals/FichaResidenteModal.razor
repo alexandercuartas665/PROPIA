@@ -40,7 +40,7 @@ else
         <div class="pm-head-s">@SubtituloRelacion</div>
     </div>
     <div class="pm-head-acts">
-        <ModalHeaderActions EnEdicion="@(_editMode && (_tab == "perfil" || _tab == "acceso"))" MostrarEditar="@(_tab == "perfil" || _tab == "acceso")"
+        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "perfil")" MostrarEditar="@(_tab == "perfil")"
                             MostrarEliminar="@(_tab == "perfil" && UnidadPersonaId != Guid.Empty)" MostrarCancelar="true"
                             Guardando="_guardando" TituloEditar="Editar" TituloGuardar="Guardar cambios"
                             TituloEliminar="Quitar de la unidad"
@@ -49,12 +49,12 @@ else
     </div>
 </div>
 
-@* Pestanas (canon Terceros): Perfil / Documentos / Comentarios / Acceso. *@
+@* Pestanas: Perfil / Documentos / Comentarios. El Acceso (rol) vive debajo de la foto, en el Perfil
+   (pedido de Alex: estaba mejor ahi que como pestana propia). *@
 <div class="fr-tabs">
     <button class="fr-tab @(_tab == "perfil" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "perfil"'>Perfil</button>
     <button class="fr-tab @(_tab == "documentos" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_adjuntos.Count > 0 ? $" ({_adjuntos.Count})" : "")</button>
     <button class="fr-tab @(_tab == "comentarios" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "comentarios"'>Comentarios@(_comentarios.Count > 0 ? $" ({_comentarios.Count})" : "")</button>
-    <button class="fr-tab @(_tab == "acceso" ? "fr-tab--on" : "")" type="button" @onclick='() => _tab = "acceso"'>Acceso</button>
 </div>
 
 @if (_tab == "perfil")
@@ -79,10 +79,53 @@ else
                     <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoFoto" />
                 </label>
             }
-            @* Chips: relacion con la unidad + roles de acceso (maqueta). La unidad va en la grilla DATOS, no como chip. *@
+            @* Chip de relacion con la unidad. Los roles de acceso van en la seccion ACCESO de abajo (no se
+               duplican aqui). La unidad va en la grilla DATOS, no como chip. *@
             <div class="fr-tags">
                 @if (!string.IsNullOrWhiteSpace(Relacion)) { <span class="chip chip--rel">@Relacion</span> }
-                @foreach (var rid in _rolIdsAsignados) { <span class="chip chip--rol">@RolNombre(rid)</span> }
+            </div>
+
+            @* ===== Acceso al sistema (Rol): debajo de la foto (pedido de Alex). Asignar rol = invitar a la
+               persona como usuario (reusa Usuarios/RBAC); se guarda con el checkmark del header. ===== *@
+            <div class="fr-access">
+                <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
+                <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. Portal Residente) y referencia la bandeja Roles y permisos; el detalle de permisos se edita alli. El cargo es descriptivo y no da permisos.</p>
+                @if (_rolesCargando)
+                {
+                    <div class="fr-empty">Cargando roles...</div>
+                }
+                else
+                {
+                    <div class="fr-chips">
+                        @if (_rolIdsAsignados.Count == 0)
+                        {
+                            <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
+                        }
+                        else
+                        {
+                            @foreach (var rid in _rolIdsAsignados)
+                            {
+                                var id = rid;
+                                <span class="fr-rolchip">@RolNombre(id)@if (_editMode) { <button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button>}</span>
+                            }
+                        }
+                    </div>
+                    @if (_editMode && RolesDisponibles() is { Count: > 0 } disp)
+                    {
+                        <div class="fr-roles-disp">
+                            <span class="fr-disp-lbl">Clic para asignar:</span>
+                            @foreach (var r in disp)
+                            {
+                                var rr = r;
+                                <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
+                            }
+                        </div>
+                    }
+                    @if (_editMode && _usuarioTenantId is null && _rolIdsAsignados.Count > 0)
+                    {
+                        <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
+                    }
+                }
             </div>
         </div>
 
@@ -187,56 +230,6 @@ else if (_tab == "comentarios")
     }
 </div>
 }
-else if (_tab == "acceso")
-{
-<div class="pm-body">
-    @* Acceso al sistema (Rol): asignar rol = invitar a la persona como usuario (reusa Usuarios/RBAC).
-       Se guarda junto con los datos al presionar Guardar (checkmark del header). *@
-    <div class="fr-sectlbl">ACCESO AL SISTEMA (ROL)</div>
-    <p class="fr-roles-hint">El rol otorga acceso al sistema (p. ej. Portal Residente) y referencia la bandeja Roles y permisos; el detalle de permisos se edita alli. El cargo es descriptivo y no da permisos.</p>
-    @if (_rolesCargando)
-    {
-        <div class="fr-empty">Cargando roles...</div>
-    }
-    else
-    {
-        <div class="fr-chips">
-            @if (_rolIdsAsignados.Count == 0)
-            {
-                <span class="fr-chip-empty">Sin rol de acceso asignado.</span>
-            }
-            else
-            {
-                @foreach (var rid in _rolIdsAsignados)
-                {
-                    var id = rid;
-                    <span class="fr-rolchip">@RolNombre(id)@if (_editMode) { <button type="button" class="fr-rolchip-x" title="Quitar rol" @onclick="() => QuitarRol(id)">&times;</button>}</span>
-                }
-            }
-        </div>
-        @if (_editMode && RolesDisponibles() is { Count: > 0 } disp)
-        {
-            <div class="fr-roles-disp">
-                <span class="fr-disp-lbl">Clic para asignar:</span>
-                @foreach (var r in disp)
-                {
-                    var rr = r;
-                    <button type="button" class="fr-rolchip-add" @onclick="() => AgregarRol(rr.Id)">+ @rr.Nombre</button>
-                }
-            </div>
-        }
-        @if (_editMode && _usuarioTenantId is null && _rolIdsAsignados.Count > 0)
-        {
-            <div class="fr-roles-note">Al guardar se invitara a esta persona como usuario (Invitacion pendiente) con el/los rol(es) seleccionado(s).</div>
-        }
-    }
-    @if (!string.IsNullOrWhiteSpace(_msg))
-    {
-        <div class="fr-msg @(_msgError ? "err" : "ok")">@_msg</div>
-    }
-</div>
-}
-
 @* Confirmacion de "Quitar de la unidad" (type-to-confirm, patron compartido mha-cdel-*). *@
 @if (_confirmDel)
 {
@@ -321,6 +314,10 @@ else if (_tab == "acceso")
     .chip--rel { background: var(--propia-brand-soft); color: var(--propia-brand); border-color: var(--propia-brand-border); }
     .chip--rol { background: var(--propia-ok-soft); color: #1B7A44; border-color: transparent; }
 
+    /* Acceso al sistema (rol) bajo la foto: estira a todo el ancho de la columna izquierda y alinea a la
+       izquierda (la columna centra sus hijos), con un divisor que lo separa de la foto/chips. */
+    .fr-access { align-self: stretch; width: 100%; text-align: left; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--propia-border-divider); display: flex; flex-direction: column; gap: 4px; }
+
     .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .fr-fld { display: flex; flex-direction: column; gap: 4px; }
     .fr-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
@@ -404,7 +401,7 @@ else if (_tab == "acceso")
     public record Resultado(bool Cambio, Guid? IrA);
 
     private bool _cargando = true;
-    private string _tab = "perfil";  // pestanas: "perfil" | "documentos" | "comentarios" | "acceso" (canon Terceros)
+    private string _tab = "perfil";  // pestanas: "perfil" (incluye Acceso bajo la foto) | "documentos" | "comentarios"
     private bool _editMode;
     private bool _confirmDel;
     private string _confirmText = "";

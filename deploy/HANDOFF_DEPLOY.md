@@ -1,6 +1,26 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.250 (Web)** (sigue a 0.0.249, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.253 (Web)** (sigue a 0.0.250, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). Homogeneizacion de las fichas Terceros/Residentes (3 cambios acumulados,
+> solo frontend; `<style>` inline, no toca CSS module ni `?v=`):
+> - **0.0.251** - Pestana **Documentos de Terceros** (`FichaTerceroModal`) pasa del listado viejo `.fr-doc*` al
+>   componente compartido `DocumentosPanel` (miniaturas + visor inline + lightbox), igual que Residentes/Zonas
+>   (`Padding="0"` porque `.pm-body` no es flex-column). Reusa el mismo backend de adjuntos de Directorio
+>   (Persona/Empresa); `SubirDocumento` ahora multi-archivo. Se quito CSS `.fr-doc*` + `FmtTam` (muertos).
+> - **0.0.252** - **Acceso bajo la foto en Residentes** (`FichaResidenteModal`): se retira la pestana "Acceso"
+>   (de la 0.0.248) y su seccion (ACCESO AL SISTEMA + hint + chips de rol + asignar/quitar + nota de invitacion)
+>   vuelve a la columna izquierda del Perfil, debajo de la foto (pedido de Alex). El rol ya no se duplica como
+>   chip arriba (queda solo el de relacion). Header: lapiz/guardar/eliminar vuelven a gatearse solo en Perfil.
+> - **0.0.253** - **Terceros "Servicio que presta" estructurado** (`FichaTerceroModal`): la columna izquierda
+>   calca a Residentes (etiqueta "FOTO DE LA PERSONA"/"LOGO DE LA EMPRESA"; los servicios pasan de botones
+>   sueltos a una seccion `.fr-access` con divisor + titulo + hint + chips pill + "Clic para asignar"). Se quito
+>   CSS `.fr-tags`/`.chip`/`.chip-x` (muertos).
+>
+> Verificado en runtime (demo): Terceros Documentos (Luz Adriana con doc real: miniatura+visor+lightbox),
+> Residentes Acceso bajo la foto (Mariano), Terceros Servicio estructurado (lectura+edicion). Build 0 errores,
+> sin warnings nuevos. Rollback = redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.250 (Web)** (sigue a 0.0.249, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Rollout del fix de "recuperar sesion ante 401 (token vencido)" al
 > resto de los modales de ficha** (la 0.0.249 ya lo hizo en Terceros+Residentes). Mismo patron: ante un 401
 > en la carga, `SessionHelper.HandleUnauthorizedAsync` (refresh sliding o /login), actualizar `Jwt` y reintentar
