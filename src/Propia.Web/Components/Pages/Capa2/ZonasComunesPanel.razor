@@ -455,6 +455,8 @@ else
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="zona" TituloSingular="zona" Jwt="@_jwt"
                              OpcionesLista="@OpcionesVistaZn(_editSisClave)" PermiteAgregar="false"
+                             ColorPopupClasico="@(_editSisClave is "categoria" or "estado")"
+                             PermitirOcultarOpciones="@(_editSisClave == "categoria")"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
 }
 
@@ -1104,8 +1106,8 @@ else
                     <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
                     break;
                 case "categoria":
-                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
-                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c" selected="@(z.Categoria == c)">@LblCatZn(c)</option> }
+                    <select class="zc-cell" style="@SelStyleZn("categoria", LblCatZn(z.Categoria))" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
+                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { if (OcultaZn("categoria", LblCatZn(c)) && z.Categoria != c) { continue; } <option value="@c" selected="@(z.Categoria == c)">@LblCatZn(c)</option> }
                     </select>
                     break;
                 case "reservable":
@@ -1118,7 +1120,7 @@ else
                     <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
                     break;
                 case "estado":
-                    <select class="zc-cell zc-cell-est" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
+                    <select class="zc-cell zc-cell-est" style="@SelStyleZn("estado", LblEstZn(z.Estado))" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
                         @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@LblEstZn(s)</option> }
                     </select>
                     break;
@@ -1408,10 +1410,26 @@ else
     // Listas (solo lectura) para el modal "Editar campo": universo = enum, label del catalogo A&D (renombra).
     private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaZn(string? clave) => clave switch
     {
-        "categoria" => Enum.GetValues<CategoriaZonaComun>().Select(c => new EditarCampoSistemaModal.OpcionVista(LblCatZn(c), null)).ToList(),
-        "estado" => Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => new EditarCampoSistemaModal.OpcionVista(LblEstZn(s), null)).ToList(),
+        "categoria" => Enum.GetValues<CategoriaZonaComun>().Select(c => new EditarCampoSistemaModal.OpcionVista(LblCatZn(c), ColorZn("categoria", LblCatZn(c)))).ToList(),
+        "estado" => Enum.GetValues<EstadoZonaComunMantenimiento>().Select(s => new EditarCampoSistemaModal.OpcionVista(LblEstZn(s), ColorZn("estado", LblEstZn(s)))).ToList(),
         _ => null
     };
+
+    // ===== Ola 3: color por copropiedad (+ocultar en categoria cosmetica; estado = solo color) de las listas C
+    // de sistema (universo enum FIJO). Override OpcionCampo por label en unidades-config entidad=zonas.
+    private List<Propia.Web.Components.Shared.OpcionCampo> OverrideZn(string clave)
+        => _cfgZona.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
+    private string? ColorZn(string clave, string? label)
+        => OverrideZn(clave).FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+    private bool OcultaZn(string clave, string? label)
+        => OverrideZn(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private string? SelStyleZn(string clave, string? label)
+    {
+        var c = ColorZn(clave, label);
+        return string.IsNullOrWhiteSpace(c) ? null
+            : $"background:{c};border-color:{c};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(c!)};border-radius:7px;font-weight:700;";
+    }
 
     private async Task CargarAsync()
     {
