@@ -49,7 +49,7 @@
                     {
                         @* Lista auto-servida (catalogo): editor completo inline (reordenar/color/ocultar/renombrar/
                            agregar). Persiste el override del tenant (config Opciones) -> ya NO delega al gestor. *@
-                        <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" />
+                        <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" SemillaKeys="@_semillaKeys" />
                     }
                     else
                     {
@@ -236,6 +236,7 @@
 
     // Modo E0: lista que arma el propio modal (null = no auto-servido) + JSON de override vigente.
     private List<OpcionVista>? _opcionesSelf;
+    private HashSet<string> _semillaKeys = new(StringComparer.OrdinalIgnoreCase);  // labels del catalogo A&D: solo-ocultar (regla 3)
     private string? _opcionesJson;
     private bool AutoServido => OpcionesLista is null && Tipo == TipoCampoTablero.Seleccion
                                  && (!string.IsNullOrWhiteSpace(ListaCatalogo) || (SemillaFallback is { Length: > 0 }));
@@ -312,12 +313,8 @@
     // (o SemillaFallback). Solo las visibles (no ocultas); el ocultar/reordenar se hace en otra parte.
     private async Task ConstruirOpcionesSelfAsync()
     {
-        // Override del tenant (lo que realmente ve la celda hoy).
-        var delTenant = OpcionCampo.Parse(_opcionesJson).Where(o => !o.Oculta)
-            .Select(o => new OpcionVista(o.K, o.Color)).ToList();
-        if (delTenant.Count > 0) { _opcionesSelf = delTenant; return; }
-
-        // Sin override: semillas del catalogo global (fallback a SemillaFallback).
+        // Semillas del catalogo global (fallback a SemillaFallback): SIEMPRE se calculan, haya o no override
+        // del tenant, porque definen cuales opciones NO se pueden eliminar (solo ocultar) -> regla 3.
         var sem = new List<OpcionVista>();
         if (!string.IsNullOrWhiteSpace(ListaCatalogo))
         {
@@ -331,7 +328,13 @@
         }
         if (sem.Count == 0 && SemillaFallback is { Length: > 0 })
             sem = SemillaFallback.Select(s => new OpcionVista(s)).ToList();
-        _opcionesSelf = sem;
+        _semillaKeys = sem.Select(s => (s.Texto ?? "").Trim()).Where(s => s.Length > 0)
+                          .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Override del tenant (lo que realmente ve la celda hoy); si no hay, las semillas del catalogo.
+        var delTenant = OpcionCampo.Parse(_opcionesJson).Where(o => !o.Oculta)
+            .Select(o => new OpcionVista(o.K, o.Color)).ToList();
+        _opcionesSelf = delTenant.Count > 0 ? delTenant : sem;
     }
 
     private async Task Cerrar() => await Cerrado.InvokeAsync();
