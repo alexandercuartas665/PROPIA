@@ -30,11 +30,19 @@
                     </div>
                 }
             </div>
-            <input class="ol-lbl @(op.Oculta ? "ol-lbl--off" : "")" value="@op.K" placeholder="Opción" @onchange="@(e => Renombrar(idx, e.Value?.ToString()))" />
-            <button type="button" class="ol-eye @(op.Oculta ? "" : "on")" title="@(op.Oculta ? "Oculta (no se ofrece)" : "Visible")" @onclick="() => ToggleOculta(idx)">
-                <i class="fi @(op.Oculta ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i>
-            </button>
-            @if (EsSemilla(op.K))
+            <input class="ol-lbl @(op.Oculta ? "ol-lbl--off" : "")" value="@op.K" placeholder="Opción" readonly="@(!PermitirRenombrar)" @onchange="@(e => Renombrar(idx, e.Value?.ToString()))" />
+            @if (PermitirOcultar)
+            {
+                <button type="button" class="ol-eye @(op.Oculta ? "" : "on")" title="@(op.Oculta ? "Oculta (no se ofrece)" : "Visible")" @onclick="() => ToggleOculta(idx)">
+                    <i class="fi @(op.Oculta ? "fi-rr-eye-crossed" : "fi-rr-eye")"></i>
+                </button>
+            }
+            @if (!PermitirQuitar && !PermitirOcultar)
+            {
+                @* Universo fijo, solo color: ni ocultar ni quitar -> candado informativo. *@
+                <span class="ol-lock" title="Opción de fábrica: su universo lo gobierna el sistema" style="display:inline-flex;align-items:center;justify-content:center;width:24px;flex-shrink:0;color:var(--propia-text-faint);font-size:12px;"><i class="fi fi-rr-lock"></i></span>
+            }
+            else if (!PermitirQuitar || EsSemilla(op.K))
             {
                 <span class="ol-lock" title="Opción de fábrica: se puede ocultar, no eliminar" style="display:inline-flex;align-items:center;justify-content:center;width:24px;flex-shrink:0;color:var(--propia-text-faint);font-size:12px;"><i class="fi fi-rr-lock"></i></span>
             }
@@ -44,7 +52,10 @@
             }
         </div>
     }
-    <button type="button" class="ol-add" @onclick="Agregar">+ Agregar opción</button>
+    @if (PermitirAgregar)
+    {
+        <button type="button" class="ol-add" @onclick="Agregar">+ Agregar opción</button>
+    }
 </div>
 
 @code {
@@ -55,6 +66,14 @@
     /// <summary>Labels (normalizados por el padre) de las opciones SEMILLA (de fabrica/catalogo A&D): no se
     /// pueden quitar (solo ocultar). null/vacio = todas se pueden quitar (comportamiento anterior).</summary>
     [Parameter] public IReadOnlySet<string>? SemillaKeys { get; set; }
+    /// <summary>false = oculta el link "+ Agregar opcion" (universo fijo, p.ej. listas C enum/tabla). Default true.</summary>
+    [Parameter] public bool PermitirAgregar { get; set; } = true;
+    /// <summary>false = el input del label va de solo lectura (no se renombra; p.ej. labels de enum). Default true.</summary>
+    [Parameter] public bool PermitirRenombrar { get; set; } = true;
+    /// <summary>false = oculta el ojo de ocultar/mostrar (p.ej. listas que gobiernan logica = solo color). Default true.</summary>
+    [Parameter] public bool PermitirOcultar { get; set; } = true;
+    /// <summary>false = ninguna fila se puede quitar (universo fijo). Default true (se respeta ademas SemillaKeys).</summary>
+    [Parameter] public bool PermitirQuitar { get; set; } = true;
 
     private bool EsSemilla(string? k)
         => SemillaKeys is { Count: > 0 } && !string.IsNullOrWhiteSpace(k) && SemillaKeys.Contains(k.Trim());
@@ -64,12 +83,14 @@
 
     private async Task Agregar()
     {
+        if (!PermitirAgregar) return;
         Opciones.Add(new OpcionCampo(""));
         await OpcionesChanged.InvokeAsync();
     }
 
     private async Task Quitar(int idx)
     {
+        if (!PermitirQuitar) return;
         if (idx < 0 || idx >= Opciones.Count) return;
         Opciones.RemoveAt(idx);
         if (_palIdx == idx) _palIdx = null;
@@ -78,6 +99,7 @@
 
     private async Task Renombrar(int idx, string? v)
     {
+        if (!PermitirRenombrar) return;
         if (idx < 0 || idx >= Opciones.Count) return;
         var val = (v ?? "").Trim();
         if (string.Equals(val, Opciones[idx].K, StringComparison.Ordinal)) return;
@@ -95,6 +117,7 @@
 
     private async Task ToggleOculta(int idx)
     {
+        if (!PermitirOcultar) return;
         if (idx < 0 || idx >= Opciones.Count) return;
         Opciones[idx] = Opciones[idx] with { Oculta = !Opciones[idx].Oculta };
         await OpcionesChanged.InvokeAsync();

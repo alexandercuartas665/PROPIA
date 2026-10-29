@@ -83,10 +83,10 @@
                         {
                             <span class="ecs-hint">@HintReadOnly</span>
                         }
-                        @if (AbrirGestorAvanzado.HasDelegate || AutoServidoPopup)
+                        @if (AbrirGestorAvanzado.HasDelegate || AutoServidoPopup || ColorPopupClasico)
                         {
                             <div class="ecs-adv" style="margin-top:8px;">
-                                <button type="button" class="ecs-btn-ghost" @onclick="OnGestionarClick"><i class="fi fi-rr-settings-sliders"></i> Gestionar colores y orden</button>
+                                <button type="button" class="ecs-btn-ghost" @onclick="OnGestionarClick"><i class="fi fi-rr-settings-sliders"></i> @(ColorPopupClasico && !PermitirOcultarOpciones ? "Gestionar colores" : "Gestionar colores y orden")</button>
                             </div>
                         }
                     }
@@ -164,7 +164,9 @@
                 <button class="ecs-x" type="button" @onclick="() => _gestorOpen = false" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
             </div>
             <div class="ecs-gbody">
-                <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" SemillaKeys="@_semillaKeys" />
+                <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" SemillaKeys="@_semillaKeys"
+                               PermitirAgregar="@(!ColorPopupClasico)" PermitirRenombrar="@(!ColorPopupClasico)"
+                               PermitirQuitar="@(!ColorPopupClasico)" PermitirOcultar="@(ColorPopupClasico ? PermitirOcultarOpciones : true)" />
             </div>
             <div class="ecs-gfoot">
                 <button type="button" class="ecs-btn-brand" @onclick="() => _gestorOpen = false"><i class="fi fi-rr-check"></i> Listo</button>
@@ -219,6 +221,14 @@
     /// interno. Asi el modal queda identico al de Unidades sin que cada modulo construya su propio popup. Default
     /// false = editor inline (comportamiento previo). Ver inventario de modulos que aun usan el inline.</summary>
     [Parameter] public bool AutoServidoPopup { get; set; }
+    /// <summary>Opt-in para listas CLASICAS read-only (OpcionesLista + PermiteAgregar=false, p.ej. listas C
+    /// enum/tabla): muestra el boton "Gestionar colores" y abre un overlay donde la copropiedad SOLO cambia el
+    /// COLOR (y oculta, si PermitirOcultarOpciones=true) de un universo FIJO. El override (OpcionCampo por label)
+    /// se persiste en la config del tenant (EntidadConfig); el modulo lo lee para pintar la celda. Default false.</summary>
+    [Parameter] public bool ColorPopupClasico { get; set; }
+    /// <summary>En modo ColorPopupClasico: true = ademas de color, permite OCULTAR opciones (listas cosmeticas);
+    /// false = SOLO color (listas que gobiernan logica: rol/estado/categoria/genero). Default true.</summary>
+    [Parameter] public bool PermitirOcultarOpciones { get; set; } = true;
     /// <summary>Seccion extra opcional especifica del modulo, renderizada tras la lista de opciones (opt-in;
     /// null en los modulos que no la usan). Tareas la usa para la config de cierre del campo Etapa.</summary>
     [Parameter] public RenderFragment? SeccionExtra { get; set; }
@@ -372,16 +382,29 @@
     // Click en "Gestionar colores y orden": overlay interno (AutoServidoPopup) o delegar al gestor del padre (clasico).
     private async Task OnGestionarClick()
     {
-        if (AutoServidoPopup) AbrirGestorInterno();
+        if (AutoServidoPopup || ColorPopupClasico) AbrirGestorInterno();
         else await AbrirGestor();
     }
 
-    // Abre el overlay interno con el editor OpcionesLista. Reconstruye _opcsEdit desde el override vigente (o las
-    // semillas) para tomar tambien lo que se haya agregado con "Añadir" del modal antes de abrirlo.
+    // Abre el overlay interno con el editor OpcionesLista.
+    // - AutoServido: reconstruye _opcsEdit desde el override vigente (o las semillas), permite agregar/quitar.
+    // - ColorPopupClasico: universo FIJO = OpcionesLista (enum/tabla) fusionado con el override del tenant
+    //   (color/oculta por label); no se agrega/quita/renombra, solo color (+ocultar si aplica).
     private void AbrirGestorInterno()
     {
         _opcsEdit.Clear();
-        if (!string.IsNullOrWhiteSpace(_opcionesJson)) _opcsEdit.AddRange(OpcionCampo.Parse(_opcionesJson));
+        if (ColorPopupClasico && OpcionesLista is not null)
+        {
+            var ov = OpcionCampo.Parse(_opcionesJson)
+                .GroupBy(o => (o.K ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            foreach (var o in OpcionesLista)
+            {
+                ov.TryGetValue((o.Texto ?? "").Trim(), out var o2);
+                _opcsEdit.Add(new OpcionCampo(o.Texto, o2?.Oculta ?? false, o2?.Color ?? o.Color));
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(_opcionesJson)) _opcsEdit.AddRange(OpcionCampo.Parse(_opcionesJson));
         else _opcsEdit.AddRange((_opcionesSelf ?? new()).Select(v => new OpcionCampo(v.Texto, false, v.Color)));
         _gestorOpen = true;
     }

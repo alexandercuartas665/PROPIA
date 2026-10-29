@@ -363,6 +363,7 @@ else
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="vehiculos" TituloSingular="vehiculo" Jwt="@_jwt"
                              OpcionesLista="@OpcionesVistaVeh(_editSisClave)" PermiteAgregar="false"
+                             ColorPopupClasico="@(_editSisClave == "tipovehiculo")" PermitirOcultarOpciones="true"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
 }
 
@@ -587,8 +588,25 @@ else
     // (enum->texto), por eso PermiteAgregar=false.
     private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaVeh(string? clave)
         => clave == "tipovehiculo"
-            ? TiposVehiculo.Select(t => new EditarCampoSistemaModal.OpcionVista(TipoLabel(t), null)).ToList()
+            ? TiposVehiculo.Select(t => new EditarCampoSistemaModal.OpcionVista(TipoLabel(t), ColorTipoVeh(TipoLabel(t)))).ToList()
             : null;
+
+    // ===== Ola 3: color (+ocultar) por copropiedad de la lista de sistema 'tipovehiculo' (universo enum FIJO).
+    // El override (OpcionCampo por label) vive en unidades-config entidad=vehiculos clave=tipovehiculo; lo
+    // escribe el overlay "Gestionar colores" de EditarCampoSistemaModal y aqui se lee para pintar/ocultar.
+    private List<Propia.Web.Components.Shared.OpcionCampo> OverrideTipoVeh()
+        => _cfg.TryGetValue("tipovehiculo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
+    private string? ColorTipoVeh(string? label)
+        => OverrideTipoVeh().FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+    private bool OcultaTipoVeh(string? label)
+        => OverrideTipoVeh().Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private string? TipoVehSelStyle(string? label)
+    {
+        var c = ColorTipoVeh(label);
+        return string.IsNullOrWhiteSpace(c) ? null
+            : $"background:{c};border-color:{c};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(c!)};border-radius:7px;font-weight:700;";
+    }
 
     // ===== Columnas dinamicas dirigidas por unidades-config (entidad 'vehiculos') =====
     // Estructurales (unidad, propietario) + de sistema editables en tabla (placa, tipovehiculo) + propias.
@@ -805,8 +823,8 @@ else
                     <input class="veh-editcell" value="@v.Placa" placeholder="-" @onchange="e => GuardarPlacaAsync(v, e.Value?.ToString())" />
                     break;
                 case "tipovehiculo":
-                    <select class="veh-editcell" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
-                        @foreach (var t in TiposVehiculo) { <option value="@t" selected="@(v.TipoVehiculo == t)">@TipoLabel(t)</option> }
+                    <select class="veh-editcell" style="@TipoVehSelStyle(TipoLabel(v.TipoVehiculo))" @onchange="e => GuardarTipoAsync(v, e.Value?.ToString())">
+                        @foreach (var t in TiposVehiculo) { if (OcultaTipoVeh(TipoLabel(t)) && v.TipoVehiculo != t) { continue; } <option value="@t" selected="@(v.TipoVehiculo == t)">@TipoLabel(t)</option> }
                     </select>
                     break;
                 case "propietario":
