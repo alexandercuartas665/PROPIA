@@ -83,10 +83,10 @@
                         {
                             <span class="ecs-hint">@HintReadOnly</span>
                         }
-                        @if (AbrirGestorAvanzado.HasDelegate)
+                        @if (AbrirGestorAvanzado.HasDelegate || AutoServidoPopup)
                         {
                             <div class="ecs-adv" style="margin-top:8px;">
-                                <button type="button" class="ecs-btn-ghost" @onclick="AbrirGestor"><i class="fi fi-rr-settings-sliders"></i> Gestionar colores y orden</button>
+                                <button type="button" class="ecs-btn-ghost" @onclick="OnGestionarClick"><i class="fi fi-rr-settings-sliders"></i> Gestionar colores y orden</button>
                             </div>
                         }
                     }
@@ -153,6 +153,26 @@
     </div>
 </div>
 
+@* Overlay "Gestionar colores y orden" (modo AutoServidoPopup): el mismo editor completo (color/ocultar/reordenar)
+   que en otros modulos va inline, aqui va en una capa sobre el modal -> el modal queda igual al de Unidades. *@
+@if (_gestorOpen)
+{
+    <div class="ecs-gback" @onclick="() => _gestorOpen = false">
+        <div class="ecs-gshell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="ecs-ghead">
+                <div class="ecs-gh">Colores y orden &middot; @(string.IsNullOrWhiteSpace(_alias) ? DefLabel : _alias)</div>
+                <button class="ecs-x" type="button" @onclick="() => _gestorOpen = false" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+            </div>
+            <div class="ecs-gbody">
+                <OpcionesLista Opciones="_opcsEdit" OpcionesChanged="PersistirOpcsAsync" SemillaKeys="@_semillaKeys" />
+            </div>
+            <div class="ecs-gfoot">
+                <button type="button" class="ecs-btn-brand" @onclick="() => _gestorOpen = false"><i class="fi fi-rr-check"></i> Listo</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     /// <summary>Clave estable del campo de sistema (ej. "matricula", "telefono").</summary>
     [Parameter, EditorRequired] public string Clave { get; set; } = "";
@@ -194,6 +214,11 @@
     /// <summary>Si se pasa, muestra un boton "Gestionar colores y orden" que delega al gestor avanzado del
     /// padre (p.ej. el editor por-tablero de estados/prioridades/etiquetas de Tareas). Opcional.</summary>
     [Parameter] public EventCallback AbrirGestorAvanzado { get; set; }
+    /// <summary>Opt-in: en modo auto-servido, en vez del editor inline, mostrar el camino CANON (lista read-only +
+    /// "Agregar" + boton "Gestionar colores y orden") y abrir el editor de color/ocultar/reordenar en un OVERLAY
+    /// interno. Asi el modal queda identico al de Unidades sin que cada modulo construya su propio popup. Default
+    /// false = editor inline (comportamiento previo). Ver inventario de modulos que aun usan el inline.</summary>
+    [Parameter] public bool AutoServidoPopup { get; set; }
     /// <summary>Seccion extra opcional especifica del modulo, renderizada tras la lista de opciones (opt-in;
     /// null en los modulos que no la usan). Tareas la usa para la config de cierre del campo Etapa.</summary>
     [Parameter] public RenderFragment? SeccionExtra { get; set; }
@@ -243,10 +268,14 @@
     // Lista efectiva a mostrar: la del padre (modo clasico) o la auto-servida (modo E0).
     private List<OpcionVista>? EfectivasOpciones => OpcionesLista ?? _opcionesSelf;
 
-    // Edicion inline COMPLETA (reordenar/color/ocultar) SOLO en el modo auto-servido (catalogo): ahi el override
+    // Edicion COMPLETA (reordenar/color/ocultar) disponible SOLO en el modo auto-servido (catalogo): ahi el override
     // usa el formato OpcionCampo [{K,Oculta,Color}] y el modal ya lo persiste. En el modo clasico los formatos
     // de override son heterogeneos por modulo (p.ej. Directorio etiquetas = List<string>), por eso NO se generaliza.
-    private bool EditableInline => AutoServido && PermiteAgregar;
+    private bool AutoServidoEditable => AutoServido && PermiteAgregar;
+    // El editor inline se incrusta en el modal SOLO si NO se pidio el overlay (AutoServidoPopup). Con overlay el
+    // modal muestra el camino canon (read-only + boton) y el mismo editor va al overlay -> homogeneo con Unidades.
+    private bool EditableInline => AutoServidoEditable && !AutoServidoPopup;
+    private bool _gestorOpen;                               // overlay "Gestionar colores y orden" (modo AutoServidoPopup)
     private readonly List<OpcionCampo> _opcsEdit = new();   // lista editable (full, incl ocultas) del modo auto-servido
 
     private string CfgUrl => RutaConfig.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
@@ -339,6 +368,23 @@
 
     private async Task Cerrar() => await Cerrado.InvokeAsync();
     private async Task AbrirGestor() { await Cerrado.InvokeAsync(); await AbrirGestorAvanzado.InvokeAsync(); }
+
+    // Click en "Gestionar colores y orden": overlay interno (AutoServidoPopup) o delegar al gestor del padre (clasico).
+    private async Task OnGestionarClick()
+    {
+        if (AutoServidoPopup) AbrirGestorInterno();
+        else await AbrirGestor();
+    }
+
+    // Abre el overlay interno con el editor OpcionesLista. Reconstruye _opcsEdit desde el override vigente (o las
+    // semillas) para tomar tambien lo que se haya agregado con "Añadir" del modal antes de abrirlo.
+    private void AbrirGestorInterno()
+    {
+        _opcsEdit.Clear();
+        if (!string.IsNullOrWhiteSpace(_opcionesJson)) _opcsEdit.AddRange(OpcionCampo.Parse(_opcionesJson));
+        else _opcsEdit.AddRange((_opcionesSelf ?? new()).Select(v => new OpcionCampo(v.Texto, false, v.Color)));
+        _gestorOpen = true;
+    }
 
     private void OnNuevaOpcionKey(KeyboardEventArgs e) { if (e.Key == "Enter") _ = AgregarOpcionAsync(); }
 
@@ -469,4 +515,11 @@
     .ecs-btn-soft { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); color: var(--propia-brand); white-space: nowrap; }
     .ecs-btn-soft:hover:not(:disabled) { background: var(--propia-brand-soft-3, var(--propia-brand-soft)); border-color: var(--propia-brand); }
     .ecs-btn-soft:disabled { opacity: .5; cursor: default; }
+    /* Overlay "Gestionar colores y orden" (modo AutoServidoPopup): capa por encima del modal (z > .ecs-back). */
+    .ecs-gback { position: fixed; inset: 0; background: rgba(20,28,45,.55); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 3600; padding: 24px; }
+    .ecs-gshell { width: 480px; max-width: 94vw; max-height: 88vh; background: var(--propia-bg-card); border-radius: var(--propia-radius-modal, 18px); box-shadow: var(--propia-shadow-modal); overflow: hidden; display: flex; flex-direction: column; font-family: var(--propia-font-base, inherit); }
+    .ecs-ghead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--propia-border-divider); }
+    .ecs-gh { flex: 1; min-width: 0; font-size: 14px; font-weight: 800; color: var(--propia-text-h1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ecs-gbody { padding: 14px 18px; overflow: auto; }
+    .ecs-gfoot { display: flex; align-items: center; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--propia-border-divider); }
 </style>
