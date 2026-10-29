@@ -279,6 +279,8 @@
                     }))
                     .ToList();
             }
+            @* Captura la lista mostrada (filtrada+ordenada) para la navegacion anterior/siguiente del modal. *@
+            _listaNavU = lista;
             @if (lista.Count == 0 && _vista == "lista")
             {
                 <div class="usr-empty">Sin usuarios @_tab.ToString().ToLower() en esta copropiedad.</div>
@@ -453,6 +455,19 @@
     <div class="usr-modal-bg" @onclick="CerrarEditar">
         <div class="usr-modal usr-modal-user" @onclick:stopPropagation="true">
             <div class="usr-modal-head">
+                @* Navegacion anterior/siguiente entre registros (canon ficha Residentes), solo al editar. *@
+                @if (!_creando && _navIdxU >= 0 && _listaNavU.Count > 1)
+                {
+                    <div class="usr-nav">
+                        <button class="usr-nav-btn" type="button" title="Anterior" disabled="@(_navIdxU <= 0)" @onclick="NavAnteriorU">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"></path></svg>
+                        </button>
+                        <span class="usr-nav-count">@(_navIdxU + 1) / @_listaNavU.Count</span>
+                        <button class="usr-nav-btn" type="button" title="Siguiente" disabled="@(_navIdxU >= _listaNavU.Count - 1)" @onclick="NavSiguienteU">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"></path></svg>
+                        </button>
+                    </div>
+                }
                 <div class="usr-modal-ico">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </div>
@@ -462,8 +477,8 @@
                 </div>
                 @* Canon cluster: Guardar (check) + Revocar acceso (bote, solo al editar) + Cancelar (undo) + Cerrar (x).
                    El modal SIEMPRE abre en edicion (EnEdicion=true, sin lapiz); Cancelar y Cerrar descartan y cierran. *@
-                <ModalHeaderActions EnEdicion="true" MostrarEditar="false"
-                                    MostrarEliminar="@(!_creando)" MostrarCancelar="true" Guardando="_busy"
+                <ModalHeaderActions EnEdicion="@(_tabUsuario == "perfil")" MostrarEditar="false"
+                                    MostrarEliminar="@(!_creando && _tabUsuario == "perfil")" MostrarCancelar="true" Guardando="_busy"
                                     TituloGuardar="@(_creando ? "Crear usuario" : "Guardar cambios")"
                                     TituloEliminar="Revocar acceso" TituloCancelar="Cancelar"
                                     OnGuardar="@(async () => { if (_creando) await GuardarCrear(); else await GuardarEditar(); })"
@@ -471,47 +486,125 @@
                                     OnCancelarEdicion="CerrarEditar"
                                     OnCerrar="CerrarEditar" />
             </div>
+            @* Pestanas (canon fichas Terceros/Residentes): Perfil + (solo al editar) Documentos / Historial. *@
+            <div class="usr-tabs">
+                <button class="usr-tab @(_tabUsuario == "perfil" ? "usr-tab--on" : "")" type="button" @onclick='() => _tabUsuario = "perfil"'>@(_creando ? "Nuevo usuario" : "Perfil")</button>
+                @if (!_creando)
+                {
+                    <button class="usr-tab @(_tabUsuario == "documentos" ? "usr-tab--on" : "")" type="button" @onclick='() => _tabUsuario = "documentos"'>Documentos@(_editAdjuntos.Count > 0 ? $" ({_editAdjuntos.Count})" : "")</button>
+                    <button class="usr-tab @(_tabUsuario == "historial" ? "usr-tab--on" : "")" type="button" @onclick='() => _tabUsuario = "historial"'>Historial</button>
+                }
+            </div>
             <div class="usr-modal-body">
-            <div class="usr-mgrid">
-            @* ---------- Columna izquierda: identidad (editable solo al crear) + rol + cargo ---------- *@
-            <div class="usr-mcol">
-                <div class="d-flex align-items-center gap-3 mb-4">
-                    <div class="usr-av-edit">
-                        @if (!_creando && !string.IsNullOrWhiteSpace(_editFotoUrl))
-                        {
-                            <img class="usr-av usr-av-img" style="width:64px;height:64px;border-radius:15px" src="@_editFotoUrl" alt="@_editUser!.NombreCompleto" />
-                        }
-                        else
-                        {
-                            <div class="usr-av" style="width:64px;height:64px;border-radius:15px;font-size:21px">@Iniciales(_creando ? _nuevoNombre : _editUser!.NombreCompleto)</div>
-                        }
-                        @if (!_creando)
-                        {
-                            <label class="usr-av-cam" title="Cambiar foto">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                                <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" style="display:none" />
-                            </label>
-                        }
-                    </div>
-                    <div>
-                        <div class="usr-name" style="font-size:16px">@(_creando ? (string.IsNullOrWhiteSpace(_nuevoNombre) ? "Nuevo usuario" : _nuevoNombre) : _editUser!.NombreCompleto)</div>
-                        <div class="usr-email">@(_creando ? "Se registrara en el Directorio" : (_editUser!.Email ?? "Sin correo") + (_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio"))</div>
-                        @if (_subiendoFoto) { <div class="usr-email" style="color:#1E88E5">Subiendo foto...</div> }
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="usr-label">Nombre completo@(_creando ? " *" : "")</label>
-                    @if (_creando)
+            @if (_tabUsuario == "perfil")
+            {
+            <div class="usr-ficha-cols">
+            @* ---------- Columna izquierda: imagen grande dedicada + ROL + CARGO debajo (canon Residentes) ---------- *@
+            <div class="usr-mcol usr-ficha-left">
+                <div class="usr-ficha-foto-lbl">FOTO DE LA PERSONA</div>
+                <div class="usr-av-edit usr-av-edit--big">
+                    @if (!_creando && !string.IsNullOrWhiteSpace(_editFotoUrl))
                     {
-                        <input class="usr-input" @bind="_nuevoNombre" @bind:event="oninput" placeholder="Nombres y apellidos" />
+                        <img class="usr-av usr-av-img usr-av--big" src="@_editFotoUrl" alt="@_editUser!.NombreCompleto" />
                     }
                     else
                     {
-                        <input class="usr-input" value="@_editUser!.NombreCompleto" disabled />
+                        <div class="usr-av usr-av--big">@Iniciales(_creando ? _nuevoNombre : _editUser!.NombreCompleto)</div>
                     }
                 </div>
-                @* Documento + Correo: editables SOLO al crear (persona nueva); al editar son solo lectura (Directorio). *@
+                @if (!_creando)
+                {
+                    <label class="usr-ficha-change" title="Cambiar foto">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"></path></svg>@(_subiendoFoto ? "Subiendo..." : "Cambiar foto")
+                        <InputFile OnChange="SubirFoto" accept="image/png,image/jpeg,image/webp" style="display:none" />
+                    </label>
+                }
+                <div class="usr-ficha-name">@(_creando ? (string.IsNullOrWhiteSpace(_nuevoNombre) ? "Nuevo usuario" : _nuevoNombre) : _editUser!.NombreCompleto)</div>
+                <div class="usr-ficha-email">@(_creando ? "Se registrara en el Directorio" : (_editUser!.Email ?? "Sin correo") + (_editUser.TieneCuentaPropia ? ". Con cuenta propia" : ". Solo en directorio"))</div>
+
+                @* ROL + CARGO bajo la foto (seccion estructurada con divisor, calca a la seccion ACCESO de Residentes). *@
+                <div class="usr-ficha-access">
+                    @* ROL (multi): chips asignados (x) + disponibles (clic para asignar). Otorga permisos (RBAC). *@
+                    <div class="usr-gob-sec">
+                        <div class="usr-gob-sec-t">ROL@(_creando ? " *" : "")</div>
+                        <div class="usr-gob-sec-hint">Otorga permisos en PropIA (referencia a Roles y Permisos). Un usuario puede tener varios.</div>
+                        <div class="usr-etq-list">
+                            @foreach (var rid in _editRolIds)
+                            {
+                                var rr = rid;
+                                var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre
+                                         ?? _editUser?.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
+                                <span class="usr-etq-chip" style="background:var(--propia-brand-soft);color:var(--propia-brand-text-2, var(--propia-brand));border-color:transparent">@rn<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
+                            }
+                            @if (_editRolIds.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
+                        </div>
+                        @{ var rolesDisp = _roles.Where(r => r.Activo && !_editRolIds.Contains(r.Id)).ToList(); }
+                        @if (rolesDisp.Count > 0)
+                        {
+                            <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
+                            <div class="usr-etq-list">
+                                @foreach (var r in rolesDisp)
+                                {
+                                    var rid3 = r.Id;
+                                    <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => ToggleEditRol(rid3)"><span class="usr-etq-dot" style="background:var(--propia-brand)"></span>@r.Nombre</button></span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* CARGO (multi, descriptivo, NO da permisos): chips + disponibles del catalogo "usuario.cargo". *@
+                    <div class="usr-gob-sec">
+                        <div class="usr-gob-sec-t">CARGO</div>
+                        <div class="usr-gob-sec-hint">Oficio o funcion del personal interno (descriptivo, no otorga permisos).</div>
+                        <div class="usr-etq-list">
+                            @foreach (var cg in _editCargos)
+                            {
+                                var cgv = cg;
+                                <span class="usr-etq-chip" style="background:var(--propia-border-divider);color:var(--propia-text-body);border-color:transparent">@cgv<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditCargo(cgv)">&times;</button></span>
+                            }
+                            @if (_editCargos.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
+                        </div>
+                        @{ var cargosDisp = _cargoOpciones.Where(c => !_editCargos.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList(); }
+                        @if (cargosDisp.Count > 0)
+                        {
+                            <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
+                            <div class="usr-etq-list">
+                                @foreach (var c in cargosDisp)
+                                {
+                                    var cv = c;
+                                    <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => AgregarEditCargo(cv)"><span class="usr-etq-dot" style="background:var(--propia-text-muted)"></span>@cv</button></span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* ---------- Columna derecha (ancha): identidad + estado + sistema (canon Residentes DATOS) ---------- *@
+            <div class="usr-mcol">
+                <div class="usr-gob-sec-t" style="margin-bottom:10px">DATOS DEL USUARIO</div>
+                @* Nombre: al CREAR es un solo campo; al EDITAR son Nombres + Apellidos (editable, se guarda en la Persona). *@
+                @if (_creando)
+                {
+                    <div class="mb-3">
+                        <label class="usr-label">Nombre completo *</label>
+                        <input class="usr-input" @bind="_nuevoNombre" @bind:event="oninput" placeholder="Nombres y apellidos" />
+                    </div>
+                }
+                else
+                {
+                    <div class="usr-mgrid mb-3" style="grid-template-columns:1fr 1fr;gap:12px">
+                        <div>
+                            <label class="usr-label">Nombres</label>
+                            <input class="usr-input" @bind="_editNombres" @bind:event="oninput" placeholder="Nombres" disabled="@(!_personaEditable)" />
+                        </div>
+                        <div>
+                            <label class="usr-label">Apellidos</label>
+                            <input class="usr-input" @bind="_editApellidos" @bind:event="oninput" placeholder="Apellidos" disabled="@(!_personaEditable)" />
+                        </div>
+                    </div>
+                }
+                @* Documento (solo lectura al editar) + Correo (editable). *@
                 <div class="usr-mgrid mb-3" style="grid-template-columns:1fr 1fr;gap:12px">
                     <div>
                         <label class="usr-label">@(_creando ? "Documento *" : "Documento de identidad")</label>
@@ -521,7 +614,7 @@
                         }
                         else
                         {
-                            <input class="usr-input" value="@_editUser!.Documento" disabled />
+                            <input class="usr-input" value="@_editUser!.Documento" disabled title="El documento no se edita aqui" />
                         }
                     </div>
                     <div>
@@ -532,74 +625,17 @@
                         }
                         else
                         {
-                            <input class="usr-input" value="@(_editUser!.Email ?? "")" disabled />
+                            <input class="usr-input" type="email" @bind="_editEmail" @bind:event="oninput" placeholder="correo@@ejemplo.com" disabled="@(!_personaEditable)" />
                         }
                     </div>
                 </div>
-                @* Celular (WhatsApp): editable en ambos modos (persiste en Persona.Telefono). *@
+                @* Celular (WhatsApp): editable en ambos modos. *@
                 <div class="mb-2">
                     <label class="usr-label">Celular (WhatsApp)</label>
                     <input class="usr-input" @bind="_editTelefono" @bind:event="oninput" placeholder="Numero de celular" />
                 </div>
-                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">@(_creando ? "La persona se registra en el Directorio; la foto y mas datos se completan luego en la ficha." : "La identidad (nombre, documento, correo) es unica por persona y se edita en el Directorio.")</div>
+                <div class="usr-hint" style="margin-top:0;margin-bottom:14px">@(_creando ? "La persona se registra en el Directorio; la foto y mas datos se completan luego en la ficha." : "El nombre, correo y celular se guardan en la persona del Directorio (compartida con Residentes y Terceros). El documento no se edita aqui.")</div>
 
-                @* ROL (multi): chips asignados (x) + disponibles (clic para asignar). Otorga permisos (RBAC). *@
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">ROL@(_creando ? " *" : "")</div>
-                    <div class="usr-gob-sec-hint">Otorga permisos en PropIA (referencia a Roles y Permisos). Un usuario puede tener varios.</div>
-                    <div class="usr-etq-list">
-                        @foreach (var rid in _editRolIds)
-                        {
-                            var rr = rid;
-                            var rn = _roles.FirstOrDefault(r => r.Id == rr)?.Nombre
-                                     ?? _editUser?.Roles.FirstOrDefault(x => x.Id == rr)?.Nombre ?? "Rol";
-                            <span class="usr-etq-chip" style="background:var(--propia-brand-soft);color:var(--propia-brand-text-2, var(--propia-brand));border-color:transparent">@rn<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditRol(rr)">&times;</button></span>
-                        }
-                        @if (_editRolIds.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
-                    </div>
-                    @{ var rolesDisp = _roles.Where(r => r.Activo && !_editRolIds.Contains(r.Id)).ToList(); }
-                    @if (rolesDisp.Count > 0)
-                    {
-                        <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
-                        <div class="usr-etq-list">
-                            @foreach (var r in rolesDisp)
-                            {
-                                var rid3 = r.Id;
-                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => ToggleEditRol(rid3)"><span class="usr-etq-dot" style="background:var(--propia-brand)"></span>@r.Nombre</button></span>
-                            }
-                        </div>
-                    }
-                </div>
-
-                @* CARGO (multi, descriptivo, NO da permisos): chips + disponibles del catalogo "usuario.cargo". *@
-                <div class="usr-gob-sec">
-                    <div class="usr-gob-sec-t">CARGO</div>
-                    <div class="usr-gob-sec-hint">Oficio o funcion del personal interno (descriptivo, no otorga permisos).</div>
-                    <div class="usr-etq-list">
-                        @foreach (var cg in _editCargos)
-                        {
-                            var cgv = cg;
-                            <span class="usr-etq-chip" style="background:var(--propia-border-divider);color:var(--propia-text-body);border-color:transparent">@cgv<button class="usr-etq-x" title="Quitar" @onclick="() => QuitarEditCargo(cgv)">&times;</button></span>
-                        }
-                        @if (_editCargos.Count == 0) { <span class="usr-etq-empty">Ninguno asignado</span> }
-                    </div>
-                    @{ var cargosDisp = _cargoOpciones.Where(c => !_editCargos.Contains(c, StringComparer.OrdinalIgnoreCase)).ToList(); }
-                    @if (cargosDisp.Count > 0)
-                    {
-                        <div class="usr-etq-disp-t">Disponibles - clic para asignar</div>
-                        <div class="usr-etq-list">
-                            @foreach (var c in cargosDisp)
-                            {
-                                var cv = c;
-                                <span class="usr-etq-off"><button class="usr-etq-pick2" @onclick="() => AgregarEditCargo(cv)"><span class="usr-etq-dot" style="background:var(--propia-text-muted)"></span>@cv</button></span>
-                            }
-                        </div>
-                    }
-                </div>
-            </div>
-
-            @* ---------- Columna derecha: estado + sistema + zona de acceso (solo al editar) ---------- *@
-            <div class="usr-mcol">
                 @if (!_creando)
                 {
                     @* ESTADO: el backend solo mueve Activo<->Inactivo (revocar/reactivar); "Pendiente..." los fija el sistema. *@
@@ -644,6 +680,28 @@
                 @* La accion "Revocar acceso" vive ahora en el cluster del header (bote de la papelera, canon). *@
             </div>
             </div>
+            }
+            else if (_tabUsuario == "documentos")
+            {
+                @* Canon de documentos compartido (miniaturas + visor inline + lightbox), igual que Residentes/Terceros.
+                   Reusa el backend de adjuntos de Directorio por la PersonaId del usuario. Padding="0": el padding
+                   lo pone .usr-modal-body. *@
+                <DocumentosPanel Padding="0"
+                                 Documentos="@DocItemsUsuario()"
+                                 Subiendo="_subiendoDocUsuario"
+                                 EmptyHint="Sube la cedula, el contrato u otros documentos del usuario con el boton Subir archivo."
+                                 OnSubir="SubirDocumentoUsuario" OnEliminar="EliminarAdjuntoUsuario" />
+            }
+            else if (_tabUsuario == "historial")
+            {
+                @* Historial: eventos de ciclo de vida del acceso que ya conocemos (sin log de auditoria dedicado). *@
+                <div class="usr-gob-sec-t" style="margin-bottom:12px">HISTORIAL DEL ACCESO</div>
+                <div class="usr-sysrow"><span>Fecha de vinculacion</span><b>@FechaCortaU(_editUser!.FechaVinculacion)</b></div>
+                <div class="usr-sysrow"><span>Ultimo acceso</span><b>@FechaCortaU(_editUser!.UltimoAcceso)</b></div>
+                <div class="usr-sysrow"><span>Aceptacion de politica de datos</span><b>@(_editUser!.AceptoTratamientoDatos ? FechaHoraU(_editUser!.FechaAceptacionDatos) : "No registrada")</b></div>
+                <div class="usr-sysrow"><span>Estado actual</span><b>@EstadoLabelU(_editUser!.Estado)</b></div>
+                <div class="usr-hint" style="margin-top:16px">El registro detallado de acciones (inicios de sesion, cambios de rol) aun no se almacena; aqui se muestran los hitos del acceso disponibles.</div>
+            }
             </div>
         </div>
     </div>
@@ -1289,6 +1347,27 @@
     private string? _editFotoUrl;
     private bool _subiendoFoto;
 
+    // Pestanas del modal Editar usuario (canon fichas): "perfil" | "documentos" | "historial".
+    private string _tabUsuario = "perfil";
+    // Documentos: reusa los adjuntos de Directorio por la PersonaId del usuario (igual que Residentes/Terceros).
+    private List<DirectorioAdjuntoDto> _editAdjuntos = new();
+    private bool _subiendoDocUsuario;
+
+    // Identidad EDITABLE del usuario (se persiste en la Persona del Directorio, igual que la ficha de Residentes).
+    // Documento queda de solo lectura; nombres/apellidos/correo/celular se editan aqui.
+    private string _editNombres = "";
+    private string _editApellidos = "";
+    private string? _editEmail;
+    private DateOnly? _editFechaNac;                    // se preserva en el PUT (no se edita aqui, pero no se pisa)
+    private Propia.Domain.Enums.GeneroPersona? _editGenero;  // idem
+    // true si la persona del Directorio cargo OK (editable); false para cuentas sembradas sin persona (p.ej. admin demo):
+    // en ese caso nombre/correo quedan de solo lectura y el celular usa el endpoint propio del usuario.
+    private bool _personaEditable;
+
+    // Navegacion anterior/siguiente entre registros (canon ficha Residentes): la lista mostrada y el indice actual.
+    private List<UsuarioListaDto> _listaNavU = new();
+    private int _navIdxU = -1;
+
     // La UI de Roles y Permisos se movio a su propia bandeja (RolesPanel.razor, ruta /roles).
     // Aqui solo se conserva _roles + CargarRolesAsync para poblar los selects de rol de Usuarios.
 
@@ -1666,7 +1745,7 @@
             await CargarAsync();
             var creado = _usuarios?.FirstOrDefault(u => u.PersonaId == personaId);
             _msg = $"Usuario {d.Nombres} {d.Apellidos} creado. Completa su ficha."; _msgClass = "alert-success";
-            if (creado is not null) AbrirEditar(creado);
+            if (creado is not null) await AbrirEditar(creado);
             return;
         }
 
@@ -1732,7 +1811,7 @@
     }
 
     // ---------------- Editar usuario ----------------
-    private void AbrirEditar(UsuarioListaDto u)
+    private async Task AbrirEditar(UsuarioListaDto u)
     {
         _editUser = u;
         _editRolIds = u.Roles is { Count: > 0 }
@@ -1742,9 +1821,88 @@
         _editTelefono = u.Telefono ?? "";
         _editEstado = u.Estado;
         _editFotoUrl = u.FotoUrl;
+        _tabUsuario = "perfil";
+        _editAdjuntos = new();
+        // Indice en la lista mostrada (para la navegacion anterior/siguiente).
+        _navIdxU = _listaNavU.FindIndex(x => x.UsuarioTenantId == u.UsuarioTenantId);
+        // Identidad editable: parte el nombre completo como fallback y luego carga la persona real del Directorio.
+        (_editNombres, _editApellidos) = PartirNombreU(u.NombreCompleto);
+        _editEmail = u.Email; _editFechaNac = null; _editGenero = null;
+        await CargarPersonaEditar();
+        await CargarAdjuntosUsuario();
     }
+
+    // Carga la persona del Directorio para tener nombres/apellidos/correo/celular separados y preservar foto/fecha/genero.
+    private async Task CargarPersonaEditar()
+    {
+        _personaEditable = false;
+        if (_editUser is null) return;
+        try
+        {
+            var dto = await Auth().GetFromJsonAsync<Persona360Dto>($"/api/directorio/personas/{_editUser.PersonaId}");
+            if (dto?.Persona is { } p)
+            {
+                _editNombres = p.Nombres; _editApellidos = p.Apellidos;
+                _editEmail = p.Email; _editTelefono = p.Telefono ?? "";
+                _editFechaNac = p.FechaNacimiento; _editGenero = p.Genero;
+                if (!string.IsNullOrWhiteSpace(p.FotoUrl)) _editFotoUrl = p.FotoUrl;
+                _personaEditable = true;
+            }
+        }
+        catch { /* persona no encontrada (cuenta sembrada): se quedan los valores del UsuarioListaDto, solo lectura */ }
+    }
+
+    // Navegacion anterior/siguiente entre registros de la lista mostrada (canon ficha Residentes).
+    private async Task NavAnteriorU() { if (_navIdxU > 0) await AbrirEditar(_listaNavU[_navIdxU - 1]); }
+    private async Task NavSiguienteU() { if (_navIdxU >= 0 && _navIdxU < _listaNavU.Count - 1) await AbrirEditar(_listaNavU[_navIdxU + 1]); }
+
     // Cierra el modal (crear o editar): resetea ambos modos.
-    private void CerrarEditar() { _editUser = null; _creando = false; }
+    private void CerrarEditar() { _editUser = null; _creando = false; _tabUsuario = "perfil"; _editAdjuntos = new(); _navIdxU = -1; }
+
+    // ---- Documentos del usuario: reusa los adjuntos de Directorio por PersonaId (canon Residentes/Terceros) ----
+    private async Task CargarAdjuntosUsuario()
+    {
+        if (_editUser is null) return;
+        try { _editAdjuntos = await Auth().GetFromJsonAsync<List<DirectorioAdjuntoDto>>($"/api/directorio/adjuntos/Persona/{_editUser.PersonaId}") ?? new(); }
+        catch { _editAdjuntos = new(); }
+    }
+
+    private List<DocumentosPanel.Item> DocItemsUsuario() =>
+        _editAdjuntos.Select(a => new DocumentosPanel.Item(a.Id, a.Nombre, a.Url, a.TamanoBytes)).ToList();
+
+    private async Task SubirDocumentoUsuario(InputFileChangeEventArgs e)
+    {
+        if (_editUser is null) return;
+        var files = e.GetMultipleFiles(20);
+        if (files.Count == 0) return;
+        _subiendoDocUsuario = true;
+        try
+        {
+            foreach (var f in files)
+            {
+                if (f.Size > 10_000_000) continue;
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(f.OpenReadStream(10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+                content.Add(sc, "file", f.Name);
+                await Auth().PostAsync($"/api/directorio/adjuntos/Persona/{_editUser.PersonaId}", content);
+            }
+            await CargarAdjuntosUsuario();
+        }
+        catch { /* el panel se queda como estaba */ }
+        finally { _subiendoDocUsuario = false; }
+    }
+
+    private async Task EliminarAdjuntoUsuario(Guid id)
+    {
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/directorio/adjuntos/{id}");
+            if (resp.IsSuccessStatusCode) _editAdjuntos.RemoveAll(a => a.Id == id);
+        }
+        catch { /* no-op */ }
+    }
 
     // ---------------- Crear usuario (mismo modal, modo creacion) ----------------
     // Primera palabra = nombres, resto = apellidos (mismo criterio que la fila de alta, UsuariosTablaVista.PartirNombre).
@@ -1787,13 +1945,36 @@
             var id = _editUser.UsuarioTenantId;
             var cambios = false;
 
-            // 1) Celular (Persona.Telefono): si cambio.
-            var telNuevo = (_editTelefono ?? "").Trim();
-            if (!string.Equals((_editUser.Telefono ?? "").Trim(), telNuevo, StringComparison.Ordinal))
+            // 1) Identidad. Si la persona del Directorio es editable (caso normal), se persiste nombre/apellidos/
+            //    correo/celular con un PUT, igual que la ficha de Residentes (documento no se edita; foto/fecha/genero
+            //    se preservan). Si no (cuenta sembrada sin persona, p.ej. admin demo), solo se guarda el celular.
+            if (_personaEditable)
             {
-                var r = await http.PutAsJsonAsync($"/api/usuarios/{id}/telefono", new ActualizarTelefonoUsuarioRequest(telNuevo));
-                if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
-                cambios = true;
+                var nombres = (_editNombres ?? "").Trim();
+                var apellidos = (_editApellidos ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(nombres)) { _msg = "El nombre es obligatorio."; _msgClass = "alert-danger"; return; }
+                var emailNuevo = string.IsNullOrWhiteSpace(_editEmail) ? null : _editEmail!.Trim();
+                var telNuevo = string.IsNullOrWhiteSpace(_editTelefono) ? null : _editTelefono!.Trim();
+                var nombreCambio = !string.Equals((_editUser.NombreCompleto ?? "").Trim(), $"{nombres} {apellidos}".Trim(), StringComparison.Ordinal);
+                var emailCambio = !string.Equals((_editUser.Email ?? "").Trim(), emailNuevo ?? "", StringComparison.OrdinalIgnoreCase);
+                var telCambio = !string.Equals((_editUser.Telefono ?? "").Trim(), telNuevo ?? "", StringComparison.Ordinal);
+                if (nombreCambio || emailCambio || telCambio)
+                {
+                    var req = new ActualizarPersonaRequest(nombres, apellidos, emailNuevo, telNuevo, _editFotoUrl, _editFechaNac, _editGenero);
+                    var r = await http.PutAsJsonAsync($"/api/directorio/personas/{_editUser.PersonaId}", req);
+                    if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                    cambios = true;
+                }
+            }
+            else
+            {
+                var telNuevo = (_editTelefono ?? "").Trim();
+                if (!string.Equals((_editUser.Telefono ?? "").Trim(), telNuevo, StringComparison.Ordinal))
+                {
+                    var r = await http.PutAsJsonAsync($"/api/usuarios/{id}/telefono", new ActualizarTelefonoUsuarioRequest(telNuevo));
+                    if (!r.IsSuccessStatusCode) { _msg = await r.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+                    cambios = true;
+                }
             }
 
             // 2) Roles (multi): no vacio; el backend tambien lo valida.

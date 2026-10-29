@@ -1,6 +1,25 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.255 (Web)** (sigue a 0.0.254, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.258 (Web)** (sigue a 0.0.255, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.213). Modal "Editar usuario" (`UsuariosPanel.razor` + `usuarios.css?v=28`),
+> acercandolo al canon de las fichas Residentes/Terceros (3 cambios acumulados, solo frontend):
+> - **0.0.256** - Redistribucion a 2 columnas canon Residentes (`.usr-ficha-cols` 4fr/8fr): columna izquierda con
+>   imagen grande dedicada (avatar 150px) + ROL/CARGO debajo en seccion con divisor; columna derecha ancha con
+>   los datos (Nombre, Documento, Correo, Celular) + Estado + Datos del sistema + Persona unica.
+> - **0.0.257** - Pestanas **Documentos** (canon `DocumentosPanel`, reusa adjuntos de Directorio por la PersonaId
+>   del usuario) e **Historial** (hitos del acceso: vinculacion/ultimo acceso/aceptacion datos/estado). Las
+>   acciones del header (Guardar/Revocar) se gatean a la pestana Perfil. Solo aparecen al editar (no al crear).
+> - **0.0.258** - Navegacion **anterior/siguiente** entre registros en el header (canon ficha Residentes) +
+>   **edicion de identidad**: Nombres/Apellidos/Correo/Celular editables, se guardan en la Persona del Directorio
+>   (`PUT /api/directorio/personas/{id}`, mismo mecanismo que Residentes; el Documento no se edita). Guard: si la
+>   persona no existe (cuenta sembrada sin persona en el Directorio, p.ej. admin demo -> 404) esos campos quedan
+>   de solo lectura y el celular usa el endpoint propio del usuario, sin fallo silencioso ni regresion.
+>
+> Verificado en runtime (demo): navegacion 1/2<->2/2; edicion del celular de un usuario real persiste y sobrevive
+> al reinicio (en BD); admin demo cae al modo solo-lectura. Documentos carga por PersonaId; Historial muestra los
+> hitos. Build 0 errores, sin warnings nuevos. Rollback = redeploy del artefacto previo (no toca BD).
+>
+> **VERSION PREVIA = 0.0.255 (Web)** (sigue a 0.0.254, 2026-10-28). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). **Usuarios - ancho del modal Editar usuario igualado a las fichas.**
 > `.usr-modal-user` pasa de `width:900px` a `width:1056px; max-width:96vw; max-height:86vh`, el mismo ancho
 > intrinseco que las fichas de Residentes/Terceros (is-fixedh 1056 x 86vh) y que la ficha de rol
