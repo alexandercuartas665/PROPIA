@@ -453,10 +453,13 @@
 
     @if (_editSisClave is not null)
     {
+        @* Clave capturada: "Gestionar colores y orden" abre el panel de config DESPUES de Cerrado (que limpia _editSisClave). *@
+        var claveGestor = _editSisClave;
         <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                                  EntidadConfig="pqrsd" TituloSingular="campo" Jwt="@_jwt"
                                  OpcionesLista="@OpcionesVistaPqrsd(_editSisClave)"
                                  OnAgregarOpcion="@((t) => AgregarOpcionPqrsdAsync(_editSisClave, t))"
+                                 AbrirGestorAvanzado="@(_editSisClave is "estado" or "tipo" or "categoria" ? EventCallback.Factory.Create(this, () => AbrirGestorListaPqrsd(claveGestor)) : default)"
                                  Guardado="CargarAsync" Cerrado="() => _editSisClave = null" />
     }
 
@@ -1192,7 +1195,11 @@
                         break;
                     case "tipo": <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span> break;
                     case "categoria": <span>@it.CategoriaNombre</span> break;
-                    case "estado": <span>@(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre ?? "-")</span> break;
+                    case "estado":
+                        @if (_estados.FirstOrDefault(e => e.Id == it.EstadoId) is { } ec && !string.IsNullOrWhiteSpace(ec.Color))
+                        { <span class="pk-lchip" style="background:@ec.Color;color:@PaletaChips.TextoSobre(ec.Color!)">@ec.Nombre</span> }
+                        else { <span>@(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre ?? "-")</span> }
+                        break;
                     case "semaforo":
                         <span class="pk-sem @SemaforoClass(it.Semaforo)"><span class="pk-sem-dot"></span>@SemaforoLabel(it.Semaforo)</span>
                         <span class="pk-sem-dias @(it.DiasHastaVencimiento < 0 ? "pk-sem-dias--err" : it.DiasHastaVencimiento <= 3 ? "pk-sem-dias--warn" : "")">@DiasSlaTexto(it)</span>
@@ -2060,6 +2067,16 @@
 
     // ---------- Config columnas ----------
     private async Task AbrirConfigColumnas() { _cfgOpen = true; _cfgMsg = ""; await CargarMotivosAsync(); await CargarTiposCatAsync(); }
+
+    // "Gestionar colores y orden" del modal "Editar campo" -> abre el panel de config (grupo Flujo) en la
+    // pestana de la lista: estado=Columnas, tipo=Tipos, categoria=Categorias.
+    private async Task AbrirGestorListaPqrsd(string? clave)
+    {
+        await AbrirConfigColumnas();   // _cfgOpen=true + carga motivos/tipos/categorias
+        await CargarEstadosAsync();
+        _cfgGrupo = "flujo";
+        _cfgTab = clave == "tipo" ? "tipos" : clave == "categoria" ? "categorias" : "columnas";
+    }
 
     // ===================== Compartir formulario publico =====================
     private void AbrirCompartir()
