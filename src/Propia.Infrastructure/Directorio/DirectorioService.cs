@@ -299,8 +299,19 @@ public class DirectorioService : IDirectorioService
     // S-08: la Persona/Empresa es global (sin RLS), pero solo debe verse su ficha completa (PII: documento,
     // email, telefono, nacimiento) desde un tenant que tenga un vinculo ACTIVO con ella. DirectorioVinculos
     // es TenantEntity (HasQueryFilter), asi que esta consulta ya queda acotada al tenant actual.
-    private Task<bool> TieneVinculoEnTenantAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
-        => _db.DirectorioVinculos.AnyAsync(v => v.EntidadTipo == tipo && v.EntidadId == entidadId, ct);
+    private async Task<bool> TieneVinculoEnTenantAsync(EntidadDirectorio tipo, Guid entidadId, CancellationToken ct)
+    {
+        if (await _db.DirectorioVinculos.AnyAsync(v => v.EntidadTipo == tipo && v.EntidadId == entidadId, ct))
+            return true;
+        // Un residente vinculado a una unidad del tenant (unidad_personas, TenantEntity -> ya acotado al tenant)
+        // tambien es un vinculo legitimo con la persona. Hay residentes (carga masiva / seed) con el link de
+        // unidad pero SIN fila en directorio_vinculos; sin esto su ficha daria 404 (S-08) aunque aparecen en la
+        // lista de Residentes. Solo aplica a Persona (una unidad se vincula a persona o empresa).
+        if (tipo == EntidadDirectorio.Persona
+            && await _db.UnidadPersonas.AnyAsync(up => up.PersonaId == entidadId, ct))
+            return true;
+        return false;
+    }
 
     public async Task<Persona360Dto?> GetPersona360Async(Guid personaId, CancellationToken ct)
     {

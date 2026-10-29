@@ -1,6 +1,25 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.258 (Web)** (sigue a 0.0.255, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.259 (Web) + 0.0.214 (API)** (sigue a 0.0.258, 2026-10-29). **SOLO CODIGO, SIN
+> MIGRACION, SIN CONFIG.** **OJO: esta version SI cambia la API (0.0.213 -> 0.0.214); hay que redeployar API,
+> no solo Web.** **Fix: la ficha de un residente ya no da "404 (Not Found)" ni se queda en "Cargando roles...".**
+> Causa: la lista de Residentes se arma de `unidad_personas`, pero la ficha (GET `/api/directorio/personas/{id}`)
+> exigia una fila en `directorio_vinculos` (chequeo de seguridad S-08). Residentes de carga masiva/seed tienen el
+> link de unidad pero NO esa fila -> su ficha daba 404 (y "Cargando roles..." colgado, porque la carga abortaba
+> antes). Afecta varias copropiedades (en una, 11 de 13 residentes). Fix en `DirectorioService.TieneVinculoEnTenantAsync`
+> (Propia.Infrastructure): ademas del vinculo de directorio, acepta como vinculo valido un link de `unidad_personas`
+> en el tenant actual (TenantEntity -> ya acotado al tenant; un residente de una unidad del tenant SI esta vinculado;
+> no debilita S-08 ni filtra de mas). Tambien resiliencia en `FichaResidenteModal`: el spinner de roles se libera
+> siempre (`finally`) aunque la carga falle. **Sin migracion ni backfill de datos.** Verificado E2E en el demo:
+> se borro el `directorio_vinculos` de un residente -> con el codigo viejo reproducia el 404 exacto; con el fix
+> carga completo (nombre/correo/foto/roles); vinculo restaurado despues. Sin regresion (residentes con vinculo
+> cargan igual; tests `DirectorioFlowTests` no afectados). Rollback = redeploy del artefacto previo (no toca BD).
+>
+> Nota aparte (no bloquea): queda la inconsistencia de datos de fondo (residentes con `unidad_personas` pero sin
+> `directorio_vinculos`); el fix la hace inofensiva para la ficha. Backfill opcional + revisar el camino de alta
+> de residentes (que cree ambos) queda para decidir con Alex.
+>
+> **VERSION PREVIA = 0.0.258 (Web)** (sigue a 0.0.255, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.213). Modal "Editar usuario" (`UsuariosPanel.razor` + `usuarios.css?v=28`),
 > acercandolo al canon de las fichas Residentes/Terceros (3 cambios acumulados, solo frontend):
 > - **0.0.256** - Redistribucion a 2 columnas canon Residentes (`.usr-ficha-cols` 4fr/8fr): columna izquierda con
