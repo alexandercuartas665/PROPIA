@@ -173,6 +173,7 @@ else
                                      Requerido="false" EntidadConfig="rol" TituloSingular="rol" Jwt="@_jwt"
                                      OpcionesLista="@(_editSisClave == "categoria" ? CategoriasOpcionesVista() : null)"
                                      PermiteAgregar="false"
+                                     ColorPopupClasico="@(_editSisClave == "categoria")" PermitirOcultarOpciones="false"
                                      HintReadOnly="La categoria del rol es fija del sistema (ubica al usuario en la app); no se agregan opciones aqui."
                                      Guardado="OnCategoriasGuardadas" Cerrado="() => _editSisClave = null" />
         }
@@ -276,7 +277,7 @@ else
                                     case "categoria":
                                         <td>
                                             <span class="rol-cat">
-                                                <span class="rol-cat-dot" style="background:@ColorCategoria(r.Categoria)"></span>@LabelCategoria(r.Categoria)
+                                                <span class="rol-cat-dot" style="background:@ColorCategoriaEff(r.Categoria)"></span>@LabelCategoria(r.Categoria)
                                             </span>
                                         </td>
                                         break;
@@ -609,8 +610,17 @@ else
 
     // Semillas de categoria (las del enum) para el modal "Editar campo" de la columna Categoria.
     // Opciones (solo lectura) de la columna Categoria para el modal "Editar campo": el enum cerrado CategoriaRol.
-    private static List<EditarCampoSistemaModal.OpcionVista> CategoriasOpcionesVista()
-        => Enum.GetValues<CategoriaRol>().Select(c => new EditarCampoSistemaModal.OpcionVista(LabelCategoria(c), null)).ToList();
+    private List<EditarCampoSistemaModal.OpcionVista> CategoriasOpcionesVista()
+        => Enum.GetValues<CategoriaRol>().Select(c => new EditarCampoSistemaModal.OpcionVista(LabelCategoria(c), ColorCatOverride(LabelCategoria(c)))).ToList();
+
+    // ===== Ola 3c (solo color): override de color por copropiedad de la categoria del rol (universo enum FIJO,
+    // NO se oculta). OpcionCampo por label en unidades-config entidad=rol clave=categoria; el punto de la celda pinta.
+    private List<Propia.Web.Components.Shared.OpcionCampo> OverrideCat()
+        => _camposConfig.TryGetValue("categoria", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
+    private string? ColorCatOverride(string? label)
+        => OverrideCat().FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+    private string ColorCategoriaEff(CategoriaRol c) => ColorCatOverride(LabelCategoria(c)) ?? ColorCategoria(c);
     private async Task OnCategoriasGuardadas() { await RecargarConfigAsync(); StateHasChanged(); }
 
     // ===== Seleccion multiple + acciones masivas (checkbox de la bandeja) =====

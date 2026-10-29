@@ -454,6 +454,7 @@ else
                              EntidadConfig="personas" TituloSingular="residente" Jwt="@_jwt"
                              OpcionesLista="@(_editSisClave == "rol" ? RolOpcionesVista() : null)"
                              PermiteAgregar="false"
+                             ColorPopupClasico="@(_editSisClave == "rol")" PermitirOcultarOpciones="false"
                              HintReadOnly="El rol del residente (su relacion con la unidad) es fijo del sistema; no se agregan opciones aqui."
                              Guardado="RecargarCamposAsync" Cerrado="() => _editSisClave = null" />
 }
@@ -1680,19 +1681,36 @@ else
     };
 
     // Opciones (solo lectura) de la columna "rol" para el modal "Editar campo": el universo cerrado del enum.
-    private static List<EditarCampoSistemaModal.OpcionVista> RolOpcionesVista()
-        => Enum.GetValues<RolUnidadPersona>().Select(r => new EditarCampoSistemaModal.OpcionVista(RolLabel(r), null)).ToList();
+    private List<EditarCampoSistemaModal.OpcionVista> RolOpcionesVista()
+        => Enum.GetValues<RolUnidadPersona>().Select(r => new EditarCampoSistemaModal.OpcionVista(RolLabel(r), ColorRol(RolLabel(r)))).ToList();
+
+    // ===== Ola 3c (solo color): override de color por copropiedad del rol (universo enum FIJO, NO se oculta).
+    // OpcionCampo por label en unidades-config entidad=personas clave=rol; RolBadge pinta con ese color.
+    private List<Propia.Web.Components.Shared.OpcionCampo> OverrideRol()
+        => _cfgPer.TryGetValue("rol", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
+    private string? ColorRol(string? label)
+        => OverrideRol().FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
 
     private RenderFragment RolBadge(RolUnidadPersona r) => builder =>
     {
-        var cls = r switch
+        var col = ColorRol(RolLabel(r));
+        if (!string.IsNullOrWhiteSpace(col))
         {
-            RolUnidadPersona.Propietario => "res-rol res-rol-prop",
-            RolUnidadPersona.Residente => "res-rol res-rol-resi",
-            RolUnidadPersona.Arrendatario => "res-rol res-rol-arr",
-            _ => "res-rol res-rol-otro"
-        };
-        builder.AddMarkupContent(0, $"<span class=\"{cls}\">{RolLabel(r)}</span>");
+            var st = $"font-size:11px;font-weight:700;border-radius:8px;padding:2px 9px;background:{col};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(col!)};";
+            builder.AddMarkupContent(0, $"<span class=\"res-rol\" style=\"{st}\">{RolLabel(r)}</span>");
+        }
+        else
+        {
+            var cls = r switch
+            {
+                RolUnidadPersona.Propietario => "res-rol res-rol-prop",
+                RolUnidadPersona.Residente => "res-rol res-rol-resi",
+                RolUnidadPersona.Arrendatario => "res-rol res-rol-arr",
+                _ => "res-rol res-rol-otro"
+            };
+            builder.AddMarkupContent(0, $"<span class=\"{cls}\">{RolLabel(r)}</span>");
+        }
     };
 }
 

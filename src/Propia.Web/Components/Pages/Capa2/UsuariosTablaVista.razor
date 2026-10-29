@@ -110,7 +110,7 @@
                             @foreach (var rid in _d.RolIds)
                             {
                                 var rr = rid; var rn = Roles.FirstOrDefault(r => r.Id == rr)?.Nombre ?? "Rol";
-                                <span class="usr-mchip usr-mchip--rol">@rn<button type="button" class="usr-mchip-x" title="Quitar" @onclick="() => QuitarRol(rr)">&times;</button></span>
+                                <span class="usr-mchip usr-mchip--rol" style="@RolChipStyle(rn)">@rn<button type="button" class="usr-mchip-x" title="Quitar" @onclick="() => QuitarRol(rr)">&times;</button></span>
                             }
                             @if (_d.RolIds.Count == 0) { <span class="usr-mph">Agregar rol</span> }
                             <button type="button" class="usr-madd usr-madd--rol" title="Agregar rol" @onclick="() => { _rolMenuOpen = !_rolMenuOpen; _cargoMenuOpen = false; }">+</button>
@@ -327,9 +327,9 @@
                     <div class="utb-c utb-c-chips">
                         @if (u.Roles.Count > 0)
                         {
-                            @foreach (var rc in u.Roles) { <span class="usr-rolchip">@rc.Nombre</span> }
+                            @foreach (var rc in u.Roles) { <span class="usr-rolchip" style="@RolChipStyle(rc.Nombre)">@rc.Nombre</span> }
                         }
-                        else { <span class="usr-rolchip">@u.RolNombre</span> }
+                        else { <span class="usr-rolchip" style="@RolChipStyle(u.RolNombre)">@u.RolNombre</span> }
                     </div>
                     break;
                 case "cargo":
@@ -347,7 +347,7 @@
                     break;
                 case "estado":
                     @* 2.5 v2.0: badge con 4 valores (ok/warn/info/danger). *@
-                    <div class="utb-c"><span class="@(EstadoChip(u.Estado).Cls)">@(EstadoChip(u.Estado).Label)</span></div>
+                    <div class="utb-c"><span class="@(EstadoChip(u.Estado).Cls)" style="@EstadoChipStyle(EstadoChip(u.Estado).Label)">@(EstadoChip(u.Estado).Label)</span></div>
                     break;
             }
         }
@@ -692,15 +692,21 @@
     [Parameter] public IReadOnlyList<string> CargoOpciones { get; set; } = Array.Empty<string>();
     /// <summary>Mapa cargo -> color (hex) para pintar el chip; null/ausente = chip neutro.</summary>
     [Parameter] public Dictionary<string, string>? CargoColores { get; set; }
+    /// <summary>Ola 3c: mapa rol -> color y estado -> color (override por copropiedad, solo color). null = neutro.</summary>
+    [Parameter] public Dictionary<string, string>? RolColores { get; set; }
+    [Parameter] public Dictionary<string, string>? EstadoColores { get; set; }
 
-    // Estilo del chip de cargo segun el color elegido por la copropiedad (contraste automatico). null = neutro.
-    private string? CargoChipStyle(string? val)
+    // Estilo del chip segun el color elegido por la copropiedad (contraste automatico). null = neutro/por defecto.
+    private static string? ChipStyleDe(Dictionary<string, string>? mapa, string? val)
     {
-        if (string.IsNullOrWhiteSpace(val) || CargoColores is null) return null;
-        return CargoColores.TryGetValue(val, out var c) && !string.IsNullOrWhiteSpace(c)
+        if (string.IsNullOrWhiteSpace(val) || mapa is null) return null;
+        return mapa.TryGetValue(val, out var c) && !string.IsNullOrWhiteSpace(c)
             ? $"background:{c};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(c)};border:1px solid {c};"
             : null;
     }
+    private string? CargoChipStyle(string? val) => ChipStyleDe(CargoColores, val);
+    private string? RolChipStyle(string? val) => ChipStyleDe(RolColores, val);
+    private string? EstadoChipStyle(string? val) => ChipStyleDe(EstadoColores, val);
     private bool _rolMenuOpen;
     private bool _rolMenuAnclado;
     private bool _cargoMenuOpen;

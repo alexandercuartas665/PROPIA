@@ -321,7 +321,7 @@
                 }
                 @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
                    muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
-                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones" CargoColores="_cargoColores"
+                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones" CargoColores="_cargoColores" RolColores="_rolColores" EstadoColores="_estadoColores"
                                     Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     OnCrearAbrir="CrearUsuarioAbrirTabla"
@@ -790,6 +790,7 @@
                              OpcionesLista="@OpcionesSisU(_editSisClave)"
                              PermiteAgregar="@(_editSisClave == "cargo")"
                              AutoServidoPopup="@(_editSisClave == "cargo")"
+                             ColorPopupClasico="@(_editSisClave is "rol" or "estado")" PermitirOcultarOpciones="false"
                              HintReadOnly="@HintSisU(_editSisClave)"
                              Guardado="OnCampoSistemaUGuardado" Cerrado="() => _editSisClave = null" />
 }
@@ -865,11 +866,14 @@
         _ => null
     };
     private List<EditarCampoSistemaModal.OpcionVista> RolesComoOpcionesU()
-        => _roles.Where(r => r.Activo).Select(r => new EditarCampoSistemaModal.OpcionVista(r.Nombre)).ToList();
+        => _roles.Where(r => r.Activo).Select(r => new EditarCampoSistemaModal.OpcionVista(r.Nombre, _rolColores.GetValueOrDefault(r.Nombre))).ToList();
     // Universo de estados del usuario (labels iguales al badge de la tabla, ver UsuariosTablaVista.EstadoChip).
-    private static List<EditarCampoSistemaModal.OpcionVista> EstadosComoOpcionesU() => new()
+    private List<EditarCampoSistemaModal.OpcionVista> EstadosComoOpcionesU() => new()
     {
-        new("Activo"), new("Invitación pendiente"), new("Pendiente de contacto"), new("Inactivo")
+        new("Activo", _estadoColores.GetValueOrDefault("Activo")),
+        new("Invitación pendiente", _estadoColores.GetValueOrDefault("Invitación pendiente")),
+        new("Pendiente de contacto", _estadoColores.GetValueOrDefault("Pendiente de contacto")),
+        new("Inactivo", _estadoColores.GetValueOrDefault("Inactivo"))
     };
     private static string HintSisU(string clave) => clave switch
     {
@@ -1232,10 +1236,20 @@
         {
             var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=usuario") ?? new();
             _cfgUsr = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            _rolColores = MapaColorU("rol");
+            _estadoColores = MapaColorU("estado");
             HidratarAnchosU();
         }
         catch { }
     }
+    // Ola 3c (solo color): override de color por copropiedad de rol/estado (universo FIJO, NO se oculta).
+    // OpcionCampo por label en unidades-config entidad=usuario clave=rol|estado; los chips de la celda pintan.
+    private Dictionary<string, string> _rolColores = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _estadoColores = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> MapaColorU(string clave)
+        => _cfgUsr.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
+            ? OpcionCampo.Parse(c.Opciones).Where(o => !string.IsNullOrWhiteSpace(o.Color)).ToDictionary(o => o.K, o => o.Color!, StringComparer.OrdinalIgnoreCase)
+            : new(StringComparer.OrdinalIgnoreCase);
     private void HidratarAnchosU()
     {
         _colWU.Clear();
