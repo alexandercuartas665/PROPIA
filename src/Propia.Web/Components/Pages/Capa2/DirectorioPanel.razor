@@ -169,7 +169,7 @@
         @if (_tab == "personas")
         {
             <DirectorioPersonasVista Personas="PersonasParaVista()" Recien="_recienP" Grupos="GruposPersonas()" ColsConfig="_colsPersonas" ColsOrder="_ordenPersonas" Vista="_view" Agg="_aggDir"
-                                     Etiquetas="EtiquetasOpciones()"
+                                     Etiquetas="EtiquetasOpciones()" EtiquetaColores="EtiquetaColores()"
                                      ColsWidth="_widthPersonas" SortKey="@_sortKeyDir" SortDir="_sortDirDir"
                                      OnOrdenar="OrdenarDir" OnReordenar="ReordenarDir" OnRedimensionar="RedimensionarDir"
                                      Seleccion="_sel" TodoSeleccionado="TodoSeleccionadoActivo"
@@ -701,7 +701,28 @@
                              OpcionesLista="@(_editSisClave == "etiquetas" ? EtiquetasOpcionesVista() : (_editSisClave == "genero" ? SexoOpcionesVista() : null))"
                              PermiteAgregar="@(_editSisClave == "etiquetas")"
                              OnAgregarOpcion="AgregarEtiquetaOpcionAsync"
+                             AbrirGestorAvanzado="@(_editSisClave == "etiquetas" ? EventCallback.Factory.Create(this, AbrirEtLista) : default)"
                              Guardado="RecargarCamposDir" Cerrado="() => _editSisClave = null" />
+}
+
+@* Popup "Gestionar colores y orden" de las ETIQUETAS: editor inline (color/ocultar/reordenar/agregar; las de
+   fabrica solo se ocultan). Las ocultas dejan de ofrecerse pero las personas que ya las usan las conservan. *@
+@if (_etListaAbierta)
+{
+    <div style="position:fixed;inset:0;background:rgba(20,28,45,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:3400;padding:24px;" @onclick="CerrarEtLista">
+        <div style="width:460px;max-width:96vw;max-height:88vh;background:var(--propia-bg-card);border-radius:16px;box-shadow:0 30px 70px rgba(27,42,58,.4);overflow:hidden;display:flex;flex-direction:column;" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--propia-border-divider);">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:15px;font-weight:800;color:var(--propia-text-h1);">Opciones de Etiquetas</div>
+                    <div style="font-size:12px;color:var(--propia-text-muted);margin-top:2px;">Las opciones de fábrica no se pueden eliminar, pero sí ocultar: dejan de ofrecerse sin perder los contactos que ya las usan.</div>
+                </div>
+                <button type="button" @onclick="CerrarEtLista" aria-label="Cerrar" style="border:0;background:transparent;font-size:20px;color:var(--propia-text-muted);cursor:pointer;line-height:1;flex-shrink:0;">&times;</button>
+            </div>
+            <div style="padding:14px 20px;overflow:auto;">
+                <OpcionesLista Opciones="_etOpsEdit" OpcionesChanged="GuardarEtOpsEditAsync" SemillaKeys="@_etSemillaKeys" />
+            </div>
+        </div>
+    </div>
 }
 
 @* Gestor avanzado (crear/renombrar/reordenar/ocultar/tipos): el mismo componente compartido que usa
@@ -769,23 +790,39 @@
     // tenant viven en la config del campo (unidades-config, entidad=personas, campo=etiquetas), igual
     // que las listas de sistema de Unidades (Estado). La asignacion por contacto es un texto (chip).
     private List<string> _catEtiqueta = new();          // labels activos del catalogo directorio.etiqueta
-    private List<string> _etiquetaCustom = new();        // valores custom del tenant (de la config del campo)
+    // Lista FULL de etiquetas (base del catalogo + override por copropiedad): cada opcion lleva K/Oculta/Color.
+    private List<OpcionCampo> _etOps = new();
+    private HashSet<string> _etSemillaKeys = new(StringComparer.OrdinalIgnoreCase);  // labels base (semilla): solo-ocultar
+    private bool _etListaAbierta;                        // popup "Gestionar colores y orden" de etiquetas
+    private List<OpcionCampo> _etOpsEdit = new();        // copia editable para el popup
     private UnidadCampoConfigDto? _etiquetaCfgRow;       // fila de config del campo "etiquetas" (para preservar alias/oculto)
     // Filtro dinamico unico (componente compartido): mismos campos para personas y empresas.
     private FiltroDinamico? _fd;
 
-    // Opciones de etiqueta ofrecidas (catalogo + custom), dedup case/acento-insensible, catalogo primero.
+    // Opciones de etiqueta VISIBLES (no ocultas), en su orden. Fuente: _etOps (base catalogo + override tenant).
     private List<string> EtiquetasOpciones()
+        => _etOps.Where(o => !o.Oculta).Select(o => o.K).ToList();
+
+    // Mapa valor->color (hex) de las etiquetas, del override de la copropiedad. Para pintar el chip en la tabla.
+    private Dictionary<string, string> EtiquetaColores()
+        => _etOps.Where(o => !string.IsNullOrWhiteSpace(o.Color))
+                 .GroupBy(o => o.K, StringComparer.OrdinalIgnoreCase)
+                 .ToDictionary(g => g.Key, g => g.First().Color!, StringComparer.OrdinalIgnoreCase);
+
+    // Arma la lista FULL: override del tenant (config Opciones en formato OpcionCampo; tolera el legado string[])
+    // + las del catalogo base que no esten ya en el override (como semilla visible, sin color).
+    private void ConstruirEtOps()
     {
-        var res = new List<string>();
-        var vistos = new HashSet<string>();
-        foreach (var v in _catEtiqueta.Concat(_etiquetaCustom))
+        _etSemillaKeys = _catEtiqueta.Select(s => (s ?? "").Trim()).Where(s => s.Length > 0)
+                                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ops = OpcionCampo.Parse(_etiquetaCfgRow?.Opciones);
+        var vistos = new HashSet<string>(ops.Select(o => NormalizarEt(o.K)), StringComparer.Ordinal);
+        foreach (var b in _catEtiqueta)
         {
-            var val = (v ?? "").Trim();
-            if (val.Length == 0) continue;
-            if (vistos.Add(NormalizarEt(val))) res.Add(val);
+            var val = (b ?? "").Trim();
+            if (val.Length > 0 && vistos.Add(NormalizarEt(val))) ops.Add(new OpcionCampo(val));
         }
-        return res;
+        _etOps = ops;
     }
 
     // Vista de las opciones para EditarCampoSistemaModal (solo texto, sin color).
@@ -1725,44 +1762,41 @@
         {
             var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=personas") ?? new();
             _etiquetaCfgRow = cfg.FirstOrDefault(c => string.Equals(c.CampoClave, "etiquetas", StringComparison.OrdinalIgnoreCase));
-            _etiquetaCustom = ParseEtiquetaCustom(_etiquetaCfgRow?.Opciones);
+            ConstruirEtOps();
         }
-        catch { _etiquetaCfgRow = null; _etiquetaCustom = new(); }
-    }
-
-    // Las opciones custom se guardan como JSON array de strings en Opciones de la config del campo.
-    private static List<string> ParseEtiquetaCustom(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return new();
-        try
-        {
-            var t = raw.TrimStart();
-            if (t.StartsWith('[')) return System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw) ?? new();
-            // Formato legado (una por linea): se tolera.
-            return raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        }
-        catch { return new(); }
+        catch { _etiquetaCfgRow = null; _etOps = new(); _etSemillaKeys = new(StringComparer.OrdinalIgnoreCase); }
     }
 
     // Agregar una opcion propia desde EditarCampoSistemaModal (menu de columna "Etiquetas"): dedup
-    // case/acento-insensible contra catalogo + custom; persiste en la config del campo (entidad=personas).
+    // case/acento-insensible contra la lista actual; persiste en la config del campo (entidad=personas).
     private async Task AgregarEtiquetaOpcionAsync(string texto)
     {
         if (_editSisClave != "etiquetas") return;
         var val = (texto ?? "").Trim();
         if (val.Length == 0) return;
         var norm = NormalizarEt(val);
-        if (EtiquetasOpciones().Any(v => NormalizarEt(v) == norm)) return;   // ya existe (catalogo o custom)
-        _etiquetaCustom.Add(val);
-        await GuardarEtiquetaCustomAsync();
+        if (_etOps.Any(o => NormalizarEt(o.K) == norm)) return;   // ya existe (base o propia)
+        _etOps.Add(new OpcionCampo(val));
+        await GuardarEtOpsAsync();
         StateHasChanged();
     }
 
-    // Persiste la lista de custom en la config del campo "etiquetas" (entidad=personas), preservando
-    // alias/visibilidad existentes. El PUT de unidades-config es un merge por (entidad, campoClave).
-    private async Task GuardarEtiquetaCustomAsync()
+    // "Gestionar colores y orden" de etiquetas: popup con el editor inline (color/ocultar/reordenar/agregar;
+    // las de fabrica solo se ocultan). Persiste la lista FULL como OpcionCampo[] en la config del campo.
+    private void AbrirEtLista() { _etOpsEdit = _etOps.Select(o => o with { }).ToList(); _etListaAbierta = true; }
+    private void CerrarEtLista() { _etListaAbierta = false; }
+    private async Task GuardarEtOpsEditAsync()
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(_etiquetaCustom);
+        _etOps = _etOpsEdit.Where(o => !string.IsNullOrWhiteSpace(o.K)).Select(o => o with { }).ToList();
+        await GuardarEtOpsAsync();
+        StateHasChanged();
+    }
+
+    // Persiste la lista FULL de etiquetas (OpcionCampo[]) en la config del campo "etiquetas" (entidad=personas),
+    // preservando alias/visibilidad. El PUT de unidades-config es un merge por (entidad, campoClave).
+    private async Task GuardarEtOpsAsync()
+    {
+        var json = OpcionCampo.Serializar(_etOps.Where(o => !string.IsNullOrWhiteSpace(o.K)).ToList());
         var req = new GuardarUnidadCampoConfigRequest(
             CampoClave: "etiquetas",
             Alias: _etiquetaCfgRow?.Alias,

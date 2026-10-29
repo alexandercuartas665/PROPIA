@@ -26,11 +26,28 @@ public sealed record OpcionCampo(string K, bool Oculta = false, string? Color = 
         {
             try
             {
-                var arr = JsonSerializer.Deserialize<List<OpcionCampo>>(raw,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                foreach (var o in arr ?? new())
-                    if (!string.IsNullOrWhiteSpace(o.K))
-                        res.Add(o with { K = o.K.Trim(), Color = string.IsNullOrWhiteSpace(o.Color) ? null : o.Color });
+                // Array JSON: cada elemento puede ser un OBJETO {K,Oculta,Color} (formato nuevo) o un STRING
+                // (formato legado de algunos modulos, p.ej. etiquetas del Directorio = ["Proveedor","Apoderado"]).
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var el in doc.RootElement.EnumerateArray())
+                    {
+                        if (el.ValueKind == JsonValueKind.String)
+                        {
+                            var s = el.GetString();
+                            if (!string.IsNullOrWhiteSpace(s)) res.Add(new OpcionCampo(s!.Trim()));
+                        }
+                        else if (el.ValueKind == JsonValueKind.Object)
+                        {
+                            string? k = (el.TryGetProperty("K", out var kp) || el.TryGetProperty("k", out kp)) && kp.ValueKind == JsonValueKind.String ? kp.GetString() : null;
+                            if (string.IsNullOrWhiteSpace(k)) continue;
+                            var oculta = (el.TryGetProperty("Oculta", out var op) || el.TryGetProperty("oculta", out op)) && op.ValueKind == JsonValueKind.True;
+                            string? color = (el.TryGetProperty("Color", out var cp) || el.TryGetProperty("color", out cp)) && cp.ValueKind == JsonValueKind.String ? cp.GetString() : null;
+                            res.Add(new OpcionCampo(k!.Trim(), oculta, string.IsNullOrWhiteSpace(color) ? null : color));
+                        }
+                    }
+                }
             }
             catch { /* JSON corrupto: se cae a lista vacia */ }
             return res;
