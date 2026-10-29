@@ -43,6 +43,22 @@
 
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
+@* Menu de columna canon (chevron del header) + editor focalizado de campo de sistema, por tab. *@
+<TablaColMenu @ref="_colMenuProg" OnAccion="OnColAccionProg" />
+<TablaColMenu @ref="_colMenuInterv" OnAccion="OnColAccionInterv" />
+@if (_editSisClaveProg is not null)
+{
+    <EditarCampoSistemaModal Clave="@_editSisClaveProg" DefLabel="@_editSisLabelProg" Tipo="_editSisTipoProg" Requerido="_editSisReqProg"
+                             EntidadConfig="programacion" TituloSingular="programacion" Jwt="@_jwt"
+                             Guardado="RecargarCamposYConfigProgAsync" Cerrado="() => _editSisClaveProg = null" />
+}
+@if (_editSisClaveInterv is not null)
+{
+    <EditarCampoSistemaModal Clave="@_editSisClaveInterv" DefLabel="@_editSisLabelInterv" Tipo="_editSisTipoInterv" Requerido="_editSisReqInterv"
+                             EntidadConfig="intervencion" TituloSingular="intervencion" Jwt="@_jwt"
+                             Guardado="RecargarCamposYConfigIntervAsync" Cerrado="() => _editSisClaveInterv = null" />
+}
+
 @if (_tab == "prog")
 {
     @* Configuracion de mantenimientos en TABLA (patron vista-tabla): una fila por programacion,
@@ -170,7 +186,7 @@
             <div class="mtp-head" style="@ProgGrid">
                 <div class="mtp-sel-col"><label class="mtp-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasProgSel" @onchange="ToggleSelAllProg" /></label></div>
                 <div></div>
-                @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
+                @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label@ChevColProg(ck, c.Label, EsCustomProg(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @foreach (var grupo in ProgGruposRender())
@@ -506,7 +522,7 @@
         <div class="mtp-table mtp-table--wide">
             <div class="mtp-head" style="@IntervGrid">
                 <div></div>
-                @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
+                @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label@ChevColInterv(ck, c.Label, EsCustomInterv(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @foreach (var grupo in IntervGruposRender())
@@ -1394,6 +1410,108 @@ else if (_tab == "calendario")
         }
         catch (Exception ex) { _msg = "Error al eliminar el campo: " + ex.Message; _msgClass = "alert-danger"; }
         _campoAEliminarProg = null; _colBusyProg = false; StateHasChanged();
+    }
+
+    // ===== Menu de columna canon (TablaColMenu) + editor focalizado de campo de SISTEMA =====
+    // Normaliza el header de Programacion/Intervenciones al resto de vistas-tabla: un chevron por columna
+    // abre TablaColMenu; "Editar campo" abre EditarCampoSistemaModal (columna de sistema) o el panel "Campos"
+    // (columna propia), igual que PQRSD/Seguros/Servicios. El resto de acciones reusa los helpers ya existentes.
+    private TablaColMenu? _colMenuProg;
+    private TablaColMenu? _colMenuInterv;
+    private void AbrirColMenuProg(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenuProg?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    private void AbrirColMenuInterv(MouseEventArgs e, string clave, string label, bool dyn)
+        => _colMenuInterv?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    // Chevron del header (inline con token de color; sin clase/CSS nueva). Stop-propagation para no disparar reorder.
+    private RenderFragment ChevColProg(string clave, string label, bool dyn) =>@<button type="button" title="Opciones de columna"
+            style="background:none;border:0;padding:0 2px;margin-left:4px;cursor:pointer;color:var(--propia-text-muted);display:inline-flex;align-items:center;vertical-align:middle;"
+            @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenuProg(e, clave, label, dyn)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private RenderFragment ChevColInterv(string clave, string label, bool dyn) =>@<button type="button" title="Opciones de columna"
+            style="background:none;border:0;padding:0 2px;margin-left:4px;cursor:pointer;color:var(--propia-text-muted);display:inline-flex;align-items:center;vertical-align:middle;"
+            @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenuInterv(e, clave, label, dyn)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+
+    private string? _editSisClaveProg; private string _editSisLabelProg = ""; private TipoCampoTablero? _editSisTipoProg; private bool _editSisReqProg;
+    private void AbrirEditarCampoSistemaProg(string clave)
+    {
+        var s = ProgramacionCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisLabelProg = s?.Label ?? clave; _editSisTipoProg = s?.Tipo; _editSisReqProg = s?.Fija ?? false; _editSisClaveProg = clave;
+    }
+    private string? _editSisClaveInterv; private string _editSisLabelInterv = ""; private TipoCampoTablero? _editSisTipoInterv; private bool _editSisReqInterv;
+    private void AbrirEditarCampoSistemaInterv(string clave)
+    {
+        var s = IntervCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisLabelInterv = s?.Label ?? clave; _editSisTipoInterv = s?.Tipo; _editSisReqInterv = s?.Fija ?? false; _editSisClaveInterv = clave;
+    }
+    private void ColToastMant(string m) { _msg = m; _msgClass = "alert-info"; }
+
+    private async Task OnColAccionProg((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sortsProg = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; OnSortsProgChanged(); break;
+            case TablaColMenu.Accion.OrdenarDesc: _sortsProg = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; OnSortsProgChanged(); break;
+            case TablaColMenu.Accion.Editar:
+                if (CampoCustomProg(col.Key) is not null) { _selProgAbierto = true; ColToastMant("Edita el campo propio en el panel de Campos."); }
+                else AbrirEditarCampoSistemaProg(col.Key);
+                break;
+            case TablaColMenu.Accion.Ocultar: await ToggleVisibleColProg(col.Key); break;
+            case TablaColMenu.Accion.Eliminar:
+                if (CampoCustomProg(col.Key) is { } cdp) _campoAEliminarProg = cdp;
+                else ColToastMant("Los campos del sistema no se eliminan aqui.");
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fdProg is not null && CamposFiltroProg.Any(c => c.Key == col.Key)) await _fdProg.AgregarReglaCampo(col.Key);
+                else ColToastMant("Filtrar por este campo no esta disponible; usa el boton Filtros.");
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                if (ProgAgruparOpciones().Any(g => g.Item1 == col.Key)) _progAgrupar = col.Key;
+                else ColToastMant("Agrupar por este campo no esta disponible aun.");
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _selProgAbierto = true; ColToastMant("Crea el campo nuevo desde el panel de Campos.");
+                break;
+            case TablaColMenu.Accion.Duplicar: ColToastMant("Duplicar un campo se hace desde el panel de Campos."); break;
+            default: ColToastMant("Esta accion no aplica a esta columna."); break;
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnColAccionInterv((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sortsInterv = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; OnSortsIntervChanged(); break;
+            case TablaColMenu.Accion.OrdenarDesc: _sortsInterv = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; OnSortsIntervChanged(); break;
+            case TablaColMenu.Accion.Editar:
+                if (CampoCustomInterv(col.Key) is not null) { _selIntervAbierto = true; ColToastMant("Edita el campo propio en el panel de Campos."); }
+                else AbrirEditarCampoSistemaInterv(col.Key);
+                break;
+            case TablaColMenu.Accion.Ocultar: await ToggleVisibleColInterv(col.Key); break;
+            case TablaColMenu.Accion.Eliminar:
+                if (CampoCustomInterv(col.Key) is { } cdi) _campoAEliminarInterv = cdi;
+                else ColToastMant("Los campos del sistema no se eliminan aqui.");
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fdInterv is not null && CamposFiltroInterv.Any(c => c.Key == col.Key)) await _fdInterv.AgregarReglaCampo(col.Key);
+                else ColToastMant("Filtrar por este campo no esta disponible; usa el boton Filtros.");
+                break;
+            case TablaColMenu.Accion.Agrupar:
+                if (IntervAgruparOpciones().Any(g => g.Item1 == col.Key)) _intervAgrupar = col.Key;
+                else ColToastMant("Agrupar por este campo no esta disponible aun.");
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _selIntervAbierto = true; ColToastMant("Crea el campo nuevo desde el panel de Campos.");
+                break;
+            case TablaColMenu.Accion.Duplicar: ColToastMant("Duplicar un campo se hace desde el panel de Campos."); break;
+            default: ColToastMant("Esta accion no aplica a esta columna."); break;
+        }
+        StateHasChanged();
     }
 
     private async Task CargarConfigProgAsync()
