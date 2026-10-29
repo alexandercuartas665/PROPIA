@@ -1,6 +1,23 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.259 (Web) + 0.0.214 (API)** (sigue a 0.0.258, 2026-10-29). **SOLO CODIGO, SIN
+> **VERSION A DESPLEGAR = 0.0.260 (Web)** (sigue a 0.0.259, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
+> CONFIG.** API sin cambios (0.0.214). **Unidades: color y ocultar por copropiedad en los campos-lista del
+> sistema (Tipo/Estado) — Ola 0 del plan.** La copropiedad ya puede, desde "Editar campo" -> "Gestionar colores
+> y orden", cambiar el COLOR de cada opcion (se pinta en la celda como pill) y OCULTAR opciones (en vez de
+> borrar): las ocultas dejan de ofrecerse en nuevas filas pero las unidades que ya las usan las conservan; las
+> opciones de fabrica (semilla A&D) no se eliminan, solo se ocultan (candado), solo las propias de la
+> copropiedad se borran. El editor completo YA existia en `DistribucionPanel` (popup `_listaAbierta` con la
+> regla 3 implementada) pero estaba HUERFANO (anidado en el gestor viejo `_configCamposAbierto` que ya no se
+> abre, y nada lo llamaba). Fix: (1) el modal `EditarCampoSistemaModal` muestra el boton "Gestionar colores y
+> orden" (`AbrirGestorAvanzado`) que reabre el editor; (2) el popup se saco a nivel superior (tiene su propio
+> backdrop); (3) las celdas `tipo`/`estado` ahora pintan el color (`ColorTipoCelda`/`ColorEstadoCelda` +
+> `SelectListaStyle`). Sin migracion ni cambio de schema (el override vive en `unidad_campos_config.Opciones`,
+> ya existente). Verificado E2E en demo (color+ocultar+regla3+con-vigente). Rollback = redeploy previo.
+>
+> Nota: es la Ola 0 (solo Unidades) de un rollout por olas; el resto de modulos va en olas siguientes (ver
+> Obsidian "Inventario - Color y Ocultar por copropiedad en campos-lista (olas)").
+>
+> **VERSION PREVIA = 0.0.259 (Web) + 0.0.214 (API)** (sigue a 0.0.258, 2026-10-29). **SOLO CODIGO, SIN
 > MIGRACION, SIN CONFIG.** **OJO: esta version SI cambia la API (0.0.213 -> 0.0.214); hay que redeployar API,
 > no solo Web.** **Fix: la ficha de un residente ya no da "404 (Not Found)" ni se queda en "Cargando roles...".**
 > Causa: la lista de Residentes se arma de `unidad_personas`, pero la ficha (GET `/api/directorio/personas/{id}`)

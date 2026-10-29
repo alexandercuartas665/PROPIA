@@ -195,10 +195,14 @@
 
 @if (_editSisClave is not null)
 {
+    @* Clave capturada: "Gestionar colores y orden" abre el editor de la lista (color/ocultar/orden) DESPUES de
+       que el modal corre Cerrado (que limpia _editSisClave), por eso se captura el valor aqui. *@
+    var claveGestor = _editSisClave;
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="unidad" TituloSingular="unidad" Jwt="@_jwt"
                              OpcionesLista="@(_editSisTipo == TipoCampoTablero.Seleccion ? OpcionesVistaDe(_editSisClave) : null)"
                              OnAgregarOpcion="@((t) => AgregarOpcionDesdeModalAsync(_editSisClave, t))"
+                             AbrirGestorAvanzado="@(_editSisTipo == TipoCampoTablero.Seleccion ? EventCallback.Factory.Create(this, () => AbrirLista(claveGestor)) : default)"
                              Guardado="RecargarTrasCrearCampo" Cerrado="() => _editSisClave = null" />
 }
 
@@ -241,8 +245,12 @@
                                      Cambiado="RecargarCamposTrasComponente" />
             </div>
         </div>
+    </div>
+}
 
-        @* ===== Popup de opciones de una lista del sistema (Tipo / Estado) =====
+@* ===== Popup de opciones de una lista del sistema (Tipo / Estado) -- a nivel superior (antes estaba
+   anidado dentro del gestor avanzado, que ya no se abre para campos de sistema; se reactiva desde el
+   boton "Gestionar colores y orden" del modal Editar campo). Tiene su propio backdrop (.cgl-back). =====
            Va ENCIMA del modal de configuracion: administrarla aqui evita empujar la grilla hacia
            abajo. Las opciones SEMILLA no se eliminan, se OCULTAN. *@
         @if (_listaAbierta is not null)
@@ -329,8 +337,6 @@
                 </div>
             </div>
         }
-    </div>
-}
 
 @if (!_authChecked)
 {
@@ -621,7 +627,7 @@ else
                                         @* Si el tipo de la unidad quedo oculto se ofrece igual: si no, el select
                                            mostraria otra opcion y al tocar la celda se guardaria un valor que
                                            nadie eligio. *@
-                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "tipo", e))">
+                                        <td><select class="tbl-cell tbl-cell-lista" style="@SelectListaStyle(ColorTipoCelda(uu))" @onchange="@(e => Inline(uu, "tipo", e))">
                                             @foreach (var t in TiposBaseConVigente(uu))
                                             {
                                                 <option value="@($"e:{t}")" selected="@(uu.TipoCustomId is null && uu.Tipo == t)">@Etiqueta(t)</option>
@@ -636,7 +642,7 @@ else
                                         </select></td>
                                         break;
                                     case "estado":
-                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "estado", e))">
+                                        <td><select class="tbl-cell tbl-cell-lista" style="@SelectListaStyle(ColorEstadoCelda(uu.Estado))" @onchange="@(e => Inline(uu, "estado", e))">
                                             @foreach (var es in EstadosConVigente(uu.Estado))
                                             {
                                                 <option value="@es" selected="@(string.Equals(uu.Estado, es, StringComparison.OrdinalIgnoreCase))">@es</option>
@@ -1049,6 +1055,17 @@ else
     // chip siendo editable). Sin color -> null (select plano).
     private static string? SelectListaStyle(string? color)
         => string.IsNullOrWhiteSpace(color) ? null : $"background:{color}; border-color:{color};";
+
+    // Color de la celda de TIPO (por la clave e:/c: de la unidad) y de ESTADO (por label), leido del override
+    // de la copropiedad (config Opciones). Pinta la celda con el color elegido en "Gestionar colores y orden".
+    private string? ColorTipoCelda(UnidadDto u)
+    {
+        var clave = u.TipoCustomId is { } g ? "c:" + g : "e:" + u.Tipo;
+        return LeerOpciones("tipo").FirstOrDefault(o => string.Equals(o.K, clave, StringComparison.OrdinalIgnoreCase))?.Color;
+    }
+    private string? ColorEstadoCelda(string? estado)
+        => string.IsNullOrWhiteSpace(estado) ? null
+           : LeerOpciones("estado").FirstOrDefault(o => string.Equals(o.K, estado, StringComparison.OrdinalIgnoreCase))?.Color;
 
     // Color del chip para el valor de un campo Lista (segun la opcion elegida). null = sin color / no aplica.
     private string? ColorCampoCelda(Guid unidadId, UnidadCampoDefinicionDto def)
