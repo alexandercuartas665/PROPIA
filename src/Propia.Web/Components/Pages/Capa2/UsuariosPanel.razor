@@ -321,7 +321,7 @@
                 }
                 @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
                    muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
-                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones"
+                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones" CargoColores="_cargoColores"
                                     Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     OnCrearAbrir="CrearUsuarioAbrirTabla"
@@ -1625,6 +1625,9 @@
     // (usuario.cargo) + opciones propias de la copropiedad (unidades-config entidad=usuario, clave=cargo):
     // si la copropiedad ya personalizo, esa lista YA incluye semillas+propias (la escribe el modal E0).
     private List<string> _cargoOpciones = new();
+    // Mapa cargo -> color (hex) para pintar el chip de la celda: override de la copropiedad (config OpcionCampo)
+    // o, si no hay config, el color del catalogo A&D. Vacio = chip neutro.
+    private Dictionary<string, string> _cargoColores = new(StringComparer.OrdinalIgnoreCase);
     private async Task RecargarCargoOpciones()
     {
         var http = Auth();
@@ -1638,10 +1641,19 @@
             }
             catch { }
             if (!string.IsNullOrWhiteSpace(cfgRaw))
-                _cargoOpciones = OpcionCampo.VisiblesK(cfgRaw).ToList();
+            {
+                var ops = OpcionCampo.Parse(cfgRaw).Where(o => !o.Oculta).ToList();
+                _cargoOpciones = ops.Select(o => o.K).ToList();
+                _cargoColores = ops.Where(o => !string.IsNullOrWhiteSpace(o.Color))
+                    .ToDictionary(o => o.K, o => o.Color!, StringComparer.OrdinalIgnoreCase);
+            }
             else
-                _cargoOpciones = (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>("/api/catalogos?lista=usuario.cargo") ?? new())
-                    .Select(o => o.Label).ToList();
+            {
+                var cat = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>("/api/catalogos?lista=usuario.cargo") ?? new();
+                _cargoOpciones = cat.Select(o => o.Label).ToList();
+                _cargoColores = cat.Where(o => !string.IsNullOrWhiteSpace(o.Color))
+                    .ToDictionary(o => o.Label, o => o.Color!, StringComparer.OrdinalIgnoreCase);
+            }
         }
         catch { }
     }
