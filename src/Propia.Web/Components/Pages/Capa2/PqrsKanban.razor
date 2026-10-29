@@ -613,6 +613,7 @@
                     {
                         var tt = t;
                         <div class="pk-cfg-row">
+                            <input type="color" class="pk-cfg-color" value="@(t.Color ?? "#6D4FE3")" title="Color del chip" @onchange="(ev) => CambiarColorTipo(tt, ev)" />
                             <input class="pk-cfg-name" value="@t.Nombre" @onchange="(ev) => RenombrarTipo(tt, ev)" />
                             <input class="pk-cfg-dias" type="number" min="1" max="90" value="@t.DiasHabiles" title="Días hábiles de plazo" @onchange="(ev) => CambiarDiasTipo(tt, ev)" />
                             <select class="pk-cfg-clasif" @onchange="(ev) => CambiarLegalTipo(tt, ev)" disabled="@t.EsBase" title="@(t.EsBase ? "Los tipos base conservan su conducta legal" : "Conducta legal que hereda")">
@@ -640,6 +641,7 @@
                     {
                         var cc = c;
                         <div class="pk-cfg-row">
+                            <input type="color" class="pk-cfg-color" value="@(c.Color ?? "#6D4FE3")" title="Color del chip" @onchange="(ev) => CambiarColorCategoria(cc, ev)" />
                             <input class="pk-cfg-name" value="@c.Nombre" @onchange="(ev) => RenombrarCategoria(cc, ev)" />
                             @if (c.EsPredeterminada) { <span class="pk-cfg-badge" title="Categoría predeterminada">predet.</span> }
                             <label class="pk-cfg-chk"><input type="checkbox" checked="@c.Activa" @onchange="(ev) => ActivarCategoria(cc, ev)" />Activa</label>
@@ -1193,8 +1195,16 @@
                     case "asunto":
                         <div class="pk-td-muted" style="max-width:380px;">@it.DescripcionResumen</div>
                         break;
-                    case "tipo": <span class="pk-tipo-pill">@TipoLabel(it.Tipo)</span> break;
-                    case "categoria": <span>@it.CategoriaNombre</span> break;
+                    case "tipo":
+                        @if (ColorTipoItem(it) is { Length: > 0 } tcol)
+                        { <span class="pk-lchip" style="background:@tcol;color:@PaletaChips.TextoSobre(tcol)">@(it.TipoNombre ?? TipoLabel(it.Tipo))</span> }
+                        else { <span class="pk-tipo-pill">@(it.TipoNombre ?? TipoLabel(it.Tipo))</span> }
+                        break;
+                    case "categoria":
+                        @if (ColorCategoriaItem(it.CategoriaNombre) is { Length: > 0 } ccol)
+                        { <span class="pk-lchip" style="background:@ccol;color:@PaletaChips.TextoSobre(ccol)">@it.CategoriaNombre</span> }
+                        else { <span>@it.CategoriaNombre</span> }
+                        break;
                     case "estado":
                         @if (_estados.FirstOrDefault(e => e.Id == it.EstadoId) is { } ec && !string.IsNullOrWhiteSpace(ec.Color))
                         { <span class="pk-lchip" style="background:@ec.Color;color:@PaletaChips.TextoSobre(ec.Color!)">@ec.Nombre</span> }
@@ -1882,7 +1892,7 @@
             try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); _authChecked = true; }
             catch { _jwt = null; }
             await RestaurarPrefsAsync();
-            if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); await AbrirDesdeQueryAsync(); }
+            if (!string.IsNullOrEmpty(_jwt)) { await CargarAsync(); await CargarTiposCatAsync(); await AbrirDesdeQueryAsync(); }
             StateHasChanged();
         }
         // Doble scroll horizontal (barra superior espejo) para la vista Tabla, igual que en Tareas.
@@ -2184,6 +2194,19 @@
         try { _tipos = (await Auth().GetFromJsonAsync<List<PqrsdTipoDto>>("/api/pqrsd/tipos?incluirInactivos=true")) ?? new(); } catch { _tipos = new(); }
         try { _categorias = (await Auth().GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias")) ?? _categorias; } catch { }
     }
+
+    // Color del chip de la celda TIPO (por el nombre del tipo configurable elegido; fallback al tipo base del enum)
+    // y CATEGORIA (por nombre). Leido del catalogo por copropiedad (_tipos/_categorias).
+    private string? ColorTipoItem(PqrsdBandejaItemDto it)
+    {
+        var t = !string.IsNullOrWhiteSpace(it.TipoNombre)
+            ? _tipos.FirstOrDefault(x => string.Equals(x.Nombre, it.TipoNombre, StringComparison.OrdinalIgnoreCase))
+            : _tipos.FirstOrDefault(x => x.EsBase && x.Legal == it.Tipo);
+        return t?.Color;
+    }
+    private string? ColorCategoriaItem(string? nombre)
+        => string.IsNullOrWhiteSpace(nombre) ? null
+           : _categorias.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Color;
     private async Task AgregarTipo()
     {
         var legal = Enum.TryParse<TipoPqrsd>(_nuevoTipoLegal, out var l) ? l : TipoPqrsd.Peticion;
@@ -2195,19 +2218,25 @@
     private async Task RenombrarTipo(PqrsdTipoDto t, ChangeEventArgs e)
     {
         var nombre = e.Value?.ToString() ?? t.Nombre; if (string.IsNullOrWhiteSpace(nombre)) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(nombre.Trim(), t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal));
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(nombre.Trim(), t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.Color));
         await CargarTiposCatAsync();
     }
     private async Task CambiarDiasTipo(PqrsdTipoDto t, ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out var d)) return; d = Math.Clamp(d, 1, 90);
-        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, d, t.DiasInconformidad, t.NivelUrgencia, t.Legal));
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, d, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.Color));
         await CargarTiposCatAsync();
     }
     private async Task CambiarLegalTipo(PqrsdTipoDto t, ChangeEventArgs e)
     {
         if (!Enum.TryParse<TipoPqrsd>(e.Value?.ToString(), out var lg)) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, lg));
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, lg, t.Color));
+        await CargarTiposCatAsync();
+    }
+    private async Task CambiarColorTipo(PqrsdTipoDto t, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString();
+        await Auth().PutAsJsonAsync($"/api/pqrsd/tipos/{t.Id}", new GuardarTipoPqrsdRequest(t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, color));
         await CargarTiposCatAsync();
     }
     private async Task EliminarTipo(Guid id) { await Auth().DeleteAsync($"/api/pqrsd/tipos/{id}"); await CargarTiposCatAsync(); }
@@ -2220,13 +2249,19 @@
     private async Task RenombrarCategoria(PqrsdCategoriaDto c, ChangeEventArgs e)
     {
         var nombre = e.Value?.ToString() ?? c.Nombre; if (string.IsNullOrWhiteSpace(nombre)) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(nombre.Trim(), c.Activa, c.Orden));
+        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(nombre.Trim(), c.Activa, c.Orden, c.Color));
         await CargarTiposCatAsync();
     }
     private async Task ActivarCategoria(PqrsdCategoriaDto c, ChangeEventArgs e)
     {
         var activa = e.Value is bool b ? b : c.Activa;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(c.Nombre, activa, c.Orden));
+        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(c.Nombre, activa, c.Orden, c.Color));
+        await CargarTiposCatAsync();
+    }
+    private async Task CambiarColorCategoria(PqrsdCategoriaDto c, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString();
+        await Auth().PutAsJsonAsync($"/api/pqrsd/categorias/{c.Id}", new ActualizarCategoriaRequest(c.Nombre, c.Activa, c.Orden, color));
         await CargarTiposCatAsync();
     }
 

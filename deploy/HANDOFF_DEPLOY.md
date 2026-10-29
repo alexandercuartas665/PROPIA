@@ -1,6 +1,22 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.260 (Web)** (sigue a 0.0.259, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
+> **VERSION A DESPLEGAR = 0.0.262 (Web) + 0.0.215 (API)** (sigue a 0.0.260, 2026-10-29). **1 MIGRACION NUEVA
+> (ADITIVA), SIN CONFIG. Redeployar API y Web.** **PQRSD: color por copropiedad en estado/tipo/categoria (Ola 1).**
+> - **0.0.261 (Web, sin migracion):** PQRSD·**estado** -> la celda ETAPA de la tabla ahora se pinta con el color
+>   del estado (igual que el dot de la columna del Kanban); y "Editar campo" de estado/tipo/categoria muestra el
+>   boton "Gestionar colores y orden" que abre el panel de config en la pestana correcta.
+> - **0.0.262 Web + 0.0.215 API (CON migracion):** PQRSD·**tipo** y **categoria** -> **MIGRACION aditiva**
+>   `20261029153431_AddColorPqrsdTipoCategoria` (agrega columna `color` a `pqrsd_tipos` y `pqrsd_categorias`; no
+>   toca datos ni la metadata legal/plazos). Picker de color en las pestanas Tipos/Categorias del panel; las
+>   celdas TIPO y CATEGORIA de la tabla se pintan con el color (mapeo por TipoNombre/base y por Nombre). Color es
+>   solo display: el motor legal (plazos Ley 1755, workflow) NO se toca. Los handlers de rename/dias/legal/activa
+>   preservan el color (ya no lo pisan). Verificado E2E en demo (categoria Administracion -> celdas #ff8a3d; tipo
+>   Peticion -> celdas #2ec4b6; revertido a null por SQL). Build 0 errores.
+>
+> **Aplicar la migracion:** `cd src/Propia.Api && dotnet ef database update --project ../Propia.Infrastructure --startup-project .`
+> Rollback = redeploy previo (la migracion aditiva puede quedarse). Parte 2 de la Ola 1; falta Directorio·etiquetas.
+>
+> **VERSION PREVIA = 0.0.260 (Web)** (sigue a 0.0.259, 2026-10-29). **SOLO CODIGO, SIN MIGRACION, SIN
 > CONFIG.** API sin cambios (0.0.214). **Unidades: color y ocultar por copropiedad en los campos-lista del
 > sistema (Tipo/Estado) — Ola 0 del plan.** La copropiedad ya puede, desde "Editar campo" -> "Gestionar colores
 > y orden", cambiar el COLOR de cada opcion (se pinta en la celda como pill) y OCULTAR opciones (en vez de

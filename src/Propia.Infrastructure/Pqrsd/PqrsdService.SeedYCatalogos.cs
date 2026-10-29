@@ -289,7 +289,7 @@ public partial class PqrsdService
         await AsegurarCatalogoBaseAsync(ct);
         return await _db.PqrsdCategorias.AsNoTracking()
             .OrderBy(c => c.Orden).ThenBy(c => c.Nombre)
-            .Select(c => new PqrsdCategoriaDto(c.Id, c.Nombre, c.EsPredeterminada, c.Activa, c.Orden))
+            .Select(c => new PqrsdCategoriaDto(c.Id, c.Nombre, c.EsPredeterminada, c.Activa, c.Orden, c.Color))
             .ToListAsync(ct);
     }
 
@@ -303,7 +303,7 @@ public partial class PqrsdService
         var c = new PqrsdCategoria { Nombre = nom, EsPredeterminada = false, Activa = true, Orden = req.Orden };
         _db.PqrsdCategorias.Add(c);
         await _db.SaveChangesAsync(ct);
-        return new PqrsdCategoriaDto(c.Id, c.Nombre, false, true, c.Orden);
+        return new PqrsdCategoriaDto(c.Id, c.Nombre, false, true, c.Orden, c.Color);
     }
 
     public async Task<bool> ActualizarCategoriaAsync(Guid id, ActualizarCategoriaRequest req, CancellationToken ct)
@@ -313,6 +313,7 @@ public partial class PqrsdService
         c.Nombre = req.Nombre.Trim();
         c.Activa = req.Activa;
         c.Orden = req.Orden;
+        c.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color;
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
@@ -402,7 +403,7 @@ public partial class PqrsdService
     // ===================== Tipos configurables =====================
 
     private static PqrsdTipoDto MapTipo(PqrsdTipo t) => new(
-        t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden);
+        t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden, t.Color);
 
     public async Task<IReadOnlyList<PqrsdTipoDto>> ListarTiposAsync(bool incluirInactivos, CancellationToken ct)
     {
@@ -410,7 +411,7 @@ public partial class PqrsdService
         var q = _db.PqrsdTipos.AsNoTracking().AsQueryable();
         if (!incluirInactivos) q = q.Where(t => t.Activo);
         return await q.OrderBy(t => t.Orden).ThenBy(t => t.Nombre)
-            .Select(t => new PqrsdTipoDto(t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden))
+            .Select(t => new PqrsdTipoDto(t.Id, t.Nombre, t.DiasHabiles, t.DiasInconformidad, t.NivelUrgencia, t.Legal, t.EsBase, t.Activo, t.Orden, t.Color))
             .ToListAsync(ct);
     }
 
@@ -450,6 +451,7 @@ public partial class PqrsdService
         t.DiasHabiles = req.DiasHabiles < 1 ? 1 : req.DiasHabiles;
         t.DiasInconformidad = req.DiasInconformidad < 0 ? 0 : req.DiasInconformidad;
         t.NivelUrgencia = req.NivelUrgencia;
+        t.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color;
         // La conducta legal de los tipos base NO se cambia (protege reserva/comite); los custom si.
         if (!t.EsBase) t.Legal = req.Legal;
         t.UpdatedAt = DateTimeOffset.UtcNow;

@@ -305,6 +305,9 @@ public class PqrsdTipo : TenantEntity
 
     public int Orden { get; set; }
 
+    /// <summary>Color del chip (hex) para esta copropiedad. null = neutro. Solo display, no toca la logica legal.</summary>
+    public string? Color { get; set; }
+
     /// <summary>Solo tipos base: true = la copropiedad fijo su propio plazo (override) y el plazo global
     /// del catalogo A&D (pqrsd.tipo) NO lo pisa. false = el plazo base lo manda el catalogo global (se
     /// propaga perezosamente en el seeder). Los tipos custom (EsBase=false) siempre usan su propio plazo.</summary>
@@ -370,6 +373,8 @@ public class PqrsdCategoria : TenantEntity
     public bool EsPredeterminada { get; set; }
     public bool Activa { get; set; } = true;
     public int Orden { get; set; }
+    /// <summary>Color del chip (hex) para esta copropiedad. null = neutro. Solo display.</summary>
+    public string? Color { get; set; }
 }
 
 /// <summary>Adjunto del expediente. Spec 2.9 v1.0 tabla pqrsd_adjunto.</summary>

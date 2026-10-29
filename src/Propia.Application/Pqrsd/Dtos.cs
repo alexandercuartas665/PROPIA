@@ -4,9 +4,9 @@ namespace Propia.Application.Pqrsd;
 
 // ===================== Categorias y plazos =====================
 
-public record PqrsdCategoriaDto(Guid Id, string Nombre, bool EsPredeterminada, bool Activa, int Orden);
+public record PqrsdCategoriaDto(Guid Id, string Nombre, bool EsPredeterminada, bool Activa, int Orden, string? Color = null);
 public record CrearCategoriaRequest(string Nombre, int Orden);
-public record ActualizarCategoriaRequest(string Nombre, bool Activa, int Orden);
+public record ActualizarCategoriaRequest(string Nombre, bool Activa, int Orden, string? Color = null);
 
 public record PqrsdPlazoDto(TipoPqrsd Tipo, int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia);
 public record ActualizarPlazoRequest(int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia);
@@ -158,10 +158,11 @@ public record ArchivarExpedienteRequest(bool Archivar);
 /// <summary>Tipo de PQRS configurable por copropiedad (catalogo editable).</summary>
 public record PqrsdTipoDto(
     Guid Id, string Nombre, int DiasHabiles, int DiasInconformidad,
-    NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal, bool EsBase, bool Activo, int Orden);
+    NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal, bool EsBase, bool Activo, int Orden, string? Color = null);
 
 public record GuardarTipoPqrsdRequest(
-    string Nombre, int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal);
+    string Nombre, int DiasHabiles, int DiasInconformidad, NivelUrgenciaPqrsd NivelUrgencia, TipoPqrsd Legal,
+    string? Color = null);
 
 // ===================== Formulario publico (radicacion externa, sin login) =====================
 
