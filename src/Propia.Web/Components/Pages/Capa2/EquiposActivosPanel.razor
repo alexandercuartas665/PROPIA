@@ -472,7 +472,8 @@ else
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="equipo" TituloSingular="equipo" Jwt="@_jwt"
-                             OpcionesLista="@OpcionesVistaEq(_editSisClave)" PermiteAgregar="false"
+                             OpcionesLista="@((_editSisClave is "categoria" or "tipo" or "estado") ? null : OpcionesVistaEq(_editSisClave))" PermiteAgregar="false"
+                             ListaTenant="@(_editSisClave == "categoria" ? "equipo.categoria" : _editSisClave == "tipo" ? "equipo.tipo" : _editSisClave == "estado" ? "equipo.estado" : null)"
                              ColorPopupClasico="@(_editSisClave is "categoria" or "tipo" or "estado")"
                              PermitirOcultarOpciones="@(_editSisClave is "categoria" or "tipo")"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
@@ -719,6 +720,10 @@ else
             try { _catEqCat = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.categoria") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqCat = new(StringComparer.Ordinal); }
             try { _catEqTipo = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.tipo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqTipo = new(StringComparer.Ordinal); }
             try { _catEqEstado = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=equipo.estado") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catEqEstado = new(StringComparer.Ordinal); }
+            // Ola 4: copias POR TENANT de equipo.categoria/tipo/estado (fuente efectiva).
+            try { _listaEqCat = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.categoria&incluirOcultas=true") ?? new(); } catch { _listaEqCat = new(); }
+            try { _listaEqTipo = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.tipo&incluirOcultas=true") ?? new(); } catch { _listaEqTipo = new(); }
+            try { _listaEqEstado = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.estado&incluirOcultas=true") ?? new(); } catch { _listaEqEstado = new(); }
             if (_suppressRecienClearE) _suppressRecienClearE = false; else _recienE.Clear();
             await CargarCamposYConfigAsync();
             _loadError = null;
@@ -1530,6 +1535,15 @@ else
     private async Task RecargarCamposYConfigAsync()
     {
         try { await CargarCamposYConfigAsync(); } catch { }
+        // Ola 4: recargar las copias por-tenant tras editar en el modal.
+        try
+        {
+            var http = Auth();
+            _listaEqCat = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.categoria&incluirOcultas=true") ?? _listaEqCat;
+            _listaEqTipo = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.tipo&incluirOcultas=true") ?? _listaEqTipo;
+            _listaEqEstado = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=equipo.estado&incluirOcultas=true") ?? _listaEqEstado;
+        }
+        catch { }
         StateHasChanged();
     }
 
@@ -1761,16 +1775,29 @@ else
     private Dictionary<string, string> _catEqCat = new(StringComparer.Ordinal);
     private Dictionary<string, string> _catEqTipo = new(StringComparer.Ordinal);
     private Dictionary<string, string> _catEqEstado = new(StringComparer.Ordinal);
-    private string LblCatEq(CategoriaEquipo c) => _catEqCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString();
-    private string LblTipoEq(TipoElemento t) => _catEqTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : (t == TipoElemento.Equipo ? "Equipo" : "Activo");
+    // Ola 4: copia POR TENANT de las listas (fuente efectiva de label/color/ocultar); vacia = fallback.
+    private List<OpcionEfectivaDto> _listaEqCat = new();
+    private List<OpcionEfectivaDto> _listaEqTipo = new();
+    private List<OpcionEfectivaDto> _listaEqEstado = new();
+    private List<OpcionEfectivaDto> ListaEqDe(string clave) => clave switch { "tipo" => _listaEqTipo, "estado" => _listaEqEstado, _ => _listaEqCat };
+    private bool UsaTenantEq(string clave) => ListaEqDe(clave).Count > 0;
+    private OpcionEfectivaDto? RowEqPorLabel(string clave, string? label)
+        => ListaEqDe(clave).FirstOrDefault(r => string.Equals((r.Label ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private string LblCatEq(CategoriaEquipo c)
+        => (_listaEqCat.FirstOrDefault(r => r.Clave == "e:" + c)?.Label is { Length: > 0 } rl) ? rl
+           : (_catEqCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString());
+    private string LblTipoEq(TipoElemento t)
+        => (_listaEqTipo.FirstOrDefault(r => r.Clave == "e:" + t)?.Label is { Length: > 0 } rl) ? rl
+           : (_catEqTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : (t == TipoElemento.Equipo ? "Equipo" : "Activo"));
     private string EstadoTextoCorto(EstadoEquipoActivo s)
-        => _catEqEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s switch
-        {
-            EstadoEquipoActivo.Operativo => "Operativo",
-            EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
-            EstadoEquipoActivo.FueraDeServicio => "Fuera",
-            _ => s.ToString()
-        };
+        => (_listaEqEstado.FirstOrDefault(r => r.Clave == "e:" + s)?.Label is { Length: > 0 } rl) ? rl
+           : (_catEqEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s switch
+             {
+                 EstadoEquipoActivo.Operativo => "Operativo",
+                 EstadoEquipoActivo.EnMantenimiento => "Mantenimiento",
+                 EstadoEquipoActivo.FueraDeServicio => "Fuera",
+                 _ => s.ToString()
+             });
 
     // Listas (solo lectura) para el modal "Editar campo": universo = enum, label del catalogo A&D (renombra).
     private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaEq(string? clave) => clave switch
@@ -1787,9 +1814,13 @@ else
         => _cfgEquipo.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
             ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
     private string? ColorEq(string clave, string? label)
-        => OverrideEq(clave).FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+        => UsaTenantEq(clave)
+            ? RowEqPorLabel(clave, label)?.Color
+            : OverrideEq(clave).FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
     private bool OcultaEq(string clave, string? label)
-        => OverrideEq(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        => UsaTenantEq(clave)
+            ? RowEqPorLabel(clave, label) is { Activo: false }
+            : OverrideEq(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string? SelStyleEq(string clave, string? label)
     {
         var c = ColorEq(clave, label);

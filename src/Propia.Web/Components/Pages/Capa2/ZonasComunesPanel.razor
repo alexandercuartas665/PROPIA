@@ -454,7 +454,8 @@ else
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="zona" TituloSingular="zona" Jwt="@_jwt"
-                             OpcionesLista="@OpcionesVistaZn(_editSisClave)" PermiteAgregar="false"
+                             OpcionesLista="@((_editSisClave is "categoria" or "estado") ? null : OpcionesVistaZn(_editSisClave))" PermiteAgregar="false"
+                             ListaTenant="@(_editSisClave == "categoria" ? "zona.categoria" : _editSisClave == "estado" ? "zona.estado" : null)"
                              ColorPopupClasico="@(_editSisClave is "categoria" or "estado")"
                              PermitirOcultarOpciones="@(_editSisClave == "categoria")"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
@@ -1003,6 +1004,14 @@ else
     private async Task RecargarCamposYConfigAsync()
     {
         try { await CargarCamposYConfigAsync(); } catch { }
+        // Ola 4: recargar las copias por-tenant tras editar en el modal.
+        try
+        {
+            var http = Auth();
+            _listaZnCat = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=zona.categoria&incluirOcultas=true") ?? _listaZnCat;
+            _listaZnEstado = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=zona.estado&incluirOcultas=true") ?? _listaZnEstado;
+        }
+        catch { }
         StateHasChanged();
     }
 
@@ -1404,8 +1413,19 @@ else
     // clave enum no cambia (la logica -EnMantenimiento bloquea reservas- usa el valor, no el label).
     private Dictionary<string, string> _catZnCat = new(StringComparer.Ordinal);
     private Dictionary<string, string> _catZnEstado = new(StringComparer.Ordinal);
-    private string LblCatZn(CategoriaZonaComun c) => _catZnCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString();
-    private string LblEstZn(EstadoZonaComunMantenimiento s) => _catZnEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s.ToString();
+    // Ola 4: copia POR TENANT de las listas (fuente efectiva de label/color/ocultar); vacia = fallback.
+    private List<OpcionEfectivaDto> _listaZnCat = new();
+    private List<OpcionEfectivaDto> _listaZnEstado = new();
+    private List<OpcionEfectivaDto> ListaZnDe(string clave) => clave == "estado" ? _listaZnEstado : _listaZnCat;
+    private bool UsaTenantZn(string clave) => ListaZnDe(clave).Count > 0;
+    private OpcionEfectivaDto? RowZnPorLabel(string clave, string? label)
+        => ListaZnDe(clave).FirstOrDefault(r => string.Equals((r.Label ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private string LblCatZn(CategoriaZonaComun c)
+        => (_listaZnCat.FirstOrDefault(r => r.Clave == "e:" + c)?.Label is { Length: > 0 } rl) ? rl
+           : (_catZnCat.TryGetValue("e:" + c, out var l) && !string.IsNullOrWhiteSpace(l) ? l : c.ToString());
+    private string LblEstZn(EstadoZonaComunMantenimiento s)
+        => (_listaZnEstado.FirstOrDefault(r => r.Clave == "e:" + s)?.Label is { Length: > 0 } rl) ? rl
+           : (_catZnEstado.TryGetValue("e:" + s, out var l) && !string.IsNullOrWhiteSpace(l) ? l : s.ToString());
 
     // Listas (solo lectura) para el modal "Editar campo": universo = enum, label del catalogo A&D (renombra).
     private List<EditarCampoSistemaModal.OpcionVista>? OpcionesVistaZn(string? clave) => clave switch
@@ -1421,9 +1441,13 @@ else
         => _cfgZona.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
             ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
     private string? ColorZn(string clave, string? label)
-        => OverrideZn(clave).FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+        => UsaTenantZn(clave)
+            ? RowZnPorLabel(clave, label)?.Color
+            : OverrideZn(clave).FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
     private bool OcultaZn(string clave, string? label)
-        => OverrideZn(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        => UsaTenantZn(clave)
+            ? RowZnPorLabel(clave, label) is { Activo: false }
+            : OverrideZn(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string? SelStyleZn(string clave, string? label)
     {
         var c = ColorZn(clave, label);
@@ -1448,6 +1472,9 @@ else
             _zonas = await resp.Content.ReadFromJsonAsync<List<ZonaComunDto>>() ?? new();
             try { _catZnCat = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=zona.categoria") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catZnCat = new(StringComparer.Ordinal); }
             try { _catZnEstado = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=zona.estado") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catZnEstado = new(StringComparer.Ordinal); }
+            // Ola 4: copia POR TENANT de zona.categoria/estado (fuente efectiva).
+            try { _listaZnCat = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=zona.categoria&incluirOcultas=true") ?? new(); } catch { _listaZnCat = new(); }
+            try { _listaZnEstado = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=zona.estado&incluirOcultas=true") ?? new(); } catch { _listaZnEstado = new(); }
             // Tras un refresco real las recien creadas vuelven a su orden natural (sin verde); la recarga
             // que dispara la propia creacion conserva el resaltado (suppress).
             if (_suppressRecienClearZ) _suppressRecienClearZ = false; else _recienZ.Clear();

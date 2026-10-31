@@ -74,6 +74,12 @@ public static class DependencyInjection
         services.AddScoped<Application.Catalogos.ICatalogoListas, Catalogos.CatalogoListasService>();
         services.AddScoped<Application.Catalogos.ICatalogoListasAdmin, Catalogos.CatalogoListasAdminService>();
 
+        // Ola 4: copia POR TENANT de las listas (materializa desde el catalogo global, sirve efectivas,
+        // reaplica bases). Una sola instancia por scope compartida por ambas interfaces.
+        services.AddScoped<Catalogos.ListasTenantService>();
+        services.AddScoped<Application.Catalogos.IListasTenant>(sp => sp.GetRequiredService<Catalogos.ListasTenantService>());
+        services.AddScoped<Application.Catalogos.IOpcionesEfectivas>(sp => sp.GetRequiredService<Catalogos.ListasTenantService>());
+
         // Modulo 0.2 Billing y Suscripciones
         services.AddScoped<IBillingService, BillingService>();
 

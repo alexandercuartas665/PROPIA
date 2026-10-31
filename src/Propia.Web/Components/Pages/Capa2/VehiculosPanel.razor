@@ -262,7 +262,7 @@ else
                                 break;
                             case "tipovehiculo":
                                 <select class="veh-row-inp" @bind="_nuTipo">
-                                    @foreach (var t in TiposVehiculo) { <option value="@t">@TipoLabel(t)</option> }
+                                    @foreach (var t in TiposVehiculo.Where(t => !OcultaTipoVeh(TipoLabel(t)))) { <option value="@t">@TipoLabel(t)</option> }
                                 </select>
                                 break;
                             case "propietario":
@@ -362,7 +362,8 @@ else
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="vehiculos" TituloSingular="vehiculo" Jwt="@_jwt"
-                             OpcionesLista="@OpcionesVistaVeh(_editSisClave)" PermiteAgregar="false"
+                             OpcionesLista="@(_editSisClave == "tipovehiculo" ? null : OpcionesVistaVeh(_editSisClave))" PermiteAgregar="false"
+                             ListaTenant="@(_editSisClave == "tipovehiculo" ? "vehiculo.tipovehiculo" : null)"
                              ColorPopupClasico="@(_editSisClave == "tipovehiculo")" PermitirOcultarOpciones="true"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
 }
@@ -576,12 +577,22 @@ else
     // Tipos ofrecidos: los mismos que la ficha de la unidad (enum compartido con Porteria).
     private static readonly TipoVehiculo[] TiposVehiculo =
         { TipoVehiculo.Automovil, TipoVehiculo.Moto, TipoVehiculo.Bicicleta, TipoVehiculo.Camioneta, TipoVehiculo.Otro };
-    // Label del tipo: del catalogo global (vehiculo.tipovehiculo, editable por A&D) si cargo; si no, el
-    // switch de codigo (fallback). La clave enum no cambia.
+    // Label del tipo (Ola 4): de la copia POR TENANT (lista_opciones, clave e:Enum) si cargo; si no, del
+    // catalogo global (_catTipoVeh); si no, el switch de codigo. La clave enum guardada NO cambia.
     private Dictionary<string, string> _catTipoVeh = new(StringComparer.Ordinal);
+    private List<OpcionEfectivaDto> _listaTipoVeh = new();   // copia por-tenant (fuente efectiva)
+    private bool UsaListaTenant => _listaTipoVeh.Count > 0;
+    private OpcionEfectivaDto? RowTipoVehPorClave(TipoVehiculo t)
+        => _listaTipoVeh.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
+    private OpcionEfectivaDto? RowTipoVehPorLabel(string? label)
+        => _listaTipoVeh.FirstOrDefault(r => string.Equals((r.Label ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string TipoLabel(TipoVehiculo t)
-        => _catTipoVeh.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l)
+    {
+        var row = RowTipoVehPorClave(t);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return _catTipoVeh.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l)
             ? l : (t == TipoVehiculo.Automovil ? "Carro" : t.ToString());
+    }
 
     // Lista (solo lectura) para el modal "Editar campo" de 'tipovehiculo': el universo es el enum y el
     // label sale del catalogo global (A&D renombra). Agregar tipos nuevos exigiria cambiar el almacenamiento
@@ -597,10 +608,15 @@ else
     private List<Propia.Web.Components.Shared.OpcionCampo> OverrideTipoVeh()
         => _cfg.TryGetValue("tipovehiculo", out var c) && !string.IsNullOrWhiteSpace(c.Opciones)
             ? Propia.Web.Components.Shared.OpcionCampo.Parse(c.Opciones) : new();
+    // Color/ocultar: de la copia por-tenant si cargo (Ola 4); si no, del override Ola 3 (unidades-config).
     private string? ColorTipoVeh(string? label)
-        => OverrideTipoVeh().FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
+        => UsaListaTenant
+            ? RowTipoVehPorLabel(label)?.Color
+            : OverrideTipoVeh().FirstOrDefault(o => string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
     private bool OcultaTipoVeh(string? label)
-        => OverrideTipoVeh().Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        => UsaListaTenant
+            ? RowTipoVehPorLabel(label) is { Activo: false }
+            : OverrideTipoVeh().Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string? TipoVehSelStyle(string? label)
     {
         var c = ColorTipoVeh(label);
@@ -1020,6 +1036,8 @@ else
             var http = Auth();
             _vehiculos = await http.GetFromJsonAsync<List<VehiculoResumenDto>>("/api/mi-copropiedad/vehiculos") ?? new();
             try { _catTipoVeh = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=vehiculo.tipovehiculo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catTipoVeh = new(StringComparer.Ordinal); }
+            // Ola 4: copia POR TENANT de la lista (fuente efectiva de label/color/ocultar). Vacia = tabla sin migrar -> fallback.
+            try { _listaTipoVeh = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=vehiculo.tipovehiculo&incluirOcultas=true") ?? new(); } catch { _listaTipoVeh = new(); }
             if (_suppressRecienClearV) _suppressRecienClearV = false; else _recienCreados.Clear();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             try { _copNombre = (await http.GetFromJsonAsync<ResumenMiCopropiedadDto>("/api/mi-copropiedad/resumen"))?.Identidad?.Nombre; } catch { }
@@ -1046,6 +1064,8 @@ else
     private async Task RecargarCamposYConfigAsync()
     {
         try { await CargarCamposAsync(Auth()); } catch { }
+        // Ola 4: recargar la copia por-tenant tras editar color/ocultar en el modal.
+        try { _listaTipoVeh = await Auth().GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=vehiculo.tipovehiculo&incluirOcultas=true") ?? _listaTipoVeh; } catch { }
         StateHasChanged();
     }
 

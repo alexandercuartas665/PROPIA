@@ -785,12 +785,10 @@
 {
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="@TipoSisU(_editSisClave)" Requerido="false"
                              EntidadConfig="usuario" TituloSingular="usuario" Jwt="@_jwt"
-                             ListaCatalogo="@(_editSisClave == "cargo" ? "usuario.cargo" : null)"
-                             SemillaFallback="@(_editSisClave == "cargo" ? _cargoOpciones.ToArray() : null)"
+                             ListaTenant="@(_editSisClave == "cargo" ? "usuario.cargo" : null)"
                              OpcionesLista="@OpcionesSisU(_editSisClave)"
                              PermiteAgregar="@(_editSisClave == "cargo")"
-                             AutoServidoPopup="@(_editSisClave == "cargo")"
-                             ColorPopupClasico="@(_editSisClave is "rol" or "estado")" PermitirOcultarOpciones="false"
+                             ColorPopupClasico="@(_editSisClave is "rol" or "estado" or "cargo")" PermitirOcultarOpciones="@(_editSisClave == "cargo")"
                              HintReadOnly="@HintSisU(_editSisClave)"
                              Guardado="OnCampoSistemaUGuardado" Cerrado="() => _editSisClave = null" />
 }
@@ -1643,9 +1641,26 @@
     // Mapa cargo -> color (hex) para pintar el chip de la celda: override de la copropiedad (config OpcionCampo)
     // o, si no hay config, el color del catalogo A&D. Vacio = chip neutro.
     private Dictionary<string, string> _cargoColores = new(StringComparer.OrdinalIgnoreCase);
+    // Ola 4 (modelo B): copia POR TENANT de 'cargo' (lista_opciones). Si ya se materializo, es la fuente
+    // efectiva y alimenta _cargoOpciones/_cargoColores (que leen tabla, picker y filtro); si no, se cae al
+    // override de config / catalogo global de abajo. La clave guardada en el usuario sigue siendo el texto.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCargo = new();
+    private bool UsaCargoTenant => _listaCargo.Count > 0;
     private async Task RecargarCargoOpciones()
     {
         var http = Auth();
+        try { _listaCargo = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=usuario.cargo&incluirOcultas=true") ?? new(); }
+        catch { _listaCargo = new(); }
+        if (UsaCargoTenant)
+        {
+            // Picker/universo: solo activas (no ocultas), en su orden. Colores: de TODAS (una asignada ya
+            // oculta sigue pintando su color en la celda).
+            _cargoOpciones = _listaCargo.Where(o => o.Activo).OrderBy(o => o.Orden).ThenBy(o => o.Label).Select(o => o.Label).ToList();
+            _cargoColores = _listaCargo.Where(o => !string.IsNullOrWhiteSpace(o.Color))
+                .GroupBy(o => o.Label, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Color!, StringComparer.OrdinalIgnoreCase);
+            return;
+        }
         try
         {
             string? cfgRaw = null;

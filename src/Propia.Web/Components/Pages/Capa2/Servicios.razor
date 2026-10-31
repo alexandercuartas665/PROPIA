@@ -265,10 +265,15 @@ else
 
         @if (_editSisClave is not null)
         {
+            @* Ola 4: las 4 listas editables (tipocontrato/categoria/formapago/tipo->tiposervicio) se editan sobre
+               la copia POR TENANT (lista_opciones) via ListaTenant; el modal gestiona color/ocultar/agregar/reset.
+               Las demas claves conservan el popup auto-servido. *@
             <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                                      EntidadConfig="contrato" TituloSingular="servicio" Jwt="@_jwt"
-                                     ListaCatalogo="@ListaCatalogoDe(_editSisClave)" SemillaFallback="@SemillaModalDe(_editSisClave)"
-                                     AutoServidoPopup="true"
+                                     ListaTenant="@ListaCatalogoDe(_editSisClave)"
+                                     AutoServidoPopup="@(ListaCatalogoDe(_editSisClave) is null)"
+                                     ColorPopupClasico="@(ListaCatalogoDe(_editSisClave) is not null)"
+                                     PermitirOcultarOpciones="@(ListaCatalogoDe(_editSisClave) is not null)"
                                      Guardado="RecargarCamposYConfigContratoAsync" Cerrado="() => _editSisClave = null" />
         }
         @if (_colToast is not null)
@@ -2510,6 +2515,23 @@ else
     private List<string> _catCtrForma = new();
     private List<string> _catCtrTipoServ = new();
 
+    // Ola 4: copia POR TENANT de las listas de Contratos (lista_opciones). Si cargo (Count>0) es la fuente
+    // efectiva (universo visible + color/ocultar) y REEMPLAZA el override Ola 3 en unidades-config; si no,
+    // cae al override+semilla de siempre. La clave de columna "tipo" corresponde a la lista contrato.tiposervicio.
+    private List<OpcionEfectivaDto> _listaCtrTipo = new();
+    private List<OpcionEfectivaDto> _listaCtrCat = new();
+    private List<OpcionEfectivaDto> _listaCtrForma = new();
+    private List<OpcionEfectivaDto> _listaCtrTipoServ = new();
+    private List<OpcionEfectivaDto>? ListaTenantC(string clave) => clave switch
+    {
+        "tipocontrato" => _listaCtrTipo,
+        "categoria" => _listaCtrCat,
+        "formapago" => _listaCtrForma,
+        "tipo" => _listaCtrTipoServ,
+        _ => null
+    };
+    private bool UsaTenantC(string clave) => ListaTenantC(clave) is { Count: > 0 };
+
     // Texto de "Tipo de servicio" de un contrato: el texto del catalogo si existe; si no, la etiqueta del enum.
     private static string TipoServTxt(ContratoServicioDto c)
         => string.IsNullOrWhiteSpace(c.TipoServicioTexto) ? TipoLabel(c.Tipo) : c.TipoServicioTexto!;
@@ -2519,6 +2541,11 @@ else
     // Reusa el helper compartido OpcionCampo (mismo formato que escribe ConfigCamposEntidad).
     private string[] OpcionesSisC(string clave)
     {
+        // Ola 4: la copia por-tenant (lista_opciones) manda si cargo; es el universo visible ya resuelto
+        // (activas, en orden). Las ocultas no se ofrecen (los contratos que ya las usan conservan el texto).
+        if (UsaTenantC(clave))
+            return ListaTenantC(clave)!.Where(o => o.Activo).OrderBy(o => o.Orden)
+                                       .Select(o => o.Label).ToArray();
         var raw = _cfgContrato.TryGetValue(ConfigClave(clave), out var c) ? c.Opciones : null;
         if (!string.IsNullOrWhiteSpace(raw)) return OpcionCampo.VisiblesK(raw);
         return OpcionesFijasContrato(clave) ?? Array.Empty<string>();
@@ -2532,6 +2559,10 @@ else
     private string? ColorSisC(string clave, string? val)
     {
         if (string.IsNullOrWhiteSpace(val)) return null;
+        // Ola 4: color de la copia por-tenant (emparejado por label) si cargo.
+        if (UsaTenantC(clave))
+            return ListaTenantC(clave)!.FirstOrDefault(o =>
+                string.Equals((o.Label ?? "").Trim(), val.Trim(), StringComparison.OrdinalIgnoreCase))?.Color;
         var raw = _cfgContrato.TryGetValue(ConfigClave(clave), out var c) ? c.Opciones : null;
         if (string.IsNullOrWhiteSpace(raw)) return null;
         return OpcionCampo.Parse(raw).FirstOrDefault(o => string.Equals(o.K, val, StringComparison.OrdinalIgnoreCase))?.Color;
@@ -2746,6 +2777,12 @@ else
             try { _catCtrCat = (await GetAuthAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=contrato.categoria") ?? new()).Select(o => o.Label).ToList(); } catch { _catCtrCat = new(); }
             try { _catCtrForma = (await GetAuthAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=contrato.formapago") ?? new()).Select(o => o.Label).ToList(); } catch { _catCtrForma = new(); }
             try { _catCtrTipoServ = (await GetAuthAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=contrato.tiposervicio") ?? new()).Select(o => o.Label).ToList(); } catch { _catCtrTipoServ = new(); }
+            // Ola 4: copia POR TENANT (lista_opciones). incluirOcultas=true: el panel filtra Activo al mostrar
+            // y usa las ocultas para pintar/consultar color. Si la tabla aun no esta migrada, el resolver da [].
+            try { _listaCtrTipo = await GetAuthAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=contrato.tipocontrato&incluirOcultas=true") ?? new(); } catch { _listaCtrTipo = new(); }
+            try { _listaCtrCat = await GetAuthAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=contrato.categoria&incluirOcultas=true") ?? new(); } catch { _listaCtrCat = new(); }
+            try { _listaCtrForma = await GetAuthAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=contrato.formapago&incluirOcultas=true") ?? new(); } catch { _listaCtrForma = new(); }
+            try { _listaCtrTipoServ = await GetAuthAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=contrato.tiposervicio&incluirOcultas=true") ?? new(); } catch { _listaCtrTipoServ = new(); }
         }
         catch (SesionRedirigidaException) { }
         catch { _cfgContrato = new(StringComparer.Ordinal); }

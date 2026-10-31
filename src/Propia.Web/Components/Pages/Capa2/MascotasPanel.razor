@@ -360,14 +360,16 @@ else
 
 @if (_editSisClave is not null)
 {
-    @* 'tipo' es lista: modo auto-servido (semillas del catalogo A&D mascota.tipo + propias por copropiedad,
-       guardadas en unidades-config entidad=mascotas); el <select> de la celda lee esa misma config. *@
+    @* 'tipo' es lista: Ola 4 -> copia POR TENANT en lista_opciones (bases del catalogo A&D mascota.tipo +
+       propias por copropiedad). El modal (ListaTenant) la edita (color/ocultar/agregar/restablecer); el
+       <select> de la celda lee _listaTipoMas via _tipoOpciones. *@
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
                              EntidadConfig="mascotas" TituloSingular="mascota" Jwt="@_jwt"
-                             ListaCatalogo="@(_editSisClave == "tipo" ? "mascota.tipo" : null)"
-                             SemillaFallback="@(_editSisClave == "tipo" ? TiposMascota.Select(t => TipoLabel(t)).ToArray() : null)"
+                             ListaTenant="@(_editSisClave == "tipo" ? "mascota.tipo" : null)"
                              PermiteAgregar="@(_editSisClave == "tipo")"
-                             AutoServidoPopup="true"
+                             AutoServidoPopup="@(_editSisClave != "tipo")"
+                             ColorPopupClasico="@(_editSisClave == "tipo")"
+                             PermitirOcultarOpciones="@(_editSisClave == "tipo")"
                              Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
 }
 
@@ -587,8 +589,21 @@ else
     private static readonly TipoMascota[] TiposMascota = Enum.GetValues<TipoMascota>();
     // Label del tipo: del catalogo global (mascota.tipo, editable por A&D) si cargo; si no, el enum.
     private Dictionary<string, string> _catTipoMas = new(StringComparer.Ordinal);
+    // Ola 4: copia POR TENANT de la lista mascota.tipo (lista_opciones; clave e:Enum para las bases,
+    // c:guid para las propias de la copropiedad). Si cargo, es la fuente efectiva de label/color/ocultar;
+    // si no, cae al catalogo global (_catTipoMas) y luego al enum.
+    private List<OpcionEfectivaDto> _listaTipoMas = new();
+    private bool UsaListaTenantMas => _listaTipoMas.Count > 0;
+    private OpcionEfectivaDto? RowTipoMasPorClave(TipoMascota t)
+        => _listaTipoMas.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
+    private OpcionEfectivaDto? RowTipoMasPorLabel(string? label)
+        => _listaTipoMas.FirstOrDefault(r => string.Equals((r.Label ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string TipoLabel(TipoMascota t)
-        => _catTipoMas.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString();
+    {
+        var row = RowTipoMasPorClave(t);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return _catTipoMas.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString();
+    }
 
     // Opciones EFECTIVAS del select de Tipo (etiquetas): las que personalizo la copropiedad
     // (unidades-config entidad=mascotas, clave=tipo; semillas+propias) o, sin personalizar, las semillas.
@@ -601,7 +616,15 @@ else
     private void RecargarTipoOpciones()
     {
         _tipoSeedToEnum = new(StringComparer.OrdinalIgnoreCase);
+        // TipoLabel ya prefiere la copia por-tenant, asi que un base renombrado mapea a su enum (no a Otro).
         foreach (var t in TiposMascota) { _tipoSeedToEnum[TipoLabel(t)] = t; _tipoSeedToEnum[t.ToString()] = t; }
+        if (UsaListaTenantMas)
+        {
+            // Ola 4: el universo es la copia por-tenant (bases no ocultas + propias c:guid). Una propia del
+            // tenant (clave c:*) NO esta en el seed map, asi que se guarda como TipoCustom (enum = Otro).
+            _tipoOpciones = _listaTipoMas.Where(r => r.Activo).Select(r => r.Label).ToList();
+            return;
+        }
         var raw = _cfg.TryGetValue("tipo", out var c) ? c.Opciones : null;
         var propias = OpcionCampo.VisiblesK(raw).ToList();
         _tipoOpciones = propias.Count > 0 ? propias : TiposMascota.Select(t => TipoLabel(t)).ToList();
@@ -1080,6 +1103,7 @@ else
     private string? ColorTipoMas(string? val)
     {
         if (string.IsNullOrWhiteSpace(val)) return null;
+        if (UsaListaTenantMas) return RowTipoMasPorLabel(val)?.Color;
         var raw = _cfg.TryGetValue("tipo", out var c) ? c.Opciones : null;
         if (string.IsNullOrWhiteSpace(raw)) return null;
         return OpcionCampo.Parse(raw).FirstOrDefault(o => string.Equals(o.K, val, StringComparison.OrdinalIgnoreCase))?.Color;
@@ -1109,7 +1133,10 @@ else
             HidratarAnchos();
         }
         catch { _cfg = new(StringComparer.Ordinal); }
-        RecargarTipoOpciones();   // depende de _cfg (propias) y _catTipoMas (semillas/labels A&D)
+        // Ola 4: copia POR TENANT de mascota.tipo (resolver). incluirOcultas para pintar/mapear tambien las
+        // ocultas que una mascota ya use. Fuente efectiva de _tipoOpciones/color cuando cargo.
+        try { _listaTipoMas = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=mascota.tipo&incluirOcultas=true") ?? new(); } catch { _listaTipoMas = new(); }
+        RecargarTipoOpciones();   // depende de _listaTipoMas (Ola 4) / _cfg (propias) y _catTipoMas (labels A&D)
 
         // Fase 2: usuarios del tenant (campo Usuario) + mapa id->nombre (Usuario y Directorio), tenant-scoped.
         try { _usuariosTenant = await http.GetFromJsonAsync<List<UsuarioOpc>>("/api/usuarios") ?? new(); } catch { _usuariosTenant = new(); }

@@ -695,13 +695,17 @@
 
 @if (_editSisClave is not null)
 {
+    @* Ola 4: etiquetas y genero (sexo) gestionan su copia POR TENANT (lista_opciones) dentro del propio
+       modal (agregar texto libre / color / ocultar / reordenar / "Restablecer desde A&D"); por eso se
+       enruta via ListaTenant y se anulan los parametros heredados (OpcionesLista/PermiteAgregar/gestor
+       avanzado). El popup bespoke de etiquetas (AbrirEtLista) queda sin uso desde aqui. *@
     <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Requerido="_editSisReq"
                              Tipo="@(_editSisClave is "etiquetas" or "genero" ? TipoCampoTablero.Seleccion : null)"
                              EntidadConfig="personas" TituloSingular="registro del directorio" Jwt="@_jwt"
-                             OpcionesLista="@(_editSisClave == "etiquetas" ? EtiquetasOpcionesVista() : (_editSisClave == "genero" ? SexoOpcionesVista() : null))"
-                             PermiteAgregar="@(_editSisClave == "etiquetas")"
-                             OnAgregarOpcion="AgregarEtiquetaOpcionAsync"
-                             AbrirGestorAvanzado="@(_editSisClave == "etiquetas" ? EventCallback.Factory.Create(this, AbrirEtLista) : default)"
+                             ListaTenant="@(_editSisClave == "etiquetas" ? "directorio.etiqueta" : (_editSisClave == "genero" ? "persona.sexo" : null))"
+                             OpcionesLista="@null" PermiteAgregar="@(_editSisClave == "etiquetas")"
+                             ColorPopupClasico="@(_editSisClave is "etiquetas" or "genero")"
+                             PermitirOcultarOpciones="@(_editSisClave is "etiquetas" or "genero")"
                              Guardado="RecargarCamposDir" Cerrado="() => _editSisClave = null" />
 }
 
@@ -799,15 +803,26 @@
     // Filtro dinamico unico (componente compartido): mismos campos para personas y empresas.
     private FiltroDinamico? _fd;
 
-    // Opciones de etiqueta VISIBLES (no ocultas), en su orden. Fuente: _etOps (base catalogo + override tenant).
-    private List<string> EtiquetasOpciones()
-        => _etOps.Where(o => !o.Oculta).Select(o => o.K).ToList();
+    // Ola 4: copia POR TENANT de directorio.etiqueta (lista_opciones). Si cargo, es la fuente efectiva
+    // (universo + color + ocultar); si no, cae al _etOps (base catalogo + override en config del campo).
+    private List<OpcionEfectivaDto> _listaEtiqueta = new();
+    private bool UsaEtiquetaTenant => _listaEtiqueta.Count > 0;
 
-    // Mapa valor->color (hex) de las etiquetas, del override de la copropiedad. Para pintar el chip en la tabla.
+    // Opciones de etiqueta VISIBLES (no ocultas), en su orden. Fuente: copia por-tenant si cargo; si no, _etOps.
+    private List<string> EtiquetasOpciones()
+        => UsaEtiquetaTenant
+            ? _listaEtiqueta.Where(r => r.Activo).OrderBy(r => r.Orden).Select(r => r.Label).ToList()
+            : _etOps.Where(o => !o.Oculta).Select(o => o.K).ToList();
+
+    // Mapa valor->color (hex) de las etiquetas. Para pintar el chip en la tabla. Copia por-tenant si cargo.
     private Dictionary<string, string> EtiquetaColores()
-        => _etOps.Where(o => !string.IsNullOrWhiteSpace(o.Color))
-                 .GroupBy(o => o.K, StringComparer.OrdinalIgnoreCase)
-                 .ToDictionary(g => g.Key, g => g.First().Color!, StringComparer.OrdinalIgnoreCase);
+        => UsaEtiquetaTenant
+            ? _listaEtiqueta.Where(r => !string.IsNullOrWhiteSpace(r.Color))
+                            .GroupBy(r => r.Label, StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(g => g.Key, g => g.First().Color!, StringComparer.OrdinalIgnoreCase)
+            : _etOps.Where(o => !string.IsNullOrWhiteSpace(o.Color))
+                     .GroupBy(o => o.K, StringComparer.OrdinalIgnoreCase)
+                     .ToDictionary(g => g.Key, g => g.First().Color!, StringComparer.OrdinalIgnoreCase);
 
     // Arma la lista FULL: override del tenant (config Opciones en formato OpcionCampo; tolera el legado string[])
     // + las del catalogo base que no esten ya en el override (como semilla visible, sin color).
@@ -1553,7 +1568,11 @@
     private async Task RecargarCamposDir()
     {
         _crearCampoAbierto = false; _campoAEditar = null;
-        await CargarCamposDirAsync(Auth());
+        var http = Auth();
+        // Ola 4: refrescar la copia por-tenant tras editar sexo/etiquetas en el gestor del modal.
+        try { _listaSexo = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=persona.sexo&incluirOcultas=true") ?? _listaSexo; } catch { }
+        try { _listaEtiqueta = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=directorio.etiqueta&incluirOcultas=true") ?? _listaEtiqueta; } catch { }
+        await CargarCamposDirAsync(http);
         StateHasChanged();
     }
 
@@ -1712,9 +1731,19 @@
         catch { }
     }
 
-    // Label del sexo: del catalogo global (persona.sexo, editable por A&D) si cargo; si no, el enum.
+    // Label del sexo (Ola 4): de la copia POR TENANT (lista_opciones persona.sexo, clave e:Enum) si cargo;
+    // si no, del catalogo global (persona.sexo, editable por A&D); si no, el enum. El valor enum NO cambia.
     private Dictionary<string, string> _catSexo = new(StringComparer.Ordinal);
-    private string LblSexo(GeneroPersona g) => _catSexo.TryGetValue("e:" + g, out var l) && !string.IsNullOrWhiteSpace(l) ? l : g.ToString();
+    private List<OpcionEfectivaDto> _listaSexo = new();   // copia por-tenant (fuente efectiva)
+    private bool UsaSexoTenant => _listaSexo.Count > 0;
+    private OpcionEfectivaDto? RowSexoPorClave(GeneroPersona g)
+        => _listaSexo.FirstOrDefault(r => string.Equals(r.Clave, "e:" + g, StringComparison.Ordinal));
+    private string LblSexo(GeneroPersona g)
+    {
+        var row = RowSexoPorClave(g);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return _catSexo.TryGetValue("e:" + g, out var l) && !string.IsNullOrWhiteSpace(l) ? l : g.ToString();
+    }
 
     // Lista (solo lectura) de Sexo para el modal "Editar campo": universo = enum, label del catalogo A&D.
     private List<EditarCampoSistemaModal.OpcionVista> SexoOpcionesVista()
@@ -1743,6 +1772,7 @@
             else
                 _empresas = await resp.Content.ReadFromJsonAsync<List<EmpresaResumenDto>>() ?? new();
             try { _catSexo = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=persona.sexo") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); } catch { _catSexo = new(StringComparer.Ordinal); }
+            try { _listaSexo = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=persona.sexo&incluirOcultas=true") ?? new(); } catch { _listaSexo = new(); }
             // Tras un refresco real, las recien creadas vuelven a su orden natural (sin verde); la recarga
             // que dispara la propia creacion conserva el resaltado (suppress).
             if (_suppressRecienClear) _suppressRecienClear = false; else { _recienP.Clear(); _recienE.Clear(); }
@@ -1758,6 +1788,8 @@
         var http = Auth();
         try { _catEtiqueta = (await http.GetFromJsonAsync<List<CatalogoOpcionDto>>("/api/catalogos?lista=directorio.etiqueta") ?? new()).Select(o => o.Label).ToList(); }
         catch { _catEtiqueta = new(); }
+        try { _listaEtiqueta = await http.GetFromJsonAsync<List<OpcionEfectivaDto>>("/api/campos/opciones?lista=directorio.etiqueta&incluirOcultas=true") ?? new(); }
+        catch { _listaEtiqueta = new(); }
         try
         {
             var cfg = await http.GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=personas") ?? new();

@@ -46,6 +46,9 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
     // Catalogo global de listas (editable desde la consola A&D). Tabla GLOBAL, sin tenant/RLS.
     public DbSet<CatalogoOpcion> CatalogoOpciones => Set<CatalogoOpcion>();
+    // Ola 4: copia POR TENANT de las listas del sistema (materializada desde el catalogo global).
+    // TenantEntity con tenant_id + RLS + HasQueryFilter (ver ConfigureListasTenant).
+    public DbSet<ListaOpcion> ListaOpciones => Set<ListaOpcion>();
 
     // Integraciones de plataforma (Super Admin) - portadas de CUBOT.travels. Globales singleton.
     public DbSet<EmailConfig> EmailConfigs => Set<EmailConfig>();
@@ -433,6 +436,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
         ConfigureDocumentosYReportes(modelBuilder);
         ConfigurePorteriaReservasGlobales(modelBuilder);
         ConfigureAuditoriaIaBilling(modelBuilder);
+        ConfigureListasTenant(modelBuilder);
 
     }
 
