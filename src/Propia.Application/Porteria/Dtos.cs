@@ -64,7 +64,8 @@ public record AutorizacionPreviaDto(
     int UsosMaximos,
     int UsosRealizados,
     string? CodigoNumerico,
-    DateTimeOffset CreadoAt);
+    DateTimeOffset CreadoAt,
+    string? TipoVisitanteClave = null);
 
 public record CrearAutorizacionRequest(
     Guid UnidadPrivadaId,
@@ -75,7 +76,8 @@ public record CrearAutorizacionRequest(
     DateTimeOffset VigenciaFin,
     string? NotaPortero,
     int UsosMaximos = 1,
-    OrigenAutorizacion Origen = OrigenAutorizacion.PortalResidente);
+    OrigenAutorizacion Origen = OrigenAutorizacion.PortalResidente,
+    string? TipoVisitanteClave = null);
 
 public record ValidarCodigoRequest(string Codigo);
 
@@ -102,7 +104,8 @@ public record RegistroVisitaDto(
     string? Observacion,
     DateTimeOffset Timestamp,
     Guid GuardaPersonaId,
-    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null,
+    string? TipoVisitanteClave = null);
 
 public record RegistrarVisitaRequest(
     TipoEventoAccesoPorteria TipoEvento,
@@ -116,7 +119,8 @@ public record RegistrarVisitaRequest(
     Guid? VisitanteFrecuenteId,
     string? Observacion,
     bool AvisoTratamientoConfirmado,
-    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null);
+    IReadOnlyList<PorteriaCampoValorDto>? CamposValores = null,
+    string? TipoVisitanteClave = null);
 
 // ===========================================================================
 // Campos personalizados del modulo (estilo CUBOT.travels)

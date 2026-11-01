@@ -25,6 +25,25 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
         _tenant = tenant;
     }
 
+    // Compara dos Meta JSON por VALOR, no por texto: jsonb normaliza el almacenamiento (p.ej. agrega un espacio
+    // tras ':'), asi que comparar strings crudos marcaria como "cambiada" una opcion que no cambio (y pondria
+    // OverrideMeta en todas). Normaliza reserializando el documento; si alguno no parsea, cae a comparar texto.
+    private static bool MetaIgual(string? a, string? b)
+    {
+        var na = string.IsNullOrWhiteSpace(a);
+        var nb = string.IsNullOrWhiteSpace(b);
+        if (na && nb) return true;
+        if (na || nb) return false;
+        try
+        {
+            using var da = System.Text.Json.JsonDocument.Parse(a!);
+            using var db = System.Text.Json.JsonDocument.Parse(b!);
+            return System.Text.Json.JsonSerializer.Serialize(da.RootElement)
+                == System.Text.Json.JsonSerializer.Serialize(db.RootElement);
+        }
+        catch { return string.Equals(a, b, StringComparison.Ordinal); }
+    }
+
     // 42P01 = "relation does not exist": la migracion de lista_opciones aun no esta aplicada en este
     // entorno. Durante la transicion de Ola 4 el resolver degrada a vacio (cada modulo cae a su fallback)
     // en vez de 500. Es temporal: quitar este salvavidas cuando la migracion este universal.
@@ -60,6 +79,8 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
                     Activo = true,
                     EsBase = true,
                     OverrideVisual = false,
+                    Meta = o.Meta,          // Ola 4c: hereda la metadata de negocio del catalogo global.
+                    OverrideMeta = false,
                 };
                 creadas.Add(row);
                 _db.ListaOpciones.Add(row);
@@ -175,7 +196,7 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
             if (!incluirOcultas) q = q.Where(x => x.Activo);
             return await q
                 .OrderBy(x => x.Orden).ThenBy(x => x.Label)
-                .Select(x => new OpcionEfectivaDto(x.Clave, x.Label, x.Orden, x.Color, x.Activo, x.EsBase))
+                .Select(x => new OpcionEfectivaDto(x.Clave, x.Label, x.Orden, x.Color, x.Activo, x.EsBase, x.Meta))
                 .ToListAsync(ct);
         }
         catch (Exception ex) when (EsTablaAusente(ex)) { return System.Array.Empty<OpcionEfectivaDto>(); }
@@ -205,11 +226,17 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
             {
                 if (porClave.TryGetValue(o.Clave, out var row))
                 {
-                    if (row.OverrideVisual) continue;   // la copropiedad la fijo: no se pisa.
-                    if (row.Label != o.Label) { row.Label = o.Label; cambios++; }
-                    if (row.Color != o.Color) { row.Color = o.Color; cambios++; }
-                    if (row.Orden != o.Orden) { row.Orden = o.Orden; cambios++; }
-                    if (!row.Activo) { row.Activo = true; cambios++; }   // reactivar base que A&D volvio a activar
+                    // Lo VISUAL (label/color/orden/activo) solo se realinea si la copropiedad no lo overrideo.
+                    if (!row.OverrideVisual)
+                    {
+                        if (row.Label != o.Label) { row.Label = o.Label; cambios++; }
+                        if (row.Color != o.Color) { row.Color = o.Color; cambios++; }
+                        if (row.Orden != o.Orden) { row.Orden = o.Orden; cambios++; }
+                        if (!row.Activo) { row.Activo = true; cambios++; }   // reactivar base que A&D volvio a activar
+                    }
+                    // La META (Ola 4c) es un eje INDEPENDIENTE: se realinea salvo que la copropiedad la overrideo.
+                    if (!row.OverrideMeta && !MetaIgual(row.Meta, o.Meta))
+                    { row.Meta = o.Meta; cambios++; }
                     if (!row.EsBase) row.EsBase = true;
                 }
                 else
@@ -224,6 +251,8 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
                         Activo = true,
                         EsBase = true,
                         OverrideVisual = false,
+                        Meta = o.Meta,
+                        OverrideMeta = false,
                     });
                     cambios++;
                 }
@@ -282,6 +311,15 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
                         if (row.EsBase && !row.OverrideVisual) row.OverrideVisual = true;
                         cambios++;
                     }
+                    // Meta (Ola 4c): null = el editor no la envia (listas libres), se deja intacta. Un valor nuevo
+                    // sobre una base la marca OverrideMeta (el re-sembrar ya no la pisa); es un eje aparte del visual.
+                    // Comparacion por valor (MetaIgual): jsonb normaliza el texto, comparar strings marcaria todo.
+                    if (op.Meta is not null && !MetaIgual(row.Meta, op.Meta))
+                    {
+                        row.Meta = op.Meta;
+                        if (row.EsBase) row.OverrideMeta = true;
+                        cambios++;
+                    }
                 }
                 else
                 {
@@ -296,6 +334,8 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
                         Activo = activo,
                         EsBase = false,
                         OverrideVisual = false,
+                        Meta = op.Meta,          // Ola 4c: la opcion propia acarrea su metadata de negocio.
+                        OverrideMeta = false,
                     });
                     cambios++;
                 }

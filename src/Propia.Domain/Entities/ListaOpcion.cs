@@ -39,4 +39,15 @@ public class ListaOpcion : TenantEntity
     /// <summary>Solo bases: true = la copropiedad edito label/color/orden/activo y el re-sembrar ya no la pisa.
     /// false = el re-sembrar la realinea con el catalogo global.</summary>
     public bool OverrideVisual { get; set; }
+
+    /// <summary>Metadata de negocio en JSON para listas CON-LOGICA (Ola 4c): la opcion acarrea comportamiento
+    /// que el codigo lee por clave en vez de un switch(enum). Ej. porteria.tipovisitante {"columnaTablero":1};
+    /// persona.tipodocumento {"esEmpresa":true}. Vacio en listas libres. Se copia del catalogo global al
+    /// materializar; la copropiedad puede editarlo (base o propia), lo que marca <see cref="OverrideMeta"/>.</summary>
+    public string? Meta { get; set; }
+
+    /// <summary>Solo bases: true = la copropiedad edito la <see cref="Meta"/> de esta base y el re-sembrar ya no
+    /// la pisa (eje independiente de <see cref="OverrideVisual"/>). false = el re-sembrar realinea la Meta con el
+    /// catalogo global.</summary>
+    public bool OverrideMeta { get; set; }
 }

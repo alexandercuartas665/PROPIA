@@ -18,6 +18,8 @@ public partial class PropiaDbContext
             b.Property(x => x.Label).IsRequired().HasMaxLength(200);
             b.Property(x => x.Color).HasMaxLength(20);
             b.Property(x => x.Activo).HasDefaultValue(true);
+            b.Property(x => x.Meta).HasColumnType("jsonb");        // Ola 4c: metadata de negocio por opcion.
+            b.Property(x => x.OverrideMeta).HasDefaultValue(false);
             b.HasIndex(x => new { x.TenantId, x.Lista });
             b.HasIndex(x => new { x.TenantId, x.Lista, x.Clave }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);

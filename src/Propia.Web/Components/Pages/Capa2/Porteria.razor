@@ -104,7 +104,7 @@
             @for (var c = 0; c < 3; c++)
             {
                 var col = c;
-                var items = _adentro.Where(a => Cat(a.TipoVisitante) == col).ToList();
+                var items = _adentro.Where(a => ColumnaDeVis(a.TipoVisitanteClave, a.TipoVisitante) == col).ToList();
                 <div class="po-col">
                     <div class="po-col-h">
                         <span class="po-col-t">@ColTitulo(col)</span>
@@ -130,7 +130,7 @@
                                         </div>
                                         <div class="po-pcard-id">
                                             <div class="po-pcard-name">@reg.Nombre</div>
-                                            <div class="po-pcard-meta">@(reg.DestinoNombre ?? TipoLabel(reg.TipoVisitante)) &middot; entro @reg.Timestamp.LocalDateTime.ToString("HH:mm")</div>
+                                            <div class="po-pcard-meta">@(reg.DestinoNombre ?? LblTipoVis(reg.TipoVisitanteClave, reg.TipoVisitante)) &middot; entro @reg.Timestamp.LocalDateTime.ToString("HH:mm")</div>
                                         </div>
                                         <button class="po-salir" title="Marcar salida" @onclick="() => RegistrarEgreso(reg)">Salida</button>
                                     </div>
@@ -225,7 +225,7 @@
                         </div>
                         <div class="po-row-id">
                             <div class="po-row-name">@reg.Nombre</div>
-                            <div class="po-row-meta">@TipoLabel(reg.TipoVisitante)@if (!string.IsNullOrEmpty(reg.DestinoNombre)) { <text> &middot; @reg.DestinoNombre</text> }@if (!string.IsNullOrEmpty(reg.Documento)) { <text> &middot; @reg.Documento</text> }@foreach (var cv in (reg.CamposValores ?? new List<PorteriaCampoValorDto>())) { if (!string.IsNullOrWhiteSpace(cv.Valor)) { <text> &middot; @CampoLabel(cv.CampoId): @cv.Valor</text> } }</div>
+                            <div class="po-row-meta">@LblTipoVis(reg.TipoVisitanteClave, reg.TipoVisitante)@if (!string.IsNullOrEmpty(reg.DestinoNombre)) { <text> &middot; @reg.DestinoNombre</text> }@if (!string.IsNullOrEmpty(reg.Documento)) { <text> &middot; @reg.Documento</text> }@foreach (var cv in (reg.CamposValores ?? new List<PorteriaCampoValorDto>())) { if (!string.IsNullOrWhiteSpace(cv.Valor)) { <text> &middot; @CampoLabel(cv.CampoId): @cv.Valor</text> } }</div>
                         </div>
                         <span class="po-row-hora">@reg.Timestamp.LocalDateTime.ToString("HH:mm")</span>
                         @if (dentro)
@@ -627,13 +627,9 @@
                     </div>
                     <div class="po-form-2">
                         <div>
-                            <label class="po-lbl">Tipo de ingreso</label>
-                            <select class="po-input" @bind="_viTipo">
-                                <option value="@TipoVisitante.VisitaPersonal">Visitante</option>
-                                <option value="@TipoVisitante.Proveedor">Proveedor</option>
-                                <option value="@TipoVisitante.Delivery">Domicilio</option>
-                                <option value="@TipoVisitante.PersonalExterno">Personal externo</option>
-                                <option value="@TipoVisitante.Otro">Otro</option>
+                            <label class="po-lbl">Tipo de ingreso</label><button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestTipoVis = true" style="background:none;border:none;cursor:pointer;padding:0 0 0 6px;font-size:11px;color:inherit;"><i class="fi fi-rr-settings-sliders"></i></button>
+                            <select class="po-input" @bind="_viClave">
+                                @foreach (var o in _listaTipoVis.Where(o => o.Activo)) { <option value="@o.Clave">@o.Label</option> }
                             </select>
                         </div>
                         <div>
@@ -856,8 +852,8 @@
                     </div>
                     <div>
                         <label class="po-lbl">Tipo</label>
-                        <select class="po-input" @bind="_authTipo">
-                            @foreach (var t in Enum.GetValues<TipoVisitante>()) { <option value="@t">@TipoLabel(t)</option> }
+                        <select class="po-input" @bind="_authClave">
+                            @foreach (var o in _listaTipoVis.Where(o => o.Activo)) { <option value="@o.Clave">@o.Label</option> }
                         </select>
                     </div>
                 </div>
@@ -979,6 +975,11 @@
     <GestionarOpcionesListaModal Lista="porteria.tipocorrespondencia" Titulo="Portería · Tipo de correspondencia" Jwt="@_jwt"
                                  PermiteAgregar="false" Guardado="RecargarCorrespAsync" Cerrado="() => _gestCorresp = false" />
 }
+@if (_gestTipoVis)
+{
+    <GestionarOpcionesListaModal Lista="porteria.tipovisitante" Titulo="Portería · Tipo de visitante" Jwt="@_jwt"
+                                 Guardado="RecargarTipoVisAsync" Cerrado="() => _gestTipoVis = false" />
+}
 
 @code {
     // ===== Columnas reordenables/redimensionables de las 4 tablas de porteria (JS compartido). =====
@@ -1095,7 +1096,7 @@
 
     // Celdas por columna de cada tabla (porta el markup original a render por clave).
     private RenderFragment CellAut(AutorizacionPreviaDto a, string k) =>@<text>
-        @if (k == "vis") { <strong>@a.NombreVisitante</strong><div class="po-cell-sub">@TipoLabel(a.TipoVisitante)</div> }
+        @if (k == "vis") { <strong>@a.NombreVisitante</strong><div class="po-cell-sub">@LblTipoVis(a.TipoVisitanteClave, a.TipoVisitante)</div> }
         else if (k == "uni") { <span class="u-cod">@a.UnidadNumero</span> }
         else if (k == "vig") { <span class="po-cell-sub">@a.VigenciaInicio.LocalDateTime.ToString("yyyy-MM-dd HH:mm")<br>@a.VigenciaFin.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span> }
         else if (k == "est") { @RenderEstadoAut(a.Estado) }
@@ -1153,7 +1154,7 @@
     private bool _showRegistrar;
     private string _viNombre = "";
     private string _viDoc = "";
-    private TipoVisitante _viTipo = TipoVisitante.VisitaPersonal;
+    private string _viClave = "e:VisitaPersonal";   // Ola 4c: clave del tipo seleccionado (base o propia)
     private Guid _viDestino = Guid.Empty;
     private string _viMotivo = "";
     private List<AutorizacionPreviaDto> _viSugs = new();
@@ -1173,7 +1174,7 @@
     private Guid _authUnidad = Guid.Empty;
     private string _authNombre = "";
     private string _authDoc = "";
-    private TipoVisitante _authTipo = TipoVisitante.VisitaPersonal;
+    private string _authClave = "e:VisitaPersonal";   // Ola 4c
     private DateTime _authIni = DateTime.Now.AddMinutes(30);
     private DateTime _authFin = DateTime.Now.AddDays(1);
     private string _authNota = "";
@@ -1238,6 +1239,7 @@
         public string Nombre = "";
         public string? Documento;
         public TipoVisitante TipoVisitante;
+        public string? TipoVisitanteClave;   // Ola 4c
         public string? DestinoNombre;
         public string? Observacion;
         public DateTimeOffset Timestamp;
@@ -1280,6 +1282,7 @@
             try { _equipos = await http.GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos") ?? new(); } catch { _equipos = new(); }
             try { _listaNovedad = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tiponovedad&incluirOcultas=true") ?? new(); } catch { _listaNovedad = new(); }
             try { _listaCorresp = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipocorrespondencia&incluirOcultas=true") ?? new(); } catch { _listaCorresp = new(); }
+            try { _listaTipoVis = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipovisitante&incluirOcultas=true") ?? new(); } catch { _listaTipoVis = new(); }
             try
             {
                 var resumen = await http.GetFromJsonAsync<ResumenWrap>("/api/mi-copropiedad/resumen");
@@ -1305,6 +1308,7 @@
                     Nombre = v.Nombre,
                     Documento = v.Documento,
                     TipoVisitante = v.TipoVisitante,
+                    TipoVisitanteClave = v.TipoVisitanteClave,
                     DestinoNombre = v.DestinoNombre,
                     Observacion = v.Observacion,
                     Timestamp = v.Timestamp
@@ -1378,7 +1382,7 @@
     private void AbrirRegistrar()
     {
         _showRegistrar = true;
-        _viNombre = ""; _viDoc = ""; _viMotivo = ""; _viTipo = TipoVisitante.VisitaPersonal;
+        _viNombre = ""; _viDoc = ""; _viMotivo = ""; _viClave = "e:VisitaPersonal";
         _viDestino = Guid.Empty; _viSugs = new(); _viChat = new();
         _viTyping = _viAwait = _viOk = _viNo = false;
         _waResName = "Residente"; _waResTel = "+57 3xx xxx xxxx";
@@ -1405,7 +1409,7 @@
     {
         _viNombre = a.NombreVisitante;
         _viDoc = a.DocumentoVisitante ?? "";
-        _viTipo = a.TipoVisitante;
+        _viClave = EffClaveVis(a.TipoVisitanteClave, a.TipoVisitante);
         _viDestino = a.UnidadPrivadaId;
         _viSugs = new();
     }
@@ -1423,7 +1427,7 @@
         SetResidenteFromDestino();
         var hora = DateTime.Now.ToString("HH:mm");
         _viChat.Add(new ChatMsg("sys", "El agente IA inicio la conversacion con el residente.", hora));
-        var motivo = string.IsNullOrWhiteSpace(_viMotivo) ? TipoLabel(_viTipo).ToLowerInvariant() : _viMotivo;
+        var motivo = string.IsNullOrWhiteSpace(_viMotivo) ? LblDeClave(_viClave).ToLowerInvariant() : _viMotivo;
         _viChat.Add(new ChatMsg("agent", $"Hola, soy el asistente de {(_coName == "" ? "la copropiedad" : _coName)}. {_viNombre} esta en porteria ({motivo}). Autorizas su ingreso?", hora));
         _viTyping = true; StateHasChanged();
         await Task.Delay(900);
@@ -1475,8 +1479,8 @@
             DestinoVisita? destinoTipo = _viDestino != Guid.Empty ? DestinoVisita.UnidadPrivada : null;
             Guid? destinoId = _viDestino != Guid.Empty ? _viDestino : null;
             var campos = (_campos ?? new()).Select(c => new PorteriaCampoValorDto(c.Id, _viCampos.GetValueOrDefault(c.Id))).ToList();
-            var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Ingreso, _viTipo, _viNombre,
-                string.IsNullOrWhiteSpace(_viDoc) ? null : _viDoc, null, destinoTipo, destinoId, null, null, observacion, true, campos);
+            var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Ingreso, EnumDeClave(_viClave), _viNombre,
+                string.IsNullOrWhiteSpace(_viDoc) ? null : _viDoc, null, destinoTipo, destinoId, null, null, observacion, true, campos, _viClave);
             var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno!.Id}/visitas", req);
             if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return false; }
             return true;
@@ -1486,19 +1490,19 @@
 
     private async Task RegistrarEgreso(RegistroVisitaDto v)
     {
-        await RegistrarEgresoCore(v.TipoVisitante, v.Nombre, v.Documento, v.DestinoTipo, v.DestinoId);
+        await RegistrarEgresoCore(v.TipoVisitante, v.TipoVisitanteClave, v.Nombre, v.Documento, v.DestinoTipo, v.DestinoId);
     }
 
     private async Task RegistrarEgreso(AdentroItem a)
     {
         DestinoVisita? dt = a.DestinoNombre is not null ? DestinoVisita.UnidadPrivada : null;
-        await RegistrarEgresoCore(a.TipoVisitante, a.Nombre, a.Documento, dt, null);
+        await RegistrarEgresoCore(a.TipoVisitante, a.TipoVisitanteClave, a.Nombre, a.Documento, dt, null);
     }
 
-    private async Task RegistrarEgresoCore(TipoVisitante tipo, string nombre, string? doc, DestinoVisita? dt, Guid? did)
+    private async Task RegistrarEgresoCore(TipoVisitante tipo, string? clave, string nombre, string? doc, DestinoVisita? dt, Guid? did)
     {
         if (_turno is null) { Flash("No hay turno abierto.", false); return; }
-        var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Egreso, tipo, nombre, doc, null, dt, did, null, null, null, true);
+        var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Egreso, tipo, nombre, doc, null, dt, did, null, null, null, true, null, clave);
         var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/visitas", req);
         if (resp.IsSuccessStatusCode) { await RefrescarOperacionAsync(); Flash($"Salida registrada: {nombre}.", true); }
         else Flash(await resp.Content.ReadAsStringAsync(), false);
@@ -1544,7 +1548,7 @@
         if (_vfReg is not null)
         {
             DestinoVisita? dt = _vfReg.DestinoNombre is not null ? DestinoVisita.UnidadPrivada : null;
-            await RegistrarEgresoCore(_vfReg.TipoVisitante, _vfReg.Nombre, _vfReg.Documento, dt, null);
+            await RegistrarEgresoCore(_vfReg.TipoVisitante, _vfReg.TipoVisitanteClave, _vfReg.Nombre, _vfReg.Documento, dt, null);
         }
         _vfSalio = true; StateHasChanged();
     }
@@ -1556,9 +1560,9 @@
         try
         {
             var req = new CrearAutorizacionRequest(_authUnidad, _authNombre,
-                string.IsNullOrWhiteSpace(_authDoc) ? null : _authDoc, _authTipo,
+                string.IsNullOrWhiteSpace(_authDoc) ? null : _authDoc, EnumDeClave(_authClave),
                 new DateTimeOffset(_authIni, TimeSpan.Zero), new DateTimeOffset(_authFin, TimeSpan.Zero),
-                string.IsNullOrWhiteSpace(_authNota) ? null : _authNota, 1, OrigenAutorizacion.Administrador);
+                string.IsNullOrWhiteSpace(_authNota) ? null : _authNota, 1, OrigenAutorizacion.Administrador, _authClave);
             var resp = await Auth().PostAsJsonAsync("/api/porteria/autorizaciones", req);
             if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
             _showCrearAuth = false;
@@ -1773,9 +1777,11 @@
     // sigue guardando el enum; si la copia cargo, label/color salen de ahi (A&D/copropiedad los edita).
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaNovedad = new();
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCorresp = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaTipoVis = new();   // Ola 4c
     // Ola 4b-2 (edicion per-tenant): overlays para gestionar las opciones de cada lista (color/ocultar/renombrar).
     private bool _gestNovedad;
     private bool _gestCorresp;
+    private bool _gestTipoVis;   // Ola 4c
     private async Task RecargarNovedadAsync()
     {
         try { _listaNovedad = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tiponovedad&incluirOcultas=true") ?? _listaNovedad; } catch { }
@@ -1786,6 +1792,52 @@
         try { _listaCorresp = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipocorrespondencia&incluirOcultas=true") ?? _listaCorresp; } catch { }
         StateHasChanged();
     }
+
+    // ===== Ola 4c: porteria.tipovisitante (CON-LOGICA). La copia por-tenant guarda Meta.columnaTablero; el
+    // registro guarda la clave ("e:<Enum>" base o "c:<guid>" propia) + el enum (back-compat). La clave manda;
+    // si falta Meta/opcion, se cae al Cat()/TipoLabel() legado por enum. =====
+    private async Task RecargarTipoVisAsync()
+    {
+        try { _listaTipoVis = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipovisitante&incluirOcultas=true") ?? _listaTipoVis; } catch { }
+        StateHasChanged();
+    }
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowTipoVis(string clave)
+        => _listaTipoVis.FirstOrDefault(r => string.Equals(r.Clave, clave, StringComparison.OrdinalIgnoreCase));
+    // Enum base de una clave "e:<Enum>" (Otro si es propia o no parsea) -> para el campo enum de back-compat.
+    private static TipoVisitante EnumDeClave(string? clave)
+        => !string.IsNullOrEmpty(clave) && clave!.StartsWith("e:", StringComparison.Ordinal)
+           && Enum.TryParse<TipoVisitante>(clave.Substring(2), out var t) ? t : TipoVisitante.Otro;
+    // Clave efectiva de un registro: la propia si existe, si no la del enum legado.
+    private static string EffClaveVis(string? clave, TipoVisitante e)
+        => !string.IsNullOrEmpty(clave) ? clave! : "e:" + e;
+    // Columna del tablero (0/1/2): Meta.columnaTablero de la opcion; fallback al Cat() legado por enum.
+    private int ColumnaDeVis(string? clave, TipoVisitante e)
+    {
+        var row = RowTipoVis(EffClaveVis(clave, e));
+        if (row?.Meta is { } m && ColumnaDeMeta(m) is { } c) return c;
+        return Cat(e);
+    }
+    private static int? ColumnaDeMeta(string meta)
+    {
+        try
+        {
+            using var d = System.Text.Json.JsonDocument.Parse(meta);
+            if (d.RootElement.TryGetProperty("columnaTablero", out var el))
+            {
+                if (el.ValueKind == System.Text.Json.JsonValueKind.Number && el.TryGetInt32(out var n)) return n;
+                if (el.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(el.GetString(), out var n2)) return n2;
+            }
+        }
+        catch { }
+        return null;
+    }
+    // Etiqueta de un registro: label de la opcion (propia o base) o fallback al TipoLabel legado por enum.
+    private string LblTipoVis(string? clave, TipoVisitante e)
+    {
+        var row = RowTipoVis(EffClaveVis(clave, e));
+        return row is not null && !string.IsNullOrWhiteSpace(row.Label) ? row.Label : TipoLabel(e);
+    }
+    private string LblDeClave(string clave) => LblTipoVis(clave, EnumDeClave(clave));
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowNov(TipoNovedadPorteria t)
         => _listaNovedad.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowCorr(TipoCorrespondencia t)

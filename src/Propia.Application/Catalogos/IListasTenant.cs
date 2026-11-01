@@ -33,5 +33,6 @@ public interface IListasTenant
 }
 
 /// <summary>Una opcion tal como la deja el editor de columna: label visible, color opcional y si queda oculta.
-/// El orden lo da la posicion en la lista.</summary>
-public record OpcionGuardarDto(string Label, string? Color, bool Oculta);
+/// El orden lo da la posicion en la lista. <paramref name="Meta"/> (Ola 4c, listas con-logica): JSON de negocio;
+/// null = no tocar la Meta existente (el editor generico de listas libres no la envia).</summary>
+public record OpcionGuardarDto(string Label, string? Color, bool Oculta, string? Meta = null);

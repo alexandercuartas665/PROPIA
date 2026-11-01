@@ -305,6 +305,20 @@ public static class CatalogoListasSeeder
             new("e:Suplente", "Suplente", 5),
         }));
 
+        // ===== Ola 4c: listas CON-LOGICA editables por la copropiedad. Clave "e:<Enum>"; el Meta acarrea el
+        // comportamiento que hoy vive en un switch del codigo, para que la copropiedad lo overridee o agregue
+        // opciones propias. =====
+        // porteria.tipovisitante: Meta.columnaTablero (0/1/2) = en que columna del tablero "Adentro ahora" cae el
+        // tipo (hoy Cat() en Porteria.razor). Paridad: VisitaPersonal->0, Proveedor/PersonalExterno->1, resto->2.
+        reg.Add(("porteria.tipovisitante", new List<SemillaOpcion>
+        {
+            new("e:VisitaPersonal", "Visitante", 0, "{\"columnaTablero\":0}"),
+            new("e:Proveedor", "Proveedor", 1, "{\"columnaTablero\":1}"),
+            new("e:Delivery", "Domicilio", 2, "{\"columnaTablero\":2}"),
+            new("e:PersonalExterno", "Personal externo", 3, "{\"columnaTablero\":1}"),
+            new("e:Otro", "Otro", 4, "{\"columnaTablero\":2}"),
+        }));
+
         return reg;
     }
 

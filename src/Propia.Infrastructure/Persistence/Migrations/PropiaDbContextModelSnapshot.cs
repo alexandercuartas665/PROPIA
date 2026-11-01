@@ -1849,6 +1849,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("tipo_visitante");
 
+                    b.Property<string>("TipoVisitanteClave")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipo_visitante_clave");
+
                     b.Property<Guid>("UnidadPrivadaId")
                         .HasColumnType("uuid")
                         .HasColumnName("unidad_privada_id");
@@ -7846,9 +7851,19 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(80)")
                         .HasColumnName("lista");
 
+                    b.Property<string>("Meta")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("meta");
+
                     b.Property<int>("Orden")
                         .HasColumnType("integer")
                         .HasColumnName("orden");
+
+                    b.Property<bool>("OverrideMeta")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("override_meta");
 
                     b.Property<bool>("OverrideVisual")
                         .HasColumnType("boolean")
@@ -13815,6 +13830,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<int>("TipoVisitante")
                         .HasColumnType("integer")
                         .HasColumnName("tipo_visitante");
+
+                    b.Property<string>("TipoVisitanteClave")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipo_visitante_clave");
 
                     b.Property<Guid>("TurnoId")
                         .HasColumnType("uuid")

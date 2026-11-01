@@ -66,6 +66,11 @@ public class AutorizacionPrevia : TenantEntity
     public string? DocumentoVisitante { get; set; }
     public TipoVisitante TipoVisitante { get; set; }
 
+    /// <summary>Ola 4c: clave estable del tipo de visitante en la lista por-tenant (porteria.tipovisitante):
+    /// "e:&lt;Enum&gt;" para base, "c:&lt;guid&gt;" para un tipo propio de la copropiedad. null = legado (usar
+    /// <see cref="TipoVisitante"/>). Permite tipos propios con comportamiento (columna del tablero) sin perder el enum.</summary>
+    public string? TipoVisitanteClave { get; set; }
+
     public DateTimeOffset VigenciaInicio { get; set; }
     public DateTimeOffset VigenciaFin { get; set; }
 
@@ -111,6 +116,10 @@ public class RegistroVisita : TenantEntity
 
     public TipoEventoAccesoPorteria TipoEvento { get; set; }
     public TipoVisitante TipoVisitante { get; set; }
+
+    /// <summary>Ola 4c: clave estable del tipo de visitante en la lista por-tenant (porteria.tipovisitante):
+    /// "e:&lt;Enum&gt;" para base, "c:&lt;guid&gt;" para un tipo propio. null = legado (usar <see cref="TipoVisitante"/>).</summary>
+    public string? TipoVisitanteClave { get; set; }
 
     /// <summary>FK opcional al catalogo de visitantes frecuentes (reconocimiento).</summary>
     public Guid? VisitanteFrecuenteId { get; set; }

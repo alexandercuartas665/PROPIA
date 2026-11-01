@@ -5,7 +5,8 @@ namespace Propia.Application.Catalogos;
 /// tenant (<see cref="Propia.Domain.Entities.ListaOpcion"/>) ya compuesta (base del catalogo global + ediciones
 /// y opciones propias de la copropiedad).
 /// </summary>
-public record OpcionEfectivaDto(string Clave, string Label, int Orden, string? Color, bool Activo, bool EsBase);
+/// <param name="Meta">JSON de negocio de la opcion para listas con-logica (Ola 4c); null en listas libres.</param>
+public record OpcionEfectivaDto(string Clave, string Label, int Orden, string? Color, bool Activo, bool EsBase, string? Meta = null);
 
 /// <summary>
 /// Opciones efectivas de una lista del sistema para la copropiedad ACTIVA (Ola 4, modelo por-tenant). Lee la

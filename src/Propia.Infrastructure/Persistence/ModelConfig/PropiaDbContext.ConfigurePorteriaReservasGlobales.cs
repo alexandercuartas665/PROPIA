@@ -52,6 +52,7 @@ public partial class PropiaDbContext
             b.Property(x => x.NotaPortero).HasColumnType("text");
             b.Property(x => x.Origen).HasConversion<int>();
             b.Property(x => x.TipoVisitante).HasConversion<int>();
+            b.Property(x => x.TipoVisitanteClave).HasMaxLength(120);   // Ola 4c
             b.Property(x => x.Estado).HasConversion<int>();
             b.HasOne(x => x.UnidadPrivada).WithMany().HasForeignKey(x => x.UnidadPrivadaId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.CreadoPorPersona).WithMany().HasForeignKey(x => x.CreadoPorPersonaId).OnDelete(DeleteBehavior.Restrict);
@@ -81,6 +82,7 @@ public partial class PropiaDbContext
             b.Property(x => x.Observacion).HasColumnType("text");
             b.Property(x => x.TipoEvento).HasConversion<int>();
             b.Property(x => x.TipoVisitante).HasConversion<int>();
+            b.Property(x => x.TipoVisitanteClave).HasMaxLength(120);   // Ola 4c
             b.Property(x => x.TipoDocumento).HasConversion<int?>();
             b.Property(x => x.DestinoTipo).HasConversion<int?>();
             b.HasOne(x => x.Turno).WithMany().HasForeignKey(x => x.TurnoId).OnDelete(DeleteBehavior.Restrict);

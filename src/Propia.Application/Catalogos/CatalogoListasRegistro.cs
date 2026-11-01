@@ -13,7 +13,21 @@ public static class CatalogoListasRegistro
     /// <param name="Lista">Clave de la lista (discriminador en catalogo_opciones).</param>
     /// <param name="Nombre">Nombre amigable para la consola A&D.</param>
     /// <param name="ConLogica">true = sus opciones llevan metadata de negocio (Meta). false = lista libre.</param>
-    public sealed record ListaInfo(string Lista, string Nombre, bool ConLogica);
+    /// <param name="MetaSchema">Ola 4c: campos de metadata que acarrea cada opcion de una lista con-logica. El
+    /// editor por-tenant renderiza un input por campo; el consumidor lee el valor por Clave del JSON Meta. null
+    /// en listas libres o con-logica cuya Meta no edita la copropiedad (p.ej. plazos legales de PQRSD).</param>
+    public sealed record ListaInfo(string Lista, string Nombre, bool ConLogica, IReadOnlyList<MetaCampoDef>? MetaSchema = null);
+
+    /// <summary>Tipo de dato de un campo de metadata editable (Ola 4c).</summary>
+    public enum MetaTipo { Bool, Entero, Seleccion }
+
+    /// <summary>Un campo de la <see cref="ListaInfo.MetaSchema"/>: la clave en el JSON Meta, su etiqueta, el tipo
+    /// de input y, para <see cref="MetaTipo.Seleccion"/>, las opciones disponibles.</summary>
+    public sealed record MetaCampoDef(string Clave, string Label, MetaTipo Tipo,
+        IReadOnlyList<MetaOpcionDef>? Opciones = null, string? Ayuda = null);
+
+    /// <summary>Una opcion de un campo Meta de tipo <see cref="MetaTipo.Seleccion"/> (valor guardado + etiqueta).</summary>
+    public sealed record MetaOpcionDef(string Valor, string Label);
 
     public static readonly IReadOnlyList<ListaInfo> Conocidas = new List<ListaInfo>
     {
@@ -48,6 +62,16 @@ public static class CatalogoListasRegistro
         new("mantenimiento.intervtipo",      "Mantenimiento · Tipo de intervención", false),
         new("mantenimiento.intervestado",    "Mantenimiento · Estado de intervención", true),
         new("mantenimiento.intervprioridad", "Mantenimiento · Prioridad (intervención)", false),
+        // Ola 4c: listas con-logica editables por la copropiedad (la opcion acarrea comportamiento via Meta).
+        new("porteria.tipovisitante", "Portería · Tipo de visitante", true, new List<MetaCampoDef>
+        {
+            new("columnaTablero", "Columna del tablero \"Adentro ahora\"", MetaTipo.Seleccion, new List<MetaOpcionDef>
+            {
+                new("0", "Visitantes"),
+                new("1", "Proveedores y personal"),
+                new("2", "Domicilios y otros"),
+            }, "En cuál de las 3 columnas del tablero aparece este tipo de visitante."),
+        }),
     };
 
     public static ListaInfo Info(string lista)

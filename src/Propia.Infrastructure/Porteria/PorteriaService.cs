@@ -229,6 +229,7 @@ public class PorteriaService : IPorteriaService
                 a.NombreVisitante,
                 a.DocumentoVisitante,
                 a.TipoVisitante,
+                a.TipoVisitanteClave,
                 a.VigenciaInicio,
                 a.VigenciaFin,
                 a.NotaPortero,
@@ -242,7 +243,7 @@ public class PorteriaService : IPorteriaService
         return list.Select(r => new AutorizacionPreviaDto(
             r.Id, r.UnidadPrivadaId, r.UnidadNumero, r.Origen, r.NombreVisitante, r.DocumentoVisitante,
             r.TipoVisitante, r.VigenciaInicio, r.VigenciaFin, r.NotaPortero, r.Estado,
-            r.UsosMaximos, r.UsosRealizados, r.Codigo, r.CreatedAt)).ToList();
+            r.UsosMaximos, r.UsosRealizados, r.Codigo, r.CreatedAt, r.TipoVisitanteClave)).ToList();
     }
 
     public async Task<AutorizacionPreviaDto?> GetAutorizacionAsync(Guid id, CancellationToken ct)
@@ -272,6 +273,7 @@ public class PorteriaService : IPorteriaService
             NombreVisitante = req.NombreVisitante.Trim(),
             DocumentoVisitante = req.DocumentoVisitante?.Trim(),
             TipoVisitante = req.TipoVisitante,
+            TipoVisitanteClave = req.TipoVisitanteClave,   // Ola 4c
             VigenciaInicio = req.VigenciaInicio,
             VigenciaFin = req.VigenciaFin,
             NotaPortero = req.NotaPortero?.Trim(),
@@ -416,6 +418,7 @@ public class PorteriaService : IPorteriaService
             TurnoId = turnoId,
             TipoEvento = req.TipoEvento,
             TipoVisitante = req.TipoVisitante,
+            TipoVisitanteClave = req.TipoVisitanteClave,   // Ola 4c: clave estable (base "e:" o propia "c:")
             VisitanteFrecuenteId = req.VisitanteFrecuenteId,
             Nombre = req.Nombre.Trim(),
             Documento = req.Documento?.Trim(),
@@ -483,7 +486,7 @@ public class PorteriaService : IPorteriaService
             destinoNombre = await _db.ZonasComunes.Where(z => z.Id == r.DestinoId).Select(z => z.Nombre).FirstOrDefaultAsync(ct);
         return new RegistroVisitaDto(r.Id, r.TurnoId, r.TipoEvento, r.TipoVisitante, r.Nombre, r.Documento,
             r.DestinoTipo, r.DestinoId, destinoNombre, r.AutorizacionId, r.Observacion, r.Timestamp, r.GuardaPersonaId,
-            ParseCamposValores(r.CamposValoresJson));
+            ParseCamposValores(r.CamposValoresJson), r.TipoVisitanteClave);
     }
 
     private static IReadOnlyList<PorteriaCampoValorDto>? ParseCamposValores(string? json)
