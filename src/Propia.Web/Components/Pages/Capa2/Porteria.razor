@@ -464,7 +464,7 @@
                                            Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
                     <div class="po-form-2">
                         <div>
-                            <label class="po-lbl">Tipo</label>
+                            <label class="po-lbl">Tipo</label><button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestCorresp = true" style="background:none;border:none;cursor:pointer;padding:0 0 0 6px;font-size:11px;color:inherit;"><i class="fi fi-rr-settings-sliders"></i></button>
                             <select class="po-input" @bind="_paqTipo">
                                 @foreach (var t in Enum.GetValues<TipoCorrespondencia>().Where(t => RowCorr(t)?.Activo != false)) { <option value="@t">@LblCorr(t)</option> }
                             </select>
@@ -894,7 +894,7 @@
             <div class="po-form-body" style="padding:20px 22px">
                 <div class="po-form-2">
                     <div>
-                        <label class="po-lbl">Tipo</label>
+                        <label class="po-lbl">Tipo</label><button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestNovedad = true" style="background:none;border:none;cursor:pointer;padding:0 0 0 6px;font-size:11px;color:inherit;"><i class="fi fi-rr-settings-sliders"></i></button>
                         <select class="po-input" @bind="_nvTipo">
                             @foreach (var tp in Enum.GetValues<TipoNovedadPorteria>().Where(tp => RowNov(tp)?.Activo != false)) { <option value="@tp">@TipoNovedadLabel(tp)</option> }
                         </select>
@@ -968,6 +968,17 @@
     .po-col-rz::after { content: ""; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
     .po-col-rz:hover::after { background: var(--propia-brand); }
 </style>
+
+@if (_gestNovedad)
+{
+    <GestionarOpcionesListaModal Lista="porteria.tiponovedad" Titulo="Portería · Tipo de novedad" Jwt="@_jwt"
+                                 PermiteAgregar="false" Guardado="RecargarNovedadAsync" Cerrado="() => _gestNovedad = false" />
+}
+@if (_gestCorresp)
+{
+    <GestionarOpcionesListaModal Lista="porteria.tipocorrespondencia" Titulo="Portería · Tipo de correspondencia" Jwt="@_jwt"
+                                 PermiteAgregar="false" Guardado="RecargarCorrespAsync" Cerrado="() => _gestCorresp = false" />
+}
 
 @code {
     // ===== Columnas reordenables/redimensionables de las 4 tablas de porteria (JS compartido). =====
@@ -1109,7 +1120,7 @@
     private RenderFragment CellPaq(CorrespondenciaDto p, string k) =>@<text>
         @if (k == "sem") { @RenderSemaforo(p.Semaforo) }
         else if (k == "uni") { <span class="u-cod">@p.UnidadNumero</span> }
-        else if (k == "tipo") { @p.Tipo }
+        else if (k == "tipo") { @LblCorr(p.Tipo) }
         else if (k == "rem") { @(string.IsNullOrEmpty(p.Remitente) ? "-" : p.Remitente) }
         else if (k == "rec") { <span class="po-cell-sub">@p.RecibidoAt.LocalDateTime.ToString("MM-dd HH:mm")</span> }
     </text>;
@@ -1762,6 +1773,19 @@
     // sigue guardando el enum; si la copia cargo, label/color salen de ahi (A&D/copropiedad los edita).
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaNovedad = new();
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCorresp = new();
+    // Ola 4b-2 (edicion per-tenant): overlays para gestionar las opciones de cada lista (color/ocultar/renombrar).
+    private bool _gestNovedad;
+    private bool _gestCorresp;
+    private async Task RecargarNovedadAsync()
+    {
+        try { _listaNovedad = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tiponovedad&incluirOcultas=true") ?? _listaNovedad; } catch { }
+        StateHasChanged();
+    }
+    private async Task RecargarCorrespAsync()
+    {
+        try { _listaCorresp = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipocorrespondencia&incluirOcultas=true") ?? _listaCorresp; } catch { }
+        StateHasChanged();
+    }
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowNov(TipoNovedadPorteria t)
         => _listaNovedad.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowCorr(TipoCorrespondencia t)

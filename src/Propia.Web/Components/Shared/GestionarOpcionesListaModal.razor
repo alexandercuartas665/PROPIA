@@ -1,0 +1,158 @@
+@* ============================================================================================
+   Editor FOCALIZADO de las OPCIONES de una lista del sistema POR COPROPIEDAD (Ola 4b-2). A diferencia
+   de EditarCampoSistemaModal (que edita una COLUMNA de la vista tabla: alias/visibilidad/formato +
+   opciones), este modal edita SOLO las opciones de una lista que vive en un dropdown de formulario
+   (no es columna): renombrar / color / ocultar + "Restablecer desde A&D". La copia vive por-tenant en
+   lista_opciones; el resolver (IOpcionesEfectivas) la lee y este modal la escribe via /api/campos/opciones.
+   Guarda al cambiar (igual que el gestor de EditarCampoSistemaModal); el boton solo cierra. Es
+   AUTOCONTENIDO (estilos gol-* propios + z-index alto) para poder abrirse DESDE otros modales.
+   ============================================================================================ *@
+@inject IHttpClientFactory HttpFactory
+@using Propia.Application.Catalogos
+
+<div class="gol-back" @onclick="Cerrar">
+    <div class="gol-shell" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <div class="gol-head">
+            <div class="gol-head-ic"><i class="fi fi-rr-list"></i></div>
+            <div class="gol-head-tt">
+                <div class="gol-head-h">Opciones de la lista</div>
+                <div class="gol-head-s">@Titulo</div>
+            </div>
+            <button class="gol-x" type="button" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+        </div>
+
+        <div class="gol-body">
+            @if (_cargando)
+            {
+                <div class="gol-hint">Cargando...</div>
+            }
+            else
+            {
+                <div class="gol-fld">
+                    <label>Opciones de esta copropiedad</label>
+                    <OpcionesLista Opciones="_opcs" OpcionesChanged="GuardarAsync"
+                                   SemillaKeys="@_semillaKeys"
+                                   PermitirAgregar="@PermiteAgregar" PermitirRenombrar="true"
+                                   PermitirOcultar="@PermitirOcultar" PermitirQuitar="false" />
+                    <span class="gol-hint">Renombrar, colorear u ocultar aplica solo a esta copropiedad. Las opciones base no se pueden quitar, solo ocultar.</span>
+                </div>
+
+                <div class="gol-adv">
+                    <button type="button" class="gol-btn-ghost" @onclick="ReaplicarBasesAsync" disabled="@_busy"
+                            title="Trae las opciones base desde el catalogo A&D, respetando lo que esta copropiedad edito">
+                        <i class="fi fi-rr-refresh"></i> Restablecer desde A&D</button>
+                </div>
+                @if (!string.IsNullOrEmpty(_msg)) { <div class="gol-msg">@_msg</div> }
+            }
+        </div>
+
+        <div class="gol-foot">
+            <span class="gol-spacer"></span>
+            <button type="button" class="gol-btn-brand" @onclick="Cerrar" disabled="@_busy">
+                <i class="fi fi-rr-check"></i> Listo
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .gol-back { position: fixed; inset: 0; background: rgba(20,28,45,.72); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 4000; padding: 24px; }
+    .gol-shell { width: 480px; max-width: 96vw; max-height: 94vh; background: var(--propia-bg-card); border-radius: var(--propia-radius-modal, 18px); box-shadow: var(--propia-shadow-modal); overflow: hidden; display: flex; flex-direction: column; font-family: var(--propia-font-base, inherit); }
+    .gol-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--propia-border-divider); }
+    .gol-head-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+    .gol-head-tt { flex: 1; min-width: 0; }
+    .gol-head-h { font-size: 16px; font-weight: 800; color: var(--propia-text-h1); }
+    .gol-head-s { font-size: 12.5px; color: var(--propia-text-muted); margin-top: 2px; }
+    .gol-x { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .gol-x:hover { background: var(--propia-bg-hover); color: var(--propia-text-body); }
+    .gol-body { padding: 16px 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+    .gol-foot { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--propia-border-divider); }
+    .gol-spacer { flex: 1; }
+    .gol-fld { display: flex; flex-direction: column; gap: 4px; }
+    .gol-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
+    .gol-hint { font-size: 11px; color: var(--propia-text-muted); }
+    .gol-msg { font-size: 12.5px; font-weight: 600; color: var(--propia-danger); }
+    .gol-adv { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .gol-btn-brand { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: 0; background: var(--propia-brand); color: #fff; box-shadow: var(--propia-glow-brand-sm); }
+    .gol-btn-brand:hover:not(:disabled) { background: var(--propia-brand-hover); }
+    .gol-btn-brand:disabled { opacity: .55; cursor: default; }
+    .gol-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); color: var(--propia-text-secondary); }
+    .gol-btn-ghost:hover:not(:disabled) { border-color: var(--propia-brand); color: var(--propia-brand); }
+</style>
+
+@code {
+    /// <summary>Clave de la lista (discriminador en lista_opciones / catalogo_opciones), ej. "porteria.tiponovedad".</summary>
+    [Parameter, EditorRequired] public string Lista { get; set; } = "";
+    /// <summary>Titulo amigable que se muestra en la cabecera del modal.</summary>
+    [Parameter] public string Titulo { get; set; } = "";
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Permite ocultar opciones (default true). Para listas enum-universo siempre true (ocultar, no borrar).</summary>
+    [Parameter] public bool PermitirOcultar { get; set; } = true;
+    /// <summary>Permite agregar opciones propias (texto libre). false para listas enum-universo (el valor es el enum).</summary>
+    [Parameter] public bool PermiteAgregar { get; set; } = false;
+    [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Se invoca tras guardar/restablecer para que el padre recargue sus opciones efectivas.</summary>
+    [Parameter] public EventCallback Guardado { get; set; }
+
+    private List<OpcionCampo> _opcs = new();
+    private HashSet<string> _semillaKeys = new(StringComparer.OrdinalIgnoreCase);  // labels base (A&D): solo-ocultar
+    private bool _cargando = true;
+    private bool _busy;
+    private string? _msg;
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            var rows = await Auth().GetFromJsonAsync<List<OpcionEfectivaDto>>(
+                $"/api/campos/opciones?lista={Uri.EscapeDataString(Lista)}&incluirOcultas=true") ?? new();
+            _opcs = rows.Select(r => new OpcionCampo(r.Label, !r.Activo, r.Color)).ToList();
+            _semillaKeys = rows.Where(r => r.EsBase).Select(r => (r.Label ?? "").Trim())
+                               .Where(s => s.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    // Guarda al cambiar (reconcilia por label en el backend) y avisa al padre para que recargue.
+    private async Task GuardarAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var payload = _opcs.Where(o => !string.IsNullOrWhiteSpace(o.K))
+                .Select(o => new OpcionGuardarDto(o.K, o.Color, o.Oculta)).ToList();
+            var r = await Auth().PostAsJsonAsync($"/api/campos/opciones?lista={Uri.EscapeDataString(Lista)}", payload);
+            if (r.IsSuccessStatusCode) { await CargarAsync(); await Guardado.InvokeAsync(); }
+            else { _msg = "No se pudo guardar la lista."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ReaplicarBasesAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/campos/reaplicar-bases?lista={Uri.EscapeDataString(Lista)}", null);
+            if (r.IsSuccessStatusCode) { await CargarAsync(); await Guardado.InvokeAsync(); }
+            else { _msg = "No se pudo restablecer."; }
+        }
+        catch (Exception ex) { _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task Cerrar() => await Cerrado.InvokeAsync();
+}

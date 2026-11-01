@@ -436,7 +436,7 @@ else
                     <div class="rs-fld"><label>Fecha fin *</label><input type="date" @bind="_blqFechaFin" /></div>
                 </div>
                 <div class="rs-grid2">
-                    <div class="rs-fld"><label>Etiqueta</label>
+                    <div class="rs-fld"><label>Etiqueta <button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestEtqBloq = true" style="background:none;border:none;cursor:pointer;color:var(--propia-text-muted);padding:0 2px;font-size:12px;vertical-align:middle;"><i class="fi fi-rr-settings-sliders"></i></button></label>
                         <select @bind="_blqEtiqueta">@foreach (var e in Enum.GetValues<EtiquetaBloqueo>().Where(x => RowBloq(x)?.Activo != false)) { <option value="@e">@LblBloq(e)</option> }</select>
                     </div>
                     <label class="rs-check rs-check-inline" style="align-self:flex-end;padding-bottom:8px">
@@ -448,6 +448,13 @@ else
         </div>
     </div>
 }
+}
+
+@if (_gestEtqBloq)
+{
+    <GestionarOpcionesListaModal Lista="reserva.etiquetabloqueo" Titulo="Reservas · Etiqueta de bloqueo"
+                                 Jwt="@_jwt" PermiteAgregar="false"
+                                 Guardado="RecargarEtqBloqAsync" Cerrado="() => _gestEtqBloq = false" />
 }
 
 <style>
@@ -629,8 +636,16 @@ else
     // Ola 4b-2: la etiqueta de bloqueo (enum-universo) lee su label/color/ocultar de la copia POR TENANT
     // (lista_opciones, lista reserva.etiquetabloqueo); el bloqueo sigue guardando el enum.
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaEtqBloq = new();
+    private bool _gestEtqBloq;   // modal "Gestionar opciones" de la lista etiqueta de bloqueo (per-tenant)
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowBloq(EtiquetaBloqueo e)
         => _listaEtqBloq.FirstOrDefault(r => r.Clave == "e:" + e);
+    // Recarga la copia por-tenant tras editar en el modal (renombrar/color/ocultar/restablecer).
+    private async Task RecargarEtqBloqAsync()
+    {
+        try { _listaEtqBloq = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=reserva.etiquetabloqueo&incluirOcultas=true") ?? _listaEtqBloq; }
+        catch { }
+        StateHasChanged();
+    }
     private string LblBloq(EtiquetaBloqueo e)
     {
         var l = RowBloq(e)?.Label;

@@ -191,7 +191,9 @@ else
                     {
                         <div class="row g-2">
                             <div class="col-md-4">
-                                <label class="form-label small">Tipo *</label>
+                                <label class="form-label small d-flex align-items-center justify-content-between">Tipo *
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-muted" title="Gestionar opciones de la lista" @onclick="() => _gestTipoCom = true"><i class="fi fi-rr-settings-sliders"></i></button>
+                                </label>
                                 <select class="form-select form-select-sm" @bind="_crearTipo">
                                     @foreach (var t in Enum.GetValues<TipoComunicadoBase>().Where(t => !OcultaTipoCom(t))) { <option value="@t">@LblTipoCom(t)</option> }
                                 </select>
@@ -297,6 +299,14 @@ else
             </div>
         </div>
     </div>
+}
+
+@* Gestion por-copropiedad de las opciones de "Tipo de comunicado" (Ola 4b-2). *@
+@if (_gestTipoCom)
+{
+    <GestionarOpcionesListaModal Lista="comunicacion.tipocomunicado" Titulo="Comunicaciones · Tipo de comunicado"
+                                 Jwt="@_jwt" PermiteAgregar="false"
+                                 Guardado="RecargarTipoCom" Cerrado="() => _gestTipoCom = false" />
 }
 
 @* ===== Modal Ficha + Acuses ===== *@
@@ -430,6 +440,7 @@ else
     private string? _jwt;
     private bool _authChecked;
     private bool _busy;
+    private bool _gestTipoCom;   // modal "Gestionar opciones" de comunicacion.tipocomunicado (por copropiedad)
     private string? _msg;
     private string _msgClass = "alert-info";
 
@@ -887,6 +898,12 @@ else
         };
     }
     private bool OcultaTipoCom(TipoComunicadoBase t) => RowCom(t) is { Activo: false };
+    // Recarga la copia por-tenant tras editar en el modal "Gestionar opciones".
+    private async Task RecargarTipoCom()
+    {
+        try { _listaTipoCom = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=comunicacion.tipocomunicado&incluirOcultas=true") ?? _listaTipoCom; } catch { }
+        StateHasChanged();
+    }
 
     private MarkupString RenderTipo(TipoComunicadoBase t) => t switch
     {

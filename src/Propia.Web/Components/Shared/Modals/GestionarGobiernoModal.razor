@@ -82,6 +82,7 @@
                 <select class="ggov-input ggov-grow" @bind="_consejoForm.Cargo">
                     @foreach (var c in Enum.GetValues<CargoConsejo>().Where(c => RowCargoC(c)?.Activo != false)) { <option value="@c">@LblCargoC(c)</option> }
                 </select>
+                <button class="ggov-input" type="button" style="flex:0 0 auto;width:auto;cursor:pointer;" title="Gestionar opciones del cargo" @onclick="() => _gestCargo = true"><i class="fi fi-rr-settings-sliders"></i></button>
                 <input type="date" class="ggov-input" @bind="_consejoForm.FechaInicio" />
                 <button class="ggov-btn-brand" type="button" @onclick="AgregarMiembroConsejo" disabled="@(_busy || !ConsejoFormValido)">Agregar</button>
             </div>
@@ -171,6 +172,13 @@
         <div class="ggov-msg @(_msgError ? "ggov-msg--err" : "ggov-msg--ok")">@_msg</div>
     }
 </div>
+
+@if (_gestCargo)
+{
+    <GestionarOpcionesListaModal Lista="gobierno.cargoconsejo" Titulo="Consejo · Cargo" Jwt="@Jwt"
+                                 PermiteAgregar="false"
+                                 Guardado="RecargarCargoConsejo" Cerrado="() => _gestCargo = false" />
+}
 
 <style>
     .ggov-header {
@@ -378,8 +386,20 @@
     // Ola 4b-2: cargos del consejo desde la copia POR TENANT (lista_opciones, gobierno.cargoconsejo). El
     // record guarda el enum CargoConsejo; A&D/la copropiedad solo renombra/oculta (universo fijo).
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCargoConsejo = new();
+    private bool _gestCargo;   // modal "Gestionar opciones del cargo" (edicion per-tenant de gobierno.cargoconsejo)
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowCargoC(CargoConsejo c)
         => _listaCargoConsejo.FirstOrDefault(x => x.Clave == "e:" + c);
+    // Recarga la copia por-tenant tras editar en el modal (para que el <select> refleje rename/ocultar al instante).
+    private async Task RecargarCargoConsejo()
+    {
+        try
+        {
+            _listaCargoConsejo = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>(
+                "/api/campos/opciones?lista=gobierno.cargoconsejo&incluirOcultas=true") ?? new();
+        }
+        catch { }
+        StateHasChanged();
+    }
     private string LblCargoC(CargoConsejo c)
     {
         var l = RowCargoC(c)?.Label;

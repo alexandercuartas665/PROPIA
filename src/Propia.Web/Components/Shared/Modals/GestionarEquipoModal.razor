@@ -98,6 +98,10 @@
                     <option value="@r">@RolLabel(r)</option>
                 }
             </select>
+            <button type="button" title="Gestionar opciones del rol (esta copropiedad)" @onclick="() => _gestRol = true"
+                    style="border:1px solid var(--propia-border-divider);background:var(--propia-bg-card);border-radius:8px;min-width:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--propia-text-secondary);">
+                <i class="fi fi-rr-settings-sliders"></i>
+            </button>
             @if (_form.Rol == RolEquipo.Otro)
             {
                 <input class="gem-input gem-grow" @bind="_form.RolPersonalizado" @bind:event="oninput" placeholder="Rol personalizado" />
@@ -261,6 +265,13 @@
     }
 </style>
 
+@if (_gestRol)
+{
+    <GestionarOpcionesListaModal Lista="equipotrabajo.rol" Titulo="Equipo de trabajo · Rol operativo"
+                                 Jwt="@Jwt" PermiteAgregar="false"
+                                 Guardado="RecargarRolEq" Cerrado="() => _gestRol = false" />
+}
+
 @code {
     [Parameter] public string? Jwt { get; set; }
 
@@ -378,8 +389,16 @@
     // Ola 4b-2: labels del rol desde la copia POR TENANT (lista_opciones, lista equipotrabajo.rol, clave
     // "e:<Enum>"). El record sigue guardando el enum RolEquipo; A&D/la copropiedad renombra/oculta sin deploy.
     private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaRolEq = new();
+    private bool _gestRol;   // modal "Gestionar opciones del rol" (edicion per-tenant de equipotrabajo.rol)
     private Propia.Application.Catalogos.OpcionEfectivaDto? RowRolEq(RolEquipo r)
         => _listaRolEq.FirstOrDefault(x => string.Equals(x.Clave, "e:" + r, StringComparison.Ordinal));
+
+    // Recarga la lista de roles tras editarla en el modal de opciones (Guardado/Restablecer).
+    private async Task RecargarRolEq()
+    {
+        try { _listaRolEq = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=equipotrabajo.rol&incluirOcultas=true") ?? _listaRolEq; } catch { }
+        StateHasChanged();
+    }
 
     private string RolLabel(RolEquipo r)
     {
