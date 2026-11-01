@@ -71,13 +71,12 @@
             <div class="col-md-6"><label class="form-label small">Medio de recibido</label>
                 <select class="form-select form-select-sm" @bind="_medio">
                     <option value="">Sin especificar</option>
-                    <option value="@MedioRecepcionPqrsd.CorreoElectronico">Correo electrónico</option>
-                    <option value="@MedioRecepcionPqrsd.Fisico">Físico</option>
-                    <option value="@MedioRecepcionPqrsd.Telefonico">Telefonico</option>
-                    <option value="@MedioRecepcionPqrsd.Presencial">Presencial</option>
-                    <option value="@MedioRecepcionPqrsd.WhatsApp">WhatsApp</option>
-                    <option value="@MedioRecepcionPqrsd.PortalWeb">Portal web</option>
-                    <option value="@MedioRecepcionPqrsd.Otro">Otro</option>
+                    @* Ola 4b-2: opciones de la copia POR TENANT (lista_opciones, pqrsd.mediorecepcion). El valor
+                       sigue siendo el enum; una opcion oculta por la copropiedad no se ofrece en altas nuevas. *@
+                    @foreach (var m in Enum.GetValues<MedioRecepcionPqrsd>().Where(x => RowMedio(x)?.Activo != false))
+                    {
+                        <option value="@m">@LblMedio(m)</option>
+                    }
                 </select></div>
             <div class="col-md-6"><label class="form-label small">Fecha de recibido</label>
                 <input type="date" class="form-control form-control-sm" @bind="_fechaRecibido" />
@@ -110,7 +109,7 @@
         <div class="card bg-light"><div class="card-body small">
             <div><strong>Tipo:</strong> @_tipo</div>
             <div><strong>Categoría:</strong> @(_categorias?.FirstOrDefault(c => c.Id.ToString() == _categoriaId)?.Nombre ?? "-")</div>
-            @if (_medio is not null) { <div><strong>Medio de recibido:</strong> @MedioLabel(_medio.Value)</div> }
+            @if (_medio is not null) { <div><strong>Medio de recibido:</strong> @LblMedio(_medio.Value)</div> }
             @if (!string.IsNullOrWhiteSpace(_seccional)) { <div><strong>Seccional:</strong> @_seccional</div> }
             @if (!string.IsNullOrWhiteSpace(_administrador)) { <div><strong>Administrador:</strong> @_administrador</div> }
             @if (_fechaRecibido is not null) { <div><strong>Fecha de recibido:</strong> @_fechaRecibido.Value.ToString("yyyy-MM-dd")</div> }
@@ -155,6 +154,16 @@
 
     // Datos de recepcion (bitacora legal) - opcionales.
     private MedioRecepcionPqrsd? _medio;
+    // Ola 4b-2: copia POR TENANT de la lista "medio de recepcion" (lista_opciones). El universo es el enum
+    // (el record guarda el enum); la copropiedad solo renombra/oculta. Fuente: resolver /api/campos/opciones.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMedio = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowMedio(MedioRecepcionPqrsd m)
+        => _listaMedio.FirstOrDefault(r => r.Clave == "e:" + m);
+    private string LblMedio(MedioRecepcionPqrsd m)
+    {
+        var l = RowMedio(m)?.Label;
+        return string.IsNullOrWhiteSpace(l) ? MedioLabel(m) : l!;
+    }
     private string? _seccional;
     private string? _administrador;
     private DateOnly? _fechaRecibido;
@@ -172,6 +181,7 @@
             {
                 _jwt = stored;
                 _categorias = await Auth().GetFromJsonAsync<List<PqrsdCategoriaDto>>("/api/pqrsd/categorias") ?? new();
+                try { _listaMedio = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=pqrsd.mediorecepcion&incluirOcultas=true") ?? new(); } catch { _listaMedio = new(); }
                 StateHasChanged();
             }
         }

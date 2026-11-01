@@ -62,7 +62,7 @@
                         <div class="ggov-avatar ggov-avatar--owner">@Iniciales(m.PersonaNombre)</div>
                         <div class="ggov-card-id">
                             <div class="ggov-card-name">@m.PersonaNombre</div>
-                            <div class="ggov-card-meta">@m.Cargo · desde @m.FechaInicio.ToString("yyyy-MM-dd")</div>
+                            <div class="ggov-card-meta">@LblCargoC(m.Cargo) · desde @m.FechaInicio.ToString("yyyy-MM-dd")</div>
                         </div>
                         <button class="ggov-del" type="button" @onclick="() => DesactivarConsejo(m.Id)" title="Desactivar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
@@ -80,7 +80,7 @@
                              Placeholder="Buscar quien entra al consejo..." />
             <div class="ggov-form-row">
                 <select class="ggov-input ggov-grow" @bind="_consejoForm.Cargo">
-                    @foreach (var c in Enum.GetValues<CargoConsejo>()) { <option value="@c">@c</option> }
+                    @foreach (var c in Enum.GetValues<CargoConsejo>().Where(c => RowCargoC(c)?.Activo != false)) { <option value="@c">@LblCargoC(c)</option> }
                 </select>
                 <input type="date" class="ggov-input" @bind="_consejoForm.FechaInicio" />
                 <button class="ggov-btn-brand" type="button" @onclick="AgregarMiembroConsejo" disabled="@(_busy || !ConsejoFormValido)">Agregar</button>
@@ -375,6 +375,17 @@
     private bool ConsejoFormValido => _consejoSel is not null;
     private bool RevisorFormValido => _revisorSel is not null;
 
+    // Ola 4b-2: cargos del consejo desde la copia POR TENANT (lista_opciones, gobierno.cargoconsejo). El
+    // record guarda el enum CargoConsejo; A&D/la copropiedad solo renombra/oculta (universo fijo).
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCargoConsejo = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowCargoC(CargoConsejo c)
+        => _listaCargoConsejo.FirstOrDefault(x => x.Clave == "e:" + c);
+    private string LblCargoC(CargoConsejo c)
+    {
+        var l = RowCargoC(c)?.Label;
+        return string.IsNullOrWhiteSpace(l) ? c.ToString() : l;
+    }
+
     protected override async Task OnInitializedAsync() => await CargarAsync();
 
     private HttpClient Auth()
@@ -403,6 +414,12 @@
             _comites = await Auth().GetFromJsonAsync<List<ComiteDto>>("/api/mi-copropiedad/comites") ?? new();
         }
         catch { _comites = new(); }
+        try
+        {
+            _listaCargoConsejo = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>(
+                "/api/campos/opciones?lista=gobierno.cargoconsejo&incluirOcultas=true") ?? new();
+        }
+        catch { _listaCargoConsejo = new(); }
         try
         {
             var resp = await Auth().GetAsync("/api/mi-copropiedad/revisor-fiscal");

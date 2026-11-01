@@ -50,12 +50,20 @@
 {
     <EditarCampoSistemaModal Clave="@_editSisClaveProg" DefLabel="@_editSisLabelProg" Tipo="_editSisTipoProg" Requerido="_editSisReqProg"
                              EntidadConfig="programacion" TituloSingular="programacion" Jwt="@_jwt"
+                             ListaTenant="@(_editSisClaveProg == "periodicidad" ? "mantenimiento.periodicidad" : _editSisClaveProg == "prioridad" ? "mantenimiento.prioridad" : null)"
+                             ColorPopupClasico="@(_editSisClaveProg is "periodicidad" or "prioridad")"
+                             PermiteAgregar="false"
+                             PermitirOcultarOpciones="@(_editSisClaveProg is "periodicidad" or "prioridad")"
                              Guardado="RecargarCamposYConfigProgAsync" Cerrado="() => _editSisClaveProg = null" />
 }
 @if (_editSisClaveInterv is not null)
 {
     <EditarCampoSistemaModal Clave="@_editSisClaveInterv" DefLabel="@_editSisLabelInterv" Tipo="_editSisTipoInterv" Requerido="_editSisReqInterv"
                              EntidadConfig="intervencion" TituloSingular="intervencion" Jwt="@_jwt"
+                             ListaTenant="@(_editSisClaveInterv == "tipo" ? "mantenimiento.intervtipo" : _editSisClaveInterv == "estado" ? "mantenimiento.intervestado" : _editSisClaveInterv == "prioridad" ? "mantenimiento.intervprioridad" : null)"
+                             ColorPopupClasico="@(_editSisClaveInterv is "tipo" or "estado" or "prioridad")"
+                             PermiteAgregar="false"
+                             PermitirOcultarOpciones="@(_editSisClaveInterv is "tipo" or "estado" or "prioridad")"
                              Guardado="RecargarCamposYConfigIntervAsync" Cerrado="() => _editSisClaveInterv = null" />
 }
 
@@ -324,14 +332,14 @@
                         case "prioridad":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_altaPrioridad">
-                                    @foreach (var p in Enum.GetValues<PrioridadTarea>()) { <option value="@p">@LblPrioProg(p)</option> }
+                                    @foreach (var p in Enum.GetValues<PrioridadTarea>().Where(x => !MtOculta(_listaMtPrioProg, "e:" + x))) { <option value="@p">@LblPrioProg(p)</option> }
                                 </select>
                             </div>
                             break;
                         case "periodicidad":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_altaPeriodicidad">
-                                    @foreach (var p in Enum.GetValues<PeriodicidadProgramacion>()) { <option value="@p">@PeriodicidadProgLabel(p)</option> }
+                                    @foreach (var p in Enum.GetValues<PeriodicidadProgramacion>().Where(x => !MtOculta(_listaMtPeriod, "e:" + x))) { <option value="@p">@PeriodicidadProgLabel(p)</option> }
                                 </select>
                             </div>
                             break;
@@ -605,7 +613,7 @@
                         case "tipo":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_iaTipo">
-                                    @foreach (var t in Enum.GetValues<TipoIntervencionMantenimiento>()) { <option value="@t">@LblIntTipo(t)</option> }
+                                    @foreach (var t in Enum.GetValues<TipoIntervencionMantenimiento>().Where(x => !MtOculta(_listaMtIntTipo, "e:" + x))) { <option value="@t">@LblIntTipo(t)</option> }
                                 </select>
                             </div>
                             break;
@@ -614,7 +622,7 @@
                         case "prioridad":
                             <div>
                                 <select class="mtp-nf-inp" @bind="_iaPrioridad">
-                                    @foreach (var p in Enum.GetValues<PrioridadIntervencion>()) { <option value="@p">@LblIntPrio(p)</option> }
+                                    @foreach (var p in Enum.GetValues<PrioridadIntervencion>().Where(x => !MtOculta(_listaMtIntPrio, "e:" + x))) { <option value="@p">@LblIntPrio(p)</option> }
                                 </select>
                             </div>
                             break;
@@ -1323,6 +1331,7 @@ else if (_tab == "calendario")
     {
         await CargarConfigProgAsync();
         await CargarCamposProgAsync();
+        await CargarCatalogosMantAsync();   // refresca label/color/ocultar por-tenant tras editar la lista
         StateHasChanged();
     }
 
@@ -1676,9 +1685,9 @@ else if (_tab == "calendario")
         => new[] { ("", "Sin agrupar") }.Concat(ProgColsVis.Select(c => (c.Key, c.Label)));
 
     private string ProgAgruparLabel(string k) => string.IsNullOrEmpty(k) ? "" : LabelColProg(k);
-    // Label de periodicidad: del catalogo global A&D (mantenimiento.periodicidad) si cargo; si no, el enum.
+    // Label de periodicidad: copia por-tenant (lista_opciones) si cargo; si no, catalogo global A&D; si no, el enum.
     private string PeriodicidadProgLabel(PeriodicidadProgramacion p)
-        => _catMtPeriod.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
+        => RowLbl(_listaMtPeriod, "e:" + p) ?? (_catMtPeriod.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
 
     // ============================================================================================
     // INTERVENCIONES - tabla canon (Ola 3): columnas sistema + campos propios (EAV), filtros, agrupar, pager.
@@ -1725,7 +1734,7 @@ else if (_tab == "calendario")
         }
         catch { _camposValInterv = new(); }
     }
-    private async Task RecargarCamposYConfigIntervAsync() { await CargarConfigIntervAsync(); await CargarCamposIntervAsync(); StateHasChanged(); }
+    private async Task RecargarCamposYConfigIntervAsync() { await CargarConfigIntervAsync(); await CargarCamposIntervAsync(); await CargarCatalogosMantAsync(); StateHasChanged(); }
     private async Task GuardarCampoValorInterv(Guid intId, Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto cd, string? valor)
     {
         try
@@ -2725,6 +2734,13 @@ else if (_tab == "calendario")
     private Dictionary<string, string> _catMtIntTipo = new(StringComparer.Ordinal);
     private Dictionary<string, string> _catMtIntEstado = new(StringComparer.Ordinal);
     private Dictionary<string, string> _catMtIntPrio = new(StringComparer.Ordinal);
+    // Ola 4b-1: copia POR TENANT (lista_opciones) de las 5 listas de Mantenimiento. Si cargo, manda sobre el
+    // catalogo global (_catMt*) para label/color/ocultar. El valor guardado sigue siendo el enum.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMtPeriod = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMtPrioProg = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMtIntTipo = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMtIntEstado = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaMtIntPrio = new();
     private async Task CargarCatalogosMantAsync()
     {
         var http = Auth();
@@ -2733,16 +2749,32 @@ else if (_tab == "calendario")
             try { return (await http.GetFromJsonAsync<List<Propia.Application.Catalogos.CatalogoOpcionDto>>($"/api/catalogos?lista={lista}") ?? new()).ToDictionary(o => o.Clave, o => o.Label, StringComparer.Ordinal); }
             catch { return new(StringComparer.Ordinal); }
         }
+        async Task<List<Propia.Application.Catalogos.OpcionEfectivaDto>> T(string lista)
+        {
+            try { return await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>($"/api/campos/opciones?lista={lista}&incluirOcultas=true") ?? new(); }
+            catch { return new(); }
+        }
         _catMtPeriod = await L("mantenimiento.periodicidad");
         _catMtPrioProg = await L("mantenimiento.prioridad");
         _catMtIntTipo = await L("mantenimiento.intervtipo");
         _catMtIntEstado = await L("mantenimiento.intervestado");
         _catMtIntPrio = await L("mantenimiento.intervprioridad");
+        _listaMtPeriod = await T("mantenimiento.periodicidad");
+        _listaMtPrioProg = await T("mantenimiento.prioridad");
+        _listaMtIntTipo = await T("mantenimiento.intervtipo");
+        _listaMtIntEstado = await T("mantenimiento.intervestado");
+        _listaMtIntPrio = await T("mantenimiento.intervprioridad");
     }
-    private string LblPrioProg(PrioridadTarea p) => _catMtPrioProg.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
-    private string LblIntTipo(TipoIntervencionMantenimiento t) => _catMtIntTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString();
-    private string LblIntEstado(EstadoIntervencion e) => _catMtIntEstado.TryGetValue("e:" + e, out var l) && !string.IsNullOrWhiteSpace(l) ? l : e.ToString();
-    private string LblIntPrio(PrioridadIntervencion p) => _catMtIntPrio.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString();
+    // Label POR TENANT (lista_opciones, clave "e:<Enum>") si cargo; si no, catalogo global; si no, el enum.
+    private string? RowLbl(List<Propia.Application.Catalogos.OpcionEfectivaDto> rows, string clave)
+        => rows.FirstOrDefault(r => string.Equals(r.Clave, clave, StringComparison.Ordinal)) is { Label: var l } && !string.IsNullOrWhiteSpace(l) ? l : null;
+    private string LblPrioProg(PrioridadTarea p) => RowLbl(_listaMtPrioProg, "e:" + p) ?? (_catMtPrioProg.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
+    private string LblIntTipo(TipoIntervencionMantenimiento t) => RowLbl(_listaMtIntTipo, "e:" + t) ?? (_catMtIntTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString());
+    private string LblIntEstado(EstadoIntervencion e) => RowLbl(_listaMtIntEstado, "e:" + e) ?? (_catMtIntEstado.TryGetValue("e:" + e, out var l) && !string.IsNullOrWhiteSpace(l) ? l : e.ToString());
+    private string LblIntPrio(PrioridadIntervencion p) => RowLbl(_listaMtIntPrio, "e:" + p) ?? (_catMtIntPrio.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
+    // Una opcion esta oculta si su fila por-tenant tiene Activo=false (se saca de las altas; las existentes la conservan).
+    private bool MtOculta(List<Propia.Application.Catalogos.OpcionEfectivaDto> rows, string clave)
+        => rows.FirstOrDefault(r => string.Equals(r.Clave, clave, StringComparison.Ordinal)) is { Activo: false };
 
     private MarkupString RenderTipoBadge(TipoIntervencionMantenimiento t)
     {

@@ -240,6 +240,71 @@ public static class CatalogoListasSeeder
             Enum.GetValues<Propia.Domain.Enums.PrioridadIntervencion>()
                 .Select((p, i) => new SemillaOpcion("e:" + p, p.ToString(), i)).ToList()));
 
+        // ===== Ola 4b-2: listas libres (enum-universo). Clave estable "e:<Enum>"; el record guarda el enum.
+        // A&D (y la copropiedad, via lista_opciones) renombra/recolorea/oculta; el universo es fijo (no se
+        // agregan valores nuevos). Label = texto legible (paridad/mejora del que muestra el panel hoy). =====
+        reg.Add(("comunicacion.tipocomunicado", new List<SemillaOpcion>
+        {
+            new("e:Circular", "Circular", 0),
+            new("e:AvisoOperativo", "Aviso operativo", 1),
+            new("e:AnuncioGeneral", "Anuncio general", 2),
+            new("e:ComunicadoUrgente", "Comunicado urgente", 3),
+        }));
+        reg.Add(("porteria.tiponovedad", new List<SemillaOpcion>
+        {
+            new("e:General", "Novedad", 0, null, "#516F90"),
+            new("e:Dano", "Daño", 1, null, "#E8910C"),
+            new("e:Reclamo", "Reclamo", 2, null, "#C0383C"),
+            new("e:Seguridad", "Seguridad", 3, null, "#6D4FE3"),
+            new("e:Mantenimiento", "Mantenimiento", 4, null, "#0FB5A5"),
+        }));
+        reg.Add(("porteria.tipocorrespondencia", new List<SemillaOpcion>
+        {
+            new("e:Paquete", "Paquete", 0),
+            new("e:Carta", "Carta", 1),
+            new("e:Encomienda", "Encomienda", 2),
+            new("e:Documento", "Documento", 3),
+            new("e:Otro", "Otro", 4),
+        }));
+        reg.Add(("reserva.etiquetabloqueo", new List<SemillaOpcion>
+        {
+            new("e:Mantenimiento", "Mantenimiento", 0),
+            new("e:EventoCopropiedad", "Evento de copropiedad", 1),
+            new("e:Cerrado", "Cerrado", 2),
+            new("e:Otro", "Otro", 3),
+        }));
+        reg.Add(("pqrsd.mediorecepcion", new List<SemillaOpcion>
+        {
+            new("e:CorreoElectronico", "Correo electrónico", 0),
+            new("e:Fisico", "Físico", 1),
+            new("e:Telefonico", "Telefónico", 2),
+            new("e:Presencial", "Presencial", 3),
+            new("e:WhatsApp", "WhatsApp", 4),
+            new("e:PortalWeb", "Portal web", 5),
+            new("e:Otro", "Otro", 6),
+        }));
+        reg.Add(("equipotrabajo.rol", new List<SemillaOpcion>
+        {
+            new("e:AdministradorDelegado", "Administrador delegado", 0),
+            new("e:Contador", "Contador", 1),
+            new("e:AuxiliarCartera", "Auxiliar de cartera", 2),
+            new("e:CoordinadorOperativo", "Coordinador operativo", 3),
+            new("e:SupervisorVigilancia", "Supervisor de vigilancia", 4),
+            new("e:PersonalAseo", "Personal de aseo", 5),
+            new("e:Mantenimiento", "Mantenimiento", 6),
+            new("e:Recepcion", "Recepción", 7),
+            new("e:Otro", "Otro", 8),
+        }));
+        reg.Add(("gobierno.cargoconsejo", new List<SemillaOpcion>
+        {
+            new("e:Presidente", "Presidente", 0),
+            new("e:Vicepresidente", "Vicepresidente", 1),
+            new("e:Secretario", "Secretario", 2),
+            new("e:Tesorero", "Tesorero", 3),
+            new("e:Vocal", "Vocal", 4),
+            new("e:Suplente", "Suplente", 5),
+        }));
+
         return reg;
     }
 

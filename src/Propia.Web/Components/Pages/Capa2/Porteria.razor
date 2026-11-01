@@ -466,7 +466,7 @@
                         <div>
                             <label class="po-lbl">Tipo</label>
                             <select class="po-input" @bind="_paqTipo">
-                                @foreach (var t in Enum.GetValues<TipoCorrespondencia>()) { <option value="@t">@t</option> }
+                                @foreach (var t in Enum.GetValues<TipoCorrespondencia>().Where(t => RowCorr(t)?.Activo != false)) { <option value="@t">@LblCorr(t)</option> }
                             </select>
                         </div>
                         <div>
@@ -896,7 +896,7 @@
                     <div>
                         <label class="po-lbl">Tipo</label>
                         <select class="po-input" @bind="_nvTipo">
-                            @foreach (var tp in Enum.GetValues<TipoNovedadPorteria>()) { <option value="@tp">@TipoNovedadLabel(tp)</option> }
+                            @foreach (var tp in Enum.GetValues<TipoNovedadPorteria>().Where(tp => RowNov(tp)?.Activo != false)) { <option value="@tp">@TipoNovedadLabel(tp)</option> }
                         </select>
                     </div>
                     <div>
@@ -1267,6 +1267,8 @@
             _novedades = await http.GetFromJsonAsync<List<NovedadDto>>($"/api/porteria/novedades?fecha={today:yyyy-MM-dd}") ?? new();
             try { _zonas = await http.GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas") ?? new(); } catch { _zonas = new(); }
             try { _equipos = await http.GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos") ?? new(); } catch { _equipos = new(); }
+            try { _listaNovedad = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tiponovedad&incluirOcultas=true") ?? new(); } catch { _listaNovedad = new(); }
+            try { _listaCorresp = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tipocorrespondencia&incluirOcultas=true") ?? new(); } catch { _listaCorresp = new(); }
             try
             {
                 var resumen = await http.GetFromJsonAsync<ResumenWrap>("/api/mi-copropiedad/resumen");
@@ -1756,16 +1758,39 @@
         }
         finally { _busy = false; }
     }
-    private static string TipoNovedadLabel(TipoNovedadPorteria t) => t switch
+    // Ola 4b-2: copia POR TENANT de las listas de porteria (lista_opciones, clave "e:<Enum>"). El record
+    // sigue guardando el enum; si la copia cargo, label/color salen de ahi (A&D/copropiedad los edita).
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaNovedad = new();
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaCorresp = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowNov(TipoNovedadPorteria t)
+        => _listaNovedad.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowCorr(TipoCorrespondencia t)
+        => _listaCorresp.FirstOrDefault(r => string.Equals(r.Clave, "e:" + t, StringComparison.Ordinal));
+    private string TipoNovedadLabel(TipoNovedadPorteria t)
     {
-        TipoNovedadPorteria.General => "Novedad", TipoNovedadPorteria.Dano => "Dano", TipoNovedadPorteria.Reclamo => "Reclamo",
-        TipoNovedadPorteria.Seguridad => "Seguridad", TipoNovedadPorteria.Mantenimiento => "Mantenimiento", _ => "Novedad"
-    };
-    private static string NovedadColor(TipoNovedadPorteria t) => t switch
+        var row = RowNov(t);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return t switch
+        {
+            TipoNovedadPorteria.General => "Novedad", TipoNovedadPorteria.Dano => "Dano", TipoNovedadPorteria.Reclamo => "Reclamo",
+            TipoNovedadPorteria.Seguridad => "Seguridad", TipoNovedadPorteria.Mantenimiento => "Mantenimiento", _ => "Novedad"
+        };
+    }
+    private string NovedadColor(TipoNovedadPorteria t)
     {
-        TipoNovedadPorteria.Dano => "#E8910C", TipoNovedadPorteria.Reclamo => "#C0383C",
-        TipoNovedadPorteria.Seguridad => "#6D4FE3", TipoNovedadPorteria.Mantenimiento => "#0FB5A5", _ => "#516F90"
-    };
+        var row = RowNov(t);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Color)) return row.Color!;
+        return t switch
+        {
+            TipoNovedadPorteria.Dano => "#E8910C", TipoNovedadPorteria.Reclamo => "#C0383C",
+            TipoNovedadPorteria.Seguridad => "#6D4FE3", TipoNovedadPorteria.Mantenimiento => "#0FB5A5", _ => "#516F90"
+        };
+    }
+    private string LblCorr(TipoCorrespondencia t)
+    {
+        var row = RowCorr(t);
+        return row is not null && !string.IsNullOrWhiteSpace(row.Label) ? row.Label : t.ToString();
+    }
 
     // ----- Helpers -----
     private void Flash(string m, bool ok) { _msg = m; _msgOk = ok; }

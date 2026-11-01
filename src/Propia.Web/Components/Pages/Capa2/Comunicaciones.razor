@@ -193,7 +193,7 @@ else
                             <div class="col-md-4">
                                 <label class="form-label small">Tipo *</label>
                                 <select class="form-select form-select-sm" @bind="_crearTipo">
-                                    @foreach (var t in Enum.GetValues<TipoComunicadoBase>()) { <option value="@t">@t</option> }
+                                    @foreach (var t in Enum.GetValues<TipoComunicadoBase>().Where(t => !OcultaTipoCom(t))) { <option value="@t">@LblTipoCom(t)</option> }
                                 </select>
                             </div>
                             <div class="col-md-8">
@@ -475,7 +475,7 @@ else
     {
         new() { Key = "asunto", Label = "Asunto", Kind = "texto" },
         new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = Enum.GetValues<TipoComunicadoBase>().Select(t => (t.ToString(), t.ToString())).ToList() },
+                Opciones = Enum.GetValues<TipoComunicadoBase>().Select(t => (t.ToString(), LblTipoCom(t))).ToList() },
         new() { Key = "estado", Label = "Estado", Kind = "sel",
                 Opciones = Enum.GetValues<EstadoComunicado>().Select(e => (e.ToString(), e.ToString())).ToList() },
         new() { Key = "segmento", Label = "Segmento", Kind = "texto" },
@@ -737,6 +737,7 @@ else
             // Carga completa: el filtrado/busqueda/orden/agrupacion se hacen client-side (canon vista tabla).
             _lista = await http.GetFromJsonAsync<List<ComunicadoListaDto>>("/api/comunicaciones") ?? new();
             await CargarConfigAsync();   // orden/visibilidad/ancho de columnas por copropiedad
+            try { _listaTipoCom = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=comunicacion.tipocomunicado&incluirOcultas=true") ?? new(); } catch { _listaTipoCom = new(); }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
@@ -866,6 +867,26 @@ else
             _msg = "Reenvio encolado a destinatarios pendientes."; _msgClass = "alert-success";
         }
     }
+
+    // Ola 4b-2: 'tipo de comunicado' lee su copia POR TENANT (lista_opciones, lista comunicacion.tipocomunicado).
+    // Universo fijo = enum TipoComunicadoBase; el record guarda el enum. A&D/la copropiedad renombra/oculta.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaTipoCom = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowCom(TipoComunicadoBase t)
+        => _listaTipoCom.FirstOrDefault(r => r.Clave == "e:" + t);
+    private string LblTipoCom(TipoComunicadoBase t)
+    {
+        var row = RowCom(t);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return t switch
+        {
+            TipoComunicadoBase.Circular => "Circular",
+            TipoComunicadoBase.AvisoOperativo => "Aviso operativo",
+            TipoComunicadoBase.AnuncioGeneral => "Anuncio general",
+            TipoComunicadoBase.ComunicadoUrgente => "Comunicado urgente",
+            _ => t.ToString()
+        };
+    }
+    private bool OcultaTipoCom(TipoComunicadoBase t) => RowCom(t) is { Activo: false };
 
     private MarkupString RenderTipo(TipoComunicadoBase t) => t switch
     {

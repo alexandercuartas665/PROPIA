@@ -93,7 +93,7 @@
         </div>
         <div class="gem-form-row">
             <select class="gem-input gem-grow" @bind="_form.Rol">
-                @foreach (var r in Enum.GetValues<RolEquipo>())
+                @foreach (var r in Enum.GetValues<RolEquipo>().Where(r => RowRolEq(r)?.Activo != false))
                 {
                     <option value="@r">@RolLabel(r)</option>
                 }
@@ -305,6 +305,7 @@
         try
         {
             _equipo = await Auth().GetFromJsonAsync<List<MiembroEquipoDto>>("/api/mi-copropiedad/equipo") ?? new();
+            try { _listaRolEq = await Auth().GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=equipotrabajo.rol&incluirOcultas=true") ?? new(); } catch { _listaRolEq = new(); }
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
         {
@@ -374,16 +375,27 @@
 
     private record VincularResp(Guid PersonaId);
 
-    private static string RolLabel(RolEquipo r) => r switch
+    // Ola 4b-2: labels del rol desde la copia POR TENANT (lista_opciones, lista equipotrabajo.rol, clave
+    // "e:<Enum>"). El record sigue guardando el enum RolEquipo; A&D/la copropiedad renombra/oculta sin deploy.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaRolEq = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowRolEq(RolEquipo r)
+        => _listaRolEq.FirstOrDefault(x => string.Equals(x.Clave, "e:" + r, StringComparison.Ordinal));
+
+    private string RolLabel(RolEquipo r)
     {
-        RolEquipo.AdministradorDelegado => "Administrador delegado",
-        RolEquipo.Contador => "Contador",
-        RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
-        RolEquipo.CoordinadorOperativo => "Coordinador operativo",
-        RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
-        RolEquipo.PersonalAseo => "Personal de aseo",
-        RolEquipo.Mantenimiento => "Mantenimiento",
-        RolEquipo.Otro => "Otros",
-        _ => r.ToString()
-    };
+        var row = RowRolEq(r);
+        if (row is not null && !string.IsNullOrWhiteSpace(row.Label)) return row.Label;
+        return r switch
+        {
+            RolEquipo.AdministradorDelegado => "Administrador delegado",
+            RolEquipo.Contador => "Contador",
+            RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
+            RolEquipo.CoordinadorOperativo => "Coordinador operativo",
+            RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
+            RolEquipo.PersonalAseo => "Personal de aseo",
+            RolEquipo.Mantenimiento => "Mantenimiento",
+            RolEquipo.Otro => "Otros",
+            _ => r.ToString()
+        };
+    }
 }

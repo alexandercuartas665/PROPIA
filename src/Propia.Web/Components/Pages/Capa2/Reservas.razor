@@ -198,7 +198,7 @@ else
                                 @(string.IsNullOrWhiteSpace(b.MotivoPersonalizado) ? "" : "- " + b.MotivoPersonalizado)
                             </div>
                         </div>
-                        <span class="rs-badge" style="color:#B45309;background:#FEF3DC">@b.Etiqueta</span>
+                        <span class="rs-badge" style="color:#B45309;background:#FEF3DC">@LblBloq(b.Etiqueta)</span>
                         <span class="rs-badge" style="color:var(--propia-text-muted);background:var(--propia-border-divider)">@(b.Origen == OrigenBloqueoZona.AutomaticoSistema ? "Auto" : "Manual")</span>
                         @if (b.Origen != OrigenBloqueoZona.AutomaticoSistema)
                         {
@@ -437,7 +437,7 @@ else
                 </div>
                 <div class="rs-grid2">
                     <div class="rs-fld"><label>Etiqueta</label>
-                        <select @bind="_blqEtiqueta">@foreach (var e in Enum.GetValues<EtiquetaBloqueo>()) { <option value="@e">@e</option> }</select>
+                        <select @bind="_blqEtiqueta">@foreach (var e in Enum.GetValues<EtiquetaBloqueo>().Where(x => RowBloq(x)?.Activo != false)) { <option value="@e">@LblBloq(e)</option> }</select>
                     </div>
                     <label class="rs-check rs-check-inline" style="align-self:flex-end;padding-bottom:8px">
                         <input type="checkbox" @bind="_blqVisible" /><span>Visible al residente</span>
@@ -626,6 +626,17 @@ else
     private bool _blqVisible = true;
     private string _blqMotivo = "";
 
+    // Ola 4b-2: la etiqueta de bloqueo (enum-universo) lee su label/color/ocultar de la copia POR TENANT
+    // (lista_opciones, lista reserva.etiquetabloqueo); el bloqueo sigue guardando el enum.
+    private List<Propia.Application.Catalogos.OpcionEfectivaDto> _listaEtqBloq = new();
+    private Propia.Application.Catalogos.OpcionEfectivaDto? RowBloq(EtiquetaBloqueo e)
+        => _listaEtqBloq.FirstOrDefault(r => r.Clave == "e:" + e);
+    private string LblBloq(EtiquetaBloqueo e)
+    {
+        var l = RowBloq(e)?.Label;
+        return string.IsNullOrWhiteSpace(l) ? e.ToString() : l;
+    }
+
     private List<ZonaGaleriaDto> ZonasReservables =>
         _galeria?.Where(z => z.Reservable).ToList() ?? new();
 
@@ -778,6 +789,7 @@ else
             _reservas = await http.GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
             _bloqueos = await http.GetFromJsonAsync<List<BloqueoDto>>("/api/reservas/bloqueos") ?? new();
             try { _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new(); } catch { _unidades = new(); }
+            try { _listaEtqBloq = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=reserva.etiquetabloqueo&incluirOcultas=true") ?? new(); } catch { _listaEtqBloq = new(); }
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
