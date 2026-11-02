@@ -3367,6 +3367,12 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
                     b.Property<string>("Color")
                         .HasMaxLength(9)
                         .HasColumnType("character varying(9)")

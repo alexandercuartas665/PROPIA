@@ -63,6 +63,7 @@ public partial class PqrsdService
         e.Nombre = nom;
         if (!string.IsNullOrWhiteSpace(req.Color)) e.Color = req.Color!.Trim();
         e.Orden = req.Orden;
+        e.Activo = req.Activo;   // inactivar = ocultar de altas + atenuar en kanban (no borra; util para columnas legales)
         if (e.EsBase) e.OverrideVisual = true;   // la copropiedad personalizo la columna base: A&D ya no la pisa.
         e.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

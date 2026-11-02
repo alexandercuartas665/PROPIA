@@ -158,4 +158,7 @@ public class ContratoEtapa : TenantEntity
     public int Orden { get; set; }
     /// <summary>Color hex para la columna/pill (ej. "#22C55E").</summary>
     public string? Color { get; set; }
+    /// <summary>Inactiva = columna atenuada en el kanban y NO elegible en altas nuevas; los contratos que ya
+    /// la tenian conservan su etiqueta. No se borra (a diferencia de Eliminar).</summary>
+    public bool Activo { get; set; } = true;
 }

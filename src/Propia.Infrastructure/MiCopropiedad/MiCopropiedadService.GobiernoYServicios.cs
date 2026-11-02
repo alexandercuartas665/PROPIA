@@ -627,7 +627,7 @@ public partial class MiCopropiedadService
         await AsegurarEtapasBaseAsync(ct);
         return await _db.ContratoEtapas.AsNoTracking()
             .OrderBy(e => e.Orden).ThenBy(e => e.Nombre)
-            .Select(e => new ContratoEtapaDto(e.Id, e.Nombre, e.Orden, e.Color))
+            .Select(e => new ContratoEtapaDto(e.Id, e.Nombre, e.Orden, e.Color, e.Activo))
             .ToListAsync(ct);
     }
 
@@ -640,7 +640,7 @@ public partial class MiCopropiedadService
         var etapa = new ContratoEtapa { Nombre = req.Nombre.Trim(), Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim(), Orden = maxOrden + 1 };
         _db.ContratoEtapas.Add(etapa);
         await _db.SaveChangesAsync(ct);
-        return new ContratoEtapaDto(etapa.Id, etapa.Nombre, etapa.Orden, etapa.Color);
+        return new ContratoEtapaDto(etapa.Id, etapa.Nombre, etapa.Orden, etapa.Color, etapa.Activo);
     }
 
     public async Task<bool> ActualizarContratoEtapaAsync(Guid etapaId, ActualizarContratoEtapaRequest req, CancellationToken ct)
@@ -649,6 +649,7 @@ public partial class MiCopropiedadService
         if (etapa is null) return false;
         if (!string.IsNullOrWhiteSpace(req.Nombre)) etapa.Nombre = req.Nombre.Trim();
         etapa.Color = string.IsNullOrWhiteSpace(req.Color) ? null : req.Color.Trim();
+        etapa.Activo = req.Activo;   // inactivar = ocultar de altas + atenuar en kanban (no borra)
         await _db.SaveChangesAsync(ct);
         return true;
     }

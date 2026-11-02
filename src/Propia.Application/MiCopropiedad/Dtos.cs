@@ -326,9 +326,9 @@ public record ContratoServicioDto(
     string? FormaPago = null, string? TipoServicioTexto = null);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
-public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color);
+public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color, bool Activo = true);
 public record CrearContratoEtapaRequest(string Nombre, string? Color);
-public record ActualizarContratoEtapaRequest(string Nombre, string? Color);
+public record ActualizarContratoEtapaRequest(string Nombre, string? Color, bool Activo = true);
 public record ReordenarContratoEtapasRequest(List<Guid> Orden);
 public record CambiarEtapaContratoRequest(Guid? EtapaId);
 

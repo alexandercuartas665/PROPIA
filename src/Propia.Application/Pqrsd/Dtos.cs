@@ -133,7 +133,7 @@ public record PqrsdEstadoDto(
     bool EsTerminal, bool EsBase, bool Activo, EstadoPqrsd? SemanticaLegal);
 
 public record CrearEstadoPqrsdRequest(string Nombre, string? Color);
-public record ActualizarEstadoPqrsdRequest(string Nombre, string? Color, int Orden);
+public record ActualizarEstadoPqrsdRequest(string Nombre, string? Color, int Orden, bool Activo = true);
 public record MoverExpedienteEstadoRequest(Guid EstadoId);
 
 /// <summary>Campo personalizado del tablero PQRS. Port de TableroCampo.</summary>

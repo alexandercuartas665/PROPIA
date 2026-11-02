@@ -428,6 +428,7 @@ public partial class PropiaDbContext
         {
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(80);
             b.Property(x => x.Color).HasMaxLength(9);
+            b.Property(x => x.Activo).HasDefaultValue(true);
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
