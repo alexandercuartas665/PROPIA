@@ -190,7 +190,7 @@
                 @foreach (var col in _estados.OrderBy(e => e.Orden))
                 {
                     var items = ItemsFiltrados.Where(x => x.EstadoId == col.Id).ToList();
-                    <div class="pk-col" @ondragover="OnDragOver" @ondragover:preventDefault="true" @ondrop="() => OnDrop(col.Id)">
+                    <div class="pk-col @(col.Activo ? "" : "pk-col--off")" title="@(col.Activo ? null : "Estado inactivo")" @ondragover="OnDragOver" @ondragover:preventDefault="true" @ondrop="() => OnDrop(col.Id)">
                         <div class="pk-col-head">
                             <span class="pk-col-dot" style="background:@(col.Color ?? "#A6B7C8")"></span>
                             <span class="pk-col-name">@col.Nombre</span>
@@ -463,6 +463,22 @@
                                  Guardado="CargarAsync" Cerrado="() => _editSisClave = null" />
     }
 
+    @* Editor de ESTADOS (columnas del kanban) = componente COMPARTIDO GestionarEstadosColumna (el MISMO en
+       Tareas/Tableros/PQRSD/Contratos). Anclado al chevron de la columna Estado (desde "Editar campo" ->
+       "Gestionar colores y orden"). Las columnas LEGALES (plazos de ley) no se pueden eliminar. API /api/pqrsd/estados. *@
+    <GestionarEstadosColumna Visible="_estEditorOpenP" Ancla="(_popXP, _popYP)" HaciaArriba="_popUpP"
+                             Titulo="Estados (columnas)"
+                             Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Las columnas legales manejan los plazos de ley y no se eliminan."
+                             PlaceholderNuevo="Nombre de nueva columna..."
+                             Estados="EstadosVmPqrsd()"
+                             OnAgregar="AgregarEstadoPqrsdAsync"
+                             OnRenombrar="RenombrarEstadoPqrsdAsync"
+                             OnColor="ColorEstadoPqrsdAsync"
+                             OnMover="MoverEstadoPqrsdAsync"
+                             OnEliminar="EliminarEstado"
+                             OnToggleActivo="ToggleActivoEstadoPqrsdAsync"
+                             Cerrar="() => _estEditorOpenP = false" />
+
     @* ===================== COMPARTIR FORMULARIO PUBLICO ===================== *@
     @if (_shareOpen)
     {
@@ -556,25 +572,16 @@
                   @if (_cfgTab == "columnas")
                   {
                     <div class="pk-cfg-sec-hint">Columnas (etapas) del tablero. Las columnas legales manejan los plazos de ley.</div>
-                    @foreach (var e in _estados.OrderBy(x => x.Orden))
-                    {
-                        <div class="pk-cfg-row">
-                            <input type="color" class="pk-cfg-color" value="@(e.Color ?? "#6D4FE3")" @onchange="(ev) => CambiarColor(e, ev)" />
-                            <input class="pk-cfg-name" value="@e.Nombre" @onchange="(ev) => RenombrarEstado(e, ev)" />
-                            @if (e.SemanticaLegal is not null) { <span class="pk-cfg-badge" title="Columna legal - maneja plazos">legal</span> }
-                            @if (_colGuardadoId == e.Id) { <span class="pk-cfg-ok">Guardado</span> }
-                            <div class="pk-cfg-ord">
-                                <button class="pk-icon-btn" @onclick='() => ReordenarEstado(e.Id, "arriba")'>&#8593;</button>
-                                <button class="pk-icon-btn" @onclick='() => ReordenarEstado(e.Id, "abajo")'>&#8595;</button>
-                            </div>
-                            <button class="pk-cfg-del" @onclick="() => EliminarEstado(e.Id)">Eliminar</button>
-                        </div>
-                    }
-                    <div class="pk-cfg-add">
-                        <input class="pk-cfg-name" placeholder="Nombre de nueva columna..." @bind="_nuevaColNombre" />
-                        <input type="color" class="pk-cfg-color" @bind="_nuevaColColor" />
-                        <button class="pk-comp-ok" @onclick="AgregarColumna" disabled="@string.IsNullOrWhiteSpace(_nuevaColNombre)">Agregar columna</button>
-                    </div>
+                    @* MISMO componente compartido que "Editar campo" de la columna Estado, en modo inline. *@
+                    <GestionarEstadosColumna Inline="true" Visible="true"
+                                             Estados="EstadosVmPqrsd()"
+                                             PlaceholderNuevo="Nombre de nueva columna..."
+                                             OnAgregar="AgregarEstadoPqrsdAsync"
+                                             OnRenombrar="RenombrarEstadoPqrsdAsync"
+                                             OnColor="ColorEstadoPqrsdAsync"
+                                             OnMover="MoverEstadoPqrsdAsync"
+                                             OnEliminar="EliminarEstado"
+                                             OnToggleActivo="ToggleActivoEstadoPqrsdAsync" />
                   }
 
                   @if (_cfgTab == "motivos")
@@ -1415,8 +1422,12 @@
     private TablaColMenu? _colMenu;
     private string? _colToast;
     private void ColToast(string m) { _colToast = m; }
+    private double _colMenuX, _colMenuY;
     private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
-        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    {
+        _colMenuX = e.ClientX; _colMenuY = e.ClientY;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
 
     // "Editar campo" sobre una columna del SISTEMA: editor focalizado (alias/descripcion/visibilidad).
     private string? _editSisClave;
@@ -2082,11 +2093,62 @@
     // pestana de la lista: estado=Columnas, tipo=Tipos, categoria=Categorias.
     private async Task AbrirGestorListaPqrsd(string? clave)
     {
+        // "estado" (columnas del kanban) -> gestor COMPARTIDO GestionarEstadosColumna, anclado al chevron
+        // (el MISMO editor que Tareas/Tableros/Contratos). tipo/categoria conservan su pestana en Configurar PQRSD.
+        if (clave == "estado")
+        {
+            await CargarEstadosAsync();
+            await AbrirEstadosEditorP();
+            return;
+        }
         await AbrirConfigColumnas();   // _cfgOpen=true + carga motivos/tipos/categorias
         await CargarEstadosAsync();
         _cfgGrupo = "flujo";
-        _cfgTab = clave == "tipo" ? "tipos" : clave == "categoria" ? "categorias" : "columnas";
+        _cfgTab = clave == "tipo" ? "tipos" : "categorias";
     }
+
+    // ===== Gestor de estados COMPARTIDO: posicion anclada + VM + callbacks -> API /api/pqrsd/estados.
+    private bool _estEditorOpenP; private double _popXP, _popYP; private bool _popUpP;
+    private async Task AbrirEstadosEditorP()
+    {
+        _popXP = _colMenuX; _popYP = _colMenuY;
+        try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUpP = vh > 0 && _colMenuY > vh * 0.55; }
+        catch { _popUpP = false; }
+        _estEditorOpenP = true;
+    }
+    private List<GestionarEstadosColumna.EstadoVm> EstadosVmPqrsd()
+        => _estados.OrderBy(e => e.Orden).Select(e => new GestionarEstadosColumna.EstadoVm(
+               e.Id, e.Nombre, e.Color, null, null,
+               PuedeEliminar: e.SemanticaLegal is null,
+               Badge: e.SemanticaLegal is not null ? "legal" : null,
+               BadgeTitulo: e.SemanticaLegal is not null ? "Columna legal (maneja plazos de ley)" : null,
+               Activo: e.Activo, PuedeInactivar: true)).ToList();
+    private async Task AgregarEstadoPqrsdAsync(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(nombre.Trim(), null));
+        if (resp.IsSuccessStatusCode) { _estadosCambiaron = true; await CargarEstadosAsync(); }
+    }
+    private async Task RenombrarEstadoPqrsdAsync((Guid Id, string Nombre) x)
+    {
+        var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(x.Nombre, e.Color, e.Orden, e.Activo));
+        await CargarEstadosAsync();
+    }
+    private async Task ColorEstadoPqrsdAsync((Guid Id, string Color) x)
+    {
+        var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, x.Color, e.Orden, e.Activo));
+        await CargarEstadosAsync();
+    }
+    private async Task ToggleActivoEstadoPqrsdAsync((Guid Id, bool Activo) x)
+    {
+        var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
+        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, e.Color, e.Orden, x.Activo));
+        await CargarEstadosAsync();
+    }
+    private async Task MoverEstadoPqrsdAsync((Guid Id, int Dir) x)
+        => await ReordenarEstado(x.Id, x.Dir < 0 ? "arriba" : "abajo");
 
     // ===================== Compartir formulario publico =====================
     private void AbrirCompartir()

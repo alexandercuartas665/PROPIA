@@ -42,11 +42,8 @@ else
         @if (EsContratos)
         {
             <div class="srv-head-actions">
-                <div class="ctr-vtoggle">
-                    <button class="@(_vistaC == "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tarjetas")' title="Vista de tarjetas (Kanban)"><i class="fi fi-rr-apps"></i> Tarjetas</button>
-                    <button class="@(_vistaC != "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tabla")' title="Vista de tabla"><i class="fi fi-rr-table-list"></i> Tabla</button>
-                </div>
-                <button class="ctr-cfg-btn" @onclick="() => _showConfigModal = true" title="Configurar estados y campos"><i class="fi fi-rr-settings"></i> Configurar</button>
+                @* El switcher de vista (Tarjetas|Tabla) vive al final de la barra de controles (canon = Tareas).
+                   Los estados se gestionan desde el chevron de la columna "Estado" ("Editar campo"); no hay boton "Configurar". *@
                 <button class="srv-btn-primary" @onclick="() => AbrirModal(null)"><i class="fi fi-rr-plus"></i> Nuevo contrato</button>
             </div>
         }
@@ -192,9 +189,11 @@ else
             </div>
             <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
             </div>
-            @if (_vistaC != "tarjetas")
-            {
-                <div class="ctr-filtros-r">
+            @* Fila de controles canon (= Tareas): Ordenar/Agrupar/Columnas solo en Tabla; el switcher de vista
+               va al final y SIEMPRE visible (en Tarjetas es el unico control, para poder volver a Tabla). *@
+            <div class="ctr-filtros-r">
+                @if (_vistaC != "tarjetas")
+                {
                     @* Ordenar (multi-criterio apilable): fuente unica compartida, JUSTO antes de Agrupar. *@
                     <TablaOrdenarMenu Columnas="ColsOrdenablesC()" Sorts="_sortsC" SortsChanged="OnSortsCChanged" />
                     @* Agrupar (menu compartido TablaAgruparMenu, multi-nivel apilable, igual que los demas modulos). *@
@@ -254,8 +253,14 @@ else
                             </div>
                         }
                     </div>
+                }
+                @* Switcher de vista canon (reusa .tb-modeswitch/.tb-mode de Tareas): ultimo control de la barra,
+                   tras Columnas. Siempre visible para poder alternar Tarjetas <-> Tabla desde cualquier vista. *@
+                <div class="tb-modeswitch">
+                    <button class="tb-mode @(_vistaC == "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tarjetas")' title="Vista de tarjetas (Kanban)"><i class="fi fi-rr-apps"></i><span>Tarjetas</span></button>
+                    <button class="tb-mode @(_vistaC != "tarjetas" ? "on" : "")" @onclick='() => CambiarVistaC("tabla")' title="Vista de tabla"><i class="fi fi-rr-table-list"></i><span>Tabla</span></button>
                 </div>
-            }
+            </div>
         </div>
 
         @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
@@ -263,7 +268,35 @@ else
            eliminar/ocultar abren ese gestor y el resto (orden/URL/agrupar) actua directo. *@
         <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaC" />
 
-        @if (_editSisClave is not null)
+        @* Editor de ESTADOS (etapas del flujo) = componente COMPARTIDO GestionarEstadosColumna (el MISMO en
+           Tareas/Tableros/PQRSD/Contratos). Se lanza desde EditarCampoSistemaModal ("Gestionar colores y orden"
+           -> AbrirEstadosEditorC), anclado al chevron de la columna "Estado". API propia: ContratoEtapa. *@
+        <GestionarEstadosColumna Visible="_estEditorOpenC" Ancla="(_popXC, _popYC)" HaciaArriba="_popUpC" Busy="_busy"
+                                 Titulo="Estados (columnas)"
+                                 Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Los estados son las columnas de la vista Tarjetas."
+                                 PlaceholderNuevo="Nuevo estado (ej. En revision)..."
+                                 Estados="EstadosVmContrato()"
+                                 OnAgregar="AgregarEstadoContratoAsync"
+                                 OnRenombrar="RenombrarEstadoContratoAsync"
+                                 OnColor="ColorEstadoContratoAsync"
+                                 OnMover="MoverEstadoContratoAsync"
+                                 OnEliminar="EliminarEtapaAsync"
+                                 OnToggleActivo="ToggleActivoEstadoContratoAsync"
+                                 Cerrar="() => _estEditorOpenC = false" />
+
+        @if (_editSisClave == "etapa")
+        {
+            @* La columna "Estado" (etapa del flujo) edita sus estados con el GESTOR COMPARTIDO, lanzado desde este
+               MISMO modal canonico ("Gestionar colores y orden" -> AbrirEstadosEditorC). Igual que Tareas/PQRSD.
+               Los estados NO son lista_opciones: entidad ContratoEtapa + API propia. *@
+            <EditarCampoSistemaModal Clave="etapa" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="false"
+                                     EntidadConfig="contrato" TituloSingular="servicio" Jwt="@_jwt"
+                                     OpcionesLista="EstadosVistaContrato()" PermiteAgregar="false"
+                                     HintReadOnly="Gestiona los estados (crear, renombrar, color, orden, eliminar) con el boton de abajo."
+                                     AbrirGestorAvanzado="EventCallback.Factory.Create(this, AbrirEstadosEditorC)"
+                                     Guardado="RecargarCamposYConfigContratoAsync" Cerrado="() => _editSisClave = null" />
+        }
+        else if (_editSisClave is not null)
         {
             @* Ola 4: las 4 listas editables (tipocontrato/categoria/formapago/tipo->tiposervicio) se editan sobre
                la copia POR TENANT (lista_opciones) via ListaTenant; el modal gestiona color/ocultar/agregar/reset.
@@ -312,7 +345,7 @@ else
                     {
                         var etapa = et;
                         var enEtapa = filtrados.Where(c => c.EtapaId == etapa.Id).ToList();
-                        <div class="ctr-kcol @(_dragOverEtapa == etapa.Id ? "over" : "")"
+                        <div class="ctr-kcol @(_dragOverEtapa == etapa.Id ? "over" : "") @(etapa.Activo ? "" : "ctr-kcol--off")" title="@(etapa.Activo ? null : "Estado inactivo")"
                              @ondragover:preventDefault="true" @ondragover="() => _dragOverEtapa = etapa.Id"
                              @ondrop="() => SoltarEnEtapa(etapa.Id)" @ondragleave="() => { if (_dragOverEtapa == etapa.Id) _dragOverEtapa = null; }">
                             <div class="ctr-kcol-h">
@@ -506,7 +539,8 @@ else
                                                     case "etapa":
                                                         <select class="ctr-etsel" style="background:@(_etapas.FirstOrDefault(x => x.Id == c.EtapaId)?.Color ?? "#94A3B8")" @onchange="(e) => CEtapaSelChange(cc, e)">
                                                             @if (c.EtapaId is null) { <option value="" selected>-</option> }
-                                                            @foreach (var et in _etapas) { <option value="@et.Id" selected="@(et.Id == c.EtapaId)">@et.Nombre</option> }
+                                                            @* Inactivos no se ofrecen en altas, salvo que el contrato ya estuviera en ese estado. *@
+                                                            @foreach (var et in _etapas.Where(x => x.Activo || x.Id == c.EtapaId)) { <option value="@et.Id" selected="@(et.Id == c.EtapaId)">@et.Nombre</option> }
                                                         </select>
                                                         break;
                                                     case "contacto":
@@ -757,7 +791,7 @@ else
                                             case "etapa":
                                                 <select class="ctr-inp" @bind="_ncEtapa">
                                                     <option value="">- Etapa -</option>
-                                                    @foreach (var et in _etapas) { <option value="@et.Id">@et.Nombre</option> }
+                                                    @foreach (var et in _etapas.Where(x => x.Activo)) { <option value="@et.Id">@et.Nombre</option> }
                                                 </select>
                                                 break;
                                             case "estado": <span class="ctr-cval">Vigente</span> break;
@@ -840,46 +874,8 @@ else
         }
 
     @* ---- Modal: Configurar (estados + campos en un solo modal, estilo "Configurar tablero" de Tareas) ---- *@
-    @if (_showConfigModal)
-    {
-        <div class="ctr-cm-back" @onclick="() => _showConfigModal = false">
-            <div class="ctr-cm" @onclick:stopPropagation="true">
-                <div class="ctr-cm-head">
-                    <div>
-                        <div class="ctr-cm-title">Configurar contratos</div>
-                        <div class="ctr-cm-sub">Estados del flujo y campos personalizados.</div>
-                    </div>
-                    <button class="ctr-cm-x" @onclick="() => _showConfigModal = false" title="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
-                </div>
-                <div class="ctr-cm-body">
-                    <div class="ctr-cm-sec">Estados (columnas)</div>
-                    <div class="ctr-cm-list">
-                        @for (int i = 0; i < _etapas.Count; i++)
-                        {
-                            var eidx = i; var et = _etapas[eidx];
-                            <div class="ctr-et-row">
-                                <div class="ctr-et-ord">
-                                    <button class="ctr-et-mv" disabled="@(eidx == 0)" @onclick="() => MoverEtapaAsync(eidx, -1)" title="Subir">&#9650;</button>
-                                    <button class="ctr-et-mv" disabled="@(eidx == _etapas.Count - 1)" @onclick="() => MoverEtapaAsync(eidx, 1)" title="Bajar">&#9660;</button>
-                                </div>
-                                <input type="color" class="ctr-et-color" value="@(et.Color ?? "#94A3B8")" @onchange="(e) => CambiarColorEtapaAsync(et, e)" title="Color" />
-                                <input class="ctr-et-nom" value="@et.Nombre" @onchange="(e) => RenombrarEtapaAsync(et, e)" />
-                                <span class="ctr-cm-count">@(_contratos.Count(x => x.EtapaId == et.Id)) contratos</span>
-                                <button class="ctr-cm-del" @onclick="() => EliminarEtapaAsync(et.Id)" title="Eliminar estado" disabled="@(_etapas.Count <= 1)"><i class="fi fi-rr-trash"></i></button>
-                            </div>
-                        }
-                    </div>
-                    <div class="ctr-cm-newgrid">
-                        <input class="srv-input" placeholder="Nuevo estado (ej. En revisión)" @bind="_nuevaEtapaNombre" @bind:event="oninput" @onkeydown='(e) => { if (e.Key == "Enter") return CrearEtapaAsync(); return Task.CompletedTask; }' />
-                        <button class="srv-btn-primary sm" @onclick="CrearEtapaAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevaEtapaNombre))">Agregar</button>
-                    </div>
-
-                    <div class="ctr-cm-sec">Campos personalizados</div>
-                    <div class="ctr-cm-help">Los campos propios y las columnas de la lista (mostrar/ocultar, ordenar, renombrar y crear) se gestionan en el boton <strong>Campos</strong> de la barra de herramientas.</div>
-                </div>
-            </div>
-        </div>
-    }
+    @* El modal "Configurar" se retiro (patron Tareas): los estados se gestionan desde el chevron de la
+       columna "Estado" ("Editar campo" -> popover anclado), y los campos desde el boton "Campos". *@
 
     }
     else
@@ -2199,7 +2195,54 @@ else
     // (ConfigCamposEntidad); aqui solo se leen (_cCampos) para pintar columnas y editar VALORES inline. ----
     private List<ContratoCampoDto> _cCampos = new();
     private IEnumerable<ContratoCampoDto> CamposActivos => _cCampos.Where(c => c.Activo);
-    private bool _showConfigModal;   // modal "Configurar" (estados del flujo / kanban)
+    // El modal "Configurar" se retiro (patron Tareas): los estados se editan desde el chevron de la columna "Estado".
+    private bool _estEditorOpenC;    // popover de estados (etapas) anclado al chevron de la columna Estado
+    private double _popXC, _popYC; private bool _popUpC;
+    private async Task AbrirEstadosEditorC()
+    {
+        _popXC = _colMenuX; _popYC = _colMenuY;
+        try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUpC = vh > 0 && _colMenuY > vh * 0.55; }
+        catch { _popUpC = false; }
+        _estEditorOpenC = true;
+    }
+    // Lista de estados (etapas) para el modal canonico (solo lectura) y para el gestor compartido.
+    private List<EditarCampoSistemaModal.OpcionVista> EstadosVistaContrato()
+        => _etapas.OrderBy(e => e.Orden).Select(e => new EditarCampoSistemaModal.OpcionVista(e.Nombre, e.Color)).ToList();
+    private List<GestionarEstadosColumna.EstadoVm> EstadosVmContrato()
+        => _etapas.OrderBy(e => e.Orden).Select(e => new GestionarEstadosColumna.EstadoVm(
+               e.Id, e.Nombre, e.Color, _contratos.Count(c => c.EtapaId == e.Id), "contratos",
+               PuedeEliminar: _etapas.Count > 1, Activo: e.Activo, PuedeInactivar: true)).ToList();
+    // Callbacks del gestor compartido -> API ContratoEtapa (reusa MoverEtapaAsync/EliminarEtapaAsync existentes).
+    private async Task AgregarEstadoContratoAsync(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        _busy = true;
+        try { var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos/etapas", new CrearContratoEtapaRequest(nombre.Trim(), null)); if (r.IsSuccessStatusCode) await RecargarEtapasAsync(); }
+        finally { _busy = false; }
+    }
+    private async Task RenombrarEstadoContratoAsync((Guid Id, string Nombre) x)
+    {
+        var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(x.Nombre, et.Color, et.Activo));
+        await RecargarEtapasAsync();
+    }
+    private async Task ColorEstadoContratoAsync((Guid Id, string Color) x)
+    {
+        var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, x.Color, et.Activo));
+        await RecargarEtapasAsync();
+    }
+    private async Task ToggleActivoEstadoContratoAsync((Guid Id, bool Activo) x)
+    {
+        var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
+        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, et.Color, x.Activo));
+        await RecargarEtapasAsync();
+    }
+    private async Task MoverEstadoContratoAsync((Guid Id, int Dir) x)
+    {
+        var idx = _etapas.FindIndex(e => e.Id == x.Id); if (idx < 0) return;
+        await MoverEtapaAsync(idx, x.Dir);
+    }
 
     private string? ValorCampo(ContratoServicioDto c, Guid campoId)
         => c.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
@@ -2360,8 +2403,12 @@ else
     private TablaColMenu? _colMenu;
     private string? _colToast;
     private void ColToast(string m) { _colToast = m; }
+    private double _colMenuX, _colMenuY;
     private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
-        => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    {
+        _colMenuX = e.ClientX; _colMenuY = e.ClientY;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
 
     // "Editar campo" sobre una columna del SISTEMA: editor focalizado (alias/descripcion/visibilidad).
     private string? _editSisClave;
@@ -2443,7 +2490,7 @@ else
                 break;
             case TablaColMenu.Accion.Editar:
                 if (col.EsDinamico) { _showColsMenu = true; ColToast("Edita el campo en el panel de Campos."); }
-                else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
+                else AbrirEditarCampoSistema(col.Key);   // sistema (incl. "etapa"=Estado): SIEMPRE el modal canonico EditarCampoSistemaModal
                 break;
             case TablaColMenu.Accion.Ocultar:
                 try

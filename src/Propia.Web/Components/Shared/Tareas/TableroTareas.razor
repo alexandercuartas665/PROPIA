@@ -257,7 +257,7 @@ else
                     @* El dragover se cancela con un handler HTML plano (no con @@ondragover:preventDefault):
                        Blazor solo instala el listener de un evento si hay un manejador para el, asi que
                        la marca de preventDefault sola no se aplicaba y el navegador rechazaba el drop. *@
-                    <div class="tb-col @(_dragTareaId is not null ? "tb-col-drop" : "")"
+                    <div class="tb-col @(_dragTareaId is not null ? "tb-col-drop" : "") @(est.Activo ? "" : "tb-col--off")" title="@(est.Activo ? null : "Estado inactivo")"
                          ondragover="event.preventDefault()"
                          @ondrop="() => SoltarEnEstado(estado.Id)">
                         <div class="tb-col-head">
@@ -950,7 +950,8 @@ else
                         <div class="tbc-fld tbc-grow">
                             <label>Estado</label>
                             <select class="tbc-estado-sel" value="@d.EstadoId" @onchange="OnCardEstadoChange">
-                                @foreach (var e in _board.Estados)
+                                @* Inactivos no se ofrecen, salvo que la tarea ya estuviera en ese estado. *@
+                                @foreach (var e in _board.Estados.Where(x => x.Activo || x.Id == d.EstadoId))
                                 {
                                     <option value="@e.Id">@e.Nombre</option>
                                 }
@@ -1627,65 +1628,22 @@ else
 @* ===================== Editor de ESTADOS (columnas) anclado al chevron de la columna ETAPA =====================
    Fase 1: la lista de estados se edita aqui (desde "Editar campo" del header), no en el modal Configurar.
    Los estados SIGUEN siendo las columnas del kanban; aqui solo se gestionan (nombre/color/orden/alta/baja). *@
-@if (_estEditorOpen && _board is not null)
-{
-    <div class="tbfld-bd" @onclick="() => _estEditorOpen = false"></div>
-    <div class="tbfld-pop tb-listpop @(_popUp ? "tbfld-pop-up" : "")" @onclick:stopPropagation="true" style="@PopStyle()">
-        <div class="tbfld-pop-h">
-            <span>Estados (columnas)</span>
-            <button type="button" class="tbfld-x" @onclick="() => _estEditorOpen = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-        </div>
-        <div class="tbfld-pop-b">
-            <div class="tbcfg-help">Click en el nombre para renombrar, en el punto para el color, y las flechas para reordenar. Los estados son las columnas del tablero. El <strong>estado de cierre</strong> y los motivos se configuran en "Editar campo" de la columna Etapa.</div>
-            <div class="tbcfg-list">
-                @for (var iEst = 0; iEst < _board.Estados.Count; iEst++)
-                {
-                    var est = _board.Estados[iEst];
-                    var idxEst = iEst;
-                    <div class="tbcfg-est">
-                        <span style="position:relative;display:inline-flex;">
-                            <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(est.Color ?? EstadoColorDefault)" title="Cambiar color" @onclick="() => _estColorId = _estColorId == est.Id ? null : est.Id"></button>
-                            @if (_estColorId == est.Id)
-                            {
-                                <div class="tb-tagpop-bd" @onclick="() => _estColorId = null"></div>
-                                <div class="tb-tag-colors" @onclick:stopPropagation="true">
-                                    @foreach (var c in _colores)
-                                    {
-                                        var cc = c;
-                                        <button type="button" class="tb-tag-copt @(string.Equals(est.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarEstadoColorAsync(est, cc)"></button>
-                                    }
-                                </div>
-                            }
-                        </span>
-                        @if (_estEditId == est.Id)
-                        {
-                            <input class="tbcfg-est-inp" @bind="_estEditVal" @bind:event="oninput" @onblur="() => GuardarEstadoNombreAsync(est)" @onkeydown="(e) => EstadoEditKeydown(e, est)" />
-                        }
-                        else
-                        {
-                            <span class="tbcfg-est-nom tbcfg-est-nom-edit" title="Click para renombrar" @onclick="() => { _estEditId = est.Id; _estEditVal = est.Nombre; }">@est.Nombre</span>
-                        }
-                        <span class="tbcfg-est-cnt">@CountEstado(est.Id) tarjetas</span>
-                        <span class="tbcfg-ord">
-                            <button type="button" class="tbcfg-ordbtn" title="Subir" disabled="@(idxEst == 0 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, -1)">&#9650;</button>
-                            <button type="button" class="tbcfg-ordbtn" title="Bajar" disabled="@(idxEst == _board.Estados.Count - 1 || _busy)" @onclick="() => MoverEstadoAsync(idxEst, 1)">&#9660;</button>
-                        </span>
-                        @if (!est.EsBase && !est.EsTerminal)
-                        {
-                            <button class="tbcfg-del" title="Quitar estado" @onclick="() => CfgRemoveEstado(est.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
-                        }
-                    </div>
-                }
-            </div>
-            <div class="tbcfg-add">
-                <input @bind="_cfgEstadoNew" @bind:event="oninput" placeholder="Nuevo estado (ej. En revisión)" />
-                <button class="tb-btn tb-btn-primary" @onclick="CfgAddEstado" disabled="@(_busy || string.IsNullOrWhiteSpace(_cfgEstadoNew))">Agregar</button>
-            </div>
-            @* El "estado de cierre" y los MOTIVOS DE CIERRE se gestionan en el editor del campo Etapa
-               ("Editar campo"), no aqui: este popover queda solo para color/orden/alta/baja de estados. *@
-        </div>
-    </div>
-}
+@* Editor de ESTADOS (columnas) = componente COMPARTIDO GestionarEstadosColumna (el MISMO en Tareas/Tableros/
+   PQRSD/Contratos). Se lanza desde "Editar campo" de la columna Estado (EditarCampoSistemaModal ->
+   AbrirGestorAvanzado -> AbrirEstadosEditor), anclado al chevron. El estado de CIERRE y sus motivos se
+   gestionan aparte, en el editor del campo (SeccionExtra), no aqui. API: /api/tareas/estados. *@
+<GestionarEstadosColumna Visible="_estEditorOpen && _board is not null" Ancla="(_popX, _popY)" HaciaArriba="_popUp" Busy="_busy"
+                         Titulo="Estados (columnas)"
+                         Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Los estados son las columnas del tablero; el estado de cierre y los motivos se configuran en 'Editar campo'."
+                         PlaceholderNuevo="Nuevo estado (ej. En revision)..."
+                         Estados="EstadosVmTb()"
+                         OnAgregar="AgregarEstadoTbAsync"
+                         OnRenombrar="RenombrarEstadoTbAsync"
+                         OnColor="ColorEstadoTbAsync"
+                         OnMover="MoverEstadoTbAsync"
+                         OnEliminar="EliminarEstadoTbAsync"
+                         OnToggleActivo="ToggleActivoEstadoTbAsync"
+                         Cerrar="() => _estEditorOpen = false" />
 
 @* ===================== Editor de ETIQUETAS anclado al chevron de la columna ETIQUETAS =====================
    Fase 1: la lista de etiquetas (con color) se crea/edita aqui, no en el modal Configurar. Exclusivas del tablero. *@
@@ -5239,21 +5197,18 @@ else
     private sealed record CompartidoMoverResp(bool Ok, string? Error);
     private sealed record CompartidoSwitchResp(string? AccessToken);
 
-    // ---- Edicion de estados (columnas): renombrar, color y orden (el PUT ya existia) ----
-    private Guid? _estColorId;
-    private Guid? _estEditId;
-    private string _estEditVal = "";
-
+    // ---- Edicion de estados (columnas): el PUT lo reusan los callbacks del gestor compartido GestionarEstadosColumna. ----
     private async Task PutEstadoAsync(EstadoTareaDto est, string nombre, string? color, int orden)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, true));
+        // PRESERVA el Activo actual del estado (antes mandaba siempre true -> reactivaba al renombrar/colorear).
+        var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, est.Activo));
         if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
-
-    private async Task GuardarEstadoColorAsync(EstadoTareaDto est, string color)
+    private async Task ToggleActivoEstadoTbAsync((Guid Id, bool Activo) x)
     {
-        _estColorId = null;
-        await PutEstadoAsync(est, est.Nombre, color, est.Orden);
+        var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
+        var r = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(est.Nombre, est.Color, est.Orden, x.Activo));
+        if (!r.IsSuccessStatusCode) { _msg = await ErrTxtAsync(r); _msgClass = "alert-danger"; return; }
         await RecargarBoard();
     }
 
@@ -5271,20 +5226,6 @@ else
         finally { _busy = false; }
     }
 
-    private async Task GuardarEstadoNombreAsync(EstadoTareaDto est)
-    {
-        var v = (_estEditVal ?? "").Trim();
-        _estEditId = null;
-        if (v.Length == 0 || v == est.Nombre) return;
-        await PutEstadoAsync(est, v, est.Color, est.Orden);
-        await RecargarBoard();
-    }
-
-    private async Task EstadoEditKeydown(KeyboardEventArgs e, EstadoTareaDto est)
-    {
-        if (e.Key == "Enter") { await GuardarEstadoNombreAsync(est); }
-        else if (e.Key == "Escape") { _estEditId = null; }
-    }
 
     private async Task MoverEstadoAsync(int idx, int dir)
     {
@@ -5518,6 +5459,45 @@ else
         if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
         await RecargarBoard();
     }
+
+    // ===== Gestor de estados COMPARTIDO (GestionarEstadosColumna): VM + callbacks -> API /api/tareas/estados.
+    // El estado de cierre (EsTerminal) se marca como badge (solo lectura aqui): se configura en "Editar campo".
+    private List<GestionarEstadosColumna.EstadoVm> EstadosVmTb()
+        => (_board?.Estados ?? new List<EstadoTareaDto>()).Select(e => new GestionarEstadosColumna.EstadoVm(
+               e.Id, e.Nombre, e.Color, CountEstado(e.Id), "tarjetas",
+               PuedeEliminar: !e.EsBase && !e.EsTerminal,
+               Badge: e.EsTerminal ? "cierre" : null,
+               BadgeTitulo: e.EsTerminal ? "Estado de cierre (se configura en Editar campo)" : null,
+               Activo: e.Activo, PuedeInactivar: true)).ToList();
+    private async Task AgregarEstadoTbAsync(string nombre)
+    {
+        if (_board is null || string.IsNullOrWhiteSpace(nombre)) return;
+        _busy = true;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/tareas/estados", new CrearEstadoRequest(nombre.Trim(), null, 0, _board.Tablero.Id));
+            if (!r.IsSuccessStatusCode) { _msg = await ErrTxtAsync(r); _msgClass = "alert-danger"; return; }
+            await RecargarBoard();
+        }
+        finally { _busy = false; }
+    }
+    private async Task RenombrarEstadoTbAsync((Guid Id, string Nombre) x)
+    {
+        var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
+        await PutEstadoAsync(est, x.Nombre, est.Color, est.Orden); await RecargarBoard();
+    }
+    private async Task ColorEstadoTbAsync((Guid Id, string Color) x)
+    {
+        var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
+        await PutEstadoAsync(est, est.Nombre, x.Color, est.Orden); await RecargarBoard();
+    }
+    private async Task MoverEstadoTbAsync((Guid Id, int Dir) x)
+    {
+        var idx = (_board?.Estados.ToList() ?? new List<EstadoTareaDto>()).FindIndex(e => e.Id == x.Id);
+        if (idx < 0) return;
+        await MoverEstadoAsync(idx, x.Dir);
+    }
+    private async Task EliminarEstadoTbAsync(Guid id) => await CfgRemoveEstado(id);
     private void CfgNuevoCampo() => _campoDraft = new CampoDraft();
     // "Agregar campo" desde el modal de tarjeta: mismo editor/potencia que Configurar tablero.
     // Coordenadas del clic para anclar el popover al boton (aspecto de "nace del boton").
