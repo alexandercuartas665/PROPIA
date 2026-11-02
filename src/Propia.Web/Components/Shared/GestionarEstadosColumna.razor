@@ -1,0 +1,160 @@
+@* ============================================================================================
+   Editor COMPARTIDO de ESTADOS / etapas (las columnas del kanban) para los 4 modulos que las
+   tienen editables: Tareas, Tableros, PQRSD y Contratos. UNA sola UI: cada modulo cablea sus
+   callbacks a su propia API de estados (los estados NO son lista_opciones: son entidades por
+   modulo). Se lanza IGUAL desde EditarCampoSistemaModal (boton "Gestionar colores y orden" ->
+   AbrirGestorAvanzado). Posicion: anclada al chevron (Ancla) o inline (Inline, p.ej. dentro de
+   una pestana de configuracion). Estilos propios (.gec-*) autocontenidos (ver nota en memoria
+   columna-editor-unico-sistema: un componente nuevo no debe depender del <style> de otro).
+   ============================================================================================ *@
+@if (Visible)
+{
+    @if (!Inline)
+    {
+        <div class="gec-bd" @onclick="CerrarAsync"></div>
+    }
+    <div class="gec-pop @(Inline ? "gec-inline" : "")" @onclick:stopPropagation="true" style="@EstiloPos()">
+        @if (!Inline)
+        {
+            <div class="gec-h">
+                <span>@Titulo</span>
+                <button type="button" class="gec-x" @onclick="CerrarAsync" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12" /></svg></button>
+            </div>
+        }
+        <div class="gec-b">
+            @if (!string.IsNullOrWhiteSpace(Hint)) { <div class="gec-help">@Hint</div> }
+            <div class="gec-list">
+                @for (var i = 0; i < Estados.Count; i++)
+                {
+                    var est = Estados[i]; var idx = i;
+                    <div class="gec-row @(est.Activo ? "" : "gec-row--off")">
+                        <div class="gec-ord">
+                            <button type="button" class="gec-mv" disabled="@(idx == 0 || Busy)" @onclick="() => OnMover.InvokeAsync((est.Id, -1))" title="Subir">&#9650;</button>
+                            <button type="button" class="gec-mv" disabled="@(idx == Estados.Count - 1 || Busy)" @onclick="() => OnMover.InvokeAsync((est.Id, 1))" title="Bajar">&#9660;</button>
+                        </div>
+                        <input type="color" class="gec-color" value="@(est.Color ?? DefaultColor)" @onchange="(ev) => OnColor.InvokeAsync((est.Id, ev.Value?.ToString() ?? DefaultColor))" title="Color" disabled="@Busy" />
+                        <input class="gec-nom" value="@est.Nombre" @onchange="(ev) => RenombrarAsync(est.Id, ev)" disabled="@Busy" />
+                        @if (!est.Activo) { <span class="gec-off-pill" title="Estado inactivo: no se elige en altas nuevas; los registros que ya lo tenian lo conservan">inactivo</span> }
+                        @if (!string.IsNullOrWhiteSpace(est.Badge)) { <span class="gec-badge" title="@est.BadgeTitulo">@est.Badge</span> }
+                        @if (est.Conteo is { } n) { <span class="gec-cnt">@n @est.ConteoSufijo</span> }
+                        @if (est.PuedeInactivar)
+                        {
+                            <button type="button" class="gec-act @(est.Activo ? "" : "on")" disabled="@Busy" title="@(est.Activo ? "Inactivar (ocultar de altas, se puede reactivar)" : "Activar")" @onclick="() => OnToggleActivo.InvokeAsync((est.Id, !est.Activo))">
+                                @if (est.Activo)
+                                {
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/></svg>
+                                }
+                                else
+                                {
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                }
+                            </button>
+                        }
+                        <button type="button" class="gec-del" disabled="@(!est.PuedeEliminar || Busy)" title="@(est.PuedeEliminar ? "Eliminar estado" : "No se puede eliminar (puedes inactivarlo)")" @onclick="() => OnEliminar.InvokeAsync(est.Id)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg></button>
+                    </div>
+                }
+                @if (Estados.Count == 0) { <div class="gec-empty">Aun no hay estados.</div> }
+            </div>
+            <div class="gec-add">
+                <input class="gec-nom" placeholder="@PlaceholderNuevo" @bind="_nuevo" @bind:event="oninput" @onkeydown="OnAddKey" disabled="@Busy" />
+                <button type="button" class="gec-add-btn" @onclick="AgregarAsync" disabled="@(Busy || string.IsNullOrWhiteSpace(_nuevo))">Agregar</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .gec-bd { position: fixed; inset: 0; z-index: 4000; background: transparent; }
+    .gec-pop { position: fixed; z-index: 4001; width: 400px; max-width: calc(100vw - 24px); background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 13px; box-shadow: var(--propia-shadow-modal); display: flex; flex-direction: column; overflow: hidden; }
+    .gec-pop.gec-inline { position: static; width: 100%; max-width: 100%; box-shadow: none; border: 0; border-radius: 0; }
+    .gec-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13.5px; font-weight: 800; color: var(--propia-text-h1); flex-shrink: 0; }
+    .gec-x { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: var(--propia-bg-hover); border-radius: 8px; color: var(--propia-text-muted); cursor: pointer; }
+    .gec-x:hover { background: var(--propia-bg-card-soft); color: var(--propia-text-body); }
+    .gec-b { padding: 13px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; }
+    .gec-inline .gec-b { padding: 0; }
+    .gec-help { font-size: 12px; color: var(--propia-text-muted); line-height: 1.45; }
+    .gec-list { display: flex; flex-direction: column; gap: 8px; }
+    .gec-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--propia-border-card); border-radius: 11px; }
+    .gec-row--off { opacity: .55; background: var(--propia-bg-hover); }
+    .gec-off-pill { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-text-muted); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+    .gec-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; border-radius: 7px; flex-shrink: 0; }
+    .gec-act:hover:not(:disabled) { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .gec-act.on { color: var(--propia-brand); }
+    .gec-act:disabled { opacity: .4; cursor: default; }
+    .gec-ord { display: flex; flex-direction: column; gap: 1px; }
+    .gec-mv { width: 22px; height: 15px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 5px; color: var(--propia-text-muted); font-size: 9px; cursor: pointer; padding: 0; }
+    .gec-mv:hover:not(:disabled) { background: var(--propia-bg-hover); color: var(--propia-brand); }
+    .gec-mv:disabled { opacity: .4; cursor: default; }
+    .gec-color { width: 34px; height: 30px; padding: 2px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); cursor: pointer; }
+    .gec-nom { flex: 1; min-width: 0; border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-weight: 600; color: var(--propia-text-body); background: var(--propia-bg-card); font-family: inherit; }
+    .gec-nom:focus { outline: none; border-color: var(--propia-brand); }
+    .gec-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-brand); background: var(--propia-brand-soft); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+    .gec-cnt { font-size: 11px; color: var(--propia-text-faint); font-weight: 600; white-space: nowrap; }
+    .gec-del { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; border-radius: 7px; }
+    .gec-del:hover:not(:disabled) { color: var(--propia-danger); background: var(--propia-danger-soft); }
+    .gec-del:disabled { opacity: .35; cursor: default; }
+    .gec-empty { font-size: 12px; color: var(--propia-text-faint); padding: 6px 2px; }
+    .gec-add { display: flex; gap: 8px; }
+    .gec-add .gec-nom { flex: 1; }
+    .gec-add-btn { flex-shrink: 0; border: 0; background: var(--propia-brand); color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .gec-add-btn:disabled { opacity: .5; cursor: default; }
+</style>
+
+@code {
+    private const string DefaultColor = "#94A3B8";
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Titulo { get; set; } = "Estados (columnas)";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string PlaceholderNuevo { get; set; } = "Nuevo estado (ej. En revision)...";
+    [Parameter] public IReadOnlyList<EstadoVm> Estados { get; set; } = Array.Empty<EstadoVm>();
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Posicion anclada (coordenadas del chevron). Si es null, el popover se centra via CSS fijo arriba-derecha.</summary>
+    [Parameter] public (double X, double Y)? Ancla { get; set; }
+    /// <summary>true = abre hacia arriba (cuando el chevron esta en la mitad inferior).</summary>
+    [Parameter] public bool HaciaArriba { get; set; }
+    /// <summary>true = render inline (sin backdrop/cabecera ni posicion fija), p.ej. dentro de una pestana de configuracion.</summary>
+    [Parameter] public bool Inline { get; set; }
+
+    [Parameter] public EventCallback<string> OnAgregar { get; set; }
+    [Parameter] public EventCallback<(Guid Id, string Nombre)> OnRenombrar { get; set; }
+    [Parameter] public EventCallback<(Guid Id, string Color)> OnColor { get; set; }
+    [Parameter] public EventCallback<(Guid Id, int Dir)> OnMover { get; set; }
+    [Parameter] public EventCallback<Guid> OnEliminar { get; set; }
+    /// <summary>Inactivar/activar un estado (no borra): el padre pone Activo=false y lo atenua en el kanban.</summary>
+    [Parameter] public EventCallback<(Guid Id, bool Activo)> OnToggleActivo { get; set; }
+    [Parameter] public EventCallback Cerrar { get; set; }
+
+    private string _nuevo = "";
+
+    /// <summary>Vista neutra de un estado/etapa. Conteo/Badge opcionales (cada modulo decide).</summary>
+    public sealed record EstadoVm(Guid Id, string Nombre, string? Color, int? Conteo = null,
+        string? ConteoSufijo = null, bool PuedeEliminar = true, string? Badge = null, string? BadgeTitulo = null,
+        bool Activo = true, bool PuedeInactivar = false);
+
+    private async Task AgregarAsync()
+    {
+        var v = (_nuevo ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(v)) return;
+        await OnAgregar.InvokeAsync(v);
+        _nuevo = "";
+    }
+    private async Task OnAddKey(KeyboardEventArgs e) { if (e.Key == "Enter") await AgregarAsync(); }
+    private async Task RenombrarAsync(Guid id, ChangeEventArgs ev)
+    {
+        var nom = (ev.Value?.ToString() ?? "").Trim();
+        if (nom.Length == 0) return;
+        await OnRenombrar.InvokeAsync((id, nom));
+    }
+    private async Task CerrarAsync() => await Cerrar.InvokeAsync();
+
+    private string EstiloPos()
+    {
+        if (Inline || Ancla is null) return "";
+        var (x, y) = Ancla.Value;
+        return HaciaArriba
+            ? $"bottom:calc(100vh - {y:0}px + 8px); right:calc(100vw - {x:0}px); max-height:calc({y:0}px - 24px);"
+            : $"top:calc({y:0}px + 8px); right:calc(100vw - {x:0}px); max-height:calc(100vh - {y:0}px - 24px);";
+    }
+}
