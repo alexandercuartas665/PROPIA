@@ -69,7 +69,7 @@ public static class ContratoCamposSistema
     // compartida (unidades-config, entidad 'contrato') + render por clave del switch = un unico vocabulario
     // (adopcion Fase 1, decision VIGIA 2026-09-14). El ORDEN y VisiblePorDefecto espejan las columnas actuales.
     // No hay 'vencimiento' ni 'nitProveedor' aparte: el semaforo va en 'estado' (label "Vencimiento") y no hay
-    // columna NIT. 'etapa' es la etapa del kanban.
+    // columna NIT. 'etapa' es el estado del flujo del kanban (label "Estado"), visible por defecto.
     public static readonly IReadOnlyList<ContratoCampoSistema> Todos = new[]
     {
         new ContratoCampoSistema("tercero", "Contratista", TipoCampoTablero.Texto, VisiblePorDefecto: true, Fija: true),
@@ -93,7 +93,9 @@ public static class ContratoCamposSistema
         // Tipo de servicio = lista editable (catalogo contrato.tiposervicio).
         new ContratoCampoSistema("tipo", "Tipo de servicio", TipoCampoTablero.Seleccion, VisiblePorDefecto: false, OpcionesEditables: true),
         new ContratoCampoSistema("valor", "$/mes", TipoCampoTablero.Moneda, VisiblePorDefecto: false),
-        new ContratoCampoSistema("etapa", "Etapa", TipoCampoTablero.Texto, VisiblePorDefecto: false),
+        // Estado del flujo del kanban (En tramite/Activo/...). Label "Estado" (= kanban y modal Configurar);
+        // visible por defecto. Editable por copropiedad en "Configurar" (etapas).
+        new ContratoCampoSistema("etapa", "Estado", TipoCampoTablero.Texto, VisiblePorDefecto: true),
         new ContratoCampoSistema("contacto", "Contacto", TipoCampoTablero.Texto, VisiblePorDefecto: false),
         new ContratoCampoSistema("renov", "Renov.", TipoCampoTablero.Booleano, VisiblePorDefecto: false),
         new ContratoCampoSistema("dias", "Dias alerta", TipoCampoTablero.Numero, VisiblePorDefecto: false),
