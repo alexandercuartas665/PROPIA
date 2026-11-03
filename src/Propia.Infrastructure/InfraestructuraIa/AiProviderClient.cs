@@ -88,7 +88,23 @@ public sealed class AiProviderClient : IAiProviderClient
             }
             else
             {
-                msgs.Add(new { role = m.Role == "model" ? "assistant" : m.Role, content = m.Text ?? "" });
+                var role = m.Role == "model" ? "assistant" : m.Role;
+                // Vision: si el turno trae imagenes entrantes, el content va como array multimodal
+                // (text + image_url con data URI base64). Gemini via endpoint OpenAI acepta este formato.
+                if (role == "user" && m.Images is { Count: > 0 })
+                {
+                    var parts = new List<object>();
+                    if (!string.IsNullOrWhiteSpace(m.Text)) { parts.Add(new { type = "text", text = m.Text }); }
+                    foreach (var img in m.Images)
+                    {
+                        parts.Add(new { type = "image_url", image_url = new { url = $"data:{img.MimeType};base64,{img.Base64}" } });
+                    }
+                    msgs.Add(new { role, content = parts.ToArray() });
+                }
+                else
+                {
+                    msgs.Add(new { role, content = m.Text ?? "" });
+                }
             }
         }
 
@@ -160,7 +176,21 @@ public sealed class AiProviderClient : IAiProviderClient
             }
             else
             {
-                msgs.Add(new { role = m.Role == "model" ? "assistant" : "user", content = m.Text ?? "" });
+                var role = m.Role == "model" ? "assistant" : "user";
+                if (role == "user" && m.Images is { Count: > 0 })
+                {
+                    var blocks = new List<object>();
+                    foreach (var img in m.Images)
+                    {
+                        blocks.Add(new { type = "image", source = new { type = "base64", media_type = img.MimeType, data = img.Base64 } });
+                    }
+                    if (!string.IsNullOrWhiteSpace(m.Text)) { blocks.Add(new { type = "text", text = m.Text }); }
+                    msgs.Add(new { role, content = blocks.ToArray() });
+                }
+                else
+                {
+                    msgs.Add(new { role, content = m.Text ?? "" });
+                }
             }
         }
 
@@ -314,7 +344,20 @@ public sealed class AiProviderClient : IAiProviderClient
         var body = new
         {
             systemInstruction = string.IsNullOrWhiteSpace(systemPrompt) ? null : new { parts = new[] { new { text = systemPrompt } } },
-            contents = turns.Select(t => new { role = t.Role == "model" ? "model" : "user", parts = new[] { new { text = t.Text } } }).ToArray()
+            contents = turns.Select(t =>
+            {
+                // Vision: las imagenes entrantes del turno van como inline_data (base64) ANTES del texto.
+                var parts = new List<object>();
+                if (t.Images is { Count: > 0 })
+                {
+                    foreach (var img in t.Images)
+                    {
+                        parts.Add(new { inline_data = new { mime_type = img.MimeType, data = img.Base64 } });
+                    }
+                }
+                parts.Add(new { text = t.Text ?? "" });
+                return new { role = t.Role == "model" ? "model" : "user", parts = parts.ToArray() };
+            }).ToArray()
         };
         using var resp = await _http.PostAsync(url, JsonBody(body), ct);
         var raw = await resp.Content.ReadAsStringAsync(ct);
@@ -339,7 +382,21 @@ public sealed class AiProviderClient : IAiProviderClient
 
         var messages = new List<object>();
         if (!string.IsNullOrWhiteSpace(systemPrompt)) { messages.Add(new { role = "system", content = systemPrompt }); }
-        foreach (var t in turns) { messages.Add(new { role = t.Role == "model" ? "assistant" : "user", content = t.Text }); }
+        foreach (var t in turns)
+        {
+            var role = t.Role == "model" ? "assistant" : "user";
+            if (role == "user" && t.Images is { Count: > 0 })
+            {
+                var parts = new List<object>();
+                if (!string.IsNullOrWhiteSpace(t.Text)) { parts.Add(new { type = "text", text = t.Text }); }
+                foreach (var img in t.Images)
+                {
+                    parts.Add(new { type = "image_url", image_url = new { url = $"data:{img.MimeType};base64,{img.Base64}" } });
+                }
+                messages.Add(new { role, content = parts.ToArray() });
+            }
+            else { messages.Add(new { role, content = t.Text }); }
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(new { model, messages }) };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -362,12 +419,28 @@ public sealed class AiProviderClient : IAiProviderClient
         IReadOnlyList<AiChatTurn> turns, CancellationToken ct)
     {
         var url = $"{Base(baseUrl, "https://api.anthropic.com")}/v1/messages";
+        var msgsClaude = turns.Select(t =>
+        {
+            var role = t.Role == "model" ? "assistant" : "user";
+            // Vision: las imagenes entrantes van como bloques image (source base64) ANTES del texto.
+            if (role == "user" && t.Images is { Count: > 0 })
+            {
+                var blocks = new List<object>();
+                foreach (var img in t.Images)
+                {
+                    blocks.Add(new { type = "image", source = new { type = "base64", media_type = img.MimeType, data = img.Base64 } });
+                }
+                if (!string.IsNullOrWhiteSpace(t.Text)) { blocks.Add(new { type = "text", text = t.Text }); }
+                return new { role, content = (object)blocks.ToArray() };
+            }
+            return new { role, content = (object)(t.Text ?? "") };
+        }).ToArray();
         var body = new
         {
             model,
             max_tokens = 1024,
             system = string.IsNullOrWhiteSpace(systemPrompt) ? null : systemPrompt,
-            messages = turns.Select(t => new { role = t.Role == "model" ? "assistant" : "user", content = t.Text }).ToArray()
+            messages = msgsClaude
         };
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(body) };
         req.Headers.Add("x-api-key", apiKey);

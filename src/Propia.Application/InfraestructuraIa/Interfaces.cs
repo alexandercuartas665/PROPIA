@@ -74,6 +74,14 @@ public interface IWhatsAppConnectorService
     /// </summary>
     Task<LineSendResult> SendReactionAsync(Guid lineId, string phone, string externalMessageId, string emoji,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Baja el contenido de una IMAGEN entrante (que envio el contacto) como base64 + mime, para que el
+    /// agente la "vea". <paramref name="externalMessageId"/> es el id de WhatsApp del mensaje. Solo Evolution
+    /// por ahora (Cloud/YCloud devuelven null). Null si no se pudo bajar. Portado de ECOREX.
+    /// </summary>
+    Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId,
+        CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -178,6 +186,8 @@ public interface IEvolutionApiClient
     Task<EvolutionSendResult> SendLocationAsync(string baseUrl, string apiKey, string instanceName, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
     /// <summary>Reacciona a un mensaje con un emoji. remoteJid+id identifican el mensaje entrante (fromMe=false).</summary>
     Task<EvolutionSendResult> SendReactionAsync(string baseUrl, string apiKey, string instanceName, string remoteJid, string messageId, string emoji, CancellationToken ct = default);
+    /// <summary>Baja el base64 (+mime) de un media entrante por la clave del mensaje (POST /chat/getBase64FromMediaMessage).</summary>
+    Task<EvolutionMediaResult> GetBase64FromMediaMessageAsync(string baseUrl, string apiKey, string instanceName, string messageKeyId, CancellationToken ct = default);
     Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
 }
 

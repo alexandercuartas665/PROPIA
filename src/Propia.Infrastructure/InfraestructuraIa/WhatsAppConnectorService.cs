@@ -453,6 +453,25 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         return new LineSendResult(result.Ok, result.Error);
     }
 
+    public async Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(externalMessageId)) { return null; }
+        var line = await _db.WhatsAppLines.AsNoTracking().FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return null; }
+
+        // Solo Evolution por ahora: Cloud/YCloud entregan media por URL firmada (no por key); se portara aparte.
+        if (line.Provider != WhatsAppProvider.Evolution) { return null; }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return null; }
+        var (baseUrl, apiKey) = server.Value;
+
+        var media = await _client.GetBase64FromMediaMessageAsync(baseUrl, apiKey, EvoInstance(line), externalMessageId, ct);
+        if (!media.Ok || string.IsNullOrWhiteSpace(media.Base64)) { return null; }
+        var mime = string.IsNullOrWhiteSpace(media.MimeType) ? "image/jpeg" : media.MimeType!;
+        return (mime, media.Base64!);
+    }
+
     // URL + token del webhook segun el maestro. La ruta receptora exige el tenant en el path
     // (/webhooks/evolution/{tenantId}); sin el guid Evolution recibe 404 y los entrantes nunca llegan.
     private async Task<(string? Url, string? Token)> EffectiveWebhookAsync(Guid tenantId, CancellationToken ct)

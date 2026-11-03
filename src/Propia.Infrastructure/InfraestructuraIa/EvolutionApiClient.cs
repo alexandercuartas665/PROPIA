@@ -166,6 +166,30 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         return await PostSendAsync(baseUrl, apiKey, $"/message/sendReaction/{Uri.EscapeDataString(instanceName)}", body, ct);
     }
 
+    public async Task<EvolutionMediaResult> GetBase64FromMediaMessageAsync(string baseUrl, string apiKey, string instanceName, string messageKeyId, CancellationToken ct = default)
+    {
+        // Evolution v2: POST /chat/getBase64FromMediaMessage/{instance} con la clave del mensaje. La respuesta
+        // trae el contenido en base64 + el mimetype. Portado de ECOREX. Solo necesita key.id.
+        var body = new { message = new { key = new { id = messageKeyId } }, convertToMp4 = false };
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/chat/getBase64FromMediaMessage/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode) { return new EvolutionMediaResult(false, null, null, $"HTTP {(int)resp.StatusCode}: {Trim(json)}"); }
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var b64 = root.TryGetProperty("base64", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
+            var mime = root.TryGetProperty("mimetype", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()
+                : (root.TryGetProperty("mimeType", out var m2) && m2.ValueKind == JsonValueKind.String ? m2.GetString() : null);
+            if (string.IsNullOrWhiteSpace(b64)) { return new EvolutionMediaResult(false, null, null, "La respuesta no trajo base64."); }
+            return new EvolutionMediaResult(true, b64, mime, null);
+        }
+        catch (Exception ex)
+        {
+            return new EvolutionMediaResult(false, null, null, ex.Message);
+        }
+    }
+
     // Helper comun para los POST de envio (texto/media/ubicacion/reaccion): mapea el HTTP a EvolutionSendResult.
     private async Task<EvolutionSendResult> PostSendAsync(string baseUrl, string apiKey, string path, object body, CancellationToken ct)
     {

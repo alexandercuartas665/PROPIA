@@ -141,7 +141,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
             .OrderByDescending(m => m.SentAt)
             .Take(MaxTurns)
             .OrderBy(m => m.SentAt)
-            .Select(m => new { m.Direction, m.Body })
+            .Select(m => new { m.Direction, m.Body, m.ExternalId, m.MediaType })
             .ToListAsync(ct);
 
         // Colapsa turnos consecutivos del mismo rol (los LLM esperan alternancia user/model; varios
@@ -157,6 +157,39 @@ public sealed class AgentDispatcher : IAgentDispatcher
             else { turns.Add(new AiChatTurn(role, m.Body)); }
         }
         if (turns.Count == 0) { turns.Add(new AiChatTurn("user", inboundBody)); }
+
+        // Vision (Ola C): si los ultimos mensajes entrantes (el "turno" actual del residente) traen
+        // imagenes, bajamos su contenido de Evolution y las adjuntamos al ultimo turno user para que el
+        // agente las "vea". Solo imagenes por ahora. Best-effort: si falla la bajada, seguimos solo-texto.
+        if (turns.Count > 0 && turns[^1].Role == "user")
+        {
+            const int MaxImagenes = 4;
+            var imagenes = new List<AiInboundImage>();
+            // Run final de entrantes (los mensajes despues del ultimo saliente): el mensaje actual del contacto.
+            foreach (var m in recent.AsEnumerable().Reverse())
+            {
+                if (m.Direction != MessageDirection.Inbound) { break; }
+                if (m.MediaType != MessageMediaType.Image || string.IsNullOrWhiteSpace(m.ExternalId)) { continue; }
+                try
+                {
+                    var img = await _connector.FetchInboundImageAsync(whatsAppLineId.Value, m.ExternalId!, ct);
+                    if (img is not null) { imagenes.Insert(0, new AiInboundImage(img.Value.MimeType, img.Value.Base64)); }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Dispatcher: no se pudo bajar imagen entrante {ExtId} conv {ConvId}", m.ExternalId, conversationId);
+                }
+                if (imagenes.Count >= MaxImagenes) { break; }
+            }
+            if (imagenes.Count > 0)
+            {
+                turns[^1] = turns[^1] with { Images = imagenes };
+                await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
+                    $"Imagenes adjuntas al contexto ({imagenes.Count})",
+                    "El residente envio imagen(es); se adjuntaron al ultimo turno para que el agente las analice (vision).",
+                    null, ct);
+            }
+        }
 
         var totalChars = turns.Sum(t => t.Text?.Length ?? 0);
         await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,

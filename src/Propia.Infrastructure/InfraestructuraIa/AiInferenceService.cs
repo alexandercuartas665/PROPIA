@@ -224,7 +224,7 @@ public sealed class AiInferenceService : IAiInferenceService
         IReadOnlyList<AiChatAttachment> resources, string bearerToken,
         string? contactPhone, Guid? conversationId, CancellationToken ct)
     {
-        var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text)));
+        var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text, Images: t.Images)));
         int inTok = 0, outTok = 0;
         // Bitacora de depuracion: el prompt principal (con herramientas) + una entrada por cada ronda de tools.
         var debug = new List<AiDebugPrompt>();

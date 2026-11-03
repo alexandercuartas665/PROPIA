@@ -167,8 +167,15 @@ public sealed record UpdateAgentPromptRequest(string? Name, string? Rule, string
 
 // ---------- Inferencia / chat ----------
 
-/// <summary>Un turno de la conversacion para inferir. Role: "user" o "model".</summary>
-public sealed record AiChatTurn(string Role, string Text);
+/// <summary>
+/// Imagen ENTRANTE (que envio el residente) adjunta a un turno para que el agente la "vea".
+/// Base64 crudo (sin prefijo data:) + mime. Portado de ECOREX (ingesta multimodal). Solo imagenes
+/// por ahora (audio/pdf en un incremento posterior).
+/// </summary>
+public sealed record AiInboundImage(string MimeType, string Base64);
+
+/// <summary>Un turno de la conversacion para inferir. Role: "user" o "model". Images: imagenes entrantes del turno (solo "user").</summary>
+public sealed record AiChatTurn(string Role, string Text, IReadOnlyList<AiInboundImage>? Images = null);
 
 /// <summary>Recurso adjuntable que el agente decidio entregar.</summary>
 public sealed record AiChatAttachment(string Name, AgentResourceType ResourceType, string? FileUrl, string? FileName, string? Detail);
@@ -203,7 +210,8 @@ public sealed record AiToolMessage(
     string? Text,
     IReadOnlyList<AiToolCall>? ToolCalls = null,
     string? ToolCallId = null,
-    string? ToolName = null);
+    string? ToolName = null,
+    IReadOnlyList<AiInboundImage>? Images = null);
 
 /// <summary>Resultado de una ronda de completado con tools: texto final o tools a ejecutar.</summary>
 public sealed record AiCompletion(
@@ -250,3 +258,5 @@ public sealed record AiQuotaDto(bool HasLimit, int MonthlyLimitCalls, int Monthl
 public sealed record EvolutionPingResult(bool Reached, bool Authorized, int? StatusCode, string Message);
 public sealed record EvolutionInstanceResult(bool Ok, string? QrBase64, string? State, string? Status, string? Error);
 public sealed record EvolutionSendResult(bool Ok, string? Error);
+/// <summary>Resultado de bajar el base64 de un media ENTRANTE de Evolution (getBase64FromMediaMessage).</summary>
+public sealed record EvolutionMediaResult(bool Ok, string? Base64, string? MimeType, string? Error);
