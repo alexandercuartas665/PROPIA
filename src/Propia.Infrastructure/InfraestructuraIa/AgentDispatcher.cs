@@ -158,28 +158,52 @@ public sealed class AgentDispatcher : IAgentDispatcher
         }
         if (turns.Count == 0) { turns.Add(new AiChatTurn("user", inboundBody)); }
 
-        // Vision (Ola C): si los ultimos mensajes entrantes (el "turno" actual del residente) traen
-        // imagenes, bajamos su contenido de Evolution y las adjuntamos al ultimo turno user para que el
-        // agente las "vea". Solo imagenes por ahora. Best-effort: si falla la bajada, seguimos solo-texto.
+        // Entrada multimedia (Ola C): si los ultimos mensajes entrantes (el "turno" actual del residente)
+        // traen media, la procesamos para que el agente la "entienda". Imagenes -> vision (se adjuntan al
+        // turno). Audio -> transcripcion; PDF -> extraccion de texto (ambos se inyectan como TEXTO en el
+        // turno, antes de la inferencia principal, asi funciona igual con o sin tools). Solo Evolution por
+        // ahora. Best-effort: si falla la bajada/transcripcion, seguimos con lo que haya.
         if (turns.Count > 0 && turns[^1].Role == "user")
         {
             const int MaxImagenes = 4;
+            const int MaxTranscripciones = 3;
             var imagenes = new List<AiInboundImage>();
+            var transcripciones = new List<string>();
             // Run final de entrantes (los mensajes despues del ultimo saliente): el mensaje actual del contacto.
             foreach (var m in recent.AsEnumerable().Reverse())
             {
                 if (m.Direction != MessageDirection.Inbound) { break; }
-                if (m.MediaType != MessageMediaType.Image || string.IsNullOrWhiteSpace(m.ExternalId)) { continue; }
+                if (string.IsNullOrWhiteSpace(m.ExternalId)) { continue; }
                 try
                 {
-                    var img = await _connector.FetchInboundImageAsync(whatsAppLineId.Value, m.ExternalId!, ct);
-                    if (img is not null) { imagenes.Insert(0, new AiInboundImage(img.Value.MimeType, img.Value.Base64)); }
+                    if (m.MediaType == MessageMediaType.Image && imagenes.Count < MaxImagenes)
+                    {
+                        var img = await _connector.FetchInboundImageAsync(whatsAppLineId.Value, m.ExternalId!, ct);
+                        if (img is not null) { imagenes.Insert(0, new AiInboundImage(img.Value.MimeType, img.Value.Base64)); }
+                    }
+                    else if (m.MediaType is MessageMediaType.Audio or MessageMediaType.Document && transcripciones.Count < MaxTranscripciones)
+                    {
+                        var media = await _connector.FetchInboundMediaAsync(whatsAppLineId.Value, m.ExternalId!, ct);
+                        if (media is not null)
+                        {
+                            var esAudio = m.MediaType == MessageMediaType.Audio;
+                            var mime = media.Value.MimeType ?? (esAudio ? "audio/ogg" : "application/pdf");
+                            var instruccion = esAudio
+                                ? "Transcribe esta nota de voz en espanol. Devuelve SOLO el texto hablado, sin comentarios ni formato adicional."
+                                : "Extrae el texto de este documento en espanol, conservando los datos clave (nombres, numeros, fechas, montos). Devuelve solo el contenido, de forma clara y ordenada.";
+                            var texto = await _inference.DescribeInboundMediaAsync(binding.AgentId, mime, media.Value.Base64, instruccion, ct);
+                            if (!string.IsNullOrWhiteSpace(texto))
+                            {
+                                var etiqueta = esAudio ? "Nota de voz del residente (transcripcion)" : "Documento que envio el residente (contenido)";
+                                transcripciones.Insert(0, $"[{etiqueta}]:\n{texto!.Trim()}");
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Dispatcher: no se pudo bajar imagen entrante {ExtId} conv {ConvId}", m.ExternalId, conversationId);
+                    _logger.LogWarning(ex, "Dispatcher: no se pudo procesar media entrante {ExtId} ({Kind}) conv {ConvId}", m.ExternalId, m.MediaType, conversationId);
                 }
-                if (imagenes.Count >= MaxImagenes) { break; }
             }
             if (imagenes.Count > 0)
             {
@@ -188,6 +212,16 @@ public sealed class AgentDispatcher : IAgentDispatcher
                     $"Imagenes adjuntas al contexto ({imagenes.Count})",
                     "El residente envio imagen(es); se adjuntaron al ultimo turno para que el agente las analice (vision).",
                     null, ct);
+            }
+            if (transcripciones.Count > 0)
+            {
+                var bloque = string.Join("\n\n", transcripciones);
+                var baseText = turns[^1].Text ?? string.Empty;
+                turns[^1] = turns[^1] with { Text = string.IsNullOrWhiteSpace(baseText) ? bloque : $"{baseText}\n\n{bloque}" };
+                await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
+                    $"Media transcrita al contexto ({transcripciones.Count})",
+                    "El residente envio audio/PDF; se transcribio/extrajo su texto y se inyecto en el turno.",
+                    bloque, ct);
             }
         }
 

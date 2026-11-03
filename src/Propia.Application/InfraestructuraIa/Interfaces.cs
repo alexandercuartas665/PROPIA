@@ -82,6 +82,13 @@ public interface IWhatsAppConnectorService
     /// </summary>
     Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Baja el contenido de CUALQUIER media entrante (imagen/audio/pdf) como base64 + mime (crudo, puede
+    /// venir null). Solo Evolution por ahora (Cloud/YCloud devuelven null). Null si no se pudo bajar.
+    /// </summary>
+    Task<(string? MimeType, string Base64)?> FetchInboundMediaAsync(Guid lineId, string externalMessageId,
+        CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -158,6 +165,14 @@ public interface IAiInferenceService
     /// tenant + permisos). Sin tools o sin token: completado simple de un turno.
     /// </summary>
     Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pre-procesa un MEDIA entrante (audio/pdf) del residente con el proveedor del agente: devuelve
+    /// texto plano (transcripcion de la nota de voz o extraccion del documento) para inyectarlo como
+    /// texto en el turno antes de la inferencia principal. base64 crudo + mime + instruccion en espanol.
+    /// Null si no se pudo (proveedor no soportado, cuota, error). Portado de ECOREX (ingesta multimodal).
+    /// </summary>
+    Task<string?> DescribeInboundMediaAsync(Guid agentId, string mimeType, string base64, string instruction, CancellationToken ct = default);
 }
 
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
@@ -249,4 +264,13 @@ public interface IAiProviderClient
     /// </summary>
     Task<AiChatResult> ExtractFromDocumentAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
         string instruction, byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct = default);
+
+    /// <summary>
+    /// Describe/transcribe un MEDIA (audio, pdf, imagen) mandandolo NATIVO al modelo y devolviendo TEXTO
+    /// plano segun la instruccion (sin JSON schema). Lo usa la ingesta multimodal para transcribir notas
+    /// de voz y extraer texto de PDF entrantes. Hoy soporta Gemini (inline_data). Otros proveedores:
+    /// Ok=false "no soportado". La API key llega descifrada; el media no se persiste ni se loggea aqui.
+    /// </summary>
+    Task<AiChatResult> DescribeMediaAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] mediaBytes, string mimeType, CancellationToken ct = default);
 }

@@ -259,6 +259,82 @@ public sealed class AiProviderClient : IAiProviderClient
         }
     }
 
+    // ---------- Descripcion/transcripcion de media -> TEXTO plano (sin JSON schema) ----------
+    public async Task<AiChatResult> DescribeMediaAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] mediaBytes, string mimeType, CancellationToken ct = default)
+    {
+        try
+        {
+            return provider switch
+            {
+                AiProvider.Gemini => await GeminiDescribe(apiKey, baseUrl, model, instruction, mediaBytes, mimeType, ct),
+                _ => new AiChatResult(false, null, $"El proveedor {provider} no soporta transcripcion/extraccion de media todavia.")
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AiChatResult(false, null, $"No se pudo contactar al proveedor: {ex.Message}");
+        }
+    }
+
+    private async Task<AiChatResult> GeminiDescribe(string apiKey, string? baseUrl, string model, string instruction,
+        byte[] mediaBytes, string mimeType, CancellationToken ct)
+    {
+        var url = $"{Base(baseUrl, "https://generativelanguage.googleapis.com")}/v1beta/models/{model}:generateContent?key={apiKey}";
+        // Gemini quiere el mime base (sin parametros como "; codecs=opus" de las notas de voz de WhatsApp).
+        var mime = mimeType;
+        var semi = mime.IndexOf(';');
+        if (semi > 0) { mime = mime[..semi].Trim(); }
+        if (string.IsNullOrWhiteSpace(mime)) { mime = "application/octet-stream"; }
+        var b64 = Convert.ToBase64String(mediaBytes);
+        var body = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new { inline_data = new { mime_type = mime, data = b64 } },
+                        new { text = instruction }
+                    }
+                }
+            },
+            generationConfig = new { temperature = 0.0 }
+        };
+
+        using var resp = await _http.PostAsync(url, JsonBody(body), ct);
+        var raw = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var snip = raw.Length > 400 ? raw[..400] : raw;
+            return new AiChatResult(false, null, $"Gemini respondio HTTP {(int)resp.StatusCode}. {snip}");
+        }
+
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        string? text = null;
+        if (root.TryGetProperty("candidates", out var cands) && cands.ValueKind == JsonValueKind.Array && cands.GetArrayLength() > 0)
+        {
+            var cand = cands[0];
+            if (cand.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts)
+                && parts.ValueKind == JsonValueKind.Array && parts.GetArrayLength() > 0
+                && parts[0].TryGetProperty("text", out var t))
+                text = t.GetString();
+        }
+        if (string.IsNullOrWhiteSpace(text))
+            return new AiChatResult(false, null, "Gemini no devolvio contenido (posible bloqueo de seguridad o media ilegible).");
+
+        var (inTok, outTok) = (0, 0);
+        if (root.TryGetProperty("usageMetadata", out var um))
+        {
+            inTok = um.TryGetProperty("promptTokenCount", out var p) ? p.GetInt32() : 0;
+            outTok = um.TryGetProperty("candidatesTokenCount", out var c) ? c.GetInt32() : 0;
+        }
+        return new AiChatResult(true, text, null, inTok, outTok);
+    }
+
     private async Task<AiChatResult> GeminiExtract(string apiKey, string? baseUrl, string model, string instruction,
         byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct)
     {

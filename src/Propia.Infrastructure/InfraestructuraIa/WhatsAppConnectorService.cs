@@ -455,6 +455,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
 
     public async Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)
     {
+        var media = await FetchInboundMediaAsync(lineId, externalMessageId, ct);
+        if (media is null) { return null; }
+        var mime = string.IsNullOrWhiteSpace(media.Value.MimeType) ? "image/jpeg" : media.Value.MimeType!;
+        return (mime, media.Value.Base64);
+    }
+
+    public async Task<(string? MimeType, string Base64)?> FetchInboundMediaAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)
+    {
         if (string.IsNullOrWhiteSpace(externalMessageId)) { return null; }
         var line = await _db.WhatsAppLines.AsNoTracking().FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return null; }
@@ -468,8 +476,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
 
         var media = await _client.GetBase64FromMediaMessageAsync(baseUrl, apiKey, EvoInstance(line), externalMessageId, ct);
         if (!media.Ok || string.IsNullOrWhiteSpace(media.Base64)) { return null; }
-        var mime = string.IsNullOrWhiteSpace(media.MimeType) ? "image/jpeg" : media.MimeType!;
-        return (mime, media.Base64!);
+        return (media.MimeType, media.Base64!);
     }
 
     // URL + token del webhook segun el maestro. La ruta receptora exige el tenant en el path
