@@ -1016,15 +1016,17 @@ else
 
                     @* Ola D: Etiquetas sueltas retiradas del modal (van como campos de lista del tablero). *@
 
-                    @* Solicitante: quien pide la tarea (registro del directorio). Por defecto el usuario actual; editable con el selector que busca/crea terceros. *@
+                    @* Solicitante: quien pide la tarea (registro del directorio). La persona elegida se ve como
+                       tarjeta (chip con documento + quitar) del propio SelectorPersona; no se duplica el nombre
+                       en una linea aparte. Si no hay solicitante, por defecto es el usuario actual. *@
                     <div class="tbc-fld">
                         <label>Solicitante</label>
-                        <div class="tbc-solic">
-                            <div class="tb-ava tbc-solic-ava">@Iniciales(d.SolicitanteNombre ?? "?")</div>
-                            <span class="tbc-solic-nm">@(string.IsNullOrWhiteSpace(d.SolicitanteNombre) ? "Tu (usuario actual)" : d.SolicitanteNombre)</span>
-                        </div>
+                        @if (string.IsNullOrWhiteSpace(d.SolicitanteNombre))
+                        {
+                            <div class="tbc-solic-hint">Por defecto: tu (usuario actual). Puedes asignar otro.</div>
+                        }
                         <div class="tbc-solic-sel">
-                            <SelectorPersona Jwt="@_jwt" Seleccionada="_solicitanteSel" SeleccionadaChanged="OnSolicitanteSel" Placeholder="Cambiar solicitante (buscar o crear)..." />
+                            <SelectorPersona Jwt="@_jwt" Seleccionada="_solicitanteSel" SeleccionadaChanged="OnSolicitanteSel" Placeholder="Asignar solicitante (buscar o crear)..." />
                         </div>
                     </div>
 
@@ -1643,7 +1645,8 @@ else
                          OnMover="MoverEstadoTbAsync"
                          OnEliminar="EliminarEstadoTbAsync"
                          OnToggleActivo="ToggleActivoEstadoTbAsync"
-                         Cerrar="() => _estEditorOpen = false" />
+                         Error="@_estEditorErr"
+                         Cerrar="() => { _estEditorOpen = false; _estEditorErr = null; }" />
 
 @* ===================== Editor de ETIQUETAS anclado al chevron de la columna ETIQUETAS =====================
    Fase 1: la lista de etiquetas (con color) se crea/edita aqui, no en el modal Configurar. Exclusivas del tablero. *@
@@ -1782,6 +1785,14 @@ else
                 <div class="ecs-fld">
                     <label>Estado de cierre</label>
                     <span class="ecs-hint">Marca cual(es) estado(s) cierran la tarea: al llegar ahi se pide un motivo de cierre.</span>
+                    @* Error DENTRO del modal (ej. "Debe quedar al menos un estado de cierre"), junto a los toggles. *@
+                    @if (!string.IsNullOrWhiteSpace(_cierreErr))
+                    {
+                        <div class="ecs-cierre-err" role="alert">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                            <span>@_cierreErr</span>
+                        </div>
+                    }
                     <div class="ecs-cierre-estados">
                         @foreach (var estC in _board.Estados)
                         {
@@ -4211,12 +4222,13 @@ else
                 <div class="tb-row-desc">
                     @if (EnEd(t.Id, "descripcion"))
                     {
-                        <textarea class="tb-cell-area" rows="3" @bind="_editVal" @bind:event="oninput" autofocus
+                        <div class="tb-tagpop-bd" @onclick='() => GuardarEd(tarea.Id, "descripcion")'></div>
+                        <textarea class="tb-cell-area" rows="3" style="left:min(@(_edPopX)px, calc(100vw - 356px));top:min(@(_edPopY)px, calc(100vh - 160px))" @bind="_editVal" @bind:event="oninput" autofocus
                                   @onblur='() => GuardarEd(tarea.Id, "descripcion")' @onkeydown='@(e => { if (e.Key == "Escape") CancelarEd(); })'></textarea>
                     }
                     else
                     {
-                        <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "-" : t.Descripcion)</div>
+                        <div class="tb-editable tb-row-desc-prev" title="Click para editar" @onclick='(e) => IniciarEd(e, tarea.Id, "descripcion", tarea.Descripcion)'>@(string.IsNullOrWhiteSpace(t.Descripcion) ? "-" : t.Descripcion)</div>
                     }
                 </div>
             }
@@ -4242,16 +4254,18 @@ else
             @if (_colResp)
             {
                 var resp = tarea.Responsables ?? new List<ResponsableMiniDto>();
-                <div class="tb-row-resp tb-editable" @onclick="() => AbrirAsigDrop(tarea)">
+                <div class="tb-row-resp tb-editable" @onclick="(e) => AbrirAsigDrop(e, tarea)">
                     @if (resp.Count == 0) { <span class="tb-row-resp-empty">Sin asignar</span> }
                     else
                     {
-                        @foreach (var r in resp.Take(3)) { <span class="tb-ava tb-ava-sm" title="@r.Nombre">@Iniciales(r.Nombre)</span> }
-                        @if (resp.Count > 3) { <span class="tb-ava-more">+@(resp.Count - 3)</span> }
+                        var primero = resp[0];
+                        <span class="tb-asig-pill" title="@primero.Nombre"><span class="tb-ava tb-ava-sm">@Iniciales(primero.Nombre)</span><span class="tb-asig-pill-nom">@primero.Nombre</span></span>
+                        @if (resp.Count > 1) { <span class="tb-asig-more" title="@string.Join(", ", resp.Skip(1).Select(r => r.Nombre))">+@(resp.Count - 1)</span> }
                     }
                     @if (_asigDropId == tarea.Id)
                     {
-                        <div class="tb-asig-drop" @onclick:stopPropagation="true">
+                        <div class="tb-tagpop-bd" @onclick="CerrarAsigDrop" @onclick:stopPropagation="true"></div>
+                        <div class="tb-asig-drop" style="left:min(@(_asigX)px, calc(100vw - 250px));top:min(@(_asigY)px, calc(100vh - 290px))" @onclick:stopPropagation="true">
                             @foreach (var u in _personas ?? new List<PersonaMini>())
                             {
                                 var uu = u;
@@ -4372,11 +4386,15 @@ else
             @if (_colOrigen)
             {
                 <div class="tb-row-orig">
-                    @* Origen del modulo emisor (inmutable): PQRSD/Mantenimiento/etc. o "Propia" si se creo a mano. *@
-                    <span class="tb-orig-mod" title="Origen: modulo que emitio la tarea (no editable)"
-                          style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--propia-brand-soft);color:var(--propia-brand-text);white-space:nowrap;">
-                        @OrigenModulo.Etiqueta(t.ModuloOrigenCodigo)
-                    </span>
+                    @* Origen del modulo emisor (inmutable): PQRSD/Mantenimiento/etc. Las tareas creadas a mano
+                       (Origen "Propia") NO muestran chip: es el caso por defecto y no aporta informacion. *@
+                    @if (!string.IsNullOrEmpty(t.ModuloOrigenCodigo))
+                    {
+                        <span class="tb-orig-mod" title="Origen: modulo que emitio la tarea (no editable)"
+                              style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--propia-brand-soft);color:var(--propia-brand-text);white-space:nowrap;">
+                            @OrigenModulo.Etiqueta(t.ModuloOrigenCodigo)
+                        </span>
+                    }
                     <select class="tb-orig-tsel" value="@(t.OrigenTipo ?? "")" @onchange="(e) => CambiarOrigenTipoFila(tarea.Id, e)">
                         <option value="">Sin relacion</option>
                         <option value="inmueble">Inmueble</option>
@@ -4408,7 +4426,8 @@ else
                     {
                         @if (campo.Tipo == TipoCampoTablero.AreaTexto || campo.Tipo == TipoCampoTablero.Texto || campo.Tipo == TipoCampoTablero.Telefono)
                         {
-                            <textarea class="tb-cell-area" rows="3" @bind="_editVal" @bind:event="oninput" autofocus
+                            <div class="tb-tagpop-bd" @onclick="() => GuardarCampoValor(tarea.Id, campo.Id)"></div>
+                            <textarea class="tb-cell-area" rows="3" style="left:min(@(_edPopX)px, calc(100vw - 356px));top:min(@(_edPopY)px, calc(100vh - 160px))" @bind="_editVal" @bind:event="oninput" autofocus
                                       @onblur="() => GuardarCampoValor(tarea.Id, campo.Id)" @onkeydown="@(e => CampoKeydown(e, tarea.Id, campo.Id))"></textarea>
                         }
                         else if (campo.Tipo == TipoCampoTablero.Numero || campo.Tipo == TipoCampoTablero.Moneda)
@@ -4429,7 +4448,7 @@ else
                     }
                     else
                     {
-                        <div class="tb-editable" title="Click para editar" @onclick='() => IniciarEd(tarea.Id, "campo:" + campo.Id, CampoValor(tarea, campo.Id))'>@(string.IsNullOrWhiteSpace(CampoDisplay(t, campo)) ? "-" : CampoDisplay(t, campo))</div>
+                        <div class="tb-editable" title="Click para editar" @onclick='(e) => IniciarEd(e, tarea.Id, "campo:" + campo.Id, CampoValor(tarea, campo.Id))'>@(string.IsNullOrWhiteSpace(CampoDisplay(t, campo)) ? "-" : CampoDisplay(t, campo))</div>
                     }
                 </div>
             }
@@ -4474,6 +4493,10 @@ else
 
     private bool EnEd(Guid id, string campo) => _editKey == id + ":" + campo;
     private void IniciarEd(Guid id, string campo, string? actual) { _editKey = id + ":" + campo; _editVal = actual ?? ""; }
+    // Coords del clic (clientX/Y) para anclar el editor .tb-cell-area como popover position:fixed y que
+    // el contenedor con scroll de la tabla no lo recorte (mismo patron que .tb-etqpop).
+    private int _edPopX, _edPopY;
+    private void IniciarEd(MouseEventArgs e, Guid id, string campo, string? actual) { _edPopX = (int)e.ClientX; _edPopY = (int)e.ClientY; IniciarEd(id, campo, actual); }
     private void CancelarEd() { _editKey = null; _editVal = ""; }
 
     private void PatchLocal(Guid id, Func<TareaListaDto, TareaListaDto> f)
@@ -4569,9 +4592,11 @@ else
 
     // ---- Asignados inline (multi-select desde miembros del tablero) ----
     private Guid? _asigDropId;
+    private int _asigX, _asigY;   // ancla del dropdown de asignados (coords del clic); fixed para no recortarse.
     private HashSet<Guid> _asigSel = new();
-    private async Task AbrirAsigDrop(TareaListaDto t)
+    private async Task AbrirAsigDrop(MouseEventArgs e, TareaListaDto t)
     {
+        _asigX = (int)e.ClientX; _asigY = (int)e.ClientY;
         _asigDropId = t.Id;
         _asigSel = (t.Responsables ?? new List<ResponsableMiniDto>()).Select(r => r.PersonaId).ToHashSet();
         if (_personas is null)
@@ -4841,7 +4866,9 @@ else
             <div class="tb-row-exp"></div>
             <div class="tb-row-tit">
                 <span class="tbl-nf-hint-txt">
-                    <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                    <kbd class="tbl-kbd">Enter</kbd> o clic fuera para guardar la fila
+                    <span class="tbl-nf-hint-sep">&middot;</span>
+                    <kbd class="tbl-kbd">Tab</kbd> entre campos
                     <span class="tbl-nf-hint-sep">&middot;</span>
                     <kbd class="tbl-kbd">Esc</kbd> para cancelar
                 </span>
@@ -5202,13 +5229,14 @@ else
     {
         // PRESERVA el Activo actual del estado (antes mandaba siempre true -> reactivaba al renombrar/colorear).
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(nombre, color, orden, est.Activo));
-        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        if (!resp.IsSuccessStatusCode) { _estEditorErr = await ErrTxtAsync(resp); }
     }
     private async Task ToggleActivoEstadoTbAsync((Guid Id, bool Activo) x)
     {
+        _estEditorErr = null;
         var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
         var r = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}", new ActualizarEstadoRequest(est.Nombre, est.Color, est.Orden, x.Activo));
-        if (!r.IsSuccessStatusCode) { _msg = await ErrTxtAsync(r); _msgClass = "alert-danger"; return; }
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ErrTxtAsync(r); return; }
         await RecargarBoard();
     }
 
@@ -5216,11 +5244,12 @@ else
     // siempre al menos un estado de cierre y uno abierto; si no, devuelve el motivo y se muestra como error.
     private async Task ToggleEstadoCierre(EstadoTareaDto est)
     {
+        _cierreErr = null;
         _busy = true;
         try
         {
             var resp = await Auth().PutAsJsonAsync($"/api/tareas/estados/{est.Id}/terminal", new SetEstadoTerminalRequest(!est.EsTerminal));
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _cierreErr = await ErrTxtAsync(resp); return; }
             await RecargarBoard();
         }
         finally { _busy = false; }
@@ -5229,6 +5258,7 @@ else
 
     private async Task MoverEstadoAsync(int idx, int dir)
     {
+        _estEditorErr = null;
         if (_board is null) return;
         var j = idx + dir;
         if (j < 0 || j >= _board.Estados.Count) return;
@@ -5290,6 +5320,9 @@ else
     private string _editSisLabel = "";
     private TipoCampoTablero? _editSisTipo;
     private bool _editSisReq;
+    // Error de la config de cierre (estado de cierre + motivos) que vive en SeccionExtra del editor del campo
+    // Etapa: se pinta DENTRO de ese modal, no en el banner de pagina detras.
+    private string? _cierreErr;
     // El menu de columna usa claves de orden (descripcion/numero/asignado...); la config/catalogo usa las
     // cortas (desc/cod/resp...). Este mapa las concilia para leer/guardar la fila correcta de columnas-config.
     private static string ClaveSisConfig(string chevKey) => chevKey switch
@@ -5311,6 +5344,7 @@ else
         _editSisLabel = def?.Label ?? label;
         _editSisTipo = def?.Tipo;
         _editSisReq = def?.Fija ?? false;
+        _cierreErr = null;
         // El campo Etapa ("est") muestra en su editor la config de cierre (estado de cierre + motivos):
         // se cargan los motivos del modulo para poder listarlos/editarlos ahi.
         if (clave == "est" && _motivosTareas.Count == 0) await CargarMotivosTareasAsync();
@@ -5319,7 +5353,9 @@ else
     // ---- Fase 1: Estados y Etiquetas se editan desde el chevron de SU columna ("Editar campo"), en un
     //      popover anclado al header (no en el modal Configurar). Reusa la logica de estados/etiquetas. ----
     private bool _estEditorOpen, _etiqEditorOpen, _prioEditorOpen;
-    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorOpen = true; }
+    // Error del editor COMPARTIDO de estados: se pinta DENTRO del popover (slot Error), no en el banner de pagina.
+    private string? _estEditorErr;
+    private async Task AbrirEstadosEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _etiqEditorOpen = false; _prioEditorOpen = false; _estEditorErr = null; _estEditorOpen = true; }
     private async Task AbrirEtiquetasEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _prioEditorOpen = false; _etiqEditorOpen = true; }
     private async Task AbrirPrioridadesEditor() { await PosicionarPopColMenu(); _showCampoEditor = false; _estEditorOpen = false; _etiqEditorOpen = false; _prioEditorOpen = true; }
 
@@ -5414,27 +5450,34 @@ else
     private string _nuevoMotivoTareaClasif = "1";
     private async Task AgregarMotivoTarea()
     {
+        _cierreErr = null;
         if (!int.TryParse(_nuevoMotivoTareaClasif, out var c)) c = 1;
         var resp = await Auth().PostAsJsonAsync("/api/cierre/motivos?modulo=tareas",
             new GuardarMotivoCierreRequest(_nuevoMotivoTareaNombre.Trim(), (ClasificacionCierre)c));
-        if (resp.IsSuccessStatusCode) { _nuevoMotivoTareaNombre = ""; await CargarMotivosTareasAsync(); }
+        if (resp.IsSuccessStatusCode) { _nuevoMotivoTareaNombre = ""; await CargarMotivosTareasAsync(); } else { _cierreErr = await ErrTxtAsync(resp); }
     }
     private async Task RenombrarMotivoTarea(MotivoCierreDto m, ChangeEventArgs e)
     {
+        _cierreErr = null;
         var nombre = e.Value?.ToString() ?? m.Nombre;
         if (string.IsNullOrWhiteSpace(nombre)) return;
-        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(nombre.Trim(), m.Clasificacion));
+        var resp = await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(nombre.Trim(), m.Clasificacion));
+        if (!resp.IsSuccessStatusCode) { _cierreErr = await ErrTxtAsync(resp); return; }
         await CargarMotivosTareasAsync();
     }
     private async Task ClasifMotivoTarea(MotivoCierreDto m, ChangeEventArgs e)
     {
+        _cierreErr = null;
         if (!int.TryParse(e.Value?.ToString(), out var c)) return;
-        await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(m.Nombre, (ClasificacionCierre)c));
+        var resp = await Auth().PutAsJsonAsync($"/api/cierre/motivos/{m.Id}", new GuardarMotivoCierreRequest(m.Nombre, (ClasificacionCierre)c));
+        if (!resp.IsSuccessStatusCode) { _cierreErr = await ErrTxtAsync(resp); return; }
         await CargarMotivosTareasAsync();
     }
     private async Task EliminarMotivoTarea(Guid id)
     {
-        await Auth().DeleteAsync($"/api/cierre/motivos/{id}");
+        _cierreErr = null;
+        var resp = await Auth().DeleteAsync($"/api/cierre/motivos/{id}");
+        if (!resp.IsSuccessStatusCode) { _cierreErr = await ErrTxtAsync(resp); return; }
         await CargarMotivosTareasAsync();
     }
     private int CountEstado(Guid estadoId) => _tareas.Count(t => t.EstadoId == estadoId && t.PadreId == null);
@@ -5454,9 +5497,10 @@ else
     }
     private async Task CfgRemoveEstado(Guid estadoId)
     {
+        _estEditorErr = null;
         if (_board is null) return;
         var resp = await Auth().DeleteAsync($"/api/tareas/estados/{estadoId}");
-        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+        if (!resp.IsSuccessStatusCode) { _estEditorErr = await ErrTxtAsync(resp); return; }
         await RecargarBoard();
     }
 
@@ -5471,23 +5515,26 @@ else
                Activo: e.Activo, PuedeInactivar: true)).ToList();
     private async Task AgregarEstadoTbAsync(string nombre)
     {
+        _estEditorErr = null;
         if (_board is null || string.IsNullOrWhiteSpace(nombre)) return;
         _busy = true;
         try
         {
             var r = await Auth().PostAsJsonAsync("/api/tareas/estados", new CrearEstadoRequest(nombre.Trim(), null, 0, _board.Tablero.Id));
-            if (!r.IsSuccessStatusCode) { _msg = await ErrTxtAsync(r); _msgClass = "alert-danger"; return; }
+            if (!r.IsSuccessStatusCode) { _estEditorErr = await ErrTxtAsync(r); return; }
             await RecargarBoard();
         }
         finally { _busy = false; }
     }
     private async Task RenombrarEstadoTbAsync((Guid Id, string Nombre) x)
     {
+        _estEditorErr = null;
         var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
         await PutEstadoAsync(est, x.Nombre, est.Color, est.Orden); await RecargarBoard();
     }
     private async Task ColorEstadoTbAsync((Guid Id, string Color) x)
     {
+        _estEditorErr = null;
         var est = _board?.Estados.FirstOrDefault(e => e.Id == x.Id); if (est is null) return;
         await PutEstadoAsync(est, est.Nombre, x.Color, est.Orden); await RecargarBoard();
     }
@@ -5943,6 +5990,11 @@ else
                 Copias = (det.Copias ?? new List<TareaListaDto>()).ToList()
             };
             _adjSel = _cardDraft.Adjuntos.FirstOrDefault()?.Id;
+            // Mostrar al solicitante ya guardado como tarjeta (chip) del SelectorPersona, no como linea aparte.
+            // El detalle no trae el documento, asi que el chip muestra solo el nombre (el doc aparece si se reasigna).
+            _solicitanteSel = det.SolicitantePersonaId is { } solId && !string.IsNullOrWhiteSpace(det.SolicitanteNombre)
+                ? new PersonaCandidatoDto(solId, det.SolicitanteNombre!, default, "", true, Array.Empty<string>())
+                : null;
             _pendingFile = null; _pendingFileName = null; _mencionQuery = null; _mencionMatches.Clear();
             _scrollChatPend = true;   // al abrir, el chat arranca abajo (ultimo mensaje visible)
         }
