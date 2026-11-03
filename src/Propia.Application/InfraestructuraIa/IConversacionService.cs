@@ -62,6 +62,14 @@ public interface IConversacionService
     /// <summary>Reinicia el contexto del agente IA para esta conversacion (siguientes mensajes inician sesion limpia).</summary>
     Task<bool> ReiniciarContextoAgenteAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Cierra y OLVIDA la conversacion: reinicia el contexto, BORRA los datos cache que el agente
+    /// recordaba del contacto (nombre, unidad, etc.) y la archiva. A diferencia de "Reiniciar contexto"
+    /// (que conserva el cache para que el bot retome sin arrastrar el hilo), esto hace un olvido total.
+    /// Si el contacto vuelve a escribir, el agente lo atiende desde cero. Portado de ECOREX (cierre).
+    /// </summary>
+    Task<bool> CerrarYOlvidarAsync(Guid id, CancellationToken ct = default);
+
     /// <summary>Bloquea al contacto (lo agrega a la lista negra global del tenant) y archiva la conversacion.</summary>
     Task<bool> BloquearContactoAsync(Guid id, CancellationToken ct = default);
 

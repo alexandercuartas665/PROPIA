@@ -177,6 +177,10 @@ public class IaController : ControllerBase
     public async Task<IActionResult> ReiniciarContextoAgente(Guid id, CancellationToken ct)
         => await _conversaciones.ReiniciarContextoAgenteAsync(id, ct) ? NoContent() : NotFound();
 
+    [HttpPut("conversaciones/{id:guid}/cerrar")]
+    public async Task<IActionResult> CerrarYOlvidarConversacion(Guid id, CancellationToken ct)
+        => await _conversaciones.CerrarYOlvidarAsync(id, ct) ? NoContent() : NotFound();
+
     [HttpPost("conversaciones/{id:guid}/bloquear")]
     public async Task<IActionResult> BloquearContactoConversacion(Guid id, CancellationToken ct)
         => await _conversaciones.BloquearContactoAsync(id, ct) ? NoContent() : NotFound();

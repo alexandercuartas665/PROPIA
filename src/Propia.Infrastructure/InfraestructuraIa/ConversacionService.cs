@@ -162,6 +162,21 @@ public sealed class ConversacionService : IConversacionService
         return true;
     }
 
+    public async Task<bool> CerrarYOlvidarAsync(Guid id, CancellationToken ct = default)
+    {
+        var conv = await _db.Conversations.FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (conv is null) return false;
+        var now = DateTimeOffset.UtcNow;
+        // Olvido total: reinicio de contexto + borrado del cache del contacto (la sesion de cache es
+        // el conversationId) + archivado. Si vuelve a escribir, el agente arranca sin memoria previa.
+        conv.AgentContextResetAt = now;
+        conv.IaPausadaAt = null;
+        conv.ArchivedAt = now;
+        await _db.AiAgentCacheValues.Where(v => v.SessionId == id).ExecuteDeleteAsync(ct);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task<bool> BloquearContactoAsync(Guid id, CancellationToken ct = default)
     {
         var conv = await _db.Conversations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
