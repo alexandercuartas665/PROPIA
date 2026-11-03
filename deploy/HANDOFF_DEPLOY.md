@@ -1,6 +1,32 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.262 (Web) + 0.0.215 (API)** (sigue a 0.0.260, 2026-10-29). **1 MIGRACION NUEVA
+> **VERSION A DESPLEGAR = 0.0.274 (Web)** (sigue a 0.0.273, 2026-11-03). **SOLO CODIGO FRONTEND, SIN MIGRACION,
+> SIN CONFIG. API SIN CAMBIOS (diff de Api/Infrastructure/Domain/Application vacio). Redeployar SOLO Web.**
+> Cambios de esta tanda (todos UI; commits 454b09de, 63b87516, 05f3b234 + bump):
+> - **Mi Copropiedad -> Identidad:** la seccion pasa a un **CARNET a 2 columnas** (resumen a la izquierda +
+>   datos en lista label/valor con hairline, por secciones). Elimina la grilla `.mc-readgrid` que mostraba la
+>   banda gris en filas incompletas; vacios -> "—". CSS `.mcv2-*` por tokens `--propia-*` (ok en claro y oscuro).
+>   Ruta: `/configuracion-copropiedad` (pestana General). Bump `mi-copropiedad.css ?v=6`.
+> - **Tareas (vista tabla):** el editor inline de **Descripcion** y el dropdown de **Asignado** ya NO se recortan
+>   al abrirse en la ultima fila (pasan a `position:fixed` anclado al clic, patron `.tb-etqpop`). Asignado muestra
+>   una **pildora con el nombre** (antes solo el circulo). Ayuda del alta inline corregida ("Enter o clic fuera
+>   para guardar; Tab entre campos; Esc cancelar"). Bump `tareas.css ?v=58`.
+> - **Editor de estados (PQRSD / Contratos / Tareas):** los mensajes de validacion/rechazo salen **dentro del
+>   modal** (antes en el banner de pagina, detras del modal). Contratos ademas lee el error del API al
+>   eliminar/mover etapa.
+> - **SelectorPersona:** oculta la linea de documento cuando esta vacia.
+>
+> **Como desplegar:** redeploy de **Web** (Railway). **NO** ejecutar migraciones (no hay). **NO** tocar
+> config/env. El `?v` de los CSS ya esta bumpeado, no hace falta purgar cache manualmente.
+> **Rollback:** redeploy del artefacto previo (0.0.273); **no toca BD**, es seguro.
+> **Verificado** E2E en dev (demo "Conjunto Altos del Bosque" + "Edificio Portal del Sol"), claro y oscuro,
+> responsive; `dotnet build` 0 errores.
+>
+> _Nota de gap: las versiones 0.0.263-0.0.273 (olas de "color por copropiedad" en campos-lista: Ola 2b/2c/3/3b/3c,
+> todas frontend) ya estan en `main` pero NO quedaron documentadas en este handoff por las sesiones del equipo.
+> Este bloque 0.0.274 reanuda el registro desde el estado actual de `main`._
+>
+> **VERSION PREVIA = 0.0.262 (Web) + 0.0.215 (API)** (sigue a 0.0.260, 2026-10-29). **1 MIGRACION NUEVA
 > (ADITIVA), SIN CONFIG. Redeployar API y Web.** **PQRSD: color por copropiedad en estado/tipo/categoria (Ola 1).**
 > - **0.0.261 (Web, sin migracion):** PQRSD·**estado** -> la celda ETAPA de la tabla ahora se pinta con el color
 >   del estado (igual que el dot de la columna del Kanban); y "Editar campo" de estado/tipo/categoria muestra el
