@@ -175,6 +175,26 @@ public interface IAiInferenceService
     Task<string?> DescribeInboundMediaAsync(Guid agentId, string mimeType, string base64, string instruction, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Reactivacion/seguimiento: envia mensajes automaticos a conversaciones inactivas segun una secuencia
+/// de pasos configurada por agente. La corrida la dispara un job en background (por tenant). Portado de ECOREX.
+/// </summary>
+public interface IAgentReactivacionService
+{
+    /// <summary>Lee la config de reactivacion del agente (vacia si no tiene).</summary>
+    Task<AgentReactivacionConfig> GetConfigAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Guarda la config de reactivacion del agente (config vacia -> limpia el campo).</summary>
+    Task<bool> SaveConfigAsync(Guid agentId, AgentReactivacionConfig config, CancellationToken ct = default);
+
+    /// <summary>
+    /// Corre la reactivacion para el TENANT ACTUAL (debe estar fijado en el contexto): barre los agentes
+    /// con reactivacion, sus lineas conectadas y las conversaciones activas, y envia el paso que corresponda.
+    /// Devuelve cuantos mensajes se enviaron. La invoca el job en background por cada tenant.
+    /// </summary>
+    Task<int> RunTenantAsync(CancellationToken ct = default);
+}
+
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
 public interface IAiUsageService
 {

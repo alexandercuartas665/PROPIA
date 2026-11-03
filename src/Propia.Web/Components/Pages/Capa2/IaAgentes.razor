@@ -391,6 +391,70 @@ else
                         }
                     </div>
 
+                    @* ----- Reactivacion / seguimiento automatico (Ola G) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleReactivacion">
+                            <span class="ag-accordion-chev @(_reactivacionOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Reactivacion</span>
+                            <span class="ag-accordion-count">@_reactSteps.Count(s => s.Habilitado && !string.IsNullOrWhiteSpace(s.Mensaje))</span>
+                            <span class="ag-acc-status" style="@(_reactHabilitada ? "color:#1f8a4c;" : "")">@(_reactHabilitada ? "Activa" : "Inactiva")</span>
+                        </button>
+                        @if (_reactivacionOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                @if (_editId is null)
+                                {
+                                    <div class="ag-acc-help">Guarda primero el agente con "Crear agente" para configurar la reactivacion.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-acc-help">Si el contacto deja de responder, el agente le reenvia un mensaje de seguimiento tras las horas que definas (contadas desde el <strong>ultimo mensaje del contacto</strong>). Cada paso se envia una sola vez; si el contacto responde, la secuencia se reinicia. No reactiva numeros en lista negra ni conversaciones con atencion humana en curso. En lineas oficiales (Cloud/YCloud) solo se envia dentro de la ventana de 24h de WhatsApp.</div>
+                                    <label class="ag-switch-row">
+                                        <span class="ag-switch"><input type="checkbox" checked="@_reactHabilitada" @onchange="@(e => _reactHabilitada = (bool)e.Value!)" disabled="@_reactivacionBusy" /><span class="ag-slider"></span></span>
+                                        <span>@(_reactHabilitada ? "Reactivacion activada" : "Reactivacion desactivada")</span>
+                                    </label>
+
+                                    <div class="mt-2">
+                                        @if (_reactSteps.Count == 0)
+                                        {
+                                            <div class="text-muted small">Sin pasos. Agrega al menos uno con el mensaje a enviar.</div>
+                                        }
+                                        else
+                                        {
+                                            @for (int i = 0; i < _reactSteps.Count; i++)
+                                            {
+                                                var paso = _reactSteps[i];
+                                                var num = i + 1;
+                                                <div style="border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:8px;margin-bottom:8px;">
+                                                    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                                                        <span class="ag-accordion-count">Paso @num</span>
+                                                        <span class="small text-muted">a las</span>
+                                                        <input type="number" class="form-control form-control-sm" style="width:80px;" min="0" max="2160" @bind="paso.OffsetHoras" disabled="@_reactivacionBusy" />
+                                                        <span class="small text-muted">horas de inactividad</span>
+                                                        <label class="ag-switch-row ms-auto mb-0" style="gap:6px;">
+                                                            <span class="ag-switch"><input type="checkbox" checked="@paso.Habilitado" @onchange="@(e => paso.Habilitado = (bool)e.Value!)" disabled="@_reactivacionBusy" /><span class="ag-slider"></span></span>
+                                                            <span class="small">@(paso.Habilitado ? "On" : "Off")</span>
+                                                        </label>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarPasoReact(paso)" disabled="@_reactivacionBusy" title="Quitar paso">&times;</button>
+                                                    </div>
+                                                    <textarea class="form-control form-control-sm" rows="2" @bind="paso.Mensaje" placeholder="Mensaje de seguimiento (texto libre)" disabled="@_reactivacionBusy"></textarea>
+                                                </div>
+                                            }
+                                        }
+                                        <button type="button" class="btn btn-sm btn-outline-dark mt-2" @onclick="AgregarPasoReact" disabled="@_reactivacionBusy">+ Agregar paso</button>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-3">
+                                        <button type="button" class="btn btn-sm btn-dark" @onclick="GuardarReactivacionAsync" disabled="@_reactivacionBusy">@(_reactivacionBusy ? "Guardando..." : "Guardar secuencia")</button>
+                                        @if (_reactSaved) { <span class="small" style="color:#1f8a4c;">Guardado</span> }
+                                        @if (_reactError is not null) { <span class="small text-danger">@_reactError</span> }
+                                    </div>
+                                    <div class="text-muted" style="font-size:11.5px;margin-top:8px;">El envio automatico lo hace un proceso en segundo plano (cada ~15 min).</div>
+                                }
+                            </div>
+                        }
+                    </div>
+
                     @* ----- Historial de versiones (red de seguridad) ----- *@
                     <div class="ag-accordion mt-2">
                         <button type="button" class="ag-accordion-head" @onclick="ToggleVersionHistory">
@@ -957,6 +1021,7 @@ else
         _bindings = new(); _bindingsError = null; _versions = new();
         _bindingsOpen = false; _reactionsOpen = false; _versionsOpen = false;
         _cacheFields = new(); _cacheValues = new(); _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
+        _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
         _debugLog.Clear(); _debugOpen = false;
         _showEditor = true;
     }
@@ -967,6 +1032,7 @@ else
         _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
         _debugLog.Clear(); _debugOpen = false;
         _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
+        _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
         _showEditor = true;
         _editId = id;
         await CargarDetalleAsync(id);
@@ -1344,6 +1410,75 @@ else
     private const int MaxVersionsShown = 5;
     private List<AiAgentPromptVersionDto> _versions = new();
     private AiAgentPromptVersionDto? _versionPendingRestore;
+
+    // ----- Reactivacion / seguimiento automatico (Ola G) -----
+    private sealed class ReactStepForm
+    {
+        public int OffsetHoras { get; set; } = 24;
+        public string Mensaje { get; set; } = "";
+        public bool Habilitado { get; set; } = true;
+    }
+    private bool _reactivacionOpen;
+    private bool _reactivacionLoaded;
+    private bool _reactivacionBusy;
+    private bool _reactHabilitada;
+    private bool _reactSaved;
+    private string? _reactError;
+    private List<ReactStepForm> _reactSteps = new();
+
+    private async Task ToggleReactivacion()
+    {
+        _reactivacionOpen = !_reactivacionOpen;
+        _reactSaved = false;
+        if (_reactivacionOpen && !_reactivacionLoaded && _editId is not null)
+            await ReloadReactivacionAsync();
+    }
+
+    private async Task ReloadReactivacionAsync()
+    {
+        if (_editId is null) return;
+        _reactError = null;
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<AgentReactivacionConfig>($"/api/ia/agentes/{_editId}/reactivacion");
+            _reactHabilitada = cfg?.Habilitada ?? false;
+            _reactSteps = (cfg?.Pasos ?? new List<AgentReactivacionPaso>())
+                .Select(p => new ReactStepForm { OffsetHoras = p.OffsetHoras, Mensaje = p.MensajeTexto ?? "", Habilitado = p.Habilitado })
+                .ToList();
+            _reactivacionLoaded = true;
+        }
+        catch (Exception ex) { _reactError = ex.Message; }
+    }
+
+    private void AgregarPasoReact()
+    {
+        var ultima = _reactSteps.Count > 0 ? _reactSteps[^1].OffsetHoras : 0;
+        _reactSteps.Add(new ReactStepForm { OffsetHoras = ultima + 24, Mensaje = "", Habilitado = true });
+        _reactSaved = false;
+    }
+
+    private void QuitarPasoReact(ReactStepForm p) { _reactSteps.Remove(p); _reactSaved = false; }
+
+    private async Task GuardarReactivacionAsync()
+    {
+        if (_editId is null) return;
+        _reactivacionBusy = true; _reactError = null; _reactSaved = false;
+        try
+        {
+            var cfg = new AgentReactivacionConfig(
+                _reactHabilitada,
+                _reactSteps.Select(s => new AgentReactivacionPaso(
+                    Math.Max(0, s.OffsetHoras),
+                    string.IsNullOrWhiteSpace(s.Mensaje) ? null : s.Mensaje.Trim(),
+                    s.Habilitado)).ToList());
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}/reactivacion", cfg);
+            if (!resp.IsSuccessStatusCode) { _reactError = $"HTTP {(int)resp.StatusCode}"; return; }
+            _reactSaved = true;
+            await ReloadReactivacionAsync();
+        }
+        catch (Exception ex) { _reactError = ex.Message; }
+        finally { _reactivacionBusy = false; }
+    }
 
     private List<string> ReactionEmojiList() =>
         string.IsNullOrWhiteSpace(_form.ReactionEmojis)

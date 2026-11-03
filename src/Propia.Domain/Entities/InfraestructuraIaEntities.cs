@@ -89,6 +89,13 @@ public class Conversation : TenantEntity
     /// </summary>
     public DateTimeOffset? IaPausadaAt { get; set; }
 
+    /// <summary>Reactivacion: indice del PROXIMO paso de la secuencia a enviar (0 = ninguno enviado aun).
+    /// Se reinicia a 0 cuando el contacto responde despues de nuestro ultimo seguimiento. Portado de ECOREX.</summary>
+    public int ReactivacionUltimoPaso { get; set; }
+
+    /// <summary>Reactivacion: cuando se envio (u omitio) el ultimo paso de seguimiento. Null = nunca.</summary>
+    public DateTimeOffset? ReactivacionUltimoEnvioAt { get; set; }
+
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
 
@@ -178,6 +185,13 @@ public class AiAgent : TenantEntity
     /// Los demas turnos van como texto normal. Requiere que el tenant tenga LogoUrl/FotoFachadaUrl.
     /// </summary>
     public bool SaludarConLogo { get; set; }
+
+    /// <summary>
+    /// Configuracion de REACTIVACION/seguimiento (JSON AgentReactivacionConfig): secuencia de pasos
+    /// que, tras N horas de inactividad del contacto, envian un mensaje de seguimiento. Null = sin
+    /// reactivacion. Lo ejecuta un job en background. Portado de ECOREX.
+    /// </summary>
+    public string? ReactivacionJson { get; set; }
 
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();

@@ -30,6 +30,7 @@ public class IaController : ControllerBase
     private readonly IAgentRunLogService _bitacora;
     private readonly IAutomationService _automations;
     private readonly IAsistenteCamposService _asistente;
+    private readonly IAgentReactivacionService _reactivacion;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -44,7 +45,8 @@ public class IaController : ControllerBase
         IConversacionService conversaciones,
         IAgentRunLogService bitacora,
         IAutomationService automations,
-        IAsistenteCamposService asistente)
+        IAsistenteCamposService asistente,
+        IAgentReactivacionService reactivacion)
     {
         _lines = lines;
         _connector = connector;
@@ -59,6 +61,7 @@ public class IaController : ControllerBase
         _bitacora = bitacora;
         _automations = automations;
         _asistente = asistente;
+        _reactivacion = reactivacion;
     }
 
     // ---------- Automatizaciones (Infraestructura IA) ----------
@@ -457,6 +460,17 @@ public class IaController : ControllerBase
     [HttpPost("agentes/{id:guid}/describir-media")]
     public async Task<IActionResult> DescribirMedia(Guid id, [FromBody] DescribirMediaRequest req, CancellationToken ct)
         => Ok(new { text = await _inference.DescribeInboundMediaAsync(id, req.Mime, req.Base64, req.Instruction, ct) });
+
+    // ---------- Reactivacion / seguimiento automatico (Ola G) ----------
+    /// <summary>Lee la secuencia de reactivacion configurada del agente (vacia si no tiene).</summary>
+    [HttpGet("agentes/{id:guid}/reactivacion")]
+    public async Task<IActionResult> GetReactivacion(Guid id, CancellationToken ct)
+        => Ok(await _reactivacion.GetConfigAsync(id, ct));
+
+    /// <summary>Guarda la secuencia de reactivacion del agente (config deshabilitada/vacia limpia el campo).</summary>
+    [HttpPut("agentes/{id:guid}/reactivacion")]
+    public async Task<IActionResult> GuardarReactivacion(Guid id, [FromBody] AgentReactivacionConfig config, CancellationToken ct)
+        => await _reactivacion.SaveConfigAsync(id, config, ct) ? NoContent() : NotFound();
 
     // ---------- Auxiliar Administrativo: rellenar/completar campos con IA ----------
     /// <summary>Genera el contenido de un campo (condiciones de uso, descripciones, etc.) con el

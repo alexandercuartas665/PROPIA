@@ -132,6 +132,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
@@ -302,6 +303,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ProgramacionTareasJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.AutomacionesJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.ReactivacionAgenteJob>();  // Ola G: seguimiento de inactivos
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ContratosVencimientoJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PurgaRegistrosNoConfirmadosJob>();  // S-04b
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MantenimientoPreventivoJob>();  // M-01: preventivo 2.11

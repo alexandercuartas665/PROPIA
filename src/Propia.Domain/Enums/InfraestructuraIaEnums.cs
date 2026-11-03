@@ -107,5 +107,7 @@ public enum AiAgentRunLogKind
     /// <summary>Nota informativa del proceso (skip por lista negra, contexto enviado, etc.).</summary>
     Info = 4,
     /// <summary>Error durante la atencion.</summary>
-    Error = 5
+    Error = 5,
+    /// <summary>Mensaje de reactivacion/seguimiento enviado automaticamente a una conversacion inactiva.</summary>
+    Reactivacion = 6
 }
