@@ -104,6 +104,32 @@ internal sealed class WhatsAppCloudClient : IWhatsAppCloudClient
         return SendMessageAsync(credentials, payload, ct);
     }
 
+    public Task<WhatsAppCloudSendResult> SendLocationAsync(WhatsAppCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"] = "individual",
+            ["to"] = toPhone,
+            ["type"] = "location",
+            ["location"] = new { latitude, longitude, name = name ?? string.Empty, address = address ?? string.Empty }
+        };
+        return SendMessageAsync(credentials, payload, ct);
+    }
+
+    public Task<WhatsAppCloudSendResult> SendReactionAsync(WhatsAppCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"] = "individual",
+            ["to"] = toPhone,
+            ["type"] = "reaction",
+            ["reaction"] = new { message_id = messageId, emoji }
+        };
+        return SendMessageAsync(credentials, payload, ct);
+    }
+
     private async Task<WhatsAppCloudSendResult> SendMessageAsync(WhatsAppCloudCredentials credentials, object payload, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{GraphBase}/{credentials.PhoneNumberId}/messages");

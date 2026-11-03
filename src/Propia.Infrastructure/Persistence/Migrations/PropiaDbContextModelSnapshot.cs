@@ -20171,6 +20171,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
 
+                    b.Property<string>("YCloudApiKeyEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("y_cloud_api_key_encrypted");
+
+                    b.Property<string>("YCloudFromNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("y_cloud_from_number");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId", "InstanceName")

@@ -18,7 +18,8 @@ public sealed record WhatsAppLineDto(
     DateTimeOffset? LastConnectedAt,
     DateTimeOffset? LastStatusAt,
     WhatsAppProvider Provider = WhatsAppProvider.Evolution,
-    string? CloudPhoneNumberId = null);
+    string? CloudPhoneNumberId = null,
+    string? YCloudFromNumber = null);
 
 public sealed record CreateWhatsAppLineRequest(
     string InstanceName,
@@ -27,7 +28,10 @@ public sealed record CreateWhatsAppLineRequest(
     string? CloudPhoneNumberId = null,
     string? CloudBusinessAccountId = null,
     string? CloudAccessToken = null,
-    string? CloudWebhookVerifyToken = null);
+    string? CloudWebhookVerifyToken = null,
+    // YCloud (Provider == YCloud): API key de la cuenta + numero remitente registrado.
+    string? YCloudApiKey = null,
+    string? YCloudFromNumber = null);
 
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);
@@ -39,6 +43,12 @@ public sealed record WhatsAppCloudCredentials(string PhoneNumberId, string Acces
 public sealed record WhatsAppCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
 public sealed record WhatsAppCloudSendResult(bool Ok, string? ExternalId, string? Error);
 public enum WhatsAppCloudMediaKind { Image, Video, Audio, Document }
+
+// ---------- YCloud (BSP oficial, API REST api.ycloud.com/v2) ----------
+/// <summary>Credenciales YCloud de una linea: API key (descifrada) + numero remitente "from" (E.164).</summary>
+public sealed record YCloudCredentials(string ApiKey, string FromNumber);
+public sealed record YCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
+public sealed record YCloudSendResult(bool Ok, string? ExternalId, string? Error);
 
 // ---------- Agentes de IA ----------
 

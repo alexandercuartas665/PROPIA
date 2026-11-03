@@ -17,12 +17,14 @@ public enum WhatsAppLineStatus
 
 /// <summary>
 /// Proveedor de una linea WhatsApp. Evolution = API no oficial por QR (servidor maestro).
-/// Cloud = WhatsApp Cloud API oficial de Meta (token + phone number id). Portado de CUBOT.travels.
+/// Cloud = WhatsApp Cloud API oficial de Meta (token + phone number id). YCloud = BSP oficial
+/// YCloud (API key + numero remitente, API REST api.ycloud.com). Portado de CUBOT.travels.
 /// </summary>
 public enum WhatsAppProvider
 {
     Evolution = 1,
-    Cloud = 2
+    Cloud = 2,
+    YCloud = 3
 }
 
 /// <summary>Direccion de un mensaje de chat. Portado de CUBOT.travels.</summary>

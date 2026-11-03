@@ -47,6 +47,13 @@ public class WhatsAppLine : TenantEntity
 
     /// <summary>Verify token del webhook de Meta (cifrado). Usado en el handshake GET de /webhooks/meta.</summary>
     public string? CloudWebhookVerifyTokenEncrypted { get; set; }
+
+    // === Credenciales YCloud (solo cuando Provider == YCloud) =================
+    /// <summary>API key de la cuenta YCloud, cifrada con DataProtection (ISecretProtector).</summary>
+    public string? YCloudApiKeyEncrypted { get; set; }
+
+    /// <summary>Numero remitente de WhatsApp registrado en YCloud (E.164, el "from" de los envios).</summary>
+    public string? YCloudFromNumber { get; set; }
 }
 
 /// <summary>

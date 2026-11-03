@@ -138,6 +138,50 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         }
     }
 
+    public async Task<EvolutionSendResult> SendMediaTypedAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediatype, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default)
+    {
+        // Evolution v2 /message/sendMedia acepta 'media' como URL publica o base64. mediatype: image/video/audio/document.
+        // El audio por sendMedia va como nota de audio; el caption no aplica a audio.
+        var body = new Dictionary<string, object?>
+        {
+            ["number"] = phone,
+            ["mediatype"] = mediatype,
+            ["media"] = mediaUrl
+        };
+        if (!string.IsNullOrWhiteSpace(caption) && mediatype != "audio") { body["caption"] = caption; }
+        if (mediatype == "document" && !string.IsNullOrWhiteSpace(fileName)) { body["fileName"] = fileName; }
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendMedia/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    public async Task<EvolutionSendResult> SendLocationAsync(string baseUrl, string apiKey, string instanceName, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default)
+    {
+        var body = new { number = phone, name = name ?? string.Empty, address = address ?? string.Empty, latitude, longitude };
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendLocation/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    public async Task<EvolutionSendResult> SendReactionAsync(string baseUrl, string apiKey, string instanceName, string remoteJid, string messageId, string emoji, CancellationToken ct = default)
+    {
+        // Reaccionamos a un mensaje ENTRANTE del contacto: fromMe=false. reaction="" quita la reaccion.
+        var body = new { key = new { remoteJid, fromMe = false, id = messageId }, reaction = emoji };
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendReaction/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    // Helper comun para los POST de envio (texto/media/ubicacion/reaccion): mapea el HTTP a EvolutionSendResult.
+    private async Task<EvolutionSendResult> PostSendAsync(string baseUrl, string apiKey, string path, object body, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Post, baseUrl, path, apiKey, JsonContent.Create(body), ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
+        }
+        catch (Exception ex)
+        {
+            return new EvolutionSendResult(false, ex.Message);
+        }
+    }
+
     public async Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default)
     {
         var body = new

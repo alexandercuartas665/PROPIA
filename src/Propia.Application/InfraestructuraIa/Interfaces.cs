@@ -55,6 +55,25 @@ public interface IWhatsAppConnectorService
     /// </summary>
     Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
         IReadOnlyList<string> bodyParams, string fallbackText, CancellationToken ct = default);
+
+    /// <summary>
+    /// Envia un ADJUNTO binario (imagen/video/audio/pdf) por URL publica desde la linea, con el tipo
+    /// correcto segun el recurso (router Evolution/Cloud/YCloud). Lo usa el agente al entregar recursos
+    /// [[enviar: X]] en el chat real.
+    /// </summary>
+    Task<LineSendResult> SendAttachmentAsync(Guid lineId, string phone, AgentResourceType kind, string mediaUrl,
+        string? caption, string? fileName, CancellationToken ct = default);
+
+    /// <summary>Envia una UBICACION (lat/long) desde la linea (router Evolution/Cloud/YCloud).</summary>
+    Task<LineSendResult> SendLocationAsync(Guid lineId, string phone, double latitude, double longitude,
+        string? name, string? address, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reacciona (emoji) a un mensaje ENTRANTE del contacto. <paramref name="externalMessageId"/> es el id
+    /// de WhatsApp del mensaje; un emoji vacio quita la reaccion. Router Evolution/Cloud/YCloud.
+    /// </summary>
+    Task<LineSendResult> SendReactionAsync(Guid lineId, string phone, string externalMessageId, string emoji,
+        CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -153,6 +172,12 @@ public interface IEvolutionApiClient
     Task<bool> DeleteInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
     Task<EvolutionSendResult> SendTextAsync(string baseUrl, string apiKey, string instanceName, string phone, string text, CancellationToken ct = default);
     Task<EvolutionSendResult> SendMediaAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediaUrl, string? caption, CancellationToken ct = default);
+    /// <summary>Envia un adjunto por URL con tipo explicito (image/video/audio/document). fileName da titulo al documento.</summary>
+    Task<EvolutionSendResult> SendMediaTypedAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediatype, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
+    /// <summary>Envia una ubicacion (lat/long) por la instancia.</summary>
+    Task<EvolutionSendResult> SendLocationAsync(string baseUrl, string apiKey, string instanceName, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje con un emoji. remoteJid+id identifican el mensaje entrante (fromMe=false).</summary>
+    Task<EvolutionSendResult> SendReactionAsync(string baseUrl, string apiKey, string instanceName, string remoteJid, string messageId, string emoji, CancellationToken ct = default);
     Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
 }
 
@@ -168,6 +193,27 @@ public interface IWhatsAppCloudClient
     Task<WhatsAppCloudSendResult> SendMediaAsync(WhatsAppCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
     /// <summary>Envia una plantilla (template) aprobada de Meta. bodyParams son los valores {{1}},{{2}}... del cuerpo.</summary>
     Task<WhatsAppCloudSendResult> SendTemplateAsync(WhatsAppCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default);
+    Task<WhatsAppCloudSendResult> SendLocationAsync(WhatsAppCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje (type=reaction). messageId es el wamid del entrante; emoji vacio quita la reaccion.</summary>
+    Task<WhatsAppCloudSendResult> SendReactionAsync(WhatsAppCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Cliente HTTP del BSP oficial YCloud (REST api.ycloud.com/v2). Las credenciales (API key +
+/// numero remitente) se entregan por llamada; el cliente NO conoce la entidad ni el ISecretProtector.
+/// La API key va en el header "X-API-Key". Espeja a IWhatsAppCloudClient (Meta).
+/// </summary>
+public interface IYCloudApiClient
+{
+    /// <summary>Valida la API key y que el numero remitente exista en la cuenta YCloud.</summary>
+    Task<YCloudCheckResult> CheckAsync(YCloudCredentials credentials, CancellationToken ct = default);
+    Task<YCloudSendResult> SendTextAsync(YCloudCredentials credentials, string toPhone, string text, CancellationToken ct = default);
+    Task<YCloudSendResult> SendMediaAsync(YCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
+    /// <summary>Envia una plantilla aprobada. bodyParams son los valores {{1}},{{2}}... del cuerpo.</summary>
+    Task<YCloudSendResult> SendTemplateAsync(YCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default);
+    Task<YCloudSendResult> SendLocationAsync(YCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje (type=reaction). messageId es el wamid del entrante; emoji vacio quita la reaccion.</summary>
+    Task<YCloudSendResult> SendReactionAsync(YCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default);
 }
 
 /// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>

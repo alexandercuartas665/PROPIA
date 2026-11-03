@@ -81,11 +81,13 @@ public sealed class AgentDispatcher : IAgentDispatcher
             return;
         }
 
-        // 2) Agente activo (en produccion). Si esta apagado, silencio total (coherente con la UI).
-        var agentActive = await _db.AiAgents.AsNoTracking()
-            .Where(a => a.Id == binding.AgentId).Select(a => a.IsActive)
+        // 2) Config del agente en una sola consulta: activo (en produccion), reacciones y saludo con logo.
+        // Si esta apagado, silencio total (coherente con la UI).
+        var agent = await _db.AiAgents.AsNoTracking()
+            .Where(a => a.Id == binding.AgentId)
+            .Select(a => new { a.IsActive, a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis, a.SaludarConLogo })
             .FirstOrDefaultAsync(ct);
-        if (!agentActive)
+        if (agent is null || !agent.IsActive)
         {
             _logger.LogInformation("Dispatcher: skip conv {ConvId} (agente {AgentId} apagado)", conversationId, binding.AgentId);
             return;
@@ -118,6 +120,15 @@ public sealed class AgentDispatcher : IAgentDispatcher
         // Bitacora: el mensaje recibido abre la ventana de la conversacion en /ia/bitacora.
         await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Inbound,
             "Mensaje recibido", inboundBody, null, ct);
+
+        // Reacciones automaticas (emoji) ANTES de llamar al LLM: cero tokens. Reacciona a ~N de cada M
+        // mensajes del contacto con un emoji al azar. Independiente del modo sugerencia. Portado de
+        // ECOREX (AgentConversationService.MaybeReactAsync).
+        if (agent.ReactionsEnabled)
+        {
+            await MaybeReactAsync(tenantId, conversationId, whatsAppLineId.Value, conv.ContactPhone, binding.AgentId,
+                agent.ReactionRatioN, agent.ReactionRatioM, agent.ReactionEmojis, ct);
+        }
 
         // 4) Reconstruye contexto: ultimos N turnos despues del reinicio de contexto, excluyendo
         // mensajes fallidos del bot y placeholders. Inbound -> user, Outbound -> model.
@@ -196,10 +207,10 @@ public sealed class AgentDispatcher : IAgentDispatcher
         }
 
         // Texto a enviar: el texto del LLM + el detalle de los recursos de tipo Texto que el agente
-        // decidio entregar ([[enviar: X]]). Los adjuntos binarios (imagen/pdf/audio) no se envian en
-        // esta fase (el connector de PROPIA solo hace texto); quedan anotados en la bitacora.
+        // decidio entregar ([[enviar: X]]). Los adjuntos binarios (imagen/video/audio/pdf) y la ubicacion
+        // se envian aparte, DESPUES del texto (portado de ECOREX: el dispatcher ya los entrega).
         var textToSend = (result.Text ?? string.Empty).Trim();
-        var skippedBinary = 0;
+        var binarios = new List<AiChatAttachment>();
         if (result.Attachments is { Count: > 0 })
         {
             foreach (var a in result.Attachments)
@@ -208,81 +219,210 @@ public sealed class AgentDispatcher : IAgentDispatcher
                 {
                     textToSend = string.IsNullOrWhiteSpace(textToSend) ? a.Detail!.Trim() : $"{textToSend}\n\n{a.Detail!.Trim()}";
                 }
-                else { skippedBinary++; }
+                else if (a.ResourceType != AgentResourceType.Text)
+                {
+                    binarios.Add(a);
+                }
             }
         }
 
-        if (string.IsNullOrWhiteSpace(textToSend))
+        // Nada que enviar (ni texto ni adjuntos): la respuesta del modelo vino vacia.
+        if (string.IsNullOrWhiteSpace(textToSend) && binarios.Count == 0)
         {
             await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Error,
-                "Texto vacio del LLM",
-                skippedBinary > 0
-                    ? $"El agente solo intento enviar {skippedBinary} adjunto(s) binario(s), que aun no se envian en esta fase."
-                    : "El modelo devolvio una respuesta vacia (contexto largo, filtro de seguridad o prompt mal armado).",
+                "Respuesta vacia del LLM",
+                "El modelo devolvio una respuesta vacia (contexto largo, filtro de seguridad o prompt mal armado).",
                 result.Error, ct);
             return;
         }
 
-        // 6) Modo sugerencia (AutoConfirm = false): guarda como borrador y NO envia.
+        // 6) Modo sugerencia (AutoConfirm = false): guarda como borrador y NO envia (ni texto ni adjuntos).
         if (!binding.AutoConfirm)
         {
-            await PersistOutboundAsync(tenantId, conversationId, textToSend, "ai_draft", ct);
+            var draft = string.IsNullOrWhiteSpace(textToSend)
+                ? $"(el agente propuso enviar {binarios.Count} adjunto(s))"
+                : textToSend;
+            await PersistOutboundAsync(tenantId, conversationId, draft, "ai_draft", ct);
             await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
                 "Respuesta en borrador (sin enviar)",
                 "El vinculo linea-agente esta en modo sugerencia (AutoConfirm=false): la respuesta queda como borrador para que un operador la revise.",
-                textToSend, ct);
+                draft, ct);
             return;
         }
 
-        // 7) Envio real por la linea (router Evolution/Cloud interno del connector).
-        // Saludo con logo: si el agente lo tiene activo y este es el PRIMER saliente de la
-        // conversacion, enviamos el texto del LLM como CAPTION de la imagen (logo de la copropiedad).
-        var saludarConLogo = await _db.AiAgents.AsNoTracking()
-            .Where(a => a.Id == binding.AgentId).Select(a => a.SaludarConLogo).FirstOrDefaultAsync(ct);
-        string? logoUrl = null;
-        if (saludarConLogo)
+        // 7) Envio real por la linea (router Evolution/Cloud/YCloud interno del connector).
+        // 7a) Texto (si hay). Saludo con logo: si el agente lo tiene activo y este es el PRIMER saliente
+        // de la conversacion, enviamos el texto como CAPTION de la imagen (logo de la copropiedad).
+        if (!string.IsNullOrWhiteSpace(textToSend))
         {
-            var yaHayOutbound = await _db.Messages.AsNoTracking()
-                .AnyAsync(m => m.ConversationId == conversationId && m.Direction == MessageDirection.Outbound, ct);
-            if (!yaHayOutbound) { logoUrl = await ResolveLogoPublicUrlAsync(tenantId, ct); }
-        }
-
-        LineSendResult send;
-        try
-        {
-            if (logoUrl is not null)
+            string? logoUrl = null;
+            if (agent.SaludarConLogo)
             {
-                send = await _connector.SendMediaAsync(whatsAppLineId.Value, conv.ContactPhone, logoUrl, textToSend, ct);
-                // Si el envio de media falla, no perdemos la respuesta: caemos a texto plano.
-                if (!send.Ok)
+                var yaHayOutbound = await _db.Messages.AsNoTracking()
+                    .AnyAsync(m => m.ConversationId == conversationId && m.Direction == MessageDirection.Outbound, ct);
+                if (!yaHayOutbound) { logoUrl = await ResolveLogoPublicUrlAsync(tenantId, ct); }
+            }
+
+            LineSendResult send;
+            try
+            {
+                if (logoUrl is not null)
                 {
-                    await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
-                        "Saludo con logo fallo; fallback a texto", send.Error, null, ct);
+                    send = await _connector.SendMediaAsync(whatsAppLineId.Value, conv.ContactPhone, logoUrl, textToSend, ct);
+                    // Si el envio de media falla, no perdemos la respuesta: caemos a texto plano.
+                    if (!send.Ok)
+                    {
+                        await LogRunAsync(tenantId, conversationId, binding.AgentId, AiAgentRunLogKind.Info,
+                            "Saludo con logo fallo; fallback a texto", send.Error, null, ct);
+                        send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct);
+                    }
+                }
+                else
+                {
                     send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct);
                 }
             }
-            else
+            catch (Exception ex)
             {
-                send = await _connector.SendTestAsync(whatsAppLineId.Value, conv.ContactPhone, textToSend, ct);
+                _logger.LogWarning(ex, "Dispatcher: envio de texto fallo conv {ConvId}", conversationId);
+                send = new LineSendResult(false, ex.Message);
             }
+
+            await PersistOutboundAsync(tenantId, conversationId, textToSend, send.Ok ? "ai_sent" : "ai_failed", ct);
+            await LogRunAsync(tenantId, conversationId, binding.AgentId,
+                send.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
+                send.Ok ? "Respuesta enviada" : "Envio fallo", textToSend, send.Ok ? "OK" : send.Error, ct);
+
+            // Si el texto fallo (linea caida, numero invalido), no insistimos con los adjuntos.
+            if (!send.Ok) { return; }
         }
-        catch (Exception ex)
+
+        // 7b) Adjuntos binarios + ubicacion, cada uno como su propio mensaje saliente.
+        foreach (var a in binarios)
         {
-            _logger.LogWarning(ex, "Dispatcher: envio fallo conv {ConvId}", conversationId);
-            send = new LineSendResult(false, ex.Message);
+            await SendAgentAttachmentAsync(tenantId, conversationId, binding.AgentId, whatsAppLineId.Value, conv.ContactPhone, a, ct);
+        }
+    }
+
+    /// <summary>
+    /// Reaccion automatica (emoji) al ultimo mensaje entrante del contacto, SIN pasar por el LLM.
+    /// Aplica la frecuencia N/M como probabilidad y elige el emoji al azar del listado configurado.
+    /// Un mensaje que ya tiene reaccion no recibe otra. Portado de ECOREX (MaybeReactAsync).
+    /// </summary>
+    private async Task MaybeReactAsync(Guid tenantId, Guid conversationId, Guid lineId, string phone, Guid agentId,
+        int ratioN, int ratioM, string? emojiCsv, CancellationToken ct)
+    {
+        var emojis = (emojiCsv ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (emojis.Count == 0) { return; }            // sin emojis configurados: nada que hacer.
+        if (ratioM <= 0 || ratioN <= 0) { return; }   // frecuencia invalida o cero: no reacciona.
+
+        // Dado de N de cada M: si el numerador es menor que el denominador, tiramos el dado.
+        if (ratioN < ratioM && Random.Shared.Next(ratioM) >= ratioN) { return; }
+
+        // Ultimo entrante con id de WhatsApp y sin reaccion previa (rastreado para poder marcarlo).
+        var lastInbound = await _db.Messages
+            .Where(m => m.ConversationId == conversationId
+                     && m.Direction == MessageDirection.Inbound
+                     && m.ExternalId != null
+                     && m.Reaction == null)
+            .OrderByDescending(m => m.SentAt)
+            .FirstOrDefaultAsync(ct);
+        if (lastInbound is null || string.IsNullOrWhiteSpace(lastInbound.ExternalId)) { return; }
+
+        var emoji = emojis[Random.Shared.Next(emojis.Count)];
+        LineSendResult res;
+        try { res = await _connector.SendReactionAsync(lineId, phone, lastInbound.ExternalId!, emoji, ct); }
+        catch (Exception ex) { res = new LineSendResult(false, ex.Message); }
+
+        if (res.Ok)
+        {
+            lastInbound.Reaction = emoji;
+            await _db.SaveChangesAsync(ct);
+            await LogRunAsync(tenantId, conversationId, agentId, AiAgentRunLogKind.Tool,
+                $"Reaccion automatica {emoji}", "Sin consumo de IA (reaccion directa al entrante).", null, ct);
+        }
+        else
+        {
+            await LogRunAsync(tenantId, conversationId, agentId, AiAgentRunLogKind.Error,
+                "No se pudo enviar la reaccion", res.Error, null, ct);
+        }
+    }
+
+    /// <summary>
+    /// Entrega un recurso binario (imagen/video/audio/pdf) o una ubicacion por la linea, lo persiste como
+    /// saliente y lo registra en bitacora. La URL del archivo se absolutiza contra el origen publico.
+    /// </summary>
+    private async Task SendAgentAttachmentAsync(Guid tenantId, Guid conversationId, Guid agentId, Guid lineId,
+        string phone, AiChatAttachment a, CancellationToken ct)
+    {
+        // Ubicacion: el Detail del recurso trae "lat,lng".
+        if (a.ResourceType == AgentResourceType.Location)
+        {
+            if (!TryParseLatLng(a.Detail, out var lat, out var lng))
+            {
+                await LogRunAsync(tenantId, conversationId, agentId, AiAgentRunLogKind.Error,
+                    $"Ubicacion invalida: {a.Name}", a.Detail, null, ct);
+                return;
+            }
+            LineSendResult rl;
+            try { rl = await _connector.SendLocationAsync(lineId, phone, lat, lng, a.Name, null, ct); }
+            catch (Exception ex) { rl = new LineSendResult(false, ex.Message); }
+            await PersistOutboundAsync(tenantId, conversationId, $"[Ubicacion] {a.Name}",
+                rl.Ok ? "ai_sent" : "ai_failed", ct, MessageMediaType.Location);
+            await LogRunAsync(tenantId, conversationId, agentId,
+                rl.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
+                rl.Ok ? $"Ubicacion enviada: {a.Name}" : $"Ubicacion fallo: {a.Name}", a.Detail, rl.Ok ? "OK" : rl.Error, ct);
+            return;
         }
 
-        await PersistOutboundAsync(tenantId, conversationId, textToSend, send.Ok ? "ai_sent" : "ai_failed", ct);
-
-        await LogRunAsync(tenantId, conversationId, binding.AgentId,
-            send.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
-            send.Ok ? "Respuesta enviada" : "Envio fallo",
-            textToSend,
-            send.Ok
-                ? (skippedBinary > 0 ? $"OK (se omitieron {skippedBinary} adjunto(s) binario(s) en esta fase)" : "OK")
-                : send.Error,
-            ct);
+        // Binario: absolutiza la URL del recurso (relativa al mismo origen) y envialo con su tipo.
+        var url = await ResolvePublicUrlAsync(a.FileUrl, ct);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            await LogRunAsync(tenantId, conversationId, agentId, AiAgentRunLogKind.Error,
+                $"Adjunto sin URL publica: {a.Name}",
+                "El recurso no tiene archivo o no hay origen publico configurado para absolutizarlo.", null, ct);
+            return;
+        }
+        var mediaType = a.ResourceType switch
+        {
+            AgentResourceType.Image => MessageMediaType.Image,
+            AgentResourceType.Video => MessageMediaType.Video,
+            AgentResourceType.Audio => MessageMediaType.Audio,
+            _ => MessageMediaType.Document
+        };
+        LineSendResult rs;
+        try { rs = await _connector.SendAttachmentAsync(lineId, phone, a.ResourceType, url!, null, a.FileName, ct); }
+        catch (Exception ex) { rs = new LineSendResult(false, ex.Message); }
+        await PersistOutboundAsync(tenantId, conversationId, $"[Adjunto] {a.Name}",
+            rs.Ok ? "ai_sent" : "ai_failed", ct, mediaType, url, MimeFromResource(a.ResourceType, a.FileName));
+        await LogRunAsync(tenantId, conversationId, agentId,
+            rs.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
+            rs.Ok ? $"Adjunto enviado: {a.Name}" : $"Adjunto fallo: {a.Name}", url, rs.Ok ? "OK" : rs.Error, ct);
     }
+
+    // Parsea "lat,lng" (del Detail de un recurso Ubicacion) en coordenadas, tolerando espacios.
+    private static bool TryParseLatLng(string? detail, out double lat, out double lng)
+    {
+        lat = 0; lng = 0;
+        if (string.IsNullOrWhiteSpace(detail)) { return false; }
+        var parts = detail.Split(',', 2);
+        if (parts.Length != 2) { return false; }
+        return double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out lat)
+            && double.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out lng);
+    }
+
+    // Mime orientativo para el mensaje saliente persistido (solo para la bandeja; el envio usa URL).
+    private static string? MimeFromResource(AgentResourceType kind, string? fileName) => kind switch
+    {
+        AgentResourceType.Image => "image/*",
+        AgentResourceType.Video => "video/*",
+        AgentResourceType.Audio => "audio/*",
+        AgentResourceType.Pdf => "application/pdf",
+        _ => null
+    };
 
     /// <summary>
     /// URL publica absoluta del logo de la copropiedad (fallback foto de fachada) para enviarla como
@@ -294,17 +434,28 @@ public sealed class AgentDispatcher : IAgentDispatcher
         var t = await _db.Tenants.AsNoTracking().Where(x => x.Id == tenantId)
             .Select(x => new { x.LogoUrl, x.FotoFachadaUrl }).FirstOrDefaultAsync(ct);
         var rel = !string.IsNullOrWhiteSpace(t?.LogoUrl) ? t!.LogoUrl : t?.FotoFachadaUrl;
-        if (string.IsNullOrWhiteSpace(rel)) { return null; }
-        if (rel.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            rel.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) { return rel; }
+        return await ResolvePublicUrlAsync(rel, ct);
+    }
+
+    /// <summary>
+    /// Absolutiza una ruta de archivo (relativa al mismo origen) contra el origen publico del servidor
+    /// (WebhookPublicUrl del maestro Evolution = app publico). Si ya es absoluta la devuelve tal cual;
+    /// null si no hay ruta o no hay origen publico configurado.
+    /// </summary>
+    private async Task<string?> ResolvePublicUrlAsync(string? pathOrUrl, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(pathOrUrl)) { return null; }
+        if (pathOrUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) { return pathOrUrl; }
         var origin = await _db.EvolutionMasterConfigs.AsNoTracking()
             .Select(m => m.WebhookPublicUrl).FirstOrDefaultAsync(ct);
         if (string.IsNullOrWhiteSpace(origin)) { return null; }
-        return $"{origin!.TrimEnd('/')}/{rel!.TrimStart('/')}";
+        return $"{origin!.TrimEnd('/')}/{pathOrUrl!.TrimStart('/')}";
     }
 
-    /// <summary>Persiste el saliente del agente y lo difunde a la bandeja en vivo (SignalR).</summary>
-    private async Task PersistOutboundAsync(Guid tenantId, Guid conversationId, string body, string sourceTag, CancellationToken ct)
+    /// <summary>Persiste el saliente del agente (texto o media) y lo difunde a la bandeja en vivo (SignalR).</summary>
+    private async Task PersistOutboundAsync(Guid tenantId, Guid conversationId, string body, string sourceTag, CancellationToken ct,
+        MessageMediaType mediaType = MessageMediaType.None, string? mediaUrl = null, string? mediaMime = null)
     {
         var now = DateTimeOffset.UtcNow;
         var msg = new Message
@@ -314,9 +465,11 @@ public sealed class AgentDispatcher : IAgentDispatcher
             Direction = MessageDirection.Outbound,
             ExternalId = null, // el connector de PROPIA no devuelve MessageId todavia
             Body = body,
-            MessageType = "text",
+            MessageType = mediaType == MessageMediaType.None ? "text" : mediaType.ToString().ToLowerInvariant(),
             SentAt = now,
-            MediaType = MessageMediaType.None,
+            MediaType = mediaType,
+            MediaUrl = mediaUrl,
+            MediaMimeType = mediaMime,
             SentByName = $"IA ({sourceTag})"
         };
         _db.Messages.Add(msg);

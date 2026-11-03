@@ -114,6 +114,7 @@ public static class DependencyInjection
         // Clientes HTTP externos (Evolution WhatsApp + proveedores de IA). Tipados via HttpClientFactory.
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IWhatsAppCloudClient, InfraestructuraIa.WhatsAppCloudClient>();
+        services.AddHttpClient<Application.InfraestructuraIa.IYCloudApiClient, InfraestructuraIa.YCloudApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();

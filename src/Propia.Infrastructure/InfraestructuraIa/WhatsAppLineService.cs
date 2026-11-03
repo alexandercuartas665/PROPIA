@@ -28,7 +28,7 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
     {
         return await _db.WhatsAppLines.AsNoTracking()
             .OrderBy(l => l.InstanceName)
-            .Select(l => new WhatsAppLineDto(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId))
+            .Select(l => new WhatsAppLineDto(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber))
             .ToListAsync(ct);
     }
 
@@ -70,6 +70,14 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
             line.CloudBusinessAccountId = string.IsNullOrWhiteSpace(request.CloudBusinessAccountId) ? null : request.CloudBusinessAccountId.Trim();
             line.CloudAccessTokenEncrypted = _secret.Protect(request.CloudAccessToken.Trim());
             line.CloudWebhookVerifyTokenEncrypted = string.IsNullOrWhiteSpace(request.CloudWebhookVerifyToken) ? null : _secret.Protect(request.CloudWebhookVerifyToken.Trim());
+        }
+        else if (request.Provider == WhatsAppProvider.YCloud)
+        {
+            if (string.IsNullOrWhiteSpace(request.YCloudApiKey) || string.IsNullOrWhiteSpace(request.YCloudFromNumber))
+                throw new InvalidOperationException("Para una linea YCloud indica la API key y el numero remitente.");
+            // El numero remitente se guarda solo con digitos (E.164 sin "+"), que es el "from" de YCloud.
+            line.YCloudFromNumber = new string(request.YCloudFromNumber.Where(char.IsDigit).ToArray());
+            line.YCloudApiKeyEncrypted = _secret.Protect(request.YCloudApiKey.Trim());
         }
 
         _db.WhatsAppLines.Add(line);
@@ -121,5 +129,5 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
     }
 
     private static WhatsAppLineDto Map(WhatsAppLine l) =>
-        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId);
+        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber);
 }
