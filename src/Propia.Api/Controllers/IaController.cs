@@ -447,6 +447,13 @@ public class IaController : ControllerBase
     public async Task<IActionResult> ProbarAgente(Guid id, [FromBody] ProbarAgenteRequest req, CancellationToken ct)
         => Ok(await _inference.TestChatAsync(id, req.Turns, req.SystemPromptOverride, BearerToken(), req.ContactPhone, req.ConversationId, ct));
 
+    // ---------- Playground: interpretar un adjunto (audio/pdf) a TEXTO ----------
+    /// <summary>Transcribe/extrae a texto un media (base64) con el proveedor del agente, para que el
+    /// chat de prueba pueda adjuntar notas de voz o PDF igual que lo hace el dispatcher real.</summary>
+    [HttpPost("agentes/{id:guid}/describir-media")]
+    public async Task<IActionResult> DescribirMedia(Guid id, [FromBody] DescribirMediaRequest req, CancellationToken ct)
+        => Ok(new { text = await _inference.DescribeInboundMediaAsync(id, req.Mime, req.Base64, req.Instruction, ct) });
+
     // ---------- Auxiliar Administrativo: rellenar/completar campos con IA ----------
     /// <summary>Genera el contenido de un campo (condiciones de uso, descripciones, etc.) con el
     /// agente Auxiliar Administrativo de la copropiedad activa. Reutilizable en todo el sistema.</summary>
@@ -465,4 +472,5 @@ public class IaController : ControllerBase
     public sealed record ProbarEnvioRequest(string Phone, string Text);
     public sealed record SetActiveRequest(bool Active);
     public sealed record ProbarAgenteRequest(List<AiChatTurn> Turns, string? SystemPromptOverride, string? ContactPhone = null, Guid? ConversationId = null);
+    public sealed record DescribirMediaRequest(string Mime, string Base64, string Instruction);
 }

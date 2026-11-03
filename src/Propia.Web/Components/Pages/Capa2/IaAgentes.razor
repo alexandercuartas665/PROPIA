@@ -471,7 +471,16 @@ else
                                 @foreach (var t in _chat)
                                 {
                                     <div class="ag-bubble @(t.Role == "model" ? "bot" : "me")">
-                                        @if (!string.IsNullOrWhiteSpace(t.Text)) { <div>@t.Text</div> }
+                                        @{ var bubbleText = t.DisplayText ?? t.Text; }
+                                        @if (!string.IsNullOrWhiteSpace(bubbleText)) { <div>@bubbleText</div> }
+                                        @if (!string.IsNullOrWhiteSpace(t.InboundImageDataUri))
+                                        {
+                                            <div class="ag-attach"><img src="@t.InboundImageDataUri" alt="imagen adjunta" /></div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(t.InboundChip))
+                                        {
+                                            <div class="ag-inbound-chip">@t.InboundChip</div>
+                                        }
                                         @if (t.Attachments is { Count: > 0 })
                                         {
                                             @foreach (var a in t.Attachments)
@@ -498,9 +507,21 @@ else
                             @if (_busy) { <div class="ag-bubble bot ag-typing">Escribiendo...</div> }
                         </div>
                         @if (!string.IsNullOrEmpty(_chatError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_chatError</div> }
+                        @if (!string.IsNullOrEmpty(_attachError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_attachError</div> }
+                        @if (_pendingAttach is not null)
+                        {
+                            <div class="ag-pending-attach" style="padding:0 8px 6px;">
+                                <span class="ag-inbound-chip">@AttachIcon(_pendingAttach.Kind) @_pendingAttach.Name</span>
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="() => { _pendingAttach = null; _attachError = null; }" disabled="@_busy">quitar</button>
+                            </div>
+                        }
                         <div class="ag-test-input">
+                            <label class="ag-attach-btn" title="Adjuntar imagen, audio o PDF">
+                                📎
+                                <InputFile OnChange="OnAttachChanged" accept="image/*,audio/*,application/pdf" disabled="@(_busy || _pendingAttach is not null)" style="display:none;" />
+                            </label>
                             <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
-                            <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_chatInput))">Enviar</button>
+                            <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null))">Enviar</button>
                         </div>
                     </div>
                     @if (_chat.Count > 0)
@@ -821,8 +842,12 @@ else
     .ag-attach a { font-size: 12px; font-weight: 600; color: var(--propia-primary, var(--propia-brand)); text-decoration: none; }
     .ag-attach-text { background: rgba(0,0,0,0.04); border-left: 3px solid var(--propia-primary, var(--propia-brand)); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; white-space: pre-wrap; }
     .ag-attach-cap { font-size: 12px; margin-top: 3px; }
-    .ag-test-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--propia-border-input); background: var(--propia-bg-card); }
+    .ag-test-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--propia-border-input); background: var(--propia-bg-card); align-items: center; }
     .ag-test-input input { flex: 1; }
+    .ag-attach-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--propia-border-input); background: var(--propia-bg-card); cursor: pointer; font-size: 16px; flex: 0 0 auto; user-select: none; }
+    .ag-attach-btn:hover { background: rgba(0,0,0,0.04); }
+    .ag-inbound-chip { display: inline-block; background: rgba(0,0,0,0.05); border: 1px solid var(--propia-border-input); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .ag-pending-attach { display: flex; align-items: center; }
     .ag-phone { border: 1px solid var(--propia-border-input); border-radius: 10px; padding: 8px 10px; background: var(--propia-bg-card); }
     .ag-phone-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; margin: 0; }
     .ag-phone-row { display: flex; gap: 6px; margin-top: 8px; }
@@ -867,6 +892,8 @@ else
     private readonly List<ChatMsg> _chat = new();
     private string _chatInput = "";
     private string? _chatError;
+    private PendingAttach? _pendingAttach;
+    private string? _attachError;
 
     // Bitacora de depuracion: prompts que se enviaron al LLM en cada llamada (mas reciente arriba).
     private readonly List<AiDebugPrompt> _debugLog = new();
@@ -1096,7 +1123,7 @@ else
         finally { _busy = false; }
     }
 
-    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; _debugLog.Clear(); }
+    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; _debugLog.Clear(); _pendingAttach = null; _attachError = null; }
 
     private async Task Fmt(string before, string after) { try { await Js.InvokeVoidAsync("propiaUI.wrapField", "agentPrompt", before, after); } catch { } }
 
@@ -1182,13 +1209,59 @@ else
     // ----- Probar -----
     private async Task ProbarChatAsync()
     {
-        if (_detalle is null || string.IsNullOrWhiteSpace(_chatInput)) return;
+        if (_detalle is null) return;
+        if (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null) return;
         _busy = true; _chatError = null; _phoneInfo = null;
-        _chat.Add(new ChatMsg("user", _chatInput.Trim(), null));
-        _chatInput = "";
+
+        var userText = _chatInput.Trim();
+        var attach = _pendingAttach;
+        _chatInput = ""; _pendingAttach = null;
+
+        // El adjunto se procesa igual que en el dispatcher real: imagen -> vision (viaja en el turno);
+        // audio/pdf -> se transcribe/extrae a texto y se concatena al texto del turno.
+        IReadOnlyList<AiInboundImage>? inboundImages = null;
+        string? imgDataUri = null;
+        string? chip = null;
+        var turnText = userText;
+        if (attach is not null)
+        {
+            if (attach.Kind == AgentResourceType.Image)
+            {
+                inboundImages = new[] { new AiInboundImage(attach.Mime, attach.Base64) };
+                imgDataUri = $"data:{attach.Mime};base64,{attach.Base64}";
+            }
+            else
+            {
+                var esAudio = attach.Kind == AgentResourceType.Audio;
+                chip = (esAudio ? "🎤 " : "📄 ") + attach.Name;
+                var instr = esAudio
+                    ? "Transcribe esta nota de voz en espanol. Devuelve SOLO el texto hablado, sin comentarios ni formato adicional."
+                    : "Extrae el texto de este documento en espanol, conservando los datos clave (nombres, numeros, fechas, montos). Devuelve solo el contenido, de forma clara y ordenada.";
+                try
+                {
+                    var resp0 = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/describir-media",
+                        new { attach.Mime, attach.Base64, Instruction = instr });
+                    var r0 = await resp0.Content.ReadFromJsonAsync<DescribeMediaResponse>();
+                    var txt = r0?.Text;
+                    if (!string.IsNullOrWhiteSpace(txt))
+                    {
+                        var etiqueta = esAudio ? "Nota de voz del residente (transcripcion)" : "Documento que envio el residente (contenido)";
+                        var bloque = $"[{etiqueta}]:\n{txt!.Trim()}";
+                        turnText = string.IsNullOrWhiteSpace(turnText) ? bloque : $"{turnText}\n\n{bloque}";
+                    }
+                    else { _chatError = "No se pudo interpretar el adjunto (audio/PDF)."; }
+                }
+                catch (Exception ex) { _chatError = "No se pudo interpretar el adjunto: " + ex.Message; }
+            }
+        }
+
+        // Burbuja del usuario: muestra lo tecleado + preview del adjunto. El Text guarda lo que ve el modelo.
+        _chat.Add(new ChatMsg("user", turnText, null, DisplayText: userText,
+            InboundImages: inboundImages, InboundImageDataUri: imgDataUri, InboundChip: chip));
+
         try
         {
-            var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text)).ToList();
+            var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text, m.InboundImages)).ToList();
             var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/probar",
                 new { Turns = turns, SystemPromptOverride = (string?)null });
             var r = await resp.Content.ReadFromJsonAsync<AiChatResult>();
@@ -1203,6 +1276,41 @@ else
         catch (Exception ex) { _chatError = ex.Message; }
         finally { _busy = false; }
     }
+
+    private async Task OnAttachChanged(InputFileChangeEventArgs e)
+    {
+        _attachError = null;
+        var file = e.File;
+        if (file is null) { return; }
+        const long max = 10 * 1024 * 1024; // 10 MB
+        if (file.Size > max) { _attachError = "El archivo supera 10 MB."; return; }
+        var mime = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        var kind = KindFromMime(mime, file.Name);
+        if (kind is null) { _attachError = "Solo se admite imagen, audio o PDF."; return; }
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(max).CopyToAsync(ms);
+            _pendingAttach = new PendingAttach(kind.Value, mime, Convert.ToBase64String(ms.ToArray()), file.Name);
+        }
+        catch (Exception ex) { _attachError = "No se pudo leer el archivo: " + ex.Message; }
+    }
+
+    private static AgentResourceType? KindFromMime(string mime, string name)
+    {
+        mime = (mime ?? "").ToLowerInvariant();
+        if (mime.StartsWith("image/")) { return AgentResourceType.Image; }
+        if (mime.StartsWith("audio/")) { return AgentResourceType.Audio; }
+        if (mime == "application/pdf" || name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { return AgentResourceType.Pdf; }
+        return null;
+    }
+
+    private static string AttachIcon(AgentResourceType kind) => kind switch
+    {
+        AgentResourceType.Image => "🖼️",
+        AgentResourceType.Audio => "🎤",
+        _ => "📄"
+    };
 
     private async Task EnviarAlTelefonoAsync(string? text)
     {
@@ -1442,5 +1550,17 @@ else
         public string? FileUrl { get; set; }
     }
 
-    private sealed record ChatMsg(string Role, string Text, IReadOnlyList<AiChatAttachment>? Attachments);
+    // Text = lo que ve el modelo (incluye transcripcion de audio/pdf); DisplayText = lo que se muestra
+    // en la burbuja (solo lo tecleado). InboundImages viaja al turno; el data URI + chip son solo preview.
+    private sealed record ChatMsg(
+        string Role,
+        string Text,
+        IReadOnlyList<AiChatAttachment>? Attachments,
+        string? DisplayText = null,
+        IReadOnlyList<AiInboundImage>? InboundImages = null,
+        string? InboundImageDataUri = null,
+        string? InboundChip = null);
+
+    private sealed record PendingAttach(AgentResourceType Kind, string Mime, string Base64, string Name);
+    private sealed record DescribeMediaResponse(string? Text);
 }
