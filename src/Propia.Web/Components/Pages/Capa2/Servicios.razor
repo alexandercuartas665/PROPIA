@@ -282,7 +282,8 @@ else
                                  OnMover="MoverEstadoContratoAsync"
                                  OnEliminar="EliminarEtapaAsync"
                                  OnToggleActivo="ToggleActivoEstadoContratoAsync"
-                                 Cerrar="() => _estEditorOpenC = false" />
+                                 Error="@_estEditorErr"
+                                 Cerrar="() => { _estEditorOpenC = false; _estEditorErr = null; }" />
 
         @if (_editSisClave == "etapa")
         {
@@ -2198,11 +2199,14 @@ else
     // El modal "Configurar" se retiro (patron Tareas): los estados se editan desde el chevron de la columna "Estado".
     private bool _estEditorOpenC;    // popover de estados (etapas) anclado al chevron de la columna Estado
     private double _popXC, _popYC; private bool _popUpC;
+    // Error del editor COMPARTIDO de estados: se pinta DENTRO del editor (slot Error), no en un toast de pagina.
+    private string? _estEditorErr;
     private async Task AbrirEstadosEditorC()
     {
         _popXC = _colMenuX; _popYC = _colMenuY;
         try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUpC = vh > 0 && _colMenuY > vh * 0.55; }
         catch { _popUpC = false; }
+        _estEditorErr = null;
         _estEditorOpenC = true;
     }
     // Lista de estados (etapas) para el modal canonico (solo lectura) y para el gestor compartido.
@@ -2215,27 +2219,34 @@ else
     // Callbacks del gestor compartido -> API ContratoEtapa (reusa MoverEtapaAsync/EliminarEtapaAsync existentes).
     private async Task AgregarEstadoContratoAsync(string nombre)
     {
+        _estEditorErr = null;
         if (string.IsNullOrWhiteSpace(nombre)) return;
         _busy = true;
-        try { var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos/etapas", new CrearContratoEtapaRequest(nombre.Trim(), null)); if (r.IsSuccessStatusCode) await RecargarEtapasAsync(); }
+        try { var r = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos/etapas", new CrearContratoEtapaRequest(nombre.Trim(), null)); if (r.IsSuccessStatusCode) await RecargarEtapasAsync(); else _estEditorErr = await ReadErr(r); }
         finally { _busy = false; }
     }
     private async Task RenombrarEstadoContratoAsync((Guid Id, string Nombre) x)
     {
+        _estEditorErr = null;
         var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(x.Nombre, et.Color, et.Activo));
+        var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(x.Nombre, et.Color, et.Activo));
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ReadErr(r); return; }
         await RecargarEtapasAsync();
     }
     private async Task ColorEstadoContratoAsync((Guid Id, string Color) x)
     {
+        _estEditorErr = null;
         var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, x.Color, et.Activo));
+        var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, x.Color, et.Activo));
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ReadErr(r); return; }
         await RecargarEtapasAsync();
     }
     private async Task ToggleActivoEstadoContratoAsync((Guid Id, bool Activo) x)
     {
+        _estEditorErr = null;
         var et = _etapas.FirstOrDefault(e => e.Id == x.Id); if (et is null) return;
-        await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, et.Color, x.Activo));
+        var r = await Auth().PutAsJsonAsync($"/api/mi-copropiedad/contratos/etapas/{x.Id}", new ActualizarContratoEtapaRequest(et.Nombre, et.Color, x.Activo));
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ReadErr(r); return; }
         await RecargarEtapasAsync();
     }
     private async Task MoverEstadoContratoAsync((Guid Id, int Dir) x)
@@ -2341,21 +2352,25 @@ else
     }
     private async Task EliminarEtapaAsync(Guid etapaId)
     {
+        _estEditorErr = null;
         if (_etapas.Count <= 1) return;
         if (!await Modals.ConfirmAsync("Eliminar esta etapa? Sus contratos pasaran a la primera etapa.", "Eliminar etapa")) return;
-        await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/etapas/{etapaId}");
+        var r = await Auth().DeleteAsync($"/api/mi-copropiedad/contratos/etapas/{etapaId}");
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ReadErr(r); return; }
         await RecargarEtapasAsync();
         await CargarAsync();
         StateHasChanged();
     }
     private async Task MoverEtapaAsync(int idx, int dir)
     {
+        _estEditorErr = null;
         var j = idx + dir;
         if (idx < 0 || idx >= _etapas.Count || j < 0 || j >= _etapas.Count) return;
         (_etapas[idx], _etapas[j]) = (_etapas[j], _etapas[idx]);
         StateHasChanged();
-        await Auth().PutAsJsonAsync("/api/mi-copropiedad/contratos/etapas/reordenar",
+        var r = await Auth().PutAsJsonAsync("/api/mi-copropiedad/contratos/etapas/reordenar",
             new ReordenarContratoEtapasRequest(_etapas.Select(e => e.Id).ToList()));
+        if (!r.IsSuccessStatusCode) { _estEditorErr = await ReadErr(r); await RecargarEtapasAsync(); }
     }
 
     // Cambiar la etapa de un contrato desde el select inline de la tabla.

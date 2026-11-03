@@ -477,7 +477,8 @@
                              OnMover="MoverEstadoPqrsdAsync"
                              OnEliminar="EliminarEstado"
                              OnToggleActivo="ToggleActivoEstadoPqrsdAsync"
-                             Cerrar="() => _estEditorOpenP = false" />
+                             Error="@_estEditorErr"
+                             Cerrar="() => { _estEditorOpenP = false; _estEditorErr = null; }" />
 
     @* ===================== COMPARTIR FORMULARIO PUBLICO ===================== *@
     @if (_shareOpen)
@@ -581,7 +582,8 @@
                                              OnColor="ColorEstadoPqrsdAsync"
                                              OnMover="MoverEstadoPqrsdAsync"
                                              OnEliminar="EliminarEstado"
-                                             OnToggleActivo="ToggleActivoEstadoPqrsdAsync" />
+                                             OnToggleActivo="ToggleActivoEstadoPqrsdAsync"
+                                             Error="@_estEditorErr" />
                   }
 
                   @if (_cfgTab == "motivos")
@@ -2109,11 +2111,14 @@
 
     // ===== Gestor de estados COMPARTIDO: posicion anclada + VM + callbacks -> API /api/pqrsd/estados.
     private bool _estEditorOpenP; private double _popXP, _popYP; private bool _popUpP;
+    // Error del editor COMPARTIDO de estados: se pinta DENTRO del editor (slot Error), no en _cfgMsg/toast.
+    private string? _estEditorErr;
     private async Task AbrirEstadosEditorP()
     {
         _popXP = _colMenuX; _popYP = _colMenuY;
         try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUpP = vh > 0 && _colMenuY > vh * 0.55; }
         catch { _popUpP = false; }
+        _estEditorErr = null;
         _estEditorOpenP = true;
     }
     private List<GestionarEstadosColumna.EstadoVm> EstadosVmPqrsd()
@@ -2125,26 +2130,33 @@
                Activo: e.Activo, PuedeInactivar: true)).ToList();
     private async Task AgregarEstadoPqrsdAsync(string nombre)
     {
+        _estEditorErr = null;
         if (string.IsNullOrWhiteSpace(nombre)) return;
         var resp = await Auth().PostAsJsonAsync("/api/pqrsd/estados", new CrearEstadoPqrsdRequest(nombre.Trim(), null));
-        if (resp.IsSuccessStatusCode) { _estadosCambiaron = true; await CargarEstadosAsync(); }
+        if (resp.IsSuccessStatusCode) { _estadosCambiaron = true; await CargarEstadosAsync(); } else { _estEditorErr = await LeerError(resp); }
     }
     private async Task RenombrarEstadoPqrsdAsync((Guid Id, string Nombre) x)
     {
+        _estEditorErr = null;
         var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(x.Nombre, e.Color, e.Orden, e.Activo));
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(x.Nombre, e.Color, e.Orden, e.Activo));
+        if (!resp.IsSuccessStatusCode) { _estEditorErr = await LeerError(resp); return; }
         await CargarEstadosAsync();
     }
     private async Task ColorEstadoPqrsdAsync((Guid Id, string Color) x)
     {
+        _estEditorErr = null;
         var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, x.Color, e.Orden, e.Activo));
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, x.Color, e.Orden, e.Activo));
+        if (!resp.IsSuccessStatusCode) { _estEditorErr = await LeerError(resp); return; }
         await CargarEstadosAsync();
     }
     private async Task ToggleActivoEstadoPqrsdAsync((Guid Id, bool Activo) x)
     {
+        _estEditorErr = null;
         var e = _estados.FirstOrDefault(s => s.Id == x.Id); if (e is null) return;
-        await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, e.Color, e.Orden, x.Activo));
+        var resp = await Auth().PutAsJsonAsync($"/api/pqrsd/estados/{x.Id}", new ActualizarEstadoPqrsdRequest(e.Nombre, e.Color, e.Orden, x.Activo));
+        if (!resp.IsSuccessStatusCode) { _estEditorErr = await LeerError(resp); return; }
         await CargarEstadosAsync();
     }
     private async Task MoverEstadoPqrsdAsync((Guid Id, int Dir) x)
@@ -2724,13 +2736,15 @@
     }
     private async Task ReordenarEstado(Guid id, string dir)
     {
+        _estEditorErr = null;
         var resp = await Auth().PutAsync($"/api/pqrsd/estados/{id}/orden?direccion={dir}", null);
-        if (resp.IsSuccessStatusCode) { await CargarEstadosAsync(); await MarcarFilaGuardadaAsync(id); }
+        if (resp.IsSuccessStatusCode) { await CargarEstadosAsync(); await MarcarFilaGuardadaAsync(id); } else { _estEditorErr = await LeerError(resp); }
     }
     private async Task EliminarEstado(Guid id)
     {
+        _estEditorErr = null;
         var resp = await Auth().DeleteAsync($"/api/pqrsd/estados/{id}");
-        if (resp.IsSuccessStatusCode) { _cfgMsg = ""; _estadosCambiaron = true; await CargarEstadosAsync(); } else { _cfgMsg = await LeerError(resp); }
+        if (resp.IsSuccessStatusCode) { _estadosCambiaron = true; await CargarEstadosAsync(); } else { _estEditorErr = await LeerError(resp); }
     }
 
     // C-02: recarga SOLO las columnas (no toda la bandeja) al editar por fila; el tablero se refresca al cerrar.
