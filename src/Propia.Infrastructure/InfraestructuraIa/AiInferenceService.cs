@@ -297,7 +297,7 @@ public sealed class AiInferenceService : IAiInferenceService
                     }
                     else
                     {
-                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, contactPhone, conversationId, ct);
+                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, contactPhone, conversationId, agent.Id, ct);
                     }
                 }
                 catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }

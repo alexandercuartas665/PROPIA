@@ -16,6 +16,10 @@ public interface IAgentCallContext
     /// <summary>Id de la conversacion en curso, si aplica.</summary>
     Guid? ConversationId { get; }
 
+    /// <summary>Ola H - id del AGENTE que ejecuta la tool, para que tools como crear_tarea lean su config
+    /// (whitelist de tableros, reparto round-robin). Lo pone el gateway (header server-set X-Agent-Id).</summary>
+    Guid? AgentId { get; }
+
     /// <summary>Fija el contexto (lo llama el middleware desde los headers server-set).</summary>
-    void Set(string? contactPhone, Guid? conversationId);
+    void Set(string? contactPhone, Guid? conversationId, Guid? agentId = null);
 }

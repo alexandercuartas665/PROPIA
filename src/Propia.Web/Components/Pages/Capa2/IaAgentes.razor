@@ -455,6 +455,79 @@ else
                         }
                     </div>
 
+                    @* ----- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleEnrutamiento">
+                            <span class="ag-accordion-chev @(_enrutOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Enrutamiento de tareas</span>
+                            <span class="ag-acc-status" style="@((_enrutPermitidos.Count > 0 || _enrutAsignados.Count > 0) ? "color:#1f8a4c;" : "")">@((_enrutPermitidos.Count > 0 || _enrutAsignados.Count > 0) ? "Configurado" : "Libre")</span>
+                        </button>
+                        @if (_enrutOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                @if (_editId is null)
+                                {
+                                    <div class="ag-acc-help">Guarda primero el agente con "Crear agente" para configurar el enrutamiento de tareas.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-acc-help">Controla la herramienta <strong>crear_tarea</strong> de este agente: en que <strong>tableros</strong> puede crear y a quien se las <strong>reparte</strong>. Aplica tanto en conversaciones reales como en el chat de prueba de arriba.</div>
+
+                                    <div class="mt-2">
+                                        <label class="form-label small mb-1"><strong>Tableros permitidos</strong></label>
+                                        <div class="text-muted" style="font-size:11.5px;margin-bottom:6px;">Si no marcas ninguno, el agente puede usar cualquier tablero (y el por defecto). Con uno marcado, siempre crea ahi. Con varios, debe elegir entre esos.</div>
+                                        @if (_enrutTableros.Count == 0)
+                                        {
+                                            <div class="text-muted small">No hay tableros en la copropiedad todavia.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex flex-column gap-1">
+                                                @foreach (var b in _enrutTableros)
+                                                {
+                                                    var bid = b.Id;
+                                                    <label class="d-flex align-items-center gap-2" style="cursor:pointer;">
+                                                        <input type="checkbox" checked="@_enrutPermitidos.Contains(bid)" @onchange="@(e => ToggleTableroPermitido(bid, (bool)e.Value!))" disabled="@_enrutBusy" />
+                                                        <span class="small">@b.Nombre</span>
+                                                    </label>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="mt-3">
+                                        <label class="form-label small mb-1"><strong>Reparto automatico (round-robin)</strong></label>
+                                        <div class="text-muted" style="font-size:11.5px;margin-bottom:6px;">El agente reparte las tareas que crea entre estas personas, en orden y rotando (1a, 2a, 1a, 2a...). Si el modelo nombra a alguien, ese gana. Si la lista esta vacia, la tarea queda sin asignar.</div>
+                                        @if (_enrutAsignados.Count > 0)
+                                        {
+                                            <div class="ag-list mb-2">
+                                                @for (int i = 0; i < _enrutAsignados.Count; i++)
+                                                {
+                                                    var idx = i; var a = _enrutAsignados[i];
+                                                    <div class="ag-item">
+                                                        <div class="ag-item-main">
+                                                            <div class="ag-item-name">@(idx + 1). @a.Nombre</div>
+                                                        </div>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => SubirAsignado(idx)" disabled="@(_enrutBusy || idx == 0)" title="Subir">&uarr;</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => BajarAsignado(idx)" disabled="@(_enrutBusy || idx == _enrutAsignados.Count - 1)" title="Bajar">&darr;</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarAsignado(idx)" disabled="@_enrutBusy" title="Quitar">&times;</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        <SelectorPersona Jwt="@_jwt" Seleccionada="_enrutPersonaSel" SeleccionadaChanged="OnEnrutPersonaChanged" Placeholder="Agregar persona al reparto..." />
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-3">
+                                        <button type="button" class="btn btn-sm btn-dark" @onclick="GuardarEnrutamientoAsync" disabled="@_enrutBusy">@(_enrutBusy ? "Guardando..." : "Guardar enrutamiento")</button>
+                                        @if (_enrutSaved) { <span class="small" style="color:#1f8a4c;">Guardado</span> }
+                                        @if (_enrutError is not null) { <span class="small text-danger">@_enrutError</span> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
                     @* ----- Historial de versiones (red de seguridad) ----- *@
                     <div class="ag-accordion mt-2">
                         <button type="button" class="ag-accordion-head" @onclick="ToggleVersionHistory">
@@ -1022,6 +1095,7 @@ else
         _bindingsOpen = false; _reactionsOpen = false; _versionsOpen = false;
         _cacheFields = new(); _cacheValues = new(); _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
         _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
+        _enrutOpen = false; _enrutLoaded = false; _enrutPermitidos = new(); _enrutAsignados = new(); _enrutTableros = new(); _enrutPersonaSel = null; _enrutSaved = false; _enrutError = null;
         _debugLog.Clear(); _debugOpen = false;
         _showEditor = true;
     }
@@ -1033,6 +1107,7 @@ else
         _debugLog.Clear(); _debugOpen = false;
         _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
         _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
+        _enrutOpen = false; _enrutLoaded = false; _enrutPermitidos = new(); _enrutAsignados = new(); _enrutTableros = new(); _enrutPersonaSel = null; _enrutSaved = false; _enrutError = null;
         _showEditor = true;
         _editId = id;
         await CargarDetalleAsync(id);
@@ -1478,6 +1553,96 @@ else
         }
         catch (Exception ex) { _reactError = ex.Message; }
         finally { _reactivacionBusy = false; }
+    }
+
+    // ----- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) -----
+    private sealed record TableroMiniDto(Guid Id, string Nombre);
+    private bool _enrutOpen;
+    private bool _enrutLoaded;
+    private bool _enrutBusy;
+    private bool _enrutSaved;
+    private string? _enrutError;
+    private List<TableroMiniDto> _enrutTableros = new();
+    private HashSet<Guid> _enrutPermitidos = new();
+    private List<AgentAsignadoDto> _enrutAsignados = new();
+    private Propia.Application.Directorio.PersonaCandidatoDto? _enrutPersonaSel;
+
+    private async Task ToggleEnrutamiento()
+    {
+        _enrutOpen = !_enrutOpen;
+        _enrutSaved = false;
+        if (_enrutOpen && !_enrutLoaded && _editId is not null)
+            await ReloadEnrutamientoAsync();
+    }
+
+    private async Task ReloadEnrutamientoAsync()
+    {
+        if (_editId is null) return;
+        _enrutError = null;
+        try
+        {
+            _enrutTableros = await Auth().GetFromJsonAsync<List<TableroMiniDto>>("/api/tareas/tableros") ?? new();
+            var cfg = await Auth().GetFromJsonAsync<AgentEnrutamientoDto>($"/api/ia/agentes/{_editId}/enrutamiento-tareas");
+            _enrutPermitidos = cfg is null ? new() : cfg.TablerosPermitidos.ToHashSet();
+            _enrutAsignados = cfg is null ? new() : cfg.Asignados.ToList();
+            _enrutLoaded = true;
+        }
+        catch (Exception ex) { _enrutError = ex.Message; }
+    }
+
+    private void ToggleTableroPermitido(Guid id, bool on)
+    {
+        if (on) { _enrutPermitidos.Add(id); } else { _enrutPermitidos.Remove(id); }
+        _enrutSaved = false;
+    }
+
+    private async Task OnEnrutPersonaChanged(Propia.Application.Directorio.PersonaCandidatoDto? p)
+    {
+        _enrutPersonaSel = null;   // el selector queda listo para la siguiente
+        if (p is null) return;
+        if (_enrutAsignados.All(a => a.PersonaId != p.PersonaId))
+        {
+            _enrutAsignados.Add(new AgentAsignadoDto(p.PersonaId, p.NombreCompleto));
+            _enrutSaved = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private void QuitarAsignado(int idx)
+    {
+        if (idx >= 0 && idx < _enrutAsignados.Count) { _enrutAsignados.RemoveAt(idx); _enrutSaved = false; }
+    }
+
+    private void SubirAsignado(int idx)
+    {
+        if (idx <= 0 || idx >= _enrutAsignados.Count) return;
+        (_enrutAsignados[idx - 1], _enrutAsignados[idx]) = (_enrutAsignados[idx], _enrutAsignados[idx - 1]);
+        _enrutSaved = false;
+    }
+
+    private void BajarAsignado(int idx)
+    {
+        if (idx < 0 || idx >= _enrutAsignados.Count - 1) return;
+        (_enrutAsignados[idx + 1], _enrutAsignados[idx]) = (_enrutAsignados[idx], _enrutAsignados[idx + 1]);
+        _enrutSaved = false;
+    }
+
+    private async Task GuardarEnrutamientoAsync()
+    {
+        if (_editId is null) return;
+        _enrutBusy = true; _enrutError = null; _enrutSaved = false;
+        try
+        {
+            var req = new AgentEnrutamientoSaveRequest(
+                _enrutPermitidos.ToList(),
+                _enrutAsignados.Select(a => a.PersonaId).ToList());
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}/enrutamiento-tareas", req);
+            if (!resp.IsSuccessStatusCode) { _enrutError = $"HTTP {(int)resp.StatusCode}"; return; }
+            _enrutSaved = true;
+            await ReloadEnrutamientoAsync();
+        }
+        catch (Exception ex) { _enrutError = ex.Message; }
+        finally { _enrutBusy = false; }
     }
 
     private List<string> ReactionEmojiList() =>

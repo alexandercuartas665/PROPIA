@@ -621,6 +621,18 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AllowedBoardIdsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("allowed_board_ids_json");
+
+                    b.Property<int>("AssigneeCursor")
+                        .HasColumnType("integer")
+                        .HasColumnName("assignee_cursor");
+
+                    b.Property<string>("AssigneeUserIdsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("assignee_user_ids_json");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

@@ -133,6 +133,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentEnrutamientoService, InfraestructuraIa.AgentEnrutamientoService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.

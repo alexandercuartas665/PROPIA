@@ -31,6 +31,7 @@ public class IaController : ControllerBase
     private readonly IAutomationService _automations;
     private readonly IAsistenteCamposService _asistente;
     private readonly IAgentReactivacionService _reactivacion;
+    private readonly IAgentEnrutamientoService _enrutamiento;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -46,7 +47,8 @@ public class IaController : ControllerBase
         IAgentRunLogService bitacora,
         IAutomationService automations,
         IAsistenteCamposService asistente,
-        IAgentReactivacionService reactivacion)
+        IAgentReactivacionService reactivacion,
+        IAgentEnrutamientoService enrutamiento)
     {
         _lines = lines;
         _connector = connector;
@@ -62,6 +64,7 @@ public class IaController : ControllerBase
         _automations = automations;
         _asistente = asistente;
         _reactivacion = reactivacion;
+        _enrutamiento = enrutamiento;
     }
 
     // ---------- Automatizaciones (Infraestructura IA) ----------
@@ -471,6 +474,20 @@ public class IaController : ControllerBase
     [HttpPut("agentes/{id:guid}/reactivacion")]
     public async Task<IActionResult> GuardarReactivacion(Guid id, [FromBody] AgentReactivacionConfig config, CancellationToken ct)
         => await _reactivacion.SaveConfigAsync(id, config, ct) ? NoContent() : NotFound();
+
+    // ---------- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) ----------
+    /// <summary>Lee la config de enrutamiento de tareas del agente (tableros permitidos + asignados round-robin).</summary>
+    [HttpGet("agentes/{id:guid}/enrutamiento-tareas")]
+    public async Task<IActionResult> GetEnrutamientoTareas(Guid id, CancellationToken ct)
+    {
+        var r = await _enrutamiento.GetConfigAsync(id, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
+    /// <summary>Guarda la whitelist de tableros + la lista de asignados (reparto round-robin) del agente. Listas vacias = sin restriccion / sin reparto.</summary>
+    [HttpPut("agentes/{id:guid}/enrutamiento-tareas")]
+    public async Task<IActionResult> GuardarEnrutamientoTareas(Guid id, [FromBody] AgentEnrutamientoSaveRequest req, CancellationToken ct)
+        => await _enrutamiento.SaveConfigAsync(id, req, ct) ? NoContent() : NotFound();
 
     // ---------- Auxiliar Administrativo: rellenar/completar campos con IA ----------
     /// <summary>Genera el contenido de un campo (condiciones de uso, descripciones, etc.) con el

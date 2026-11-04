@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using Propia.Application.Common;
+using Propia.Application.InfraestructuraIa;
 using Propia.Application.Tareas;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -21,9 +22,9 @@ namespace Propia.Api.Mcp;
 public sealed class TareasAgenteTools
 {
     [McpServerTool(Name = "crear_tarea")]
-    [Description("Crea una tarea del modulo de Tareas y Proyectos. Resuelve el tablero destino por su nombre (o usa el tablero por defecto si no se indica) y deja la tarea en la primera columna (estado inicial). La prioridad por defecto es Normal. El asignado (opcional) se resuelve por nombre contra el directorio de la copropiedad; si no se resuelve, la tarea queda sin asignar y se avisa. Es dry-run por defecto: propone la tarea para confirmar; vuelve a llamar con dryRun=false para crearla y devolver su numero.")]
+    [Description("Crea una tarea del modulo de Tareas y Proyectos. Resuelve el tablero destino por su nombre (o usa el tablero por defecto si no se indica) y deja la tarea en la primera columna (estado inicial). La prioridad por defecto es Normal. El asignado (opcional) se resuelve por nombre contra el directorio de la copropiedad; si no se resuelve, la tarea queda sin asignar y se avisa. Algunos agentes solo pueden crear tareas en ciertos tableros y/o reparten automaticamente el responsable; en ese caso la herramienta lo aplica sola. Es dry-run por defecto: propone la tarea para confirmar; vuelve a llamar con dryRun=false para crearla y devolver su numero.")]
     public static async Task<ResultadoCreacionMcp> CrearTarea(
-        ITareasService tareas, PropiaDbContext db, ITenantContext tenant,
+        ITareasService tareas, PropiaDbContext db, ITenantContext tenant, IAgentCallContext call,
         [Description("Titulo de la tarea (obligatorio).")] string titulo,
         CancellationToken ct,
         [Description("Descripcion / detalle de la tarea (opcional).")] string? descripcion = null,
@@ -37,6 +38,13 @@ public sealed class TareasAgenteTools
         var tit = (titulo ?? "").Trim();
         if (tit.Length < 3) { return Fail(dryRun, "El titulo de la tarea es obligatorio (minimo 3 caracteres)."); }
 
+        // Ola H: config de enrutamiento del agente (whitelist de tableros + reparto round-robin). Se carga
+        // TRACKED porque el reparto avanza el cursor. Si no hay agente en contexto (llamada directa), null
+        // -> sin whitelist ni reparto (comportamiento historico).
+        Domain.Entities.AiAgent? agente = call.AgentId is Guid aid
+            ? await db.AiAgents.FirstOrDefaultAsync(a => a.Id == aid, ct)
+            : null;
+
         // Prioridad (default Normal).
         var prio = PrioridadTarea.Normal;
         if (!string.IsNullOrWhiteSpace(prioridad) && !TryPrioridad(prioridad, out prio))
@@ -44,30 +52,103 @@ public sealed class TareasAgenteTools
             return Fail(dryRun, $"Prioridad '{prioridad}' no valida. Usa Urgente, Alta, Normal o Baja.");
         }
 
-        // Tablero (por nombre) o el por defecto.
+        // Tablero: por nombre, o el por defecto, acotado por la WHITELIST del agente (Ola H).
+        // allowed == null => sin restriccion (todos). allowed con 1+ ids => solo esos. Semantica ECOREX:
+        //  - con 1 permitido, un nombre ausente o que no calza cae al unico permitido (jamas se escapa);
+        //  - con 2+ permitidos, no hay default: si no calza un permitido, se rechaza listando solo los permitidos.
+        var allowedBoards = agente is not null ? AgentEnrutamientoTareas.ParseIds(agente.AllowedBoardIdsJson) : Array.Empty<Guid>();
+        var allowed = allowedBoards.Count > 0 ? allowedBoards : null;
+
+        var tableros = await tareas.ListarTablerosAsync(ct);
+        var universo = allowed is null ? tableros : tableros.Where(b => allowed.Contains(b.Id)).ToList();
+
         Guid? tableroId = null;
         var tableroNombre = "(por defecto)";
+        TableroDto? elegido = null;
         if (!string.IsNullOrWhiteSpace(tablero))
         {
-            var tableros = await tareas.ListarTablerosAsync(ct);
-            var t = AgentContactoHelper.MatchByName(tableros, b => b.Nombre, tablero);
-            if (t is null)
+            elegido = AgentContactoHelper.MatchByName(universo, b => b.Nombre, tablero);
+        }
+        if (elegido is null && allowed is { Count: 1 })
+        {
+            elegido = universo.FirstOrDefault(b => b.Id == allowed[0]);  // comodidad: 1 permitido = por defecto
+        }
+        if (elegido is null)
+        {
+            if (allowed is null)
             {
-                var nombres = string.Join(", ", tableros.Select(b => b.Nombre));
-                return Fail(dryRun, $"No encontre el tablero '{tablero}'. Tableros disponibles: {nombres}.");
+                // Sin whitelist: nombre dado que no calza -> error; sin nombre -> tablero por defecto del servicio.
+                if (!string.IsNullOrWhiteSpace(tablero))
+                {
+                    var nombres = string.Join(", ", universo.Select(b => b.Nombre));
+                    return Fail(dryRun, $"No encontre el tablero '{tablero}'. Tableros disponibles: {nombres}.");
+                }
             }
-            tableroId = t.Id; tableroNombre = t.Nombre;
+            else
+            {
+                // Con whitelist (2+ aqui): hay que elegir uno de los permitidos. No se escapa ni cae a default.
+                var nombres = string.Join(", ", universo.Select(b => b.Nombre));
+                var pedido = string.IsNullOrWhiteSpace(tablero) ? "" : $" (el tablero '{tablero}' no esta permitido para este agente)";
+                return Fail(dryRun, $"Indica en cual de estos tableros crear la tarea{pedido}. Tableros disponibles: {nombres}.");
+            }
+        }
+        else
+        {
+            tableroId = elegido.Id; tableroNombre = elegido.Nombre;
         }
 
-        // Asignado (opcional): resolver por nombre en el directorio. No bloquea si no se resuelve.
+        // Asignado: (1) si el modelo nombra a alguien y resuelve, gana el explicito; (2) si no, y el agente
+        // tiene lista de reparto round-robin (Ola H), se toma el SIGUIENTE de la rotacion; (3) si no, sin asignar.
         Guid? asignadoId = null;
         string? asignadoNombre = null;
         string? asignadoNota = null;
+        var porRoundRobin = false;
+        int? rrNextCursor = null;
         if (!string.IsNullOrWhiteSpace(asignado))
         {
             var (pid, pnom, err) = await ResolverPersonaDirectorioAsync(db, asignado, ct);
             if (pid is { } id) { asignadoId = id; asignadoNombre = pnom; }
             else { asignadoNota = err; }
+        }
+        if (asignadoId is null && agente is not null)
+        {
+            var pool = AgentEnrutamientoTareas.ParseIds(agente.AssigneeUserIdsJson);
+            if (pool.Count > 0)
+            {
+                var start = ((agente.AssigneeCursor % pool.Count) + pool.Count) % pool.Count;
+                for (var i = 0; i < pool.Count; i++)
+                {
+                    var idx = (start + i) % pool.Count;
+                    var cand = pool[idx];
+                    // Solo personas VINCULADAS a esta copropiedad (mismo criterio que valida CrearTareaAsync):
+                    // una persona que ya no esta en el directorio se salta y la rotacion sigue a la siguiente.
+                    var vinculada = await db.DirectorioVinculos.AsNoTracking()
+                        .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == cand, ct);
+                    if (!vinculada) { continue; }
+                    var nom = await db.Personas.AsNoTracking()
+                        .Where(p => p.Id == cand).Select(p => (p.Nombres + " " + p.Apellidos).Trim()).FirstOrDefaultAsync(ct);
+                    if (!string.IsNullOrWhiteSpace(nom))
+                    {
+                        asignadoId = cand; asignadoNombre = nom; porRoundRobin = true;
+                        rrNextCursor = (idx + 1) % pool.Count;   // el proximo arranca despues del elegido
+                        break;
+                    }
+                }
+                if (asignadoId is null) { asignadoNota = "La lista de reparto del agente no tiene personas validas; la tarea queda sin asignar."; }
+            }
+        }
+
+        var comoAsig = porRoundRobin ? "asignada (reparto) a" : "asignada a";
+        var asigTxt = asignadoNombre is not null ? $"{comoAsig} {asignadoNombre}" : (asignadoNota ?? "sin asignar");
+
+        // Dry-run: NO crea nada. CrearTareaAsync abre y commitea su PROPIA transaccion, asi que no se puede
+        // "crear y revertir"; el dry-run solo propone (y por eso tampoco consume la rotacion round-robin).
+        if (dryRun)
+        {
+            return new ResultadoCreacionMcp(
+                DryRun: true, Exito: true,
+                Mensaje: $"Propuesta de tarea (aun no creada): '{tit}' en el tablero {tableroNombre}, prioridad {prio}, {asigTxt}. Vuelve a llamar con dryRun=false para crearla.",
+                Recurso: new { titulo = tit, tablero = tableroNombre, prioridad = prio.ToString(), asignado = asignadoNombre, nota = asignadoNota });
         }
 
         var req = new CrearTareaRequest(
@@ -82,31 +163,21 @@ public sealed class TareasAgenteTools
             EtiquetaIds: null,
             TableroId: tableroId);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        try
+        TareaDetalleDto det;
+        try { det = await tareas.CrearTareaAsync(req, ct); }
+        catch (InvalidOperationException ex) { return Fail(dryRun, $"No se pudo crear la tarea: {ex.Message}"); }
+
+        // Creada OK -> avanza el cursor del reparto round-robin (solo si se repartio en esta llamada).
+        if (porRoundRobin && rrNextCursor is int nc && agente is not null)
         {
-            var det = await tareas.CrearTareaAsync(req, ct);
-            var asigTxt = asignadoNombre is not null ? $"asignada a {asignadoNombre}" : (asignadoNota ?? "sin asignar");
-            if (dryRun)
-            {
-                await tx.RollbackAsync(ct);
-                return new ResultadoCreacionMcp(
-                    DryRun: true, Exito: true,
-                    Mensaje: $"Propuesta de tarea (aun no creada): '{tit}' en el tablero {tableroNombre}, prioridad {prio}, {asigTxt}. Vuelve a llamar con dryRun=false para crearla.",
-                    Recurso: new { titulo = tit, tablero = tableroNombre, prioridad = prio.ToString(), asignado = asignadoNombre, nota = asignadoNota });
-            }
-            await tx.CommitAsync(ct);
-            var nota = asignadoNota is not null ? $" Nota: {asignadoNota}" : "";
-            return new ResultadoCreacionMcp(
-                DryRun: false, Exito: true,
-                Mensaje: $"Tarea creada: {det.NumeroTarea} '{det.Titulo}' ({det.Estado.Nombre}), prioridad {det.Prioridad}, {asigTxt}.{nota}",
-                Recurso: new { numero = det.NumeroTarea, id = det.Id, titulo = det.Titulo, tablero = tableroNombre, estado = det.Estado.Nombre, prioridad = det.Prioridad.ToString(), asignado = det.AsignadoNombre });
+            agente.AssigneeCursor = nc;
+            await db.SaveChangesAsync(ct);
         }
-        catch (InvalidOperationException ex)
-        {
-            await tx.RollbackAsync(ct);
-            return Fail(dryRun, $"No se pudo crear la tarea: {ex.Message}");
-        }
+        var nota = asignadoNota is not null ? $" Nota: {asignadoNota}" : "";
+        return new ResultadoCreacionMcp(
+            DryRun: false, Exito: true,
+            Mensaje: $"Tarea creada: {det.NumeroTarea} '{det.Titulo}' ({det.Estado.Nombre}), prioridad {det.Prioridad}, {asigTxt}.{nota}",
+            Recurso: new { numero = det.NumeroTarea, id = det.Id, titulo = det.Titulo, tablero = tableroNombre, estado = det.Estado.Nombre, prioridad = det.Prioridad.ToString(), asignado = det.AsignadoNombre });
     }
 
     [McpServerTool(Name = "estado_tarea")]

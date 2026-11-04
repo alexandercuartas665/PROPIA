@@ -195,6 +195,19 @@ public interface IAgentReactivacionService
     Task<int> RunTenantAsync(CancellationToken ct = default);
 }
 
+/// <summary>
+/// Ola H - enrutamiento de las tareas que el agente crea con crear_tarea: whitelist de tableros + lista de
+/// asignados para el reparto round-robin. Portado de ECOREX. La ROTACION en si la hace la tool crear_tarea.
+/// </summary>
+public interface IAgentEnrutamientoService
+{
+    /// <summary>Lee la config de enrutamiento del agente (tableros permitidos + asignados con nombre). Null si no existe el agente.</summary>
+    Task<AgentEnrutamientoDto?> GetConfigAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Guarda la config. Listas vacias limpian los campos. Si cambia la lista/orden de asignados, reinicia el cursor a 0. Devuelve false si no existe el agente.</summary>
+    Task<bool> SaveConfigAsync(Guid agentId, AgentEnrutamientoSaveRequest req, CancellationToken ct = default);
+}
+
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
 public interface IAiUsageService
 {

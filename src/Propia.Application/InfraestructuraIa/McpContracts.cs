@@ -94,5 +94,5 @@ public interface IMcpGateway
     /// conversacion sin exponerlo como argumento del LLM.
     /// </summary>
     Task<string> CallToolAsync(string connectionCode, string toolName, IReadOnlyDictionary<string, object?> arguments,
-        string bearerToken, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default);
+        string bearerToken, string? contactPhone = null, Guid? conversationId = null, Guid? agentId = null, CancellationToken ct = default);
 }

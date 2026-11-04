@@ -193,6 +193,24 @@ public class AiAgent : TenantEntity
     /// </summary>
     public string? ReactivacionJson { get; set; }
 
+    /// <summary>
+    /// Ola H - WHITELIST DURA de tableros que este agente puede usar al crear tareas (JSON, arreglo de
+    /// GUID = ids de Tablero). Null o vacio = SIN restriccion (todos los tableros del tenant), que preserva
+    /// el comportamiento historico. Con 1+ ids, la tool crear_tarea SOLO admite esos tableros. Portado de ECOREX.
+    /// </summary>
+    public string? AllowedBoardIdsJson { get; set; }
+
+    /// <summary>
+    /// Ola H - ASIGNACION ROUND-ROBIN: lista ORDENADA de ids de Persona (directorio) a los que el agente
+    /// reparte las tareas que crea (crear_tarea), rotando una por registro (A, B, A, B...). Null o vacio =
+    /// sin reparto -> la tarea queda sin asignar salvo que el modelo nombre a alguien. Portado de ECOREX.
+    /// </summary>
+    public string? AssigneeUserIdsJson { get; set; }
+
+    /// <summary>Ola H - cursor de rotacion del reparto round-robin (<see cref="AssigneeUserIdsJson"/>): indice
+    /// del PROXIMO de la lista a asignar. Avanza (modulo el tamano de la lista) en cada asignacion.</summary>
+    public int AssigneeCursor { get; set; }
+
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();
 }

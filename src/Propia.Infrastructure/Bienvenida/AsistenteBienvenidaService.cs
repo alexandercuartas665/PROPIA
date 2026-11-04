@@ -302,7 +302,7 @@ public class AsistenteBienvenidaService : IAsistenteBienvenidaService
                     }
                     else
                     {
-                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, null, null, ct);
+                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, null, null, agentId: null, ct: ct);
                     }
                 }
                 catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }
