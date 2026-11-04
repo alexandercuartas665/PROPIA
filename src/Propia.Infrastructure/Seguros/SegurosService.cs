@@ -498,5 +498,34 @@ public class SegurosService : ISegurosService
         return new PolizaComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId);
     }
 
+    // --------------- Documentos/adjuntos de una poliza (espejo de EquipoDocumento) ---------------
+    public async Task<IReadOnlyList<PolizaDocumentoDto>> ListDocumentosAsync(Guid polizaId, CancellationToken ct)
+    {
+        if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct)) return Array.Empty<PolizaDocumentoDto>();
+        return await _db.PolizaDocumentos.AsNoTracking()
+            .Where(d => d.PolizaId == polizaId)
+            .OrderByDescending(d => d.CreatedAt)
+            .Select(d => new PolizaDocumentoDto(d.Id, d.Nombre, d.Url))
+            .ToListAsync(ct);
+    }
+
+    public async Task<PolizaDocumentoDto?> AgregarDocumentoAsync(Guid polizaId, string nombre, string url, CancellationToken ct)
+    {
+        if (!await _db.Polizas.AnyAsync(p => p.Id == polizaId, ct)) return null;
+        var d = new PolizaDocumento { PolizaId = polizaId, Nombre = nombre, Url = url };
+        _db.PolizaDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        return new PolizaDocumentoDto(d.Id, d.Nombre, d.Url);
+    }
+
+    public async Task<bool> EliminarDocumentoAsync(Guid docId, CancellationToken ct)
+    {
+        var d = await _db.PolizaDocumentos.FirstOrDefaultAsync(x => x.Id == docId, ct);
+        if (d is null) return false;
+        _db.PolizaDocumentos.Remove(d);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

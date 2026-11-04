@@ -3360,6 +3360,61 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("contrato_campo_valores");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.ContratoComentario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AutorNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("autor_nombre");
+
+                    b.Property<Guid?>("AutorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_usuario_id");
+
+                    b.Property<Guid>("ContratoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("contrato_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("texto");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContratoId");
+
+                    b.HasIndex("TenantId", "ContratoId");
+
+                    b.ToTable("contrato_comentarios");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.ContratoEtapa", b =>
                 {
                     b.Property<Guid>("Id")
@@ -11232,6 +11287,57 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "PolizaId");
 
                     b.ToTable("poliza_campo_valores");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.PolizaDocumento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid>("PolizaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("poliza_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PolizaId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("poliza_documentos");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.PolizaReclamacion", b =>
@@ -21348,6 +21454,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Contrato");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.ContratoComentario", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.ContratoServicio", "Contrato")
+                        .WithMany()
+                        .HasForeignKey("ContratoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contrato");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.ContratoServicio", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.Servicio", "Servicio")
@@ -22220,6 +22337,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Empresa");
 
                     b.Navigation("Persona");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.PolizaDocumento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Poliza", "Poliza")
+                        .WithMany()
+                        .HasForeignKey("PolizaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Poliza");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.PolizaReclamacion", b =>

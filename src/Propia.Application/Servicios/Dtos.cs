@@ -36,6 +36,10 @@ public record AdjuntoDto(
 /// <summary>Subida via base64 (mismo patron que Documentos 2.15). Admite prefijo data:...;base64,.</summary>
 public record SubirAdjuntoRequest(string NombreArchivo, string TipoMime, string ContenidoBase64);
 
+// ----- Hilo de actividad (chat) por-contrato. Espejo de PolizaComentarioDto. -----
+public record ContratoComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
+public record AgregarComentarioContratoRequest(string Texto);
+
 // ----- Resumen de contrato para el detalle del servicio -----
 public record ContratoResumenDto(
     Guid Id, TipoServicio Tipo, string Proveedor, DateOnly FechaInicio, DateOnly? FechaFin,

@@ -1,6 +1,64 @@
 # HAND-OFF DEPLOY - PROPIA
 
-> **VERSION A DESPLEGAR = 0.0.274 (Web)** (sigue a 0.0.273, 2026-11-03). **SOLO CODIGO FRONTEND, SIN MIGRACION,
+> **VERSION A DESPLEGAR = 0.0.276 (Web) + API (nuevos endpoints)** (sigue a 0.0.275, 2026-11-04).
+> **1 MIGRACION NUEVA (ADITIVA) + LA API CAMBIA. Redeployar API y Web.**
+> **Contratos: el modal de Contrato queda identico a la maqueta (modal-contrato.html), hermano del de Poliza.**
+> Cambios de esta tanda:
+> - **Modal de Contrato a 2 columnas:** la pestana **Contrato** pasa a formulario (izquierda, scroll propio) +
+>   **panel de Actividad lateral** (`.act-*`, chat por-contrato, mismo look que Poliza/Tarea/PQRSD) a la derecha.
+>   En contrato NUEVO queda a 1 columna (sin Actividad hasta guardar). El frame estandar 1056x86vh ya existia.
+> - **Chat por-contrato (MIGRACION aditiva `20261104160730_AddContratoComentario`):** tabla nueva
+>   `contrato_comentarios` (RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`, FK a `contratos_servicio`
+>   ON DELETE CASCADE) + endpoints `GET/POST /api/servicios/contratos/{id}/comentarios`. Espejo EXACTO de
+>   `poliza_reclamacion_comentarios`. No toca datos existentes. `ServiciosService` ahora recibe `IHttpContextAccessor`
+>   (para el autor del comentario desde los claims) — ya registrado en DI, no cambia config.
+> - **Pestana Documentos = panel comun `DocumentosPanel`** (miniaturas + visor inline + lightbox) sobre los
+>   **adjuntos de contrato que ya existian** (endpoint `/api/servicios/contratos/{id}/adjuntos`, sin backend nuevo).
+>   Se conservan arriba los **Expedientes conectados** y abajo **Programar tarea** (no estan en la maqueta pero son
+>   features vivas).
+> - **Configuracion de alertas:** se agregan "Avisar antes del vencimiento" (checkbox) y "Canal de aviso"
+>   (informativo, default del sistema) para calcar la maqueta; el canal NO se persiste por-contrato.
+> - **Vinculos internos** (Servicio/Proyecto/Valor mensual) se **conservan** (decision de Alex) aunque la maqueta
+>   los retira: hoy solo se capturan ahi. Icono del header -> `file-signature`. Bump `servicios.css ?v=25`.
+> - Todo por tokens `--propia-*` (ok en claro y oscuro).
+>
+> **Aplicar la migracion:** `cd src/Propia.Api && dotnet ef database update --project ../Propia.Infrastructure --startup-project .`
+> **Como desplegar:** redeploy de **API y Web** (Railway) + aplicar la migracion (aditiva). NO tocar config/env.
+> **Rollback:** redeploy del artefacto previo (0.0.275); la tabla nueva puede quedarse (es aditiva y nada mas la usa).
+> **Verificado** E2E en dev (demo "Conjunto Altos del Bosque", contrato Aseo Total SAS): modal a 2 columnas con
+> Actividad (mensaje persiste fila en BD + estilo "mine"), Documentos (subida real por API -> miniatura + visor +
+> borrado), Alertas y Vinculos, claro y oscuro. `dotnet build` 0 err / 46 warn (baseline); RlsCoverage + test de
+> aislamiento de `contrato_comentarios` verdes. Datos de prueba borrados.
+>
+> **VERSION PREVIA = 0.0.275 (Web) + API (nuevos endpoints)** (sigue a 0.0.274, 2026-11-03).
+> **1 MIGRACION NUEVA (ADITIVA) + LA API CAMBIA. Redeployar API y Web.**
+> **Seguros: el modal de Poliza queda identico al diseno CARNET / 2 columnas de la maqueta (modal-poliza.html).**
+> Cambios de esta tanda:
+> - **Modal de Poliza a 2 columnas:** la pestana **Poliza** pasa a formulario (izquierda) + **panel de Actividad
+>   lateral** (`.act-*`, chat por-poliza, mismo look que Tarea/PQRSD) a la derecha. Antes el chat vivia dentro de
+>   la pestana Reclamaciones; ahora es columna permanente de la vista por defecto.
+> - **Pestana Documentos = panel comun `DocumentosPanel`** (caratula, certificados y anexos con miniaturas +
+>   visor inline + lightbox). Reemplaza el viejo enlace "expediente". **MIGRACION aditiva
+>   `20261104010324_AddPolizaDocumentos`**: tabla nueva `poliza_documentos` (RLS FORCE + policy `tenant_isolation`
+>   + GRANT a `propia_app`, FK a `polizas` ON DELETE CASCADE) y endpoints nuevos
+>   `GET/POST/DELETE /api/seguros/polizas/{id}/documentos` (POST/DELETE gateados a Administrador). No toca datos
+>   existentes.
+> - **Reclamaciones intactas:** CRUD completo (tabla + nueva reclamacion + cerrar con monto reconocido); solo se
+>   alinearon estilos y se saco el chat (ahora en Actividad).
+> - **Ortografia de produccion** en el modal: Poliza, Numero, Finalizacion, etc. **Aseguradora y Corredor** siguen
+>   como relacion al Directorio (`SelectorPersona`) + snapshot de nombre.
+> - Todo por tokens `--propia-*` (ok en claro y oscuro). El CSS de Seguros es inline en `Seguros.razor`, por eso
+>   NO hay bump de `?v` de CSS en `App.razor`.
+>
+> **Aplicar la migracion:** `cd src/Propia.Api && dotnet ef database update --project ../Propia.Infrastructure --startup-project .`
+> **Como desplegar:** redeploy de **API y Web** (Railway) + aplicar la migracion (aditiva). NO tocar config/env.
+> **Rollback:** redeploy del artefacto previo (0.0.274); la tabla nueva puede quedarse (es aditiva y nada mas la usa).
+> **Verificado** E2E en dev (demo "Conjunto Altos del Bosque", poliza AR-2025-4471): Actividad (mensaje persiste
+> entre reaperturas + estilo "mine"), Documentos (subida real por API -> miniatura + visor PDF + borrado),
+> Reclamaciones CRUD intacto, claro y oscuro. `dotnet build` 0 errores; tests Seguros 28/28 + RlsCoverage verdes
+> (la tabla nueva pasa la cobertura de RLS). Datos de prueba borrados.
+>
+> **VERSION PREVIA = 0.0.274 (Web)** (sigue a 0.0.273, 2026-11-03). **SOLO CODIGO FRONTEND, SIN MIGRACION,
 > SIN CONFIG. API SIN CAMBIOS (diff de Api/Infrastructure/Domain/Application vacio). Redeployar SOLO Web.**
 > Cambios de esta tanda (todos UI; commits 454b09de, 63b87516, 05f3b234 + bump):
 > - **Mi Copropiedad -> Identidad:** la seccion pasa a un **CARNET a 2 columnas** (resumen a la izquierda +

@@ -162,3 +162,20 @@ public class ContratoEtapa : TenantEntity
     /// la tenian conservan su etiqueta. No se borra (a diferencia de Eliminar).</summary>
     public bool Activo { get; set; } = true;
 }
+
+/// <summary>
+/// Comentario del hilo de actividad (chat) de un contrato (por-contrato, MVP). Espejo de
+/// PolizaReclamacionComentario: es la conversacion/seguimiento del contrato (admin, contabilidad),
+/// no toca los datos del contrato ni sus adjuntos. Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class ContratoComentario : TenantEntity
+{
+    public Guid ContratoId { get; set; }
+    public ContratoServicio? Contrato { get; set; }
+
+    /// <summary>Texto libre del comentario (incluye las respuestas rapidas, que insertan texto canoneo).</summary>
+    public string Texto { get; set; } = string.Empty;
+
+    public Guid? AutorUsuarioId { get; set; }
+    public string? AutorNombre { get; set; }
+}

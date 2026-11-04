@@ -31,4 +31,9 @@ public interface ISegurosService
     // Hilo de actividad (chat) de reclamaciones, por-poliza (MVP). Coexiste con el CRUD de arriba.
     Task<IReadOnlyList<PolizaComentarioDto>> ListComentariosAsync(Guid polizaId, CancellationToken ct);
     Task<PolizaComentarioDto> AgregarComentarioAsync(Guid polizaId, AgregarComentarioPolizaRequest req, CancellationToken ct);
+
+    // Documentos/adjuntos de una poliza (caratula, certificados, anexos). Espejo de EquipoDocumento.
+    Task<IReadOnlyList<PolizaDocumentoDto>> ListDocumentosAsync(Guid polizaId, CancellationToken ct);
+    Task<PolizaDocumentoDto?> AgregarDocumentoAsync(Guid polizaId, string nombre, string url, CancellationToken ct);
+    Task<bool> EliminarDocumentoAsync(Guid docId, CancellationToken ct);
 }

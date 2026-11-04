@@ -486,6 +486,16 @@ public partial class PropiaDbContext
             b.HasOne(x => x.Poliza).WithMany().HasForeignKey(x => x.PolizaId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        // Documentos/adjuntos de una poliza (espejo de EquipoDocumento). RLS en la migracion.
+        modelBuilder.Entity<PolizaDocumento>(b =>
+        {
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(255);
+            b.Property(x => x.Url).IsRequired();
+            b.HasOne(x => x.Poliza).WithMany().HasForeignKey(x => x.PolizaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.PolizaId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
 
         // Informes de gestion (plantillas inteligentes + generacion IA)
         modelBuilder.Entity<InformePlantilla>(b =>
@@ -561,6 +571,15 @@ public partial class PropiaDbContext
             b.Property(x => x.UrlStorage).IsRequired().HasMaxLength(500);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.ContratoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        // Hilo de actividad (chat) por-contrato (espejo de PolizaReclamacionComentario). RLS en la migracion.
+        modelBuilder.Entity<ContratoComentario>(b =>
+        {
+            b.Property(x => x.Texto).IsRequired().HasMaxLength(4000);
+            b.Property(x => x.AutorNombre).HasMaxLength(200);
+            b.HasIndex(x => new { x.TenantId, x.ContratoId });
+            b.HasOne(x => x.Contrato).WithMany().HasForeignKey(x => x.ContratoId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

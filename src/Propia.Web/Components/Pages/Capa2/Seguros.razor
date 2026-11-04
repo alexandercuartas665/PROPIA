@@ -389,8 +389,8 @@
         <div class="seg-modal-head">
             <div class="seg-modal-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg></div>
             <div style="flex:1;min-width:0;">
-                <div class="seg-modal-title">@(_editId is null ? "Nueva poliza" : (string.IsNullOrWhiteSpace(_f.NumeroPoliza) ? "Poliza" : "Poliza " + _f.NumeroPoliza))</div>
-                <div class="seg-modal-sub">@(_editId is null ? "Registra la poliza y su vigencia." : _f.Aseguradora)</div>
+                <div class="seg-modal-title">@(_editId is null ? "Nueva póliza" : (string.IsNullOrWhiteSpace(_f.NumeroPoliza) ? "Póliza" : "Póliza " + _f.NumeroPoliza))</div>
+                <div class="seg-modal-sub">@(_editId is null ? "Registra la póliza y su vigencia." : _f.Aseguradora)</div>
             </div>
             <button class="seg-x" @onclick="() => _modal = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
@@ -407,11 +407,13 @@
         <div class="seg-modal-body">
             @if (_editId is null || _tab == "poliza")
             {
+            <div class="seg-2col @(_editId is null ? "seg-2col--solo" : "")">
+            <div class="seg-mainpane">
                 @* Cargar PDF con OCR para prellenar (reusa el motor de Super Admin). *@
                 <div class="seg-ocr">
                     <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                        @(_ocrBusy ? "Leyendo poliza..." : "Cargar PDF y extraer (IA)")
+                        @(_ocrBusy ? "Leyendo póliza..." : "Cargar PDF y extraer (IA)")
                         <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
                     </label>
                     @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
@@ -438,7 +440,7 @@
                     <div><label class="seg-lbl">Número de póliza</label><input class="seg-input" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
                     <div><label class="seg-lbl">Valor de póliza (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
                     <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input" type="date" @bind="_f.Inicio" /></div>
-                    <div><label class="seg-lbl">Fecha de finalizacion</label><input class="seg-input" type="date" @bind="_f.Fin" /></div>
+                    <div><label class="seg-lbl">Fecha de finalización</label><input class="seg-input" type="date" @bind="_f.Fin" /></div>
                     <div><label class="seg-lbl">Forma de pago (cuotas)</label><input class="seg-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cuotas" /></div>
                     <div><label class="seg-lbl">Pago mensual</label><label class="seg-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label></div>
                     <div class="seg-col-full"><label class="seg-check"><input type="checkbox" @bind="_f.IncluyeZonasUnidades" /> Incluye zonas y unidades privadas</label></div>
@@ -487,18 +489,64 @@
                         }
                     }
                 </div>
+            </div>
+            @* Panel de actividad (chat por-poliza), columna lateral como en la maqueta (.act-*). Solo sobre una poliza existente. *@
+            @if (_editId is not null)
+            {
+                <aside class="seg-actpane">
+                    <div class="act-panel">
+                        <div class="act-h"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Actividad</div>
+                        <div class="act-chat">
+                            @if (_comentarios.Count == 0)
+                            {
+                                <div class="act-empty">Aún no hay actividad. Escribe el primer mensaje sobre la póliza.</div>
+                            }
+                            else
+                            {
+                                @foreach (var c in _comentarios)
+                                {
+                                    var mine = c.AutorUsuarioId is { } au && au == _miUsuarioId;
+                                    var autor = string.IsNullOrWhiteSpace(c.AutorNombre) ? "Sistema" : c.AutorNombre!;
+                                    <div class="act-msg @(mine ? "mine" : "")">
+                                        <span class="act-av">@Iniciales(autor)</span>
+                                        <div class="act-msg-b">
+                                            <div class="act-who">@autor</div>
+                                            <div class="act-bubble">@c.Texto</div>
+                                            <div class="act-time">@c.CreatedAt.ToLocalTime().ToString("dd MMM - HH:mm")</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="act-qr-row">
+                            <span class="act-qr-lbl">Respuesta rápida</span>
+                            @foreach (var qr in _respuestasRapidas)
+                            {
+                                var t = qr;
+                                <button type="button" class="act-qr" @onclick="() => EnviarComentario(t)" disabled="@_busy">@t</button>
+                            }
+                        </div>
+                        <div class="act-composer">
+                            <input class="seg-input" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un mensaje..." @onkeydown="OnChatKey" />
+                            <button type="button" class="act-cbtn act-send" title="Enviar" @onclick="() => EnviarComentario(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+                        </div>
+                    </div>
+                </aside>
+            }
+            </div>
             }
             else if (_tab == "docs")
             {
-                <div class="seg-doc-h">Expediente de la póliza (documentos)</div>
-                <select class="seg-input" @bind="_f.ExpedienteId">
-                    <option value="">- Sin expediente -</option>
-                    @foreach (var e in _expedientes) { <option value="@e.Id">@e.Etiqueta</option> }
-                </select>
-                <p class="seg-doc-note">Conecta el expediente con la póliza, corredor y aseguradora. Los documentos se cargan en el módulo <a href="/documentos">Documentos</a>. Recuerda Guardar.</p>
+                @* Panel de documentos comun (canon PQRSD): caratula, certificados y anexos de la poliza. *@
+                <div class="seg-docpane">
+                    <DocumentosPanel Documentos="DocsItems()" Subiendo="_docsSubiendo" Fill="true" Padding="0"
+                                     EmptyHint="Sube la carátula, los certificados y los anexos de la póliza."
+                                     OnSubir="OnSubirDocumento" OnEliminar="OnEliminarDocumento" />
+                </div>
             }
             else if (_tab == "recl")
             {
+                <div class="seg-reclpane">
                 <div class="seg-doc-h">Reclamaciones (@_reclamaciones.Count)</div>
                 @if (_reclamaciones.Count > 0)
                 {
@@ -543,37 +591,6 @@
                         <button class="seg-btn-brand" style="margin-top:8px;" @onclick="CrearReclamacion" disabled="@(_busy || string.IsNullOrWhiteSpace(_nrDesc))">Agregar reclamación</button>
                     </div>
                 }
-
-                @* Hilo de actividad (chat) por-poliza. Coexiste con el CRUD de siniestros de arriba (no lo reemplaza). *@
-                <div class="seg-chat">
-                    <div class="seg-doc-h" style="margin-top:16px;">Actividad</div>
-                    @if (_comentarios.Count == 0)
-                    {
-                        <p class="seg-doc-note">Aun no hay comentarios. Escribe el primero.</p>
-                    }
-                    else
-                    {
-                        <div class="seg-chat-feed">
-                            @foreach (var c in _comentarios)
-                            {
-                                <div class="seg-chat-msg">
-                                    <div class="seg-chat-meta"><span class="seg-chat-autor">@(string.IsNullOrWhiteSpace(c.AutorNombre) ? "Sistema" : c.AutorNombre)</span> <span class="seg-chat-fecha">@c.CreatedAt.ToLocalTime().ToString("dd MMM yyyy - HH:mm")</span></div>
-                                    <div class="seg-chat-texto">@c.Texto</div>
-                                </div>
-                            }
-                        </div>
-                    }
-                    <div class="seg-chat-qr">
-                        @foreach (var qr in _respuestasRapidas)
-                        {
-                            var t = qr;
-                            <button type="button" class="seg-chat-qrbtn" @onclick="() => EnviarComentario(t)" disabled="@_busy">@t</button>
-                        }
-                    </div>
-                    <div class="seg-chat-compose">
-                        <input class="seg-input" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un comentario..." @onkeydown="OnChatKey" />
-                        <button class="seg-btn-brand" @onclick="() => EnviarComentario(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))">Enviar</button>
-                    </div>
                 </div>
             }
 
@@ -587,7 +604,7 @@
                     <button class="seg-btn-danger" style="margin-right:auto;" @onclick="() => _confirmEliminarP = true" disabled="@_busy">Eliminar</button>
                 }
                 <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
-                <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear poliza" : "Guardar poliza")</button>
+                <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear póliza" : "Guardar póliza")</button>
             </div>
         }
     </div>
@@ -788,7 +805,50 @@
     .seg-tabs button { border: 0; background: transparent; color: var(--propia-text-muted); font-size: 13px; font-weight: 700; padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
     .seg-tabs button.on { color: var(--propia-brand, var(--propia-brand)); border-bottom-color: var(--propia-brand, var(--propia-brand)); }
     .seg-tab-n { font-size: 10px; background: var(--propia-border-divider); color: var(--propia-text-secondary); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
-    .seg-modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+    /* Cuerpo: flex en columna; cada pestana maneja su propio scroll para que el alto del modal NO cambie. */
+    .seg-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* Pestana Poliza: 2 columnas (formulario + panel de Actividad lateral, como la maqueta .tfm-2col). */
+    .seg-2col { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; padding: 16px 20px; }
+    .seg-2col--solo { grid-template-columns: 1fr; }
+    .seg-mainpane { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+    .seg-actpane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    /* Pestanas Documentos / Reclamaciones: ancho completo, scroll propio. */
+    .seg-docpane { flex: 1; min-height: 0; display: flex; padding: 16px 20px; }
+    .seg-reclpane { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; }
+
+    /* Panel de Actividad (CALCA .act-* de la maqueta): chat por-poliza en la columna derecha. */
+    .act-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; }
+    .act-h { padding: 11px 14px 9px; font-size: 12.5px; font-weight: 800; color: var(--propia-text-h1); display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--propia-border-divider); }
+    .act-h svg { color: var(--propia-brand); }
+    .act-chat { flex: 1; min-height: 120px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--propia-bg-card-soft); }
+    .act-empty { font-size: 12px; color: var(--propia-text-faint); text-align: center; margin: auto 8px; }
+    .act-msg { display: flex; gap: 8px; max-width: 90%; }
+    .act-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+    .act-msg-b { min-width: 0; }
+    .act-av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--propia-brand), var(--propia-brand-hover)); color: var(--propia-text-inverse); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+    .act-bubble { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 8px 11px; font-size: 12.5px; color: var(--propia-text-body); overflow-wrap: anywhere; }
+    .act-msg.mine .act-bubble { background: var(--propia-brand-soft); border-color: var(--propia-brand-border); }
+    .act-who { font-size: 10.5px; font-weight: 700; color: var(--propia-text-muted); margin-bottom: 2px; }
+    .act-msg.mine .act-who { text-align: right; }
+    .act-time { font-size: 9.5px; color: var(--propia-text-faint); margin-top: 3px; }
+    .act-msg.mine .act-time { text-align: right; }
+    .act-qr-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid var(--propia-border-divider); background: var(--propia-bg-card); }
+    .act-qr-lbl { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--propia-text-faint); margin-right: 2px; }
+    .act-qr { font-size: 11.5px; font-weight: 600; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 999px; padding: 4px 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .act-qr:hover:not(:disabled) { background: var(--propia-brand-border); }
+    .act-qr:disabled { opacity: .5; cursor: default; }
+    .act-composer { border-top: 1px solid var(--propia-border-card); padding: 9px 12px; display: flex; align-items: center; gap: 8px; background: var(--propia-bg-card); }
+    .act-composer .seg-input { flex: 1; }
+    .act-cbtn { width: 34px; height: 34px; border-radius: 9px; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .act-send { background: var(--propia-brand); color: var(--propia-text-inverse); }
+    .act-send:disabled { opacity: .5; cursor: default; }
+
+    @@media (max-width: 760px) {
+        .seg-2col { grid-template-columns: 1fr; overflow-y: auto; }
+        .seg-mainpane { overflow: visible; }
+        .seg-actpane .act-panel { min-height: 60vh; }
+    }
+
     .seg-grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
     .seg-col-full { grid-column: 1 / -1; }
     .seg-lbl { display: block; font-size: 11.5px; font-weight: 700; color: var(--propia-text-muted); margin-bottom: 3px; }
@@ -910,6 +970,7 @@
     }
 
     private string? _jwt;
+    private Guid? _miUsuarioId;   // para marcar "mios" los mensajes del panel de Actividad (.act-msg.mine)
     private bool _authChecked;
     private string? _loadError;
 
@@ -1821,6 +1882,7 @@
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                _miUsuarioId = UserIdFromJwt(stored);
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
                 try { _gruposS = ParseGruposS(await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey)); } catch { }
                 try { CargarAggS(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyS)); } catch { }
@@ -1830,6 +1892,23 @@
             StateHasChanged();
         }
         catch { }
+    }
+
+    // Lee el claim "user_id" del JWT (base64url del payload) para distinguir mis mensajes en Actividad.
+    private static Guid? UserIdFromJwt(string jwt)
+    {
+        try
+        {
+            var parts = jwt.Split('.');
+            if (parts.Length < 2) return null;
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("user_id", out var e) && Guid.TryParse(e.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
     }
 
     private HttpClient Auth()
@@ -1922,7 +2001,7 @@
 
     private async Task AbrirModal(Guid? id)
     {
-        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _comentarios = new(); _nuevoComentario = ""; _cerrarId = null; _campoValores.Clear();
+        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _comentarios = new(); _docs = new(); _nuevoComentario = ""; _cerrarId = null; _campoValores.Clear();
         if (_expedientes.Count == 0)
         {
             try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/folders/lista") ?? new(); } catch { }
@@ -1938,6 +2017,10 @@
             if (p is null) { try { p = await Auth().GetFromJsonAsync<PolizaDto>($"/api/seguros/polizas/{id}"); } catch { } }
             if (p is not null) CargarForm(p);
             try { _reclamaciones = await Auth().GetFromJsonAsync<List<ReclamacionDto>>($"/api/seguros/polizas/{id}/reclamaciones") ?? new(); } catch { }
+            // El panel de Actividad y la pestana Documentos viven ahora en la vista por defecto (Poliza),
+            // asi que se cargan al abrir la ficha, no solo al entrar a su pestana.
+            try { _comentarios = await Auth().GetFromJsonAsync<List<Propia.Application.Seguros.PolizaComentarioDto>>($"/api/seguros/polizas/{id}/comentarios") ?? new(); } catch { }
+            try { _docs = await Auth().GetFromJsonAsync<List<Propia.Application.Seguros.PolizaDocumentoDto>>($"/api/seguros/polizas/{id}/documentos") ?? new(); } catch { }
         }
         _modal = true;
     }
@@ -2177,6 +2260,50 @@
     private List<Propia.Application.Seguros.PolizaComentarioDto> _comentarios = new();
     private string _nuevoComentario = "";
     private static readonly string[] _respuestasRapidas = { "Gracias, lo reviso", "En proceso", "Agendo visita", "Resuelto" };
+
+    // Iniciales para el avatar del panel de Actividad (.act-av).
+    private static string Iniciales(string? nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, 1).ToUpperInvariant();
+        return (parts[0].Substring(0, 1) + parts[^1].Substring(0, 1)).ToUpperInvariant();
+    }
+
+    // ---- Documentos/adjuntos (pestana Documentos): panel comun DocumentosPanel contra los endpoints de polizas. ----
+    private List<Propia.Application.Seguros.PolizaDocumentoDto> _docs = new();
+    private bool _docsSubiendo;
+
+    private List<DocumentosPanel.Item> DocsItems() =>
+        _docs.Select(d => new DocumentosPanel.Item(d.Id, d.Nombre, d.Url)).ToList();
+
+    private async Task OnSubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (_editId is not { } id) return;
+        _docsSubiendo = true; _modalError = null;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(file.OpenReadStream(10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+                content.Add(sc, "file", file.Name);
+                var resp = await Auth().PostAsync($"/api/seguros/polizas/{id}/documentos", content);
+                if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); break; }
+            }
+            _docs = await Auth().GetFromJsonAsync<List<Propia.Application.Seguros.PolizaDocumentoDto>>($"/api/seguros/polizas/{id}/documentos") ?? _docs;
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _docsSubiendo = false; }
+    }
+
+    private async Task OnEliminarDocumento(Guid docId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/seguros/polizas/documentos/{docId}");
+        if (resp.IsSuccessStatusCode) { _docs.RemoveAll(d => d.Id == docId); }
+        else { _modalError = await MensajeErrorAsync(resp); }
+    }
 
     private async Task EnviarComentario(string? textoRapido)
     {

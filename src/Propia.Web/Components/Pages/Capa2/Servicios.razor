@@ -999,7 +999,7 @@ else
     <div class="srv-ov" @onclick="() => _showModal = false"></div>
     <div class="srv-modal srv-modal-contrato">
         <div class="srv-modal-head">
-            <div class="srv-modal-ic"><i class="fi fi-rr-shield"></i></div>
+            <div class="srv-modal-ic"><i class="fi fi-rr-file-signature"></i></div>
             <div style="flex:1;min-width:0;">
                 <div class="srv-modal-title">@(_editId is null ? "Nuevo contrato" : "Detalle del contrato")</div>
                 <div class="srv-sub" style="margin:2px 0 0;">Datos del contrato y su vigencia.</div>
@@ -1010,7 +1010,7 @@ else
                                 TituloGuardar="@(_editId is null ? "Crear contrato" : "Guardar contrato")"
                                 OnGuardar="GuardarAsync" OnCerrar="@(() => _showModal = false)" />
         </div>
-        <div class="srv-modal-body">
+        <div class="srv-modal-body @(_editId is not null && _modalTab == "detalle" ? "srv-modal-body--2col" : "")">
             @if (_editId is not null)
             {
                 <div class="srv-modal-tabs">
@@ -1021,6 +1021,8 @@ else
             }
             @if (_editId is null || _modalTab == "detalle")
             {
+            <div class="srv-ctr-2col @(_editId is null ? "srv-ctr-2col--solo" : "")">
+            <div class="srv-ctr-main">
             <div class="sp-ocr" style="margin-bottom:12px;">
                 <label class="sp-ocr-up">
                     <i class="fi fi-rr-upload"></i>
@@ -1143,12 +1145,21 @@ else
             </div>
 
             <div class="srv-sec">Configuración de alertas</div>
+            <label class="srv-check" style="margin-bottom:8px;"><input type="checkbox" @bind="_f.AvisarVencimiento" /> Avisar antes del vencimiento</label>
             <div class="srv-grid">
                 <div>
                     <label class="srv-lbl">Días de anticipación</label>
                     <input class="srv-input" type="number" @bind="_f.Dias" placeholder="30" />
                 </div>
-                <div class="srv-note">El canal de aviso usa el valor por defecto del sistema (se ajusta en Configuracion, seccion Alertas).</div>
+                <div>
+                    <label class="srv-lbl">Canal de aviso</label>
+                    <select class="srv-input" disabled title="Valor por defecto del sistema">
+                        <option selected>Notificación + correo</option>
+                        <option>Solo notificación</option>
+                        <option>Solo correo</option>
+                    </select>
+                </div>
+                <div class="srv-note">Valor por defecto del sistema; se ajusta en Configuración &gt; Alertas.</div>
             </div>
 
             <div class="srv-sec">Vínculos internos</div>
@@ -1171,8 +1182,53 @@ else
                     <label class="srv-lbl">Valor mensual (COP)</label>
                     <input class="srv-input" type="number" step="any" @bind="_f.Valor" placeholder="0" />
                 </div>
-                <div class="srv-note">La maqueta retira estos 3 campos del modal; se conservan porque hoy solo se capturan aqui (decision de Alex pendiente).</div>
+                <div class="srv-note">Estos 3 campos no estan en la maqueta; se conservan a peticion porque hoy solo se capturan aqui.</div>
             </div>
+            </div>@* /.srv-ctr-main *@
+            @if (_editId is not null)
+            {
+                @* Panel de actividad (chat por-contrato), columna lateral como en la maqueta (.act-*). *@
+                <aside class="srv-ctr-actpane">
+                    <div class="act-panel">
+                        <div class="act-h"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Actividad</div>
+                        <div class="act-chat">
+                            @if (_comentarios.Count == 0)
+                            {
+                                <div class="act-empty">Aún no hay actividad. Escribe el primer mensaje sobre el contrato.</div>
+                            }
+                            else
+                            {
+                                @foreach (var cm in _comentarios)
+                                {
+                                    var mine = cm.AutorUsuarioId is { } au && au == _miUsuarioId;
+                                    var autor = string.IsNullOrWhiteSpace(cm.AutorNombre) ? "Sistema" : cm.AutorNombre!;
+                                    <div class="act-msg @(mine ? "mine" : "")">
+                                        <span class="act-av">@Iniciales(autor)</span>
+                                        <div class="act-msg-b">
+                                            <div class="act-who">@autor</div>
+                                            <div class="act-bubble">@cm.Texto</div>
+                                            <div class="act-time">@cm.CreatedAt.ToLocalTime().ToString("dd MMM - HH:mm")</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="act-qr-row">
+                            <span class="act-qr-lbl">Respuesta rápida</span>
+                            @foreach (var qr in _respuestasRapidas)
+                            {
+                                var t = qr;
+                                <button type="button" class="act-qr" @onclick="() => EnviarComentario(t)" disabled="@_busy">@t</button>
+                            }
+                        </div>
+                        <div class="act-composer">
+                            <input class="srv-input" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un mensaje..." @onkeydown="OnChatKey" />
+                            <button type="button" class="act-cbtn act-send" title="Enviar" @onclick="() => EnviarComentario(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+                        </div>
+                    </div>
+                </aside>
+            }
+            </div>@* /.srv-ctr-2col *@
             }
 
             @if (_editId is not null && _modalTab == "archivos")
@@ -1206,22 +1262,10 @@ else
 
                 <div class="srv-attach">
                     <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del contrato (@_contratoAdjuntos.Count)</div>
-                    <div class="srv-attach-list">
-                        @foreach (var a in _contratoAdjuntos)
-                        {
-                            var aa = a;
-                            <div class="srv-attach-item">
-                                <i class="fi fi-rr-document"></i>
-                                <a href="@a.Url" target="_blank" class="srv-attach-name">@a.NombreArchivo</a>
-                                <span class="srv-attach-size">@FmtBytes(a.TamanoBytes)</span>
-                                <span class="srv-del" @onclick="() => EliminarAdjuntoContratoAsync(aa.Id)" title="Eliminar"><i class="fi fi-rr-trash"></i></span>
-                            </div>
-                        }
-                        <label class="srv-attach-up">
-                            <i class="fi fi-rr-upload"></i><span>@(_attachBusy ? "Subiendo..." : "Adjuntar (PDF, imagen, Word, Excel)")</span>
-                            <InputFile OnChange="(e) => SubirAdjuntoContratoAsync(e)" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" disabled="@_attachBusy" />
-                        </label>
-                    </div>
+                    @* Panel de documentos comun (canon PQRSD): miniaturas + visor inline + lightbox. *@
+                    <DocumentosPanel Documentos="DocsItemsContrato()" Subiendo="_attachBusy" Padding="0"
+                                     EmptyHint="Sube el contrato firmado, la póliza de cumplimiento y los anexos."
+                                     OnSubir="OnSubirDocumentoContrato" OnEliminar="EliminarAdjuntoContratoAsync" />
                 </div>
 
                 <div class="srv-attach">
@@ -2085,6 +2129,9 @@ else
         public DateTime? Fin { get; set; }
         public decimal? Valor { get; set; }
         public int Dias { get; set; } = 30;
+        // Visual (como la maqueta): "Avisar antes del vencimiento". El canal de aviso es un default del
+        // sistema (no por-contrato); no se persiste aparte de DiasAnticipacionAlerta.
+        public bool AvisarVencimiento { get; set; } = true;
         public string? Observaciones { get; set; }
         public EstadoContrato Estado { get; set; } = EstadoContrato.Vigente;
         public bool RenovacionAutomatica { get; set; }
@@ -3330,6 +3377,9 @@ else
         _modalError = null;
         _ocrCMsg = null;
         _contratoAdjuntos = new();
+        _comentarios = new();
+        _nuevoComentario = "";
+        _miUsuarioId = UserIdFromJwt(_jwt);
         _modalTab = "detalle";
         await CargarDropdownsAsync();
         if (c is null)
@@ -3375,6 +3425,9 @@ else
             catch { _contratoAdjuntos = new(); }
             try { _contratoExpedientes = await Auth().GetFromJsonAsync<List<ContratoExpedienteDto>>($"/api/mi-copropiedad/contratos/{c.Id}/expedientes") ?? new(); }
             catch { _contratoExpedientes = new(); }
+            // Hilo de actividad por-contrato: se carga al abrir la ficha (vive en la pestana Contrato).
+            try { _comentarios = await Auth().GetFromJsonAsync<List<ContratoComentarioDto>>($"/api/servicios/contratos/{c.Id}/comentarios") ?? new(); }
+            catch { _comentarios = new(); }
             _contratoBitacora = new();   // se carga perezoso al abrir la pestana Historial
         }
         _expedienteAConectar = "";
@@ -3938,6 +3991,90 @@ else
             await CargarAsync();
         }
         finally { _attachBusy = false; }
+    }
+
+    // ----- Documentos del contrato: panel comun DocumentosPanel sobre los adjuntos de contrato. -----
+    private List<DocumentosPanel.Item> DocsItemsContrato() =>
+        _contratoAdjuntos.Select(a => new DocumentosPanel.Item(a.Id, a.NombreArchivo, a.Url, a.TamanoBytes)).ToList();
+
+    private async Task OnSubirDocumentoContrato(InputFileChangeEventArgs e)
+    {
+        if (_editId is not { } cid) return;
+        _attachBusy = true; _modalError = null;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                var b64 = await ToBase64(file);
+                var resp = await Auth().PostAsJsonAsync($"/api/servicios/contratos/{cid}/adjuntos",
+                    new SubirAdjuntoRequest(file.Name, file.ContentType ?? "", b64));
+                if (!resp.IsSuccessStatusCode) { _modalError = await ReadErr(resp); break; }
+            }
+            _contratoAdjuntos = await Auth().GetFromJsonAsync<List<AdjuntoDto>>($"/api/servicios/contratos/{cid}/adjuntos") ?? _contratoAdjuntos;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _attachBusy = false; }
+    }
+
+    // ----------------------------- Hilo de actividad (chat) por-contrato -----------------------------
+    // Coexiste con los adjuntos/bitacora: solo agrega/lee comentarios (espejo del chat de polizas).
+    private List<ContratoComentarioDto> _comentarios = new();
+    private string _nuevoComentario = "";
+    private Guid? _miUsuarioId;   // para marcar "mios" los mensajes del panel de Actividad (.act-msg.mine)
+    private static readonly string[] _respuestasRapidas = { "Gracias, lo reviso", "En proceso", "Agendo visita", "Resuelto" };
+
+    private async Task EnviarComentario(string? textoRapido)
+    {
+        if (_editId is not { } id) return;
+        var texto = (textoRapido ?? _nuevoComentario).Trim();
+        if (string.IsNullOrWhiteSpace(texto)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/servicios/contratos/{id}/comentarios",
+                new AgregarComentarioContratoRequest(texto));
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<ContratoComentarioDto>();
+                if (dto is not null) _comentarios.Add(dto);
+                if (textoRapido is null) _nuevoComentario = "";
+            }
+        }
+        catch { }
+        finally { _busy = false; }
+    }
+
+    private async Task OnChatKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await EnviarComentario(null);
+    }
+
+    // Iniciales para el avatar del panel de Actividad (.act-av).
+    private static string Iniciales(string? nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, 1).ToUpperInvariant();
+        return (parts[0].Substring(0, 1) + parts[^1].Substring(0, 1)).ToUpperInvariant();
+    }
+
+    // Lee el claim "user_id" del JWT para distinguir mis mensajes en Actividad.
+    private static Guid? UserIdFromJwt(string? jwt)
+    {
+        if (string.IsNullOrEmpty(jwt)) return null;
+        try
+        {
+            var parts = jwt.Split('.');
+            if (parts.Length < 2) return null;
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("user_id", out var el) && Guid.TryParse(el.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
     }
 
     // ----- Asociar contratos al servicio -----

@@ -24,6 +24,10 @@ public interface IServiciosService
     Task<IReadOnlyList<AdjuntoDto>> ListarAdjuntosContratoAsync(Guid contratoId, CancellationToken ct);
     Task<bool> EliminarAdjuntoContratoAsync(Guid adjuntoId, CancellationToken ct);
 
+    // ----- Hilo de actividad (chat) por-contrato (espejo del de polizas). Coexiste con los adjuntos. -----
+    Task<IReadOnlyList<ContratoComentarioDto>> ListarComentariosContratoAsync(Guid contratoId, CancellationToken ct);
+    Task<ContratoComentarioDto> AgregarComentarioContratoAsync(Guid contratoId, AgregarComentarioContratoRequest req, CancellationToken ct);
+
     /// <summary>Asocia un contrato existente a un servicio.</summary>
     Task<bool> AsociarContratoAsync(Guid servicioId, Guid contratoId, CancellationToken ct);
     /// <summary>Quita el vinculo servicio del contrato.</summary>

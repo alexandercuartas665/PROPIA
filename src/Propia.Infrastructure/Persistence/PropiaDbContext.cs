@@ -100,6 +100,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PolizaCampoValor> PolizaCampoValores => Set<PolizaCampoValor>();
     public DbSet<PolizaReclamacion> PolizaReclamaciones => Set<PolizaReclamacion>();
     public DbSet<PolizaReclamacionComentario> PolizaReclamacionComentarios => Set<PolizaReclamacionComentario>();
+    public DbSet<PolizaDocumento> PolizaDocumentos => Set<PolizaDocumento>();
     // Informes de gestion (plantillas inteligentes + generacion IA)
     public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
     public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();
@@ -110,6 +111,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<ServicioContacto> ServicioContactos => Set<ServicioContacto>();
     public DbSet<ServicioAdjunto> ServicioAdjuntos => Set<ServicioAdjunto>();
     public DbSet<ContratoAdjunto> ContratoAdjuntos => Set<ContratoAdjunto>();
+    public DbSet<ContratoComentario> ContratoComentarios => Set<ContratoComentario>();
     // Programador de tareas (2.10)
     public DbSet<ProgramacionTarea> ProgramacionTareas => Set<ProgramacionTarea>();
     public DbSet<ProgramacionTareaResponsable> ProgramacionTareaResponsables => Set<ProgramacionTareaResponsable>();

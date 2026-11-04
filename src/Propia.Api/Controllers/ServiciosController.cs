@@ -95,6 +95,19 @@ public class ServiciosController : ControllerBase
     public async Task<IActionResult> EliminarAdjuntoContrato(Guid adjuntoId, CancellationToken ct)
         => await _svc.EliminarAdjuntoContratoAsync(adjuntoId, ct) ? NoContent() : NotFound();
 
+    // ----- Hilo de actividad (chat) por-contrato (espejo del de polizas) -----
+
+    [HttpGet("contratos/{contratoId:guid}/comentarios")]
+    public async Task<IActionResult> ListarComentariosContrato(Guid contratoId, CancellationToken ct)
+        => Ok(await _svc.ListarComentariosContratoAsync(contratoId, ct));
+
+    [HttpPost("contratos/{contratoId:guid}/comentarios")]
+    public async Task<IActionResult> AgregarComentarioContrato(Guid contratoId, [FromBody] AgregarComentarioContratoRequest req, CancellationToken ct)
+    {
+        try { return Created("", await _svc.AgregarComentarioContratoAsync(contratoId, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ----- Asociar contratos a un servicio -----
 
     [HttpPost("{id:guid}/contratos/{contratoId:guid}")]

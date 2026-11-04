@@ -94,6 +94,40 @@ public class SegurosTenantIsolationTests
         await CleanupTenantAsync(tB);
     }
 
+    /// <summary>
+    /// Documentos de poliza (por-poliza): el adjunto PERSISTE y se lee de vuelta, y NO se ve entre
+    /// copropiedades (RLS FORCE + policy). Espejo del test de comentarios.
+    /// </summary>
+    [Fact]
+    public async Task Documentos_de_poliza_persisten_y_no_se_ven_entre_copropiedades()
+    {
+        var tA = await SeedTenantAsync("[SELLO] ISO doc A");
+        var tB = await SeedTenantAsync("[SELLO] ISO doc B");
+        var svcA = BuildService(tA);
+        var svcB = BuildService(tB);
+
+        var pA = await svcA.CrearPolizaAsync(Poliza("[SELLO] Aseg A", "[SELLO]-DA"), CancellationToken.None);
+        var pB = await svcB.CrearPolizaAsync(Poliza("[SELLO] Aseg B", "[SELLO]-DB"), CancellationToken.None);
+
+        var d1 = await svcA.AgregarDocumentoAsync(pA.Id, "caratula.pdf", "/mem/caratula.pdf", CancellationToken.None);
+        Assert.NotNull(d1);
+        Assert.Equal("caratula.pdf", d1!.Nombre);
+
+        var docsA = await svcA.ListDocumentosAsync(pA.Id, CancellationToken.None);
+        Assert.Single(docsA);
+
+        // Aislamiento: B no ve los documentos de A (ni por su poliza ni apuntando al id de la de A).
+        Assert.Empty(await svcB.ListDocumentosAsync(pB.Id, CancellationToken.None));
+        Assert.Empty(await svcB.ListDocumentosAsync(pA.Id, CancellationToken.None));
+
+        // Borrado: al eliminar, desaparece de la lista.
+        Assert.True(await svcA.EliminarDocumentoAsync(d1.Id, CancellationToken.None));
+        Assert.Empty(await svcA.ListDocumentosAsync(pA.Id, CancellationToken.None));
+
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     private static CrearPolizaRequest Poliza(string aseguradora, string numero)
@@ -131,6 +165,7 @@ public class SegurosTenantIsolationTests
         await using var ctx = OwnerDb();
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campo_valores WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_campos WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_documentos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_reclamacion_comentarios WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM poliza_reclamaciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM polizas WHERE tenant_id = {tenantId}");

@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Servicios;
@@ -17,6 +19,7 @@ public class ServiciosService : IServiciosService
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
     private readonly IBlobStorage _blob;
+    private readonly IHttpContextAccessor _http;
 
     private static readonly HashSet<string> ExtPermitidas = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -25,11 +28,24 @@ public class ServiciosService : IServiciosService
     private const long MaxBytes = 20L * 1024 * 1024; // 20 MB
     private const string ModuloServicio = "servicio"; // ModuloOrigenCodigo de las alertas de servicio
 
-    public ServiciosService(PropiaDbContext db, ITenantContext tenant, IBlobStorage blob)
+    public ServiciosService(PropiaDbContext db, ITenantContext tenant, IBlobStorage blob, IHttpContextAccessor http)
     {
         _db = db;
         _tenant = tenant;
         _blob = blob;
+        _http = http;
+    }
+
+    // Autor actual desde los claims del JWT (mismo patron que SegurosService/PqrsdService.ActorActual).
+    private (Guid? UsuarioId, string? Nombre) ActorActual()
+    {
+        var u = _http.HttpContext?.User;
+        Guid? uid = Guid.TryParse(u?.FindFirst("user_id")?.Value, out var g) ? g : null;
+        var nombre = u?.FindFirst("name")?.Value
+            ?? u?.FindFirst(ClaimTypes.Name)?.Value
+            ?? u?.FindFirst("email")?.Value
+            ?? u?.FindFirst(ClaimTypes.Email)?.Value;
+        return (uid, nombre);
     }
 
     // ----------------------------- Servicio CRUD -----------------------------
@@ -298,6 +314,38 @@ public class ServiciosService : IServiciosService
         _db.ContratoAdjuntos.Remove(a);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    // ----------------------------- Hilo de actividad (chat) por-contrato -----------------------------
+    // Coexiste con los adjuntos/bitacora: solo agrega/lee comentarios, no toca el contrato.
+
+    public async Task<IReadOnlyList<ContratoComentarioDto>> ListarComentariosContratoAsync(Guid contratoId, CancellationToken ct)
+    {
+        if (!await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct)) return Array.Empty<ContratoComentarioDto>();
+        return await _db.ContratoComentarios.AsNoTracking()
+            .Where(c => c.ContratoId == contratoId)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new ContratoComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId))
+            .ToListAsync(ct);
+    }
+
+    public async Task<ContratoComentarioDto> AgregarComentarioContratoAsync(Guid contratoId, AgregarComentarioContratoRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Texto))
+            throw new InvalidOperationException("El comentario no puede estar vacio.");
+        if (!await _db.ContratosServicio.AnyAsync(c => c.Id == contratoId, ct))
+            throw new InvalidOperationException("Contrato no encontrado.");
+        var (uid, nombre) = ActorActual();
+        var c = new ContratoComentario
+        {
+            ContratoId = contratoId,
+            Texto = req.Texto.Trim(),
+            AutorUsuarioId = uid,
+            AutorNombre = nombre
+        };
+        _db.ContratoComentarios.Add(c);
+        await _db.SaveChangesAsync(ct);
+        return new ContratoComentarioDto(c.Id, c.Texto, c.AutorNombre, c.CreatedAt, c.AutorUsuarioId);
     }
 
     // ----------------------------- Asociar contratos -----------------------------

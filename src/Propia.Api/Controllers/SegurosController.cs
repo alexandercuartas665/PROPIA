@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Api.Authorization;
 using Propia.Domain.Enums;
 using Propia.Application.Seguros;
+using Propia.Infrastructure.Storage;
 
 namespace Propia.Api.Controllers;
 
@@ -14,7 +16,8 @@ namespace Propia.Api.Controllers;
 public class SegurosController : ControllerBase
 {
     private readonly ISegurosService _svc;
-    public SegurosController(ISegurosService svc) => _svc = svc;
+    private readonly IBlobStorage _storage;
+    public SegurosController(ISegurosService svc, IBlobStorage storage) { _svc = svc; _storage = storage; }
 
     // ---- Polizas ----
     [HttpGet("polizas")] public async Task<IActionResult> List(CancellationToken ct) => Ok(await _svc.ListPolizasAsync(ct));
@@ -148,4 +151,33 @@ public class SegurosController : ControllerBase
         try { return Created("", await _svc.AgregarComentarioAsync(id, req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
+
+    // ---- Documentos/adjuntos de una poliza (caratula, certificados, anexos). Espejo de equipos/documentos. ----
+    [HttpGet("polizas/{id:guid}/documentos")]
+    public async Task<IActionResult> ListDocumentos(Guid id, CancellationToken ct) => Ok(await _svc.ListDocumentosAsync(id, ct));
+
+    [HttpPost("polizas/{id:guid}/documentos")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible (consistente con el resto del modulo)
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirDocumento(Guid id, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var ext = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/polizas/{id:N}/docs/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var dto = await _svc.AgregarDocumentoAsync(id, file.FileName, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo registrar el documento." }) : Ok(dto);
+    }
+
+    [HttpDelete("polizas/documentos/{docId:guid}")]
+    [RequiereRol("Administrador")]  // S-06: escritura sensible
+    public async Task<IActionResult> EliminarDocumento(Guid docId, CancellationToken ct)
+        => await _svc.EliminarDocumentoAsync(docId, ct) ? NoContent() : NotFound();
+
+    private Guid? GetTenantId() => Guid.TryParse(User.FindFirstValue("tenant_id"), out var g) ? g : null;
+    private string Absolutizar(string url) => url;
 }

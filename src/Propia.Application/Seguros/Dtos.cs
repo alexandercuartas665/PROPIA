@@ -68,6 +68,9 @@ public record ReclamacionDto(
 public record CrearReclamacionRequest(DateOnly Fecha, decimal MontoReclamado, string Descripcion, Guid? ExpedienteId = null);
 public record CerrarReclamacionRequest(decimal MontoReconocido);
 
+// ----- Documentos/adjuntos de una poliza (caratula, certificados, anexos). Espejo de EquipoDocumento. -----
+public record PolizaDocumentoDto(Guid Id, string Nombre, string Url);
+
 // ----- Hilo de actividad (chat) de reclamaciones, por-poliza (MVP). Coexiste con el CRUD de arriba. -----
 public record PolizaComentarioDto(Guid Id, string Texto, string? AutorNombre, DateTimeOffset CreatedAt, Guid? AutorUsuarioId = null);
 public record AgregarComentarioPolizaRequest(string Texto);

@@ -58,6 +58,18 @@ public class Poliza : TenantEntity
     public ICollection<PolizaReclamacion> Reclamaciones { get; set; } = new List<PolizaReclamacion>();
 }
 
+/// <summary>
+/// Documento/adjunto de una poliza (caratula, certificados, anexos). Espejo de EquipoDocumento:
+/// el blob vive en storage y aqui se guarda nombre + url. Es TenantEntity - aislada por tenant_id.
+/// </summary>
+public class PolizaDocumento : TenantEntity
+{
+    public Guid PolizaId { get; set; }
+    public Poliza? Poliza { get; set; }
+    public string Nombre { get; set; } = null!;
+    public string Url { get; set; } = null!;
+}
+
 /// <summary>Definicion de un campo personalizado (EAV) para las polizas del tenant (como ContratoCampo).</summary>
 public class PolizaCampo : TenantEntity
 {
