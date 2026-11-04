@@ -111,8 +111,8 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         try
         {
             using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/message/sendText/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
-            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
             var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
             return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
         }
         catch (Exception ex)
@@ -128,14 +128,104 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         try
         {
             using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/message/sendMedia/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
-            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
             var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
             return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
         }
         catch (Exception ex)
         {
             return new EvolutionSendResult(false, ex.Message);
         }
+    }
+
+    public async Task<EvolutionSendResult> SendMediaTypedAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediatype, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default)
+    {
+        // Evolution v2 /message/sendMedia acepta 'media' como URL publica o base64. mediatype: image/video/audio/document.
+        // El audio por sendMedia va como nota de audio; el caption no aplica a audio.
+        var body = new Dictionary<string, object?>
+        {
+            ["number"] = phone,
+            ["mediatype"] = mediatype,
+            ["media"] = mediaUrl
+        };
+        if (!string.IsNullOrWhiteSpace(caption) && mediatype != "audio") { body["caption"] = caption; }
+        if (mediatype == "document" && !string.IsNullOrWhiteSpace(fileName)) { body["fileName"] = fileName; }
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendMedia/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    public async Task<EvolutionSendResult> SendLocationAsync(string baseUrl, string apiKey, string instanceName, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default)
+    {
+        var body = new { number = phone, name = name ?? string.Empty, address = address ?? string.Empty, latitude, longitude };
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendLocation/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    public async Task<EvolutionSendResult> SendReactionAsync(string baseUrl, string apiKey, string instanceName, string remoteJid, string messageId, string emoji, CancellationToken ct = default)
+    {
+        // Reaccionamos a un mensaje ENTRANTE del contacto: fromMe=false. reaction="" quita la reaccion.
+        var body = new { key = new { remoteJid, fromMe = false, id = messageId }, reaction = emoji };
+        return await PostSendAsync(baseUrl, apiKey, $"/message/sendReaction/{Uri.EscapeDataString(instanceName)}", body, ct);
+    }
+
+    public async Task<EvolutionMediaResult> GetBase64FromMediaMessageAsync(string baseUrl, string apiKey, string instanceName, string messageKeyId, CancellationToken ct = default)
+    {
+        // Evolution v2: POST /chat/getBase64FromMediaMessage/{instance} con la clave del mensaje. La respuesta
+        // trae el contenido en base64 + el mimetype. Portado de ECOREX. Solo necesita key.id.
+        var body = new { message = new { key = new { id = messageKeyId } }, convertToMp4 = false };
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/chat/getBase64FromMediaMessage/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode) { return new EvolutionMediaResult(false, null, null, $"HTTP {(int)resp.StatusCode}: {Trim(json)}"); }
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var b64 = root.TryGetProperty("base64", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
+            var mime = root.TryGetProperty("mimetype", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()
+                : (root.TryGetProperty("mimeType", out var m2) && m2.ValueKind == JsonValueKind.String ? m2.GetString() : null);
+            if (string.IsNullOrWhiteSpace(b64)) { return new EvolutionMediaResult(false, null, null, "La respuesta no trajo base64."); }
+            return new EvolutionMediaResult(true, b64, mime, null);
+        }
+        catch (Exception ex)
+        {
+            return new EvolutionMediaResult(false, null, null, ex.Message);
+        }
+    }
+
+    // Helper comun para los POST de envio (texto/media/ubicacion/reaccion): mapea el HTTP a EvolutionSendResult.
+    private async Task<EvolutionSendResult> PostSendAsync(string baseUrl, string apiKey, string path, object body, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Post, baseUrl, path, apiKey, JsonContent.Create(body), ct);
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
+            return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
+        }
+        catch (Exception ex)
+        {
+            return new EvolutionSendResult(false, ex.Message);
+        }
+    }
+
+    // key.id del mensaje que Evolution devuelve al enviar (sendText/sendMedia/...). Correlaciona el webhook de
+    // estado (messages.update). Tolerante: si la respuesta no trae key.id, devuelve null (el saliente queda "sent"
+    // sin poder avanzar). Ola D.
+    private static string? ExtractMessageId(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) { return null; }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.Object
+                && key.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                var s = id.GetString();
+                return string.IsNullOrWhiteSpace(s) ? null : s;
+            }
+        }
+        catch { /* respuesta no-JSON o forma inesperada: sin id */ }
+        return null;
     }
 
     public async Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default)
@@ -153,7 +243,8 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
                 },
                 byEvents = false,
                 base64 = false,
-                events = new[] { "MESSAGES_UPSERT" }
+                // MESSAGES_UPSERT = entrantes; MESSAGES_UPDATE = acks de entrega (Ola D, analitica de entregas).
+                events = new[] { "MESSAGES_UPSERT", "MESSAGES_UPDATE" }
             }
         };
         try

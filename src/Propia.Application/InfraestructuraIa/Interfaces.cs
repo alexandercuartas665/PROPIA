@@ -55,6 +55,40 @@ public interface IWhatsAppConnectorService
     /// </summary>
     Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
         IReadOnlyList<string> bodyParams, string fallbackText, CancellationToken ct = default);
+
+    /// <summary>
+    /// Envia un ADJUNTO binario (imagen/video/audio/pdf) por URL publica desde la linea, con el tipo
+    /// correcto segun el recurso (router Evolution/Cloud/YCloud). Lo usa el agente al entregar recursos
+    /// [[enviar: X]] en el chat real.
+    /// </summary>
+    Task<LineSendResult> SendAttachmentAsync(Guid lineId, string phone, AgentResourceType kind, string mediaUrl,
+        string? caption, string? fileName, CancellationToken ct = default);
+
+    /// <summary>Envia una UBICACION (lat/long) desde la linea (router Evolution/Cloud/YCloud).</summary>
+    Task<LineSendResult> SendLocationAsync(Guid lineId, string phone, double latitude, double longitude,
+        string? name, string? address, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reacciona (emoji) a un mensaje ENTRANTE del contacto. <paramref name="externalMessageId"/> es el id
+    /// de WhatsApp del mensaje; un emoji vacio quita la reaccion. Router Evolution/Cloud/YCloud.
+    /// </summary>
+    Task<LineSendResult> SendReactionAsync(Guid lineId, string phone, string externalMessageId, string emoji,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Baja el contenido de una IMAGEN entrante (que envio el contacto) como base64 + mime, para que el
+    /// agente la "vea". <paramref name="externalMessageId"/> es el id de WhatsApp del mensaje. Solo Evolution
+    /// por ahora (Cloud/YCloud devuelven null). Null si no se pudo bajar. Portado de ECOREX.
+    /// </summary>
+    Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Baja el contenido de CUALQUIER media entrante (imagen/audio/pdf) como base64 + mime (crudo, puede
+    /// venir null). Solo Evolution por ahora (Cloud/YCloud devuelven null). Null si no se pudo bajar.
+    /// </summary>
+    Task<(string? MimeType, string Base64)?> FetchInboundMediaAsync(Guid lineId, string externalMessageId,
+        CancellationToken ct = default);
 }
 
 /// <summary>Gestion de agentes de IA de la copropiedad: proveedor, prompt, encendido, recursos y prompts enrutados.</summary>
@@ -131,6 +165,47 @@ public interface IAiInferenceService
     /// tenant + permisos). Sin tools o sin token: completado simple de un turno.
     /// </summary>
     Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null, string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pre-procesa un MEDIA entrante (audio/pdf) del residente con el proveedor del agente: devuelve
+    /// texto plano (transcripcion de la nota de voz o extraccion del documento) para inyectarlo como
+    /// texto en el turno antes de la inferencia principal. base64 crudo + mime + instruccion en espanol.
+    /// Null si no se pudo (proveedor no soportado, cuota, error). Portado de ECOREX (ingesta multimodal).
+    /// </summary>
+    Task<string?> DescribeInboundMediaAsync(Guid agentId, string mimeType, string base64, string instruction, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Reactivacion/seguimiento: envia mensajes automaticos a conversaciones inactivas segun una secuencia
+/// de pasos configurada por agente. La corrida la dispara un job en background (por tenant). Portado de ECOREX.
+/// </summary>
+public interface IAgentReactivacionService
+{
+    /// <summary>Lee la config de reactivacion del agente (vacia si no tiene).</summary>
+    Task<AgentReactivacionConfig> GetConfigAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Guarda la config de reactivacion del agente (config vacia -> limpia el campo).</summary>
+    Task<bool> SaveConfigAsync(Guid agentId, AgentReactivacionConfig config, CancellationToken ct = default);
+
+    /// <summary>
+    /// Corre la reactivacion para el TENANT ACTUAL (debe estar fijado en el contexto): barre los agentes
+    /// con reactivacion, sus lineas conectadas y las conversaciones activas, y envia el paso que corresponda.
+    /// Devuelve cuantos mensajes se enviaron. La invoca el job en background por cada tenant.
+    /// </summary>
+    Task<int> RunTenantAsync(CancellationToken ct = default);
+}
+
+/// <summary>
+/// Ola H - enrutamiento de las tareas que el agente crea con crear_tarea: whitelist de tableros + lista de
+/// asignados para el reparto round-robin. Portado de ECOREX. La ROTACION en si la hace la tool crear_tarea.
+/// </summary>
+public interface IAgentEnrutamientoService
+{
+    /// <summary>Lee la config de enrutamiento del agente (tableros permitidos + asignados con nombre). Null si no existe el agente.</summary>
+    Task<AgentEnrutamientoDto?> GetConfigAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>Guarda la config. Listas vacias limpian los campos. Si cambia la lista/orden de asignados, reinicia el cursor a 0. Devuelve false si no existe el agente.</summary>
+    Task<bool> SaveConfigAsync(Guid agentId, AgentEnrutamientoSaveRequest req, CancellationToken ct = default);
 }
 
 /// <summary>Registro y reporte de consumo de IA de la copropiedad + control de cuota del plan.</summary>
@@ -153,6 +228,14 @@ public interface IEvolutionApiClient
     Task<bool> DeleteInstanceAsync(string baseUrl, string apiKey, string instanceName, CancellationToken ct = default);
     Task<EvolutionSendResult> SendTextAsync(string baseUrl, string apiKey, string instanceName, string phone, string text, CancellationToken ct = default);
     Task<EvolutionSendResult> SendMediaAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediaUrl, string? caption, CancellationToken ct = default);
+    /// <summary>Envia un adjunto por URL con tipo explicito (image/video/audio/document). fileName da titulo al documento.</summary>
+    Task<EvolutionSendResult> SendMediaTypedAsync(string baseUrl, string apiKey, string instanceName, string phone, string mediatype, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
+    /// <summary>Envia una ubicacion (lat/long) por la instancia.</summary>
+    Task<EvolutionSendResult> SendLocationAsync(string baseUrl, string apiKey, string instanceName, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje con un emoji. remoteJid+id identifican el mensaje entrante (fromMe=false).</summary>
+    Task<EvolutionSendResult> SendReactionAsync(string baseUrl, string apiKey, string instanceName, string remoteJid, string messageId, string emoji, CancellationToken ct = default);
+    /// <summary>Baja el base64 (+mime) de un media entrante por la clave del mensaje (POST /chat/getBase64FromMediaMessage).</summary>
+    Task<EvolutionMediaResult> GetBase64FromMediaMessageAsync(string baseUrl, string apiKey, string instanceName, string messageKeyId, CancellationToken ct = default);
     Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default);
 }
 
@@ -168,6 +251,27 @@ public interface IWhatsAppCloudClient
     Task<WhatsAppCloudSendResult> SendMediaAsync(WhatsAppCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
     /// <summary>Envia una plantilla (template) aprobada de Meta. bodyParams son los valores {{1}},{{2}}... del cuerpo.</summary>
     Task<WhatsAppCloudSendResult> SendTemplateAsync(WhatsAppCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default);
+    Task<WhatsAppCloudSendResult> SendLocationAsync(WhatsAppCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje (type=reaction). messageId es el wamid del entrante; emoji vacio quita la reaccion.</summary>
+    Task<WhatsAppCloudSendResult> SendReactionAsync(WhatsAppCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Cliente HTTP del BSP oficial YCloud (REST api.ycloud.com/v2). Las credenciales (API key +
+/// numero remitente) se entregan por llamada; el cliente NO conoce la entidad ni el ISecretProtector.
+/// La API key va en el header "X-API-Key". Espeja a IWhatsAppCloudClient (Meta).
+/// </summary>
+public interface IYCloudApiClient
+{
+    /// <summary>Valida la API key y que el numero remitente exista en la cuenta YCloud.</summary>
+    Task<YCloudCheckResult> CheckAsync(YCloudCredentials credentials, CancellationToken ct = default);
+    Task<YCloudSendResult> SendTextAsync(YCloudCredentials credentials, string toPhone, string text, CancellationToken ct = default);
+    Task<YCloudSendResult> SendMediaAsync(YCloudCredentials credentials, string toPhone, WhatsAppCloudMediaKind kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default);
+    /// <summary>Envia una plantilla aprobada. bodyParams son los valores {{1}},{{2}}... del cuerpo.</summary>
+    Task<YCloudSendResult> SendTemplateAsync(YCloudCredentials credentials, string toPhone, string templateName, string languageCode, IReadOnlyList<string> bodyParams, CancellationToken ct = default);
+    Task<YCloudSendResult> SendLocationAsync(YCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
+    /// <summary>Reacciona a un mensaje (type=reaction). messageId es el wamid del entrante; emoji vacio quita la reaccion.</summary>
+    Task<YCloudSendResult> SendReactionAsync(YCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default);
 }
 
 /// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>
@@ -193,4 +297,13 @@ public interface IAiProviderClient
     /// </summary>
     Task<AiChatResult> ExtractFromDocumentAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
         string instruction, byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct = default);
+
+    /// <summary>
+    /// Describe/transcribe un MEDIA (audio, pdf, imagen) mandandolo NATIVO al modelo y devolviendo TEXTO
+    /// plano segun la instruccion (sin JSON schema). Lo usa la ingesta multimodal para transcribir notas
+    /// de voz y extraer texto de PDF entrantes. Hoy soporta Gemini (inline_data). Otros proveedores:
+    /// Ok=false "no soportado". La API key llega descifrada; el media no se persiste ni se loggea aqui.
+    /// </summary>
+    Task<AiChatResult> DescribeMediaAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] mediaBytes, string mimeType, CancellationToken ct = default);
 }

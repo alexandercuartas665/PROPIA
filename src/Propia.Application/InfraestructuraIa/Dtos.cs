@@ -18,7 +18,8 @@ public sealed record WhatsAppLineDto(
     DateTimeOffset? LastConnectedAt,
     DateTimeOffset? LastStatusAt,
     WhatsAppProvider Provider = WhatsAppProvider.Evolution,
-    string? CloudPhoneNumberId = null);
+    string? CloudPhoneNumberId = null,
+    string? YCloudFromNumber = null);
 
 public sealed record CreateWhatsAppLineRequest(
     string InstanceName,
@@ -27,18 +28,29 @@ public sealed record CreateWhatsAppLineRequest(
     string? CloudPhoneNumberId = null,
     string? CloudBusinessAccountId = null,
     string? CloudAccessToken = null,
-    string? CloudWebhookVerifyToken = null);
+    string? CloudWebhookVerifyToken = null,
+    // YCloud (Provider == YCloud): API key de la cuenta + numero remitente registrado.
+    string? YCloudApiKey = null,
+    string? YCloudFromNumber = null);
 
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);
 
-public sealed record LineSendResult(bool Ok, string? Error);
+/// <summary><paramref name="ExternalId"/> = id del mensaje en el proveedor (key.id de Evolution / wamid de
+/// Meta/YCloud), para correlacionar el webhook de estado de entrega (Ola D). Null si el proveedor no lo devolvio.</summary>
+public sealed record LineSendResult(bool Ok, string? Error, string? ExternalId = null);
 
 // ---------- WhatsApp Cloud API (Meta) ----------
 public sealed record WhatsAppCloudCredentials(string PhoneNumberId, string AccessToken);
 public sealed record WhatsAppCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
 public sealed record WhatsAppCloudSendResult(bool Ok, string? ExternalId, string? Error);
 public enum WhatsAppCloudMediaKind { Image, Video, Audio, Document }
+
+// ---------- YCloud (BSP oficial, API REST api.ycloud.com/v2) ----------
+/// <summary>Credenciales YCloud de una linea: API key (descifrada) + numero remitente "from" (E.164).</summary>
+public sealed record YCloudCredentials(string ApiKey, string FromNumber);
+public sealed record YCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
+public sealed record YCloudSendResult(bool Ok, string? ExternalId, string? Error);
 
 // ---------- Agentes de IA ----------
 
@@ -157,8 +169,15 @@ public sealed record UpdateAgentPromptRequest(string? Name, string? Rule, string
 
 // ---------- Inferencia / chat ----------
 
-/// <summary>Un turno de la conversacion para inferir. Role: "user" o "model".</summary>
-public sealed record AiChatTurn(string Role, string Text);
+/// <summary>
+/// Imagen ENTRANTE (que envio el residente) adjunta a un turno para que el agente la "vea".
+/// Base64 crudo (sin prefijo data:) + mime. Portado de ECOREX (ingesta multimodal). Solo imagenes
+/// por ahora (audio/pdf en un incremento posterior).
+/// </summary>
+public sealed record AiInboundImage(string MimeType, string Base64);
+
+/// <summary>Un turno de la conversacion para inferir. Role: "user" o "model". Images: imagenes entrantes del turno (solo "user").</summary>
+public sealed record AiChatTurn(string Role, string Text, IReadOnlyList<AiInboundImage>? Images = null);
 
 /// <summary>Recurso adjuntable que el agente decidio entregar.</summary>
 public sealed record AiChatAttachment(string Name, AgentResourceType ResourceType, string? FileUrl, string? FileName, string? Detail);
@@ -193,7 +212,8 @@ public sealed record AiToolMessage(
     string? Text,
     IReadOnlyList<AiToolCall>? ToolCalls = null,
     string? ToolCallId = null,
-    string? ToolName = null);
+    string? ToolName = null,
+    IReadOnlyList<AiInboundImage>? Images = null);
 
 /// <summary>Resultado de una ronda de completado con tools: texto final o tools a ejecutar.</summary>
 public sealed record AiCompletion(
@@ -239,4 +259,8 @@ public sealed record AiQuotaDto(bool HasLimit, int MonthlyLimitCalls, int Monthl
 
 public sealed record EvolutionPingResult(bool Reached, bool Authorized, int? StatusCode, string Message);
 public sealed record EvolutionInstanceResult(bool Ok, string? QrBase64, string? State, string? Status, string? Error);
-public sealed record EvolutionSendResult(bool Ok, string? Error);
+/// <summary><paramref name="ExternalId"/> = key.id que Evolution devuelve al enviar, para correlacionar el
+/// webhook de estado de entrega (messages.update). Null si la respuesta no lo trajo (Ola D).</summary>
+public sealed record EvolutionSendResult(bool Ok, string? Error, string? ExternalId = null);
+/// <summary>Resultado de bajar el base64 de un media ENTRANTE de Evolution (getBase64FromMediaMessage).</summary>
+public sealed record EvolutionMediaResult(bool Ok, string? Base64, string? MimeType, string? Error);

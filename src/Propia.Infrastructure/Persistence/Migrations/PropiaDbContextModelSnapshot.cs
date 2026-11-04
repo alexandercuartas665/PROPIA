@@ -621,6 +621,18 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AllowedBoardIdsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("allowed_board_ids_json");
+
+                    b.Property<int>("AssigneeCursor")
+                        .HasColumnType("integer")
+                        .HasColumnName("assignee_cursor");
+
+                    b.Property<string>("AssigneeUserIdsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("assignee_user_ids_json");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -669,6 +681,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<bool>("ReactionsEnabled")
                         .HasColumnType("boolean")
                         .HasColumnName("reactions_enabled");
+
+                    b.Property<string>("ReactivacionJson")
+                        .HasColumnType("text")
+                        .HasColumnName("reactivacion_json");
 
                     b.Property<string>("Role")
                         .HasMaxLength(100)
@@ -3739,6 +3755,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("PersonaId")
                         .HasColumnType("uuid")
                         .HasColumnName("persona_id");
+
+                    b.Property<DateTimeOffset?>("ReactivacionUltimoEnvioAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reactivacion_ultimo_envio_at");
+
+                    b.Property<int>("ReactivacionUltimoPaso")
+                        .HasColumnType("integer")
+                        .HasColumnName("reactivacion_ultimo_paso");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -8664,6 +8688,15 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
+
+                    b.Property<string>("DeliveryError")
+                        .HasColumnType("text")
+                        .HasColumnName("delivery_error");
+
+                    b.Property<string>("DeliveryStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("delivery_status");
 
                     b.Property<string>("Direction")
                         .IsRequired()
@@ -20276,6 +20309,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
+
+                    b.Property<string>("YCloudApiKeyEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("y_cloud_api_key_encrypted");
+
+                    b.Property<string>("YCloudFromNumber")
+                        .HasColumnType("text")
+                        .HasColumnName("y_cloud_from_number");
 
                     b.HasKey("Id");
 

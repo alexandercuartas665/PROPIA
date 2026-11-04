@@ -47,6 +47,13 @@ public class WhatsAppLine : TenantEntity
 
     /// <summary>Verify token del webhook de Meta (cifrado). Usado en el handshake GET de /webhooks/meta.</summary>
     public string? CloudWebhookVerifyTokenEncrypted { get; set; }
+
+    // === Credenciales YCloud (solo cuando Provider == YCloud) =================
+    /// <summary>API key de la cuenta YCloud, cifrada con DataProtection (ISecretProtector).</summary>
+    public string? YCloudApiKeyEncrypted { get; set; }
+
+    /// <summary>Numero remitente de WhatsApp registrado en YCloud (E.164, el "from" de los envios).</summary>
+    public string? YCloudFromNumber { get; set; }
 }
 
 /// <summary>
@@ -81,6 +88,13 @@ public class Conversation : TenantEntity
     /// = el agente atiende normalmente.
     /// </summary>
     public DateTimeOffset? IaPausadaAt { get; set; }
+
+    /// <summary>Reactivacion: indice del PROXIMO paso de la secuencia a enviar (0 = ninguno enviado aun).
+    /// Se reinicia a 0 cuando el contacto responde despues de nuestro ultimo seguimiento. Portado de ECOREX.</summary>
+    public int ReactivacionUltimoPaso { get; set; }
+
+    /// <summary>Reactivacion: cuando se envio (u omitio) el ultimo paso de seguimiento. Null = nunca.</summary>
+    public DateTimeOffset? ReactivacionUltimoEnvioAt { get; set; }
 
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
@@ -118,6 +132,18 @@ public class Message : TenantEntity
 
     /// <summary>Emoji con el que el agente reacciono a este entrante (null = sin reaccion). Una sola por mensaje.</summary>
     public string? Reaction { get; set; }
+
+    /// <summary>
+    /// Ola D (analitica de entregas): estado de ENTREGA del saliente segun el proveedor: "sent" (aceptado),
+    /// "delivered" (llego al telefono), "read" (leido) o "failed" (no se entrego). Se siembra "sent" al enviar
+    /// (cuando el proveedor acepta) y lo AVANZA el webhook de estado (Evolution messages.update / Meta statuses[]),
+    /// correlacionando por <see cref="ExternalId"/>. Null en entrantes y en salientes sin id de proveedor.
+    /// </summary>
+    public string? DeliveryStatus { get; set; }
+
+    /// <summary>Motivo del proveedor cuando <see cref="DeliveryStatus"/> es "failed" (codigo + texto de Meta, ej.
+    /// "codigo 131026 - Message undeliverable"). Null si no fallo o si el proveedor no dio detalle.</summary>
+    public string? DeliveryError { get; set; }
 }
 
 /// <summary>
@@ -171,6 +197,31 @@ public class AiAgent : TenantEntity
     /// Los demas turnos van como texto normal. Requiere que el tenant tenga LogoUrl/FotoFachadaUrl.
     /// </summary>
     public bool SaludarConLogo { get; set; }
+
+    /// <summary>
+    /// Configuracion de REACTIVACION/seguimiento (JSON AgentReactivacionConfig): secuencia de pasos
+    /// que, tras N horas de inactividad del contacto, envian un mensaje de seguimiento. Null = sin
+    /// reactivacion. Lo ejecuta un job en background. Portado de ECOREX.
+    /// </summary>
+    public string? ReactivacionJson { get; set; }
+
+    /// <summary>
+    /// Ola H - WHITELIST DURA de tableros que este agente puede usar al crear tareas (JSON, arreglo de
+    /// GUID = ids de Tablero). Null o vacio = SIN restriccion (todos los tableros del tenant), que preserva
+    /// el comportamiento historico. Con 1+ ids, la tool crear_tarea SOLO admite esos tableros. Portado de ECOREX.
+    /// </summary>
+    public string? AllowedBoardIdsJson { get; set; }
+
+    /// <summary>
+    /// Ola H - ASIGNACION ROUND-ROBIN: lista ORDENADA de ids de Persona (directorio) a los que el agente
+    /// reparte las tareas que crea (crear_tarea), rotando una por registro (A, B, A, B...). Null o vacio =
+    /// sin reparto -> la tarea queda sin asignar salvo que el modelo nombre a alguien. Portado de ECOREX.
+    /// </summary>
+    public string? AssigneeUserIdsJson { get; set; }
+
+    /// <summary>Ola H - cursor de rotacion del reparto round-robin (<see cref="AssigneeUserIdsJson"/>): indice
+    /// del PROXIMO de la lista a asignar. Avanza (modulo el tamano de la lista) en cada asignacion.</summary>
+    public int AssigneeCursor { get; set; }
 
     public ICollection<AiAgentPrompt> Prompts { get; set; } = new List<AiAgentPrompt>();
     public ICollection<AiAgentResource> Resources { get; set; } = new List<AiAgentResource>();

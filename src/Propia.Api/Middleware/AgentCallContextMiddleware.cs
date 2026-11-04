@@ -24,16 +24,23 @@ public sealed class AgentCallContextMiddleware
         // principal de servicio del dispatcher (sub == DispatcherServiceUserId). Antes se aceptaban
         // de CUALQUIER cliente con JWT valido, permitiendo impersonar a otro contacto/conversacion
         // (p.ej. verificar_residencia sobre el telefono de un tercero) inyectando estos headers.
+        string? phone = null;
+        Guid? conversationId = null;
         if (EsPrincipalDispatcher(context.User))
         {
-            var phone = context.Request.Headers["X-Contact-Phone"].FirstOrDefault();
-            Guid? conversationId = Guid.TryParse(context.Request.Headers["X-Conversation-Id"].FirstOrDefault(), out var g)
-                ? g : null;
+            phone = context.Request.Headers["X-Contact-Phone"].FirstOrDefault();
+            conversationId = Guid.TryParse(context.Request.Headers["X-Conversation-Id"].FirstOrDefault(), out var g) ? g : null;
+        }
 
-            if (!string.IsNullOrWhiteSpace(phone) || conversationId is not null)
-            {
-                call.Set(phone, conversationId);
-            }
+        // X-Agent-Id (Ola H): a diferencia de telefono/conversacion, NO es un vector de suplantacion ni de
+        // acceso a datos; solo SELECCIONA que config del MISMO tenant aplica la tool (whitelist de tableros,
+        // reparto round-robin), y la whitelist solo RESTRINGE. La RLS sigue acotando todo al tenant del JWT.
+        // Por eso se acepta de cualquier llamante autenticado, para que el playground tambien lo ejercite.
+        Guid? agentId = Guid.TryParse(context.Request.Headers["X-Agent-Id"].FirstOrDefault(), out var aid) ? aid : null;
+
+        if (!string.IsNullOrWhiteSpace(phone) || conversationId is not null || agentId is not null)
+        {
+            call.Set(phone, conversationId, agentId);
         }
 
         await _next(context);

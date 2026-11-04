@@ -30,6 +30,8 @@ public class IaController : ControllerBase
     private readonly IAgentRunLogService _bitacora;
     private readonly IAutomationService _automations;
     private readonly IAsistenteCamposService _asistente;
+    private readonly IAgentReactivacionService _reactivacion;
+    private readonly IAgentEnrutamientoService _enrutamiento;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -44,7 +46,9 @@ public class IaController : ControllerBase
         IConversacionService conversaciones,
         IAgentRunLogService bitacora,
         IAutomationService automations,
-        IAsistenteCamposService asistente)
+        IAsistenteCamposService asistente,
+        IAgentReactivacionService reactivacion,
+        IAgentEnrutamientoService enrutamiento)
     {
         _lines = lines;
         _connector = connector;
@@ -59,6 +63,8 @@ public class IaController : ControllerBase
         _bitacora = bitacora;
         _automations = automations;
         _asistente = asistente;
+        _reactivacion = reactivacion;
+        _enrutamiento = enrutamiento;
     }
 
     // ---------- Automatizaciones (Infraestructura IA) ----------
@@ -129,6 +135,12 @@ public class IaController : ControllerBase
         return Ok(new { logs, cache, messages });
     }
 
+    // ---------- Analitica de entregas (Ola D) ----------
+    /// <summary>Resumen del estado de entrega de los salientes del tenant: conteo por estado + ultimos fallos.</summary>
+    [HttpGet("entregas")]
+    public async Task<IActionResult> ResumenEntregas([FromQuery] int take = 50, CancellationToken ct = default)
+        => Ok(await _conversaciones.ObtenerResumenEntregasAsync(take, ct));
+
     // ---------- Conversaciones humanas (Oleada IA #3) ----------
     [HttpGet("conversaciones")]
     public async Task<IActionResult> ListarConversaciones([FromQuery] string? q, CancellationToken ct)
@@ -176,6 +188,10 @@ public class IaController : ControllerBase
     [HttpPut("conversaciones/{id:guid}/reiniciar-contexto")]
     public async Task<IActionResult> ReiniciarContextoAgente(Guid id, CancellationToken ct)
         => await _conversaciones.ReiniciarContextoAgenteAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpPut("conversaciones/{id:guid}/cerrar")]
+    public async Task<IActionResult> CerrarYOlvidarConversacion(Guid id, CancellationToken ct)
+        => await _conversaciones.CerrarYOlvidarAsync(id, ct) ? NoContent() : NotFound();
 
     [HttpPost("conversaciones/{id:guid}/bloquear")]
     public async Task<IActionResult> BloquearContactoConversacion(Guid id, CancellationToken ct)
@@ -447,6 +463,38 @@ public class IaController : ControllerBase
     public async Task<IActionResult> ProbarAgente(Guid id, [FromBody] ProbarAgenteRequest req, CancellationToken ct)
         => Ok(await _inference.TestChatAsync(id, req.Turns, req.SystemPromptOverride, BearerToken(), req.ContactPhone, req.ConversationId, ct));
 
+    // ---------- Playground: interpretar un adjunto (audio/pdf) a TEXTO ----------
+    /// <summary>Transcribe/extrae a texto un media (base64) con el proveedor del agente, para que el
+    /// chat de prueba pueda adjuntar notas de voz o PDF igual que lo hace el dispatcher real.</summary>
+    [HttpPost("agentes/{id:guid}/describir-media")]
+    public async Task<IActionResult> DescribirMedia(Guid id, [FromBody] DescribirMediaRequest req, CancellationToken ct)
+        => Ok(new { text = await _inference.DescribeInboundMediaAsync(id, req.Mime, req.Base64, req.Instruction, ct) });
+
+    // ---------- Reactivacion / seguimiento automatico (Ola G) ----------
+    /// <summary>Lee la secuencia de reactivacion configurada del agente (vacia si no tiene).</summary>
+    [HttpGet("agentes/{id:guid}/reactivacion")]
+    public async Task<IActionResult> GetReactivacion(Guid id, CancellationToken ct)
+        => Ok(await _reactivacion.GetConfigAsync(id, ct));
+
+    /// <summary>Guarda la secuencia de reactivacion del agente (config deshabilitada/vacia limpia el campo).</summary>
+    [HttpPut("agentes/{id:guid}/reactivacion")]
+    public async Task<IActionResult> GuardarReactivacion(Guid id, [FromBody] AgentReactivacionConfig config, CancellationToken ct)
+        => await _reactivacion.SaveConfigAsync(id, config, ct) ? NoContent() : NotFound();
+
+    // ---------- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) ----------
+    /// <summary>Lee la config de enrutamiento de tareas del agente (tableros permitidos + asignados round-robin).</summary>
+    [HttpGet("agentes/{id:guid}/enrutamiento-tareas")]
+    public async Task<IActionResult> GetEnrutamientoTareas(Guid id, CancellationToken ct)
+    {
+        var r = await _enrutamiento.GetConfigAsync(id, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
+    /// <summary>Guarda la whitelist de tableros + la lista de asignados (reparto round-robin) del agente. Listas vacias = sin restriccion / sin reparto.</summary>
+    [HttpPut("agentes/{id:guid}/enrutamiento-tareas")]
+    public async Task<IActionResult> GuardarEnrutamientoTareas(Guid id, [FromBody] AgentEnrutamientoSaveRequest req, CancellationToken ct)
+        => await _enrutamiento.SaveConfigAsync(id, req, ct) ? NoContent() : NotFound();
+
     // ---------- Auxiliar Administrativo: rellenar/completar campos con IA ----------
     /// <summary>Genera el contenido de un campo (condiciones de uso, descripciones, etc.) con el
     /// agente Auxiliar Administrativo de la copropiedad activa. Reutilizable en todo el sistema.</summary>
@@ -465,4 +513,5 @@ public class IaController : ControllerBase
     public sealed record ProbarEnvioRequest(string Phone, string Text);
     public sealed record SetActiveRequest(bool Active);
     public sealed record ProbarAgenteRequest(List<AiChatTurn> Turns, string? SystemPromptOverride, string? ContactPhone = null, Guid? ConversationId = null);
+    public sealed record DescribirMediaRequest(string Mime, string Base64, string Instruction);
 }

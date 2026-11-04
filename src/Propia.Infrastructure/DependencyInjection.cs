@@ -114,12 +114,14 @@ public static class DependencyInjection
         // Clientes HTTP externos (Evolution WhatsApp + proveedores de IA). Tipados via HttpClientFactory.
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IWhatsAppCloudClient, InfraestructuraIa.WhatsAppCloudClient>();
+        services.AddHttpClient<Application.InfraestructuraIa.IYCloudApiClient, InfraestructuraIa.YCloudApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
         services.AddScoped<Application.InfraestructuraIa.IConversacionService, InfraestructuraIa.ConversacionService>();
         services.AddScoped<Application.InfraestructuraIa.IChatIngestService, InfraestructuraIa.ChatIngestService>();
         services.AddScoped<Application.InfraestructuraIa.IMetaWebhookService, InfraestructuraIa.MetaWebhookService>();
+        services.AddScoped<Application.InfraestructuraIa.IDeliveryStatusService, InfraestructuraIa.DeliveryStatusService>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentLineBindingService, InfraestructuraIa.AiAgentLineBindingService>();
@@ -131,6 +133,8 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentEnrutamientoService, InfraestructuraIa.AgentEnrutamientoService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
@@ -301,6 +305,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.CobroRecurrenteJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ProgramacionTareasJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.AutomacionesJob>();
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.ReactivacionAgenteJob>();  // Ola G: seguimiento de inactivos
         services.AddScoped<Jobs.IBackgroundJob, Jobs.ContratosVencimientoJob>();
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PurgaRegistrosNoConfirmadosJob>();  // S-04b
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MantenimientoPreventivoJob>();  // M-01: preventivo 2.11

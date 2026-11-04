@@ -32,7 +32,7 @@ public sealed class McpGateway : IMcpGateway
         // nombre (ej. "plataforma_"), asi las tools de plataforma no aparecen en "copropiedades".
         var con = McpConnectionCatalog.Find(connectionCode)
             ?? throw new InvalidOperationException($"Conexion MCP desconocida: {connectionCode}");
-        await using var client = await ConnectAsync(connectionCode, bearerToken, null, null, ct);
+        await using var client = await ConnectAsync(connectionCode, bearerToken, null, null, null, ct);
         var tools = await client.ListToolsAsync(cancellationToken: ct);
         return tools
             .Where(t => McpConnectionCatalog.ToolBelongsTo(con, t.Name))
@@ -41,7 +41,7 @@ public sealed class McpGateway : IMcpGateway
     }
 
     public async Task<string> CallToolAsync(string connectionCode, string toolName, IReadOnlyDictionary<string, object?> arguments,
-        string bearerToken, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default)
+        string bearerToken, string? contactPhone = null, Guid? conversationId = null, Guid? agentId = null, CancellationToken ct = default)
     {
         var con = McpConnectionCatalog.Find(connectionCode)
             ?? throw new InvalidOperationException($"Conexion MCP desconocida: {connectionCode}");
@@ -49,7 +49,7 @@ public sealed class McpGateway : IMcpGateway
         {
             throw new InvalidOperationException($"La tool '{toolName}' no pertenece a la conexion '{connectionCode}'.");
         }
-        await using var client = await ConnectAsync(connectionCode, bearerToken, contactPhone, conversationId, ct);
+        await using var client = await ConnectAsync(connectionCode, bearerToken, contactPhone, conversationId, agentId, ct);
         // El SDK espera IReadOnlyDictionary<string, object> (sin null); filtramos los nulos.
         var args = arguments
             .Where(kv => kv.Value is not null)
@@ -71,7 +71,7 @@ public sealed class McpGateway : IMcpGateway
     }
 
     private async Task<McpClient> ConnectAsync(string connectionCode, string bearerToken,
-        string? contactPhone, Guid? conversationId, CancellationToken ct)
+        string? contactPhone, Guid? conversationId, Guid? agentId, CancellationToken ct)
     {
         if (McpConnectionCatalog.Find(connectionCode) is null)
         {
@@ -81,9 +81,11 @@ public sealed class McpGateway : IMcpGateway
         var http = _httpFactory.CreateClient("Mcp");
         // El telefono y la conversacion viajan como headers server-set: el lado servidor los deposita
         // en IAgentCallContext para tools como verificar_residencia. Nunca son argumentos del LLM.
+        // X-Agent-Id (Ola H) identifica al agente para que crear_tarea lea su whitelist/round-robin.
         var headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {bearerToken}" };
         if (!string.IsNullOrWhiteSpace(contactPhone)) { headers["X-Contact-Phone"] = contactPhone!; }
         if (conversationId is Guid cid) { headers["X-Conversation-Id"] = cid.ToString(); }
+        if (agentId is Guid aid) { headers["X-Agent-Id"] = aid.ToString(); }
 
         var transport = new HttpClientTransport(new HttpClientTransportOptions
         {

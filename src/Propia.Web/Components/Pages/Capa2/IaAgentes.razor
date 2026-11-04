@@ -391,6 +391,143 @@ else
                         }
                     </div>
 
+                    @* ----- Reactivacion / seguimiento automatico (Ola G) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleReactivacion">
+                            <span class="ag-accordion-chev @(_reactivacionOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Reactivacion</span>
+                            <span class="ag-accordion-count">@_reactSteps.Count(s => s.Habilitado && !string.IsNullOrWhiteSpace(s.Mensaje))</span>
+                            <span class="ag-acc-status" style="@(_reactHabilitada ? "color:#1f8a4c;" : "")">@(_reactHabilitada ? "Activa" : "Inactiva")</span>
+                        </button>
+                        @if (_reactivacionOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                @if (_editId is null)
+                                {
+                                    <div class="ag-acc-help">Guarda primero el agente con "Crear agente" para configurar la reactivacion.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-acc-help">Si el contacto deja de responder, el agente le reenvia un mensaje de seguimiento tras las horas que definas (contadas desde el <strong>ultimo mensaje del contacto</strong>). Cada paso se envia una sola vez; si el contacto responde, la secuencia se reinicia. No reactiva numeros en lista negra ni conversaciones con atencion humana en curso. En lineas oficiales (Cloud/YCloud) solo se envia dentro de la ventana de 24h de WhatsApp.</div>
+                                    <label class="ag-switch-row">
+                                        <span class="ag-switch"><input type="checkbox" checked="@_reactHabilitada" @onchange="@(e => _reactHabilitada = (bool)e.Value!)" disabled="@_reactivacionBusy" /><span class="ag-slider"></span></span>
+                                        <span>@(_reactHabilitada ? "Reactivacion activada" : "Reactivacion desactivada")</span>
+                                    </label>
+
+                                    <div class="mt-2">
+                                        @if (_reactSteps.Count == 0)
+                                        {
+                                            <div class="text-muted small">Sin pasos. Agrega al menos uno con el mensaje a enviar.</div>
+                                        }
+                                        else
+                                        {
+                                            @for (int i = 0; i < _reactSteps.Count; i++)
+                                            {
+                                                var paso = _reactSteps[i];
+                                                var num = i + 1;
+                                                <div style="border:1px solid rgba(0,0,0,.1);border-radius:8px;padding:8px;margin-bottom:8px;">
+                                                    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                                                        <span class="ag-accordion-count">Paso @num</span>
+                                                        <span class="small text-muted">a las</span>
+                                                        <input type="number" class="form-control form-control-sm" style="width:80px;" min="0" max="2160" @bind="paso.OffsetHoras" disabled="@_reactivacionBusy" />
+                                                        <span class="small text-muted">horas de inactividad</span>
+                                                        <label class="ag-switch-row ms-auto mb-0" style="gap:6px;">
+                                                            <span class="ag-switch"><input type="checkbox" checked="@paso.Habilitado" @onchange="@(e => paso.Habilitado = (bool)e.Value!)" disabled="@_reactivacionBusy" /><span class="ag-slider"></span></span>
+                                                            <span class="small">@(paso.Habilitado ? "On" : "Off")</span>
+                                                        </label>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarPasoReact(paso)" disabled="@_reactivacionBusy" title="Quitar paso">&times;</button>
+                                                    </div>
+                                                    <textarea class="form-control form-control-sm" rows="2" @bind="paso.Mensaje" placeholder="Mensaje de seguimiento (texto libre)" disabled="@_reactivacionBusy"></textarea>
+                                                </div>
+                                            }
+                                        }
+                                        <button type="button" class="btn btn-sm btn-outline-dark mt-2" @onclick="AgregarPasoReact" disabled="@_reactivacionBusy">+ Agregar paso</button>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-3">
+                                        <button type="button" class="btn btn-sm btn-dark" @onclick="GuardarReactivacionAsync" disabled="@_reactivacionBusy">@(_reactivacionBusy ? "Guardando..." : "Guardar secuencia")</button>
+                                        @if (_reactSaved) { <span class="small" style="color:#1f8a4c;">Guardado</span> }
+                                        @if (_reactError is not null) { <span class="small text-danger">@_reactError</span> }
+                                    </div>
+                                    <div class="text-muted" style="font-size:11.5px;margin-top:8px;">El envio automatico lo hace un proceso en segundo plano (cada ~15 min).</div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @* ----- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) ----- *@
+                    <div class="ag-accordion mt-2">
+                        <button type="button" class="ag-accordion-head" @onclick="ToggleEnrutamiento">
+                            <span class="ag-accordion-chev @(_enrutOpen ? "open" : "")">&#9656;</span>
+                            <span class="ag-accordion-title">Enrutamiento de tareas</span>
+                            <span class="ag-acc-status" style="@((_enrutPermitidos.Count > 0 || _enrutAsignados.Count > 0) ? "color:#1f8a4c;" : "")">@((_enrutPermitidos.Count > 0 || _enrutAsignados.Count > 0) ? "Configurado" : "Libre")</span>
+                        </button>
+                        @if (_enrutOpen)
+                        {
+                            <div class="ag-accordion-body">
+                                @if (_editId is null)
+                                {
+                                    <div class="ag-acc-help">Guarda primero el agente con "Crear agente" para configurar el enrutamiento de tareas.</div>
+                                }
+                                else
+                                {
+                                    <div class="ag-acc-help">Controla la herramienta <strong>crear_tarea</strong> de este agente: en que <strong>tableros</strong> puede crear y a quien se las <strong>reparte</strong>. Aplica tanto en conversaciones reales como en el chat de prueba de arriba.</div>
+
+                                    <div class="mt-2">
+                                        <label class="form-label small mb-1"><strong>Tableros permitidos</strong></label>
+                                        <div class="text-muted" style="font-size:11.5px;margin-bottom:6px;">Si no marcas ninguno, el agente puede usar cualquier tablero (y el por defecto). Con uno marcado, siempre crea ahi. Con varios, debe elegir entre esos.</div>
+                                        @if (_enrutTableros.Count == 0)
+                                        {
+                                            <div class="text-muted small">No hay tableros en la copropiedad todavia.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex flex-column gap-1">
+                                                @foreach (var b in _enrutTableros)
+                                                {
+                                                    var bid = b.Id;
+                                                    <label class="d-flex align-items-center gap-2" style="cursor:pointer;">
+                                                        <input type="checkbox" checked="@_enrutPermitidos.Contains(bid)" @onchange="@(e => ToggleTableroPermitido(bid, (bool)e.Value!))" disabled="@_enrutBusy" />
+                                                        <span class="small">@b.Nombre</span>
+                                                    </label>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="mt-3">
+                                        <label class="form-label small mb-1"><strong>Reparto automatico (round-robin)</strong></label>
+                                        <div class="text-muted" style="font-size:11.5px;margin-bottom:6px;">El agente reparte las tareas que crea entre estas personas, en orden y rotando (1a, 2a, 1a, 2a...). Si el modelo nombra a alguien, ese gana. Si la lista esta vacia, la tarea queda sin asignar.</div>
+                                        @if (_enrutAsignados.Count > 0)
+                                        {
+                                            <div class="ag-list mb-2">
+                                                @for (int i = 0; i < _enrutAsignados.Count; i++)
+                                                {
+                                                    var idx = i; var a = _enrutAsignados[i];
+                                                    <div class="ag-item">
+                                                        <div class="ag-item-main">
+                                                            <div class="ag-item-name">@(idx + 1). @a.Nombre</div>
+                                                        </div>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => SubirAsignado(idx)" disabled="@(_enrutBusy || idx == 0)" title="Subir">&uarr;</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => BajarAsignado(idx)" disabled="@(_enrutBusy || idx == _enrutAsignados.Count - 1)" title="Bajar">&darr;</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarAsignado(idx)" disabled="@_enrutBusy" title="Quitar">&times;</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        <SelectorPersona Jwt="@_jwt" Seleccionada="_enrutPersonaSel" SeleccionadaChanged="OnEnrutPersonaChanged" Placeholder="Agregar persona al reparto..." />
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-3">
+                                        <button type="button" class="btn btn-sm btn-dark" @onclick="GuardarEnrutamientoAsync" disabled="@_enrutBusy">@(_enrutBusy ? "Guardando..." : "Guardar enrutamiento")</button>
+                                        @if (_enrutSaved) { <span class="small" style="color:#1f8a4c;">Guardado</span> }
+                                        @if (_enrutError is not null) { <span class="small text-danger">@_enrutError</span> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
                     @* ----- Historial de versiones (red de seguridad) ----- *@
                     <div class="ag-accordion mt-2">
                         <button type="button" class="ag-accordion-head" @onclick="ToggleVersionHistory">
@@ -471,7 +608,16 @@ else
                                 @foreach (var t in _chat)
                                 {
                                     <div class="ag-bubble @(t.Role == "model" ? "bot" : "me")">
-                                        @if (!string.IsNullOrWhiteSpace(t.Text)) { <div>@t.Text</div> }
+                                        @{ var bubbleText = t.DisplayText ?? t.Text; }
+                                        @if (!string.IsNullOrWhiteSpace(bubbleText)) { <div>@bubbleText</div> }
+                                        @if (!string.IsNullOrWhiteSpace(t.InboundImageDataUri))
+                                        {
+                                            <div class="ag-attach"><img src="@t.InboundImageDataUri" alt="imagen adjunta" /></div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(t.InboundChip))
+                                        {
+                                            <div class="ag-inbound-chip">@t.InboundChip</div>
+                                        }
                                         @if (t.Attachments is { Count: > 0 })
                                         {
                                             @foreach (var a in t.Attachments)
@@ -498,9 +644,21 @@ else
                             @if (_busy) { <div class="ag-bubble bot ag-typing">Escribiendo...</div> }
                         </div>
                         @if (!string.IsNullOrEmpty(_chatError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_chatError</div> }
+                        @if (!string.IsNullOrEmpty(_attachError)) { <div class="text-danger small" style="padding:0 8px 6px;">@_attachError</div> }
+                        @if (_pendingAttach is not null)
+                        {
+                            <div class="ag-pending-attach" style="padding:0 8px 6px;">
+                                <span class="ag-inbound-chip">@AttachIcon(_pendingAttach.Kind) @_pendingAttach.Name</span>
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="() => { _pendingAttach = null; _attachError = null; }" disabled="@_busy">quitar</button>
+                            </div>
+                        }
                         <div class="ag-test-input">
+                            <label class="ag-attach-btn" title="Adjuntar imagen, audio o PDF">
+                                📎
+                                <InputFile OnChange="OnAttachChanged" accept="image/*,audio/*,application/pdf" disabled="@(_busy || _pendingAttach is not null)" style="display:none;" />
+                            </label>
                             <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
-                            <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_chatInput))">Enviar</button>
+                            <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null))">Enviar</button>
                         </div>
                     </div>
                     @if (_chat.Count > 0)
@@ -804,7 +962,7 @@ else
     @@media (max-width: 860px) { .ag-modal-body { flex-direction: column; } .ag-col-test { border-left: 0; padding-left: 0; border-top: 1px solid #eef0f5; padding-top: 14px; } }
 
     .ag-toolbar { display: flex; gap: 4px; border: 1px solid var(--propia-border-input); border-bottom: 0; border-radius: 8px 8px 0 0; padding: 4px 6px; background: #f7f7fb; }
-    .ag-fmt { border: 0; background: transparent; width: 28px; height: 26px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--propia-text-body); }
+    .ag-fmt { border: 0; background: transparent; min-width: 28px; height: 26px; padding: 0 6px; border-radius: 6px; font-size: 13px; line-height: 1; cursor: pointer; color: var(--propia-text-body); display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
     .ag-fmt:hover { background: rgba(89,85,209,.12); color: var(--propia-primary); }
     .ag-prompt { border-radius: 0 0 8px 8px !important; }
 
@@ -821,8 +979,12 @@ else
     .ag-attach a { font-size: 12px; font-weight: 600; color: var(--propia-primary, var(--propia-brand)); text-decoration: none; }
     .ag-attach-text { background: rgba(0,0,0,0.04); border-left: 3px solid var(--propia-primary, var(--propia-brand)); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; white-space: pre-wrap; }
     .ag-attach-cap { font-size: 12px; margin-top: 3px; }
-    .ag-test-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--propia-border-input); background: var(--propia-bg-card); }
+    .ag-test-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--propia-border-input); background: var(--propia-bg-card); align-items: center; }
     .ag-test-input input { flex: 1; }
+    .ag-attach-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--propia-border-input); background: var(--propia-bg-card); cursor: pointer; font-size: 16px; flex: 0 0 auto; user-select: none; }
+    .ag-attach-btn:hover { background: rgba(0,0,0,0.04); }
+    .ag-inbound-chip { display: inline-block; background: rgba(0,0,0,0.05); border: 1px solid var(--propia-border-input); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .ag-pending-attach { display: flex; align-items: center; }
     .ag-phone { border: 1px solid var(--propia-border-input); border-radius: 10px; padding: 8px 10px; background: var(--propia-bg-card); }
     .ag-phone-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; margin: 0; }
     .ag-phone-row { display: flex; gap: 6px; margin-top: 8px; }
@@ -867,6 +1029,8 @@ else
     private readonly List<ChatMsg> _chat = new();
     private string _chatInput = "";
     private string? _chatError;
+    private PendingAttach? _pendingAttach;
+    private string? _attachError;
 
     // Bitacora de depuracion: prompts que se enviaron al LLM en cada llamada (mas reciente arriba).
     private readonly List<AiDebugPrompt> _debugLog = new();
@@ -930,6 +1094,8 @@ else
         _bindings = new(); _bindingsError = null; _versions = new();
         _bindingsOpen = false; _reactionsOpen = false; _versionsOpen = false;
         _cacheFields = new(); _cacheValues = new(); _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
+        _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
+        _enrutOpen = false; _enrutLoaded = false; _enrutPermitidos = new(); _enrutAsignados = new(); _enrutTableros = new(); _enrutPersonaSel = null; _enrutSaved = false; _enrutError = null;
         _debugLog.Clear(); _debugOpen = false;
         _showEditor = true;
     }
@@ -940,6 +1106,8 @@ else
         _showPromptForm = false; _showRecursoForm = false; _editPromptId = null; _editRecursoId = null;
         _debugLog.Clear(); _debugOpen = false;
         _cacheOpen = false; _cacheModalOpen = false; _percibidosOpen = false;
+        _reactivacionOpen = false; _reactivacionLoaded = false; _reactHabilitada = false; _reactSteps = new(); _reactSaved = false; _reactError = null;
+        _enrutOpen = false; _enrutLoaded = false; _enrutPermitidos = new(); _enrutAsignados = new(); _enrutTableros = new(); _enrutPersonaSel = null; _enrutSaved = false; _enrutError = null;
         _showEditor = true;
         _editId = id;
         await CargarDetalleAsync(id);
@@ -1096,7 +1264,7 @@ else
         finally { _busy = false; }
     }
 
-    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; _debugLog.Clear(); }
+    private void LimpiarChat() { _chat.Clear(); _chatError = null; _phoneInfo = null; _debugLog.Clear(); _pendingAttach = null; _attachError = null; }
 
     private async Task Fmt(string before, string after) { try { await Js.InvokeVoidAsync("propiaUI.wrapField", "agentPrompt", before, after); } catch { } }
 
@@ -1182,13 +1350,59 @@ else
     // ----- Probar -----
     private async Task ProbarChatAsync()
     {
-        if (_detalle is null || string.IsNullOrWhiteSpace(_chatInput)) return;
+        if (_detalle is null) return;
+        if (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null) return;
         _busy = true; _chatError = null; _phoneInfo = null;
-        _chat.Add(new ChatMsg("user", _chatInput.Trim(), null));
-        _chatInput = "";
+
+        var userText = _chatInput.Trim();
+        var attach = _pendingAttach;
+        _chatInput = ""; _pendingAttach = null;
+
+        // El adjunto se procesa igual que en el dispatcher real: imagen -> vision (viaja en el turno);
+        // audio/pdf -> se transcribe/extrae a texto y se concatena al texto del turno.
+        IReadOnlyList<AiInboundImage>? inboundImages = null;
+        string? imgDataUri = null;
+        string? chip = null;
+        var turnText = userText;
+        if (attach is not null)
+        {
+            if (attach.Kind == AgentResourceType.Image)
+            {
+                inboundImages = new[] { new AiInboundImage(attach.Mime, attach.Base64) };
+                imgDataUri = $"data:{attach.Mime};base64,{attach.Base64}";
+            }
+            else
+            {
+                var esAudio = attach.Kind == AgentResourceType.Audio;
+                chip = (esAudio ? "🎤 " : "📄 ") + attach.Name;
+                var instr = esAudio
+                    ? "Transcribe esta nota de voz en espanol. Devuelve SOLO el texto hablado, sin comentarios ni formato adicional."
+                    : "Extrae el texto de este documento en espanol, conservando los datos clave (nombres, numeros, fechas, montos). Devuelve solo el contenido, de forma clara y ordenada.";
+                try
+                {
+                    var resp0 = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/describir-media",
+                        new { attach.Mime, attach.Base64, Instruction = instr });
+                    var r0 = await resp0.Content.ReadFromJsonAsync<DescribeMediaResponse>();
+                    var txt = r0?.Text;
+                    if (!string.IsNullOrWhiteSpace(txt))
+                    {
+                        var etiqueta = esAudio ? "Nota de voz del residente (transcripcion)" : "Documento que envio el residente (contenido)";
+                        var bloque = $"[{etiqueta}]:\n{txt!.Trim()}";
+                        turnText = string.IsNullOrWhiteSpace(turnText) ? bloque : $"{turnText}\n\n{bloque}";
+                    }
+                    else { _chatError = "No se pudo interpretar el adjunto (audio/PDF)."; }
+                }
+                catch (Exception ex) { _chatError = "No se pudo interpretar el adjunto: " + ex.Message; }
+            }
+        }
+
+        // Burbuja del usuario: muestra lo tecleado + preview del adjunto. El Text guarda lo que ve el modelo.
+        _chat.Add(new ChatMsg("user", turnText, null, DisplayText: userText,
+            InboundImages: inboundImages, InboundImageDataUri: imgDataUri, InboundChip: chip));
+
         try
         {
-            var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text)).ToList();
+            var turns = _chat.Select(m => new AiChatTurn(m.Role, m.Text, m.InboundImages)).ToList();
             var resp = await Auth().PostAsJsonAsync($"/api/ia/agentes/{_detalle.Agent.Id}/probar",
                 new { Turns = turns, SystemPromptOverride = (string?)null });
             var r = await resp.Content.ReadFromJsonAsync<AiChatResult>();
@@ -1203,6 +1417,41 @@ else
         catch (Exception ex) { _chatError = ex.Message; }
         finally { _busy = false; }
     }
+
+    private async Task OnAttachChanged(InputFileChangeEventArgs e)
+    {
+        _attachError = null;
+        var file = e.File;
+        if (file is null) { return; }
+        const long max = 10 * 1024 * 1024; // 10 MB
+        if (file.Size > max) { _attachError = "El archivo supera 10 MB."; return; }
+        var mime = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        var kind = KindFromMime(mime, file.Name);
+        if (kind is null) { _attachError = "Solo se admite imagen, audio o PDF."; return; }
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(max).CopyToAsync(ms);
+            _pendingAttach = new PendingAttach(kind.Value, mime, Convert.ToBase64String(ms.ToArray()), file.Name);
+        }
+        catch (Exception ex) { _attachError = "No se pudo leer el archivo: " + ex.Message; }
+    }
+
+    private static AgentResourceType? KindFromMime(string mime, string name)
+    {
+        mime = (mime ?? "").ToLowerInvariant();
+        if (mime.StartsWith("image/")) { return AgentResourceType.Image; }
+        if (mime.StartsWith("audio/")) { return AgentResourceType.Audio; }
+        if (mime == "application/pdf" || name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) { return AgentResourceType.Pdf; }
+        return null;
+    }
+
+    private static string AttachIcon(AgentResourceType kind) => kind switch
+    {
+        AgentResourceType.Image => "🖼️",
+        AgentResourceType.Audio => "🎤",
+        _ => "📄"
+    };
 
     private async Task EnviarAlTelefonoAsync(string? text)
     {
@@ -1236,6 +1485,165 @@ else
     private const int MaxVersionsShown = 5;
     private List<AiAgentPromptVersionDto> _versions = new();
     private AiAgentPromptVersionDto? _versionPendingRestore;
+
+    // ----- Reactivacion / seguimiento automatico (Ola G) -----
+    private sealed class ReactStepForm
+    {
+        public int OffsetHoras { get; set; } = 24;
+        public string Mensaje { get; set; } = "";
+        public bool Habilitado { get; set; } = true;
+    }
+    private bool _reactivacionOpen;
+    private bool _reactivacionLoaded;
+    private bool _reactivacionBusy;
+    private bool _reactHabilitada;
+    private bool _reactSaved;
+    private string? _reactError;
+    private List<ReactStepForm> _reactSteps = new();
+
+    private async Task ToggleReactivacion()
+    {
+        _reactivacionOpen = !_reactivacionOpen;
+        _reactSaved = false;
+        if (_reactivacionOpen && !_reactivacionLoaded && _editId is not null)
+            await ReloadReactivacionAsync();
+    }
+
+    private async Task ReloadReactivacionAsync()
+    {
+        if (_editId is null) return;
+        _reactError = null;
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<AgentReactivacionConfig>($"/api/ia/agentes/{_editId}/reactivacion");
+            _reactHabilitada = cfg?.Habilitada ?? false;
+            _reactSteps = (cfg?.Pasos ?? new List<AgentReactivacionPaso>())
+                .Select(p => new ReactStepForm { OffsetHoras = p.OffsetHoras, Mensaje = p.MensajeTexto ?? "", Habilitado = p.Habilitado })
+                .ToList();
+            _reactivacionLoaded = true;
+        }
+        catch (Exception ex) { _reactError = ex.Message; }
+    }
+
+    private void AgregarPasoReact()
+    {
+        var ultima = _reactSteps.Count > 0 ? _reactSteps[^1].OffsetHoras : 0;
+        _reactSteps.Add(new ReactStepForm { OffsetHoras = ultima + 24, Mensaje = "", Habilitado = true });
+        _reactSaved = false;
+    }
+
+    private void QuitarPasoReact(ReactStepForm p) { _reactSteps.Remove(p); _reactSaved = false; }
+
+    private async Task GuardarReactivacionAsync()
+    {
+        if (_editId is null) return;
+        _reactivacionBusy = true; _reactError = null; _reactSaved = false;
+        try
+        {
+            var cfg = new AgentReactivacionConfig(
+                _reactHabilitada,
+                _reactSteps.Select(s => new AgentReactivacionPaso(
+                    Math.Max(0, s.OffsetHoras),
+                    string.IsNullOrWhiteSpace(s.Mensaje) ? null : s.Mensaje.Trim(),
+                    s.Habilitado)).ToList());
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}/reactivacion", cfg);
+            if (!resp.IsSuccessStatusCode) { _reactError = $"HTTP {(int)resp.StatusCode}"; return; }
+            _reactSaved = true;
+            await ReloadReactivacionAsync();
+        }
+        catch (Exception ex) { _reactError = ex.Message; }
+        finally { _reactivacionBusy = false; }
+    }
+
+    // ----- Enrutamiento de tareas: whitelist de tableros + reparto round-robin (Ola H) -----
+    private sealed record TableroMiniDto(Guid Id, string Nombre);
+    private bool _enrutOpen;
+    private bool _enrutLoaded;
+    private bool _enrutBusy;
+    private bool _enrutSaved;
+    private string? _enrutError;
+    private List<TableroMiniDto> _enrutTableros = new();
+    private HashSet<Guid> _enrutPermitidos = new();
+    private List<AgentAsignadoDto> _enrutAsignados = new();
+    private Propia.Application.Directorio.PersonaCandidatoDto? _enrutPersonaSel;
+
+    private async Task ToggleEnrutamiento()
+    {
+        _enrutOpen = !_enrutOpen;
+        _enrutSaved = false;
+        if (_enrutOpen && !_enrutLoaded && _editId is not null)
+            await ReloadEnrutamientoAsync();
+    }
+
+    private async Task ReloadEnrutamientoAsync()
+    {
+        if (_editId is null) return;
+        _enrutError = null;
+        try
+        {
+            _enrutTableros = await Auth().GetFromJsonAsync<List<TableroMiniDto>>("/api/tareas/tableros") ?? new();
+            var cfg = await Auth().GetFromJsonAsync<AgentEnrutamientoDto>($"/api/ia/agentes/{_editId}/enrutamiento-tareas");
+            _enrutPermitidos = cfg is null ? new() : cfg.TablerosPermitidos.ToHashSet();
+            _enrutAsignados = cfg is null ? new() : cfg.Asignados.ToList();
+            _enrutLoaded = true;
+        }
+        catch (Exception ex) { _enrutError = ex.Message; }
+    }
+
+    private void ToggleTableroPermitido(Guid id, bool on)
+    {
+        if (on) { _enrutPermitidos.Add(id); } else { _enrutPermitidos.Remove(id); }
+        _enrutSaved = false;
+    }
+
+    private async Task OnEnrutPersonaChanged(Propia.Application.Directorio.PersonaCandidatoDto? p)
+    {
+        _enrutPersonaSel = null;   // el selector queda listo para la siguiente
+        if (p is null) return;
+        if (_enrutAsignados.All(a => a.PersonaId != p.PersonaId))
+        {
+            _enrutAsignados.Add(new AgentAsignadoDto(p.PersonaId, p.NombreCompleto));
+            _enrutSaved = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private void QuitarAsignado(int idx)
+    {
+        if (idx >= 0 && idx < _enrutAsignados.Count) { _enrutAsignados.RemoveAt(idx); _enrutSaved = false; }
+    }
+
+    private void SubirAsignado(int idx)
+    {
+        if (idx <= 0 || idx >= _enrutAsignados.Count) return;
+        (_enrutAsignados[idx - 1], _enrutAsignados[idx]) = (_enrutAsignados[idx], _enrutAsignados[idx - 1]);
+        _enrutSaved = false;
+    }
+
+    private void BajarAsignado(int idx)
+    {
+        if (idx < 0 || idx >= _enrutAsignados.Count - 1) return;
+        (_enrutAsignados[idx + 1], _enrutAsignados[idx]) = (_enrutAsignados[idx], _enrutAsignados[idx + 1]);
+        _enrutSaved = false;
+    }
+
+    private async Task GuardarEnrutamientoAsync()
+    {
+        if (_editId is null) return;
+        _enrutBusy = true; _enrutError = null; _enrutSaved = false;
+        try
+        {
+            var req = new AgentEnrutamientoSaveRequest(
+                _enrutPermitidos.ToList(),
+                _enrutAsignados.Select(a => a.PersonaId).ToList());
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/agentes/{_editId}/enrutamiento-tareas", req);
+            if (!resp.IsSuccessStatusCode) { _enrutError = $"HTTP {(int)resp.StatusCode}"; return; }
+            _enrutSaved = true;
+            await ReloadEnrutamientoAsync();
+        }
+        catch (Exception ex) { _enrutError = ex.Message; }
+        finally { _enrutBusy = false; }
+    }
 
     private List<string> ReactionEmojiList() =>
         string.IsNullOrWhiteSpace(_form.ReactionEmojis)
@@ -1442,5 +1850,17 @@ else
         public string? FileUrl { get; set; }
     }
 
-    private sealed record ChatMsg(string Role, string Text, IReadOnlyList<AiChatAttachment>? Attachments);
+    // Text = lo que ve el modelo (incluye transcripcion de audio/pdf); DisplayText = lo que se muestra
+    // en la burbuja (solo lo tecleado). InboundImages viaja al turno; el data URI + chip son solo preview.
+    private sealed record ChatMsg(
+        string Role,
+        string Text,
+        IReadOnlyList<AiChatAttachment>? Attachments,
+        string? DisplayText = null,
+        IReadOnlyList<AiInboundImage>? InboundImages = null,
+        string? InboundImageDataUri = null,
+        string? InboundChip = null);
+
+    private sealed record PendingAttach(AgentResourceType Kind, string Mime, string Base64, string Name);
+    private sealed record DescribeMediaResponse(string? Text);
 }

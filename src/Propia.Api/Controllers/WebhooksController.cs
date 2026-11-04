@@ -17,15 +17,17 @@ public class WebhooksController : ControllerBase
     private readonly IWompiWebhookService _wompi;
     private readonly IChatIngestService _chatIngest;
     private readonly IMetaWebhookService _meta;
+    private readonly IDeliveryStatusService _deliveryStatus;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IConfiguration config, IWebHostEnvironment env, ILogger<WebhooksController> logger)
+    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IDeliveryStatusService deliveryStatus, IConfiguration config, IWebHostEnvironment env, ILogger<WebhooksController> logger)
     {
         _wompi = wompi;
         _chatIngest = chatIngest;
         _meta = meta;
+        _deliveryStatus = deliveryStatus;
         _config = config;
         _env = env;
         _logger = logger;
@@ -100,7 +102,18 @@ public class WebhooksController : ControllerBase
         using (doc)
         {
             var payload = EvolutionWebhookParser.Parse(doc.RootElement);
-            if (payload is null) { return Ok(new { status = "ignored" }); } // saliente, grupo, reaccion o evento no-mensaje
+            if (payload is null)
+            {
+                // No es un entrante: puede ser un ack de entrega (messages.update). Ola D: lo aplicamos a los
+                // salientes por ExternalId. Si tampoco es un estado, se ignora (grupo, reaccion, saliente, etc.).
+                var estados = EvolutionStatusParser.ParseStatuses(doc.RootElement);
+                if (estados.Count > 0)
+                {
+                    var n = await _deliveryStatus.AplicarAsync(tenantId, estados, ct);
+                    return Ok(new { status = "status_processed", updated = n });
+                }
+                return Ok(new { status = "ignored" }); // saliente, grupo, reaccion o evento no-mensaje
+            }
 
             var result = await _chatIngest.IngestTrustedAsync(tenantId, payload, ct);
             return result switch
@@ -172,7 +185,18 @@ public class WebhooksController : ControllerBase
         using (doc)
         {
             var parsed = MetaWebhookParser.Parse(doc.RootElement);
-            if (parsed is null) { return Ok(new { status = "ignored" }); } // eventos de estado, etc.
+            if (parsed is null)
+            {
+                // No es un entrante: puede ser un evento de estado (value.statuses[]). Ola D: lo aplicamos a los
+                // salientes por wamid. Si tampoco es estado, se ignora.
+                var estados = MetaWebhookParser.ParseStatuses(doc.RootElement);
+                if (estados.Count > 0)
+                {
+                    var n = await _deliveryStatus.AplicarAsync(tenantId, estados, ct);
+                    return Ok(new { status = "status_processed", updated = n });
+                }
+                return Ok(new { status = "ignored" });
+            }
             var result = await _meta.IngestAsync(tenantId, parsed.PhoneNumberId, parsed.Payload, ct);
             return Ok(new { status = result.ToString().ToLowerInvariant() });
         }

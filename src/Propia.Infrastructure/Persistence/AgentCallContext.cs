@@ -11,10 +11,12 @@ public sealed class AgentCallContext : IAgentCallContext
 {
     public string? ContactPhone { get; private set; }
     public Guid? ConversationId { get; private set; }
+    public Guid? AgentId { get; private set; }
 
-    public void Set(string? contactPhone, Guid? conversationId)
+    public void Set(string? contactPhone, Guid? conversationId, Guid? agentId = null)
     {
         ContactPhone = string.IsNullOrWhiteSpace(contactPhone) ? null : contactPhone;
         ConversationId = conversationId;
+        AgentId = agentId;
     }
 }

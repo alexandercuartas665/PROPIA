@@ -177,6 +177,38 @@ public sealed class AiInferenceService : IAiInferenceService
         return result with { DebugPrompts = debug };
     }
 
+    public async Task<string?> DescribeInboundMediaAsync(Guid agentId, string mimeType, string base64, string instruction, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(base64)) { return null; }
+
+        var agent = await _db.AiAgents.AsNoTracking().FirstOrDefaultAsync(a => a.Id == agentId, ct);
+        if (agent is null) { return null; }
+
+        var providerCfg = await _db.AiProviderConfigs.AsNoTracking().FirstOrDefaultAsync(c => c.Provider == agent.Provider, ct);
+        if (providerCfg is null || !providerCfg.IsEnabled || string.IsNullOrWhiteSpace(providerCfg.ApiKeyEncrypted)) { return null; }
+
+        string apiKey;
+        try { apiKey = _secret.Unprotect(providerCfg.ApiKeyEncrypted); }
+        catch { return null; }
+
+        // Respeta la cuota del plan: si ya se agoto, no gastamos en pre-procesar media.
+        var quota = await _usage.GetQuotaAsync(ct);
+        if (quota.Exceeded) { return null; }
+
+        var meta = AiProviderCatalog.For(agent.Provider);
+        var model = !string.IsNullOrWhiteSpace(agent.Model) ? agent.Model!
+            : !string.IsNullOrWhiteSpace(providerCfg.Model) ? providerCfg.Model!
+            : meta.DefaultModel;
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(base64.Trim()); }
+        catch { return null; }
+
+        var r = await _client.DescribeMediaAsync(agent.Provider, apiKey, providerCfg.BaseUrl, model, instruction, bytes, mimeType, ct);
+        if (r.Ok) { await _usage.RecordAsync(agent.Id, agent.Provider, model, r.InputTokens, r.OutputTokens, "media", true, ct); }
+        return r.Ok ? r.Text : null;
+    }
+
     /// <summary>
     /// Arma las specs de tools (nombre, descripcion, JSON schema) de las tools MCP habilitadas
     /// para el agente, descubriendo en vivo el schema desde el servidor MCP. Tambien deja listo
@@ -224,7 +256,7 @@ public sealed class AiInferenceService : IAiInferenceService
         IReadOnlyList<AiChatAttachment> resources, string bearerToken,
         string? contactPhone, Guid? conversationId, CancellationToken ct)
     {
-        var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text)));
+        var msgs = new List<AiToolMessage>(turns.Select(t => new AiToolMessage(t.Role, t.Text, Images: t.Images)));
         int inTok = 0, outTok = 0;
         // Bitacora de depuracion: el prompt principal (con herramientas) + una entrada por cada ronda de tools.
         var debug = new List<AiDebugPrompt>();
@@ -265,7 +297,7 @@ public sealed class AiInferenceService : IAiInferenceService
                     }
                     else
                     {
-                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, contactPhone, conversationId, ct);
+                        resultado = await _mcp.CallToolAsync(conexion, call.Name, ParseArgs(call.ArgumentsJson), bearerToken, contactPhone, conversationId, agent.Id, ct);
                     }
                 }
                 catch (Exception ex) { resultado = $"Error ejecutando '{call.Name}': {ex.Message}"; }

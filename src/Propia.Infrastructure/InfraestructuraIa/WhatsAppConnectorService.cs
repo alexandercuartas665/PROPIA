@@ -19,13 +19,15 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
     private readonly ISecretProtector _secret;
     private readonly IEvolutionApiClient _client;
     private readonly IWhatsAppCloudClient _cloud;
+    private readonly IYCloudApiClient _ycloud;
 
-    public WhatsAppConnectorService(PropiaDbContext db, ISecretProtector secret, IEvolutionApiClient client, IWhatsAppCloudClient cloud)
+    public WhatsAppConnectorService(PropiaDbContext db, ISecretProtector secret, IEvolutionApiClient client, IWhatsAppCloudClient cloud, IYCloudApiClient ycloud)
     {
         _db = db;
         _secret = secret;
         _client = client;
         _cloud = cloud;
+        _ycloud = ycloud;
     }
 
     public async Task<bool> MasterReadyAsync(CancellationToken ct = default)
@@ -52,6 +54,24 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             }
             await _db.SaveChangesAsync(ct);
             return new LineConnectResult(chk.Ok, null, chk.Ok ? null : (chk.Error ?? "No se pudo validar el token de Meta."));
+        }
+
+        // YCloud (BSP): no hay QR. "Conectar" = validar la API key + numero remitente contra YCloud.
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineConnectResult(false, null, "Faltan credenciales YCloud (API key / numero remitente)."); }
+            var chk = await _ycloud.CheckAsync(creds, ct);
+            var now = DateTimeOffset.UtcNow;
+            line.Status = chk.Ok ? WhatsAppLineStatus.Connected : WhatsAppLineStatus.Failed;
+            line.LastStatusAt = now;
+            if (chk.Ok)
+            {
+                line.LastConnectedAt = now;
+                if (string.IsNullOrWhiteSpace(line.PhoneNumber) && !string.IsNullOrWhiteSpace(chk.PhoneNumber)) line.PhoneNumber = chk.PhoneNumber;
+            }
+            await _db.SaveChangesAsync(ct);
+            return new LineConnectResult(chk.Ok, null, chk.Ok ? null : (chk.Error ?? "No se pudo validar la cuenta YCloud."));
         }
 
         var server = await ResolveServerAsync(ct);
@@ -106,6 +126,26 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             return Map(line);
         }
 
+        // YCloud: el estado se valida revalidando la API key + numero contra YCloud.
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is not null)
+            {
+                var chk = await _ycloud.CheckAsync(creds, ct);
+                var mapped = chk.Ok ? WhatsAppLineStatus.Connected : WhatsAppLineStatus.Failed;
+                if (mapped != line.Status)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    line.Status = mapped;
+                    line.LastStatusAt = now;
+                    if (mapped == WhatsAppLineStatus.Connected) line.LastConnectedAt = now;
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+            return Map(line);
+        }
+
         var server = await ResolveServerAsync(ct);
         if (server is null) { return Map(line); }
 
@@ -146,7 +186,8 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
         if (line is null) { return false; }
 
-        if (line.Provider == WhatsAppProvider.Cloud)
+        // Cloud (Meta) y YCloud no tienen instancia que cerrar: solo se marca desconectada.
+        if (line.Provider is WhatsAppProvider.Cloud or WhatsAppProvider.YCloud)
         {
             line.Status = WhatsAppLineStatus.Disconnected;
             line.LastStatusAt = DateTimeOffset.UtcNow;
@@ -208,7 +249,16 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
             var rc = await _cloud.SendTextAsync(creds, digitsCloud, text.Trim(), ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            var digitsY = new string(phone.Where(char.IsDigit).ToArray());
+            var ry = await _ycloud.SendTextAsync(creds, digitsY, text.Trim(), ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -217,7 +267,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendTextAsync(baseUrl, apiKey, EvoInstance(line), digits, text.Trim(), ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
@@ -235,7 +285,16 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             if (string.IsNullOrWhiteSpace(templateName)) return new LineSendResult(false, "Falta el nombre de la plantilla aprobada de Meta.");
             var rc = await _cloud.SendTemplateAsync(creds, digits, templateName.Trim(), languageCode, bodyParams, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            if (string.IsNullOrWhiteSpace(templateName)) return new LineSendResult(false, "Falta el nombre de la plantilla aprobada.");
+            var ry = await _ycloud.SendTemplateAsync(creds, digits, templateName.Trim(), languageCode, bodyParams, ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         // Evolution/baileys no usa plantillas de Meta: se envia el link como texto plano.
@@ -243,7 +302,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendTextAsync(baseUrl, apiKey, EvoInstance(line), digits, (fallbackText ?? "").Trim(), ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default)
@@ -262,7 +321,16 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
             var rc = await _cloud.SendMediaAsync(creds, digitsCloud, WhatsAppCloudMediaKind.Image, imageUrl, caption, null, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            var digitsY = new string(phone.Where(char.IsDigit).ToArray());
+            var ry = await _ycloud.SendMediaAsync(creds, digitsY, WhatsAppCloudMediaKind.Image, imageUrl, caption, null, ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -271,7 +339,144 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendMediaAsync(baseUrl, apiKey, EvoInstance(line), digits, imageUrl, caption, ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
+    }
+
+    public async Task<LineSendResult> SendAttachmentAsync(Guid lineId, string phone, AgentResourceType kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(mediaUrl))
+        {
+            return new LineSendResult(false, "Indica el numero y el adjunto.");
+        }
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return new LineSendResult(false, "La linea no existe."); }
+        if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea no esta conectada."); }
+
+        // Pdf y cualquier binario no-media va como documento.
+        var cloudKind = kind switch
+        {
+            AgentResourceType.Image => WhatsAppCloudMediaKind.Image,
+            AgentResourceType.Video => WhatsAppCloudMediaKind.Video,
+            AgentResourceType.Audio => WhatsAppCloudMediaKind.Audio,
+            _ => WhatsAppCloudMediaKind.Document
+        };
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            var rc = await _cloud.SendMediaAsync(creds, Digits(phone), cloudKind, mediaUrl, caption, fileName, ct);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            var ry = await _ycloud.SendMediaAsync(creds, Digits(phone), cloudKind, mediaUrl, caption, fileName, ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
+        }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
+        var (baseUrl, apiKey) = server.Value;
+        var mediatype = kind switch
+        {
+            AgentResourceType.Image => "image",
+            AgentResourceType.Video => "video",
+            AgentResourceType.Audio => "audio",
+            _ => "document"
+        };
+        var result = await _client.SendMediaTypedAsync(baseUrl, apiKey, EvoInstance(line), Digits(phone), mediatype, mediaUrl, caption, fileName, ct);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
+    }
+
+    public async Task<LineSendResult> SendLocationAsync(Guid lineId, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) { return new LineSendResult(false, "Indica el numero."); }
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return new LineSendResult(false, "La linea no existe."); }
+        if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea no esta conectada."); }
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            var rc = await _cloud.SendLocationAsync(creds, Digits(phone), latitude, longitude, name, address, ct);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            var ry = await _ycloud.SendLocationAsync(creds, Digits(phone), latitude, longitude, name, address, ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
+        }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
+        var (baseUrl, apiKey) = server.Value;
+        var result = await _client.SendLocationAsync(baseUrl, apiKey, EvoInstance(line), Digits(phone), latitude, longitude, name, address, ct);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
+    }
+
+    public async Task<LineSendResult> SendReactionAsync(Guid lineId, string phone, string externalMessageId, string emoji, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(externalMessageId))
+        {
+            return new LineSendResult(false, "Faltan el numero o el id del mensaje.");
+        }
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return new LineSendResult(false, "La linea no existe."); }
+        if (line.Status != WhatsAppLineStatus.Connected) { return new LineSendResult(false, "La linea no esta conectada."); }
+
+        if (line.Provider == WhatsAppProvider.Cloud)
+        {
+            var creds = CloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
+            var rc = await _cloud.SendReactionAsync(creds, Digits(phone), externalMessageId, emoji, ct);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
+        }
+        if (line.Provider == WhatsAppProvider.YCloud)
+        {
+            var creds = YCloudCreds(line);
+            if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
+            var ry = await _ycloud.SendReactionAsync(creds, Digits(phone), externalMessageId, emoji, ct);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
+        }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
+        var (baseUrl, apiKey) = server.Value;
+        // Evolution identifica el mensaje con la key remota del contacto: <digitos>@s.whatsapp.net.
+        var remoteJid = $"{Digits(phone)}@s.whatsapp.net";
+        var result = await _client.SendReactionAsync(baseUrl, apiKey, EvoInstance(line), remoteJid, externalMessageId, emoji, ct);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
+    }
+
+    public async Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)
+    {
+        var media = await FetchInboundMediaAsync(lineId, externalMessageId, ct);
+        if (media is null) { return null; }
+        var mime = string.IsNullOrWhiteSpace(media.Value.MimeType) ? "image/jpeg" : media.Value.MimeType!;
+        return (mime, media.Value.Base64);
+    }
+
+    public async Task<(string? MimeType, string Base64)?> FetchInboundMediaAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(externalMessageId)) { return null; }
+        var line = await _db.WhatsAppLines.AsNoTracking().FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) { return null; }
+
+        // Solo Evolution por ahora: Cloud/YCloud entregan media por URL firmada (no por key); se portara aparte.
+        if (line.Provider != WhatsAppProvider.Evolution) { return null; }
+
+        var server = await ResolveServerAsync(ct);
+        if (server is null) { return null; }
+        var (baseUrl, apiKey) = server.Value;
+
+        var media = await _client.GetBase64FromMediaMessageAsync(baseUrl, apiKey, EvoInstance(line), externalMessageId, ct);
+        if (!media.Ok || string.IsNullOrWhiteSpace(media.Base64)) { return null; }
+        return (media.MimeType, media.Base64!);
     }
 
     // URL + token del webhook segun el maestro. La ruta receptora exige el tenant en el path
@@ -306,6 +511,9 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
     // Nombre de instancia unico en el servidor compartido: propia_<tenant>_<linea>.
     private static string EvoInstance(WhatsAppLine line) => $"propia_{line.TenantId:N}_{line.Id:N}";
 
+    // Solo digitos (telefono E.164 sin "+", espacios ni simbolos).
+    private static string Digits(string? s) => new((s ?? string.Empty).Where(char.IsDigit).ToArray());
+
     // Credenciales Cloud (Meta) de la linea, con el token descifrado. Null si faltan.
     private WhatsAppCloudCredentials? CloudCreds(WhatsAppLine line)
     {
@@ -314,6 +522,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         catch { return null; }
     }
 
+    // Credenciales YCloud de la linea, con la API key descifrada. Null si faltan.
+    private YCloudCredentials? YCloudCreds(WhatsAppLine line)
+    {
+        if (string.IsNullOrWhiteSpace(line.YCloudApiKeyEncrypted) || string.IsNullOrWhiteSpace(line.YCloudFromNumber)) return null;
+        try { return new YCloudCredentials(_secret.Unprotect(line.YCloudApiKeyEncrypted!), line.YCloudFromNumber!); }
+        catch { return null; }
+    }
+
     private static WhatsAppLineDto Map(WhatsAppLine l) =>
-        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId);
+        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber);
 }

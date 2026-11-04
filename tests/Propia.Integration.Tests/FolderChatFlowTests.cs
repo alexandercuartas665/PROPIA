@@ -220,6 +220,8 @@ public class FolderChatFlowTests : IAsyncLifetime
             => throw new NotSupportedException();
         public Task<AiChatResult> ExtractFromDocumentAsync(AiProvider provider, string apiKey, string? baseUrl, string model, string instruction, byte[] documentBytes, string mimeType, string jsonSchema, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<AiChatResult> DescribeMediaAsync(AiProvider provider, string apiKey, string? baseUrl, string model, string instruction, byte[] mediaBytes, string mimeType, CancellationToken ct = default)
+            => Task.FromResult(new AiChatResult(true, "stub media", null, 1, 1));
     }
 
     private sealed class StubExtractor : IAiDocumentExtractor

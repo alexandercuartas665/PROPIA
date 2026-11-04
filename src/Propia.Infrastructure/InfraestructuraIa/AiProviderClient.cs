@@ -88,7 +88,23 @@ public sealed class AiProviderClient : IAiProviderClient
             }
             else
             {
-                msgs.Add(new { role = m.Role == "model" ? "assistant" : m.Role, content = m.Text ?? "" });
+                var role = m.Role == "model" ? "assistant" : m.Role;
+                // Vision: si el turno trae imagenes entrantes, el content va como array multimodal
+                // (text + image_url con data URI base64). Gemini via endpoint OpenAI acepta este formato.
+                if (role == "user" && m.Images is { Count: > 0 })
+                {
+                    var parts = new List<object>();
+                    if (!string.IsNullOrWhiteSpace(m.Text)) { parts.Add(new { type = "text", text = m.Text }); }
+                    foreach (var img in m.Images)
+                    {
+                        parts.Add(new { type = "image_url", image_url = new { url = $"data:{img.MimeType};base64,{img.Base64}" } });
+                    }
+                    msgs.Add(new { role, content = parts.ToArray() });
+                }
+                else
+                {
+                    msgs.Add(new { role, content = m.Text ?? "" });
+                }
             }
         }
 
@@ -160,7 +176,21 @@ public sealed class AiProviderClient : IAiProviderClient
             }
             else
             {
-                msgs.Add(new { role = m.Role == "model" ? "assistant" : "user", content = m.Text ?? "" });
+                var role = m.Role == "model" ? "assistant" : "user";
+                if (role == "user" && m.Images is { Count: > 0 })
+                {
+                    var blocks = new List<object>();
+                    foreach (var img in m.Images)
+                    {
+                        blocks.Add(new { type = "image", source = new { type = "base64", media_type = img.MimeType, data = img.Base64 } });
+                    }
+                    if (!string.IsNullOrWhiteSpace(m.Text)) { blocks.Add(new { type = "text", text = m.Text }); }
+                    msgs.Add(new { role, content = blocks.ToArray() });
+                }
+                else
+                {
+                    msgs.Add(new { role, content = m.Text ?? "" });
+                }
             }
         }
 
@@ -227,6 +257,82 @@ public sealed class AiProviderClient : IAiProviderClient
         {
             return new AiChatResult(false, null, $"No se pudo contactar al proveedor: {ex.Message}");
         }
+    }
+
+    // ---------- Descripcion/transcripcion de media -> TEXTO plano (sin JSON schema) ----------
+    public async Task<AiChatResult> DescribeMediaAsync(AiProvider provider, string apiKey, string? baseUrl, string model,
+        string instruction, byte[] mediaBytes, string mimeType, CancellationToken ct = default)
+    {
+        try
+        {
+            return provider switch
+            {
+                AiProvider.Gemini => await GeminiDescribe(apiKey, baseUrl, model, instruction, mediaBytes, mimeType, ct),
+                _ => new AiChatResult(false, null, $"El proveedor {provider} no soporta transcripcion/extraccion de media todavia.")
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AiChatResult(false, null, $"No se pudo contactar al proveedor: {ex.Message}");
+        }
+    }
+
+    private async Task<AiChatResult> GeminiDescribe(string apiKey, string? baseUrl, string model, string instruction,
+        byte[] mediaBytes, string mimeType, CancellationToken ct)
+    {
+        var url = $"{Base(baseUrl, "https://generativelanguage.googleapis.com")}/v1beta/models/{model}:generateContent?key={apiKey}";
+        // Gemini quiere el mime base (sin parametros como "; codecs=opus" de las notas de voz de WhatsApp).
+        var mime = mimeType;
+        var semi = mime.IndexOf(';');
+        if (semi > 0) { mime = mime[..semi].Trim(); }
+        if (string.IsNullOrWhiteSpace(mime)) { mime = "application/octet-stream"; }
+        var b64 = Convert.ToBase64String(mediaBytes);
+        var body = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new object[]
+                    {
+                        new { inline_data = new { mime_type = mime, data = b64 } },
+                        new { text = instruction }
+                    }
+                }
+            },
+            generationConfig = new { temperature = 0.0 }
+        };
+
+        using var resp = await _http.PostAsync(url, JsonBody(body), ct);
+        var raw = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var snip = raw.Length > 400 ? raw[..400] : raw;
+            return new AiChatResult(false, null, $"Gemini respondio HTTP {(int)resp.StatusCode}. {snip}");
+        }
+
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        string? text = null;
+        if (root.TryGetProperty("candidates", out var cands) && cands.ValueKind == JsonValueKind.Array && cands.GetArrayLength() > 0)
+        {
+            var cand = cands[0];
+            if (cand.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var parts)
+                && parts.ValueKind == JsonValueKind.Array && parts.GetArrayLength() > 0
+                && parts[0].TryGetProperty("text", out var t))
+                text = t.GetString();
+        }
+        if (string.IsNullOrWhiteSpace(text))
+            return new AiChatResult(false, null, "Gemini no devolvio contenido (posible bloqueo de seguridad o media ilegible).");
+
+        var (inTok, outTok) = (0, 0);
+        if (root.TryGetProperty("usageMetadata", out var um))
+        {
+            inTok = um.TryGetProperty("promptTokenCount", out var p) ? p.GetInt32() : 0;
+            outTok = um.TryGetProperty("candidatesTokenCount", out var c) ? c.GetInt32() : 0;
+        }
+        return new AiChatResult(true, text, null, inTok, outTok);
     }
 
     private async Task<AiChatResult> GeminiExtract(string apiKey, string? baseUrl, string model, string instruction,
@@ -314,7 +420,20 @@ public sealed class AiProviderClient : IAiProviderClient
         var body = new
         {
             systemInstruction = string.IsNullOrWhiteSpace(systemPrompt) ? null : new { parts = new[] { new { text = systemPrompt } } },
-            contents = turns.Select(t => new { role = t.Role == "model" ? "model" : "user", parts = new[] { new { text = t.Text } } }).ToArray()
+            contents = turns.Select(t =>
+            {
+                // Vision: las imagenes entrantes del turno van como inline_data (base64) ANTES del texto.
+                var parts = new List<object>();
+                if (t.Images is { Count: > 0 })
+                {
+                    foreach (var img in t.Images)
+                    {
+                        parts.Add(new { inline_data = new { mime_type = img.MimeType, data = img.Base64 } });
+                    }
+                }
+                parts.Add(new { text = t.Text ?? "" });
+                return new { role = t.Role == "model" ? "model" : "user", parts = parts.ToArray() };
+            }).ToArray()
         };
         using var resp = await _http.PostAsync(url, JsonBody(body), ct);
         var raw = await resp.Content.ReadAsStringAsync(ct);
@@ -339,7 +458,21 @@ public sealed class AiProviderClient : IAiProviderClient
 
         var messages = new List<object>();
         if (!string.IsNullOrWhiteSpace(systemPrompt)) { messages.Add(new { role = "system", content = systemPrompt }); }
-        foreach (var t in turns) { messages.Add(new { role = t.Role == "model" ? "assistant" : "user", content = t.Text }); }
+        foreach (var t in turns)
+        {
+            var role = t.Role == "model" ? "assistant" : "user";
+            if (role == "user" && t.Images is { Count: > 0 })
+            {
+                var parts = new List<object>();
+                if (!string.IsNullOrWhiteSpace(t.Text)) { parts.Add(new { type = "text", text = t.Text }); }
+                foreach (var img in t.Images)
+                {
+                    parts.Add(new { type = "image_url", image_url = new { url = $"data:{img.MimeType};base64,{img.Base64}" } });
+                }
+                messages.Add(new { role, content = parts.ToArray() });
+            }
+            else { messages.Add(new { role, content = t.Text }); }
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(new { model, messages }) };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -362,12 +495,28 @@ public sealed class AiProviderClient : IAiProviderClient
         IReadOnlyList<AiChatTurn> turns, CancellationToken ct)
     {
         var url = $"{Base(baseUrl, "https://api.anthropic.com")}/v1/messages";
+        var msgsClaude = turns.Select(t =>
+        {
+            var role = t.Role == "model" ? "assistant" : "user";
+            // Vision: las imagenes entrantes van como bloques image (source base64) ANTES del texto.
+            if (role == "user" && t.Images is { Count: > 0 })
+            {
+                var blocks = new List<object>();
+                foreach (var img in t.Images)
+                {
+                    blocks.Add(new { type = "image", source = new { type = "base64", media_type = img.MimeType, data = img.Base64 } });
+                }
+                if (!string.IsNullOrWhiteSpace(t.Text)) { blocks.Add(new { type = "text", text = t.Text }); }
+                return new { role, content = (object)blocks.ToArray() };
+            }
+            return new { role, content = (object)(t.Text ?? "") };
+        }).ToArray();
         var body = new
         {
             model,
             max_tokens = 1024,
             system = string.IsNullOrWhiteSpace(systemPrompt) ? null : systemPrompt,
-            messages = turns.Select(t => new { role = t.Role == "model" ? "assistant" : "user", content = t.Text }).ToArray()
+            messages = msgsClaude
         };
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(body) };
         req.Headers.Add("x-api-key", apiKey);

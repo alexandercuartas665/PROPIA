@@ -24,7 +24,45 @@ public sealed record MensajeDto(
     string? MediaType,
     string? MediaUrl,
     string? MediaMimeType,
-    string? ExternalId);
+    string? ExternalId,
+    /// <summary>Ola D: estado de entrega del saliente ("sent"/"delivered"/"read"/"failed"); null en entrantes.</summary>
+    string? DeliveryStatus = null,
+    /// <summary>Ola D: motivo del proveedor cuando DeliveryStatus es "failed".</summary>
+    string? DeliveryError = null);
+
+/// <summary>
+/// Ola D (analitica de entregas): conteo de salientes por estado + los ultimos fallos con su motivo
+/// + los ultimos salientes que SI salieron con su estado (para las pestanas Entregados/Fallos de la bitacora).
+/// </summary>
+public sealed record EntregasResumenDto(
+    int Aceptados,
+    int Entregados,
+    int Leidos,
+    int Fallidos,
+    IReadOnlyList<EntregaFallidaDto> FallosRecientes,
+    IReadOnlyList<EntregaDto> EntregasRecientes);
+
+/// <summary>Un saliente que NO se entrego (DeliveryStatus "failed"), con el motivo del proveedor.</summary>
+public sealed record EntregaFallidaDto(
+    Guid ConversationId,
+    string? ContactName,
+    string ContactPhone,
+    string? LineaNombre,
+    DateTimeOffset SentAt,
+    string? Body,
+    string? DeliveryError,
+    string? SentByName);
+
+/// <summary>Un saliente que SI salio (DeliveryStatus "sent"/"delivered"/"read"), para la pestana "Entregados".</summary>
+public sealed record EntregaDto(
+    Guid ConversationId,
+    string? ContactName,
+    string ContactPhone,
+    string? LineaNombre,
+    DateTimeOffset SentAt,
+    string? Body,
+    string DeliveryStatus,
+    string? SentByName);
 
 public sealed record EnviarMensajeRequest(string Body);
 
@@ -62,6 +100,14 @@ public interface IConversacionService
     /// <summary>Reinicia el contexto del agente IA para esta conversacion (siguientes mensajes inician sesion limpia).</summary>
     Task<bool> ReiniciarContextoAgenteAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Cierra y OLVIDA la conversacion: reinicia el contexto, BORRA los datos cache que el agente
+    /// recordaba del contacto (nombre, unidad, etc.) y la archiva. A diferencia de "Reiniciar contexto"
+    /// (que conserva el cache para que el bot retome sin arrastrar el hilo), esto hace un olvido total.
+    /// Si el contacto vuelve a escribir, el agente lo atiende desde cero. Portado de ECOREX (cierre).
+    /// </summary>
+    Task<bool> CerrarYOlvidarAsync(Guid id, CancellationToken ct = default);
+
     /// <summary>Bloquea al contacto (lo agrega a la lista negra global del tenant) y archiva la conversacion.</summary>
     Task<bool> BloquearContactoAsync(Guid id, CancellationToken ct = default);
 
@@ -71,4 +117,10 @@ public interface IConversacionService
     /// el prompt del LLM. Portado de CUBOT.travels (reconstrucion de turnos para el agente).
     /// </summary>
     Task<IReadOnlyList<MensajeDto>> ListarMensajesParaContextoAsync(Guid conversationId, int maxTurnos = 12, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ola D (analitica de entregas): resumen del estado de entrega de los salientes del tenant (conteo por
+    /// estado + los ultimos <paramref name="take"/> fallos con su motivo). Tenant-scoped (RLS).
+    /// </summary>
+    Task<EntregasResumenDto> ObtenerResumenEntregasAsync(int take = 50, CancellationToken ct = default);
 }
