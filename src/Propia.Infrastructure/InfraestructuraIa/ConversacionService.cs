@@ -278,7 +278,7 @@ public sealed class ConversacionService : IConversacionService
             .ToListAsync(ct);
         int C(string s) => porEstado.FirstOrDefault(x => x.Estado == s)?.Conteo ?? 0;
 
-        // Ultimos fallos de entrega con su motivo + contacto y linea (para la tabla de la analitica).
+        // Ultimos fallos de entrega con su motivo + contacto y linea (para la pestana "Fallos de envio").
         var fallos = await (
             from m in _db.Messages.AsNoTracking()
             join c in _db.Conversations.AsNoTracking() on m.ConversationId equals c.Id
@@ -292,7 +292,22 @@ public sealed class ConversacionService : IConversacionService
                 m.SentAt, m.Body, m.DeliveryError, m.SentByName))
             .Take(take).ToListAsync(ct);
 
-        return new EntregasResumenDto(C("sent"), C("delivered"), C("read"), C("failed"), fallos);
+        // Ultimos salientes que SI salieron (sent/delivered/read) con su estado (para la pestana "Entregados").
+        var entregas = await (
+            from m in _db.Messages.AsNoTracking()
+            join c in _db.Conversations.AsNoTracking() on m.ConversationId equals c.Id
+            join wl in _db.WhatsAppLines.AsNoTracking() on c.WhatsAppLineId equals wl.Id into wlj
+            from wl in wlj.DefaultIfEmpty()
+            where m.Direction == MessageDirection.Outbound
+                  && (m.DeliveryStatus == "sent" || m.DeliveryStatus == "delivered" || m.DeliveryStatus == "read")
+            orderby m.SentAt descending
+            select new EntregaDto(
+                m.ConversationId, c.ContactName, c.ContactPhone,
+                wl != null ? (wl.PhoneNumber ?? wl.InstanceName) : null,
+                m.SentAt, m.Body, m.DeliveryStatus!, m.SentByName))
+            .Take(take).ToListAsync(ct);
+
+        return new EntregasResumenDto(C("sent"), C("delivered"), C("read"), C("failed"), fallos, entregas);
     }
 
     /// <summary>Helper: proyeccion comun con join a WhatsAppLine + ultimo mensaje (subconsulta).</summary>

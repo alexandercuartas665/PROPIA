@@ -30,13 +30,17 @@ public sealed record MensajeDto(
     /// <summary>Ola D: motivo del proveedor cuando DeliveryStatus es "failed".</summary>
     string? DeliveryError = null);
 
-/// <summary>Ola D (analitica de entregas): conteo de salientes por estado + los ultimos fallos con su motivo.</summary>
+/// <summary>
+/// Ola D (analitica de entregas): conteo de salientes por estado + los ultimos fallos con su motivo
+/// + los ultimos salientes que SI salieron con su estado (para las pestanas Entregados/Fallos de la bitacora).
+/// </summary>
 public sealed record EntregasResumenDto(
     int Aceptados,
     int Entregados,
     int Leidos,
     int Fallidos,
-    IReadOnlyList<EntregaFallidaDto> FallosRecientes);
+    IReadOnlyList<EntregaFallidaDto> FallosRecientes,
+    IReadOnlyList<EntregaDto> EntregasRecientes);
 
 /// <summary>Un saliente que NO se entrego (DeliveryStatus "failed"), con el motivo del proveedor.</summary>
 public sealed record EntregaFallidaDto(
@@ -47,6 +51,17 @@ public sealed record EntregaFallidaDto(
     DateTimeOffset SentAt,
     string? Body,
     string? DeliveryError,
+    string? SentByName);
+
+/// <summary>Un saliente que SI salio (DeliveryStatus "sent"/"delivered"/"read"), para la pestana "Entregados".</summary>
+public sealed record EntregaDto(
+    Guid ConversationId,
+    string? ContactName,
+    string ContactPhone,
+    string? LineaNombre,
+    DateTimeOffset SentAt,
+    string? Body,
+    string DeliveryStatus,
     string? SentByName);
 
 public sealed record EnviarMensajeRequest(string Body);

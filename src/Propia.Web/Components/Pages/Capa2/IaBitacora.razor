@@ -19,8 +19,11 @@
             <p class="bi-sub">Revisa como atendio el agente cada conversacion: mensaje recibido, prompts enviados a la IA, herramientas usadas y respuesta enviada.</p>
         </div>
         <div class="bi-head-actions">
-            <button class="bi-btn-ghost" type="button" @onclick="CargarConversacionesAsync" disabled="@_busy">Actualizar</button>
-            <button class="bi-btn-ghost-danger" type="button" @onclick="LimpiarTodoAsync" disabled="@(_busy || _convs.Count == 0)">Limpiar historia</button>
+            <button class="bi-btn-ghost" type="button" @onclick="RefrescarAsync" disabled="@_busy">Actualizar</button>
+            @if (_vista == "atencion")
+            {
+                <button class="bi-btn-ghost-danger" type="button" @onclick="LimpiarTodoAsync" disabled="@(_busy || _convs.Count == 0)">Limpiar historia</button>
+            }
         </div>
     </div>
 
@@ -39,6 +42,14 @@
     }
     else
     {
+        <div class="bi-vtabs">
+            <button class="bi-vtab @(_vista == "atencion" ? "bi-vtab--on" : "")" type="button" @onclick='() => SetVista("atencion")'>Atención del agente</button>
+            <button class="bi-vtab @(_vista == "entregados" ? "bi-vtab--on" : "")" type="button" @onclick='() => SetVista("entregados")'>Entregados@(_entEntregadosList.Count > 0 ? $" ({_entEntregadosList.Count})" : "")</button>
+            <button class="bi-vtab @(_vista == "fallos" ? "bi-vtab--on" : "")" type="button" @onclick='() => SetVista("fallos")'>Fallos de envío@(_entFallos.Count > 0 ? $" ({_entFallos.Count})" : "")</button>
+        </div>
+
+        @if (_vista == "atencion")
+        {
         <div class="bi-layout">
             <aside class="bi-list-col">
                 <div class="bi-list-hdr">Conversaciones atendidas <span class="bi-count">@_convs.Count</span></div>
@@ -172,6 +183,69 @@
                 }
             </main>
         </div>
+        }
+        else if (_vista == "entregados")
+        {
+            <div class="bi-dlist">
+                <div class="bi-dlist-intro">Mensajes <strong>salientes de WhatsApp que si salieron</strong> al contacto, mas recientes primero. El estado se refresca con el webhook del proveedor: <strong>enviado</strong> &rarr; <strong>entregado</strong> &rarr; <strong>leido</strong>.</div>
+                @if (_entEntregadosList.Count == 0)
+                {
+                    <div class="bi-dlist-empty">Aun no hay entregas registradas. Cuando el agente o un operador envie un mensaje, aparecerá aquí con su estado.</div>
+                }
+                else
+                {
+                    @foreach (var d in _entEntregadosList)
+                    {
+                        <div class="bi-drow">
+                            <div class="bi-drow-top">
+                                <div>
+                                    <span class="bi-drow-name">@(string.IsNullOrWhiteSpace(d.ContactName) ? d.ContactPhone : d.ContactName)</span>
+                                    <span class="bi-drow-phone">@d.ContactPhone@(string.IsNullOrEmpty(d.LineaNombre) ? "" : $" - línea {d.LineaNombre}")</span>
+                                </div>
+                                <div class="bi-drow-right">
+                                    <span class="bi-dbadge bi-dbadge--@d.DeliveryStatus">@EntLabel(d.DeliveryStatus)</span>
+                                    <span class="bi-drow-when">@d.SentAt.ToCo().ToString("dd-MM-yyyy HH:mm:ss")</span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(d.Body))
+                            {
+                                <div class="bi-drow-body">@Trunc(d.Body!, 220)@(string.IsNullOrWhiteSpace(d.SentByName) ? "" : $"  -  envío: {d.SentByName}")</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <div class="bi-dlist">
+                <div class="bi-dlist-intro">Mensajes <strong>salientes que el proveedor marcó como no entregados</strong>, con el motivo (cuando lo entrega). Mas recientes primero.</div>
+                @if (_entFallos.Count == 0)
+                {
+                    <div class="bi-dlist-empty">No hay fallos de envío registrados. Cuando un mensaje no llegue, aparecerá aquí con su motivo.</div>
+                }
+                else
+                {
+                    @foreach (var f in _entFallos)
+                    {
+                        <div class="bi-drow bi-drow--fail">
+                            <div class="bi-drow-top">
+                                <div>
+                                    <span class="bi-drow-name">@(string.IsNullOrWhiteSpace(f.ContactName) ? f.ContactPhone : f.ContactName)</span>
+                                    <span class="bi-drow-phone">@f.ContactPhone@(string.IsNullOrEmpty(f.LineaNombre) ? "" : $" - línea {f.LineaNombre}")</span>
+                                </div>
+                                <span class="bi-drow-when">@f.SentAt.ToCo().ToString("dd-MM-yyyy HH:mm:ss")</span>
+                            </div>
+                            <div class="bi-drow-motivo">Motivo: @(string.IsNullOrWhiteSpace(f.DeliveryError) ? "sin detalle del proveedor" : f.DeliveryError)</div>
+                            @if (!string.IsNullOrWhiteSpace(f.Body))
+                            {
+                                <div class="bi-drow-body">@Trunc(f.Body!, 220)@(string.IsNullOrWhiteSpace(f.SentByName) ? "" : $"  -  envío: {f.SentByName}")</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
     }
 </div>
 
@@ -242,6 +316,29 @@
     .bi-msg-text { font-size: .88rem; white-space: pre-wrap; word-break: break-word; }
     .bi-msg-meta { font-size: .7rem; opacity: .7; margin-top: 3px; }
 
+    /* Pestanas de nivel superior: Atencion / Entregados / Fallos (Ola D en la bitacora) */
+    .bi-vtabs { display: flex; gap: 4px; border-bottom: 1px solid #e2e8f0; margin-bottom: 16px; flex-wrap: wrap; }
+    .bi-vtab { border: none; background: none; padding: 9px 16px; font-size: .9rem; font-weight: 700; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .bi-vtab:hover { color: var(--propia-primary, #6366f1); }
+    .bi-vtab--on { color: var(--propia-primary, #6366f1); border-bottom-color: var(--propia-primary, #6366f1); }
+
+    .bi-dlist { border: 1px solid #e2e8f0; border-radius: 12px; background: var(--propia-bg-card); padding: 16px; }
+    .bi-dlist-intro { font-size: .82rem; color: #64748b; margin-bottom: 14px; }
+    .bi-dlist-empty { color: #94a3b8; font-size: .88rem; padding: 12px 2px; }
+    .bi-drow { border-left: 3px solid #e2e8f0; padding: 8px 0 8px 14px; margin-bottom: 10px; }
+    .bi-drow--fail { border-left-color: #ef4444; }
+    .bi-drow-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .bi-drow-right { display: flex; align-items: center; gap: 10px; }
+    .bi-drow-name { font-weight: 700; color: var(--propia-text-body); font-size: .9rem; }
+    .bi-drow-phone { color: #94a3b8; font-weight: 600; font-size: .78rem; margin-left: 6px; }
+    .bi-drow-when { color: #94a3b8; font-size: .78rem; }
+    .bi-drow-body { color: #64748b; font-size: .8rem; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+    .bi-drow-motivo { color: #ef4444; font-weight: 700; font-size: .82rem; margin-top: 4px; }
+    .bi-dbadge { border-radius: 999px; padding: 1px 9px; font-size: .74rem; font-weight: 700; color: #fff; white-space: nowrap; }
+    .bi-dbadge--sent { background: #94a3b8; }
+    .bi-dbadge--delivered { background: #0ea5e9; }
+    .bi-dbadge--read { background: #22c55e; }
+
     @@media (max-width: 900px) { .bi-layout { grid-template-columns: 1fr; height: auto; } }
 </style>
 
@@ -264,6 +361,12 @@
     private List<AgentCacheItemDto> _cache = new();
     private List<AgentRunLogMessageDto> _chat = new();
 
+    // Pestanas de nivel superior (Ola D dentro de la bitacora): atencion | entregados | fallos.
+    private string _vista = "atencion";
+    private bool _entCargado;
+    private List<EntregaDto> _entEntregadosList = new();
+    private List<EntregaFallidaDto> _entFallos = new();
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -273,9 +376,50 @@
             _authChecked = true;
         }
         catch { }
-        if (!string.IsNullOrEmpty(_jwt)) { await CargarConversacionesAsync(); }
+        if (!string.IsNullOrEmpty(_jwt)) { await CargarConversacionesAsync(); await CargarEntregasAsync(); }
         StateHasChanged();
     }
+
+    /// <summary>Cambia de pestana superior; carga las entregas la primera vez que se entra a Entregados/Fallos.</summary>
+    private async Task SetVista(string v)
+    {
+        _vista = v;
+        if ((v == "entregados" || v == "fallos") && !_entCargado) { await CargarEntregasAsync(); }
+    }
+
+    /// <summary>Boton "Actualizar": refresca la vista activa.</summary>
+    private async Task RefrescarAsync()
+    {
+        if (_vista == "atencion") { await CargarConversacionesAsync(); }
+        else { await CargarEntregasAsync(); }
+    }
+
+    /// <summary>Ola D: trae el resumen de entregas (conteos + ultimos entregados + ultimos fallos) via /api/ia/entregas.</summary>
+    private async Task CargarEntregasAsync()
+    {
+        try
+        {
+            var r = await Auth().GetFromJsonAsync<EntregasResumenDto>("/api/ia/entregas?take=100");
+            if (r is not null)
+            {
+                _entEntregadosList = r.EntregasRecientes?.ToList() ?? new();
+                _entFallos = r.FallosRecientes?.ToList() ?? new();
+            }
+            _entCargado = true;
+        }
+        catch (Exception ex) { Flash("No se pudieron cargar las entregas: " + ex.Message, true); }
+        StateHasChanged();
+    }
+
+    private static string EntLabel(string s) => s switch
+    {
+        "sent" => "Enviado",
+        "delivered" => "Entregado",
+        "read" => "Leído",
+        _ => s
+    };
+
+    private static string Trunc(string s, int n) => s.Length <= n ? s : s[..n] + "...";
 
     private HttpClient Auth()
     {
