@@ -132,6 +132,18 @@ public class Message : TenantEntity
 
     /// <summary>Emoji con el que el agente reacciono a este entrante (null = sin reaccion). Una sola por mensaje.</summary>
     public string? Reaction { get; set; }
+
+    /// <summary>
+    /// Ola D (analitica de entregas): estado de ENTREGA del saliente segun el proveedor: "sent" (aceptado),
+    /// "delivered" (llego al telefono), "read" (leido) o "failed" (no se entrego). Se siembra "sent" al enviar
+    /// (cuando el proveedor acepta) y lo AVANZA el webhook de estado (Evolution messages.update / Meta statuses[]),
+    /// correlacionando por <see cref="ExternalId"/>. Null en entrantes y en salientes sin id de proveedor.
+    /// </summary>
+    public string? DeliveryStatus { get; set; }
+
+    /// <summary>Motivo del proveedor cuando <see cref="DeliveryStatus"/> es "failed" (codigo + texto de Meta, ej.
+    /// "codigo 131026 - Message undeliverable"). Null si no fallo o si el proveedor no dio detalle.</summary>
+    public string? DeliveryError { get; set; }
 }
 
 /// <summary>

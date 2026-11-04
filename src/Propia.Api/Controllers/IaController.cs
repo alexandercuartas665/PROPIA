@@ -135,6 +135,12 @@ public class IaController : ControllerBase
         return Ok(new { logs, cache, messages });
     }
 
+    // ---------- Analitica de entregas (Ola D) ----------
+    /// <summary>Resumen del estado de entrega de los salientes del tenant: conteo por estado + ultimos fallos.</summary>
+    [HttpGet("entregas")]
+    public async Task<IActionResult> ResumenEntregas([FromQuery] int take = 50, CancellationToken ct = default)
+        => Ok(await _conversaciones.ObtenerResumenEntregasAsync(take, ct));
+
     // ---------- Conversaciones humanas (Oleada IA #3) ----------
     [HttpGet("conversaciones")]
     public async Task<IActionResult> ListarConversaciones([FromQuery] string? q, CancellationToken ct)

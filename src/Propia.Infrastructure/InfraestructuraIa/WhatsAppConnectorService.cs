@@ -249,7 +249,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
             var rc = await _cloud.SendTextAsync(creds, digitsCloud, text.Trim(), ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
 
         if (line.Provider == WhatsAppProvider.YCloud)
@@ -258,7 +258,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             var digitsY = new string(phone.Where(char.IsDigit).ToArray());
             var ry = await _ycloud.SendTextAsync(creds, digitsY, text.Trim(), ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -267,7 +267,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendTextAsync(baseUrl, apiKey, EvoInstance(line), digits, text.Trim(), ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendTemplateAsync(Guid lineId, string phone, string templateName, string languageCode,
@@ -285,7 +285,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             if (string.IsNullOrWhiteSpace(templateName)) return new LineSendResult(false, "Falta el nombre de la plantilla aprobada de Meta.");
             var rc = await _cloud.SendTemplateAsync(creds, digits, templateName.Trim(), languageCode, bodyParams, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
 
         if (line.Provider == WhatsAppProvider.YCloud)
@@ -294,7 +294,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             if (string.IsNullOrWhiteSpace(templateName)) return new LineSendResult(false, "Falta el nombre de la plantilla aprobada.");
             var ry = await _ycloud.SendTemplateAsync(creds, digits, templateName.Trim(), languageCode, bodyParams, ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         // Evolution/baileys no usa plantillas de Meta: se envia el link como texto plano.
@@ -302,7 +302,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendTextAsync(baseUrl, apiKey, EvoInstance(line), digits, (fallbackText ?? "").Trim(), ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendMediaAsync(Guid lineId, string phone, string imageUrl, string? caption, CancellationToken ct = default)
@@ -321,7 +321,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var digitsCloud = new string(phone.Where(char.IsDigit).ToArray());
             var rc = await _cloud.SendMediaAsync(creds, digitsCloud, WhatsAppCloudMediaKind.Image, imageUrl, caption, null, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
 
         if (line.Provider == WhatsAppProvider.YCloud)
@@ -330,7 +330,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             var digitsY = new string(phone.Where(char.IsDigit).ToArray());
             var ry = await _ycloud.SendMediaAsync(creds, digitsY, WhatsAppCloudMediaKind.Image, imageUrl, caption, null, ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -339,7 +339,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         var digits = new string(phone.Where(char.IsDigit).ToArray());
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendMediaAsync(baseUrl, apiKey, EvoInstance(line), digits, imageUrl, caption, ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendAttachmentAsync(Guid lineId, string phone, AgentResourceType kind, string mediaUrl, string? caption, string? fileName, CancellationToken ct = default)
@@ -366,14 +366,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             var creds = CloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var rc = await _cloud.SendMediaAsync(creds, Digits(phone), cloudKind, mediaUrl, caption, fileName, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
         if (line.Provider == WhatsAppProvider.YCloud)
         {
             var creds = YCloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             var ry = await _ycloud.SendMediaAsync(creds, Digits(phone), cloudKind, mediaUrl, caption, fileName, ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -387,7 +387,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             _ => "document"
         };
         var result = await _client.SendMediaTypedAsync(baseUrl, apiKey, EvoInstance(line), Digits(phone), mediatype, mediaUrl, caption, fileName, ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendLocationAsync(Guid lineId, string phone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default)
@@ -402,21 +402,21 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             var creds = CloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var rc = await _cloud.SendLocationAsync(creds, Digits(phone), latitude, longitude, name, address, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
         if (line.Provider == WhatsAppProvider.YCloud)
         {
             var creds = YCloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             var ry = await _ycloud.SendLocationAsync(creds, Digits(phone), latitude, longitude, name, address, ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
         if (server is null) { return new LineSendResult(false, "No hay servidor Evolution maestro configurado."); }
         var (baseUrl, apiKey) = server.Value;
         var result = await _client.SendLocationAsync(baseUrl, apiKey, EvoInstance(line), Digits(phone), latitude, longitude, name, address, ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<LineSendResult> SendReactionAsync(Guid lineId, string phone, string externalMessageId, string emoji, CancellationToken ct = default)
@@ -434,14 +434,14 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
             var creds = CloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales Cloud."); }
             var rc = await _cloud.SendReactionAsync(creds, Digits(phone), externalMessageId, emoji, ct);
-            return new LineSendResult(rc.Ok, rc.Error);
+            return new LineSendResult(rc.Ok, rc.Error, rc.ExternalId);
         }
         if (line.Provider == WhatsAppProvider.YCloud)
         {
             var creds = YCloudCreds(line);
             if (creds is null) { return new LineSendResult(false, "Faltan credenciales YCloud."); }
             var ry = await _ycloud.SendReactionAsync(creds, Digits(phone), externalMessageId, emoji, ct);
-            return new LineSendResult(ry.Ok, ry.Error);
+            return new LineSendResult(ry.Ok, ry.Error, ry.ExternalId);
         }
 
         var server = await ResolveServerAsync(ct);
@@ -450,7 +450,7 @@ public sealed class WhatsAppConnectorService : IWhatsAppConnectorService
         // Evolution identifica el mensaje con la key remota del contacto: <digitos>@s.whatsapp.net.
         var remoteJid = $"{Digits(phone)}@s.whatsapp.net";
         var result = await _client.SendReactionAsync(baseUrl, apiKey, EvoInstance(line), remoteJid, externalMessageId, emoji, ct);
-        return new LineSendResult(result.Ok, result.Error);
+        return new LineSendResult(result.Ok, result.Error, result.ExternalId);
     }
 
     public async Task<(string MimeType, string Base64)?> FetchInboundImageAsync(Guid lineId, string externalMessageId, CancellationToken ct = default)

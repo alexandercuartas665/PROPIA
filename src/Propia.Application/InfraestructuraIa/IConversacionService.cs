@@ -24,7 +24,30 @@ public sealed record MensajeDto(
     string? MediaType,
     string? MediaUrl,
     string? MediaMimeType,
-    string? ExternalId);
+    string? ExternalId,
+    /// <summary>Ola D: estado de entrega del saliente ("sent"/"delivered"/"read"/"failed"); null en entrantes.</summary>
+    string? DeliveryStatus = null,
+    /// <summary>Ola D: motivo del proveedor cuando DeliveryStatus es "failed".</summary>
+    string? DeliveryError = null);
+
+/// <summary>Ola D (analitica de entregas): conteo de salientes por estado + los ultimos fallos con su motivo.</summary>
+public sealed record EntregasResumenDto(
+    int Aceptados,
+    int Entregados,
+    int Leidos,
+    int Fallidos,
+    IReadOnlyList<EntregaFallidaDto> FallosRecientes);
+
+/// <summary>Un saliente que NO se entrego (DeliveryStatus "failed"), con el motivo del proveedor.</summary>
+public sealed record EntregaFallidaDto(
+    Guid ConversationId,
+    string? ContactName,
+    string ContactPhone,
+    string? LineaNombre,
+    DateTimeOffset SentAt,
+    string? Body,
+    string? DeliveryError,
+    string? SentByName);
 
 public sealed record EnviarMensajeRequest(string Body);
 
@@ -79,4 +102,10 @@ public interface IConversacionService
     /// el prompt del LLM. Portado de CUBOT.travels (reconstrucion de turnos para el agente).
     /// </summary>
     Task<IReadOnlyList<MensajeDto>> ListarMensajesParaContextoAsync(Guid conversationId, int maxTurnos = 12, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ola D (analitica de entregas): resumen del estado de entrega de los salientes del tenant (conteo por
+    /// estado + los ultimos <paramref name="take"/> fallos con su motivo). Tenant-scoped (RLS).
+    /// </summary>
+    Task<EntregasResumenDto> ObtenerResumenEntregasAsync(int take = 50, CancellationToken ct = default);
 }

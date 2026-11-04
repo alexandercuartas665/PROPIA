@@ -81,7 +81,8 @@ public sealed class ConversacionService : IConversacionService
             .Select(m => new MensajeDto(
                 m.Id, m.ConversationId, m.Direction.ToString(),
                 m.Body, m.MessageType, m.SentAt, m.SentByName,
-                m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId))
+                m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId,
+                m.DeliveryStatus, m.DeliveryError))
             .ToListAsync(ct);
     }
 
@@ -93,16 +94,14 @@ public sealed class ConversacionService : IConversacionService
         var conv = await _db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct);
         if (conv is null) return null;
 
-        // Envio efectivo via la linea WhatsApp (si esta vinculada). Si no, guardamos local
-        // marcando como pendiente (sin ExternalId). Cuando el conector exponga MessageId
-        // se podra reconciliar la idempotencia con el webhook entrante.
+        // Envio efectivo via la linea WhatsApp (si esta vinculada). Si no, guardamos local sin estado de entrega.
+        // Ola D: capturamos el resultado para sembrar el estado ("sent" + ExternalId del proveedor, o "failed" + motivo)
+        // y que el webhook de estado pueda avanzarlo despues.
+        LineSendResult? send = null;
         if (conv.WhatsAppLineId.HasValue)
         {
-            try
-            {
-                await _connector.SendTestAsync(conv.WhatsAppLineId.Value, conv.ContactPhone, req.Body.Trim(), ct);
-            }
-            catch { /* el mensaje queda guardado localmente aunque el envio falle */ }
+            try { send = await _connector.SendTestAsync(conv.WhatsAppLineId.Value, conv.ContactPhone, req.Body.Trim(), ct); }
+            catch (Exception ex) { send = new LineSendResult(false, ex.Message); }
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -111,12 +110,14 @@ public sealed class ConversacionService : IConversacionService
             TenantId = tenantId,
             ConversationId = conversationId,
             Direction = MessageDirection.Outbound,
-            ExternalId = null,
+            ExternalId = send is { Ok: true } ? send.ExternalId : null,
             Body = req.Body.Trim(),
             MessageType = "text",
             SentAt = now,
             MediaType = MessageMediaType.None,
-            SentByName = "Operador" // TODO: traer nombre real del usuario logueado cuando se exponga
+            SentByName = "Operador", // TODO: traer nombre real del usuario logueado cuando se exponga
+            DeliveryStatus = send is null ? null : (send.Ok ? "sent" : "failed"),
+            DeliveryError = send is { Ok: false } ? send.Error : null
         };
         _db.Messages.Add(msg);
 
@@ -130,7 +131,8 @@ public sealed class ConversacionService : IConversacionService
         var dto = new MensajeDto(
             msg.Id, msg.ConversationId, msg.Direction.ToString(),
             msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
-            msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+            msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId,
+            msg.DeliveryStatus, msg.DeliveryError);
 
         // Realtime: notifica al hilo abierto + a la bandeja del tenant.
         if (_broadcaster is not null)
@@ -205,7 +207,8 @@ public sealed class ConversacionService : IConversacionService
             .Select(m => new MensajeDto(
                 m.Id, m.ConversationId, m.Direction.ToString(),
                 m.Body, m.MessageType, m.SentAt, m.SentByName,
-                m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId))
+                m.MediaType.ToString(), m.MediaUrl, m.MediaMimeType, m.ExternalId,
+                m.DeliveryStatus, m.DeliveryError))
             .ToListAsync(ct);
     }
 
@@ -253,7 +256,8 @@ public sealed class ConversacionService : IConversacionService
         var dto = new MensajeDto(
             msg.Id, msg.ConversationId, msg.Direction.ToString(),
             msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
-            msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+            msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId,
+            msg.DeliveryStatus, msg.DeliveryError);
 
         if (_broadcaster is not null)
         {
@@ -261,6 +265,34 @@ public sealed class ConversacionService : IConversacionService
             catch { }
         }
         return dto;
+    }
+
+    public async Task<EntregasResumenDto> ObtenerResumenEntregasAsync(int take = 50, CancellationToken ct = default)
+    {
+        // Conteo por estado de los salientes del tenant (RLS por filtro global). Cada saliente vive en un solo
+        // bucket: sent -> delivered -> read avanza monotono, failed es terminal; los borradores quedan sin estado.
+        var porEstado = await _db.Messages.AsNoTracking()
+            .Where(m => m.Direction == MessageDirection.Outbound && m.DeliveryStatus != null)
+            .GroupBy(m => m.DeliveryStatus!)
+            .Select(g => new { Estado = g.Key, Conteo = g.Count() })
+            .ToListAsync(ct);
+        int C(string s) => porEstado.FirstOrDefault(x => x.Estado == s)?.Conteo ?? 0;
+
+        // Ultimos fallos de entrega con su motivo + contacto y linea (para la tabla de la analitica).
+        var fallos = await (
+            from m in _db.Messages.AsNoTracking()
+            join c in _db.Conversations.AsNoTracking() on m.ConversationId equals c.Id
+            join wl in _db.WhatsAppLines.AsNoTracking() on c.WhatsAppLineId equals wl.Id into wlj
+            from wl in wlj.DefaultIfEmpty()
+            where m.Direction == MessageDirection.Outbound && m.DeliveryStatus == "failed"
+            orderby m.SentAt descending
+            select new EntregaFallidaDto(
+                m.ConversationId, c.ContactName, c.ContactPhone,
+                wl != null ? (wl.PhoneNumber ?? wl.InstanceName) : null,
+                m.SentAt, m.Body, m.DeliveryError, m.SentByName))
+            .Take(take).ToListAsync(ct);
+
+        return new EntregasResumenDto(C("sent"), C("delivered"), C("read"), C("failed"), fallos);
     }
 
     /// <summary>Helper: proyeccion comun con join a WhatsAppLine + ultimo mensaje (subconsulta).</summary>

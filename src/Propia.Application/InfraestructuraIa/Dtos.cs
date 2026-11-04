@@ -36,7 +36,9 @@ public sealed record CreateWhatsAppLineRequest(
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);
 
-public sealed record LineSendResult(bool Ok, string? Error);
+/// <summary><paramref name="ExternalId"/> = id del mensaje en el proveedor (key.id de Evolution / wamid de
+/// Meta/YCloud), para correlacionar el webhook de estado de entrega (Ola D). Null si el proveedor no lo devolvio.</summary>
+public sealed record LineSendResult(bool Ok, string? Error, string? ExternalId = null);
 
 // ---------- WhatsApp Cloud API (Meta) ----------
 public sealed record WhatsAppCloudCredentials(string PhoneNumberId, string AccessToken);
@@ -257,6 +259,8 @@ public sealed record AiQuotaDto(bool HasLimit, int MonthlyLimitCalls, int Monthl
 
 public sealed record EvolutionPingResult(bool Reached, bool Authorized, int? StatusCode, string Message);
 public sealed record EvolutionInstanceResult(bool Ok, string? QrBase64, string? State, string? Status, string? Error);
-public sealed record EvolutionSendResult(bool Ok, string? Error);
+/// <summary><paramref name="ExternalId"/> = key.id que Evolution devuelve al enviar, para correlacionar el
+/// webhook de estado de entrega (messages.update). Null si la respuesta no lo trajo (Ola D).</summary>
+public sealed record EvolutionSendResult(bool Ok, string? Error, string? ExternalId = null);
 /// <summary>Resultado de bajar el base64 de un media ENTRANTE de Evolution (getBase64FromMediaMessage).</summary>
 public sealed record EvolutionMediaResult(bool Ok, string? Base64, string? MimeType, string? Error);

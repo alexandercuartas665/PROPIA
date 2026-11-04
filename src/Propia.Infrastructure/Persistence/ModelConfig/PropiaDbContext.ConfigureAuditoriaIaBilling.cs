@@ -380,6 +380,8 @@ public partial class PropiaDbContext
             b.Property(x => x.MediaUrl).HasMaxLength(1024);
             b.Property(x => x.MediaMimeType).HasMaxLength(150);
             b.Property(x => x.Reaction).HasMaxLength(16);
+            b.Property(x => x.DeliveryStatus).HasMaxLength(20);
+            b.Property(x => x.DeliveryError).HasColumnType("text");
             b.HasIndex(x => new { x.TenantId, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
             b.HasIndex(x => new { x.ConversationId, x.SentAt });
             b.HasOne(x => x.Conversation).WithMany(c => c.Messages).HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);

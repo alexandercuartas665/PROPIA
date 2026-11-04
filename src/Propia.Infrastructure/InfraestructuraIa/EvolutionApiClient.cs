@@ -111,8 +111,8 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         try
         {
             using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/message/sendText/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
-            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
             var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
             return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
         }
         catch (Exception ex)
@@ -128,8 +128,8 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         try
         {
             using var resp = await SendAsync(HttpMethod.Post, baseUrl, $"/message/sendMedia/{Uri.EscapeDataString(instanceName)}", apiKey, JsonContent.Create(body), ct);
-            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
             var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
             return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
         }
         catch (Exception ex)
@@ -196,14 +196,36 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
         try
         {
             using var resp = await SendAsync(HttpMethod.Post, baseUrl, path, apiKey, JsonContent.Create(body), ct);
-            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null); }
             var json = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode) { return new EvolutionSendResult(true, null, ExtractMessageId(json)); }
             return new EvolutionSendResult(false, $"HTTP {(int)resp.StatusCode}: {Trim(json)}");
         }
         catch (Exception ex)
         {
             return new EvolutionSendResult(false, ex.Message);
         }
+    }
+
+    // key.id del mensaje que Evolution devuelve al enviar (sendText/sendMedia/...). Correlaciona el webhook de
+    // estado (messages.update). Tolerante: si la respuesta no trae key.id, devuelve null (el saliente queda "sent"
+    // sin poder avanzar). Ola D.
+    private static string? ExtractMessageId(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) { return null; }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.Object
+                && key.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                var s = id.GetString();
+                return string.IsNullOrWhiteSpace(s) ? null : s;
+            }
+        }
+        catch { /* respuesta no-JSON o forma inesperada: sin id */ }
+        return null;
     }
 
     public async Task<EvolutionSendResult> SetWebhookAsync(string baseUrl, string apiKey, string instanceName, string webhookUrl, string token, CancellationToken ct = default)
@@ -221,7 +243,8 @@ public sealed class EvolutionApiClient : IEvolutionApiClient
                 },
                 byEvents = false,
                 base64 = false,
-                events = new[] { "MESSAGES_UPSERT" }
+                // MESSAGES_UPSERT = entrantes; MESSAGES_UPDATE = acks de entrega (Ola D, analitica de entregas).
+                events = new[] { "MESSAGES_UPSERT", "MESSAGES_UPDATE" }
             }
         };
         try

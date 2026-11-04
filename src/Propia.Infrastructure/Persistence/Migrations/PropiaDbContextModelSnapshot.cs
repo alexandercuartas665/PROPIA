@@ -8634,6 +8634,15 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("DeliveryError")
+                        .HasColumnType("text")
+                        .HasColumnName("delivery_error");
+
+                    b.Property<string>("DeliveryStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("delivery_status");
+
                     b.Property<string>("Direction")
                         .IsRequired()
                         .HasMaxLength(10)

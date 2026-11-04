@@ -138,7 +138,7 @@ public sealed class AgentReactivacionService : IAgentReactivacionService
                     LogOnly(conv, agent.Id, AiAgentRunLogKind.Error, $"Reactivacion paso {paso + 1} fallo", res.Error);
                     continue;   // no avanza: se reintenta la proxima corrida
                 }
-                PersistSent(conv, agent.Id, paso, now, step.MensajeTexto!.Trim());
+                PersistSent(conv, agent.Id, paso, now, step.MensajeTexto!.Trim(), res);
                 sentCount++;
                 // Un solo envio por conversacion por corrida.
             }
@@ -148,18 +148,21 @@ public sealed class AgentReactivacionService : IAgentReactivacionService
         return sentCount;
     }
 
-    private void PersistSent(Conversation conv, Guid agentId, int pasoIndex, DateTimeOffset now, string body)
+    private void PersistSent(Conversation conv, Guid agentId, int pasoIndex, DateTimeOffset now, string body, LineSendResult send)
     {
+        // Ola D: el reenvio de reactivacion tambien siembra el estado de entrega ("sent" + ExternalId del proveedor)
+        // para que el webhook de estado lo avance y entre en la analitica de entregas.
         _db.Messages.Add(new Message
         {
             TenantId = conv.TenantId,
             ConversationId = conv.Id,
             Direction = MessageDirection.Outbound,
-            ExternalId = null,
+            ExternalId = send.ExternalId,
             Body = body,
             MessageType = "text",
             SentByName = "Agente IA (reactivacion)",
-            SentAt = now
+            SentAt = now,
+            DeliveryStatus = "sent"
         });
         conv.LastMessageAt = now;
         conv.ReactivacionUltimoPaso = pasoIndex + 1;

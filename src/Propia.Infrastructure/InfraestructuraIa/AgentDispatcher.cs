@@ -355,7 +355,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
                 send = new LineSendResult(false, ex.Message);
             }
 
-            await PersistOutboundAsync(tenantId, conversationId, textToSend, send.Ok ? "ai_sent" : "ai_failed", ct);
+            await PersistOutboundAsync(tenantId, conversationId, textToSend, send.Ok ? "ai_sent" : "ai_failed", ct, send: send);
             await LogRunAsync(tenantId, conversationId, binding.AgentId,
                 send.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
                 send.Ok ? "Respuesta enviada" : "Envio fallo", textToSend, send.Ok ? "OK" : send.Error, ct);
@@ -437,7 +437,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
             try { rl = await _connector.SendLocationAsync(lineId, phone, lat, lng, a.Name, null, ct); }
             catch (Exception ex) { rl = new LineSendResult(false, ex.Message); }
             await PersistOutboundAsync(tenantId, conversationId, $"[Ubicacion] {a.Name}",
-                rl.Ok ? "ai_sent" : "ai_failed", ct, MessageMediaType.Location);
+                rl.Ok ? "ai_sent" : "ai_failed", ct, MessageMediaType.Location, send: rl);
             await LogRunAsync(tenantId, conversationId, agentId,
                 rl.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
                 rl.Ok ? $"Ubicacion enviada: {a.Name}" : $"Ubicacion fallo: {a.Name}", a.Detail, rl.Ok ? "OK" : rl.Error, ct);
@@ -464,7 +464,7 @@ public sealed class AgentDispatcher : IAgentDispatcher
         try { rs = await _connector.SendAttachmentAsync(lineId, phone, a.ResourceType, url!, null, a.FileName, ct); }
         catch (Exception ex) { rs = new LineSendResult(false, ex.Message); }
         await PersistOutboundAsync(tenantId, conversationId, $"[Adjunto] {a.Name}",
-            rs.Ok ? "ai_sent" : "ai_failed", ct, mediaType, url, MimeFromResource(a.ResourceType, a.FileName));
+            rs.Ok ? "ai_sent" : "ai_failed", ct, mediaType, url, MimeFromResource(a.ResourceType, a.FileName), send: rs);
         await LogRunAsync(tenantId, conversationId, agentId,
             rs.Ok ? AiAgentRunLogKind.Reply : AiAgentRunLogKind.Error,
             rs.Ok ? $"Adjunto enviado: {a.Name}" : $"Adjunto fallo: {a.Name}", url, rs.Ok ? "OK" : rs.Error, ct);
@@ -520,24 +520,39 @@ public sealed class AgentDispatcher : IAgentDispatcher
         return $"{origin!.TrimEnd('/')}/{pathOrUrl!.TrimStart('/')}";
     }
 
-    /// <summary>Persiste el saliente del agente (texto o media) y lo difunde a la bandeja en vivo (SignalR).</summary>
+    /// <summary>Persiste el saliente del agente (texto o media) y lo difunde a la bandeja en vivo (SignalR).
+    /// Si se pasa <paramref name="send"/>, siembra el estado de entrega (Ola D): "sent" + ExternalId del proveedor
+    /// cuando el envio fue aceptado, o "failed" + motivo cuando fallo. Sin <paramref name="send"/> (ej. borrador),
+    /// el saliente queda sin estado de entrega.</summary>
     private async Task PersistOutboundAsync(Guid tenantId, Guid conversationId, string body, string sourceTag, CancellationToken ct,
-        MessageMediaType mediaType = MessageMediaType.None, string? mediaUrl = null, string? mediaMime = null)
+        MessageMediaType mediaType = MessageMediaType.None, string? mediaUrl = null, string? mediaMime = null, LineSendResult? send = null)
     {
         var now = DateTimeOffset.UtcNow;
+        // Ola D: estado de entrega sembrado al enviar. "sent" cuando el proveedor acepto (el webhook de estado lo
+        // avanzara a delivered/read); "failed" + motivo si el envio fallo en el acto. ExternalId solo si el proveedor
+        // lo devolvio (correlaciona el webhook). Sin send (borrador): sin estado.
+        string? deliveryStatus = null, deliveryError = null, externalId = null;
+        if (send is not null)
+        {
+            deliveryStatus = send.Ok ? "sent" : "failed";
+            deliveryError = send.Ok ? null : send.Error;
+            externalId = send.Ok ? send.ExternalId : null;
+        }
         var msg = new Message
         {
             TenantId = tenantId,
             ConversationId = conversationId,
             Direction = MessageDirection.Outbound,
-            ExternalId = null, // el connector de PROPIA no devuelve MessageId todavia
+            ExternalId = externalId,
             Body = body,
             MessageType = mediaType == MessageMediaType.None ? "text" : mediaType.ToString().ToLowerInvariant(),
             SentAt = now,
             MediaType = mediaType,
             MediaUrl = mediaUrl,
             MediaMimeType = mediaMime,
-            SentByName = $"IA ({sourceTag})"
+            SentByName = $"IA ({sourceTag})",
+            DeliveryStatus = deliveryStatus,
+            DeliveryError = deliveryError
         };
         _db.Messages.Add(msg);
 
@@ -552,7 +567,8 @@ public sealed class AgentDispatcher : IAgentDispatcher
             {
                 var dto = new MensajeDto(msg.Id, msg.ConversationId, msg.Direction.ToString(),
                     msg.Body, msg.MessageType, msg.SentAt, msg.SentByName,
-                    msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId);
+                    msg.MediaType.ToString(), msg.MediaUrl, msg.MediaMimeType, msg.ExternalId,
+                    msg.DeliveryStatus, msg.DeliveryError);
                 await _broadcaster.NotifyMessageAddedAsync(tenantId, conversationId, dto, ct);
             }
             catch { /* el despacho no debe fallar si SignalR esta caido */ }
