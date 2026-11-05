@@ -1,0 +1,150 @@
+@* Campos dinamicos tipados (las "columnas" del modulo) mostrados DENTRO de la ficha como campos
+   naturales: label + valor segun su tipo, en 2 columnas y SIN titulo de seccion. Cada edicion se
+   guarda al instante. Carga: GET {BasePath}/{EntidadId}/campos-din. Guarda: PUT
+   {BasePath}/{EntidadId}/campos/{definicionId}. Lo usan la ficha de zona y la de equipo. *@
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+@if (_campos.Count > 0)
+{
+    <div class="cd-grid">
+        @foreach (var c in _campos)
+        {
+            var def = c.DefinicionId;
+            @if (c.Tipo == TipoCampoTablero.Separador)
+            {
+                <div class="cd-sep">@c.Label</div>
+            }
+            else
+            {
+                <div class="cd-f@(EsAncho(c.Tipo) ? " cd-col2" : "")">
+                    <label class="cd-lbl">@c.Label</label>
+                    @switch (c.Tipo)
+                    {
+                        case TipoCampoTablero.AreaTexto:
+                            <textarea class="cd-in cd-ta" rows="2" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())"></textarea>
+                            break;
+                        case TipoCampoTablero.Numero:
+                        case TipoCampoTablero.Moneda:
+                        case TipoCampoTablero.Porcentaje:
+                            <input class="cd-in" type="number" step="any" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Fecha:
+                            <input class="cd-in" type="date" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.FechaHora:
+                            <input class="cd-in" type="datetime-local" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Hora:
+                            <input class="cd-in" type="time" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Email:
+                            <input class="cd-in" type="email" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Url:
+                            <input class="cd-in" type="url" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Telefono:
+                            <input class="cd-in" type="tel" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                        case TipoCampoTablero.Booleano:
+                            <select class="cd-in" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())">
+                                <option value="">—</option>
+                                <option value="true">Sí</option>
+                                <option value="false">No</option>
+                            </select>
+                            break;
+                        case TipoCampoTablero.Seleccion:
+                            <select class="cd-in" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())">
+                                <option value="">—</option>
+                                @foreach (var op in Opciones(c.Opciones)) { <option value="@op">@op</option> }
+                            </select>
+                            break;
+                        case TipoCampoTablero.Formula:
+                        case TipoCampoTablero.Total:
+                            @* Calculados: solo lectura (el valor ya viene computado). *@
+                            <div class="cd-ro">@(string.IsNullOrEmpty(c.Valor) ? "—" : c.Valor)</div>
+                            break;
+                        default:
+                            <input class="cd-in" type="text" value="@c.Valor" @onchange="e => Guardar(def, e.Value?.ToString())" />
+                            break;
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+<style>
+    .cd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-top: 4px; }
+    .cd-col2 { grid-column: 1 / -1; }
+    .cd-sep { grid-column: 1 / -1; font-size: 11px; font-weight: 800; letter-spacing: .3px; color: var(--propia-text-faint); text-transform: uppercase; margin: 6px 0 0; }
+    .cd-f { min-width: 0; }
+    .cd-lbl { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; display: block; margin: 0 0 5px; }
+    .cd-in { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: var(--propia-text-body); outline: none; background: var(--propia-bg-card); box-sizing: border-box; font-family: inherit; }
+    .cd-in:focus { border-color: var(--propia-brand); }
+    .cd-ta { resize: vertical; }
+    .cd-ro { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: var(--propia-text-secondary); background: var(--propia-bg-app); box-sizing: border-box; }
+    @@media (max-width: 640px) { .cd-grid { grid-template-columns: 1fr; } }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>"zonas" o "equipos" (segmento de la ruta del API).</summary>
+    [Parameter] public string BasePath { get; set; } = "";
+    [Parameter] public Guid EntidadId { get; set; }
+
+    private List<CampoDin> _campos = new();
+    private Guid _cargadoPara;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EntidadId != Guid.Empty && EntidadId != _cargadoPara)
+        {
+            _cargadoPara = EntidadId;
+            await CargarAsync();
+        }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var lista = await Auth().GetFromJsonAsync<List<CampoDin>>($"/api/mi-copropiedad/{BasePath}/{EntidadId}/campos-din");
+            _campos = (lista ?? new()).OrderBy(c => c.Orden).ToList();
+        }
+        catch { _campos = new(); }
+    }
+
+    private async Task Guardar(Guid definicionId, string? valor)
+    {
+        var c = _campos.FirstOrDefault(x => x.DefinicionId == definicionId);
+        if (c is not null) c.Valor = valor;  // optimista
+        try { await Auth().PutAsJsonAsync($"/api/mi-copropiedad/{BasePath}/{EntidadId}/campos/{definicionId}", new { Valor = valor }); }
+        catch { }
+    }
+
+    private static string[] Opciones(string? op) => string.IsNullOrWhiteSpace(op)
+        ? System.Array.Empty<string>()
+        : op.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static bool EsAncho(TipoCampoTablero t) => t == TipoCampoTablero.AreaTexto;
+
+    private sealed class CampoDin
+    {
+        public Guid DefinicionId { get; set; }
+        public string Label { get; set; } = "";
+        public int Orden { get; set; }
+        public string? Valor { get; set; }
+        public TipoCampoTablero Tipo { get; set; }
+        public string? Opciones { get; set; }
+    }
+}

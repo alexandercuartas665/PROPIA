@@ -1252,6 +1252,24 @@ public class MiCopropiedadController : ControllerBase
     public async Task<IActionResult> EliminarZonaFactura(Guid facturaId, CancellationToken ct)
         => await _svc.EliminarZonaFacturaAsync(facturaId, ct) ? NoContent() : NotFound();
 
+    // Adjunta un documento a una factura de zona: queda en la fila y aparece en la pestana Documentos.
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("zonas/facturas/{facturaId:guid}/documento")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirZonaFacturaDocumento(Guid facturaId, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var safe = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/zonas/facturas/{facturaId:N}/{Guid.NewGuid():N}{safe}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var dto = await _svc.AdjuntarZonaFacturaDocumentoAsync(facturaId, file.FileName, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo adjuntar el documento." }) : Ok(dto);
+    }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/documentos")]
     [RequestSizeLimit(11_000_000)]
@@ -1296,6 +1314,37 @@ public class MiCopropiedadController : ControllerBase
     [HttpDelete("equipos/documentos/{docId:guid}")]
     public async Task<IActionResult> EliminarEquipoDocumento(Guid docId, CancellationToken ct)
         => await _svc.EliminarEquipoDocumentoAsync(docId, ct) ? NoContent() : NotFound();
+
+    // ----- Facturas de compra de un equipo/activo (espejo de zonas/facturas). No afectan depreciacion. -----
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("equipos/{id:guid}/facturas")]
+    public async Task<IActionResult> AgregarEquipoFactura(Guid id, [FromBody] AgregarEquipoFacturaRequest req, CancellationToken ct)
+    {
+        var dto = await _svc.AgregarEquipoFacturaAsync(id, req, ct);
+        return dto is null ? BadRequest(new { error = "no_active_tenant" }) : Ok(dto);
+    }
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)]
+    [HttpDelete("equipos/facturas/{facturaId:guid}")]
+    public async Task<IActionResult> EliminarEquipoFactura(Guid facturaId, CancellationToken ct)
+        => await _svc.EliminarEquipoFacturaAsync(facturaId, ct) ? NoContent() : NotFound();
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
+    [HttpPost("equipos/facturas/{facturaId:guid}/documento")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<IActionResult> SubirEquipoFacturaDocumento(Guid facturaId, IFormFile file, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var safe = System.IO.Path.GetExtension(file.FileName);
+        var key = $"tenants/{tenantId:N}/equipos/facturas/{facturaId:N}/{Guid.NewGuid():N}{safe}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var dto = await _svc.AdjuntarEquipoFacturaDocumentoAsync(facturaId, file.FileName, url, ct);
+        return dto is null ? BadRequest(new { error = "No se pudo adjuntar el documento." }) : Ok(dto);
+    }
 
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/campos")]

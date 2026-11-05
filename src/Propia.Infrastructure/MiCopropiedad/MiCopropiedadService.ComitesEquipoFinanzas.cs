@@ -518,9 +518,20 @@ public partial class MiCopropiedadService
         var zonaDto = new ZonaComunDto(z.Id, z.Nombre, z.Categoria, z.Descripcion, z.EsReservable,
             z.TarifaReserva, z.CapacidadPersonas, z.HorariosUso, z.ReglasUso, z.Estado);
 
-        var facturas = await _db.ZonaFacturas.AsNoTracking().Where(f => f.ZonaComunId == zonaId)
-            .OrderByDescending(f => f.Fecha)
-            .Select(f => new ZonaFacturaDto(f.Id, f.Concepto, f.Valor, f.Fecha)).ToListAsync(ct);
+        var facRows = await _db.ZonaFacturas.AsNoTracking().Where(f => f.ZonaComunId == zonaId)
+            .OrderByDescending(f => f.Fecha).ThenByDescending(f => f.CreatedAt)
+            .Select(f => new { f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, f.ZonaDocumentoId })
+            .ToListAsync(ct);
+        var facDocIds = facRows.Where(f => f.ZonaDocumentoId.HasValue).Select(f => f.ZonaDocumentoId!.Value).Distinct().ToList();
+        var facDocMap = (await _db.ZonaDocumentos.AsNoTracking().Where(d => facDocIds.Contains(d.Id))
+            .Select(d => new { d.Id, d.Nombre, d.Url }).ToListAsync(ct)).ToDictionary(d => d.Id);
+        var facturas = facRows.Select(f =>
+        {
+            string? docNombre = null, docUrl = null; Guid? docId = null;
+            if (f.ZonaDocumentoId is Guid fid && facDocMap.TryGetValue(fid, out var d))
+            { docId = d.Id; docNombre = d.Nombre; docUrl = _blob.ResolveUrl(d.Url) ?? d.Url; }
+            return new ZonaFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, docId, docNombre, docUrl);
+        }).ToList();
 
         var docs = (await _db.ZonaDocumentos.AsNoTracking().Where(d => d.ZonaComunId == zonaId)
             .OrderByDescending(d => d.CreatedAt)
@@ -573,20 +584,49 @@ public partial class MiCopropiedadService
     {
         if (_tenant.CurrentTenantId is not Guid tid) return null;
         if (!await _db.ZonasComunes.AnyAsync(z => z.Id == zonaId, ct)) return null;
-        var f = new ZonaFactura { TenantId = tid, ZonaComunId = zonaId, Concepto = req.Concepto.Trim(), Valor = req.Valor, Fecha = req.Fecha };
+        var f = new ZonaFactura
+        {
+            TenantId = tid,
+            ZonaComunId = zonaId,
+            Proveedor = Limpiar(req.Proveedor),
+            ProveedorPersonaId = req.ProveedorPersonaId,
+            ProveedorEmpresaId = req.ProveedorEmpresaId,
+            NumeroFactura = Limpiar(req.NumeroFactura),
+            Concepto = Limpiar(req.Concepto),
+            Valor = req.Valor,
+            Fecha = req.Fecha,
+            Observacion = Limpiar(req.Observacion)
+        };
         _db.ZonaFacturas.Add(f);
         await _db.SaveChangesAsync(ct);
-        return new ZonaFacturaDto(f.Id, f.Concepto, f.Valor, f.Fecha);
+        return new ZonaFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, null, null, null);
     }
 
     public async Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct)
     {
+        // El documento adjunto (ZonaDocumento) se conserva en la pestana Documentos: solo se elimina la factura.
         var f = await _db.ZonaFacturas.FirstOrDefaultAsync(x => x.Id == facturaId, ct);
         if (f is null) return false;
         _db.ZonaFacturas.Remove(f);
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    public async Task<ZonaFacturaDto?> AdjuntarZonaFacturaDocumentoAsync(Guid facturaId, string nombre, string url, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        var f = await _db.ZonaFacturas.FirstOrDefaultAsync(x => x.Id == facturaId, ct);
+        if (f is null) return null;
+        var d = new ZonaDocumento { TenantId = tid, ZonaComunId = f.ZonaComunId, Nombre = nombre.Trim(), Url = url };
+        _db.ZonaDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        f.ZonaDocumentoId = d.Id;
+        await _db.SaveChangesAsync(ct);
+        return new ZonaFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion,
+            d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url);
+    }
+
+    private static string? Limpiar(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     public async Task<ZonaDocumentoDto?> AgregarZonaDocumentoAsync(Guid zonaId, string nombre, string url, CancellationToken ct)
     {

@@ -340,6 +340,25 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        // Facturas de compra (relacion como tabla) de zonas y equipos. El documento adjunto vive en
+        // Zona/EquipoDocumento (pestana Documentos) y aqui solo se referencia por id.
+        modelBuilder.Entity<ZonaFactura>(b =>
+        {
+            b.Property(x => x.Proveedor).HasMaxLength(200);
+            b.Property(x => x.NumeroFactura).HasMaxLength(60);
+            b.Property(x => x.Observacion).HasMaxLength(500);
+            b.HasIndex(x => new { x.TenantId, x.ZonaComunId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<EquipoFactura>(b =>
+        {
+            b.Property(x => x.Proveedor).HasMaxLength(200);
+            b.Property(x => x.NumeroFactura).HasMaxLength(60);
+            b.Property(x => x.Observacion).HasMaxLength(500);
+            b.Property(x => x.Valor).HasColumnType("numeric(18,2)");
+            b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
         modelBuilder.Entity<EquipoVinculo>(b =>
         {
             b.HasIndex(x => new { x.TenantId, x.EquipoActivoId });

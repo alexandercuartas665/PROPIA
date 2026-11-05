@@ -20,6 +20,25 @@ public class EquipoDocumento : TenantEntity
     public string Url { get; set; } = null!;
 }
 
+/// <summary>Factura de compra asociada a un equipo/activo. Espejo de ZonaFactura: la relacion se
+/// muestra como tabla (proveedor/n/fecha/valor/observacion) y opcionalmente referencia un
+/// EquipoDocumento que tambien aparece en la pestana Documentos. NO afecta la depreciacion (eso es
+/// EquipoMejora); son conceptos separados.</summary>
+public class EquipoFactura : TenantEntity
+{
+    public Guid EquipoActivoId { get; set; }
+    // Proveedor: nombre/razon social (snapshot) + vinculo opcional al Directorio (persona o empresa).
+    public string? Proveedor { get; set; }
+    public Guid? ProveedorPersonaId { get; set; }
+    public Guid? ProveedorEmpresaId { get; set; }
+    public string? NumeroFactura { get; set; }
+    public string? Concepto { get; set; }
+    public decimal? Valor { get; set; }
+    public DateOnly? Fecha { get; set; }
+    public string? Observacion { get; set; }
+    public Guid? EquipoDocumentoId { get; set; }
+}
+
 /// <summary>
 /// Mejora capitalizada sobre un activo (ej. cambio de motor). Suma al valor en libros y
 /// se refleja en la depreciacion. Opcionalmente referencia una factura/documento.

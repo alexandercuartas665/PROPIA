@@ -3,13 +3,26 @@ using Propia.Domain.Enums;
 
 namespace Propia.Domain.Entities;
 
-/// <summary>Factura de compra asociada a una zona comun (ficha de la zona, prototipo).</summary>
+/// <summary>Factura de compra asociada a una zona comun (ficha de la zona). La relacion se muestra como
+/// tabla (proveedor/n/fecha/valor/observacion) y opcionalmente referencia un documento de la zona
+/// (ZonaDocumentoId) que tambien aparece en la pestana Documentos.</summary>
 public class ZonaFactura : TenantEntity
 {
     public Guid ZonaComunId { get; set; }
-    public string Concepto { get; set; } = null!;
+    // Proveedor: nombre/razon social (snapshot) + vinculo opcional al Directorio (persona o empresa),
+    // elegido con el SelectorPersona. Mismo patron que ContratoServicio.Proveedor*.
+    public string? Proveedor { get; set; }
+    public Guid? ProveedorPersonaId { get; set; }
+    public Guid? ProveedorEmpresaId { get; set; }
+    public string? NumeroFactura { get; set; }
+    // Concepto se conserva por compatibilidad con filas antiguas; el alta nueva usa Proveedor/Observacion.
+    public string? Concepto { get; set; }
     public decimal? Valor { get; set; }
     public DateOnly? Fecha { get; set; }
+    public string? Observacion { get; set; }
+    // Documento adjunto: vive en ZonaDocumento (pestana Documentos) y aqui se guarda su id para mostrarlo
+    // en la fila. Al borrar la factura el documento se conserva (solo se desvincula).
+    public Guid? ZonaDocumentoId { get; set; }
 }
 
 /// <summary>Documento adjunto de una zona comun (ficha de la zona). Binario en IBlobStorage.</summary>

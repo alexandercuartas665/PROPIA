@@ -251,6 +251,19 @@ public partial class MiCopropiedadService
             .Select(d => new { d.Id, d.Nombre, d.Url }).ToListAsync(ct))
             .Select(d => new EquipoDocumentoDto(d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url)).ToList();
 
+        var facRows = await _db.EquipoFacturas.AsNoTracking().Where(f => f.EquipoActivoId == equipoId)
+            .OrderByDescending(f => f.Fecha).ThenByDescending(f => f.CreatedAt)
+            .Select(f => new { f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, f.EquipoDocumentoId })
+            .ToListAsync(ct);
+        var facDocMap = documentos.ToDictionary(d => d.Id);
+        var facturas = facRows.Select(f =>
+        {
+            string? docNombre = null, docUrl = null; Guid? docId = null;
+            if (f.EquipoDocumentoId is Guid fid && facDocMap.TryGetValue(fid, out var d))
+            { docId = d.Id; docNombre = d.Nombre; docUrl = d.Url; }
+            return new EquipoFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, docId, docNombre, docUrl);
+        }).ToList();
+
         var depreciacion = CalcularDepreciacion(e, mejoras.Sum(m => m.Valor));
 
         // Contratos vinculados + disponibles
@@ -288,10 +301,57 @@ public partial class MiCopropiedadService
             .ToListAsync(ct);
 
         return new EquipoFichaDto(
-            ToEquipoActivoDto(e), depreciacion, fotos, mejoras, campos,
+            ToEquipoActivoDto(e), depreciacion, fotos, mejoras, facturas, campos,
             contratosVinculados, contratosDisponibles,
             activosVinculados, activosDisponibles,
             mantenimientos, tareas, documentos);
+    }
+
+    // ----- Facturas de compra del equipo (espejo de las de zona; no afectan depreciacion) -----
+    public async Task<EquipoFacturaDto?> AgregarEquipoFacturaAsync(Guid equipoId, AgregarEquipoFacturaRequest req, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        if (!await _db.EquiposActivos.AnyAsync(x => x.Id == equipoId, ct)) return null;
+        var f = new EquipoFactura
+        {
+            TenantId = tid,
+            EquipoActivoId = equipoId,
+            Proveedor = Limpiar(req.Proveedor),
+            ProveedorPersonaId = req.ProveedorPersonaId,
+            ProveedorEmpresaId = req.ProveedorEmpresaId,
+            NumeroFactura = Limpiar(req.NumeroFactura),
+            Concepto = Limpiar(req.Concepto),
+            Valor = req.Valor,
+            Fecha = req.Fecha,
+            Observacion = Limpiar(req.Observacion)
+        };
+        _db.EquipoFacturas.Add(f);
+        await _db.SaveChangesAsync(ct);
+        return new EquipoFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion, null, null, null);
+    }
+
+    public async Task<bool> EliminarEquipoFacturaAsync(Guid facturaId, CancellationToken ct)
+    {
+        // El documento adjunto (EquipoDocumento) se conserva en la pestana Documentos: solo se elimina la factura.
+        var f = await _db.EquipoFacturas.FirstOrDefaultAsync(x => x.Id == facturaId, ct);
+        if (f is null) return false;
+        _db.EquipoFacturas.Remove(f);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<EquipoFacturaDto?> AdjuntarEquipoFacturaDocumentoAsync(Guid facturaId, string nombre, string url, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        var f = await _db.EquipoFacturas.FirstOrDefaultAsync(x => x.Id == facturaId, ct);
+        if (f is null) return null;
+        var d = new EquipoDocumento { TenantId = tid, EquipoActivoId = f.EquipoActivoId, Nombre = nombre.Trim(), Url = url };
+        _db.EquipoDocumentos.Add(d);
+        await _db.SaveChangesAsync(ct);
+        f.EquipoDocumentoId = d.Id;
+        await _db.SaveChangesAsync(ct);
+        return new EquipoFacturaDto(f.Id, f.Proveedor, f.ProveedorPersonaId, f.ProveedorEmpresaId, f.NumeroFactura, f.Concepto, f.Valor, f.Fecha, f.Observacion,
+            d.Id, d.Nombre, _blob.ResolveUrl(d.Url) ?? d.Url);
     }
 
     // ----- Documentos adjuntos del equipo (pestana Documentos). Espejo de los metodos de ZonaDocumento. -----
