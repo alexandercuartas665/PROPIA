@@ -87,7 +87,9 @@ builder.Services.AddHttpClient("PropiaApi", client =>
 {
     var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7113";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(30);
+    // 75s (> los 60s del cliente de IA) para que una respuesta lenta del proveedor llegue como
+    // error legible del backend en vez de cortarse aqui con un TaskCanceledException generico.
+    client.Timeout = TimeSpan.FromSeconds(75);
 })
 .ConfigurePrimaryHttpMessageHandler(sp =>
 {

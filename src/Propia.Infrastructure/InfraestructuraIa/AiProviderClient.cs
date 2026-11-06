@@ -29,6 +29,10 @@ public sealed class AiProviderClient : IAiProviderClient
                 _ => await OpenAiCompatible(provider, apiKey, baseUrl, model, systemPrompt, turns, ct)
             };
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new AiChatResult(false, null, "El proveedor de IA no respondio a tiempo (timeout). Reintenta, o revisa el modelo y la API key en Servidores de IA.");
+        }
         catch (Exception ex)
         {
             return new AiChatResult(false, null, $"No se pudo contactar al proveedor: {ex.Message}");
@@ -43,6 +47,10 @@ public sealed class AiProviderClient : IAiProviderClient
             return provider == AiProvider.Claude
                 ? await ClaudeWithTools(apiKey, baseUrl, model, systemPrompt, messages, tools, ct)
                 : await OpenAiCompatibleWithTools(provider, apiKey, baseUrl, model, systemPrompt, messages, tools, ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new AiCompletion(false, null, "El proveedor de IA no respondio a tiempo (timeout).", 0, 0, Array.Empty<AiToolCall>());
         }
         catch (Exception ex)
         {
