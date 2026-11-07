@@ -88,6 +88,115 @@ public class OcrController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// B1 (SOLO DeepSeek, sin Gemini/Azure): recibe el TEXTO ya extraido del documento en el cliente
+    /// (pdf.js lee la capa de texto del PDF; no es OCR de IA) y lo pasa por el AGENTE DOCUMENTAL del
+    /// tenant (su proveedor = DeepSeek), que devuelve SOLO los campos del perfil como JSON para prellenar
+    /// el formulario. NO persiste nada (lo guarda el modulo con su flujo normal). Devuelve el MISMO shape
+    /// que extraer-ia para que el frontend reuse su mapeador.
+    /// </summary>
+    [HttpPost("extraer-agente")]
+    [RequestSizeLimit(25 * 1024 * 1024)]
+    public async Task<IActionResult> ExtraerAgente([FromBody] ExtraerAgenteRequest req, CancellationToken ct)
+    {
+        if (req is null || string.IsNullOrWhiteSpace(req.Texto)) return BadRequest(new { error = "texto_requerido" });
+        var campos = PerfilCampos(req.Perfil);
+        if (campos.Count == 0) return BadRequest(new { error = "perfil_desconocido" });
+
+        // El agente documental del tenant (RLS: solo el del JWT). Su proveedor configurado = DeepSeek.
+        var agentId = await _db.AiAgents.AsNoTracking()
+            .Where(a => a.Name == AgenteDocumentalSeeder.AgenteNombre && a.IsActive)
+            .Select(a => (Guid?)a.Id)
+            .FirstOrDefaultAsync(ct);
+        if (agentId is null) return BadRequest(new { error = "agente_documental_no_disponible" });
+
+        // Prompt de EXTRACCION estricto (override del prompt del agente SOLO para esta llamada).
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Eres un extractor de datos de documentos. Te doy el TEXTO de un documento y debes responder");
+        sb.AppendLine("UNICAMENTE un objeto JSON plano con estas claves. Usa null si el dato no aparece; no inventes.");
+        sb.AppendLine("No agregues explicaciones, comentarios ni bloques de codigo: responde solo el JSON.");
+        sb.AppendLine("Claves esperadas:");
+        foreach (var c in campos) { sb.AppendLine($"- \"{c.Nombre}\": {c.Descripcion} (tipo {c.Tipo})"); }
+        sb.AppendLine("Para montos devuelve solo el numero sin simbolos ni separadores de miles. Para fechas usa YYYY-MM-DD.");
+
+        var texto = req.Texto!.Length > 60000 ? req.Texto[..60000] : req.Texto;
+        var turns = new List<Application.InfraestructuraIa.AiChatTurn>
+        {
+            new("user", "TEXTO DEL DOCUMENTO:\n" + texto.Trim())
+        };
+        // bearerToken null => BuildToolSpecsAsync corta en seco => completion limpia (sin tools MCP).
+        var res = await _ai.TestChatAsync(agentId.Value, turns, systemPromptOverride: sb.ToString(), ct: ct);
+        if (!res.Ok) return BadRequest(new { error = res.Error ?? "fallo_agente" });
+
+        var valores = ParseCamposJson(res.Text, campos);
+
+        // Origen PDF (opcional): si el modulo manda el PDF en base64, lo guardamos tenant-scoped y
+        // devolvemos su key para persistirla al guardar (igual que extraer-ia). No pasa por IA. Best-effort.
+        string? pdfOrigenKey = null;
+        if (!string.IsNullOrWhiteSpace(req.PdfBase64))
+        {
+            var tenantId = User.FindFirstValue("tenant_id");
+            if (!string.IsNullOrEmpty(tenantId))
+            {
+                try
+                {
+                    var bytes = Convert.FromBase64String(req.PdfBase64);
+                    var mime = string.IsNullOrWhiteSpace(req.Mime) ? "application/pdf" : req.Mime!;
+                    var ext = mime.Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "bin";
+                    var key = $"tenants/{tenantId}/extracciones/{Guid.NewGuid():N}.{ext}";
+                    using var up = new MemoryStream(bytes);
+                    await _blob.UploadAsync(key, up, mime, ct);
+                    pdfOrigenKey = key;
+                }
+                catch { /* el guardado del origen no debe romper la extraccion */ }
+            }
+        }
+
+        return Ok(new
+        {
+            ok = true,
+            modelo = "agente",
+            pdfOrigenKey,
+            inputTokens = res.InputTokens,
+            outputTokens = res.OutputTokens,
+            campos = campos
+                .Where(c => valores.ContainsKey(c.Nombre))
+                .Select(c => new { Nombre = c.Nombre, Valor = valores[c.Nombre], Confianza = (double?)null })
+        });
+    }
+
+    /// <summary>Parse tolerante del JSON que devuelve el agente: {claveDePerfil: valor}. Ignora lo ajeno al perfil.</summary>
+    private static Dictionary<string, string?> ParseCamposJson(string? text, IReadOnlyList<CampoObjetivo> campos)
+    {
+        var outp = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text)) return outp;
+        var t = text.Trim();
+        var i = t.IndexOf('{'); var j = t.LastIndexOf('}');
+        if (i < 0 || j <= i) return outp;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(t.Substring(i, j - i + 1));
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return outp;
+            foreach (var c in campos)
+            {
+                if (!doc.RootElement.TryGetProperty(c.Nombre, out var el)) continue;
+                string? val = el.ValueKind switch
+                {
+                    System.Text.Json.JsonValueKind.String => el.GetString(),
+                    System.Text.Json.JsonValueKind.Number => el.GetRawText(),
+                    System.Text.Json.JsonValueKind.True => "true",
+                    System.Text.Json.JsonValueKind.False => "false",
+                    _ => null
+                };
+                if (!string.IsNullOrWhiteSpace(val)) outp[c.Nombre] = val;
+            }
+        }
+        catch { /* json invalido: devolvemos lo que haya */ }
+        return outp;
+    }
+
+    public sealed record ExtraerAgenteRequest(string? Perfil, string? Texto, string? PdfBase64 = null, string? Mime = null, string? FileName = null);
+
     /// <summary>Campos objetivo por perfil (server-side; el cliente no define el schema).</summary>
     private static IReadOnlyList<CampoObjetivo> PerfilCampos(string? perfil) => (perfil ?? "").Trim().ToLowerInvariant() switch
     {

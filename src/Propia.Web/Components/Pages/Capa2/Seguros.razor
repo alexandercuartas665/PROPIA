@@ -407,22 +407,62 @@
         <div class="seg-modal-body">
             @if (_editId is null || _tab == "poliza")
             {
-            <div class="seg-2col @(_editId is null ? "seg-2col--solo" : "")">
+            <div class="seg-2col @(_editId is null ? (Multi ? "seg-2col--multi" : "seg-2col--solo") : "")">
+            @if (_editId is null && Multi)
+            {
+                @* Columna de documentos cargados (varios PDF): se revisan y guardan uno por uno. *@
+                <aside class="seg-draftrail">
+                    <div class="seg-dr-head">Documentos <span class="seg-dr-cnt">@_drafts.Count</span></div>
+                    <div class="seg-dr-prog">
+                        <div class="seg-dr-prog-lbl"><span>Guardadas</span><span>@_drafts.Count(d => d.Estado == DraftEstado.Listo) de @_drafts.Count</span></div>
+                        <div class="seg-dr-bar"><i style="width:@(ProgresoPct)%"></i></div>
+                    </div>
+                    <div class="seg-dr-list">
+                        @for (var i = 0; i < _drafts.Count; i++)
+                        {
+                            var idx = i; var d = _drafts[i];
+                            <div class="seg-dr-card @(idx == _draftIdx ? "sel" : "")" @onclick="() => SeleccionarDraft(idx)">
+                                <div class="seg-dr-fic @(d.Thumb is not null ? "has-thumb" : "")">
+                                    @if (d.Thumb is not null) { <img src="@d.Thumb" alt="@d.FileName" /> } else { <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> }
+                                </div>
+                                <div class="seg-dr-meta"><div class="seg-dr-nm">@d.FileName</div><div class="seg-dr-sz">@(d.IaEstado ?? TamKb(d.Size))</div></div>
+                                <span class="seg-dr-pill @PillCls(d.Estado)">@PillTxt(d.Estado)</span>
+                            </div>
+                        }
+                    </div>
+                </aside>
+            }
             <div class="seg-mainpane">
-                @* Cargar PDF con OCR para prellenar (reusa el motor de Super Admin). *@
+                @if (_editId is null && Multi && ActiveDraft is { } act)
+                {
+                    <div class="seg-dr-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Revisando <b>@act.FileName</b> &middot; @(_draftIdx + 1) de @_drafts.Count</div>
+                }
+                @* Cargar PDF: en alta, uno o varios (se revisan uno por uno); en edicion, OCR del PDF origen. *@
                 <div class="seg-ocr">
-                    <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                        @(_ocrBusy ? "Leyendo póliza..." : "Cargar PDF y extraer (IA)")
-                        <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
-                    </label>
-                    @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
-                    @if (_editId is not null && _f.TienePdfOrigen)
+                    @if (_editId is null)
                     {
-                        <button type="button" class="seg-ocr-btn" style="margin-left:auto;" @onclick="DescargarPdfOrigen">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg>
-                            Ver PDF origen
-                        </button>
+                        <label class="seg-ocr-btn">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                            @(Multi ? "Agregar mas PDF" : "Cargar PDF (uno o varios)")
+                            <InputFile OnChange="OnFilesSelected" accept=".pdf,image/*" multiple hidden />
+                        </label>
+                        @if (!Multi && _drafts.Count == 1) { <span class="seg-ocr-msg">1 PDF: @_drafts[0].FileName (se adjunta al crear)</span> }
+                    }
+                    else
+                    {
+                        <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                            @(_ocrBusy ? "Leyendo póliza..." : "Cargar PDF y extraer (IA)")
+                            <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
+                        </label>
+                        @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
+                        @if (_f.TienePdfOrigen)
+                        {
+                            <button type="button" class="seg-ocr-btn" style="margin-left:auto;" @onclick="DescargarPdfOrigen">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg>
+                                Ver PDF origen
+                            </button>
+                        }
                     }
                 </div>
 
@@ -603,8 +643,17 @@
                 {
                     <button class="seg-btn-danger" style="margin-right:auto;" @onclick="() => _confirmEliminarP = true" disabled="@_busy">Eliminar</button>
                 }
-                <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
-                <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear póliza" : "Guardar póliza")</button>
+                @if (_editId is null && Multi)
+                {
+                    <button class="seg-btn-ghost" @onclick="DescartarDraft" disabled="@_busy">Descartar</button>
+                    <button class="seg-btn-ghost" @onclick="() => _modal = false">Cerrar</button>
+                    <button class="seg-btn-brand" @onclick="GuardarYSiguiente" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(HayPendienteDespues ? "Guardar y siguiente" : "Guardar y finalizar")</button>
+                }
+                else
+                {
+                    <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
+                    <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Aseguradora))">@(_editId is null ? "Crear póliza" : "Guardar póliza")</button>
+                }
             </div>
         }
     </div>
@@ -878,6 +927,35 @@
     .seg-ocr-btn.busy { opacity: .6; pointer-events: none; }
     .seg-ocr-msg { font-size: 11.5px; color: var(--propia-text-secondary); }
 
+    /* Carga multiple (Fase 1): columna de documentos a la izquierda cuando hay 2+ PDF. */
+    .seg-2col--multi { grid-template-columns: 290px 1fr; }
+    .seg-draftrail { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--propia-border-divider); padding-right: 14px; }
+    .seg-dr-head { font-size: 12px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-secondary); display: flex; align-items: center; gap: 8px; }
+    .seg-dr-cnt { background: var(--propia-brand-soft); color: var(--propia-brand-text); font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 999px; }
+    .seg-dr-prog { font-size: 11.5px; color: var(--propia-text-secondary); }
+    .seg-dr-prog-lbl { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: 600; }
+    .seg-dr-bar { height: 6px; border-radius: 999px; background: var(--propia-border-card); overflow: hidden; }
+    .seg-dr-bar i { display: block; height: 100%; background: var(--propia-brand); border-radius: 999px; transition: width .2s ease; }
+    .seg-dr-list { display: flex; flex-direction: column; gap: 8px; }
+    .seg-dr-card { display: flex; align-items: center; gap: 10px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; padding: 10px 11px; cursor: pointer; }
+    .seg-dr-card:hover { border-color: var(--propia-border-card-2); }
+    .seg-dr-card.sel { border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-brand-soft); }
+    .seg-dr-fic { width: 30px; height: 30px; border-radius: 8px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .seg-dr-fic.has-thumb { width: 34px; height: 44px; border-radius: 6px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); overflow: hidden; padding: 0; }
+    .seg-dr-fic.has-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+    .seg-dr-meta { min-width: 0; flex: 1; }
+    .seg-dr-nm { font-size: 12px; font-weight: 700; color: var(--propia-text-h1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .seg-dr-sz { font-size: 10.5px; color: var(--propia-text-faint); margin-top: 1px; }
+    .seg-dr-pill { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+    .seg-dr-pill.ok { background: var(--propia-success-bg); color: var(--propia-success); border: 1px solid var(--propia-success-border); }
+    .seg-dr-pill.rev { background: var(--propia-warning-bg); color: var(--propia-warning); border: 1px solid var(--propia-warning-border); }
+    .seg-dr-pill.pend { background: var(--propia-bg-hover); color: var(--propia-text-muted); border: 1px solid var(--propia-border-card); }
+    .seg-dr-pill.err { background: var(--propia-error-bg); color: var(--propia-error); border: 1px solid var(--propia-error-border); }
+    .seg-dr-active { font-size: 11.5px; color: var(--propia-text-secondary); margin-bottom: 12px; padding: 8px 11px; background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); border-radius: 9px; display: flex; align-items: center; gap: 8px; }
+    .seg-dr-active b { color: var(--propia-text-h1); font-weight: 700; }
+    .seg-dr-active svg { color: var(--propia-brand); flex: 0 0 auto; }
+    @@media (max-width: 860px) { .seg-2col--multi { grid-template-columns: 1fr; overflow-y: auto; } }
+
     .seg-doc-h { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--propia-brand, var(--propia-brand)); font-weight: 800; margin-bottom: 8px; }
     .seg-doc-note { font-size: 12px; color: var(--propia-text-muted); margin-top: 8px; }
     .seg-recl-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -1022,13 +1100,196 @@
     private Guid? _editId;
     private bool _busy;
     private string? _modalError;
-    private readonly Form _f = new();
+    private Form _f = new();   // form "activo": en carga multiple apunta al draft seleccionado (se reasigna)
     private PersonaCandidatoDto? _aseguradoraSel;
     private PersonaCandidatoDto? _corredorSel;
 
     // OCR
     private bool _ocrBusy;
     private string? _ocrMsg;
+
+    // ---- Fase 1: carga multiple de polizas (varios PDF en el mismo modal "Nueva poliza") ----
+    // Cada PDF cargado es un "draft": su propio formulario + bytes + estado. Se revisan y guardan uno por
+    // uno con "Guardar y siguiente". SIN IA todavia: los campos se llenan a mano; la extraccion automatica
+    // (Gemini, agente semilla) se cablea en la Fase 2. Con 1 solo archivo no hay columna (alta normal + adjunto).
+    private enum DraftEstado { Pendiente, Revisar, Listo, Error }
+    private sealed class PolizaDraft
+    {
+        public string FileName = "";
+        public byte[] Bytes = Array.Empty<byte>();
+        public string Mime = "application/pdf";
+        public long Size;
+        public Form F = new();
+        public PersonaCandidatoDto? AseguradoraSel;
+        public PersonaCandidatoDto? CorredorSel;
+        public Dictionary<Guid, string?> Campos = new();
+        public DraftEstado Estado = DraftEstado.Pendiente;
+        public Guid? CreatedId;
+        public string? Error;
+        public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
+        public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
+    }
+    private List<PolizaDraft> _drafts = new();
+    private int _draftIdx = -1;
+    private bool Multi => _drafts.Count >= 2;
+    private PolizaDraft? ActiveDraft => _draftIdx >= 0 && _draftIdx < _drafts.Count ? _drafts[_draftIdx] : null;
+    private int ProgresoPct => _drafts.Count == 0 ? 0 : (int)Math.Round(100.0 * _drafts.Count(d => d.Estado == DraftEstado.Listo) / _drafts.Count);
+    private bool HayPendienteDespues => _drafts.Count(d => d.Estado != DraftEstado.Listo) > 1;
+
+    private static string TamKb(long b) => b < 1024 ? b + " B" : (b < 1024 * 1024 ? Math.Round(b / 1024.0) + " KB" : Math.Round(b / (1024.0 * 1024.0), 1) + " MB");
+    private static string PillCls(DraftEstado e) => e switch { DraftEstado.Listo => "ok", DraftEstado.Revisar => "rev", DraftEstado.Error => "err", _ => "pend" };
+    private static string PillTxt(DraftEstado e) => e switch { DraftEstado.Listo => "Listo", DraftEstado.Revisar => "Revisar", DraftEstado.Error => "Error", _ => "Pendiente" };
+
+    private void LimpiarDrafts() { _drafts = new(); _draftIdx = -1; }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _modalError = null;
+        var nuevos = new List<PolizaDraft>();
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                byte[] bytes;
+                await using (var s = file.OpenReadStream(20 * 1024 * 1024))
+                {
+                    using var ms = new MemoryStream();
+                    await s.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
+                nuevos.Add(new PolizaDraft
+                {
+                    FileName = file.Name,
+                    Bytes = bytes,
+                    Mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType,
+                    Size = bytes.Length,
+                    F = new Form()
+                });
+            }
+            catch { /* archivo ilegible: se omite */ }
+        }
+        if (nuevos.Count == 0) return;
+        var primeroNuevo = _drafts.Count;   // SeleccionarDraft persiste el draft actual antes de cambiar
+        _drafts.AddRange(nuevos);
+        SeleccionarDraft(primeroNuevo);
+        StateHasChanged();   // pinta las tarjetas con icono de inmediato; la miniatura llega luego
+        foreach (var d in nuevos)
+        {
+            await GenerarThumbAsync(d);
+            StateHasChanged();
+            await ExtraerYLlenarDraftAsync(d);   // arnes: pdf.js -> Agente Documental (DeepSeek) -> llena el form
+            StateHasChanged();
+        }
+    }
+
+    // Genera la miniatura de un draft via pdf.js (o la imagen misma). Best-effort: si falla, queda el icono.
+    private async Task GenerarThumbAsync(PolizaDraft d)
+    {
+        if (d.Bytes.Length == 0 || d.Bytes.Length > 12 * 1024 * 1024) return;   // archivos enormes: se omite el preview
+        try
+        {
+            var b64 = Convert.ToBase64String(d.Bytes);
+            d.Thumb = await Js.InvokeAsync<string?>("propiaPdfThumb.render", b64, d.Mime, 120);
+        }
+        catch { d.Thumb = null; }
+    }
+
+    private void PersistActiveSel()
+    {
+        var d = ActiveDraft;
+        if (d is null) return;
+        d.AseguradoraSel = _aseguradoraSel;
+        d.CorredorSel = _corredorSel;
+        // _f y _campoValores ya apuntan a d.F / d.Campos (misma referencia): no hay que copiarlos
+    }
+
+    private void SeleccionarDraft(int idx)
+    {
+        if (idx < 0 || idx >= _drafts.Count) return;
+        PersistActiveSel();
+        _draftIdx = idx;
+        var d = _drafts[idx];
+        _f = d.F;
+        _campoValores = d.Campos;
+        _aseguradoraSel = d.AseguradoraSel;
+        _corredorSel = d.CorredorSel;
+        if (d.Estado == DraftEstado.Pendiente) d.Estado = DraftEstado.Revisar;
+        _modalError = null;
+    }
+
+    private void DescartarDraft()
+    {
+        if (ActiveDraft is null) return;
+        _drafts.RemoveAt(_draftIdx);
+        if (_drafts.Count == 0) { _draftIdx = -1; _f = new(); _campoValores = new(); _aseguradoraSel = null; _corredorSel = null; ResetForm(); }
+        else SeleccionarDraft(Math.Min(_draftIdx, _drafts.Count - 1));
+    }
+
+    private async Task AdjuntarPdfDraftAsync(Guid polizaId, PolizaDraft d)
+    {
+        if (d.Bytes.Length == 0) return;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var bc = new ByteArrayContent(d.Bytes);
+            bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(d.Mime);
+            content.Add(bc, "file", d.FileName);
+            await Auth().PostAsync($"/api/seguros/polizas/{polizaId}/documentos", content);
+        }
+        catch { /* el adjunto es best-effort: la poliza ya quedo creada */ }
+    }
+
+    private async Task<(Guid? id, string? err)> CrearPolizaActualAsync()
+    {
+        DateOnly? ini = _f.Inicio.HasValue ? DateOnly.FromDateTime(_f.Inicio.Value) : null;
+        DateOnly? fin = _f.Fin.HasValue ? DateOnly.FromDateTime(_f.Fin.Value) : null;
+        Guid? exp = Guid.TryParse(_f.ExpedienteId, out var g) ? g : null;
+        var resp = await Auth().PostAsJsonAsync("/api/seguros/polizas", new CrearPolizaRequest(
+            _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
+            _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
+            _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
+            _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey));
+        if (!resp.IsSuccessStatusCode) return (null, await MensajeErrorAsync(resp));
+        Guid? id = null;
+        try { id = (await resp.Content.ReadFromJsonAsync<PolizaDto>())?.Id; } catch { }
+        if (id is { } pid)
+        {
+            foreach (var cm in CamposActivos)
+            {
+                var val = _campoValores.TryGetValue(cm.Id, out var vv) ? vv : null;
+                try { await Auth().PutAsJsonAsync($"/api/seguros/polizas/{pid}/campo-valor/{cm.Id}", new GuardarPolizaCampoValorRequest(val)); } catch { }
+            }
+        }
+        return (id, null);
+    }
+
+    private async Task GuardarYSiguiente()
+    {
+        var d = ActiveDraft;
+        if (d is null) return;
+        _modalError = null;
+        if (string.IsNullOrWhiteSpace(_f.Aseguradora)) { _modalError = "La aseguradora es obligatoria."; return; }
+        _busy = true;
+        try
+        {
+            var (id, err) = await CrearPolizaActualAsync();
+            if (id is null) { _modalError = err ?? "No se pudo crear la poliza."; d.Estado = DraftEstado.Error; d.Error = _modalError; return; }
+            await AdjuntarPdfDraftAsync(id.Value, d);
+            d.CreatedId = id; d.Estado = DraftEstado.Listo; d.Error = null;
+            var next = _drafts.FindIndex(x => x.Estado != DraftEstado.Listo);
+            if (next >= 0) { SeleccionarDraft(next); }
+            else
+            {
+                var n = _drafts.Count(x => x.Estado == DraftEstado.Listo);
+                _modal = false;
+                LimpiarDrafts();
+                _inlineMsg = n == 1 ? "1 poliza creada." : $"{n} polizas creadas."; _inlineMsgEsError = false;
+                await CargarAsync();
+            }
+        }
+        catch (Exception ex) { _modalError = ex.Message; d.Estado = DraftEstado.Error; d.Error = ex.Message; }
+        finally { _busy = false; }
+    }
 
     // Reclamaciones
     private List<ReclamacionDto> _reclamaciones = new();
@@ -1041,7 +1302,7 @@
     // Campos personalizados (EAV)
     private List<PolizaCampoDto> _campos = new();
     private IReadOnlyList<PolizaCampoDto> CamposActivos => _campos.Where(c => c.Activo).OrderBy(c => c.Orden).ToList();
-    private readonly Dictionary<Guid, string?> _campoValores = new();  // valores del form actual
+    private Dictionary<Guid, string?> _campoValores = new();  // valores del form actual (en multi, los del draft)
     private bool _showCampos;
 
     // ---- Selector de Campos (Fase 1): columnas dirigidas por unidades-config (entidad 'poliza') ----
@@ -2001,7 +2262,7 @@
 
     private async Task AbrirModal(Guid? id)
     {
-        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _comentarios = new(); _docs = new(); _nuevoComentario = ""; _cerrarId = null; _campoValores.Clear();
+        _modalError = null; _ocrMsg = null; _tab = "poliza"; _reclamaciones = new(); _comentarios = new(); _docs = new(); _nuevoComentario = ""; _cerrarId = null; _campoValores = new(); _f = new(); LimpiarDrafts();
         if (_expedientes.Count == 0)
         {
             try { _expedientes = await Auth().GetFromJsonAsync<List<ExpedienteLite>>("/api/folders/lista") ?? new(); } catch { }
@@ -2114,9 +2375,12 @@
                     var val = _campoValores.TryGetValue(cm.Id, out var vv) ? vv : null;
                     try { await Auth().PutAsJsonAsync($"/api/seguros/polizas/{pid}/campo-valor/{cm.Id}", new GuardarPolizaCampoValorRequest(val)); } catch { }
                 }
+                // Alta con 1 solo PDF (sin columna): adjuntar ese documento a la poliza recien creada.
+                if (_editId is null && ActiveDraft is { } ad) await AdjuntarPdfDraftAsync(pid, ad);
             }
 
             _modal = false;
+            LimpiarDrafts();
             await CargarAsync();
         }
         catch (Exception ex) { _modalError = ex.Message; }
@@ -2146,14 +2410,15 @@
         finally { _eliminandoP = false; }
     }
 
-    // ---- OCR: extrae y prellena ----
+    // Boton "Cargar PDF y extraer (IA)": SOLO DeepSeek. El texto lo saca pdf.js (local, capa de texto del
+    // PDF; sin OCR de IA) y el Agente Documental (DeepSeek) devuelve los campos. El PDF se manda tambien en
+    // base64 para conservar el "PDF origen" descargable. No usa Gemini/Azure.
     private async Task OnOcrFile(InputFileChangeEventArgs e)
     {
         _ocrBusy = true; _ocrMsg = null;
         try
         {
             var file = e.File;
-            // Bufferizamos a bytes UNA vez (InputFile solo se abre una vez; ademas permite 2 intentos).
             byte[] bytes;
             await using (var s = file.OpenReadStream(15 * 1024 * 1024))
             {
@@ -2161,51 +2426,29 @@
                 await s.CopyToAsync(msb);
                 bytes = msb.ToArray();
             }
-            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
-
-            MultipartFormDataContent Build(bool conPerfil)
+            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
+            if (!mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
             {
-                var c = new MultipartFormDataContent();
-                var bc = new ByteArrayContent(bytes);
-                bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
-                c.Add(bc, "file", file.Name);
-                if (conPerfil) c.Add(new StringContent("poliza"), "perfil");
-                return c;
+                _ocrMsg = "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.";
+                return;
             }
-
-            // 1) Extraccion con IA (precisa, campos de poliza) si el motor configurado es de IA.
-            using (var content = Build(conPerfil: true))
+            var b64 = Convert.ToBase64String(bytes);
+            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, mime);
+            if (string.IsNullOrWhiteSpace(texto))
             {
-                var iaResp = await Auth().PostAsync("/api/ocr/extraer-ia", content);
-                if (iaResp.IsSuccessStatusCode)
-                {
-                    var ir = await iaResp.Content.ReadFromJsonAsync<OcrResp>();
-                    if (ir?.Campos is not null)
-                    {
-                        var aplicados = AplicarCamposPoliza(ir.Campos);
-                        if (!string.IsNullOrEmpty(ir.PdfOrigenKey)) { _f.PdfOrigenKey = ir.PdfOrigenKey; _f.TienePdfOrigen = true; }
-                        _ocrMsg = aplicados > 0
-                            ? $"Documento leido con IA ({ir.Proveedor}): {aplicados} campo(s) prellenado(s). Revisa y confirma."
-                            : $"La IA leyo el documento ({ir.Proveedor}) pero no encontro datos de poliza (aseguradora, numero, vigencia o valor). Verifica que sea una poliza de seguro y no otro documento (p.ej. un contrato); si lo es, completa los campos manualmente.";
-                        return;
-                    }
-                }
-                // 400 = el motor configurado no es IA -> caemos al OCR clasico.
+                _ocrMsg = "No se pudo leer texto del PDF (quiza es un escaneado como imagen). Completa los campos manualmente.";
+                return;
             }
-
-            // 2) Fallback: OCR clasico (Azure) best-effort.
-            using (var content = Build(conPerfil: false))
-            {
-                var resp = await Auth().PostAsync("/api/ocr/extraer", content);
-                if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
-                var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
-                if (r is null) { _ocrMsg = "Sin datos."; return; }
-                if (r.ValorSugerido is { } v && _f.ValorPoliza is null) _f.ValorPoliza = v;
-                if (!string.IsNullOrWhiteSpace(r.FechaSugerida) && DateTime.TryParse(r.FechaSugerida, out var fs) && _f.Inicio == DateTime.Today) _f.Inicio = fs;
-                var num = r.Campos?.FirstOrDefault(c => c.Nombre.Contains("Policy", StringComparison.OrdinalIgnoreCase) || c.Nombre.Contains("Poliza", StringComparison.OrdinalIgnoreCase))?.Valor;
-                if (!string.IsNullOrWhiteSpace(num) && string.IsNullOrWhiteSpace(_f.NumeroPoliza)) _f.NumeroPoliza = num;
-                _ocrMsg = $"Documento leido ({r.Proveedor}). Revisa y completa los campos.";
-            }
+            var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente",
+                new { Perfil = "poliza", Texto = texto, PdfBase64 = b64, Mime = mime, FileName = file.Name });
+            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
+            var ir = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            if (ir?.Campos is null) { _ocrMsg = "La IA no devolvio datos. Completa los campos manualmente."; return; }
+            var aplicados = AplicarCamposPoliza(ir.Campos, _f);
+            if (!string.IsNullOrEmpty(ir.PdfOrigenKey)) { _f.PdfOrigenKey = ir.PdfOrigenKey; _f.TienePdfOrigen = true; }
+            _ocrMsg = aplicados > 0
+                ? $"Documento leido con el Agente Documental (DeepSeek): {aplicados} campo(s) prellenado(s). Revisa y confirma."
+                : "El Agente Documental leyo el documento pero no encontro datos de poliza (aseguradora, numero, vigencia o valor). Verifica que sea una poliza de seguro; si lo es, completa los campos manualmente.";
         }
         catch (Exception ex) { _ocrMsg = "Error: " + ex.Message; }
         finally { _ocrBusy = false; }
@@ -2229,18 +2472,39 @@
 
     // Mapea los campos del perfil "poliza" (extraccion IA) al formulario. best-effort; el humano confirma.
     // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de poliza).
-    private int AplicarCamposPoliza(List<OcrCampo> campos)
+    private int AplicarCamposPoliza(List<OcrCampo> campos, Form f)
     {
         var n = 0;
         string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
-        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) { _f.Aseguradora = aseg!; n++; }
-        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) { _f.Corredor = corr; n++; }
-        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) { _f.NumeroPoliza = num; n++; }
+        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) { f.Aseguradora = aseg!; n++; }
+        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) { f.Corredor = corr; n++; }
+        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) { f.NumeroPoliza = num; n++; }
         var valor = Val("valor_poliza");
-        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) { _f.ValorPoliza = vv; n++; }
-        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { _f.Inicio = fdi; n++; }
-        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { _f.Fin = fdf; n++; }
+        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) { f.ValorPoliza = vv; n++; }
+        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { f.Inicio = fdi; n++; }
+        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { f.Fin = fdf; n++; }
         return n;
+    }
+
+    // Fase 2 B1 (SOLO DeepSeek): el arnes pasa el TEXTO del PDF (pdf.js, local) al Agente Documental, que
+    // devuelve los campos y prellenan el formulario de ESTE draft. No usa Gemini/Azure. El humano revisa.
+    private async Task ExtraerYLlenarDraftAsync(PolizaDraft d)
+    {
+        if (d.Bytes.Length == 0 || !d.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            d.IaEstado = "Leyendo con IA...";
+            var b64 = Convert.ToBase64String(d.Bytes);
+            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
+            if (string.IsNullOrWhiteSpace(texto)) { d.IaEstado = "Sin texto legible (escaneado?)"; return; }
+            var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
+            if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA no disponible"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos"; return; }
+            var aplicados = AplicarCamposPoliza(r.Campos, d.F);
+            d.IaEstado = aplicados > 0 ? $"IA: {aplicados} campo(s)" : "La IA no encontro datos de poliza";
+        }
+        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
     }
     private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
     private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto, string? PdfOrigenKey = null);
