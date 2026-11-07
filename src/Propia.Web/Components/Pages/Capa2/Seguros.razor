@@ -435,7 +435,7 @@
             <div class="seg-mainpane">
                 @if (_editId is null && Multi && ActiveDraft is { } act)
                 {
-                    <div class="seg-dr-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Revisando <b>@act.FileName</b> &middot; @(_draftIdx + 1) de @_drafts.Count</div>
+                    <div class="seg-dr-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Revisando <b>@act.FileName</b> &middot; @(_draftIdx + 1) de @_drafts.Count <button type="button" class="seg-dr-releer" @onclick="ReleerActivoAsync">Volver a leer</button></div>
                 }
                 @* Cargar PDF: en alta, uno o varios (se revisan uno por uno); en edicion, OCR del PDF origen. *@
                 <div class="seg-ocr">
@@ -479,17 +479,17 @@
                     <div class="seg-col-full">
                         <label class="seg-lbl">Aseguradora * <span class="seg-hint">(busca en el Directorio o crea)</span></label>
                         <SelectorPersona Jwt="@_jwt" Seleccionada="_aseguradoraSel" SeleccionadaChanged="OnAseguradoraSel" PermiteEmpresa="true" Placeholder="Buscar aseguradora (empresa o persona)..." />
-                        <input class="seg-input" style="margin-top:6px;" @bind="_f.Aseguradora" @bind:event="oninput" placeholder="Nombre de la aseguradora" />
+                        <input class="seg-input @ClsDudoso("aseguradora")" style="margin-top:6px;" @bind="_f.Aseguradora" @bind:event="oninput" placeholder="Nombre de la aseguradora" />
                     </div>
                     <div class="seg-col-full">
                         <label class="seg-lbl">Corredor de seguro <span class="seg-hint">(opcional, del Directorio)</span></label>
                         <SelectorPersona Jwt="@_jwt" Seleccionada="_corredorSel" SeleccionadaChanged="OnCorredorSel" PermiteEmpresa="true" Placeholder="Buscar corredor..." />
-                        <input class="seg-input" style="margin-top:6px;" @bind="_f.Corredor" @bind:event="oninput" placeholder="Nombre del corredor" />
+                        <input class="seg-input @ClsDudoso("corredor")" style="margin-top:6px;" @bind="_f.Corredor" @bind:event="oninput" placeholder="Nombre del corredor" />
                     </div>
-                    <div><label class="seg-lbl">Número de póliza</label><input class="seg-input" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
-                    <div><label class="seg-lbl">Valor de póliza (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
-                    <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input" type="date" @bind="_f.Inicio" /></div>
-                    <div><label class="seg-lbl">Fecha de finalización</label><input class="seg-input" type="date" @bind="_f.Fin" /></div>
+                    <div><label class="seg-lbl">Número de póliza</label><input class="seg-input @ClsDudoso("numero_poliza")" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
+                    <div><label class="seg-lbl">Valor de póliza (COP)</label><input class="seg-input @ClsDudoso("valor_poliza")" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input @ClsDudoso("fecha_inicio")" type="date" @bind="_f.Inicio" /></div>
+                    <div><label class="seg-lbl">Fecha de finalización</label><input class="seg-input @ClsDudoso("fecha_fin")" type="date" @bind="_f.Fin" /></div>
                     <div><label class="seg-lbl">Forma de pago (cuotas)</label><input class="seg-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cuotas" /></div>
                     <div><label class="seg-lbl">Pago mensual</label><label class="seg-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label></div>
                     <div class="seg-col-full"><label class="seg-check"><input type="checkbox" @bind="_f.IncluyeZonasUnidades" /> Incluye zonas y unidades privadas</label></div>
@@ -943,6 +943,8 @@
     .seg-ia-warn { font-size: 12px; color: var(--propia-text-secondary); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-left: 3px solid var(--propia-brand); border-radius: 8px; padding: 7px 10px; margin: 0 0 10px; }
     .seg-ia-warn b { color: var(--propia-text-h1); }
     .seg-ia-tok { font-size: 11px; color: var(--propia-text-faint); margin-left: auto; }
+    .seg-dr-releer { font-size: 11px; font-weight: 600; color: var(--propia-brand); background: transparent; border: 0; cursor: pointer; margin-left: 8px; }
+    .seg-dr-releer:hover { text-decoration: underline; }
 
     /* Carga multiple (Fase 1): columna de documentos a la izquierda cuando hay 2+ PDF. */
     .seg-2col--multi { grid-template-columns: 290px 1fr; }
@@ -1145,7 +1147,8 @@
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
         public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
-        public List<string>? IaDudosos;   // campos con lectura dudosa (baja confianza) para que el humano revise
+        public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
+        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
     }
     private List<PolizaDraft> _drafts = new();
     private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
@@ -2566,10 +2569,11 @@
             }
             if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposPoliza(r.Campos, d.F);
-            var dudosos = r.Campos
-                .Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor))
-                .Select(c => EtiquetaCampoPoliza(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
+            var bajas = r.Campos.Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor)).ToList();
+            var dudosos = bajas.Select(c => EtiquetaCampoPoliza(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
             d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
+            var claves = bajas.Select(c => c.Nombre).ToHashSet();
+            d.IaClavesDudosas = claves.Count > 0 ? claves : null;
             var tok = r.InputTokens + r.OutputTokens;
             _iaTokens += tok;
             d.IaEstado = aplicados > 0
@@ -2577,6 +2581,18 @@
                 : "La IA no encontro datos de poliza" + notaPag;
         }
         catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
+    }
+
+    // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
+    private string ClsDudoso(string clave) => (ActiveDraft?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+
+    // Reintento de UN draft: vuelve a leerlo con IA.
+    private async Task ReleerActivoAsync()
+    {
+        var d = ActiveDraft;
+        if (d is null) return;
+        await ExtraerYLlenarDraftAsync(d);
+        StateHasChanged();
     }
 
     private static string? EtiquetaCampoPoliza(string clave) => clave switch

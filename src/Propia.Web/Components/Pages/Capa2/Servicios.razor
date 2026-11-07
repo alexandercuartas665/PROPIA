@@ -1049,7 +1049,7 @@ else
             <div class="srv-ctr-main">
             @if (_editId is null && MultiC && ActiveDraftC is { } actc)
             {
-                <div class="srv-dr-active"><i class="fi fi-rr-file"></i> Revisando <b>@actc.FileName</b> &middot; @(_draftIdxC + 1) de @_draftsC.Count <button type="button" class="srv-dr-discard" @onclick="DescartarDraftC">Descartar</button></div>
+                <div class="srv-dr-active"><i class="fi fi-rr-file"></i> Revisando <b>@actc.FileName</b> &middot; @(_draftIdxC + 1) de @_draftsC.Count <button type="button" class="srv-dr-releer" @onclick="ReleerActivoCAsync">Volver a leer</button> <button type="button" class="srv-dr-discard" @onclick="DescartarDraftC">Descartar</button></div>
             }
             @if (_editId is null)
             {
@@ -1088,11 +1088,11 @@ else
                     <label class="srv-lbl">Contratista * <span style="font-weight:400;color:var(--propia-text-muted);">(busca en el Directorio o crea uno nuevo)</span></label>
                     <SelectorPersona Jwt="@_jwt" Seleccionada="_contratistaSel" SeleccionadaChanged="OnContratistaSel"
                                      PermiteEmpresa="true" Placeholder="Buscar en Terceros por nombre, NIT o CC..." />
-                    <input class="srv-input" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
+                    <input class="srv-input @ClsDudosoC("contratista")" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
                 </div>
                 <div>
                     <label class="srv-lbl">NIT o CC</label>
-                    <input class="srv-input" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
+                    <input class="srv-input @ClsDudosoC("nit")" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
                 </div>
                 <div>
                     <label class="srv-lbl">Teléfono</label>
@@ -1154,11 +1154,11 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Número de contrato</label>
-                    <input class="srv-input" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
+                    <input class="srv-input @ClsDudosoC("numero_contrato")" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
                 </div>
                 <div>
                     <label class="srv-lbl">Valor del contrato (COP)</label>
-                    <input class="srv-input" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_total")" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
                 </div>
                 @if (_editId is not null)
                 {
@@ -1180,18 +1180,18 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de inicio</label>
-                    <input class="srv-input" type="date" @bind="_f.Inicio" />
+                    <input class="srv-input @ClsDudosoC("fecha_inicio")" type="date" @bind="_f.Inicio" />
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de finalizacion</label>
-                    <input class="srv-input" type="date" @bind="_f.Fin" />
+                    <input class="srv-input @ClsDudosoC("fecha_fin")" type="date" @bind="_f.Fin" />
                 </div>
                 <div class="srv-col-full">
                     <label class="srv-check"><input type="checkbox" @bind="_f.RenovacionAutomatica" /> Tiene cláusula de renovación automática</label>
                 </div>
                 <div class="srv-col-full">
                     <label class="srv-lbl">Observaciones</label>
-                    <textarea class="srv-input" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
+                    <textarea class="srv-input @ClsDudosoC("objeto")" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
                 </div>
             </div>
 
@@ -1231,7 +1231,7 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Valor mensual (COP)</label>
-                    <input class="srv-input" type="number" step="any" @bind="_f.Valor" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_mensual")" type="number" step="any" @bind="_f.Valor" placeholder="0" />
                 </div>
                 <div class="srv-note">Estos 3 campos no estan en la maqueta; se conservan a peticion porque hoy solo se capturan aqui.</div>
             </div>
@@ -3091,7 +3091,8 @@ else
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
         public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
-        public List<string>? IaDudosos;   // campos con lectura dudosa (baja confianza) para que el humano revise
+        public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
+        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
     }
     private List<ContratoDraft> _draftsC = new();
     private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
@@ -3377,10 +3378,11 @@ else
             }
             if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposContrato(r.Campos, d.F);
-            var dudosos = r.Campos
-                .Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor))
-                .Select(c => EtiquetaCampoContrato(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
+            var bajas = r.Campos.Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor)).ToList();
+            var dudosos = bajas.Select(c => EtiquetaCampoContrato(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
             d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
+            var claves = bajas.Select(c => c.Nombre).ToHashSet();
+            d.IaClavesDudosas = claves.Count > 0 ? claves : null;
             var tok = r.InputTokens + r.OutputTokens;
             _iaTokensC += tok;
             d.IaEstado = aplicados > 0
@@ -3390,12 +3392,24 @@ else
         catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
     }
 
+    // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
+    private string ClsDudosoC(string clave) => (ActiveDraftC?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+
     private static string? EtiquetaCampoContrato(string clave) => clave switch
     {
         "contratista" => "Contratista", "nit" => "NIT", "numero_contrato" => "N contrato",
         "objeto" => "Objeto", "valor_total" => "Valor total", "valor_mensual" => "Valor mensual",
         "contacto" => "Contacto", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin", _ => null
     };
+
+    // Reintento de UN draft: vuelve a leerlo con IA (p.ej. si quedo mal o fallo).
+    private async Task ReleerActivoCAsync()
+    {
+        var d = ActiveDraftC;
+        if (d is null) return;
+        await ExtraerYLlenarDraftCAsync(d);
+        StateHasChanged();
+    }
 
     // Lee con IA TODOS los drafts no leidos. Sirve de "leer manual" (IA automatica apagada) y de reintento.
     private async Task LeerTodosCAsync()
