@@ -1063,6 +1063,7 @@ else
                     <div class="srv-ia-ctrl">
                         <label class="srv-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
                         @if (_draftsC.Any(d => d.Estado != DraftEstadoC.Listo)) { <button type="button" class="srv-ia-btn" @onclick="LeerTodosCAsync">Leer todos con IA</button> }
+                        @if (_iaTokensC > 0) { <span class="srv-ia-tok">IA: @FmtTok(_iaTokensC)</span> }
                     </div>
                 </div>
             }
@@ -3104,7 +3105,7 @@ else
     private static string PillClsC(DraftEstadoC e) => e switch { DraftEstadoC.Listo => "ok", DraftEstadoC.Revisar => "rev", DraftEstadoC.Error => "err", _ => "pend" };
     private static string PillTxtC(DraftEstadoC e) => e switch { DraftEstadoC.Listo => "Listo", DraftEstadoC.Revisar => "Revisar", DraftEstadoC.Error => "Error", _ => "Pendiente" };
 
-    private void LimpiarDraftsC() { _draftsC = new(); _draftIdxC = -1; }
+    private void LimpiarDraftsC() { _draftsC = new(); _draftIdxC = -1; _iaTokensC = 0; }
 
     private async Task OnFilesSelectedC(InputFileChangeEventArgs e)
     {
@@ -3292,9 +3293,9 @@ else
             {
                 // Escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas.
                 _ocrCMsg = "PDF escaneado: leyendo imagenes con IA..."; _ocrCMsgCls = "ok"; StateHasChanged();
-                var imgs = await Js.InvokeAsync<string[]>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (imgs is null || imgs.Length == 0) { _ocrCMsg = "No se pudo leer el PDF."; _ocrCMsgCls = "err"; return; }
-                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = imgs });
+                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (ras is null || ras.Paginas.Length == 0) { _ocrCMsg = "No se pudo leer el PDF."; _ocrCMsgCls = "err"; return; }
+                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = ras.Paginas });
             }
             if (!resp.IsSuccessStatusCode)
             {
@@ -3354,6 +3355,7 @@ else
             var b64 = Convert.ToBase64String(d.Bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
             OcrIaResp? r;
+            var notaPag = "";
             if (!string.IsNullOrWhiteSpace(texto))
             {
                 // PDF con capa de texto: DeepSeek sobre el texto (barato).
@@ -3366,21 +3368,24 @@ else
                 // PDF escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas (deepseek-v4-flash).
                 d.IaEstado = "Escaneado: leyendo imagenes con IA...";
                 StateHasChanged();
-                var imgs = await Js.InvokeAsync<string[]>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (imgs is null || imgs.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
-                var resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = imgs });
+                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
+                if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
+                var resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = ras.Paginas });
                 if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA vision no disponible"; return; }
                 r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
             }
-            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos"; d.IaDudosos = null; return; }
+            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposContrato(r.Campos, d.F);
             var dudosos = r.Campos
                 .Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor))
                 .Select(c => EtiquetaCampoContrato(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
             d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
+            var tok = r.InputTokens + r.OutputTokens;
+            _iaTokensC += tok;
             d.IaEstado = aplicados > 0
-                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "")
-                : "La IA no encontro datos de contrato";
+                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "") + (tok > 0 ? $" · {FmtTok(tok)}" : "") + notaPag
+                : "La IA no encontro datos de contrato" + notaPag;
         }
         catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
     }
@@ -3402,8 +3407,11 @@ else
             StateHasChanged();
         }
     }
-    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null);
+    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null, int InputTokens = 0, int OutputTokens = 0);
     private sealed record OcrIaCampo(string Nombre, string? Valor, double? Confianza);
+    private sealed record RasterResult(string[] Paginas, int Total);
+    private int _iaTokensC;   // tokens acumulados de IA en este modal (transparencia de costo)
+    private static string FmtTok(int t) => t >= 1000 ? (t / 1000.0).ToString("0.#") + "k tok" : t + " tok";
 
     // ---- OCR: cargar recibo y prefilar valor/periodo con el proveedor configurado en SuperAdmin ----
     private bool _ocrBusy;

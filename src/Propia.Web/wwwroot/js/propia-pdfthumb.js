@@ -92,14 +92,16 @@ window.propiaPdfThumb = (function () {
     }
 
     // Rasteriza cada pagina del PDF a JPEG base64 (SIN el prefijo "data:...") para mandarlas a un modelo de
-    // vision (DeepSeek). scale 2.0 ~= 150 DPI. Tope de paginas para acotar payload/tokens. [] si no es PDF.
+    // vision (DeepSeek). scale 2.0 ~= 150 DPI. Tope de paginas para acotar payload/tokens. Devuelve
+    // { paginas: [b64...], total: <paginas del PDF> } para avisar si se leyo parcial. {paginas:[],total:0} si falla.
     async function rasterizarPaginas(base64, maxPaginas) {
         maxPaginas = maxPaginas || 12;
         try {
             var pdfjs = await ensurePdfjs();
             var bytes = b64ToBytes(base64);
             var doc = await pdfjs.getDocument({ data: bytes }).promise;
-            var n = Math.min(doc.numPages, maxPaginas);
+            var total = doc.numPages;
+            var n = Math.min(total, maxPaginas);
             var out = [];
             for (var p = 1; p <= n; p++) {
                 var page = await doc.getPage(p);
@@ -115,8 +117,8 @@ window.propiaPdfThumb = (function () {
                 try { page.cleanup(); } catch (e) { }
             }
             try { doc.cleanup(); doc.destroy(); } catch (e) { }
-            return out;
-        } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo rasterizar', e); return []; }
+            return { paginas: out, total: total };
+        } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo rasterizar', e); return { paginas: [], total: 0 }; }
     }
 
     return { render: render, extraerTexto: extraerTexto, rasterizarPaginas: rasterizarPaginas };
