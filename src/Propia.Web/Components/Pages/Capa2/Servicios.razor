@@ -1007,8 +1007,8 @@ else
             <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false"
                                 MostrarCancelar="false" Guardando="_busy"
                                 PuedeGuardar="@(!string.IsNullOrWhiteSpace(_f.Proveedor))"
-                                TituloGuardar="@(_editId is null ? "Crear contrato" : "Guardar contrato")"
-                                OnGuardar="GuardarAsync" OnCerrar="@(() => _showModal = false)" />
+                                TituloGuardar="@(MultiC ? (HayPendienteDespuesC ? "Guardar y siguiente" : "Guardar y finalizar") : (_editId is null ? "Crear contrato" : "Guardar contrato"))"
+                                OnGuardar="GuardarModalContratoAsync" OnCerrar="@(() => _showModal = false)" />
         </div>
         <div class="srv-modal-body @(_editId is not null && _modalTab == "detalle" ? "srv-modal-body--2col" : "")">
             @if (_editId is not null)
@@ -1021,27 +1021,78 @@ else
             }
             @if (_editId is null || _modalTab == "detalle")
             {
-            <div class="srv-ctr-2col @(_editId is null ? "srv-ctr-2col--solo" : "")">
+            <div class="srv-ctr-2col @(_editId is null ? (MultiC ? "srv-ctr-2col--multi" : "srv-ctr-2col--solo") : "")">
+            @if (_editId is null && MultiC)
+            {
+                @* Columna de documentos cargados (varios PDF): se revisan y guardan uno por uno. *@
+                <aside class="srv-draftrail">
+                    <div class="srv-dr-head">Documentos <span class="srv-dr-cnt">@_draftsC.Count</span></div>
+                    <div class="srv-dr-prog">
+                        <div class="srv-dr-prog-lbl"><span>Guardados</span><span>@_draftsC.Count(d => d.Estado == DraftEstadoC.Listo) de @_draftsC.Count</span></div>
+                        <div class="srv-dr-bar"><i style="width:@(ProgresoPctC)%"></i></div>
+                    </div>
+                    <div class="srv-dr-list">
+                        @for (var i = 0; i < _draftsC.Count; i++)
+                        {
+                            var idx = i; var d = _draftsC[i];
+                            <div class="srv-dr-card @(idx == _draftIdxC ? "sel" : "")" @onclick="() => SeleccionarDraftC(idx)">
+                                <div class="srv-dr-fic @(d.Thumb is not null ? "has-thumb" : "")">
+                                    @if (d.Thumb is not null) { <img src="@d.Thumb" alt="@d.FileName" /> } else { <i class="fi fi-rr-file"></i> }
+                                </div>
+                                <div class="srv-dr-meta"><div class="srv-dr-nm">@d.FileName</div><div class="srv-dr-sz">@(d.IaEstado ?? TamBytes(d.Size))</div></div>
+                                <span class="srv-dr-pill @PillClsC(d.Estado)">@PillTxtC(d.Estado)</span>
+                            </div>
+                        }
+                    </div>
+                </aside>
+            }
             <div class="srv-ctr-main">
-            <div class="sp-ocr" style="margin-bottom:12px;">
-                <label class="sp-ocr-up">
-                    <i class="fi fi-rr-upload"></i>
-                    <span>@(_ocrCBusy ? "Leyendo contrato con IA..." : "Cargar PDF y extraer (IA)")</span>
-                    <InputFile OnChange="OnOcrContrato" accept=".pdf,image/*" disabled="@_ocrCBusy" />
-                </label>
-                @if (!string.IsNullOrEmpty(_ocrCMsg)) { <div class="sp-ocr-msg @_ocrCMsgCls">@_ocrCMsg</div> }
-            </div>
+            @if (_editId is null && MultiC && ActiveDraftC is { } actc)
+            {
+                <div class="srv-dr-active"><i class="fi fi-rr-file"></i> Revisando <b>@actc.FileName</b> &middot; @(_draftIdxC + 1) de @_draftsC.Count <button type="button" class="srv-dr-releer" @onclick="ReleerActivoCAsync">Volver a leer</button> <button type="button" class="srv-dr-discard" @onclick="DescartarDraftC">Descartar</button></div>
+            }
+            @if (_editId is null)
+            {
+                <div class="sp-ocr" style="margin-bottom:12px;">
+                    <label class="sp-ocr-up">
+                        <i class="fi fi-rr-upload"></i>
+                        <span>@(MultiC ? "Agregar mas PDF" : "Cargar PDF (uno o varios)")</span>
+                        <InputFile OnChange="OnFilesSelectedC" accept=".pdf,image/*" multiple />
+                    </label>
+                    @if (!MultiC && _draftsC.Count == 1) { <div class="sp-ocr-msg ok">1 PDF: @_draftsC[0].FileName (se adjunta al crear)</div> }
+                    <div class="srv-ia-ctrl">
+                        <label class="srv-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
+                        @if (_draftsC.Any(d => d.Estado != DraftEstadoC.Listo)) { <button type="button" class="srv-ia-btn" @onclick="LeerTodosCAsync">Leer todos con IA</button> }
+                        @if (_iaTokensC > 0) { <span class="srv-ia-tok">IA: @FmtTok(_iaTokensC)</span> }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="sp-ocr" style="margin-bottom:12px;">
+                    <label class="sp-ocr-up">
+                        <i class="fi fi-rr-upload"></i>
+                        <span>@(_ocrCBusy ? "Leyendo contrato con IA..." : "Cargar PDF y extraer (IA)")</span>
+                        <InputFile OnChange="OnOcrContrato" accept=".pdf,image/*" disabled="@_ocrCBusy" />
+                    </label>
+                    @if (!string.IsNullOrEmpty(_ocrCMsg)) { <div class="sp-ocr-msg @_ocrCMsgCls">@_ocrCMsg</div> }
+                </div>
+            }
+            @if (_editId is null && ActiveDraftC is { IaDudosos: { Count: > 0 } } adc)
+            {
+                <div class="srv-ia-warn">Revisa estos campos (lectura dudosa de la IA): <b>@string.Join(", ", adc.IaDudosos!)</b></div>
+            }
             <div class="srv-sec">Contratista (de Terceros)</div>
             <div class="srv-grid">
                 <div class="srv-col-full">
                     <label class="srv-lbl">Contratista * <span style="font-weight:400;color:var(--propia-text-muted);">(busca en el Directorio o crea uno nuevo)</span></label>
                     <SelectorPersona Jwt="@_jwt" Seleccionada="_contratistaSel" SeleccionadaChanged="OnContratistaSel"
                                      PermiteEmpresa="true" Placeholder="Buscar en Terceros por nombre, NIT o CC..." />
-                    <input class="srv-input" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
+                    <input class="srv-input @ClsDudosoC("contratista")" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
                 </div>
                 <div>
                     <label class="srv-lbl">NIT o CC</label>
-                    <input class="srv-input" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
+                    <input class="srv-input @ClsDudosoC("nit")" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
                 </div>
                 <div>
                     <label class="srv-lbl">Teléfono</label>
@@ -1103,11 +1154,11 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Número de contrato</label>
-                    <input class="srv-input" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
+                    <input class="srv-input @ClsDudosoC("numero_contrato")" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
                 </div>
                 <div>
                     <label class="srv-lbl">Valor del contrato (COP)</label>
-                    <input class="srv-input" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_total")" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
                 </div>
                 @if (_editId is not null)
                 {
@@ -1129,18 +1180,18 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de inicio</label>
-                    <input class="srv-input" type="date" @bind="_f.Inicio" />
+                    <input class="srv-input @ClsDudosoC("fecha_inicio")" type="date" @bind="_f.Inicio" />
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de finalizacion</label>
-                    <input class="srv-input" type="date" @bind="_f.Fin" />
+                    <input class="srv-input @ClsDudosoC("fecha_fin")" type="date" @bind="_f.Fin" />
                 </div>
                 <div class="srv-col-full">
                     <label class="srv-check"><input type="checkbox" @bind="_f.RenovacionAutomatica" /> Tiene cláusula de renovación automática</label>
                 </div>
                 <div class="srv-col-full">
                     <label class="srv-lbl">Observaciones</label>
-                    <textarea class="srv-input" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
+                    <textarea class="srv-input @ClsDudosoC("objeto")" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
                 </div>
             </div>
 
@@ -1180,7 +1231,7 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Valor mensual (COP)</label>
-                    <input class="srv-input" type="number" step="any" @bind="_f.Valor" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_mensual")" type="number" step="any" @bind="_f.Valor" placeholder="0" />
                 </div>
                 <div class="srv-note">Estos 3 campos no estan en la maqueta; se conservan a peticion porque hoy solo se capturan aqui.</div>
             </div>
@@ -3023,6 +3074,238 @@ else
     private bool _ocrCBusy;
     private string? _ocrCMsg; private string _ocrCMsgCls = "ok";
 
+    // ---- Fase 1: carga multiple de contratos (varios PDF en el mismo modal "Nuevo contrato") ----
+    // Mismo patron que Seguros: cada PDF es un "draft" con su propio Form + bytes + estado; se revisan y
+    // guardan uno por uno (Guardar y siguiente). SIN IA todavia (campos a mano). Con 1 PDF no hay columna.
+    private enum DraftEstadoC { Pendiente, Revisar, Listo, Error }
+    private sealed class ContratoDraft
+    {
+        public string FileName = "";
+        public byte[] Bytes = Array.Empty<byte>();
+        public string Mime = "application/pdf";
+        public long Size;
+        public Form F = new();
+        public PersonaCandidatoDto? ContratistaSel;
+        public DraftEstadoC Estado = DraftEstadoC.Pendiente;
+        public Guid? CreatedId;
+        public string? Error;
+        public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
+        public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
+        public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
+        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
+    }
+    private List<ContratoDraft> _draftsC = new();
+    private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
+    private int _draftIdxC = -1;
+    private bool MultiC => _draftsC.Count >= 2;
+    private ContratoDraft? ActiveDraftC => _draftIdxC >= 0 && _draftIdxC < _draftsC.Count ? _draftsC[_draftIdxC] : null;
+    private int ProgresoPctC => _draftsC.Count == 0 ? 0 : (int)Math.Round(100.0 * _draftsC.Count(d => d.Estado == DraftEstadoC.Listo) / _draftsC.Count);
+    private bool HayPendienteDespuesC => _draftsC.Count(d => d.Estado != DraftEstadoC.Listo) > 1;
+
+    private static string TamBytes(long b) => b < 1024 ? b + " B" : (b < 1024 * 1024 ? Math.Round(b / 1024.0) + " KB" : Math.Round(b / (1024.0 * 1024.0), 1) + " MB");
+    private static string PillClsC(DraftEstadoC e) => e switch { DraftEstadoC.Listo => "ok", DraftEstadoC.Revisar => "rev", DraftEstadoC.Error => "err", _ => "pend" };
+    private static string PillTxtC(DraftEstadoC e) => e switch { DraftEstadoC.Listo => "Listo", DraftEstadoC.Revisar => "Revisar", DraftEstadoC.Error => "Error", _ => "Pendiente" };
+
+    private void LimpiarDraftsC() { _draftsC = new(); _draftIdxC = -1; _iaTokensC = 0; }
+
+    private async Task OnFilesSelectedC(InputFileChangeEventArgs e)
+    {
+        _modalError = null;
+        var nuevos = new List<ContratoDraft>();
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                byte[] bytes;
+                await using (var s = file.OpenReadStream(20 * 1024 * 1024))
+                {
+                    using var ms = new MemoryStream();
+                    await s.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
+                nuevos.Add(new ContratoDraft
+                {
+                    FileName = file.Name,
+                    Bytes = bytes,
+                    Mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType,
+                    Size = bytes.Length,
+                    F = new Form()
+                });
+            }
+            catch { /* archivo ilegible: se omite */ }
+        }
+        if (nuevos.Count == 0) return;
+        var primero = _draftsC.Count;
+        _draftsC.AddRange(nuevos);
+        SeleccionarDraftC(primero);
+        StateHasChanged();   // pinta las tarjetas con icono de inmediato; la miniatura llega luego
+        foreach (var d in nuevos)
+        {
+            await GenerarThumbCAsync(d);
+            StateHasChanged();
+        }
+        if (_iaAuto)
+        {
+            foreach (var d in nuevos)
+            {
+                await ExtraerYLlenarDraftCAsync(d);   // arnes: pdf.js/vision -> DeepSeek -> llena el form
+                StateHasChanged();
+            }
+        }
+        else
+        {
+            foreach (var d in nuevos) { d.IaEstado = "Pendiente (Leer con IA)"; }
+            StateHasChanged();
+        }
+    }
+
+    // Genera la miniatura de un draft via pdf.js (o la imagen misma). Best-effort: si falla, queda el icono.
+    private async Task GenerarThumbCAsync(ContratoDraft d)
+    {
+        if (d.Bytes.Length == 0 || d.Bytes.Length > 12 * 1024 * 1024) return;   // archivos enormes: se omite el preview
+        try
+        {
+            var b64 = Convert.ToBase64String(d.Bytes);
+            d.Thumb = await Js.InvokeAsync<string?>("propiaPdfThumb.render", b64, d.Mime, 120);
+        }
+        catch { d.Thumb = null; }
+    }
+
+    private void PersistActiveSelC()
+    {
+        var d = ActiveDraftC;
+        if (d is null) return;
+        d.ContratistaSel = _contratistaSel;   // _f ya apunta a d.F (misma referencia)
+    }
+
+    private void SeleccionarDraftC(int idx)
+    {
+        if (idx < 0 || idx >= _draftsC.Count) return;
+        PersistActiveSelC();
+        _draftIdxC = idx;
+        var d = _draftsC[idx];
+        _f = d.F;
+        _contratistaSel = d.ContratistaSel;
+        if (d.Estado == DraftEstadoC.Pendiente) d.Estado = DraftEstadoC.Revisar;
+        _modalError = null;
+    }
+
+    private void DescartarDraftC()
+    {
+        if (ActiveDraftC is null) return;
+        _draftsC.RemoveAt(_draftIdxC);
+        if (_draftsC.Count == 0) { _draftIdxC = -1; _f = new Form(); _contratistaSel = null; }
+        else SeleccionarDraftC(Math.Min(_draftIdxC, _draftsC.Count - 1));
+    }
+
+    private async Task AdjuntarAdjuntoDraftCAsync(Guid contratoId, ContratoDraft d)
+    {
+        if (d.Bytes.Length == 0) return;
+        try
+        {
+            var b64 = Convert.ToBase64String(d.Bytes);
+            await Auth().PostAsJsonAsync($"/api/servicios/contratos/{contratoId}/adjuntos",
+                new SubirAdjuntoRequest(d.FileName, d.Mime, b64));
+        }
+        catch { /* el adjunto es best-effort: el contrato ya quedo creado */ }
+    }
+
+    // Mejora: si el contratista quedo como TEXTO LIBRE (extraido por IA, sin elegirlo del Directorio),
+    // al guardar se busca un Tercero por NIT/nombre y se vincula; si no existe, se crea una empresa. Asi
+    // el contrato queda vinculado a un tercero real (buscable). Best-effort: si falla, se guarda con el
+    // nombre libre (sin regresion).
+    private async Task AutoVincularContratistaAsync()
+    {
+        if (_f.ProveedorEmpresaId is not null || _f.ProveedorPersonaId is not null) return;   // ya vinculado a mano
+        var nombre = _f.Proveedor?.Trim();
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        var nit = Limpio(_f.Nit);
+        try
+        {
+            // 1) Buscar un tercero existente (por NIT si hay; si no, por nombre) y vincular si el nombre coincide.
+            var q = Uri.EscapeDataString(!string.IsNullOrWhiteSpace(nit) ? nit! : nombre);
+            var cands = await GetAuthAsync<List<PersonaCandidatoDto>>($"/api/directorio/personas/candidatos?q={q}");
+            var match = cands?.FirstOrDefault(c => NombreParecido(c.NombreCompleto, nombre));
+            if (match is not null)
+            {
+                if (match.EntidadTipo == EntidadDirectorio.Empresa) { _f.ProveedorEmpresaId = match.PersonaId; }
+                else { _f.ProveedorPersonaId = match.PersonaId; }
+                return;
+            }
+            // 2) No existe: crear una EMPRESA (los contratistas suelen ser personas juridicas).
+            var req = new { Nit = nit ?? "", RazonSocial = nombre, Email = (string?)null, Telefono = (string?)null, Contactos = new List<object>() };
+            var r = await Auth().PostAsJsonAsync("/api/directorio/empresas", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var creada = await r.Content.ReadFromJsonAsync<TerceroCreadoMini>();
+                if (creada is { Id: var gid } && gid != Guid.Empty) { _f.ProveedorEmpresaId = gid; }
+            }
+        }
+        catch { /* best-effort: el contrato se guarda igual con el nombre libre */ }
+    }
+
+    private static bool NombreParecido(string? a, string b)
+    {
+        static string N(string? s) => new string((s ?? "").Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        var x = N(a); var y = N(b);
+        return x.Length > 2 && y.Length > 2 && (x.Contains(y) || y.Contains(x));
+    }
+    private sealed record TerceroCreadoMini(Guid Id);
+
+    private async Task<(Guid? id, string? err)> CrearContratoActualAsync()
+    {
+        var inicio = DateOnly.FromDateTime(_f.Inicio ?? DateTime.Today);
+        DateOnly? fin = _f.Fin.HasValue ? DateOnly.FromDateTime(_f.Fin.Value) : null;
+        Guid? asocId = ParseG(_f.AsociadoId);
+        TipoActivoMantenimiento? asocTipo = asocId.HasValue ? _f.AsociadoTipo : null;
+        var resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
+            new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
+                inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias,
+                _f.RenovacionAutomatica, ParseG(_f.ServicioId), ParseG(_f.ExpedienteId), ParseG(_f.ProyectoId),
+                ProveedorPersonaId: _f.ProveedorPersonaId, ProveedorEmpresaId: _f.ProveedorEmpresaId,
+                NumeroContrato: Limpio(_f.NumeroContrato), TipoContrato: _f.TipoContrato, Categoria: _f.Categoria,
+                ValorTotal: _f.ValorTotal, FormaPagoCuotas: _f.FormaPagoCuotas, PagoMensual: _f.PagoMensual,
+                AsociadoTipo: asocTipo, AsociadoId: asocId,
+                TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista)));
+        if (!resp.IsSuccessStatusCode) return (null, await MensajeErrorAsync(resp));
+        Guid? id = null;
+        try { id = (await resp.Content.ReadFromJsonAsync<ContratoServicioDto>())?.Id; } catch { }
+        return (id, null);
+    }
+
+    private Task GuardarModalContratoAsync() => MultiC ? GuardarYSiguienteC() : GuardarAsync();
+
+    private async Task GuardarYSiguienteC()
+    {
+        var d = ActiveDraftC;
+        if (d is null) return;
+        _modalError = null;
+        if (string.IsNullOrWhiteSpace(_f.Proveedor)) { _modalError = "El contratista es obligatorio."; return; }
+        _busy = true;
+        try
+        {
+            await AutoVincularContratistaAsync();
+            var (id, err) = await CrearContratoActualAsync();
+            if (id is null) { _modalError = err ?? "No se pudo crear el contrato."; d.Estado = DraftEstadoC.Error; d.Error = _modalError; return; }
+            await AdjuntarAdjuntoDraftCAsync(id.Value, d);
+            d.CreatedId = id; d.Estado = DraftEstadoC.Listo; d.Error = null;
+            var next = _draftsC.FindIndex(x => x.Estado != DraftEstadoC.Listo);
+            if (next >= 0) { SeleccionarDraftC(next); }
+            else
+            {
+                var n = _draftsC.Count(x => x.Estado == DraftEstadoC.Listo);
+                _showModal = false;
+                LimpiarDraftsC();
+                _msg = n == 1 ? "1 contrato creado." : $"{n} contratos creados."; _msgEsError = false;
+                await CargarAsync();
+            }
+        }
+        catch (Exception ex) { _modalError = ex.Message; d.Estado = DraftEstadoC.Error; d.Error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // Boton "Cargar PDF y extraer (IA)": SOLO DeepSeek. El texto lo saca pdf.js (local, capa de texto del
+    // PDF; sin OCR de IA) y el Agente Documental (DeepSeek) devuelve los campos. No usa Gemini/Azure.
     private async Task OnOcrContrato(InputFileChangeEventArgs e)
     {
         var file = e.File;
@@ -3030,7 +3313,6 @@ else
         _ocrCBusy = true; _ocrCMsg = null;
         try
         {
-            // Bufferizamos a bytes UNA vez (InputFile solo se abre una vez de forma fiable).
             byte[] bytes;
             await using (var s = file.OpenReadStream(15 * 1024 * 1024))
             {
@@ -3038,64 +3320,158 @@ else
                 await s.CopyToAsync(msb);
                 bytes = msb.ToArray();
             }
-            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
-            using var content = new MultipartFormDataContent();
-            var bc = new ByteArrayContent(bytes);
-            bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mime);
-            content.Add(bc, "file", file.Name);
-            content.Add(new StringContent("contrato"), "perfil");
-
-            var resp = await Auth().PostAsync("/api/ocr/extraer-ia", content);
+            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
+            if (!mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                _ocrCMsg = "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.";
+                _ocrCMsgCls = "err"; return;
+            }
+            var b64 = Convert.ToBase64String(bytes);
+            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, mime);
+            HttpResponseMessage resp;
+            if (!string.IsNullOrWhiteSpace(texto))
+            {
+                resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
+            }
+            else
+            {
+                // Escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas.
+                _ocrCMsg = "PDF escaneado: leyendo imagenes con IA..."; _ocrCMsgCls = "ok"; StateHasChanged();
+                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (ras is null || ras.Paginas.Length == 0) { _ocrCMsg = "No se pudo leer el PDF."; _ocrCMsgCls = "err"; return; }
+                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = ras.Paginas });
+            }
             if (!resp.IsSuccessStatusCode)
             {
                 var err = await resp.Content.ReadFromJsonAsync<OcrError>();
                 _ocrCMsg = "No se pudo leer el documento: " + (err?.Error ?? resp.StatusCode.ToString());
-                _ocrCMsgCls = "err";
-                return;
+                _ocrCMsgCls = "err"; return;
             }
             var r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
             if (r?.Campos is null)
             {
                 _ocrCMsg = "La IA no devolvio datos. Completa los campos manualmente.";
-                _ocrCMsgCls = "err";
-                return;
+                _ocrCMsgCls = "err"; return;
             }
-            var aplicados = AplicarCamposContrato(r.Campos);
+            var aplicados = AplicarCamposContrato(r.Campos, _f);
             _ocrCMsg = aplicados > 0
-                ? $"Documento leido con IA ({r.Proveedor}): {aplicados} campo(s) prellenado(s). Revisa y confirma."
-                : $"La IA leyo el documento ({r.Proveedor}) pero no encontro datos de contrato (contratista, NIT, valor, vigencia). Completa los campos manualmente.";
+                ? $"Documento leido con el Agente Documental (DeepSeek): {aplicados} campo(s) prellenado(s). Revisa y confirma."
+                : "El Agente Documental leyo el documento pero no encontro datos de contrato (contratista, NIT, valor, vigencia). Completa los campos manualmente.";
             _ocrCMsgCls = aplicados > 0 ? "ok" : "err";
         }
         catch (Exception ex) { _ocrCMsg = "Error leyendo el documento: " + ex.Message; _ocrCMsgCls = "err"; }
         finally { _ocrCBusy = false; }
     }
 
-    // Mapea los campos del perfil "contrato" (extraccion IA) al formulario. best-effort; el humano confirma.
+    // Mapea los campos del perfil "contrato" (extraccion IA) al formulario f. best-effort; el humano confirma.
     // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de contrato).
-    private int AplicarCamposContrato(List<OcrIaCampo> campos)
+    private int AplicarCamposContrato(List<OcrIaCampo> campos, Form f)
     {
         var n = 0;
         string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
-        var contratista = Val("contratista"); if (!string.IsNullOrWhiteSpace(contratista)) { _f.Proveedor = contratista!; n++; }
-        var nit = Val("nit"); if (!string.IsNullOrWhiteSpace(nit)) { _f.Nit = nit; n++; }
-        var num = Val("numero_contrato"); if (!string.IsNullOrWhiteSpace(num)) { _f.NumeroContrato = num; n++; }
-        var contacto = Val("contacto"); if (!string.IsNullOrWhiteSpace(contacto)) { _f.Contacto = contacto; n++; }
+        var contratista = Val("contratista"); if (!string.IsNullOrWhiteSpace(contratista)) { f.Proveedor = contratista!; n++; }
+        var nit = Val("nit"); if (!string.IsNullOrWhiteSpace(nit)) { f.Nit = nit; n++; }
+        var num = Val("numero_contrato"); if (!string.IsNullOrWhiteSpace(num)) { f.NumeroContrato = num; n++; }
+        var contacto = Val("contacto"); if (!string.IsNullOrWhiteSpace(contacto)) { f.Contacto = contacto; n++; }
         var vt = Val("valor_total");
-        if (!string.IsNullOrWhiteSpace(vt) && decimal.TryParse(vt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvt)) { _f.ValorTotal = vvt; n++; }
+        if (!string.IsNullOrWhiteSpace(vt) && decimal.TryParse(vt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvt)) { f.ValorTotal = vvt; n++; }
         var vm = Val("valor_mensual");
-        if (!string.IsNullOrWhiteSpace(vm) && decimal.TryParse(vm, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvm)) { _f.Valor = vvm; n++; }
-        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { _f.Inicio = fdi; n++; }
-        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { _f.Fin = fdf; n++; }
+        if (!string.IsNullOrWhiteSpace(vm) && decimal.TryParse(vm, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvm)) { f.Valor = vvm; n++; }
+        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { f.Inicio = fdi; n++; }
+        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { f.Fin = fdf; n++; }
         var objeto = Val("objeto");
         if (!string.IsNullOrWhiteSpace(objeto))
         {
-            _f.Observaciones = string.IsNullOrWhiteSpace(_f.Observaciones) ? objeto : $"{objeto}\n{_f.Observaciones}";
+            f.Observaciones = string.IsNullOrWhiteSpace(f.Observaciones) ? objeto : $"{objeto}\n{f.Observaciones}";
             n++;
         }
         return n;
     }
-    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null);
+
+    // Fase 2 B1 (SOLO DeepSeek): el arnes pasa el TEXTO del PDF (pdf.js, local) al Agente Documental, que
+    // devuelve los campos y prellenan el formulario de ESTE draft. No usa Gemini/Azure. El humano revisa.
+    private async Task ExtraerYLlenarDraftCAsync(ContratoDraft d)
+    {
+        if (d.Bytes.Length == 0 || !d.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            d.IaEstado = "Leyendo con IA...";
+            var b64 = Convert.ToBase64String(d.Bytes);
+            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
+            var notaPag = "";
+            string[]? imgs = null;   // null = ruta texto; no-null = ruta vision (escaneado)
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                // PDF escaneado (sin texto): rasterizar para DeepSeek VISION (deepseek-v4-flash).
+                d.IaEstado = "Escaneado: leyendo imagenes con IA...";
+                StateHasChanged();
+                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
+                if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
+                imgs = ras.Paginas;
+            }
+            // 1 reintento automatico si la IA no devuelve datos (la vision a veces falla la 1a pasada).
+            OcrIaResp? r = null;
+            for (var intento = 1; intento <= 2; intento++)
+            {
+                var resp = imgs is not null
+                    ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = imgs })
+                    : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = imgs is not null ? "IA vision no disponible" : "IA no disponible"; return; }
+                r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
+                if (r?.Campos is { Count: > 0 }) break;
+                if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
+            }
+            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
+            var aplicados = AplicarCamposContrato(r.Campos, d.F);
+            var bajas = r.Campos.Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor)).ToList();
+            var dudosos = bajas.Select(c => EtiquetaCampoContrato(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
+            d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
+            var claves = bajas.Select(c => c.Nombre).ToHashSet();
+            d.IaClavesDudosas = claves.Count > 0 ? claves : null;
+            var tok = r.InputTokens + r.OutputTokens;
+            _iaTokensC += tok;
+            d.IaEstado = aplicados > 0
+                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "") + (tok > 0 ? $" · {FmtTok(tok)}" : "") + notaPag
+                : "La IA no encontro datos de contrato" + notaPag;
+        }
+        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
+    }
+
+    // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
+    private string ClsDudosoC(string clave) => (ActiveDraftC?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+
+    private static string? EtiquetaCampoContrato(string clave) => clave switch
+    {
+        "contratista" => "Contratista", "nit" => "NIT", "numero_contrato" => "N contrato",
+        "objeto" => "Objeto", "valor_total" => "Valor total", "valor_mensual" => "Valor mensual",
+        "contacto" => "Contacto", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin", _ => null
+    };
+
+    // Reintento de UN draft: vuelve a leerlo con IA (p.ej. si quedo mal o fallo).
+    private async Task ReleerActivoCAsync()
+    {
+        var d = ActiveDraftC;
+        if (d is null) return;
+        await ExtraerYLlenarDraftCAsync(d);
+        StateHasChanged();
+    }
+
+    // Lee con IA TODOS los drafts no leidos. Sirve de "leer manual" (IA automatica apagada) y de reintento.
+    private async Task LeerTodosCAsync()
+    {
+        foreach (var d in _draftsC)
+        {
+            if (d.Estado == DraftEstadoC.Listo) continue;
+            await ExtraerYLlenarDraftCAsync(d);
+            StateHasChanged();
+        }
+    }
+    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null, int InputTokens = 0, int OutputTokens = 0);
     private sealed record OcrIaCampo(string Nombre, string? Valor, double? Confianza);
+    private sealed record RasterResult(string[] Paginas, int Total);
+    private int _iaTokensC;   // tokens acumulados de IA en este modal (transparencia de costo)
+    private static string FmtTok(int t) => t >= 1000 ? (t / 1000.0).ToString("0.#") + "k tok" : t + " tok";
 
     // ---- OCR: cargar recibo y prefilar valor/periodo con el proveedor configurado en SuperAdmin ----
     private bool _ocrBusy;
@@ -3376,6 +3752,7 @@ else
     {
         _modalError = null;
         _ocrCMsg = null;
+        LimpiarDraftsC();
         _contratoAdjuntos = new();
         _comentarios = new();
         _nuevoComentario = "";
@@ -3526,6 +3903,7 @@ else
             HttpResponseMessage resp;
             if (_editId is null)
             {
+                await AutoVincularContratistaAsync();
                 resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
                     new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
                         inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias,
@@ -3549,7 +3927,15 @@ else
                         TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista)));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
+            // Alta con 1 solo PDF (sin columna): adjuntar ese documento al contrato recien creado.
+            if (_editId is null && ActiveDraftC is { } adc && adc.Bytes.Length > 0)
+            {
+                Guid? nuevoId = null;
+                try { nuevoId = (await resp.Content.ReadFromJsonAsync<ContratoServicioDto>())?.Id; } catch { }
+                if (nuevoId is { } cid2) await AdjuntarAdjuntoDraftCAsync(cid2, adc);
+            }
             _showModal = false;
+            LimpiarDraftsC();
             await CargarAsync();
         }
         catch (Exception ex) { _modalError = ex.Message; }
@@ -4273,6 +4659,14 @@ else
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    // Cliente de 5 min para la extraccion por VISION (DeepSeek lee las imagenes de un PDF escaneado).
+    private HttpClient AuthLong()
+    {
+        var http = HttpFactory.CreateClient("PropiaApiLong");
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
     }

@@ -6028,6 +6028,83 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("equipo_documentos");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.EquipoFactura", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Concepto")
+                        .HasColumnType("text")
+                        .HasColumnName("concepto");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EquipoActivoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("equipo_activo_id");
+
+                    b.Property<Guid?>("EquipoDocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("equipo_documento_id");
+
+                    b.Property<DateOnly?>("Fecha")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha");
+
+                    b.Property<string>("NumeroFactura")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("numero_factura");
+
+                    b.Property<string>("Observacion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("observacion");
+
+                    b.Property<string>("Proveedor")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("proveedor");
+
+                    b.Property<Guid?>("ProveedorEmpresaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_empresa_id");
+
+                    b.Property<Guid?>("ProveedorPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_persona_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<decimal?>("Valor")
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("valor");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EquipoActivoId");
+
+                    b.ToTable("equipo_facturas");
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.EquipoFoto", b =>
                 {
                     b.Property<Guid>("Id")
@@ -21015,7 +21092,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("id");
 
                     b.Property<string>("Concepto")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("concepto");
 
@@ -21030,6 +21106,29 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("Fecha")
                         .HasColumnType("date")
                         .HasColumnName("fecha");
+
+                    b.Property<string>("NumeroFactura")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("numero_factura");
+
+                    b.Property<string>("Observacion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("observacion");
+
+                    b.Property<string>("Proveedor")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("proveedor");
+
+                    b.Property<Guid?>("ProveedorEmpresaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_empresa_id");
+
+                    b.Property<Guid?>("ProveedorPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proveedor_persona_id");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -21051,7 +21150,13 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("zona_comun_id");
 
+                    b.Property<Guid?>("ZonaDocumentoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("zona_documento_id");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ZonaComunId");
 
                     b.ToTable("zona_facturas");
                 });

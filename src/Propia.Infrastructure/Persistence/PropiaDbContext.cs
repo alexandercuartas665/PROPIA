@@ -375,6 +375,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
 
     // Ficha de zona comun (2.3 seccion 4)
     public DbSet<ZonaFactura> ZonaFacturas => Set<ZonaFactura>();
+    public DbSet<EquipoFactura> EquipoFacturas => Set<EquipoFactura>();
     public DbSet<ZonaDocumento> ZonaDocumentos => Set<ZonaDocumento>();
     public DbSet<ZonaCampoPersonalizado> ZonaCamposPersonalizados => Set<ZonaCampoPersonalizado>();
     public DbSet<ZonaCampoDefinicion> ZonaCamposDefiniciones => Set<ZonaCampoDefinicion>();

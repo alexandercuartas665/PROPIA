@@ -213,10 +213,16 @@ public interface IMiCopropiedadService
     Task<string?> SetZonaImagenAsync(Guid zonaId, string url, CancellationToken ct);
     Task<ZonaFacturaDto?> AgregarZonaFacturaAsync(Guid zonaId, AgregarZonaFacturaRequest req, CancellationToken ct);
     Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct);
+    // Adjunta un documento a una factura de zona: crea el ZonaDocumento (pestana Documentos) y lo referencia.
+    Task<ZonaFacturaDto?> AdjuntarZonaFacturaDocumentoAsync(Guid facturaId, string nombre, string url, CancellationToken ct);
     Task<ZonaDocumentoDto?> AgregarZonaDocumentoAsync(Guid zonaId, string nombre, string url, CancellationToken ct);
     Task<bool> EliminarZonaDocumentoAsync(Guid docId, CancellationToken ct);
     Task<EquipoDocumentoDto?> AgregarEquipoDocumentoAsync(Guid equipoId, string nombre, string url, CancellationToken ct);
     Task<bool> EliminarEquipoDocumentoAsync(Guid docId, CancellationToken ct);
+    // Facturas de compra de un equipo/activo (espejo de las de zona; no afectan depreciacion).
+    Task<EquipoFacturaDto?> AgregarEquipoFacturaAsync(Guid equipoId, AgregarEquipoFacturaRequest req, CancellationToken ct);
+    Task<bool> EliminarEquipoFacturaAsync(Guid facturaId, CancellationToken ct);
+    Task<EquipoFacturaDto?> AdjuntarEquipoFacturaDocumentoAsync(Guid facturaId, string nombre, string url, CancellationToken ct);
     Task<ZonaCampoDto?> AgregarZonaCampoAsync(Guid zonaId, AgregarZonaCampoRequest req, CancellationToken ct);
     Task<bool> EliminarZonaCampoAsync(Guid campoId, CancellationToken ct);
 

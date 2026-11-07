@@ -516,6 +516,13 @@ public record DepreciacionDto(
 
 public record EquipoFotoDto(Guid Id, string Url);
 public record EquipoMejoraDto(Guid Id, string Descripcion, decimal Valor, DateOnly Fecha, string? DocumentoUrl);
+public record EquipoFacturaDto(
+    Guid Id, string? Proveedor, Guid? ProveedorPersonaId, Guid? ProveedorEmpresaId, string? NumeroFactura,
+    string? Concepto, decimal? Valor, DateOnly? Fecha,
+    string? Observacion, Guid? DocumentoId, string? DocumentoNombre, string? DocumentoUrl);
+public record AgregarEquipoFacturaRequest(
+    string? Proveedor, Guid? ProveedorPersonaId, Guid? ProveedorEmpresaId, string? NumeroFactura,
+    string? Concepto, decimal? Valor, DateOnly? Fecha, string? Observacion);
 public record EquipoCampoDto(Guid Id, string Label, string? Valor);
 public record EquipoRefDto(Guid Id, string Nombre, string? Meta);
 public record MantenimientoRefDto(Guid Id, string Tipo, string Titulo, string? Responsable, DateOnly? Fecha, string Estado, Guid? TareaId);
@@ -530,6 +537,7 @@ public record EquipoFichaDto(
     DepreciacionDto Depreciacion,
     IReadOnlyList<EquipoFotoDto> Fotos,
     IReadOnlyList<EquipoMejoraDto> Mejoras,
+    IReadOnlyList<EquipoFacturaDto> Facturas,
     IReadOnlyList<EquipoCampoDto> CamposPersonalizados,
     IReadOnlyList<EquipoRefDto> ContratosVinculados,
     IReadOnlyList<EquipoRefDto> ContratosDisponibles,
@@ -669,7 +677,10 @@ public record ActualizarConfiguracionFinanzasRequest(
 // Ficha completa de zona comun (2.3 seccion 4, prototipo zonaDet)
 // ===========================================================================
 
-public record ZonaFacturaDto(Guid Id, string Concepto, decimal? Valor, DateOnly? Fecha);
+public record ZonaFacturaDto(
+    Guid Id, string? Proveedor, Guid? ProveedorPersonaId, Guid? ProveedorEmpresaId, string? NumeroFactura,
+    string? Concepto, decimal? Valor, DateOnly? Fecha,
+    string? Observacion, Guid? DocumentoId, string? DocumentoNombre, string? DocumentoUrl);
 public record ZonaDocumentoDto(Guid Id, string Nombre, string Url);
 public record ZonaCampoDto(Guid Id, string Label, string? Valor);
 public record ZonaContratoRefDto(Guid Id, string Nombre);
@@ -702,7 +713,9 @@ public record GuardarZonaFichaRequest(
     int? CapacidadPersonas,
     string? ReglasUso = null);
 
-public record AgregarZonaFacturaRequest(string Concepto, decimal? Valor, DateOnly? Fecha);
+public record AgregarZonaFacturaRequest(
+    string? Proveedor, Guid? ProveedorPersonaId, Guid? ProveedorEmpresaId, string? NumeroFactura,
+    string? Concepto, decimal? Valor, DateOnly? Fecha, string? Observacion);
 public record AgregarZonaCampoRequest(string Label, string? Valor);
 
 // ===== Explorador de "Vistas del sistema" (modulo 2.3) =====

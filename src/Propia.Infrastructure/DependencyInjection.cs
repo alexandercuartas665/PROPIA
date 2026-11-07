@@ -115,7 +115,10 @@ public static class DependencyInjection
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IWhatsAppCloudClient, InfraestructuraIa.WhatsAppCloudClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IYCloudApiClient, InfraestructuraIa.YCloudApiClient>();
-        services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>();
+        // Timeout: la vision con muchas imagenes se pasa de los 100s por defecto -> 5 min (como ECOREX).
+        // El chat de texto queda acotado aguas arriba por el HttpClient Web->API (75s), asi que no se cuelga.
+        services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>(
+            c => c.Timeout = System.TimeSpan.FromMinutes(5));
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
         services.AddScoped<Application.InfraestructuraIa.IConversacionService, InfraestructuraIa.ConversacionService>();
@@ -143,12 +146,14 @@ public static class DependencyInjection
 
         // Gateway MCP: el agente como cliente MCP. HttpClient "Mcp" acepta el cert self-signed
         // SOLO para localhost (dev); contra cualquier host real exige certificado valido.
-        services.AddHttpClient("Mcp").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = (request, _, _, errors) =>
-                errors == System.Net.Security.SslPolicyErrors.None
-                || request.RequestUri?.Host is "localhost" or "127.0.0.1"
-        });
+        services.AddHttpClient("Mcp")
+            .ConfigureHttpClient(c => c.Timeout = System.TimeSpan.FromSeconds(20))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (request, _, _, errors) =>
+                    errors == System.Net.Security.SslPolicyErrors.None
+                    || request.RequestUri?.Host is "localhost" or "127.0.0.1"
+            });
         services.AddScoped<Application.InfraestructuraIa.IMcpGateway, InfraestructuraIa.McpGateway>();
 
         // Despachador del agente (auto-respuesta a entrantes) + su cola en background.

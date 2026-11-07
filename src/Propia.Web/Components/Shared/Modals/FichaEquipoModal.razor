@@ -8,6 +8,7 @@
 @inherits ModalBase<bool>
 @using Microsoft.AspNetCore.Components.Forms
 @using Propia.Application.MiCopropiedad
+@using Propia.Application.Directorio
 @using Propia.Domain.Enums
 @using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
@@ -52,6 +53,7 @@ else
     <div class="fem-tabs">
         @* El lapiz del header alterna la pestana Ficha entre vista y edicion (canon). *@
         <button class="fem-tab @(_tab == "ficha" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "ficha"'>Ficha del activo</button>
+        <button class="fem-tab @(_tab == "actividad" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "actividad"'>Tareas y mant.</button>
         <button class="fem-tab @(_tab == "documentos" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_ficha.Documentos.Count > 0 ? $" ({_ficha.Documentos.Count})" : "")</button>
         <button class="fem-tab @(_tab == "historial" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
     </div>
@@ -142,15 +144,6 @@ else
                     <div class="fem-dato"><span>Ubicación</span><b>@(string.IsNullOrEmpty(eq.Ubicacion) ? "—" : eq.Ubicacion)</b></div>
                     <div class="fem-dato"><span>Fecha de compra</span><b>@(eq.FechaAdquisicion?.ToString("dd MMM yyyy") ?? "—")</b></div>
                     <div class="fem-dato"><span>Próximo manten.</span><b>@ProximoMantenimiento()</b></div>
-                    @* Los campos dinamicos se consultan aqui; se agregan y quitan en la
-                       pestana "Editar datos" (misma UI que zonas comunes). *@
-                    @foreach (var c in _ficha.CamposPersonalizados)
-                    {
-                        <div class="fem-dato fem-dato--custom">
-                            <span>@c.Label</span>
-                            <b>@(string.IsNullOrEmpty(c.Valor) ? "—" : c.Valor)</b>
-                        </div>
-                    }
                 </div>
 
                 <div class="fem-sectlbl">VALOR Y DEPRECIACION</div>
@@ -233,39 +226,75 @@ else
                 <div class="fem-col-2"><label class="fem-lbl">Observaciones</label><textarea class="fem-input" rows="2" @bind="_form.Observaciones"></textarea></div>
             </div>
 
-            @* Campos dinamicos con la misma UI que zonas comunes (fila + alta inline).
-               Se guardan al instante con su boton, no con "Guardar cambios". *@
-            <div class="fem-section">Campos dinámicos</div>
-            <div class="fem-campos">
-                @foreach (var c in _ficha.CamposPersonalizados)
-                {
-                    var cid = c.Id;
-                    <div class="fem-campo-row">
-                        <div class="fem-campo-main"><div class="fem-campo-nom">@c.Label</div><div class="fem-campo-val">@c.Valor</div></div>
-                        <button class="fem-mini-del" type="button" title="Quitar campo" @onclick="@(() => EliminarCampoAsync(cid))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                    </div>
-                }
-                <div class="fem-campo-addrow">
-                    <input class="fem-input" style="width:42%" @bind="_campoLabel" placeholder="Campo" />
-                    <input class="fem-input fem-grow" @bind="_campoValor" placeholder="Valor" />
-                    <button class="fem-add" type="button" @onclick="AgregarCampoAsync" disabled="@_busy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
-                </div>
-            </div>
+            @* Campos dinamicos tipados (columnas de la vista tabla) como campos naturales, 2 columnas, sin titulo. *@
+            <CamposDinamicosPanel Jwt="@Jwt" BasePath="equipos" EntidadId="@EqId" />
 
-            @* Facturas: la de compra sale de los datos de arriba; las demas son mejoras
-               capitalizadas, que suman al valor en libros. *@
-            <div class="fem-section">Facturas</div>
-            @if (!string.IsNullOrEmpty(eq.NumeroFactura) || dep.CostoAdquisicion > 0)
-            {
-                <div class="fem-doc">
-                    <div class="fem-doc-icon fem-doc-icon--compra"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg></div>
-                    <div class="fem-doc-body">
-                        <div class="fem-doc-name">@(string.IsNullOrEmpty(eq.NumeroFactura) ? "Factura de compra" : eq.NumeroFactura)</div>
-                        <div class="fem-doc-meta">Factura de compra · $ @dep.CostoAdquisicion.ToString("N0") @(string.IsNullOrEmpty(eq.Proveedor) ? "" : $" · {eq.Proveedor}")</div>
-                    </div>
-                    <span class="fem-tag fem-tag--compra">COMPRA</span>
+            @* Facturas de compra como tabla (espejo de Zonas): proveedor/n/fecha/valor/observacion + un
+               documento adjunto que queda en la fila y aparece en la pestana Documentos. NO afecta la
+               depreciacion (eso son las mejoras, mas abajo). *@
+            <div class="fem-section">Facturas de compra</div>
+            <div class="fem-ftbl-wrap">
+                <table class="fem-ftbl">
+                    <thead>
+                        <tr><th>Proveedor</th><th>N° Factura</th><th>Fecha</th><th>Valor</th><th>Observación</th><th>Documento</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var f in _ficha.Facturas)
+                        {
+                            var fid = f.Id;
+                            <tr>
+                                <td class="fem-ft-prov">@(string.IsNullOrWhiteSpace(f.Proveedor) ? (string.IsNullOrWhiteSpace(f.Concepto) ? "—" : f.Concepto) : f.Proveedor)</td>
+                                <td class="fem-ft-num">@(string.IsNullOrWhiteSpace(f.NumeroFactura) ? "—" : f.NumeroFactura)</td>
+                                <td class="fem-ft-num">@(f.Fecha.HasValue ? f.Fecha.Value.ToString("dd MMM yyyy") : "—")</td>
+                                <td class="fem-ft-val">@(f.Valor.HasValue ? $"$ {f.Valor.Value:N0}" : "—")</td>
+                                <td class="fem-ft-obs">@(string.IsNullOrWhiteSpace(f.Observacion) ? (string.IsNullOrWhiteSpace(f.Proveedor) ? "" : f.Concepto) : f.Observacion)</td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(f.DocumentoUrl))
+                                    {
+                                        <a class="fem-ft-doc" href="@f.DocumentoUrl" target="_blank" rel="noopener" title="@f.DocumentoNombre">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a1.5 1.5 0 0 1-2-2l8-8"/></svg>
+                                            <span>@f.DocumentoNombre</span>
+                                        </a>
+                                        <span class="fem-ft-travel">En Documentos</span>
+                                    }
+                                    else
+                                    {
+                                        <label class="fem-ft-attach" title="Adjuntar documento (PDF o imagen)">
+                                            <InputFile OnChange="@(e => AdjuntarFacturaExistente(fid, e))" class="fem-file-hidden" />
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg> Adjuntar
+                                        </label>
+                                    }
+                                </td>
+                                <td><button class="fem-mini-del" type="button" title="Eliminar" @onclick="@(() => EliminarFacturaAsync(fid))"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></td>
+                            </tr>
+                        }
+                        @if (_ficha.Facturas.Count == 0)
+                        {
+                            <tr class="fem-ft-empty"><td colspan="7">Aún no hay facturas registradas.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="fem-ft-add">
+                <div class="fem-ft-prov-sel">
+                    <SelectorPersona Jwt="@Jwt" PermiteEmpresa="true" Seleccionada="_facProveedorSel"
+                                     SeleccionadaChanged="OnProveedorSel" Placeholder="Proveedor (buscar o crear)..." Flotante="true" />
                 </div>
-            }
+                <input class="fem-input" @bind="_facNumero" placeholder="N° Factura" />
+                <input class="fem-input" type="date" @bind="_facFecha" />
+                <input class="fem-input" type="number" min="0" step="any" @bind="_facValor" placeholder="Valor" />
+                <input class="fem-input" @bind="_facObs" placeholder="Observación" />
+                <label class="fem-ft-attach@(_facDocName is not null ? " on" : "")" title="Adjuntar documento (PDF o imagen)">
+                    <InputFile OnChange="SeleccionarFacDoc" class="fem-file-hidden" />
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg> @(_facDocName ?? "Adjuntar")
+                </label>
+                <button class="fem-btn-brand" type="button" @onclick="AgregarFacturaAsync" disabled="@_busy">Añadir</button>
+            </div>
+            <div class="fem-ft-note">El documento que adjuntes queda en la fila y aparece también en la pestaña <b>Documentos</b>. Al eliminar una factura, el documento se conserva.</div>
+
+            @* Mejoras capitalizadas: concepto contable distinto (suman al valor en libros y a la
+               depreciacion). Se mantienen separadas de las facturas de compra. *@
+            <div class="fem-section">Mejoras capitalizadas</div>
             @foreach (var m in _ficha.Mejoras)
             {
                 var mid = m.Id;
@@ -282,12 +311,14 @@ else
             <div class="fem-mejora-form">
                 <input class="fem-input fem-grow" @bind="_mejoraDesc" placeholder="Mejora (ej. Cambio de motor)" />
                 <input type="number" min="0" class="fem-input fem-mini" @bind="_mejoraValor" placeholder="Valor" />
-                <button class="fem-btn-brand" type="button" @onclick="AgregarMejoraAsync" disabled="@_busy">Añadir factura</button>
+                <button class="fem-btn-brand" type="button" @onclick="AgregarMejoraAsync" disabled="@_busy">Añadir mejora</button>
             </div>
 
-            @* Contratos: antes se listaban TODOS los del modulo de Servicios, que en una
-               copropiedad real son decenas. Ahora se buscan y se agregan de a uno. *@
-            <div class="fem-section">Contratos vinculados</div>
+            @* Vinculos del activo en 2 columnas (contratos / otros activos): antes cada seccion
+               ocupaba todo el ancho del modal. Tareas y mantenimientos pasan a su propia pestana. *@
+            <div class="fem-vinc2">
+                <div class="fem-vinc-col">
+                    <div class="fem-section">Contratos vinculados</div>
             @foreach (var c in _ficha.ContratosVinculados)
             {
                 var cid = c.Id;
@@ -302,44 +333,50 @@ else
                 <div class="fem-mini-empty">Este activo no tiene contratos vinculados.</div>
             }
 
-            @{ var encontrados = ContratosFiltrados().ToList(); }
             @if (_ficha.ContratosDisponibles.Count == 0)
             {
                 <div class="fem-mini-empty" style="margin-top:8px">No hay más contratos disponibles en Servicios.</div>
             }
             else
             {
-                @* Sin value= a proposito: en Blazor Server reafirmarlo en cada re-render
-                   se come pulsaciones mientras se escribe. *@
+                @* Autocompletado: la lista NO se vuelca completa (pueden ser cientos). Solo aparece al
+                   escribir. Sin value= a proposito (en Blazor Server reafirmarlo se come pulsaciones). *@
                 <input class="fem-input fem-buscar" placeholder="Buscar contrato por nombre..."
                        @oninput="@(e => _buscarContrato = e.Value?.ToString() ?? string.Empty)" />
-                @if (encontrados.Count == 0)
+                @if (string.IsNullOrWhiteSpace(_buscarContrato))
                 {
-                    <div class="fem-mini-empty">Ningun contrato coincide con "@_buscarContrato".</div>
+                    <div class="fem-mini-empty">Escribe para buscar entre @_ficha.ContratosDisponibles.Count contrato(s) disponible(s).</div>
                 }
                 else
                 {
-                    <div class="fem-picklist">
-                        @foreach (var c in encontrados)
-                        {
-                            var cid = c.Id;
-                            <button type="button" class="fem-pick" @onclick="@(() => ToggleContratoAsync(cid, true))" disabled="@_busy">
-                                <span>@c.Nombre</span>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                            </button>
-                        }
-                    </div>
-                    @if (_contratosOcultos > 0)
+                    var encontrados = ContratosFiltrados().ToList();
+                    @if (encontrados.Count == 0)
                     {
-                        <div class="fem-mini-empty">y @_contratosOcultos mas. Escribe para filtrar.</div>
+                        <div class="fem-mini-empty">Ningun contrato coincide con "@_buscarContrato".</div>
+                    }
+                    else
+                    {
+                        <div class="fem-picklist">
+                            @foreach (var c in encontrados)
+                            {
+                                var cid = c.Id;
+                                <button type="button" class="fem-pick" @onclick="@(() => ToggleContratoAsync(cid, true))" disabled="@_busy">
+                                    <span>@c.Nombre</span>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                                </button>
+                            }
+                        </div>
+                        @if (_contratosOcultos > 0)
+                        {
+                            <div class="fem-mini-empty">y @_contratosOcultos mas. Afina la busqueda.</div>
+                        }
                     }
                 }
             }
-
-            @* Vinculos y consultas del activo. Viven aqui y no en la ficha porque esa
-               columna quedo dedicada al muro de novedades. *@
-            <div class="fem-section">Activos vinculados</div>
-            <div class="fem-block">
+                </div>
+                <div class="fem-vinc-col">
+                    <div class="fem-section">Activos vinculados</div>
+                    <div class="fem-block">
                 @foreach (var v in _ficha.ActivosVinculados)
                 {
                     var vid = v.Id;
@@ -349,23 +386,57 @@ else
                         <button type="button" class="fem-mini-del" title="Quitar" @onclick="@(() => ToggleActivoAsync(vid, false))"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                     </div>
                 }
-                <div class="fem-disp-lbl">OTROS ACTIVOS</div>
-                @foreach (var v in _ficha.ActivosDisponibles)
-                {
-                    var vid = v.Id;
-                    <button type="button" class="fem-pick" @onclick="@(() => ToggleActivoAsync(vid, true))">
-                        <span>@v.Nombre</span>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                    </button>
-                }
                 @if (_ficha.ActivosDisponibles.Count == 0 && _ficha.ActivosVinculados.Count == 0)
                 {
                     <div class="fem-mini-empty">No hay otros activos registrados.</div>
                 }
+                else if (_ficha.ActivosDisponibles.Count > 0)
+                {
+                    @* Autocompletado (igual que contratos): la lista de otros activos no se vuelca
+                       completa; aparece al escribir. *@
+                    <input class="fem-input fem-buscar" placeholder="Buscar activo por nombre..."
+                           @oninput="@(e => _buscarActivo = e.Value?.ToString() ?? string.Empty)" />
+                    @if (string.IsNullOrWhiteSpace(_buscarActivo))
+                    {
+                        <div class="fem-mini-empty">Escribe para buscar entre @_ficha.ActivosDisponibles.Count activo(s) disponible(s).</div>
+                    }
+                    else
+                    {
+                        var encontradosA = ActivosFiltrados().ToList();
+                        @if (encontradosA.Count == 0)
+                        {
+                            <div class="fem-mini-empty">Ningun activo coincide con "@_buscarActivo".</div>
+                        }
+                        else
+                        {
+                            <div class="fem-picklist">
+                                @foreach (var v in encontradosA)
+                                {
+                                    var vid = v.Id;
+                                    <button type="button" class="fem-pick" @onclick="@(() => ToggleActivoAsync(vid, true))" disabled="@_busy">
+                                        <span>@v.Nombre</span>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                                    </button>
+                                }
+                            </div>
+                            @if (_activosOcultos > 0)
+                            {
+                                <div class="fem-mini-empty">y @_activosOcultos mas. Afina la busqueda.</div>
+                            }
+                        }
+                    }
+                }
+                    </div>
+                </div>
             </div>
-
-            @* TAREAS ASOCIADAS *@
-            <div class="fem-section">Tareas asociadas</div>
+        </div>
+    }
+    else if (_tab == "actividad")
+    {
+        @* Tareas asociadas y mantenimientos del activo, en su propia pestana (antes vivian al final
+           de la ficha y la alargaban). *@
+        <div class="fem-body">
+            <div class="fem-section" style="margin-top:0">Tareas asociadas</div>
             <div class="fem-block">
                 @if (_ficha.Tareas.Count == 0)
                 {
@@ -383,7 +454,6 @@ else
                 }
             </div>
 
-            @* MANTENIMIENTOS *@
             <div class="fem-section">Mantenimientos</div>
             <div class="fem-block">
                 @if (_ficha.Mantenimientos.Count == 0)
@@ -473,6 +543,9 @@ else
     .fem-tabs { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid var(--propia-border-divider); flex-shrink: 0; }
     .fem-tab { background: transparent; border: 0; padding: 11px 14px; font-size: 13px; font-weight: 700; color: var(--propia-text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
     .fem-tab--on { color: var(--propia-brand, var(--propia-brand)); border-bottom-color: var(--propia-brand, var(--propia-brand)); }
+    /* Contratos y activos vinculados lado a lado (2 columnas) para no ocupar todo el ancho. */
+    .fem-vinc2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; align-items: start; }
+    .fem-vinc-col { min-width: 0; }
 
     /* 4/8 de un grid de 12: la columna de la imagen es la angosta. Igual en zonas. */
     .fem-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); flex: 1 1 auto; min-height: 0; }
@@ -577,6 +650,29 @@ else
     .fem-mini-del:hover { background: var(--propia-danger-soft); color: #D7263D; }
     .fem-mejora-form { display: flex; gap: 7px; align-items: center; padding: 11px; background: var(--propia-bg-app); border: 1px dashed var(--propia-border-input); border-radius: 10px; margin-top: 3px; }
 
+    /* Facturas de compra: tabla (proveedor/n/fecha/valor/observacion/documento) + fila de alta. Espejo de Zonas. */
+    .fem-ftbl-wrap { overflow-x: auto; border: 1px solid var(--propia-border-card); border-radius: 10px; }
+    .fem-ftbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .fem-ftbl thead th { text-align: left; font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); padding: 9px 11px; background: var(--propia-bg-app); border-bottom: 1px solid var(--propia-border-card); white-space: nowrap; }
+    .fem-ftbl tbody td { padding: 9px 11px; border-bottom: 1px solid var(--propia-border-divider); vertical-align: middle; color: var(--propia-text-secondary); }
+    .fem-ftbl tbody tr:last-child td { border-bottom: 0; }
+    .fem-ft-prov { font-weight: 700; color: var(--propia-text-body); }
+    .fem-ft-val { font-weight: 700; color: var(--propia-text-body); white-space: nowrap; }
+    .fem-ft-num { white-space: nowrap; }
+    .fem-ft-obs { color: var(--propia-text-muted); }
+    .fem-ft-empty td { text-align: center; color: var(--propia-text-faint); font-style: italic; padding: 16px; }
+    .fem-ft-doc { display: inline-flex; align-items: center; gap: 6px; max-width: 170px; background: var(--propia-brand-soft-2); color: var(--propia-brand); border-radius: 7px; padding: 4px 8px; font-weight: 700; font-size: 11px; text-decoration: none; }
+    .fem-ft-doc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fem-ft-doc:hover { background: var(--propia-brand-soft); }
+    .fem-ft-travel { display: block; font-size: 9.5px; color: var(--propia-text-faint); font-weight: 700; margin-top: 3px; }
+    .fem-ft-attach { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: 1px dashed var(--propia-border-input); border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 700; color: var(--propia-brand); background: var(--propia-bg-card); white-space: nowrap; }
+    .fem-ft-attach:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .fem-ft-attach.on { border-style: solid; border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .fem-file-hidden { display: none; }
+    .fem-ft-add { display: grid; grid-template-columns: 1.6fr .9fr .95fr .8fr 1.1fr auto auto; gap: 7px; align-items: center; margin-top: 9px; padding: 11px; background: var(--propia-bg-app); border: 1px dashed var(--propia-border-input); border-radius: 10px; }
+    .fem-ft-prov-sel { min-width: 0; }
+    .fem-ft-note { margin-top: 8px; margin-bottom: 4px; font-size: 11px; color: var(--propia-text-muted); line-height: 1.5; }
+
     .fem-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .fem-link { display: flex; align-items: center; gap: 8px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 11px; margin-bottom: 6px; }
     .fem-link--on { border-color: var(--propia-brand-border); background: var(--propia-brand-soft-2); }
@@ -647,7 +743,8 @@ else
         .fem-body { padding: 16px 14px; }
         .fem-grid,
         .fem-2col,
-        .fem-egrid { grid-template-columns: 1fr; }
+        .fem-egrid,
+        .fem-vinc2 { grid-template-columns: 1fr; }
         .fem-left { border-right: 0; border-bottom: 1px solid var(--propia-border-divider); padding: 16px 14px; }
         .fem-right { padding: 16px 14px; }
         .fem-fotos { grid-template-columns: repeat(2, 1fr); }
@@ -678,15 +775,30 @@ else
     private string _mejoraDesc = "";
     private decimal? _mejoraValor;
 
-    private string _campoLabel = "";
-    private string _campoValor = "";
+    // Alta de factura de compra (tabla). El documento se bufferiza a bytes al seleccionar (el InputFile
+    // se invalida si el componente se re-renderiza antes de leerlo).
+    private string _facProveedor = "";
+    private PersonaCandidatoDto? _facProveedorSel;   // tercero elegido del Directorio (persona o empresa)
+    private Guid? _facProveedorPersonaId;
+    private Guid? _facProveedorEmpresaId;
+    private string _facNumero = "";
+    private string _facObs = "";
+    private DateOnly? _facFecha;
+    private decimal? _facValor;
+    private byte[]? _facDocBytes;
+    private string? _facDocName;
+    private string? _facDocType;
+
 
     private string _buscarContrato = "";
     private int _contratosOcultos;
+    private string _buscarActivo = "";
+    private int _activosOcultos;
 
     /// <summary>
     /// Contratos que se pueden vincular, filtrados por el texto de busqueda y recortados a
-    /// unos pocos: en una copropiedad real la lista completa son decenas y llenaba la ficha.
+    /// unos pocos: en una copropiedad real la lista completa son decenas/cientos. La lista solo
+    /// se muestra cuando hay texto de busqueda (autocompletado).
     /// </summary>
     private IEnumerable<EquipoRefDto> ContratosFiltrados()
     {
@@ -696,6 +808,18 @@ else
             ? todos
             : todos.Where(c => c.Nombre.Contains(_buscarContrato.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
         _contratosOcultos = Math.Max(0, filtrados.Count - tope);
+        return filtrados.Take(tope);
+    }
+
+    /// <summary>Otros activos vinculables, filtrados por busqueda y recortados. Espejo de ContratosFiltrados.</summary>
+    private IEnumerable<EquipoRefDto> ActivosFiltrados()
+    {
+        const int tope = 8;
+        var todos = _ficha?.ActivosDisponibles ?? (IReadOnlyList<EquipoRefDto>)Array.Empty<EquipoRefDto>();
+        var filtrados = string.IsNullOrWhiteSpace(_buscarActivo)
+            ? todos
+            : todos.Where(a => a.Nombre.Contains(_buscarActivo.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        _activosOcultos = Math.Max(0, filtrados.Count - tope);
         return filtrados.Take(tope);
     }
 
@@ -961,28 +1085,90 @@ else
         catch (Exception ex) { Toast(ex.Message, true); }
     }
 
-    private void CancelarCampo() { _campoLabel = ""; _campoValor = ""; }
-
-    private async Task AgregarCampoAsync()
+    // ----- Facturas de compra del equipo (tabla). Espejo de las de zona. -----
+    // Proveedor elegido en el SelectorPersona: snapshot del nombre + vinculo al Directorio (persona/empresa).
+    private void OnProveedorSel(PersonaCandidatoDto? sel)
     {
-        if (string.IsNullOrWhiteSpace(_campoLabel)) { Toast("Escribe el nombre del campo.", true); return; }
+        _facProveedorSel = sel;
+        if (sel is null) { _facProveedor = ""; _facProveedorPersonaId = null; _facProveedorEmpresaId = null; return; }
+        _facProveedor = sel.NombreCompleto;
+        if (sel.EntidadTipo == EntidadDirectorio.Empresa) { _facProveedorEmpresaId = sel.PersonaId; _facProveedorPersonaId = null; }
+        else { _facProveedorPersonaId = sel.PersonaId; _facProveedorEmpresaId = null; }
+    }
+
+    private async Task AgregarFacturaAsync()
+    {
+        if (EqId == Guid.Empty) return;
+        if (string.IsNullOrWhiteSpace(_facProveedor) && string.IsNullOrWhiteSpace(_facNumero)
+            && !_facValor.HasValue && string.IsNullOrWhiteSpace(_facObs)) { Toast("Agrega al menos un dato de la factura.", true); return; }
         _busy = true;
         try
         {
-            var req = new AgregarCampoRequest(_campoLabel.Trim(), string.IsNullOrWhiteSpace(_campoValor) ? null : _campoValor.Trim());
-            var r = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/campos", req);
-            if (r.IsSuccessStatusCode) { _dirty = true; CancelarCampo(); await CargarAsync(); Toast("Campo agregado.", false); }
-            else Toast($"Error: {(int)r.StatusCode}", true);
+            var req = new AgregarEquipoFacturaRequest(_facProveedor, _facProveedorPersonaId, _facProveedorEmpresaId,
+                _facNumero, null, _facValor, _facFecha, _facObs);
+            var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/equipos/{EqId}/facturas", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<EquipoFacturaDto>();
+                if (dto is not null && _facDocBytes is not null)
+                    await SubirFacturaDoc(dto.Id, _facDocBytes, _facDocName ?? "documento", _facDocType);
+                _facProveedor = ""; _facProveedorSel = null; _facProveedorPersonaId = null; _facProveedorEmpresaId = null;
+                _facNumero = ""; _facObs = ""; _facFecha = null; _facValor = null;
+                _facDocBytes = null; _facDocName = null; _facDocType = null;
+                _dirty = true; await CargarAsync(); Toast("Factura registrada.", false);
+            }
+            else Toast($"Error: {(int)resp.StatusCode}", true);
         }
         catch (Exception ex) { Toast(ex.Message, true); }
         _busy = false;
     }
 
-    private async Task EliminarCampoAsync(Guid id)
+    private async Task SeleccionarFacDoc(InputFileChangeEventArgs e)
     {
-        try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/campos/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
+        var file = e.File;
+        if (file is null) return;
+        using var ms = new System.IO.MemoryStream();
+        await file.OpenReadStream(10_000_000).CopyToAsync(ms);
+        _facDocBytes = ms.ToArray();
+        _facDocName = file.Name;
+        _facDocType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType;
+    }
+
+    private async Task SubirFacturaDoc(Guid facturaId, byte[] bytes, string name, string? type)
+    {
+        using var content = new MultipartFormDataContent();
+        var sc = new ByteArrayContent(bytes);
+        sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(type) ? "application/octet-stream" : type);
+        content.Add(sc, "file", name);
+        var resp = await Auth().PostAsync($"/api/mi-copropiedad/equipos/facturas/{facturaId}/documento", content);
+        if (!resp.IsSuccessStatusCode) Toast(await resp.Content.ReadAsStringAsync(), true);
+    }
+
+    private async Task AdjuntarFacturaExistente(Guid facturaId, InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _busy = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var sc = new StreamContent(file.OpenReadStream(10_000_000));
+            sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(sc, "file", file.Name);
+            var resp = await Auth().PostAsync($"/api/mi-copropiedad/equipos/facturas/{facturaId}/documento", content);
+            if (resp.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); }
+            else Toast(await resp.Content.ReadAsStringAsync(), true);
+        }
+        catch (Exception ex) { Toast(ex.Message, true); }
+        _busy = false;
+    }
+
+    private async Task EliminarFacturaAsync(Guid id)
+    {
+        try { var r = await Auth().DeleteAsync($"/api/mi-copropiedad/equipos/facturas/{id}"); if (r.IsSuccessStatusCode) { _dirty = true; await CargarAsync(); } }
         catch (Exception ex) { Toast(ex.Message, true); }
     }
+
 
     private async Task ToggleActivoAsync(Guid id, bool vincular)
     {

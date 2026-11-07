@@ -87,7 +87,27 @@ builder.Services.AddHttpClient("PropiaApi", client =>
 {
     var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7113";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(30);
+    // 75s (> los 60s del cliente de IA) para que una respuesta lenta del proveedor llegue como
+    // error legible del backend en vez de cortarse aqui con un TaskCanceledException generico.
+    client.Timeout = TimeSpan.FromSeconds(75);
+})
+.ConfigurePrimaryHttpMessageHandler(sp =>
+{
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var handler = new HttpClientHandler();
+    if (env.IsDevelopment())
+        handler.ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    return handler;
+});
+
+// Cliente LARGO hacia la propia API: para la extraccion por VISION (DeepSeek lee las imagenes de un PDF
+// escaneado) que puede tardar minutos. 5 min, igual que el cliente de IA del backend.
+builder.Services.AddHttpClient("PropiaApiLong", client =>
+{
+    var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7113";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromMinutes(5);
 })
 .ConfigurePrimaryHttpMessageHandler(sp =>
 {
