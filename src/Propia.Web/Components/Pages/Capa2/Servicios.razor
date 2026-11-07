@@ -3210,6 +3210,48 @@ else
         catch { /* el adjunto es best-effort: el contrato ya quedo creado */ }
     }
 
+    // Mejora: si el contratista quedo como TEXTO LIBRE (extraido por IA, sin elegirlo del Directorio),
+    // al guardar se busca un Tercero por NIT/nombre y se vincula; si no existe, se crea una empresa. Asi
+    // el contrato queda vinculado a un tercero real (buscable). Best-effort: si falla, se guarda con el
+    // nombre libre (sin regresion).
+    private async Task AutoVincularContratistaAsync()
+    {
+        if (_f.ProveedorEmpresaId is not null || _f.ProveedorPersonaId is not null) return;   // ya vinculado a mano
+        var nombre = _f.Proveedor?.Trim();
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        var nit = Limpio(_f.Nit);
+        try
+        {
+            // 1) Buscar un tercero existente (por NIT si hay; si no, por nombre) y vincular si el nombre coincide.
+            var q = Uri.EscapeDataString(!string.IsNullOrWhiteSpace(nit) ? nit! : nombre);
+            var cands = await GetAuthAsync<List<PersonaCandidatoDto>>($"/api/directorio/personas/candidatos?q={q}");
+            var match = cands?.FirstOrDefault(c => NombreParecido(c.NombreCompleto, nombre));
+            if (match is not null)
+            {
+                if (match.EntidadTipo == EntidadDirectorio.Empresa) { _f.ProveedorEmpresaId = match.PersonaId; }
+                else { _f.ProveedorPersonaId = match.PersonaId; }
+                return;
+            }
+            // 2) No existe: crear una EMPRESA (los contratistas suelen ser personas juridicas).
+            var req = new { Nit = nit ?? "", RazonSocial = nombre, Email = (string?)null, Telefono = (string?)null, Contactos = new List<object>() };
+            var r = await Auth().PostAsJsonAsync("/api/directorio/empresas", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var creada = await r.Content.ReadFromJsonAsync<TerceroCreadoMini>();
+                if (creada is { Id: var gid } && gid != Guid.Empty) { _f.ProveedorEmpresaId = gid; }
+            }
+        }
+        catch { /* best-effort: el contrato se guarda igual con el nombre libre */ }
+    }
+
+    private static bool NombreParecido(string? a, string b)
+    {
+        static string N(string? s) => new string((s ?? "").Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        var x = N(a); var y = N(b);
+        return x.Length > 2 && y.Length > 2 && (x.Contains(y) || y.Contains(x));
+    }
+    private sealed record TerceroCreadoMini(Guid Id);
+
     private async Task<(Guid? id, string? err)> CrearContratoActualAsync()
     {
         var inicio = DateOnly.FromDateTime(_f.Inicio ?? DateTime.Today);
@@ -3242,6 +3284,7 @@ else
         _busy = true;
         try
         {
+            await AutoVincularContratistaAsync();
             var (id, err) = await CrearContratoActualAsync();
             if (id is null) { _modalError = err ?? "No se pudo crear el contrato."; d.Estado = DraftEstadoC.Error; d.Error = _modalError; return; }
             await AdjuntarAdjuntoDraftCAsync(id.Value, d);
@@ -3355,26 +3398,29 @@ else
             d.IaEstado = "Leyendo con IA...";
             var b64 = Convert.ToBase64String(d.Bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
-            OcrIaResp? r;
             var notaPag = "";
-            if (!string.IsNullOrWhiteSpace(texto))
+            string[]? imgs = null;   // null = ruta texto; no-null = ruta vision (escaneado)
+            if (string.IsNullOrWhiteSpace(texto))
             {
-                // PDF con capa de texto: DeepSeek sobre el texto (barato).
-                var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA no disponible"; return; }
-                r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
-            }
-            else
-            {
-                // PDF escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas (deepseek-v4-flash).
+                // PDF escaneado (sin texto): rasterizar para DeepSeek VISION (deepseek-v4-flash).
                 d.IaEstado = "Escaneado: leyendo imagenes con IA...";
                 StateHasChanged();
                 var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
                 if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
                 if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
-                var resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = ras.Paginas });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA vision no disponible"; return; }
+                imgs = ras.Paginas;
+            }
+            // 1 reintento automatico si la IA no devuelve datos (la vision a veces falla la 1a pasada).
+            OcrIaResp? r = null;
+            for (var intento = 1; intento <= 2; intento++)
+            {
+                var resp = imgs is not null
+                    ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = imgs })
+                    : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = imgs is not null ? "IA vision no disponible" : "IA no disponible"; return; }
                 r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
+                if (r?.Campos is { Count: > 0 }) break;
+                if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
             }
             if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposContrato(r.Campos, d.F);
@@ -3857,6 +3903,7 @@ else
             HttpResponseMessage resp;
             if (_editId is null)
             {
+                await AutoVincularContratistaAsync();
                 resp = await Auth().PostAsJsonAsync("/api/mi-copropiedad/contratos",
                     new CrearContratoServicioRequest(_f.Tipo, _f.Proveedor.Trim(), Limpio(_f.Nit), Limpio(_f.Contacto),
                         inicio, fin, _f.Valor, Limpio(_f.Observaciones), _f.Dias <= 0 ? 30 : _f.Dias,

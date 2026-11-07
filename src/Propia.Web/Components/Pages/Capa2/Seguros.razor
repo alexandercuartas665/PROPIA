@@ -1272,6 +1272,43 @@
         catch { /* el adjunto es best-effort: la poliza ya quedo creada */ }
     }
 
+    // Mejora: si la aseguradora quedo como TEXTO LIBRE (extraida por IA), al guardar se busca un Tercero
+    // por nombre y se vincula; si no existe, se intenta crear una empresa. Best-effort (sin regresion).
+    private async Task AutoVincularAseguradoraAsync()
+    {
+        if (_f.AseguradoraEmpresaId is not null || _f.AseguradoraPersonaId is not null) return;
+        var nombre = _f.Aseguradora?.Trim();
+        if (string.IsNullOrWhiteSpace(nombre)) return;
+        try
+        {
+            var cands = await Auth().GetFromJsonAsync<List<PersonaCandidatoDto>>($"/api/directorio/personas/candidatos?q={Uri.EscapeDataString(nombre)}");
+            var match = cands?.FirstOrDefault(c => NombreParecido(c.NombreCompleto, nombre));
+            if (match is not null)
+            {
+                if (match.EntidadTipo == EntidadDirectorio.Empresa) { _f.AseguradoraEmpresaId = match.PersonaId; }
+                else { _f.AseguradoraPersonaId = match.PersonaId; }
+                return;
+            }
+            // La poliza no extrae NIT: se intenta crear empresa igual; si el backend lo exige, falla y queda el nombre libre.
+            var req = new { Nit = "", RazonSocial = nombre, Email = (string?)null, Telefono = (string?)null, Contactos = new List<object>() };
+            var r = await Auth().PostAsJsonAsync("/api/directorio/empresas", req);
+            if (r.IsSuccessStatusCode)
+            {
+                var creada = await r.Content.ReadFromJsonAsync<TerceroCreadoMini>();
+                if (creada is { Id: var gid } && gid != Guid.Empty) { _f.AseguradoraEmpresaId = gid; }
+            }
+        }
+        catch { /* best-effort */ }
+    }
+
+    private static bool NombreParecido(string? a, string b)
+    {
+        static string N(string? s) => new string((s ?? "").Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        var x = N(a); var y = N(b);
+        return x.Length > 2 && y.Length > 2 && (x.Contains(y) || y.Contains(x));
+    }
+    private sealed record TerceroCreadoMini(Guid Id);
+
     private async Task<(Guid? id, string? err)> CrearPolizaActualAsync()
     {
         DateOnly? ini = _f.Inicio.HasValue ? DateOnly.FromDateTime(_f.Inicio.Value) : null;
@@ -1305,6 +1342,7 @@
         _busy = true;
         try
         {
+            await AutoVincularAseguradoraAsync();
             var (id, err) = await CrearPolizaActualAsync();
             if (id is null) { _modalError = err ?? "No se pudo crear la poliza."; d.Estado = DraftEstado.Error; d.Error = _modalError; return; }
             await AdjuntarPdfDraftAsync(id.Value, d);
@@ -2388,6 +2426,7 @@
             HttpResponseMessage resp;
             if (_editId is null)
             {
+                await AutoVincularAseguradoraAsync();
                 resp = await Auth().PostAsJsonAsync("/api/seguros/polizas", new CrearPolizaRequest(
                     _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
                     _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
@@ -2546,26 +2585,29 @@
             d.IaEstado = "Leyendo con IA...";
             var b64 = Convert.ToBase64String(d.Bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
-            OcrResp? r;
             var notaPag = "";
-            if (!string.IsNullOrWhiteSpace(texto))
+            string[]? imgs = null;   // null = ruta texto; no-null = ruta vision (escaneado)
+            if (string.IsNullOrWhiteSpace(texto))
             {
-                // PDF con capa de texto: DeepSeek sobre el texto (barato).
-                var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA no disponible"; return; }
-                r = await resp.Content.ReadFromJsonAsync<OcrResp>();
-            }
-            else
-            {
-                // PDF escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas (deepseek-v4-flash).
+                // PDF escaneado (sin texto): rasterizar para DeepSeek VISION (deepseek-v4-flash).
                 d.IaEstado = "Escaneado: leyendo imagenes con IA...";
                 StateHasChanged();
                 var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
                 if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
                 if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
-                var resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Imagenes = ras.Paginas });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA vision no disponible"; return; }
+                imgs = ras.Paginas;
+            }
+            // 1 reintento automatico si la IA no devuelve datos (la vision a veces falla la 1a pasada).
+            OcrResp? r = null;
+            for (var intento = 1; intento <= 2; intento++)
+            {
+                var resp = imgs is not null
+                    ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Imagenes = imgs })
+                    : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = imgs is not null ? "IA vision no disponible" : "IA no disponible"; return; }
                 r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+                if (r?.Campos is { Count: > 0 }) break;
+                if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
             }
             if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposPoliza(r.Campos, d.F);
