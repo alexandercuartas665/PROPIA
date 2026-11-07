@@ -115,10 +115,10 @@ public static class DependencyInjection
         services.AddHttpClient<Application.InfraestructuraIa.IEvolutionApiClient, InfraestructuraIa.EvolutionApiClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IWhatsAppCloudClient, InfraestructuraIa.WhatsAppCloudClient>();
         services.AddHttpClient<Application.InfraestructuraIa.IYCloudApiClient, InfraestructuraIa.YCloudApiClient>();
-        // Timeout acotado: sin esto el default (100s) deja el chat "Escribiendo..." colgado si el
-        // proveedor de IA tarda; con 60s la llamada corta limpio y el servicio devuelve error legible.
+        // Timeout: la vision con muchas imagenes se pasa de los 100s por defecto -> 5 min (como ECOREX).
+        // El chat de texto queda acotado aguas arriba por el HttpClient Web->API (75s), asi que no se cuelga.
         services.AddHttpClient<Application.InfraestructuraIa.IAiProviderClient, InfraestructuraIa.AiProviderClient>(
-            c => c.Timeout = System.TimeSpan.FromSeconds(60));
+            c => c.Timeout = System.TimeSpan.FromMinutes(5));
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppLineService, InfraestructuraIa.WhatsAppLineService>();
         services.AddScoped<Application.InfraestructuraIa.IListaNegraService, InfraestructuraIa.ListaNegraService>();
         services.AddScoped<Application.InfraestructuraIa.IConversacionService, InfraestructuraIa.ConversacionService>();

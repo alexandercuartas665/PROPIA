@@ -482,19 +482,40 @@ public sealed class AiProviderClient : IAiProviderClient
             else { messages.Add(new { role, content = t.Text }); }
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(new { model, messages }) };
+        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonBody(new { model, messages, max_tokens = 8192 }) };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        // Forzar HTTP/1.1: con HTTP/2 el server resetea el stream a mitad de subir payloads grandes de
+        // imagenes (vision, "Unable to write data to the transport connection"). Portado de ECOREX.
+        req.Version = System.Net.HttpVersion.Version11;
+        req.VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact;
         using var resp = await _http.SendAsync(req, ct);
         var raw = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode) { return Fail((int)resp.StatusCode, raw); }
 
         using var doc = JsonDocument.Parse(raw);
-        var text = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         var (inTok, outTok) = (0, 0);
         if (doc.RootElement.TryGetProperty("usage", out var u))
         {
             inTok = u.TryGetProperty("prompt_tokens", out var p) ? p.GetInt32() : 0;
             outTok = u.TryGetProperty("completion_tokens", out var c) ? c.GetInt32() : 0;
+        }
+        // Lectura defensiva: DeepSeek a veces devuelve content=null (razona en reasoning_content, o corta
+        // por finish_reason=length). Si no hay texto, error con el crudo para depurar (no "sin respuesta").
+        string? text = null, finish = null;
+        if (doc.RootElement.TryGetProperty("choices", out var chs) && chs.ValueKind == JsonValueKind.Array && chs.GetArrayLength() > 0)
+        {
+            var ch0 = chs[0];
+            if (ch0.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String) { finish = fr.GetString(); }
+            if (ch0.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.Object)
+            {
+                if (msg.TryGetProperty("content", out var mc) && mc.ValueKind == JsonValueKind.String) { text = mc.GetString(); }
+                if (string.IsNullOrWhiteSpace(text) && msg.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String) { text = rc.GetString(); }
+            }
+        }
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            var snip = raw.Length > 300 ? raw[..300] : raw;
+            return new AiChatResult(false, null, $"El proveedor respondio 200 sin contenido (finish_reason={finish}; tokens {inTok}/{outTok}). {snip}");
         }
         return new AiChatResult(true, text, null, inTok, outTok);
     }

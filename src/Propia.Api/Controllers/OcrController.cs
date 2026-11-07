@@ -99,7 +99,8 @@ public class OcrController : ControllerBase
     [RequestSizeLimit(25 * 1024 * 1024)]
     public async Task<IActionResult> ExtraerAgente([FromBody] ExtraerAgenteRequest req, CancellationToken ct)
     {
-        if (req is null || string.IsNullOrWhiteSpace(req.Texto)) return BadRequest(new { error = "texto_requerido" });
+        var hayImagenes = req?.Imagenes is { Count: > 0 };
+        if (req is null || (string.IsNullOrWhiteSpace(req.Texto) && !hayImagenes)) return BadRequest(new { error = "texto_o_imagenes_requerido" });
         var campos = PerfilCampos(req.Perfil);
         if (campos.Count == 0) return BadRequest(new { error = "perfil_desconocido" });
 
@@ -112,18 +113,36 @@ public class OcrController : ControllerBase
 
         // Prompt de EXTRACCION estricto (override del prompt del agente SOLO para esta llamada).
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Eres un extractor de datos de documentos. Te doy el TEXTO de un documento y debes responder");
-        sb.AppendLine("UNICAMENTE un objeto JSON plano con estas claves. Usa null si el dato no aparece; no inventes.");
-        sb.AppendLine("No agregues explicaciones, comentarios ni bloques de codigo: responde solo el JSON.");
-        sb.AppendLine("Claves esperadas:");
+        sb.AppendLine("Eres un extractor de datos de documentos. Te doy un documento (texto o imagenes) y debes responder");
+        sb.AppendLine("UNICAMENTE un objeto JSON. Por cada clave devuelve un objeto {\"valor\": <dato o null>, \"conf\": <0.0 a 1.0>}.");
+        sb.AppendLine("conf = que tan seguro estas de haber leido bien ese dato (1 = claro y legible; 0.5 = dudoso o borroso;");
+        sb.AppendLine("bajo = conjetura). Usa null en valor si el dato no aparece; no inventes.");
+        sb.AppendLine("No agregues explicaciones ni bloques de codigo: responde solo el JSON. Claves esperadas:");
         foreach (var c in campos) { sb.AppendLine($"- \"{c.Nombre}\": {c.Descripcion} (tipo {c.Tipo})"); }
         sb.AppendLine("Para montos devuelve solo el numero sin simbolos ni separadores de miles. Para fechas usa YYYY-MM-DD.");
 
-        var texto = req.Texto!.Length > 60000 ? req.Texto[..60000] : req.Texto;
-        var turns = new List<Application.InfraestructuraIa.AiChatTurn>
+        List<Application.InfraestructuraIa.AiChatTurn> turns;
+        if (hayImagenes)
         {
-            new("user", "TEXTO DEL DOCUMENTO:\n" + texto.Trim())
-        };
+            // VISION (PDF escaneado): las paginas van como imagenes JPEG en orden; DeepSeek (modelo de vision,
+            // deepseek-v4-flash) lee el texto de las imagenes y devuelve el JSON del perfil. Tope de paginas
+            // para acotar payload/tokens.
+            var imgs = req.Imagenes!
+                .Where(b => !string.IsNullOrWhiteSpace(b))
+                .Take(12)
+                .Select(b => new Application.InfraestructuraIa.AiInboundImage("image/jpeg", b))
+                .ToList();
+            turns = new()
+            {
+                new("user", $"Te entrego {imgs.Count} pagina(s) del documento como imagenes, en orden. " +
+                            "Lee el texto de las imagenes y devuelve UNICAMENTE el JSON con las claves indicadas.", imgs)
+            };
+        }
+        else
+        {
+            var texto = req.Texto!.Length > 60000 ? req.Texto[..60000] : req.Texto;
+            turns = new() { new("user", "TEXTO DEL DOCUMENTO:\n" + texto.Trim()) };
+        }
         // bearerToken null => BuildToolSpecsAsync corta en seco => completion limpia (sin tools MCP).
         var res = await _ai.TestChatAsync(agentId.Value, turns, systemPromptOverride: sb.ToString(), ct: ct);
         if (!res.Ok) return BadRequest(new { error = res.Error ?? "fallo_agente" });
@@ -159,16 +178,14 @@ public class OcrController : ControllerBase
             pdfOrigenKey,
             inputTokens = res.InputTokens,
             outputTokens = res.OutputTokens,
-            campos = campos
-                .Where(c => valores.ContainsKey(c.Nombre))
-                .Select(c => new { Nombre = c.Nombre, Valor = valores[c.Nombre], Confianza = (double?)null })
+            campos = valores.Select(v => new { Nombre = v.Nombre, Valor = v.Valor, Confianza = v.Conf })
         });
     }
 
-    /// <summary>Parse tolerante del JSON que devuelve el agente: {claveDePerfil: valor}. Ignora lo ajeno al perfil.</summary>
-    private static Dictionary<string, string?> ParseCamposJson(string? text, IReadOnlyList<CampoObjetivo> campos)
+    /// <summary>Parse tolerante del JSON del agente: por clave {valor, conf} (o un valor plano). Ignora lo ajeno al perfil.</summary>
+    private static List<(string Nombre, string? Valor, double? Conf)> ParseCamposJson(string? text, IReadOnlyList<CampoObjetivo> campos)
     {
-        var outp = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var outp = new List<(string, string?, double?)>();
         if (string.IsNullOrWhiteSpace(text)) return outp;
         var t = text.Trim();
         var i = t.IndexOf('{'); var j = t.LastIndexOf('}');
@@ -176,26 +193,37 @@ public class OcrController : ControllerBase
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(t.Substring(i, j - i + 1));
-            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return outp;
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return outp;
             foreach (var c in campos)
             {
-                if (!doc.RootElement.TryGetProperty(c.Nombre, out var el)) continue;
-                string? val = el.ValueKind switch
+                if (!root.TryGetProperty(c.Nombre, out var el)) continue;
+                string? val; double? conf = null;
+                if (el.ValueKind == System.Text.Json.JsonValueKind.Object)
                 {
-                    System.Text.Json.JsonValueKind.String => el.GetString(),
-                    System.Text.Json.JsonValueKind.Number => el.GetRawText(),
-                    System.Text.Json.JsonValueKind.True => "true",
-                    System.Text.Json.JsonValueKind.False => "false",
-                    _ => null
-                };
-                if (!string.IsNullOrWhiteSpace(val)) outp[c.Nombre] = val;
+                    // Formato {valor, conf}: el modelo tambien puede usar "confianza".
+                    val = el.TryGetProperty("valor", out var ve) ? LeerValor(ve) : null;
+                    if (el.TryGetProperty("conf", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Number) { conf = ce.GetDouble(); }
+                    else if (el.TryGetProperty("confianza", out var ce2) && ce2.ValueKind == System.Text.Json.JsonValueKind.Number) { conf = ce2.GetDouble(); }
+                }
+                else { val = LeerValor(el); }   // tolerante: el modelo devolvio el valor plano
+                if (!string.IsNullOrWhiteSpace(val)) { outp.Add((c.Nombre, val, conf)); }
             }
         }
         catch { /* json invalido: devolvemos lo que haya */ }
         return outp;
     }
 
-    public sealed record ExtraerAgenteRequest(string? Perfil, string? Texto, string? PdfBase64 = null, string? Mime = null, string? FileName = null);
+    private static string? LeerValor(System.Text.Json.JsonElement el) => el.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.String => el.GetString(),
+        System.Text.Json.JsonValueKind.Number => el.GetRawText(),
+        System.Text.Json.JsonValueKind.True => "true",
+        System.Text.Json.JsonValueKind.False => "false",
+        _ => null
+    };
+
+    public sealed record ExtraerAgenteRequest(string? Perfil, string? Texto, string? PdfBase64 = null, string? Mime = null, string? FileName = null, List<string>? Imagenes = null);
 
     /// <summary>Campos objetivo por perfil (server-side; el cliente no define el schema).</summary>
     private static IReadOnlyList<CampoObjetivo> PerfilCampos(string? perfil) => (perfil ?? "").Trim().ToLowerInvariant() switch

@@ -447,6 +447,10 @@
                             <InputFile OnChange="OnFilesSelected" accept=".pdf,image/*" multiple hidden />
                         </label>
                         @if (!Multi && _drafts.Count == 1) { <span class="seg-ocr-msg">1 PDF: @_drafts[0].FileName (se adjunta al crear)</span> }
+                        <div class="seg-ia-ctrl">
+                            <label class="seg-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
+                            @if (_drafts.Any(d => d.Estado != DraftEstado.Listo)) { <button type="button" class="seg-ia-btn" @onclick="LeerTodosAsync">Leer todos con IA</button> }
+                        </div>
                     }
                     else
                     {
@@ -465,6 +469,10 @@
                         }
                     }
                 </div>
+                @if (_editId is null && ActiveDraft is { IaDudosos: { Count: > 0 } } adp)
+                {
+                    <div class="seg-ia-warn">Revisa estos campos (lectura dudosa de la IA): <b>@string.Join(", ", adp.IaDudosos!)</b></div>
+                }
 
                 <div class="seg-grid-form">
                     <div class="seg-col-full">
@@ -926,6 +934,13 @@
     .seg-ocr-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); cursor: pointer; }
     .seg-ocr-btn.busy { opacity: .6; pointer-events: none; }
     .seg-ocr-msg { font-size: 11.5px; color: var(--propia-text-secondary); }
+    /* Ola 1: control de IA (auto/leer todos) + aviso de campos dudosos (baja confianza) */
+    .seg-ia-ctrl { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; flex-basis: 100%; }
+    .seg-ia-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--propia-text-secondary); cursor: pointer; margin: 0; }
+    .seg-ia-btn { font-size: 12px; font-weight: 600; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+    .seg-ia-btn:hover { background: var(--propia-brand-soft-2); }
+    .seg-ia-warn { font-size: 12px; color: var(--propia-text-secondary); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-left: 3px solid var(--propia-brand); border-radius: 8px; padding: 7px 10px; margin: 0 0 10px; }
+    .seg-ia-warn b { color: var(--propia-text-h1); }
 
     /* Carga multiple (Fase 1): columna de documentos a la izquierda cuando hay 2+ PDF. */
     .seg-2col--multi { grid-template-columns: 290px 1fr; }
@@ -1128,8 +1143,10 @@
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
         public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
+        public List<string>? IaDudosos;   // campos con lectura dudosa (baja confianza) para que el humano revise
     }
     private List<PolizaDraft> _drafts = new();
+    private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
     private int _draftIdx = -1;
     private bool Multi => _drafts.Count >= 2;
     private PolizaDraft? ActiveDraft => _draftIdx >= 0 && _draftIdx < _drafts.Count ? _drafts[_draftIdx] : null;
@@ -1177,7 +1194,18 @@
         {
             await GenerarThumbAsync(d);
             StateHasChanged();
-            await ExtraerYLlenarDraftAsync(d);   // arnes: pdf.js -> Agente Documental (DeepSeek) -> llena el form
+        }
+        if (_iaAuto)
+        {
+            foreach (var d in nuevos)
+            {
+                await ExtraerYLlenarDraftAsync(d);   // arnes: pdf.js/vision -> DeepSeek -> llena el form
+                StateHasChanged();
+            }
+        }
+        else
+        {
+            foreach (var d in nuevos) { d.IaEstado = "Pendiente (Leer con IA)"; }
             StateHasChanged();
         }
     }
@@ -2180,6 +2208,15 @@
         return http;
     }
 
+    // Cliente de 5 min para la extraccion por VISION (DeepSeek lee las imagenes de un PDF escaneado).
+    private HttpClient AuthLong()
+    {
+        var http = HttpFactory.CreateClient("PropiaApiLong");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
     // K-09: el API responde {"error":"..."} en los 400 de validacion. Sin esto el usuario veia
     // el JSON crudo en el modal, o directamente nada en el alta inline y en las reclamaciones.
     private static async Task<string> MensajeErrorAsync(HttpResponseMessage resp)
@@ -2434,13 +2471,21 @@
             }
             var b64 = Convert.ToBase64String(bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, mime);
-            if (string.IsNullOrWhiteSpace(texto))
+            HttpResponseMessage resp;
+            if (!string.IsNullOrWhiteSpace(texto))
             {
-                _ocrMsg = "No se pudo leer texto del PDF (quiza es un escaneado como imagen). Completa los campos manualmente.";
-                return;
+                resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente",
+                    new { Perfil = "poliza", Texto = texto, PdfBase64 = b64, Mime = mime, FileName = file.Name });
             }
-            var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente",
-                new { Perfil = "poliza", Texto = texto, PdfBase64 = b64, Mime = mime, FileName = file.Name });
+            else
+            {
+                // Escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas.
+                _ocrMsg = "PDF escaneado: leyendo imagenes con IA..."; StateHasChanged();
+                var imgs = await Js.InvokeAsync<string[]>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (imgs is null || imgs.Length == 0) { _ocrMsg = "No se pudo leer el PDF."; return; }
+                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente",
+                    new { Perfil = "poliza", Imagenes = imgs, PdfBase64 = b64, Mime = mime, FileName = file.Name });
+            }
             if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
             var ir = await resp.Content.ReadFromJsonAsync<OcrResp>();
             if (ir?.Campos is null) { _ocrMsg = "La IA no devolvio datos. Completa los campos manualmente."; return; }
@@ -2496,15 +2541,53 @@
             d.IaEstado = "Leyendo con IA...";
             var b64 = Convert.ToBase64String(d.Bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
-            if (string.IsNullOrWhiteSpace(texto)) { d.IaEstado = "Sin texto legible (escaneado?)"; return; }
-            var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
-            if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA no disponible"; return; }
-            var r = await resp.Content.ReadFromJsonAsync<OcrResp>();
-            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos"; return; }
+            OcrResp? r;
+            if (!string.IsNullOrWhiteSpace(texto))
+            {
+                // PDF con capa de texto: DeepSeek sobre el texto (barato).
+                var resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA no disponible"; return; }
+                r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            }
+            else
+            {
+                // PDF escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas (deepseek-v4-flash).
+                d.IaEstado = "Escaneado: leyendo imagenes con IA...";
+                StateHasChanged();
+                var imgs = await Js.InvokeAsync<string[]>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                if (imgs is null || imgs.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
+                var resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Imagenes = imgs });
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = "IA vision no disponible"; return; }
+                r = await resp.Content.ReadFromJsonAsync<OcrResp>();
+            }
+            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos"; d.IaDudosos = null; return; }
             var aplicados = AplicarCamposPoliza(r.Campos, d.F);
-            d.IaEstado = aplicados > 0 ? $"IA: {aplicados} campo(s)" : "La IA no encontro datos de poliza";
+            var dudosos = r.Campos
+                .Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor))
+                .Select(c => EtiquetaCampoPoliza(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
+            d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
+            d.IaEstado = aplicados > 0
+                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "")
+                : "La IA no encontro datos de poliza";
         }
         catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
+    }
+
+    private static string? EtiquetaCampoPoliza(string clave) => clave switch
+    {
+        "aseguradora" => "Aseguradora", "corredor" => "Corredor", "numero_poliza" => "N poliza",
+        "ramo" => "Ramo", "valor_poliza" => "Valor", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin", _ => null
+    };
+
+    // Lee con IA TODOS los drafts no leidos. Sirve de "leer manual" (IA automatica apagada) y de reintento.
+    private async Task LeerTodosAsync()
+    {
+        foreach (var d in _drafts)
+        {
+            if (d.Estado == DraftEstado.Listo) continue;
+            await ExtraerYLlenarDraftAsync(d);
+            StateHasChanged();
+        }
     }
     private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
     private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto, string? PdfOrigenKey = null);

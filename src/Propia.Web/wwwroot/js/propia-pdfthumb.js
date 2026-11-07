@@ -91,5 +91,33 @@ window.propiaPdfThumb = (function () {
         }
     }
 
-    return { render: render, extraerTexto: extraerTexto };
+    // Rasteriza cada pagina del PDF a JPEG base64 (SIN el prefijo "data:...") para mandarlas a un modelo de
+    // vision (DeepSeek). scale 2.0 ~= 150 DPI. Tope de paginas para acotar payload/tokens. [] si no es PDF.
+    async function rasterizarPaginas(base64, maxPaginas) {
+        maxPaginas = maxPaginas || 12;
+        try {
+            var pdfjs = await ensurePdfjs();
+            var bytes = b64ToBytes(base64);
+            var doc = await pdfjs.getDocument({ data: bytes }).promise;
+            var n = Math.min(doc.numPages, maxPaginas);
+            var out = [];
+            for (var p = 1; p <= n; p++) {
+                var page = await doc.getPage(p);
+                var vp = page.getViewport({ scale: 2.0 });
+                var canvas = document.createElement('canvas');
+                canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+                var ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+                var comma = dataUrl.indexOf(',');
+                out.push(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);   // solo el base64, sin "data:"
+                try { page.cleanup(); } catch (e) { }
+            }
+            try { doc.cleanup(); doc.destroy(); } catch (e) { }
+            return out;
+        } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo rasterizar', e); return []; }
+    }
+
+    return { render: render, extraerTexto: extraerTexto, rasterizarPaginas: rasterizarPaginas };
 })();

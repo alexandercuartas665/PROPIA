@@ -101,6 +101,24 @@ builder.Services.AddHttpClient("PropiaApi", client =>
     return handler;
 });
 
+// Cliente LARGO hacia la propia API: para la extraccion por VISION (DeepSeek lee las imagenes de un PDF
+// escaneado) que puede tardar minutos. 5 min, igual que el cliente de IA del backend.
+builder.Services.AddHttpClient("PropiaApiLong", client =>
+{
+    var baseUrl = builder.Configuration["PropiaApi:BaseUrl"] ?? "https://localhost:7113";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromMinutes(5);
+})
+.ConfigurePrimaryHttpMessageHandler(sp =>
+{
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var handler = new HttpClientHandler();
+    if (env.IsDevelopment())
+        handler.ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    return handler;
+});
+
 // ==================== Servicios: API (controllers, infra, signalr, mcp, jobs) ====================
 // AddApplicationPart: los controllers viven en el ensamblado Propia.Api (referenciado),
 // no en el ensamblado de entrada, asi que hay que registrarlos explicitamente.
