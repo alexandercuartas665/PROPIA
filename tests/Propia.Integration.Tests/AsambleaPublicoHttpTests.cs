@@ -148,9 +148,14 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
             new UnidadPersona { TenantId = t.Id, UnidadId = u2.Id, PersonaId = otro.Id, Rol = RolUnidadPersona.Propietario });
         var s = new Sesion
         {
-            TenantId = t.Id, Tipo = TipoSesion.AsambleaOrdinaria, Modalidad = ModalidadSesion.Virtual,
-            Estado = EstadoSesion.EnCurso, Titulo = "Sesion publica", FechaSesion = DateTimeOffset.UtcNow,
-            QuorumRequeridoPct = 50m, HoraApertura = DateTimeOffset.UtcNow
+            TenantId = t.Id,
+            Tipo = TipoSesion.AsambleaOrdinaria,
+            Modalidad = ModalidadSesion.Virtual,
+            Estado = EstadoSesion.EnCurso,
+            Titulo = "Sesion publica",
+            FechaSesion = DateTimeOffset.UtcNow,
+            QuorumRequeridoPct = 50m,
+            HoraApertura = DateTimeOffset.UtcNow
         };
         db.Sesiones.Add(s);
         var p = new SesionPunto { TenantId = t.Id, SesionId = s.Id, Numero = 1, Titulo = "Punto", Estado = EstadoPunto.EnVotacion };
@@ -160,8 +165,12 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
             new SesionParticipante { TenantId = t.Id, SesionId = s.Id, PersonaId = otro.Id, UnidadPrivadaId = u2.Id, Coeficiente = 0.4m });
         var v = new Votacion
         {
-            TenantId = t.Id, SesionId = s.Id, PuntoId = p.Id, Estado = EstadoVotacion.Abierta,
-            HoraApertura = DateTimeOffset.UtcNow, CoeficienteTotalSala = 1m
+            TenantId = t.Id,
+            SesionId = s.Id,
+            PuntoId = p.Id,
+            Estado = EstadoVotacion.Abierta,
+            HoraApertura = DateTimeOffset.UtcNow,
+            CoeficienteTotalSala = 1m
         };
         db.Votaciones.Add(v);
         await db.SaveChangesAsync();
@@ -173,8 +182,11 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
 
     private static Persona NuevaPersona(string nombre) => new()
     {
-        TipoDocumento = TipoDocumento.CC, Documento = $"P{Guid.NewGuid():N}".Substring(0, 18),
-        Nombres = nombre, Apellidos = "Test", PerfilIncompleto = false
+        TipoDocumento = TipoDocumento.CC,
+        Documento = $"P{Guid.NewGuid():N}".Substring(0, 18),
+        Nombres = nombre,
+        Apellidos = "Test",
+        PerfilIncompleto = false
     };
 
     /// <summary>Usuario con cuenta para la persona y JWT real del API (mismo TokenService del login).</summary>
@@ -183,9 +195,14 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
         var email = $"u.{Guid.NewGuid():N}@test.co";
         var user = new ApplicationUser
         {
-            Id = Guid.NewGuid(), UserName = email, Email = email,
-            NormalizedUserName = email.ToUpper(), NormalizedEmail = email.ToUpper(),
-            EmailConfirmed = true, PersonaId = personaId, SecurityStamp = Guid.NewGuid().ToString()
+            Id = Guid.NewGuid(),
+            UserName = email,
+            Email = email,
+            NormalizedUserName = email.ToUpper(),
+            NormalizedEmail = email.ToUpper(),
+            EmailConfirmed = true,
+            PersonaId = personaId,
+            SecurityStamp = Guid.NewGuid().ToString()
         };
         await using (var db = OwnerDb()) { db.Users.Add(user); await db.SaveChangesAsync(); }
         _usuarios.Add(user.Id);

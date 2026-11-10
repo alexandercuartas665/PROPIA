@@ -252,15 +252,24 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         var email = $"admin.{Guid.NewGuid():N}@test.co";
         ctx.Personas.Add(new Persona
         {
-            Id = _adminPersonaId, TipoDocumento = TipoDocumento.CC,
+            Id = _adminPersonaId,
+            TipoDocumento = TipoDocumento.CC,
             Documento = $"A{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = "Admin", Apellidos = "Test", Email = email, PerfilIncompleto = false
+            Nombres = "Admin",
+            Apellidos = "Test",
+            Email = email,
+            PerfilIncompleto = false
         });
         ctx.Users.Add(new ApplicationUser
         {
-            Id = _adminUserId, UserName = email, Email = email,
-            NormalizedUserName = email.ToUpper(), NormalizedEmail = email.ToUpper(),
-            EmailConfirmed = true, PersonaId = _adminPersonaId, SecurityStamp = Guid.NewGuid().ToString()
+            Id = _adminUserId,
+            UserName = email,
+            Email = email,
+            NormalizedUserName = email.ToUpper(),
+            NormalizedEmail = email.ToUpper(),
+            EmailConfirmed = true,
+            PersonaId = _adminPersonaId,
+            SecurityStamp = Guid.NewGuid().ToString()
         });
         await ctx.SaveChangesAsync();
     }
@@ -272,7 +281,10 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         {
             TipoDocumento = TipoDocumento.CC,
             Documento = $"E{Guid.NewGuid():N}".Substring(0, 18),
-            Nombres = nombre, Apellidos = "Test", Email = email, PerfilIncompleto = false
+            Nombres = nombre,
+            Apellidos = "Test",
+            Email = email,
+            PerfilIncompleto = false
         };
         ctx.Personas.Add(p);
         await ctx.SaveChangesAsync();
@@ -299,7 +311,11 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         await using var ctx = OwnerDb();
         ctx.UnidadPersonas.Add(new UnidadPersona
         {
-            TenantId = tenantId, UnidadId = unidadId, PersonaId = personaId, Rol = rol, Activo = activo
+            TenantId = tenantId,
+            UnidadId = unidadId,
+            PersonaId = personaId,
+            Rol = rol,
+            Activo = activo
         });
         await ctx.SaveChangesAsync();
     }
