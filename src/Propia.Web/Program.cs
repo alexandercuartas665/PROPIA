@@ -60,7 +60,11 @@ builder.Host.UseSerilog((ctx, lc) =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o =>
     {
-        if (builder.Environment.IsDevelopment()) o.DetailedErrors = true;
+        // DetailedErrors: en dev siempre; en prod se puede ENCENDER temporalmente con la env var
+        // Blazor__DetailedErrors=true para que una excepcion de render/handler del servidor llegue al
+        // navegador (consola) en vez de tragarse en silencio. Apagar la env var para revertir.
+        if (builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Blazor:DetailedErrors"))
+            o.DetailedErrors = true;
         // Retener el circuito desconectado varios minutos: si el usuario deja la pestana quieta
         // o hay un microcorte de red, al volver se reengancha al MISMO circuito (conserva estado)
         // en vez de fallar y mostrar "Recargar pagina".
@@ -80,6 +84,11 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddScoped<Propia.Web.Components.Shared.Modals.IModalService,
                           Propia.Web.Components.Shared.Modals.ModalService>();
+
+// Diagnostico (temporal) del circuito Blazor: loguea open/up/down/closed para cazar el caso
+// "UI pensando pero server 200". Barato; se puede dejar o subir su categoria de log a Warning.
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,
+                          Propia.Web.Diagnostics.DiagnosticCircuitHandler>();
 
 // HttpClient hacia la propia API. Ahora vive en el MISMO proceso; en dev apunta a
 // la propia app (loopback), en prod a PropiaApi:BaseUrl (su propio origen interno).

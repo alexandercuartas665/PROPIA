@@ -5,6 +5,7 @@
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
+@inject ILogger<IaAgentes> Log
 
 <PageTitle>Agentes de IA - PROPIA</PageTitle>
 
@@ -657,7 +658,7 @@ else
                                 📎
                                 <InputFile OnChange="OnAttachChanged" accept="image/*,audio/*,application/pdf" disabled="@(_busy || _pendingAttach is not null)" style="display:none;" />
                             </label>
-                            <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
+                            <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(async e => { if (e.Key == "Enter") await ProbarChatAsync(); })" disabled="@_busy" />
                             <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null))">Enviar</button>
                         </div>
                     </div>
@@ -1353,6 +1354,11 @@ else
         if (_detalle is null) return;
         if (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null) return;
         _busy = true; _chatError = null; _phoneInfo = null;
+        // Diagnostico "UI pensando pero server 200": marcamos inicio/fin del handler. Si el log muestra
+        // FIN con ok=... y la UI del cliente sigue en "Escribiendo...", la respuesta se produjo y el
+        // problema es la entrega/pintado server->cliente (circuito), no este metodo.
+        var _probarSw = System.Diagnostics.Stopwatch.StartNew();
+        Log.LogInformation("[PROBAR] inicio agente={AgentId}", _detalle.Agent.Id);
 
         var userText = _chatInput.Trim();
         var attach = _pendingAttach;
@@ -1415,7 +1421,13 @@ else
             else { _chatError = r?.Error ?? "No se pudo obtener respuesta."; }
         }
         catch (Exception ex) { _chatError = ex.Message; }
-        finally { _busy = false; }
+        finally
+        {
+            _busy = false;
+            _probarSw.Stop();
+            Log.LogInformation("[PROBAR] fin agente={AgentId} ok={Ok} ms={Ms} -> _busy=false + render emitido",
+                _detalle?.Agent.Id, _chatError is null, _probarSw.ElapsedMilliseconds);
+        }
     }
 
     private async Task OnAttachChanged(InputFileChangeEventArgs e)
