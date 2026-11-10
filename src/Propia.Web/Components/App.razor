@@ -193,13 +193,41 @@
     <script src="_framework/blazor.web.js" autostart="false"></script>
     <script>
         (function () {
+            // ---- Modo diagnostico (temporal): activar con ?diag=1 en la URL una vez; persiste en
+            // localStorage (apagar con ?diag=0). Solo imprime en consola; no cambia el comportamiento.
+            // Sirve para cazar el caso "UI pensando pero server 200": muestra el transporte del
+            // circuito (WebSocket vs LongPolling), su traza, y CUALQUIER error JS no capturado que
+            // pueda abortar el pintado de la respuesta. ----
+            var diag = false;
+            try {
+                var qs = new URLSearchParams(window.location.search);
+                if (qs.get('diag') === '1') { localStorage.setItem('propia_diag', '1'); }
+                else if (qs.get('diag') === '0') { localStorage.removeItem('propia_diag'); }
+                diag = localStorage.getItem('propia_diag') === '1';
+            } catch (e) { }
+
+            var circuitOpts = { reconnectionOptions: { maxRetries: 30, retryIntervalMilliseconds: 3000 } };
+
+            if (diag) {
+                console.log('%c[PROPIA-DIAG] modo diagnostico ACTIVO', 'color:blueviolet;font-weight:bold');
+                // Errores JS no capturados: un throw aqui puede dejar a Blazor sin aplicar el diff del DOM.
+                window.addEventListener('error', function (ev) {
+                    console.error('[PROPIA-DIAG] window.error:', ev.message, 'en', ev.filename + ':' + ev.lineno, ev.error);
+                });
+                window.addEventListener('unhandledrejection', function (ev) {
+                    console.error('[PROPIA-DIAG] promesa rechazada:', ev.reason);
+                });
+                // Traza del SignalR del circuito: imprime el transporte elegido y cada corte/reintento.
+                if (window.signalR) {
+                    circuitOpts.configureSignalR = function (builder) {
+                        try { builder.configureLogging(signalR.LogLevel.Trace); } catch (e) { }
+                    };
+                }
+            }
+
             // Reconexion tolerante: ~30 intentos cada 3s (~90s) antes de rendirse. Con el circuito
             // retenido en el servidor, al volver de una pestana quieta se reengancha sin recargar.
-            Blazor.start({
-                circuit: {
-                    reconnectionOptions: { maxRetries: 30, retryIntervalMilliseconds: 3000 }
-                }
-            });
+            Blazor.start({ circuit: circuitOpts });
             // Si el overlay llega a failed/rejected (ya no reintenta), recarga sola tras 4s para no
             // dejar al usuario con el boton "Recargar pagina" (que igual se conserva como respaldo).
             var m = document.getElementById('components-reconnect-modal');
