@@ -198,3 +198,49 @@ public record AsambleaConfigDto(
     int? LimitePoderesPorPersona,
     int GraciaReconexionSeg,
     int NotifRecordatorioDias);
+
+// ===================== Self-service del residente (Ola 1) =====================
+// Vista ACOTADA para el copropietario/apoderado: datos de la sesion, puntos y SOLO sus unidades.
+// No expone la lista de participantes, poderes ajenos ni votos individuales de otras unidades.
+
+public record SesionResidenteDto(
+    Guid Id,
+    string Titulo,
+    TipoSesion Tipo,
+    ModalidadSesion Modalidad,
+    EstadoSesion Estado,
+    DateTimeOffset FechaSesion,
+    string? LugarFisico,
+    string? EnlaceVideo,
+    string PersonaNombre,
+    QuorumDto QuorumActual,
+    IReadOnlyList<SesionPuntoResidenteDto> Puntos,
+    IReadOnlyList<MiUnidadSesionDto> MisUnidades);
+
+/// <summary>Punto del orden del dia con su votacion mas reciente (resultado solo si ya cerro).</summary>
+public record SesionPuntoResidenteDto(
+    Guid Id,
+    int Numero,
+    string Titulo,
+    string? Descripcion,
+    bool RequiereVotacion,
+    EstadoPunto Estado,
+    ModalidadVoto ModalidadVoto,
+    IReadOnlyList<string> OpcionesVoto,
+    Guid? VotacionId,
+    EstadoVotacion? VotacionEstado,
+    ResultadoVotacion? ResultadoFinal,
+    string? ResultadoOpcion,
+    decimal? ResultadoPct);
+
+/// <summary>Unidad sobre la que la persona puede actuar: como propietaria o por poder aprobado.</summary>
+public record MiUnidadSesionDto(
+    Guid UnidadPrivadaId,
+    string UnidadNumero,
+    decimal Coeficiente,
+    bool Presente,
+    bool PorPoder,
+    IReadOnlyList<MiVotoDto> Votos);
+
+/// <summary>Voto ya emitido por la unidad. Opcion null si la votacion es secreta.</summary>
+public record MiVotoDto(Guid VotacionId, Guid PuntoId, string? Opcion);

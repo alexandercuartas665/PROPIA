@@ -16,7 +16,7 @@ namespace Propia.Infrastructure.Asambleas;
 /// Modulo 2.8 Asambleas y Organos de Gobierno - spec v1.0 MVP.
 /// Ciclo: Borrador -> Citada -> EnCurso -> (Cerrada | QuorumFallido).
 /// </summary>
-public class AsambleaService : IAsambleaService
+public partial class AsambleaService : IAsambleaService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
@@ -408,7 +408,13 @@ public class AsambleaService : IAsambleaService
         return true;
     }
 
-    public async Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+    public Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+        => CheckInParticipanteCoreAsync(sesionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien registra su propia asistencia (flujo self-service). Null = flujo admin,
+    // que conserva la persona del participante en el quorum log.
+    private async Task<bool> CheckInParticipanteCoreAsync(Guid sesionId, CheckInParticipanteRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var p = await _db.SesionParticipantes
             .FirstOrDefaultAsync(x => x.SesionId == sesionId && x.UnidadPrivadaId == req.UnidadPrivadaId, ct);
@@ -443,7 +449,7 @@ public class AsambleaService : IAsambleaService
         {
             SesionId = sesionId,
             Evento = req.Presente ? EventoQuorum.Ingreso : EventoQuorum.Salida,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = p.UnidadPrivadaId,
             Coeficiente = p.Coeficiente,
             QuorumAcumuladoPct = pct
@@ -491,7 +497,13 @@ public class AsambleaService : IAsambleaService
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, null, null, null, new List<VotoDto>());
     }
 
-    public async Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+    public Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+        => EmitirVotoCoreAsync(votacionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien emite el voto (propietario o apoderado, flujo self-service). Null = flujo
+    // admin, que conserva la persona del participante en el voto.
+    private async Task<bool> EmitirVotoCoreAsync(Guid votacionId, EmitirVotoRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var v = await _db.Votaciones.Include(x => x.Punto).FirstOrDefaultAsync(x => x.Id == votacionId, ct);
         if (v is null) return false;
@@ -519,7 +531,7 @@ public class AsambleaService : IAsambleaService
         _db.Votos.Add(new Voto
         {
             VotacionId = votacionId,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = req.UnidadPrivadaId,
             CoeficienteAportado = p.Coeficiente,
             Opcion = req.Opcion,
