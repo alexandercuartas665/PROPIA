@@ -290,8 +290,10 @@
                         <div class="seg-row seg-newrow seg-newrow--edit seg-grid" style="@GridStyle()" @onkeydown="OnAltaKeydownS">
                             <div class="seg-sel"></div>
                             <div class="seg-exp-col">
-                                @* Expander del alta (como Unidades): crea la poliza con lo escrito y abre su ficha para completar. *@
-                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Crear y abrir la ficha para completar" @onclick="() => CrearPolizaDesdeAltaAsync(true)" disabled="@_creandoInline">
+                                @* Expander del alta (como Mantenimiento): abre el modal "Nueva poliza" con lo ya escrito,
+                                   SIN crear nada; se termina y guarda en el modal. Antes creaba primero y, sin aseguradora,
+                                   fallaba con "Indica la aseguradora" aunque el usuario solo queria seguir en el modal. *@
+                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Abrir el formulario completo con lo escrito" @onclick="AbrirModalDesdeAltaAsync" disabled="@_creandoInline">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
                             </div>
@@ -2303,6 +2305,25 @@
     // K-09: el mismo toast avisa de exito y de error; en verde un error se lee como confirmacion.
     private bool _inlineMsgEsError;
     private readonly List<Guid> _segRecienCreados = new();
+
+    // Expander de la fila de alta: lleva lo escrito al modal "Nueva poliza" y cierra la fila. La fila se
+    // cierra (no solo se oculta) porque su auto-guardado en blur crearia la poliza en segundo plano mientras
+    // el usuario sigue escribiendo en el modal (duplicado). Lo que falte se valida al guardar en el modal.
+    private async Task AbrirModalDesdeAltaAsync()
+    {
+        var num = _npNumero; var aseg = _npAseguradora; var corr = _npCorredor;
+        var val = _npValor; var ini = _npInicio; var fin = _npFin;
+        _altaAbierta = false; _inlineMsg = null;
+        _npNumero = ""; _npAseguradora = ""; _npCorredor = ""; _npValor = ""; _npInicio = ""; _npFin = "";
+
+        await AbrirModal(null);
+        if (!string.IsNullOrWhiteSpace(num)) _f.NumeroPoliza = num.Trim();
+        if (!string.IsNullOrWhiteSpace(aseg)) _f.Aseguradora = aseg.Trim();
+        if (!string.IsNullOrWhiteSpace(corr)) _f.Corredor = corr.Trim();
+        if (decimal.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v)) _f.ValorPoliza = v;
+        if (DateTime.TryParse(ini, out var di)) _f.Inicio = di;
+        if (DateTime.TryParse(fin, out var df)) _f.Fin = df;
+    }
 
     private async Task CrearPolizaDesdeAltaAsync(bool abrir = false)
     {
