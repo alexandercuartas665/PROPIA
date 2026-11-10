@@ -38,7 +38,7 @@
 <div class="mt-tabs">
     <button class="mt-tab @(_tab == "prog" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("prog")'>Programación</button>
     <button class="mt-tab @(_tab == "intervenciones" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("intervenciones")'>Intervenciones</button>
-    <button class="mt-tab @(_tab == "calendario" ? "mt-tab--on" : "")" type="button" @onclick='() => SwitchTab("calendario")'>Calendario</button>
+    @* "Calendario" dejo de ser pestana: es una VISTA de Programacion (selector Tarjetas/Tabla/Calendario, canon). *@
 </div>
 
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
@@ -46,6 +46,8 @@
 @* Menu de columna canon (chevron del header) + editor focalizado de campo de sistema, por tab. *@
 <TablaColMenu @ref="_colMenuProg" OnAccion="OnColAccionProg" />
 <TablaColMenu @ref="_colMenuInterv" OnAccion="OnColAccionInterv" />
+@* Menu contextual de fila (clic derecho), canon compartido TablaCtxMenu (= Contratos/Seguros/Espacios). *@
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 @if (_editSisClaveProg is not null)
 {
     <EditarCampoSistemaModal Clave="@_editSisClaveProg" DefLabel="@_editSisLabelProg" Tipo="_editSisTipoProg" Requerido="_editSisReqProg"
@@ -71,83 +73,47 @@
 {
     @* Configuracion de mantenimientos en TABLA (patron vista-tabla): una fila por programacion,
        expansor en la 1a columna -> modal completo; Filtros / Agrupar / Campos; alta inline por activo. *@
-    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <FiltroDinamico @ref="_fdProg" Campos="CamposFiltroProg" OnChanged="StateHasChanged" />
-        <div class="mod-search">
+        <div class="mod-search" style="flex:1 1 180px; max-width:255px; min-width:160px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="mod-search-inp" placeholder="Buscar programación..." @bind="_progQuery" @bind:event="oninput" />
         </div>
         <div style="flex:1;"></div>
         @* Ordenar (canon = Unidades/Equipos): multi-criterio apilable, componente compartido. *@
-        <TablaOrdenarMenu Columnas="ColsOrdenablesProg()" Sorts="_sortsProg" SortsChanged="OnSortsProgChanged" />
-        <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_progAgrupar != "" ? "on" : "")" @onclick='() => _progMenu = _progMenu == "agr" ? "" : "agr"'>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                <span>Agrupar@(_progAgrupar != "" ? ": " + ProgAgruparLabel(_progAgrupar) : "")</span>
-            </button>
-            @if (_progMenu == "agr")
-            {
-                <div class="mtp-menu-bd" @onclick='() => _progMenu = ""'></div>
-                <div class="mtp-menu">
-                    @foreach (var g in ProgAgruparOpciones())
-                    {
-                        var gk = g.Item1;
-                        <button class="mtp-menu-it @(_progAgrupar == gk ? "on" : "")" @onclick='() => { _progAgrupar = gk; _progMenu = ""; }'>@g.Item2</button>
-                    }
-                </div>
-            }
-        </div>
-        @* Columnas (inline, canon = Unidades/Equipos): orden, visibilidad y borrar campo propio. Crear/alias = "Campos". *@
-        <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_showColMenuProg ? "on" : "")" @onclick="() => _showColMenuProg = !_showColMenuProg" title="Columnas: orden y visibilidad">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
-                <span>Columnas</span>
-            </button>
-            @if (_showColMenuProg)
-            {
-                <div class="mtp-menu-bd" @onclick="() => _showColMenuProg = false"></div>
-                <div class="mtp-menu mtp-colmenu">
-                    <div class="mtp-col-search">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                        <input placeholder="Buscar campo..." value="@_colQProg" @oninput="@(e => _colQProg = e.Value?.ToString() ?? string.Empty)" />
-                    </div>
-                    <div class="mtp-col-list">
-                        @{ var _colsP = ClavesOrdenadasProg().ToList(); }
-                        @for (int _ci = 0; _ci < _colsP.Count; _ci++)
-                        {
-                            var k = _colsP[_ci];
-                            var idx = _ci;
-                            var label = LabelColProg(k);
-                            if (!string.IsNullOrWhiteSpace(_colQProg) && !label.Contains(_colQProg, StringComparison.OrdinalIgnoreCase)) { continue; }
-                            var fija = EsFijaProg(k);
-                            var visible = VisibleColProg(k);
-                            var custom = CampoCustomProg(k);
-                            <div class="mtp-col-it">
-                                <button class="mtp-col-mv" disabled="@(idx == 0)" @onclick="() => MoverColumnaProg(k, -1)">&#9650;</button>
-                                <button class="mtp-col-mv" disabled="@(idx == _colsP.Count - 1)" @onclick="() => MoverColumnaProg(k, 1)">&#9660;</button>
-                                <span class="mtp-col-name">@label @if (custom is not null) { <span class="mtp-col-dyn" title="Campo personalizado">din</span> }</span>
-                                @if (fija) { <span class="mtp-col-fija">fija</span> }
-                                else
-                                {
-                                    <button class="mtp-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColProg(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
-                                }
-                                @if (custom is not null) { <button class="mtp-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarProg = custom"><i class="fi fi-rr-trash"></i></button> }
-                            </div>
-                        }
-                    </div>
-                    <div class="mtp-col-massacts">
-                        <button type="button" class="mtp-col-mass" @onclick="OcultarTodasColProg"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
-                        <button type="button" class="mtp-col-mass" @onclick="MostrarTodasColProg"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
-                        <button type="button" class="mtp-col-reset" @onclick="RestablecerColProg">Restablecer</button>
-                    </div>
-                </div>
-            }
-        </div>
+        @if (_vistaProg != "calendario")
+        {
+            <TablaOrdenarMenu Columnas="ColsOrdenablesProg()" Sorts="_sortsProg" SortsChanged="OnSortsProgChanged" />
+        }
+        @* Agrupar y Columnas: componentes COMPARTIDOS del canon (antes menus propios: Agrupar era de 1 solo
+           nivel y Columnas una copia del menu de Unidades). Agrupar ahora es multi-nivel apilable. Solo en Tabla. *@
+        @if (_vistaProg == "tabla")
+        {
+            <TablaAgruparMenu Columnas="ColsAgrupablesProg()" Grupos="_gruposProg" GruposChanged="OnGruposProgChanged" />
+            <TablaColumnasMenu Columnas="ColsVisibilidadProg()" OnMover="MoverColProgMenu" OnToggleVisible="ToggleVisibleColProg"
+                               OnEliminar="EliminarColProgMenu" OnOcultarTodas="OcultarTodasColProg"
+                               OnMostrarTodas="MostrarTodasColProg" OnRestablecer="RestablecerColProg" />
+        }
         <div class="mtp-menuwrap">
             @* Campos: abre el Selector de Campos compartido (crear campo propio, alias, config de sistema). *@
             <button type="button" class="mtp-fbtn @(_selProgAbierto ? "on" : "")" @onclick="() => _selProgAbierto = true" title="Campos de la programación: crear campo propio, alias y configuración">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
+            </button>
+        </div>
+        @* Selector de vista canon (orden del sistema: Tarjetas · Tabla · Calendario, como Tareas/PQRSD). *@
+        <div class="mtp-viewtoggle">
+            <button type="button" class="mtp-vt @(_vistaProg == "tarjetas" ? "on" : "")" @onclick='() => SetVistaProg("tarjetas")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="mtp-vt @(_vistaProg == "tabla" ? "on" : "")" @onclick='() => SetVistaProg("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                Tabla
+            </button>
+            <button type="button" class="mtp-vt @(_vistaProg == "calendario" ? "on" : "")" @onclick='() => SetVistaProg("calendario")' title="Calendario">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                Calendario
             </button>
         </div>
     </div>
@@ -175,7 +141,45 @@
     {
         <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
     }
-    else
+    else if (_vistaProg == "tarjetas")
+    {
+        @* Vista Tarjetas (patron Espacios; diseno retomado de YUNQUE): una tarjeta por programacion, respetando
+           Filtros/Buscar/Ordenar. Clic abre el formulario completo; clic derecho, el menu contextual. *@
+        var cardsP = ProgFiltradas().ToList();
+        if (cardsP.Count == 0)
+        {
+            <div class="mtp-cards-empty">No hay programaciones para mostrar. Usa la vista Tabla para crear la primera.</div>
+        }
+        else
+        {
+            <div class="mtp-cards">
+                @foreach (var p in cardsP)
+                {
+                    var pp = p;
+                    <button type="button" class="mtp-card @(p.Activa ? "" : "mtp-card--off")" title="Abrir la programación completa"
+                            @onclick="() => AbrirEditarProgAsync(pp)" @oncontextmenu="e => AbrirCtxProg(e, pp)" @oncontextmenu:preventDefault="true">
+                        <span class="mtp-card-ic">
+                            @if (p.ModuloOrigenCodigo == "zona")
+                            {
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg>
+                            }
+                            else
+                            {
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                            }
+                        </span>
+                        <span class="mtp-card-bd">
+                            <span class="mtp-card-tit">@p.Titulo</span>
+                            <span class="mtp-card-meta">@(p.ModuloOrigenCodigo == "zona" ? "Zona común" : "Equipo")@(string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "" : " · " + p.OrigenReferencia)</span>
+                            <span class="mtp-card-meta">@(p.Tipo == TipoProgramacion.Cron ? "Cron" : PeriodicidadProgLabel(p.Periodicidad)) · Próxima: @p.FechaProximaEjecucion.ToString("dd MMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("es-CO"))</span>
+                        </span>
+                        <span class="mtp-card-chip @(p.Activa ? "on" : "")">@(p.Activa ? "Activa" : "Pausada")</span>
+                    </button>
+                }
+            </div>
+        }
+    }
+    else if (_vistaProg == "tabla")
     {
         @* Barra de accion masiva (canon): aparece al seleccionar filas. Programaciones = Eliminar. *@
         @if (_selProg.Count > 0)
@@ -197,16 +201,20 @@
                 @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label@ChevColProg(ck, c.Label, EsCustomProg(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
-            @foreach (var grupo in ProgGruposRender())
+            @* Agrupacion multi-nivel (motor compartido TablaAgrupador): el arbol se aplana a encabezados de
+               (sub)grupo + filas hoja; el encabezado se sangra por nivel. Sin agrupar = pagina actual. *@
+            @foreach (var fg in ProgFilasRender())
             {
-                @if (_progAgrupar != "")
+                @if (fg.Grupo is { } gn)
                 {
-                    <div class="mtp-group"><span>@grupo.Key</span><span class="mtp-group-n">@grupo.Count()</span></div>
+                    <div class="mtp-group mtp-group--l@(Math.Min(gn.Nivel, 2))" style="padding-left:@(14 + gn.Nivel * 18)px"><span>@gn.Titulo</span><span class="mtp-group-n">@gn.Conteo</span></div>
                 }
-                @foreach (var p in grupo)
+                else
                 {
+                    var p = fg.Fila!;
                     var pp = p;
-                    <div class="mtp-row @(_selProg.Contains(pp.Id) ? "mtp-row-sel" : "")" style="@ProgGrid">
+                    <div class="mtp-row @(_selProg.Contains(pp.Id) ? "mtp-row-sel" : "")" style="@ProgGrid"
+                         @oncontextmenu="e => AbrirCtxProg(e, pp)" @oncontextmenu:preventDefault="true">
                         <div class="mtp-sel-col"><label class="mtp-chk"><input type="checkbox" checked="@_selProg.Contains(pp.Id)" @onclick:stopPropagation="true" @onchange="e => ToggleSelProg(pp.Id, (bool)(e.Value ?? false))" /></label></div>
                         <div class="mtp-exp-col">
                             <button type="button" class="mtp-exp" title="Abrir la programación completa" @onclick="() => AbrirEditarProgAsync(pp)">
@@ -403,7 +411,7 @@
                 </div>
             </div>
             }
-            @if (_progAgrupar == "")
+            @if (NivelesProg.Count == 0)
             {
                 <TablaPager Total="ProgFiltradas().Count()" Pagina="_progPagina" PorPagina="_progPorPagina" Entidad="programaciones"
                             PaginaChanged="v => _progPagina = v" PorPaginaChanged="v => { _progPorPagina = v; _progPagina = 1; }" />
@@ -421,82 +429,38 @@
 {
     @* Intervenciones en TABLA canon (Ola 3): expansor -> ficha; Filtros / Agrupar / Campos (sistema + propios);
        alta inline (crea intervencion + tarea vinculada); paginador. *@
-    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+    <div class="mod-filtros" style="margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <FiltroDinamico @ref="_fdInterv" Campos="CamposFiltroInterv" OnChanged="StateHasChanged" />
-        <div class="mod-search">
+        <div class="mod-search" style="flex:1 1 180px; max-width:255px; min-width:160px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="mod-search-inp" placeholder="Buscar intervención..." @bind="_intervQuery" @bind:event="oninput" />
         </div>
         <div style="flex:1;"></div>
         @* Ordenar (canon = Unidades/Equipos). *@
         <TablaOrdenarMenu Columnas="ColsOrdenablesInterv()" Sorts="_sortsInterv" SortsChanged="OnSortsIntervChanged" />
-        <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_intervAgrupar != "" ? "on" : "")" @onclick='() => _intervMenu = _intervMenu == "agr" ? "" : "agr"'>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                <span>Agrupar@(_intervAgrupar != "" ? ": " + IntervAgruparLabel(_intervAgrupar) : "")</span>
-            </button>
-            @if (_intervMenu == "agr")
-            {
-                <div class="mtp-menu-bd" @onclick='() => _intervMenu = ""'></div>
-                <div class="mtp-menu">
-                    @foreach (var g in IntervAgruparOpciones())
-                    {
-                        var gk = g.Item1;
-                        <button class="mtp-menu-it @(_intervAgrupar == gk ? "on" : "")" @onclick='() => { _intervAgrupar = gk; _intervMenu = ""; }'>@g.Item2</button>
-                    }
-                </div>
-            }
-        </div>
-        @* Columnas (inline, canon = Unidades/Equipos). *@
-        <div class="mtp-menuwrap">
-            <button type="button" class="mtp-fbtn @(_showColMenuInterv ? "on" : "")" @onclick="() => _showColMenuInterv = !_showColMenuInterv" title="Columnas: orden y visibilidad">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
-                <span>Columnas</span>
-            </button>
-            @if (_showColMenuInterv)
-            {
-                <div class="mtp-menu-bd" @onclick="() => _showColMenuInterv = false"></div>
-                <div class="mtp-menu mtp-colmenu">
-                    <div class="mtp-col-search">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                        <input placeholder="Buscar campo..." value="@_colQInterv" @oninput="@(e => _colQInterv = e.Value?.ToString() ?? string.Empty)" />
-                    </div>
-                    <div class="mtp-col-list">
-                        @{ var _colsI = ClavesOrdenadasInterv().ToList(); }
-                        @for (int _ci = 0; _ci < _colsI.Count; _ci++)
-                        {
-                            var k = _colsI[_ci];
-                            var idx = _ci;
-                            var label = LabelColInterv(k);
-                            if (!string.IsNullOrWhiteSpace(_colQInterv) && !label.Contains(_colQInterv, StringComparison.OrdinalIgnoreCase)) { continue; }
-                            var fija = EsFijaInterv(k);
-                            var visible = VisibleColInterv(k);
-                            var custom = CampoCustomInterv(k);
-                            <div class="mtp-col-it">
-                                <button class="mtp-col-mv" disabled="@(idx == 0)" @onclick="() => MoverColumnaInterv(k, -1)">&#9650;</button>
-                                <button class="mtp-col-mv" disabled="@(idx == _colsI.Count - 1)" @onclick="() => MoverColumnaInterv(k, 1)">&#9660;</button>
-                                <span class="mtp-col-name">@label @if (custom is not null) { <span class="mtp-col-dyn" title="Campo personalizado">din</span> }</span>
-                                @if (fija) { <span class="mtp-col-fija">fija</span> }
-                                else
-                                {
-                                    <button class="mtp-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleColInterv(k)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
-                                }
-                                @if (custom is not null) { <button class="mtp-col-del" title="Eliminar campo (definicion y valores)" @onclick="() => _campoAEliminarInterv = custom"><i class="fi fi-rr-trash"></i></button> }
-                            </div>
-                        }
-                    </div>
-                    <div class="mtp-col-massacts">
-                        <button type="button" class="mtp-col-mass" @onclick="OcultarTodasColInterv"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
-                        <button type="button" class="mtp-col-mass" @onclick="MostrarTodasColInterv"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
-                        <button type="button" class="mtp-col-reset" @onclick="RestablecerColInterv">Restablecer</button>
-                    </div>
-                </div>
-            }
-        </div>
+        @* Agrupar (multi-nivel) y Columnas: componentes COMPARTIDOS del canon (antes menus propios). Solo en Tabla. *@
+        @if (_vistaInterv == "tabla")
+        {
+            <TablaAgruparMenu Columnas="ColsAgrupablesInterv()" Grupos="_gruposInterv" GruposChanged="OnGruposIntervChanged" />
+            <TablaColumnasMenu Columnas="ColsVisibilidadInterv()" OnMover="MoverColIntervMenu" OnToggleVisible="ToggleVisibleColInterv"
+                               OnEliminar="EliminarColIntervMenu" OnOcultarTodas="OcultarTodasColInterv"
+                               OnMostrarTodas="MostrarTodasColInterv" OnRestablecer="RestablecerColInterv" />
+        }
         <div class="mtp-menuwrap">
             <button type="button" class="mtp-fbtn @(_selIntervAbierto ? "on" : "")" @onclick="() => _selIntervAbierto = true" title="Campos de la intervención: crear campo propio, alias y configuración">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
                 <span>Campos</span>
+            </button>
+        </div>
+        @* Selector de vista canon: Tarjetas (kanban por estado) · Tabla. *@
+        <div class="mtp-viewtoggle">
+            <button type="button" class="mtp-vt @(_vistaInterv == "tarjetas" ? "on" : "")" @onclick='() => SetVistaInterv("tarjetas")' title="Tarjetas">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Tarjetas
+            </button>
+            <button type="button" class="mtp-vt @(_vistaInterv == "tabla" ? "on" : "")" @onclick='() => SetVistaInterv("tabla")' title="Tabla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+                Tabla
             </button>
         </div>
     </div>
@@ -524,6 +488,43 @@
     {
         <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
     }
+    else if (_vistaInterv == "tarjetas")
+    {
+        @* Vista Tarjetas: kanban por ESTADO (Programada -> En ejecucion -> En revision -> Completada / Cancelada),
+           respetando Filtros/Buscar. Clic abre la ficha; clic derecho, el siguiente paso rapido del flujo. *@
+        var porEstado = IntervFiltradas().GroupBy(x => x.Estado).ToDictionary(g => g.Key, g => g.ToList());
+        <div class="mtk-board">
+            @foreach (var est in new[] { EstadoIntervencion.Programada, EstadoIntervencion.EnEjecucion, EstadoIntervencion.EnRevision, EstadoIntervencion.Completada, EstadoIntervencion.Cancelada })
+            {
+                var lista = porEstado.TryGetValue(est, out var l) ? l : new List<IntervencionListaDto>();
+                if (lista.Count == 0 && MtOculta(_listaMtIntEstado, "e:" + est)) { continue; }
+                <div class="mtk-col">
+                    <div class="mtk-col-head">
+                        <span class="mtk-dot mtk-dot--@((int)est)"></span>
+                        <span class="mtk-col-tit">@LblIntEstado(est)</span>
+                        <span class="mtk-col-n">@lista.Count</span>
+                    </div>
+                    <div class="mtk-col-body">
+                        @foreach (var it in lista)
+                        {
+                            var ii = it;
+                            <button type="button" class="mtk-card" title="Abrir la ficha de la intervención"
+                                    @onclick="() => MostrarFicha(ii.Id)" @oncontextmenu="e => AbrirCtxInterv(e, ii)" @oncontextmenu:preventDefault="true">
+                                <span class="mtk-card-top"><span class="mtk-cod">@it.Codigo</span>@RenderPrioridadBadge(it.Prioridad)</span>
+                                <span class="mtk-card-tit">@it.Titulo</span>
+                                <span class="mtk-card-meta">@(string.IsNullOrWhiteSpace(it.ActivoNombre) ? "(sin activo)" : it.ActivoNombre)</span>
+                                <span class="mtk-card-foot">
+                                    @RenderTipoBadge(it.Tipo)
+                                    @if (it.FechaProgramada is { } fp) { <span class="mtk-fecha">@fp.ToString("dd MMM", System.Globalization.CultureInfo.GetCultureInfo("es-CO"))</span> }
+                                </span>
+                            </button>
+                        }
+                        @if (lista.Count == 0) { <div class="mtk-empty">Sin intervenciones</div> }
+                    </div>
+                </div>
+            }
+        </div>
+    }
     else
     {
         <div class="mtp-tablebox">
@@ -533,16 +534,19 @@
                 @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label@ChevColInterv(ck, c.Label, EsCustomInterv(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
-            @foreach (var grupo in IntervGruposRender())
+            @* Agrupacion multi-nivel (motor compartido TablaAgrupador), igual que Programacion. *@
+            @foreach (var fg in IntervFilasRender())
             {
-                @if (_intervAgrupar != "")
+                @if (fg.Grupo is { } gn)
                 {
-                    <div class="mtp-group"><span>@grupo.Key</span><span class="mtp-group-n">@grupo.Count()</span></div>
+                    <div class="mtp-group mtp-group--l@(Math.Min(gn.Nivel, 2))" style="padding-left:@(14 + gn.Nivel * 18)px"><span>@gn.Titulo</span><span class="mtp-group-n">@gn.Conteo</span></div>
                 }
-                @foreach (var i in grupo)
+                else
                 {
+                    var i = fg.Fila!;
                     var iid = i.Id;
-                    <div class="mtp-row" style="@IntervGrid">
+                    <div class="mtp-row" style="@IntervGrid"
+                         @oncontextmenu="e => AbrirCtxInterv(e, i)" @oncontextmenu:preventDefault="true">
                         <div class="mtp-exp-col">
                             <button type="button" class="mtp-exp" title="Abrir la ficha de la intervención" @onclick="() => MostrarFicha(iid)">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -678,7 +682,7 @@
                 </div>
             </div>
             }
-            @if (_intervAgrupar == "")
+            @if (NivelesInterv.Count == 0)
             {
                 <TablaPager Total="IntervFiltradas().Count()" Pagina="_intervPagina" PorPagina="_intervPorPagina" Entidad="intervenciones"
                             PaginaChanged="v => _intervPagina = v" PorPaginaChanged="v => { _intervPorPagina = v; _intervPagina = 1; }" />
@@ -826,7 +830,7 @@ else if (_tab == "planes")
         </div>
     }
 }
-else if (_tab == "calendario")
+else if (_tab == "prog" && _vistaProg == "calendario")
 {
     @* Calendario de PROGRAMACIONES: cada regla se pinta en sus fechas de ejecucion (proxima +
        recurrencias segun la periodicidad) dentro de la vista. Vista Mes o Semana. *@
@@ -1139,9 +1143,15 @@ else if (_tab == "calendario")
         if (_progPagina < 1) _progPagina = 1;
         return filt.Skip((_progPagina - 1) * _progPorPagina).Take(_progPorPagina);
     }
-    // Filas a renderizar: sin agrupar -> un grupo vacio ya PAGINADO; agrupado -> los grupos completos (sin pager).
-    private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgGruposRender()
-        => _progAgrupar == "" ? ProgPagina().GroupBy(_ => "") : ProgAgrupadas();
+    // Filas a renderizar: sin agrupar -> la pagina actual (con pager); agrupado -> el arbol multi-nivel
+    // completo aplanado en encabezados + filas (sin pager). Motor compartido TablaAgrupador.
+    private List<string> NivelesProg => _gruposProg.Where(k => ProgColsVis.Any(c => c.Key == k)).ToList();
+    private IEnumerable<FilaOGrupo<ProgramacionTareaDto>> ProgFilasRender()
+    {
+        var niveles = NivelesProg;
+        if (niveles.Count == 0) return ProgPagina().Select(p => new FilaOGrupo<ProgramacionTareaDto>(null, p));
+        return TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(ProgFiltradas(), niveles, (p, k) => new[] { ValorGrupoProg(p, k) }, "(vacio)"));
+    }
 
     // Referencia a este componente para los interop de JS (guardado invisible de la fila de alta).
     private DotNetObjectReference<Mantenimiento>? _self;
@@ -1235,8 +1245,7 @@ else if (_tab == "calendario")
     private bool _progOpcionesCargadas;
     private FiltroDinamico? _fdProg;
     private string _progQuery = "";
-    private string _progAgrupar = "";
-    private string _progMenu = "";
+    private List<string> _gruposProg = new();   // niveles de agrupacion (TablaAgruparMenu), en orden
     // Fila de alta inline de Programacion: un campo por columna (canon regla 8).
     private string _altaTipo = "Equipo";          // Equipo | ZonaComun (selector antes del activo)
     private string _altaActivoId = "";            // Guid del activo (filtrado por _altaTipo)
@@ -1353,8 +1362,6 @@ else if (_tab == "calendario")
 
     // ===== Menu "Columnas" (inline, canon = Unidades/Equipos): orden, visibilidad y borrar campo propio.
     // Orden/visibilidad persisten en unidades-config (entidad 'programacion'); crear/alias siguen en "Campos". =====
-    private bool _showColMenuProg;
-    private string _colQProg = "";
     private bool _colBusyProg;
     private Propia.Application.MiCopropiedad.ProgramacionCampoDefinicionDto? _campoAEliminarProg;
     private bool EsFijaProg(string clave) => MantenimientoCamposSistema.Por(clave)?.Fija ?? false;
@@ -1476,7 +1483,7 @@ else if (_tab == "calendario")
                 else ColToastMant("Filtrar por este campo no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.Agrupar:
-                if (ProgAgruparOpciones().Any(g => g.Item1 == col.Key)) _progAgrupar = col.Key;
+                if (ProgColsVis.Any(c => c.Key == col.Key)) { if (!_gruposProg.Contains(col.Key)) _gruposProg.Add(col.Key); await OnGruposProgChanged(); }
                 else ColToastMant("Agrupar por este campo no esta disponible aun.");
                 break;
             case TablaColMenu.Accion.InsertarIzq:
@@ -1510,7 +1517,7 @@ else if (_tab == "calendario")
                 else ColToastMant("Filtrar por este campo no esta disponible; usa el boton Filtros.");
                 break;
             case TablaColMenu.Accion.Agrupar:
-                if (IntervAgruparOpciones().Any(g => g.Item1 == col.Key)) _intervAgrupar = col.Key;
+                if (IntervColsVis.Any(c => c.Key == col.Key)) { if (!_gruposInterv.Contains(col.Key)) _gruposInterv.Add(col.Key); await OnGruposIntervChanged(); }
                 else ColToastMant("Agrupar por este campo no esta disponible aun.");
                 break;
             case TablaColMenu.Accion.InsertarIzq:
@@ -1663,28 +1670,77 @@ else if (_tab == "calendario")
         return o!;
     }
 
-    private IEnumerable<IGrouping<string, ProgramacionTareaDto>> ProgAgrupadas()
+    // Valor de agrupacion de una programacion para una columna (un nivel del arbol de TablaAgrupador).
+    private ValorGrupo ValorGrupoProg(ProgramacionTareaDto p, string clave)
     {
-        Func<ProgramacionTareaDto, string> key;
-        if (CampoCustomProg(_progAgrupar) is { } cdAgr)
-            key = p => { var v = ValorCampoProg(p.Id, cdAgr.Id); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; };
-        else key = _progAgrupar switch
+        string v;
+        if (CampoCustomProg(clave) is { } cdAgr) { var x = ValorCampoProg(p.Id, cdAgr.Id); v = string.IsNullOrWhiteSpace(x) ? "(vacio)" : x!; }
+        else v = clave switch
         {
-            "activo" => p => string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "(sin activo)" : p.OrigenReferencia!,
-            "tablero" => p => string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre!,
-            "periodicidad" => p => p.Tipo == TipoProgramacion.Cron ? "Cron" : PeriodicidadProgLabel(p.Periodicidad),
-            "prioridad" => p => p.Prioridad.ToString(),
+            "activo" => string.IsNullOrWhiteSpace(p.OrigenReferencia) ? "(sin activo)" : p.OrigenReferencia!,
+            "tablero" => string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre!,
+            "periodicidad" => p.Tipo == TipoProgramacion.Cron ? "Cron" : PeriodicidadProgLabel(p.Periodicidad),
+            // Etiquetas legibles (las mismas de la tabla), no el valor crudo ("zona", "True", enum).
+            "tipo" => p.ModuloOrigenCodigo == "zona" ? "Zona común" : "Equipo",
+            "prioridad" => LblPrioProg(p.Prioridad),
+            "activa" => p.Activa ? "Activa" : "Pausada",
             // Cualquier otra columna: mismo valor que Ordenar, asi agrupa igual que ordena.
-            _ => p => { var v = ValorOrdenProg(p, _progAgrupar)?.ToString(); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; }
+            _ => ValorOrdenProg(p, clave)?.ToString() is { } s && !string.IsNullOrWhiteSpace(s) ? s : "(vacio)"
         };
-        return ProgFiltradas().GroupBy(key);
+        return new ValorGrupo(v, v);
     }
 
-    // Opciones del menu Agrupar: TODAS las columnas (igual que Ordenar/Columnas): fijas visibles + propias.
-    private IEnumerable<(string, string)> ProgAgruparOpciones()
-        => new[] { ("", "Sin agrupar") }.Concat(ProgColsVis.Select(c => (c.Key, c.Label)));
+    // Agrupar (TablaAgruparMenu): se ofrecen TODAS las columnas visibles (igual que Ordenar/Columnas).
+    private List<TablaAgruparMenu.Col> ColsAgrupablesProg()
+        => ProgColsVis.Select(c => new TablaAgruparMenu.Col(c.Key, c.Label)).ToList();
+    private async Task OnGruposProgChanged() { await GuardarGruposAsync(GruposProgKey, _gruposProg); StateHasChanged(); }
 
-    private string ProgAgruparLabel(string k) => string.IsNullOrEmpty(k) ? "" : LabelColProg(k);
+    // Columnas (TablaColumnasMenu): adaptadores sobre la logica de columnas que ya existia.
+    private List<TablaColumnasMenu.Col> ColsVisibilidadProg()
+        => ClavesOrdenadasProg().Select(k => new TablaColumnasMenu.Col(k, LabelColProg(k), CampoCustomProg(k) is not null,
+               VisibleColProg(k), Movible: true, Ocultable: !EsFijaProg(k))).ToList();
+    private Task MoverColProgMenu((string Key, int Dir) a) => MoverColumnaProg(a.Key, a.Dir);
+    private void EliminarColProgMenu(string k) { if (CampoCustomProg(k) is { } c) _campoAEliminarProg = c; }
+
+    // ===== Selector de vista (canon): Programacion = Tarjetas/Tabla/Calendario; Intervenciones = Tarjetas/Tabla.
+    // La vista se recuerda por pestana (localStorage). Al cambiar de vista se cierra la fila de alta (vive en Tabla).
+    private string _vistaProg = "tabla";
+    private string _vistaInterv = "tabla";
+    private const string VistaProgKey = "propia_mant_vista_prog";
+    private const string VistaIntervKey = "propia_mant_vista_interv";
+    private async Task SetVistaProg(string v)
+    {
+        _vistaProg = v; _altaProgAbierta = false;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", VistaProgKey, v); } catch { }
+    }
+    private async Task SetVistaInterv(string v)
+    {
+        _vistaInterv = v; _altaIntervAbierta = false;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", VistaIntervKey, v); } catch { }
+    }
+    private async Task<string> LeerVistaAsync(string key, string porDefecto, params string[] validas)
+    {
+        try { var s = await Js.InvokeAsync<string?>("localStorage.getItem", key); if (s is not null && validas.Contains(s)) return s; } catch { }
+        return porDefecto;
+    }
+
+    // Persistencia de la agrupacion por pestana (localStorage, como el resto de modulos vista-tabla).
+    private const string GruposProgKey = "propia_mant_grupos_prog";
+    private const string GruposIntervKey = "propia_mant_grupos_interv";
+    private async Task GuardarGruposAsync(string key, List<string> grupos)
+    {
+        try { await Js.InvokeVoidAsync("localStorage.setItem", key, System.Text.Json.JsonSerializer.Serialize(grupos)); } catch { }
+    }
+    private async Task<List<string>> LeerGruposAsync(string key)
+    {
+        try
+        {
+            var s = await Js.InvokeAsync<string?>("localStorage.getItem", key);
+            if (!string.IsNullOrWhiteSpace(s)) return System.Text.Json.JsonSerializer.Deserialize<List<string>>(s) ?? new();
+        }
+        catch { }
+        return new();
+    }
     // Label de periodicidad: copia por-tenant (lista_opciones) si cargo; si no, catalogo global A&D; si no, el enum.
     private string PeriodicidadProgLabel(PeriodicidadProgramacion p)
         => RowLbl(_listaMtPeriod, "e:" + p) ?? (_catMtPeriod.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
@@ -1865,8 +1921,6 @@ else if (_tab == "calendario")
     }
 
     // ===== Menu "Columnas" (Intervenciones; inline, canon = Unidades/Equipos) =====
-    private bool _showColMenuInterv;
-    private string _colQInterv = "";
     private bool _colBusyInterv;
     private Propia.Application.MiCopropiedad.IntervencionCampoDefinicionDto? _campoAEliminarInterv;
     private bool EsFijaInterv(string clave) => IntervencionCamposSistema.Por(clave)?.Fija ?? false;
@@ -1931,28 +1985,35 @@ else if (_tab == "calendario")
         _campoAEliminarInterv = null; _colBusyInterv = false; StateHasChanged();
     }
 
-    private string _intervAgrupar = "";
-    private string _intervMenu = "";
-    private IEnumerable<IGrouping<string, IntervencionListaDto>> IntervAgrupadas()
+    private List<string> _gruposInterv = new();   // niveles de agrupacion (TablaAgruparMenu), en orden
+
+    // Valor de agrupacion de una intervencion para una columna (un nivel del arbol de TablaAgrupador).
+    private ValorGrupo ValorGrupoInterv(IntervencionListaDto i, string clave)
     {
-        Func<IntervencionListaDto, string> key;
-        if (CampoCustomInterv(_intervAgrupar) is { } cdAgr)
-            key = i => { var v = ValorCampoInterv(i.Id, cdAgr.Id); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; };
-        else key = _intervAgrupar switch
+        string v;
+        if (CampoCustomInterv(clave) is { } cdAgr) { var x = ValorCampoInterv(i.Id, cdAgr.Id); v = string.IsNullOrWhiteSpace(x) ? "(vacio)" : x!; }
+        else v = clave switch
         {
-            "activo" => i => string.IsNullOrWhiteSpace(i.ActivoNombre) ? "(sin activo)" : i.ActivoNombre,
-            "tipo" => i => i.Tipo.ToString(),
-            "estado" => i => i.Estado.ToString(),
-            "prioridad" => i => i.Prioridad.ToString(),
+            "activo" => string.IsNullOrWhiteSpace(i.ActivoNombre) ? "(sin activo)" : i.ActivoNombre,
+            // Etiquetas legibles por copropiedad (las mismas de la tabla), no el nombre del enum ("EnEjecucion").
+            "tipo" => LblIntTipo(i.Tipo),
+            "estado" => LblIntEstado(i.Estado),
+            "prioridad" => LblIntPrio(i.Prioridad),
             // Cualquier otra columna: mismo valor que Ordenar, asi agrupa igual que ordena.
-            _ => i => { var v = ValorOrdenInterv(i, _intervAgrupar)?.ToString(); return string.IsNullOrWhiteSpace(v) ? "(vacio)" : v!; }
+            _ => ValorOrdenInterv(i, clave)?.ToString() is { } s && !string.IsNullOrWhiteSpace(s) ? s : "(vacio)"
         };
-        return IntervFiltradas().GroupBy(key);
+        return new ValorGrupo(v, v);
     }
-    // Opciones del menu Agrupar: TODAS las columnas (igual que Ordenar/Columnas): fijas visibles + propias.
-    private IEnumerable<(string, string)> IntervAgruparOpciones()
-        => new[] { ("", "Sin agrupar") }.Concat(IntervColsVis.Select(c => (c.Key, c.Label)));
-    private string IntervAgruparLabel(string k) => string.IsNullOrEmpty(k) ? "" : LabelColInterv(k);
+    private List<TablaAgruparMenu.Col> ColsAgrupablesInterv()
+        => IntervColsVis.Select(c => new TablaAgruparMenu.Col(c.Key, c.Label)).ToList();
+    private async Task OnGruposIntervChanged() { await GuardarGruposAsync(GruposIntervKey, _gruposInterv); StateHasChanged(); }
+
+    // Columnas (TablaColumnasMenu): adaptadores sobre la logica de columnas que ya existia.
+    private List<TablaColumnasMenu.Col> ColsVisibilidadInterv()
+        => ClavesOrdenadasInterv().Select(k => new TablaColumnasMenu.Col(k, LabelColInterv(k), CampoCustomInterv(k) is not null,
+               VisibleColInterv(k), Movible: true, Ocultable: !EsFijaInterv(k))).ToList();
+    private Task MoverColIntervMenu((string Key, int Dir) a) => MoverColumnaInterv(a.Key, a.Dir);
+    private void EliminarColIntervMenu(string k) { if (CampoCustomInterv(k) is { } c) _campoAEliminarInterv = c; }
 
     private int _intervPagina = 1;
     private int _intervPorPagina = 25;
@@ -1964,8 +2025,14 @@ else if (_tab == "calendario")
         if (_intervPagina < 1) _intervPagina = 1;
         return filt.Skip((_intervPagina - 1) * _intervPorPagina).Take(_intervPorPagina);
     }
-    private IEnumerable<IGrouping<string, IntervencionListaDto>> IntervGruposRender()
-        => _intervAgrupar == "" ? IntervPagina().GroupBy(_ => "") : IntervAgrupadas();
+    // Filas a renderizar: sin agrupar -> pagina actual (con pager); agrupado -> arbol multi-nivel aplanado.
+    private List<string> NivelesInterv => _gruposInterv.Where(k => IntervColsVis.Any(c => c.Key == k)).ToList();
+    private IEnumerable<FilaOGrupo<IntervencionListaDto>> IntervFilasRender()
+    {
+        var niveles = NivelesInterv;
+        if (niveles.Count == 0) return IntervPagina().Select(i => new FilaOGrupo<IntervencionListaDto>(null, i));
+        return TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(IntervFiltradas(), niveles, (i, k) => new[] { ValorGrupoInterv(i, k) }, "(vacio)"));
+    }
 
     // Alta inline de intervencion (crea + tarea vinculada). Guarda los campos propios sobre la recien creada.
     private string _iaTipo = "Preventivo";
@@ -2234,6 +2301,67 @@ else if (_tab == "calendario")
     private readonly HashSet<Guid> _selProg = new();
     private bool _selProgBusy;
     private void ToggleSelProg(Guid id, bool on) { if (on) _selProg.Add(id); else _selProg.Remove(id); }
+
+    // ===== Menu contextual de fila (clic derecho), canon TablaCtxMenu (= Contratos/Seguros/Espacios) =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxProg(MouseEventArgs e, ProgramacionTareaDto p)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        var sel = _selProg.Contains(p.Id);
+        _ctxItems = new()
+        {
+            new("Abrir programación", "fi-rr-expand", OnClick: () => AbrirEditarProgAsync(p)),
+            new(sel ? "Quitar de la selección" : "Seleccionar", "fi-rr-checkbox", OnClick: () => { ToggleSelProg(p.Id, !sel); return Task.CompletedTask; }),
+            new(Sep: true),
+            new("Eliminar", "fi-rr-trash", Danger: true, OnClick: () => EliminarProgAsync(p)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task EliminarProgAsync(ProgramacionTareaDto p)
+    {
+        var ok = await Modals.ConfirmAsync(
+            $"Eliminar la programacion \"{p.Titulo}\"? Las tareas ya generadas se conservan. Esta accion no se puede deshacer.",
+            "Eliminar programacion");
+        if (!ok) return;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/programaciones/{p.Id}");
+            _msg = r.IsSuccessStatusCode ? "Programacion eliminada." : "No se pudo eliminar: " + await r.Content.ReadAsStringAsync();
+            _msgClass = r.IsSuccessStatusCode ? "alert-success" : "alert-danger";
+            _selProg.Remove(p.Id);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await CargarAsync();
+        StateHasChanged();
+    }
+    // Intervenciones no se eliminan (se cancelan con motivo en la ficha). El menu ofrece abrir la ficha y el
+    // siguiente paso rapido del flujo (los mismos botones de la ficha); cerrar/cancelar piden datos -> ficha.
+    private void AbrirCtxInterv(MouseEventArgs e, IntervencionListaDto i)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        var items = new List<TablaCtxMenu.Item> { new("Abrir ficha", "fi-rr-expand", OnClick: () => MostrarFicha(i.Id)) };
+        if (i.Estado == EstadoIntervencion.Programada)
+            items.Add(new("Iniciar ejecución", "fi-rr-play", OnClick: () => CambiarEstadoCtxAsync(i.Id, EstadoIntervencion.EnEjecucion)));
+        else if (i.Estado == EstadoIntervencion.EnEjecucion)
+            items.Add(new("Pasar a revisión", "fi-rr-search", OnClick: () => CambiarEstadoCtxAsync(i.Id, EstadoIntervencion.EnRevision)));
+        _ctxItems = items;
+        _ctxOpen = true;
+    }
+    // Cambio de estado desde el menu contextual: igual que CambiarEstado pero sin abrir la ficha.
+    private async Task CambiarEstadoCtxAsync(Guid id, EstadoIntervencion nuevo)
+    {
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/mantenimiento/intervenciones/{id}/estado", new CambiarEstadoIntervencionRequest(nuevo, null, null));
+            _msg = resp.IsSuccessStatusCode ? "Estado actualizado." : await resp.Content.ReadAsStringAsync();
+            _msgClass = resp.IsSuccessStatusCode ? "alert-success" : "alert-danger";
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await CargarAsync();
+        StateHasChanged();
+    }
     private bool TodasProgSel
     {
         get { var ids = ProgFiltradas().Select(p => p.Id).ToList(); return ids.Count > 0 && ids.All(_selProg.Contains); }
@@ -2311,6 +2439,15 @@ else if (_tab == "calendario")
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Agrupacion guardada por pestana (localStorage): se restaura al entrar, como el resto de modulos.
+        if (firstRender)
+        {
+            _gruposProg = await LeerGruposAsync(GruposProgKey);
+            _gruposInterv = await LeerGruposAsync(GruposIntervKey);
+            _vistaProg = await LeerVistaAsync(VistaProgKey, "tabla", "tarjetas", "tabla", "calendario");
+            _vistaInterv = await LeerVistaAsync(VistaIntervKey, "tabla", "tarjetas", "tabla");
+            if (_gruposProg.Count > 0 || _gruposInterv.Count > 0 || _vistaProg != "tabla" || _vistaInterv != "tabla") StateHasChanged();
+        }
         if (firstRender && _jwt is null)
         {
             try
@@ -2432,7 +2569,8 @@ else if (_tab == "calendario")
         var porDia = new Dictionary<DateOnly, List<MtCalItem>>();
         void Add(DateOnly f, MtCalItem it) { if (!porDia.TryGetValue(f, out var l)) porDia[f] = l = new(); l.Add(it); }
 
-        foreach (var p in (_progs ?? new()).Where(x => x.Activa))
+        // ProgFiltradas: el calendario respeta Filtros y Buscar de la barra (ahora es una vista de Programacion).
+        foreach (var p in ProgFiltradas().Where(x => x.Activa))
         {
             var clase = !p.Activa ? "" : (p.FechaProximaEjecucion < hoy ? "mt-cal-ev--err" : "mt-cal-ev--plan");
             var texto = string.IsNullOrWhiteSpace(p.OrigenReferencia) ? p.Titulo : $"{p.OrigenReferencia}: {p.Titulo}";
@@ -2770,7 +2908,17 @@ else if (_tab == "calendario")
         => rows.FirstOrDefault(r => string.Equals(r.Clave, clave, StringComparison.Ordinal)) is { Label: var l } && !string.IsNullOrWhiteSpace(l) ? l : null;
     private string LblPrioProg(PrioridadTarea p) => RowLbl(_listaMtPrioProg, "e:" + p) ?? (_catMtPrioProg.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
     private string LblIntTipo(TipoIntervencionMantenimiento t) => RowLbl(_listaMtIntTipo, "e:" + t) ?? (_catMtIntTipo.TryGetValue("e:" + t, out var l) && !string.IsNullOrWhiteSpace(l) ? l : t.ToString());
-    private string LblIntEstado(EstadoIntervencion e) => RowLbl(_listaMtIntEstado, "e:" + e) ?? (_catMtIntEstado.TryGetValue("e:" + e, out var l) && !string.IsNullOrWhiteSpace(l) ? l : e.ToString());
+    private string LblIntEstado(EstadoIntervencion e) => RowLbl(_listaMtIntEstado, "e:" + e) ?? (_catMtIntEstado.TryGetValue("e:" + e, out var l) && !string.IsNullOrWhiteSpace(l) ? l : EstadoIntervDefault(e));
+    // Respaldo legible cuando ni la copropiedad ni el catalogo traen etiqueta (antes salia el enum crudo "EnEjecucion").
+    private static string EstadoIntervDefault(EstadoIntervencion e) => e switch
+    {
+        EstadoIntervencion.Programada => "Programada",
+        EstadoIntervencion.EnEjecucion => "En ejecución",
+        EstadoIntervencion.EnRevision => "En revisión",
+        EstadoIntervencion.Completada => "Completada",
+        EstadoIntervencion.Cancelada => "Cancelada",
+        _ => e.ToString()
+    };
     private string LblIntPrio(PrioridadIntervencion p) => RowLbl(_listaMtIntPrio, "e:" + p) ?? (_catMtIntPrio.TryGetValue("e:" + p, out var l) && !string.IsNullOrWhiteSpace(l) ? l : p.ToString());
     // Una opcion esta oculta si su fila por-tenant tiene Activo=false (se saca de las altas; las existentes la conservan).
     private bool MtOculta(List<Propia.Application.Catalogos.OpcionEfectivaDto> rows, string clave)
