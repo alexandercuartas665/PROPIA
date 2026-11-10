@@ -251,3 +251,18 @@ public record MiVotoRequest(Guid VotacionId, Guid UnidadPrivadaId, string Opcion
 
 /// <summary>Enlace self-service emitido por el admin: token opaco + ruta publica relativa + vencimiento.</summary>
 public record EnlaceResidenteDto(string Token, string Ruta, DateTimeOffset Expira);
+
+/// <summary>
+/// Envio de enlaces self-service por correo. PersonaIds null = todos los habilitados de la sesion.
+/// BaseUrl = origen publico del Web que llama; solo se usa si App:PublicBaseUrl no esta configurado.
+/// </summary>
+public record EnviarEnlacesRequest(IReadOnlyList<Guid>? PersonaIds, string? BaseUrl);
+
+/// <summary>Persona que recibe enlace: propietario activo o apoderado con poder aprobado.</summary>
+public record DestinatarioEnlaceDto(Guid PersonaId, string Nombre, string? Email, IReadOnlyList<string> Unidades);
+
+/// <summary>Respuesta inmediata del envio (los correos salen en segundo plano).</summary>
+public record EnvioEnlacesDto(int Destinatarios, int ConCorreo, IReadOnlyList<string> SinCorreo);
+
+/// <summary>Resultado del lote de correos (se registra en el log del API).</summary>
+public record EnvioEnlacesResultado(int Enviados, int Fallidos, IReadOnlyList<string> Errores);

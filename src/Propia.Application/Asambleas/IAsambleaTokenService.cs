@@ -3,6 +3,17 @@ namespace Propia.Application.Asambleas;
 /// <summary>Datos que viajan firmados en el enlace self-service de una sesion (Ola 1).</summary>
 public record AsambleaEnlaceToken(Guid TenantId, Guid SesionId, Guid PersonaId);
 
+/// <summary>Reglas compartidas del enlace: vigencia y ruta publica (endpoint del admin y envio por correo).</summary>
+public static class AsambleaEnlace
+{
+    /// <summary>Vence 2 dias despues de la fecha de la sesion (o de hoy, si la sesion ya paso).</summary>
+    public static DateTimeOffset Vencimiento(DateTimeOffset fechaSesion, DateTimeOffset ahora)
+        => (fechaSesion > ahora ? fechaSesion : ahora).AddDays(2);
+
+    /// <summary>Ruta relativa de la pagina publica (Web: Pages/Publico/VotarAsambleaPublico.razor).</summary>
+    public static string Ruta(Guid tenantId, string token) => $"/publico/asambleas/{tenantId}/{token}";
+}
+
 /// <summary>
 /// Firma y valida el token del enlace con el que el copropietario entra a una sesion de asamblea
 /// sin login (registra su asistencia y vota). Sin estado: no hay tabla; el "un solo uso" lo

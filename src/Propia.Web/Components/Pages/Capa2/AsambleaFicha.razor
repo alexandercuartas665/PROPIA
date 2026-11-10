@@ -61,6 +61,10 @@
                 {
                     <button class="btn btn-sm btn-danger" @onclick="() => _showCerrar = true" disabled="@_busy">Cerrar sesión</button>
                 }
+                @if (_s.Estado == EstadoSesion.Citada || _s.Estado == EstadoSesion.EnCurso)
+                {
+                    <div class="mt-2"><button class="btn btn-sm btn-outline-primary" @onclick="() => _showEnlaces = true" disabled="@_busy">Enviar enlaces de voto</button></div>
+                }
             </div>
         </div>
     </div>
@@ -285,6 +289,28 @@
     </div>
 }
 
+@* Modal Enviar enlaces de voto (Ola 1.5) *@
+@if (_showEnlaces)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Enviar enlaces de voto</h5>
+                    <button type="button" class="btn-close" @onclick="() => _showEnlaces = false"></button>
+                </div>
+                <div class="modal-body small">
+                    <p>Cada propietario de las unidades citadas, y cada apoderado con poder aprobado, recibirá un correo con su enlace personal para registrar asistencia y votar sin crear cuenta.</p>
+                    <p class="mb-0 text-muted">Residentes, familiares y arrendatarios no reciben enlace. Si vuelves a enviar, el enlace anterior sigue funcionando.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _showEnlaces = false">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="EnviarEnlaces" disabled="@_busy">Enviar correos</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @* Modal Firmar acta *@
 @if (_showFirmar)
 {
@@ -353,6 +379,7 @@
     private SesionDetalleDto? _s;
 
     private bool _showCerrar;
+    private bool _showEnlaces;
     private bool _quorumAlcanzado = true;
     private bool _showFirmar;
     private string? _narrativa;
@@ -389,6 +416,27 @@
             else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
         }
         finally { _busy = false; }
+    }
+
+    private async Task EnviarEnlaces()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{Id}/enviar-enlaces", new EnviarEnlacesRequest(null, Nav.BaseUri));
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnvioEnlacesDto>() is { } r)
+            {
+                var sin = r.SinCorreo.Count == 0 ? "" :
+                    $" {r.SinCorreo.Count} sin correo registrado: {string.Join(", ", r.SinCorreo.Take(10))}{(r.SinCorreo.Count > 10 ? "..." : "")}.";
+                _msg = r.Destinatarios == 0 ? "La sesión no tiene propietarios ni apoderados habilitados para recibir enlace."
+                    : r.ConCorreo == 0
+                    ? $"No se envió ningún correo: ninguno de los {r.Destinatarios} propietarios o apoderados tiene correo.{sin}"
+                    : $"Enviando {(r.ConCorreo == 1 ? "1 correo" : $"{r.ConCorreo} correos")} con el enlace de voto (salen en segundo plano).{sin}";
+                _msgClass = r.ConCorreo == 0 ? "alert-warning" : "alert-success";
+            }
+            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+        }
+        finally { _busy = false; _showEnlaces = false; }
     }
 
     private async Task AbrirSala()

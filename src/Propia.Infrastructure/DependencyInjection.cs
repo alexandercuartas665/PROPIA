@@ -246,6 +246,7 @@ public static class DependencyInjection
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
         services.AddSingleton<Application.Asambleas.IAsambleaTokenService, Asambleas.AsambleaTokenService>();
+        services.AddScoped<Application.Asambleas.IAsambleaEnlacesService, Asambleas.AsambleaEnlacesService>();
 
         // Modulo 2.11 Mantenimiento y Activos
         services.AddScoped<Application.Mantenimiento.IMantenimientoService, Mantenimiento.MantenimientoService>();

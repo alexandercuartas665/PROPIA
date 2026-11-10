@@ -115,9 +115,30 @@ public class AsambleaController : ControllerBase
         if (vista.MisUnidades.Count == 0)
             return BadRequest(new { error = "La persona no es propietaria ni apoderada con poder aprobado en esta sesion." });
 
-        var expira = (vista.FechaSesion > DateTimeOffset.UtcNow ? vista.FechaSesion : DateTimeOffset.UtcNow).AddDays(2);
+        var expira = AsambleaEnlace.Vencimiento(vista.FechaSesion, DateTimeOffset.UtcNow);
         var token = tokens.Emitir(new AsambleaEnlaceToken(tenantId, id, personaId), expira);
-        return Ok(new EnlaceResidenteDto(token, $"/publico/asambleas/{tenantId}/{token}", expira));
+        return Ok(new EnlaceResidenteDto(token, AsambleaEnlace.Ruta(tenantId, token), expira));
+    }
+
+    // Envia por correo el enlace self-service a cada propietario/apoderado habilitado (o a los
+    // PersonaIds indicados). Responde de inmediato; los correos salen en segundo plano. La base del
+    // enlace es App:PublicBaseUrl (prod); si no esta configurada, el origen del Web que llama.
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpPost("{id:guid}/enviar-enlaces")]
+    public async Task<IActionResult> EnviarEnlaces(Guid id, [FromBody] EnviarEnlacesRequest req,
+        [FromServices] IAsambleaEnlacesService enlaces, [FromServices] IConfiguration config, CancellationToken ct)
+    {
+        var baseUrl = (config["App:PublicBaseUrl"] ?? "").Trim();
+        if (string.IsNullOrEmpty(baseUrl)) baseUrl = (req.BaseUrl ?? "").Trim();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttps && u.Scheme != Uri.UriSchemeHttp))
+            return BadRequest(new { error = "No se pudo determinar la direccion publica de la aplicacion." });
+
+        try
+        {
+            var r = await enlaces.ProgramarEnvioAsync(id, req.PersonaIds, u.GetLeftPart(UriPartial.Authority), ct);
+            return r is null ? NotFound() : Ok(r);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     // Votaciones
