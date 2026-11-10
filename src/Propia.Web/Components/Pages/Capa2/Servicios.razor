@@ -700,7 +700,10 @@ else
                             <tr class="ctr-row ctr-newrow ctr-newrow--edit" @onkeydown="OnAltaKeydownC">
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col">
-                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Crear y abrir la ficha para completar" @onclick="() => CrearDesdeAltaAsync(true)" disabled="@_busy">
+                                    @* Expander del alta (como Seguros/Mantenimiento): abre el modal "Nuevo contrato" con lo ya
+                                       escrito, SIN crear nada; se termina y guarda en el modal. Antes creaba primero y, sin
+                                       contratista, fallaba aunque el usuario solo queria seguir en el modal. *@
+                                    <button type="button" class="ctr-exp ctr-exp-fijo" title="Abrir el formulario completo con lo escrito" @onclick="AbrirModalDesdeAltaCAsync" disabled="@_busy">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                     </button>
                                 </td>
@@ -3750,6 +3753,44 @@ else
         finally { _busy = false; }
         // Desde el expander: tras crear, abre la ficha/modal del contrato para completarlo (como Unidades).
         if (abrir && creado is not null) await AbrirModal(creado);
+    }
+
+    // Expander de la fila de alta: lleva lo escrito al modal "Nuevo contrato" y cierra la fila. La fila se
+    // cierra (LimpiarAlta) porque su auto-guardado en blur crearia el contrato en segundo plano mientras el
+    // usuario sigue en el modal (duplicado). Etapa, forma de pago y campos dinamicos se completan en el modal.
+    private async Task AbrirModalDesdeAltaCAsync()
+    {
+        var prov = _ncProveedor; var tc = _ncTipoContrato; var num = _ncNumero; var cat = _ncCategoria; var asoc = _ncAsociado;
+        var contacto = _ncContacto; var obs = _ncObs; var ini = _ncInicio; var fin = _ncFin;
+        var valor = _ncValor; var vtotal = _ncValorTotal; var cuotas = _ncCuotas; var dias = _ncDias;
+        var renov = _ncRenov; var pagoMensual = _ncPagoMensual;
+        LimpiarAlta();
+
+        await AbrirModal(null);
+        if (prov is not null) OnContratistaSel(prov);
+        if (!string.IsNullOrWhiteSpace(tc)) _f.TipoContrato = tc.Trim();
+        if (!string.IsNullOrWhiteSpace(num)) _f.NumeroContrato = num.Trim();
+        if (!string.IsNullOrWhiteSpace(cat)) _f.Categoria = cat.Trim();
+        if (!string.IsNullOrEmpty(asoc))
+        {
+            var parts = asoc.Split(':', 2);
+            if (parts.Length == 2 && Guid.TryParse(parts[1], out _))
+            {
+                _f.AsociadoTipo = parts[0] switch { "Equipo" => TipoActivoMantenimiento.Equipo, "ZonaComun" => TipoActivoMantenimiento.ZonaComun, _ => (TipoActivoMantenimiento?)null };
+                if (_f.AsociadoTipo is not null) _f.AsociadoId = parts[1];
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(contacto)) _f.Contacto = contacto.Trim();
+        if (!string.IsNullOrWhiteSpace(obs)) _f.Observaciones = obs.Trim();
+        if (DateTime.TryParse(ini, out var di)) _f.Inicio = di;
+        if (DateTime.TryParse(fin, out var df)) _f.Fin = df;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (decimal.TryParse(valor, System.Globalization.NumberStyles.Any, inv, out var vm)) _f.Valor = vm;
+        if (decimal.TryParse(vtotal, System.Globalization.NumberStyles.Any, inv, out var vt)) _f.ValorTotal = vt;
+        if (int.TryParse(cuotas, out var cu) && cu >= 0) _f.FormaPagoCuotas = cu;
+        if (int.TryParse(dias, out var dd) && dd > 0) _f.Dias = dd;
+        _f.RenovacionAutomatica = string.Equals(renov, "Si", StringComparison.OrdinalIgnoreCase);
+        _f.PagoMensual = string.Equals(pagoMensual, "Si", StringComparison.OrdinalIgnoreCase);
     }
 
     // Deja la fila de alta en blanco Y la cierra (canon clic-para-abrir): se invoca tras crear, al descartar
