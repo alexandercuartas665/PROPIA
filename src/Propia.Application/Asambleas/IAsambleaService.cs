@@ -46,6 +46,8 @@ public interface IAsambleaService
     // Self-service del residente (Ola 1). La persona solo actua sobre unidades donde es Propietario
     // activo o apoderado con poder Aprobado en esa sesion (Ley 675: vota el propietario). Si no,
     // UnauthorizedAccessException. Las reglas del voto (presente, RN-09, opcion) son las del admin.
+    /// <summary>Flujo publico por token (sin JWT): fija el tenant del enlace. False si no existe o no esta Activa.</summary>
+    Task<bool> ActivarTenantPublicoAsync(Guid tenantId, CancellationToken ct);
     Task<SesionResidenteDto?> GetSesionParaResidenteAsync(Guid sesionId, Guid personaId, CancellationToken ct);
     Task<bool> MiCheckInAsync(Guid sesionId, Guid personaId, Guid unidadId, bool presente, CancellationToken ct);
     Task<bool> MiVotoAsync(Guid sesionId, Guid votacionId, Guid personaId, Guid unidadId, string opcion, CancellationToken ct);

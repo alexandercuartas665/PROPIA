@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Api.Authorization;
@@ -98,6 +99,25 @@ public class AsambleaController : ControllerBase
     {
         try { return await _svc.CheckInParticipanteAsync(id, req, ct) ? NoContent() : NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Enlace self-service (Ola 1) para que un copropietario/apoderado registre asistencia y vote sin
+    // login. Solo se emite si la persona tiene unidades habilitadas en la sesion. Vence 2 dias despues
+    // de la fecha de la sesion (o de hoy, si la sesion ya paso).
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpGet("{id:guid}/enlace-residente/{personaId:guid}")]
+    public async Task<IActionResult> EnlaceResidente(Guid id, Guid personaId,
+        [FromServices] IAsambleaTokenService tokens, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("tenant_id"), out var tenantId)) return Forbid();
+        var vista = await _svc.GetSesionParaResidenteAsync(id, personaId, ct);
+        if (vista is null) return NotFound();
+        if (vista.MisUnidades.Count == 0)
+            return BadRequest(new { error = "La persona no es propietaria ni apoderada con poder aprobado en esta sesion." });
+
+        var expira = (vista.FechaSesion > DateTimeOffset.UtcNow ? vista.FechaSesion : DateTimeOffset.UtcNow).AddDays(2);
+        var token = tokens.Emitir(new AsambleaEnlaceToken(tenantId, id, personaId), expira);
+        return Ok(new EnlaceResidenteDto(token, $"/publico/asambleas/{tenantId}/{token}", expira));
     }
 
     // Votaciones

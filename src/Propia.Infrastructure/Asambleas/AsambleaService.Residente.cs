@@ -14,6 +14,18 @@ namespace Propia.Infrastructure.Asambleas;
 /// </summary>
 public partial class AsambleaService
 {
+    public async Task<bool> ActivarTenantPublicoAsync(Guid tenantId, CancellationToken ct)
+    {
+        // Tenants es entidad global: se valida sin tenant en sesion. Mismo patron que el PQRSD publico:
+        // SetTenant + CloseConnectionAsync para que la siguiente conexion fije app.tenant_id (RLS).
+        var activa = await _db.Tenants.AsNoTracking()
+            .AnyAsync(t => t.Id == tenantId && t.Estado == EstadoCopropiedad.Activa, ct);
+        if (!activa) return false;
+        _tenantContext.SetTenant(tenantId);
+        await _db.Database.CloseConnectionAsync();
+        return true;
+    }
+
     public async Task<SesionResidenteDto?> GetSesionParaResidenteAsync(Guid sesionId, Guid personaId, CancellationToken ct)
     {
         var s = await _db.Sesiones.AsNoTracking()

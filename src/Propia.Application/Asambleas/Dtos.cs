@@ -244,3 +244,10 @@ public record MiUnidadSesionDto(
 
 /// <summary>Voto ya emitido por la unidad. Opcion null si la votacion es secreta.</summary>
 public record MiVotoDto(Guid VotacionId, Guid PuntoId, string? Opcion);
+
+public record MiAsistenciaRequest(Guid UnidadPrivadaId, bool Presente);
+
+public record MiVotoRequest(Guid VotacionId, Guid UnidadPrivadaId, string Opcion);
+
+/// <summary>Enlace self-service emitido por el admin: token opaco + ruta publica relativa + vencimiento.</summary>
+public record EnlaceResidenteDto(string Token, string Ruta, DateTimeOffset Expira);
