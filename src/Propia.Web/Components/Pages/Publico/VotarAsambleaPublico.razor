@@ -1,0 +1,431 @@
+@page "/publico/asambleas/{TenantId:guid}/{Token}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Asambleas
+@using Propia.Domain.Enums
+@layout Propia.Web.Components.Layout.PublicLayout
+@implements IDisposable
+@inject IHttpClientFactory HttpFactory
+
+@* Asambleas Ola 1: el copropietario (o su apoderado) registra asistencia y vota desde el enlace que le
+   envia la administracion, sin login. Toda la logica y el gate de propiedad viven en el API publico
+   (PublicAsambleaController); esta pagina solo pinta la vista y refresca cada 10 s mientras la sesion
+   esta en curso para que vea abrir/cerrar votaciones sin recargar. *@
+
+<PageTitle>Asamblea - PROPIA</PageTitle>
+
+<div class="asmp-wrap">
+@if (_cargando)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" style="color: var(--propia-brand);"></div>
+        <p class="asmp-muted mt-3">Cargando asamblea...</p>
+    </div>
+}
+else if (_errorCarga is not null)
+{
+    <div class="asmp-card text-center">
+        <h4 class="mb-2">Asamblea no disponible</h4>
+        <p class="asmp-muted mb-0">@_errorCarga</p>
+    </div>
+}
+else if (_dto is not null)
+{
+    <div class="asmp-hero">
+        <div class="asmp-eyebrow">@TipoTexto(_dto.Tipo)</div>
+        <div class="asmp-titulo">@_dto.Titulo</div>
+        <div class="asmp-meta">
+            <span>@_dto.FechaSesion.ToCo().ToString("dddd d 'de' MMMM, h:mm tt", _co)</span>
+            <span>&middot; @ModalidadTexto(_dto.Modalidad)</span>
+            @if (!string.IsNullOrWhiteSpace(_dto.LugarFisico)) { <span>&middot; @_dto.LugarFisico</span> }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_dto.EnlaceVideo) && _dto.Estado == EstadoSesion.EnCurso)
+        {
+            <a class="asmp-btn asmp-btn-ghost mt-3" href="@_dto.EnlaceVideo" target="_blank" rel="noopener">Entrar a la videollamada</a>
+        }
+        <div class="asmp-hola">Hola, <strong>@_dto.PersonaNombre</strong></div>
+        <span class="asmp-estado asmp-estado-@((int)_dto.Estado)">@EstadoTexto(_dto.Estado)</span>
+    </div>
+
+    @if (_aviso is not null)
+    {
+        <div class="asmp-aviso @(_avisoOk ? "is-ok" : "is-err")" role="status">@_aviso</div>
+    }
+
+    <div class="asmp-card">
+        <div class="asmp-row">
+            <div class="asmp-eyebrow mb-0">QUÓRUM</div>
+            <span class="asmp-quorum-pct">@_dto.QuorumActual.PctRepresentado.ToString("0.##", _co)%</span>
+        </div>
+        <div class="asmp-bar">
+            <div class="asmp-bar-fill @(_dto.QuorumActual.Alcanzado ? "is-ok" : "")" style="width: @BarWidth(_dto.QuorumActual.PctRepresentado)"></div>
+            @if (_dto.QuorumActual.PctRequerido is decimal req)
+            {
+                <div class="asmp-bar-req" style="left: @BarWidth(req)" title="Requerido"></div>
+            }
+        </div>
+        <div class="asmp-small">
+            @_dto.QuorumActual.ParticipantesPresentes de @_dto.QuorumActual.ParticipantesTotales unidades presentes
+            @if (_dto.QuorumActual.PctRequerido is decimal r2)
+            {
+                <span> &middot; requerido @r2.ToString("0.##", _co)% &middot; @(_dto.QuorumActual.Alcanzado ? "alcanzado" : "aún no se alcanza")</span>
+            }
+        </div>
+    </div>
+
+    <div class="asmp-card">
+        <div class="asmp-eyebrow">MI ASISTENCIA</div>
+        @if (_dto.Estado == EstadoSesion.Citada)
+        {
+            <div class="asmp-nota">La sala aún no está abierta. Cuando la administración la abra podrás registrar tu asistencia aquí mismo; esta página se actualiza sola.</div>
+        }
+        @foreach (var u in _dto.MisUnidades)
+        {
+            <div class="asmp-unidad">
+                <div class="asmp-unidad-info">
+                    <div class="asmp-unidad-num">Unidad @u.UnidadNumero</div>
+                    <div class="asmp-small">
+                        Coeficiente @u.Coeficiente.ToString("0.####", _co)
+                        &middot; @(u.PorPoder ? "por poder" : "propietario")
+                    </div>
+                </div>
+                @if (u.Presente)
+                {
+                    <div class="asmp-unidad-acts">
+                        <span class="asmp-chip is-ok">Presente</span>
+                        @if (_dto.Estado == EstadoSesion.EnCurso)
+                        {
+                            <button class="asmp-link" disabled="@_ocupado" @onclick="() => AsistenciaAsync(u.UnidadPrivadaId, false)">Me retiro</button>
+                        }
+                    </div>
+                }
+                else if (_dto.Estado == EstadoSesion.EnCurso)
+                {
+                    <button class="asmp-btn" disabled="@_ocupado" @onclick="() => AsistenciaAsync(u.UnidadPrivadaId, true)">Registrar asistencia</button>
+                }
+                else
+                {
+                    <span class="asmp-chip">Ausente</span>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="asmp-card">
+        <div class="asmp-eyebrow">ORDEN DEL DÍA</div>
+        @if (_dto.Puntos.Count == 0)
+        {
+            <div class="asmp-muted">La administración aún no ha publicado el orden del día.</div>
+        }
+        @foreach (var p in _dto.Puntos)
+        {
+            var abierta = p.VotacionId.HasValue && p.VotacionEstado == EstadoVotacion.Abierta;
+            <div class="asmp-punto @(abierta ? "is-votando" : "")">
+                <div class="asmp-punto-head">
+                    <span class="asmp-punto-num">@p.Numero</span>
+                    <div class="asmp-punto-txt">
+                        <div class="asmp-punto-tit">@p.Titulo</div>
+                        @if (!string.IsNullOrWhiteSpace(p.Descripcion)) { <div class="asmp-small">@p.Descripcion</div> }
+                        @if (abierta) { <span class="asmp-chip is-live mt-2">Votación abierta</span> }
+                    </div>
+                </div>
+
+                @if (abierta)
+                {
+                    @if (p.ModalidadVoto == ModalidadVoto.Secreto)
+                    {
+                        <div class="asmp-small mb-2">Voto secreto: la administración no ve qué opción elegiste.</div>
+                    }
+                    @foreach (var u in _dto.MisUnidades)
+                    {
+                        var voto = u.Votos.FirstOrDefault(v => v.VotacionId == p.VotacionId);
+                        var clave = (p.VotacionId!.Value, u.UnidadPrivadaId);
+                        <div class="asmp-voto">
+                            @if (_dto.MisUnidades.Count > 1) { <div class="asmp-voto-unidad">Unidad @u.UnidadNumero</div> }
+                            @if (voto is not null)
+                            {
+                                <div class="asmp-chip is-ok">Voto registrado@(voto.Opcion is null ? "" : $": {OpcionTexto(voto.Opcion)}")</div>
+                            }
+                            else if (!u.Presente)
+                            {
+                                <div class="asmp-small">Registra la asistencia de esta unidad para poder votar.</div>
+                            }
+                            else
+                            {
+                                <div class="asmp-opciones">
+                                    @foreach (var op in p.OpcionesVoto)
+                                    {
+                                        var sel = _seleccion.TryGetValue(clave, out var s) && s == op;
+                                        <button class="asmp-op @(sel ? "is-sel" : "")" disabled="@_ocupado" @onclick="() => Elegir(clave, op)">@OpcionTexto(op)</button>
+                                    }
+                                </div>
+                                @if (_seleccion.TryGetValue(clave, out var elegida))
+                                {
+                                    <div class="asmp-confirmar">
+                                        <span class="asmp-small">Tu voto no se puede cambiar después de enviarlo.</span>
+                                        <button class="asmp-btn" disabled="@_ocupado" @onclick="() => VotarAsync(p.VotacionId!.Value, u.UnidadPrivadaId, elegida)">Confirmar: @OpcionTexto(elegida)</button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+                else if (p.VotacionEstado == EstadoVotacion.Cerrada && p.ResultadoFinal is not null)
+                {
+                    <div class="asmp-resultado">
+                        <span class="asmp-chip @(p.ResultadoFinal == ResultadoVotacion.Aprobado ? "is-ok" : "")">@ResultadoTexto(p.ResultadoFinal.Value)</span>
+                        @if (!string.IsNullOrWhiteSpace(p.ResultadoOpcion))
+                        {
+                            <span class="asmp-small">Opción ganadora: @OpcionTexto(p.ResultadoOpcion)@(p.ResultadoPct is decimal pct ? $" ({pct.ToString("0.##", _co)}%)" : "")</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="asmp-foot">
+        @if (_dto.Estado == EstadoSesion.EnCurso || _dto.Estado == EstadoSesion.Citada)
+        {
+            <span>Se actualiza automáticamente. </span>
+        }
+        <button class="asmp-link" disabled="@_ocupado" @onclick="RefrescarAsync">Actualizar ahora</button>
+        <div class="mt-2">Operado por A&amp;D GROUP S.A.S. &middot; PROPIA</div>
+    </div>
+}
+</div>
+
+<style>
+    .asmp-wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 40px; font-family: var(--propia-font-base); }
+    .asmp-muted { color: var(--propia-text-muted); font-size: 13px; }
+    .asmp-small { color: var(--propia-text-muted); font-size: 12.5px; line-height: 1.45; }
+    .asmp-hero { text-align: center; margin-bottom: 16px; }
+    .asmp-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--propia-text-muted); margin-bottom: 8px; text-transform: uppercase; }
+    .asmp-titulo { font-size: 21px; font-weight: 800; color: var(--propia-text-h1); line-height: 1.25; }
+    .asmp-meta { font-size: 13px; color: var(--propia-text-secondary); margin-top: 6px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .asmp-hola { font-size: 14px; color: var(--propia-text-body); margin-top: 14px; }
+    .asmp-estado { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); }
+    .asmp-estado-3 { background: var(--propia-success-bg); color: var(--propia-success); }
+    .asmp-estado-2 { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .asmp-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: var(--propia-radius-card); padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--propia-shadow-card); }
+    .asmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .asmp-quorum-pct { font-size: 20px; font-weight: 800; color: var(--propia-text-h1); }
+    .asmp-bar { position: relative; height: 10px; border-radius: var(--propia-radius-pill); background: var(--propia-border-divider); overflow: visible; margin-bottom: 8px; }
+    .asmp-bar-fill { height: 100%; border-radius: var(--propia-radius-pill); background: var(--propia-brand); transition: width .3s; }
+    .asmp-bar-fill.is-ok { background: var(--propia-success); }
+    .asmp-bar-req { position: absolute; top: -4px; width: 2px; height: 18px; background: var(--propia-text-h1); }
+    .asmp-nota { font-size: 13px; color: var(--propia-text-body); background: var(--propia-info-bg); border: 1px solid var(--propia-info-border); border-radius: var(--propia-radius-card-sm); padding: 10px 12px; margin-bottom: 10px; }
+    .asmp-unidad { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+    .asmp-unidad + .asmp-unidad { border-top: 1px solid var(--propia-border-divider); }
+    .asmp-unidad-num { font-size: 15px; font-weight: 700; color: var(--propia-text-h1); }
+    .asmp-unidad-acts { display: flex; align-items: center; gap: 10px; }
+    .asmp-btn { border: 0; border-radius: var(--propia-radius-input); background: var(--propia-brand); color: var(--propia-text-inverse); font-weight: 700; font-size: 14px; padding: 10px 16px; min-height: 44px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    .asmp-btn:hover { background: var(--propia-brand-hover); color: var(--propia-text-inverse); }
+    .asmp-btn:disabled, .asmp-op:disabled, .asmp-link:disabled { opacity: .55; cursor: default; }
+    .asmp-btn-ghost { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .asmp-btn-ghost:hover { background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .asmp-link { border: 0; background: none; color: var(--propia-brand); font-size: 13px; font-weight: 600; padding: 4px; cursor: pointer; text-decoration: underline; }
+    .asmp-chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); white-space: nowrap; }
+    .asmp-chip.is-ok { background: var(--propia-success-bg); color: var(--propia-success); }
+    .asmp-chip.is-live { background: var(--propia-warning-bg); color: var(--propia-warning); }
+    .asmp-punto { padding: 12px 0; }
+    .asmp-punto + .asmp-punto { border-top: 1px solid var(--propia-border-divider); }
+    .asmp-punto.is-votando { background: var(--propia-brand-soft); margin: 0 -18px; padding: 12px 18px; }
+    .asmp-punto-head { display: flex; align-items: flex-start; gap: 10px; }
+    .asmp-punto-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; background: var(--propia-bg-hover); color: var(--propia-text-secondary); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .asmp-punto-txt { flex: 1 1 auto; min-width: 0; }
+    .asmp-punto-tit { font-size: 14.5px; font-weight: 700; color: var(--propia-text-h1); }
+    .asmp-voto { margin: 12px 0 0 36px; }
+    .asmp-voto-unidad { font-size: 12px; font-weight: 700; color: var(--propia-text-secondary); margin-bottom: 6px; }
+    .asmp-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+    .asmp-op { min-height: 48px; border: 2px solid var(--propia-border-input); border-radius: var(--propia-radius-input); background: var(--propia-bg-card); color: var(--propia-text-h1); font-weight: 700; font-size: 15px; cursor: pointer; }
+    .asmp-op.is-sel { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .asmp-confirmar { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .asmp-resultado { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0 36px; }
+    .asmp-aviso { border-radius: var(--propia-radius-card-sm); padding: 10px 12px; margin-bottom: 14px; font-size: 13.5px; font-weight: 600; }
+    .asmp-aviso.is-ok { background: var(--propia-success-bg); color: var(--propia-success); border: 1px solid var(--propia-success-border); }
+    .asmp-aviso.is-err { background: var(--propia-error-bg); color: var(--propia-error-text); border: 1px solid var(--propia-error-border); }
+    .asmp-foot { text-align: center; font-size: 12px; color: var(--propia-text-faint); margin-top: 18px; }
+    @@media (max-width: 480px) {
+        .asmp-unidad { flex-direction: column; align-items: stretch; }
+        .asmp-unidad .asmp-btn { width: 100%; }
+        .asmp-unidad > .asmp-chip { align-self: flex-start; }
+        .asmp-voto, .asmp-resultado { margin-left: 0; }
+    }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+    [Parameter] public string Token { get; set; } = "";
+
+    private static readonly System.Globalization.CultureInfo _co = new("es-CO");
+
+    private bool _cargando = true;
+    private bool _ocupado;
+    private string? _errorCarga;
+    private string? _aviso;
+    private bool _avisoOk;
+    private SesionResidenteDto? _dto;
+    private readonly Dictionary<(Guid VotacionId, Guid UnidadId), string> _seleccion = new();
+    private CancellationTokenSource? _cts;
+
+    private string BaseUrl => $"/api/publico/asambleas/{TenantId}/sesion/{Uri.EscapeDataString(Token)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var resp = await Http().GetAsync(BaseUrl);
+            if (resp.IsSuccessStatusCode)
+                _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>();
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                _errorCarga = "Este enlace no es válido o ya venció. Pide uno nuevo a la administración.";
+            else
+                _errorCarga = await LeerErrorAsync(resp) ?? "La asamblea no está disponible.";
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+
+        if (_dto is not null)
+        {
+            _cts = new CancellationTokenSource();
+            _ = SondearAsync(_cts.Token);
+        }
+    }
+
+    // Refresco periodico mientras la sesion sigue viva (Citada / EnCurso). No interrumpe una accion en curso.
+    private async Task SondearAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (_ocupado || _dto is null) continue;
+                if (_dto.Estado is not (EstadoSesion.Citada or EstadoSesion.EnCurso)) break;
+                var resp = await Http().GetAsync(BaseUrl, ct);
+                if (!resp.IsSuccessStatusCode) continue;
+                var nuevo = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>(cancellationToken: ct);
+                if (nuevo is null || _ocupado) continue;
+                _dto = nuevo;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefrescarAsync()
+    {
+        _ocupado = true;
+        _aviso = null;
+        try
+        {
+            var resp = await Http().GetAsync(BaseUrl);
+            if (resp.IsSuccessStatusCode) _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>();
+            else Avisar(await LeerErrorAsync(resp) ?? "No se pudo actualizar.", false);
+        }
+        catch (Exception ex) { Avisar(ex.Message, false); }
+        finally { _ocupado = false; }
+    }
+
+    private Task AsistenciaAsync(Guid unidadId, bool presente)
+        => EnviarAsync($"{BaseUrl}/asistencia", new MiAsistenciaRequest(unidadId, presente),
+            presente ? "Asistencia registrada." : "Registramos tu retiro de la asamblea.");
+
+    private async Task VotarAsync(Guid votacionId, Guid unidadId, string opcion)
+    {
+        await EnviarAsync($"{BaseUrl}/voto", new MiVotoRequest(votacionId, unidadId, opcion), "Tu voto quedó registrado.");
+        _seleccion.Remove((votacionId, unidadId));
+    }
+
+    private async Task EnviarAsync<T>(string url, T body, string ok)
+    {
+        if (_ocupado) return;
+        _ocupado = true;
+        _aviso = null;
+        try
+        {
+            var resp = await Http().PostAsJsonAsync(url, body);
+            if (resp.IsSuccessStatusCode)
+            {
+                _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>() ?? _dto;
+                Avisar(ok, true);
+            }
+            else
+            {
+                Avisar(await LeerErrorAsync(resp) ?? "No se pudo completar la acción.", false);
+                // El estado pudo cambiar (votacion cerrada, sala cerrada): se refresca para no quedar desfasado.
+                var r = await Http().GetAsync(BaseUrl);
+                if (r.IsSuccessStatusCode) _dto = await r.Content.ReadFromJsonAsync<SesionResidenteDto>() ?? _dto;
+            }
+        }
+        catch (Exception ex) { Avisar(ex.Message, false); }
+        finally { _ocupado = false; }
+    }
+
+    private void Elegir((Guid, Guid) clave, string op) => _seleccion[clave] = op;
+
+    private void Avisar(string texto, bool ok) { _aviso = texto; _avisoOk = ok; }
+
+    private HttpClient Http() => HttpFactory.CreateClient("PropiaApi");
+
+    private static async Task<string?> LeerErrorAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var json = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            return json.TryGetProperty("error", out var e) ? e.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    private static string BarWidth(decimal pct)
+        => Math.Clamp(pct, 0m, 100m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string TipoTexto(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Asamblea ordinaria",
+        TipoSesion.AsambleaExtraordinaria => "Asamblea extraordinaria",
+        TipoSesion.Consejo => "Consejo de administración",
+        TipoSesion.Comite => "Comité",
+        _ => "Asamblea"
+    };
+
+    private static string ModalidadTexto(ModalidadSesion m) => m switch
+    {
+        ModalidadSesion.Presencial => "Presencial",
+        ModalidadSesion.Virtual => "Virtual",
+        ModalidadSesion.Mixta => "Mixta",
+        _ => ""
+    };
+
+    private static string EstadoTexto(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Citada => "Convocada",
+        EstadoSesion.EnCurso => "En curso",
+        EstadoSesion.Cerrada => "Cerrada",
+        EstadoSesion.QuorumFallido => "Sin quórum",
+        EstadoSesion.Cancelada => "Cancelada",
+        _ => e.ToString()
+    };
+
+    private static string ResultadoTexto(ResultadoVotacion r) => r switch
+    {
+        ResultadoVotacion.Aprobado => "Aprobado",
+        ResultadoVotacion.Rechazado => "No aprobado",
+        _ => "Sin resultado"
+    };
+
+    private static string OpcionTexto(string op) => op switch
+    {
+        OpcionesVotoBase.Si => "Sí",
+        OpcionesVotoBase.Abstencion => "Abstención",
+        _ => op
+    };
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}
