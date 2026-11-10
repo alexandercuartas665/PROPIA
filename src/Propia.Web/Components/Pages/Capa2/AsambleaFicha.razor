@@ -65,6 +65,10 @@
                 {
                     <div class="mt-2"><button class="btn btn-sm btn-outline-primary" @onclick="() => _showEnlaces = true" disabled="@_busy">Enviar enlaces de voto</button></div>
                 }
+                @if (_miRuta is not null)
+                {
+                    <div class="mt-2"><a class="btn btn-sm btn-primary" href="@_miRuta" target="_blank" rel="noopener">Votar con mi cuenta</a></div>
+                }
             </div>
         </div>
     </div>
@@ -380,6 +384,7 @@
 
     private bool _showCerrar;
     private bool _showEnlaces;
+    private string? _miRuta;
     private bool _quorumAlcanzado = true;
     private bool _showFirmar;
     private string? _narrativa;
@@ -404,6 +409,22 @@
     {
         try { _s = await Auth().GetFromJsonAsync<SesionDetalleDto>($"/api/asambleas/{Id}"); }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        await CargarMiEnlaceAsync();
+    }
+
+    // Via logueada (Ola 1.6): si quien mira es propietario o apoderado habilitado en la sesion, el API
+    // le devuelve su enlace personal y se muestra "Votar con mi cuenta"; si no (403), no hay boton.
+    private async Task CargarMiEnlaceAsync()
+    {
+        _miRuta = null;
+        if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/asambleas/{Id}/mi-enlace");
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnlaceResidenteDto>() is { } e)
+                _miRuta = e.Ruta;
+        }
+        catch { /* sin boton: la via principal sigue siendo el enlace por correo */ }
     }
 
     private async Task Citar()

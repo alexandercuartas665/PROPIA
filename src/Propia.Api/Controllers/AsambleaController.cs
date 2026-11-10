@@ -120,6 +120,25 @@ public class AsambleaController : ControllerBase
         return Ok(new EnlaceResidenteDto(token, AsambleaEnlace.Ruta(tenantId, token), expira));
     }
 
+    // Via logueada (Ola 1.6): el copropietario/apoderado CON cuenta pide su propio enlace. Sin permiso
+    // de admin: la persona sale del JWT (nunca del cliente) y aplica el mismo gate de propiedad. 403 si
+    // no tiene unidades habilitadas en la sesion (la ficha lo usa para mostrar u ocultar el boton).
+    [HttpGet("{id:guid}/mi-enlace")]
+    public async Task<IActionResult> MiEnlace(Guid id, [FromServices] IAsambleaTokenService tokens, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("tenant_id"), out var tenantId)
+            || !Guid.TryParse(User.FindFirstValue("persona_id"), out var personaId))
+            return Forbid();
+        var vista = await _svc.GetSesionParaResidenteAsync(id, personaId, ct);
+        if (vista is null) return NotFound();
+        if (vista.MisUnidades.Count == 0)
+            return StatusCode(403, new { error = "No eres propietario ni apoderado con poder aprobado en esta asamblea." });
+
+        var expira = AsambleaEnlace.Vencimiento(vista.FechaSesion, DateTimeOffset.UtcNow);
+        var token = tokens.Emitir(new AsambleaEnlaceToken(tenantId, id, personaId), expira);
+        return Ok(new EnlaceResidenteDto(token, AsambleaEnlace.Ruta(tenantId, token), expira));
+    }
+
     // Envia por correo el enlace self-service a cada propietario/apoderado habilitado (o a los
     // PersonaIds indicados). Responde de inmediato; los correos salen en segundo plano. La base del
     // enlace es App:PublicBaseUrl (prod); si no esta configurada, el origen del Web que llama.

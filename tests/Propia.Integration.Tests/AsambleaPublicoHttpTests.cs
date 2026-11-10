@@ -1,9 +1,11 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Propia.Application.Asambleas;
+using Propia.Application.Auth;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -23,6 +25,7 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
     private readonly PostgresFixture _fx;
     private AuthFlowTests.ApiFactory _factory = null!;
     private string? _connPrevia;
+    private readonly List<Guid> _usuarios = new();
     public AsambleaPublicoHttpTests(PostgresFixture fx) => _fx = fx;
 
     public Task InitializeAsync()
@@ -94,6 +97,35 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
         await CleanAsync(c);
     }
 
+    [Fact]
+    public async Task Mi_enlace_logueado_solo_para_propietario_o_apoderado()
+    {
+        var c = await SeedAsync("Asam Pub MiEnlace");
+        var ajena = NuevaPersona("Ajena");
+        await using (var db = OwnerDb()) { db.Personas.Add(ajena); await db.SaveChangesAsync(); }
+        var http = _factory.CreateClient();
+        var url = $"/api/asambleas/{c.SesionId}/mi-enlace";
+
+        var anonimo = await http.GetAsync(url);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonimo.StatusCode);
+
+        // Dueno con cuenta: recibe SU enlace (persona del JWT), valido para la pagina publica.
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await JwtAsync(c.Dueno, c.TenantId));
+        var ok = await http.GetAsync(url);
+        Assert.True(ok.IsSuccessStatusCode, $"{(int)ok.StatusCode}: {await ok.Content.ReadAsStringAsync()}");
+        var enlace = await ok.Content.ReadFromJsonAsync<EnlaceResidenteDto>();
+        Assert.StartsWith($"/publico/asambleas/{c.TenantId}/", enlace!.Ruta);
+        var tokens = _factory.Services.GetRequiredService<IAsambleaTokenService>();
+        Assert.Equal(new AsambleaEnlaceToken(c.TenantId, c.SesionId, c.Dueno), tokens.Validar(enlace.Token));
+
+        // Usuario del tenant sin unidades habilitadas: 403 (sin boton en la ficha).
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await JwtAsync(ajena.Id, c.TenantId));
+        var ajenaResp = await http.GetAsync(url);
+        Assert.Equal(HttpStatusCode.Forbidden, ajenaResp.StatusCode);
+
+        await CleanAsync(c, ajena.Id);
+    }
+
     // ===================== Escenario =====================
 
     private record Caso(Guid TenantId, Guid SesionId, Guid VotacionId, Guid UnidadDueno, Guid UnidadAjena,
@@ -145,12 +177,32 @@ public class AsambleaPublicoHttpTests : IAsyncLifetime
         Nombres = nombre, Apellidos = "Test", PerfilIncompleto = false
     };
 
+    /// <summary>Usuario con cuenta para la persona y JWT real del API (mismo TokenService del login).</summary>
+    private async Task<string> JwtAsync(Guid personaId, Guid tenantId)
+    {
+        var email = $"u.{Guid.NewGuid():N}@test.co";
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(), UserName = email, Email = email,
+            NormalizedUserName = email.ToUpper(), NormalizedEmail = email.ToUpper(),
+            EmailConfirmed = true, PersonaId = personaId, SecurityStamp = Guid.NewGuid().ToString()
+        };
+        await using (var db = OwnerDb()) { db.Users.Add(user); await db.SaveChangesAsync(); }
+        _usuarios.Add(user.Id);
+        using var scope = _factory.Services.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<ITokenService>().IssueAccessToken(user, tenantId).Token;
+    }
+
     private PropiaDbContext OwnerDb()
         => new(new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options, new TenantContext());
 
-    private async Task CleanAsync(Caso c)
+    private async Task CleanAsync(Caso c, params Guid[] otrasPersonas)
     {
         await using var ctx = OwnerDb();
+        foreach (var u in _usuarios)
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {u}");
+        foreach (var p in otrasPersonas)
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {p}");
         var tenantId = c.TenantId;
         await ctx.Database.ExecuteSqlAsync($"ALTER TABLE sesion_quorum_log DISABLE TRIGGER ALL");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesion_quorum_log WHERE tenant_id = {tenantId}");
