@@ -329,6 +329,89 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await CleanTenant(c.TenantId);
     }
 
+    // ===================== Criterio de mayoria (config por copropiedad) =====================
+
+    /// <summary>Empate exacto: Si 0.5 (dueno) vs No 0.3 + 0.2 (otro dueno y la unidad sin dueno, por el admin).</summary>
+    private async Task<Escenario> EmpateAsync(string nombre, CriterioMayoria? criterio)
+    {
+        var c = await EscenarioAsync(nombre);
+        var (svc, _, _) = Build(c.TenantId);
+        if (criterio is { } cm)
+            await svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(null, null, null, null, cm), CancellationToken.None);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        await svc.MiCheckInAsync(c.SesionId, c.OtroDueno, c.UnidadOtroDueno, true, CancellationToken.None);
+        await svc.CheckInParticipanteAsync(c.SesionId, new CheckInParticipanteRequest(c.UnidadSinDueno, true), CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.Si, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.OtroDueno, c.UnidadOtroDueno, OpcionesVotoBase.No, CancellationToken.None);
+        await svc.EmitirVotoAsync(c.VotacionId, new EmitirVotoRequest(c.UnidadSinDueno, OpcionesVotoBase.No), CancellationToken.None);
+        return c;
+    }
+
+    [Fact]
+    public async Task Empate_sin_configurar_no_aprueba_mayoria_absoluta_por_defecto()
+    {
+        var c = await EmpateAsync("Asam Crit Default", null);
+        var (svc, _, _) = Build(c.TenantId);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        Assert.Equal(ResultadoVotacion.Rechazado, r.ResultadoFinal);
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Empate_con_criterio_al_menos_aprueba()
+    {
+        var c = await EmpateAsync("Asam Crit AlMenos", CriterioMayoria.AlMenos);
+        var (svc, _, _) = Build(c.TenantId);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        Assert.Equal(ResultadoVotacion.Aprobado, r.ResultadoFinal);
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Empate_con_criterio_mas_de_no_aprueba()
+    {
+        var c = await EmpateAsync("Asam Crit MasDe", CriterioMayoria.MasDe);
+        var (svc, _, _) = Build(c.TenantId);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        Assert.Equal(ResultadoVotacion.Rechazado, r.ResultadoFinal);
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Config_put_es_merge_y_valida_rangos()
+    {
+        var tenantId = await SeedTenantAsync("Asam Config Merge");
+        await SeedAdminAsync();
+        var (svc, _, _) = Build(tenantId);
+
+        var inicial = await svc.GetConfigAsync(CancellationToken.None);
+        Assert.Equal(CriterioMayoria.MasDe, inicial.CriterioMayoria);
+
+        await svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(10, 3, null, null, null), CancellationToken.None);
+        await svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(null, null, null, null, CriterioMayoria.AlMenos), CancellationToken.None);
+        var cfg = await svc.GetConfigAsync(CancellationToken.None);
+        Assert.Equal(10, cfg.PlazoCitacionDias);          // no lo piso el segundo PUT
+        Assert.Equal(3, cfg.LimitePoderesPorPersona);
+        Assert.Equal(inicial.GraciaReconexionSeg, cfg.GraciaReconexionSeg);
+        Assert.Equal(CriterioMayoria.AlMenos, cfg.CriterioMayoria);
+
+        await svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(null, 0, null, null, null), CancellationToken.None);
+        Assert.Null((await svc.GetConfigAsync(CancellationToken.None)).LimitePoderesPorPersona);   // 0 = sin limite
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(-1, null, null, null, null), CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.ActualizarConfigAsync(new ActualizarAsambleaConfigRequest(null, null, null, null, (CriterioMayoria)9), CancellationToken.None));
+
+        await CleanTenant(tenantId);
+    }
+
     // ===================== Escenario =====================
 
     /// <summary>

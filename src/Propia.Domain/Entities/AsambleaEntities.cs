@@ -252,4 +252,7 @@ public class AsambleaConfig : TenantEntity
     public int GraciaReconexionSeg { get; set; } = 60;
 
     public int NotifRecordatorioDias { get; set; } = 1;
+
+    /// <summary>Comparacion del "Si" contra la mayoria del punto al cerrar (ver CriterioMayoria).</summary>
+    public CriterioMayoria CriterioMayoria { get; set; } = CriterioMayoria.MasDe;
 }

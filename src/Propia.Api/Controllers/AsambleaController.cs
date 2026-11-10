@@ -231,6 +231,9 @@ public class AsambleaController : ControllerBase
 
     [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("config")]
-    public async Task<IActionResult> ActualizarConfig([FromBody] AsambleaConfigDto req, CancellationToken ct)
-        => await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound();
+    public async Task<IActionResult> ActualizarConfig([FromBody] ActualizarAsambleaConfigRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }

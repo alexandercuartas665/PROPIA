@@ -197,7 +197,19 @@ public record AsambleaConfigDto(
     int PlazoCitacionDias,
     int? LimitePoderesPorPersona,
     int GraciaReconexionSeg,
-    int NotifRecordatorioDias);
+    int NotifRecordatorioDias,
+    CriterioMayoria CriterioMayoria);
+
+/// <summary>
+/// PUT de la configuracion de Asambleas con semantica MERGE: solo se actualiza lo que viene (null = no
+/// tocar). LimitePoderesPorPersona: 0 = sin limite.
+/// </summary>
+public record ActualizarAsambleaConfigRequest(
+    int? PlazoCitacionDias,
+    int? LimitePoderesPorPersona,
+    int? GraciaReconexionSeg,
+    int? NotifRecordatorioDias,
+    CriterioMayoria? CriterioMayoria);
 
 // ===================== Self-service del residente (Ola 1) =====================
 // Vista ACOTADA para el copropietario/apoderado: datos de la sesion, puntos y SOLO sus unidades.

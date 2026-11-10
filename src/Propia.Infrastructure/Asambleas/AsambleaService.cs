@@ -572,10 +572,18 @@ public partial class AsambleaService : IAsambleaService
 
             v.ResultadoPct = baseCoef > 0 ? Math.Round(ganadora.Coef / baseCoef * 100m, 2) : 0m;
 
-            // Determinar Aprobado/Rechazado: si la opcion "Si" supera la mayoria configurada
+            // Aprobado/Rechazado: el % del "Si" contra la mayoria del punto, con el criterio de la
+            // copropiedad (MasDe = mayoria absoluta, un empate no aprueba; AlMenos = basta alcanzarla).
+            // Sin fila de config = default de la entidad (MasDe).
+            var criterio = await _db.AsambleaConfigs.AsNoTracking()
+                .Select(c => (CriterioMayoria?)c.CriterioMayoria)
+                .FirstOrDefaultAsync(ct) ?? CriterioMayoria.MasDe;
             var siCoef = grupos.FirstOrDefault(g => g.Opcion == OpcionesVotoBase.Si)?.Coef ?? 0m;
             var siPct = baseCoef > 0 ? siCoef / baseCoef * 100m : 0m;
-            v.ResultadoFinal = siPct >= v.Punto.MayoriaPct ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
+            var aprobado = criterio == CriterioMayoria.AlMenos
+                ? siPct >= v.Punto.MayoriaPct
+                : siPct > v.Punto.MayoriaPct;
+            v.ResultadoFinal = aprobado ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
         }
         else
         {
@@ -724,17 +732,31 @@ public partial class AsambleaService : IAsambleaService
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.AsNoTracking().FirstAsync(ct);
         return new AsambleaConfigDto(c.PlazoCitacionDias, c.LimitePoderesPorPersona,
-            c.GraciaReconexionSeg, c.NotifRecordatorioDias);
+            c.GraciaReconexionSeg, c.NotifRecordatorioDias, c.CriterioMayoria);
     }
 
-    public async Task<bool> ActualizarConfigAsync(AsambleaConfigDto req, CancellationToken ct)
+    // MERGE: solo lo que viene en el request (null = no tocar). Rangos sanos para que un valor absurdo no
+    // rompa la citacion o los recordatorios.
+    public async Task<bool> ActualizarConfigAsync(ActualizarAsambleaConfigRequest req, CancellationToken ct)
     {
+        if (req.PlazoCitacionDias is < 0 or > 60)
+            throw new InvalidOperationException("El plazo de citacion debe estar entre 0 y 60 dias.");
+        if (req.LimitePoderesPorPersona is < 0 or > 50)
+            throw new InvalidOperationException("El limite de poderes por persona debe estar entre 0 (sin limite) y 50.");
+        if (req.GraciaReconexionSeg is < 0 or > 3600)
+            throw new InvalidOperationException("La gracia de reconexion debe estar entre 0 y 3600 segundos.");
+        if (req.NotifRecordatorioDias is < 0 or > 30)
+            throw new InvalidOperationException("El recordatorio debe estar entre 0 y 30 dias antes.");
+        if (req.CriterioMayoria is { } cm && !Enum.IsDefined(cm))
+            throw new InvalidOperationException("Criterio de mayoria invalido.");
+
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.FirstAsync(ct);
-        c.PlazoCitacionDias = req.PlazoCitacionDias;
-        c.LimitePoderesPorPersona = req.LimitePoderesPorPersona;
-        c.GraciaReconexionSeg = req.GraciaReconexionSeg;
-        c.NotifRecordatorioDias = req.NotifRecordatorioDias;
+        if (req.PlazoCitacionDias is int plazo) c.PlazoCitacionDias = plazo;
+        if (req.LimitePoderesPorPersona is int lim) c.LimitePoderesPorPersona = lim == 0 ? null : lim;
+        if (req.GraciaReconexionSeg is int gracia) c.GraciaReconexionSeg = gracia;
+        if (req.NotifRecordatorioDias is int rec) c.NotifRecordatorioDias = rec;
+        if (req.CriterioMayoria is { } criterio) c.CriterioMayoria = criterio;
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

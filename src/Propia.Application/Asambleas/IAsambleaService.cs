@@ -41,7 +41,7 @@ public interface IAsambleaService
 
     // Configuracion
     Task<AsambleaConfigDto> GetConfigAsync(CancellationToken ct);
-    Task<bool> ActualizarConfigAsync(AsambleaConfigDto req, CancellationToken ct);
+    Task<bool> ActualizarConfigAsync(ActualizarAsambleaConfigRequest req, CancellationToken ct);
 
     // Self-service del residente (Ola 1). La persona solo actua sobre unidades donde es Propietario
     // activo o apoderado con poder Aprobado en esa sesion (Ley 675: vota el propietario). Si no,
