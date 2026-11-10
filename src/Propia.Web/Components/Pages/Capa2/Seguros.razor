@@ -425,7 +425,7 @@
                                 <div class="seg-dr-fic @(d.Thumb is not null ? "has-thumb" : "")">
                                     @if (d.Thumb is not null) { <img src="@d.Thumb" alt="@d.FileName" /> } else { <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> }
                                 </div>
-                                <div class="seg-dr-meta"><div class="seg-dr-nm">@d.FileName</div><div class="seg-dr-sz">@(d.IaEstado ?? TamKb(d.Size))</div></div>
+                                <div class="seg-dr-meta"><div class="seg-dr-nm">@d.FileName</div><div class="seg-dr-sz @(d.IaError ? "err" : "")">@if (d.IaLeyendo) { <span class="spinner-border spinner-border-sm seg-ia-spin" aria-hidden="true"></span> }@(d.IaEstado ?? TamKb(d.Size))</div></div>
                                 <span class="seg-dr-pill @PillCls(d.Estado)">@PillTxt(d.Estado)</span>
                             </div>
                         }
@@ -446,7 +446,11 @@
                             @(Multi ? "Agregar mas PDF" : "Cargar PDF (uno o varios)")
                             <InputFile OnChange="OnFilesSelected" accept=".pdf,image/*" multiple hidden />
                         </label>
-                        @if (!Multi && _drafts.Count == 1) { <span class="seg-ocr-msg">1 PDF: @_drafts[0].FileName (se adjunta al crear)</span> }
+                        @if (!Multi && _drafts.Count == 1)
+                        {
+                            var d0 = _drafts[0];
+                            <span class="seg-ocr-msg">1 PDF: @d0.FileName (se adjunta al crear)</span>
+                        }
                         <div class="seg-ia-ctrl">
                             <label class="seg-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
                             @if (_drafts.Any(d => d.Estado != DraftEstado.Listo)) { <button type="button" class="seg-ia-btn" @onclick="LeerTodosAsync">Leer todos con IA</button> }
@@ -456,7 +460,8 @@
                     else
                     {
                         <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                            @if (_ocrBusy) { <span class="spinner-border spinner-border-sm seg-ia-spin" aria-hidden="true"></span> }
+                            else { <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> }
                             @(_ocrBusy ? "Leyendo póliza..." : "Cargar PDF y extraer (IA)")
                             <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
                         </label>
@@ -470,6 +475,13 @@
                         }
                     }
                 </div>
+                @* Estado de la IA con 1 solo PDF (antes no se pintaba en ningun lado: ni "leyendo" ni el error).
+                   Va FUERA de .seg-ocr (fila flex sin wrap) para ocupar el ancho completo. *@
+                @if (_editId is null && !Multi && _drafts.Count == 1 && !string.IsNullOrEmpty(_drafts[0].IaEstado))
+                {
+                    var d1 = _drafts[0];
+                    <div class="seg-ia-estado @(d1.IaLeyendo ? "busy" : d1.IaError ? "err" : "ok")" role="status">@if (d1.IaLeyendo) { <span class="spinner-border spinner-border-sm seg-ia-spin" aria-hidden="true"></span> }@d1.IaEstado</div>
+                }
                 @if (_editId is null && ActiveDraft is { IaDudosos: { Count: > 0 } } adp)
                 {
                     <div class="seg-ia-warn">Revisa estos campos (lectura dudosa de la IA): <b>@string.Join(", ", adp.IaDudosos!)</b></div>
@@ -935,6 +947,14 @@
     .seg-ocr-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); cursor: pointer; }
     .seg-ocr-btn.busy { opacity: .6; pointer-events: none; }
     .seg-ocr-msg { font-size: 11.5px; color: var(--propia-text-secondary); }
+    /* Estado de la lectura con IA (1 PDF): en curso con spinner, ok o error con detalle (2026-11-10). */
+    .seg-ia-estado { display: flex; align-items: center; margin: 0 0 12px; font-size: 12px; font-weight: 600; padding: 8px 11px; border-radius: 8px; }
+    .seg-ia-estado.busy { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .seg-ia-estado.ok { color: var(--propia-success); background: var(--propia-bg-card-soft); }
+    .seg-ia-estado.err { color: var(--propia-danger); background: var(--propia-danger-soft); }
+    .seg-ia-spin { width: 12px; height: 12px; border-width: 2px; margin-right: 7px; flex-shrink: 0; color: var(--propia-brand); }
+    .seg-dr-sz .seg-ia-spin { width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+    .seg-dr-sz.err { color: var(--propia-danger); font-weight: 700; }
     /* Ola 1: control de IA (auto/leer todos) + aviso de campos dudosos (baja confianza) */
     .seg-ia-ctrl { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; flex-basis: 100%; }
     .seg-ia-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--propia-text-secondary); cursor: pointer; margin: 0; }
@@ -1147,6 +1167,8 @@
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
         public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
+        public bool IaLeyendo;     // la IA esta leyendo este PDF ahora (spinner)
+        public bool IaError;       // la ultima lectura fallo (IaEstado trae el detalle; se pinta en rojo)
         public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
         public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
     }
@@ -2530,7 +2552,7 @@
                 resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente",
                     new { Perfil = "poliza", Imagenes = ras.Paginas, PdfBase64 = b64, Mime = mime, FileName = file.Name });
             }
-            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
+            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento " + await DetalleErrorIaAsync(resp); return; }
             var ir = await resp.Content.ReadFromJsonAsync<OcrResp>();
             if (ir?.Campos is null) { _ocrMsg = "La IA no devolvio datos. Completa los campos manualmente."; return; }
             var aplicados = AplicarCamposPoliza(ir.Campos, _f);
@@ -2539,6 +2561,7 @@
                 ? $"Documento leido con el Agente Documental (DeepSeek): {aplicados} campo(s) prellenado(s). Revisa y confirma."
                 : "El Agente Documental leyo el documento pero no encontro datos de poliza (aseguradora, numero, vigencia o valor). Verifica que sea una poliza de seguro; si lo es, completa los campos manualmente.";
         }
+        catch (TaskCanceledException) { _ocrMsg = "Error: la IA tardo demasiado (tiempo agotado). Intenta de nuevo."; }
         catch (Exception ex) { _ocrMsg = "Error: " + ex.Message; }
         finally { _ocrBusy = false; }
     }
@@ -2582,7 +2605,10 @@
         if (d.Bytes.Length == 0 || !d.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase)) return;
         try
         {
+            // Pintar YA el estado "leyendo" (spinner): sin este render la UI quedaba muda hasta el final.
+            d.IaLeyendo = true; d.IaError = false;
             d.IaEstado = "Leyendo con IA...";
+            StateHasChanged();
             var b64 = Convert.ToBase64String(d.Bytes);
             var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
             var notaPag = "";
@@ -2593,7 +2619,7 @@
                 d.IaEstado = "Escaneado: leyendo imagenes con IA...";
                 StateHasChanged();
                 var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
+                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; d.IaError = true; return; }
                 if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
                 imgs = ras.Paginas;
             }
@@ -2604,7 +2630,7 @@
                 var resp = imgs is not null
                     ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Imagenes = imgs })
                     : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = imgs is not null ? "IA vision no disponible" : "IA no disponible"; return; }
+                if (!resp.IsSuccessStatusCode) { d.IaEstado = "Error IA " + await DetalleErrorIaAsync(resp); d.IaError = true; return; }
                 r = await resp.Content.ReadFromJsonAsync<OcrResp>();
                 if (r?.Campos is { Count: > 0 }) break;
                 if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
@@ -2622,8 +2648,29 @@
                 ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "") + (tok > 0 ? $" · {FmtTok(tok)}" : "") + notaPag
                 : "La IA no encontro datos de poliza" + notaPag;
         }
-        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
+        catch (TaskCanceledException) { d.IaEstado = "Error IA: la lectura tardo demasiado (tiempo agotado). Intenta de nuevo."; d.IaError = true; }
+        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; d.IaError = true; }
+        finally { d.IaLeyendo = false; }
     }
+
+    // Detalle legible del fallo de /api/ocr/extraer-agente ({ error = "..." }) para mostrarlo tal cual, en vez
+    // de un "IA no disponible" generico que no dice nada (caso real en prod: fallaba sin ningun mensaje).
+    private static async Task<string> DetalleErrorIaAsync(HttpResponseMessage resp)
+    {
+        string? det = null;
+        try { det = (await resp.Content.ReadFromJsonAsync<OcrError>())?.Error; } catch { /* cuerpo no JSON (502/504 del proxy) */ }
+        det = det switch
+        {
+            "agente_documental_no_disponible" => "el Agente Documental no esta activo en esta copropiedad (IA > Agentes).",
+            "texto_o_imagenes_requerido" => "el PDF no tiene texto ni paginas legibles.",
+            null or "" => resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                ? "la sesion vencio; recarga la pagina."
+                : (resp.ReasonPhrase ?? "sin detalle del servidor."),
+            _ => det
+        };
+        return $"({(int)resp.StatusCode}): {det}";
+    }
+    private sealed record OcrError(string? Error);
 
     // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
     private string ClsDudoso(string clave) => (ActiveDraft?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
