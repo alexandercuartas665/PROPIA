@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Propia.Application.Asambleas;
@@ -39,6 +40,7 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         _adminPersonaId = Guid.NewGuid();
         var sc = new ServiceCollection();
         sc.AddLogging();
+        sc.AddMemoryCache();
         sc.AddDataProtection();
         sc.AddSingleton<ITenantContext, TenantContext>();
         sc.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = BuildFakeHttpContext(_adminUserId, _adminPersonaId) });
@@ -152,6 +154,45 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    [Fact]
+    public async Task Smtp_caido_se_detecta_en_el_momento_y_no_programa_nada()
+    {
+        var c = await EscenarioAsync("Asam Enl Smtp");
+        var correo = new CorreoFalso { FallaTodo = true };
+        var (_, enlaces, _) = Build(c.TenantId, correo);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            enlaces.ProgramarEnvioAsync(c.SesionId, null, BaseUrl, CancellationToken.None));
+
+        Assert.Contains("SMTP caido", ex.Message);
+        var estado = enlaces.EstadoEnvio(c.SesionId);
+        Assert.NotNull(estado);
+        Assert.Equal(0, estado!.Enviados);
+        Assert.Equal(2, estado.Fallidos);   // los 2 con correo se intentaron en el momento
+        Assert.False(estado.EnCurso);
+
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Primer_correo_sale_en_el_momento_y_queda_estado()
+    {
+        var c = await EscenarioAsync("Asam Enl Estado");
+        var correo = new CorreoFalso();
+        var (_, enlaces, _) = Build(c.TenantId, correo);
+
+        var r = await enlaces.ProgramarEnvioAsync(c.SesionId, null, BaseUrl, CancellationToken.None);
+
+        Assert.Equal(2, r!.ConCorreo);
+        Assert.NotEmpty(correo.Enviados);   // la prueba salio dentro del request
+        var estado = enlaces.EstadoEnvio(c.SesionId);
+        Assert.NotNull(estado);
+        Assert.Equal(2, estado!.Total);
+        Assert.True(estado.Enviados >= 1);
+
+        await CleanTenant(c.TenantId);
+    }
+
     // ===================== Escenario =====================
 
     /// <summary>
@@ -198,10 +239,11 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
     {
         public List<(string To, string Subject, string Html)> Enviados { get; } = new();
         public string? FallaPara { get; init; }
+        public bool FallaTodo { get; init; }
 
         public Task<EmailSendResult> SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
         {
-            if (string.Equals(toEmail, FallaPara, StringComparison.OrdinalIgnoreCase))
+            if (FallaTodo || string.Equals(toEmail, FallaPara, StringComparison.OrdinalIgnoreCase))
                 return Task.FromResult(new EmailSendResult(false, "SMTP caido"));
             Enviados.Add((toEmail, subject, htmlBody));
             return Task.FromResult(new EmailSendResult(true, null));
@@ -219,7 +261,8 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         var http = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
         var tokens = new AsambleaTokenService(scope.ServiceProvider.GetRequiredService<IDataProtectionProvider>());
         var enlaces = new AsambleaEnlacesService(db, ctx, tokens, correo,
-            scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AsambleaEnlacesService>.Instance);
+            scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scope.ServiceProvider.GetRequiredService<IMemoryCache>(), NullLogger<AsambleaEnlacesService>.Instance);
         return (tokens, enlaces, new AsambleaService(db, ctx, http));
     }
 

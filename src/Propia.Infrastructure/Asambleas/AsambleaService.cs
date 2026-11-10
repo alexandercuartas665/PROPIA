@@ -152,11 +152,7 @@ public partial class AsambleaService : IAsambleaService
             VotacionDto? votDto = null;
             if (votacionesPorPunto.TryGetValue(p.Id, out var v))
             {
-                var votosDto = (p.ModalidadVoto == ModalidadVoto.Secreto && v.Estado == EstadoVotacion.Abierta)
-                    ? new List<VotoDto>()
-                    : v.Votos.Select(x => new VotoDto(
-                        x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
-                        x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
+                var votosDto = MapearVotos(v.Votos);
                 votDto = new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
                     v.QuorumAlAbrirPct, v.CoeficienteTotalSala,
                     v.ResultadoOpcion, v.ResultadoPct, v.ResultadoFinal, votosDto);
@@ -557,16 +553,29 @@ public partial class AsambleaService : IAsambleaService
             var grupos = v.Votos.GroupBy(x => x.Opcion)
                 .Select(g => new { Opcion = g.Key, Coef = g.Sum(x => x.CoeficienteAportado) })
                 .OrderByDescending(x => x.Coef).ToList();
-            var totalCoefVotado = grupos.Sum(g => g.Coef);
             var ganadora = grupos.First();
             v.ResultadoOpcion = ganadora.Opcion;
-            v.ResultadoPct = v.CoeficienteTotalSala > 0
-                ? Math.Round(ganadora.Coef / v.CoeficienteTotalSala * 100m, 2) : 0m;
+
+            // Base del porcentaje, calculada AL CERRAR (no al abrir: con el voto self-service la gente
+            // llega despues de abrir la votacion). Ley 675: mayoria simple (art. 45) = coeficientes
+            // representados en la reunion -> presentes al cierre + quien voto y luego se retiro (su voto
+            // cuenta y no puede pasar del 100 %); mayoria calificada (art. 46) = total de coeficientes de
+            // la copropiedad (todas las unidades citadas a la sesion).
+            var participantes = await _db.SesionParticipantes.AsNoTracking()
+                .Where(x => x.SesionId == v.SesionId)
+                .Select(x => new { x.UnidadPrivadaId, x.Coeficiente, x.Presente })
+                .ToListAsync(ct);
+            var votaron = v.Votos.Select(x => x.UnidadPrivadaId).ToHashSet();
+            var baseCoef = v.Punto!.TipoMayoria == TipoMayoria.Calificada
+                ? participantes.Sum(x => x.Coeficiente)
+                : participantes.Where(x => x.Presente || votaron.Contains(x.UnidadPrivadaId)).Sum(x => x.Coeficiente);
+
+            v.ResultadoPct = baseCoef > 0 ? Math.Round(ganadora.Coef / baseCoef * 100m, 2) : 0m;
 
             // Determinar Aprobado/Rechazado: si la opcion "Si" supera la mayoria configurada
             var siCoef = grupos.FirstOrDefault(g => g.Opcion == OpcionesVotoBase.Si)?.Coef ?? 0m;
-            var siPct = v.CoeficienteTotalSala > 0 ? siCoef / v.CoeficienteTotalSala * 100m : 0m;
-            v.ResultadoFinal = siPct >= v.Punto!.MayoriaPct ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
+            var siPct = baseCoef > 0 ? siCoef / baseCoef * 100m : 0m;
+            v.ResultadoFinal = siPct >= v.Punto.MayoriaPct ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
         }
         else
         {
@@ -578,12 +587,17 @@ public partial class AsambleaService : IAsambleaService
         v.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        var votosDto = v.Votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId,
-            x.CoeficienteAportado, x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
         return new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, v.ResultadoOpcion, v.ResultadoPct,
-            v.ResultadoFinal, votosDto);
+            v.ResultadoFinal, MapearVotos(v.Votos));
     }
+
+    // Voto secreto: nunca sale la opcion de una unidad, ni con la votacion abierta ni cerrada (antes se
+    // revelaba al cerrar a cualquier usuario del tenant). Se conserva quien voto (participacion) y el
+    // coeficiente para el conteo; el resultado agregado vive en ResultadoOpcion/ResultadoPct.
+    private static List<VotoDto> MapearVotos(IEnumerable<Voto> votos)
+        => votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
+            x.EsSecreto ? "" : x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
 
     // ===================== Cierre =====================
 

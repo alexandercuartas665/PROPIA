@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Propia.Application.Asambleas;
@@ -14,27 +15,34 @@ namespace Propia.Infrastructure.Asambleas;
 /// Envio por correo del enlace self-service de Asambleas (Ola 1.5). Destinatarios = mismo gate que el
 /// enlace (AsambleaService.Residente): propietario activo de una unidad citada o apoderado con poder
 /// aprobado en la sesion. Residente/Familiar/Arrendatario no reciben enlace (Ley 675). Un dueno Empresa
-/// no recibe: vota su apoderado. Sin tabla de seguimiento: el resultado del lote va al log (Ola 3).
+/// no recibe: vota su apoderado. Sin tabla de seguimiento (Ola 3): el estado del ultimo envio por sesion
+/// vive en memoria (IMemoryCache, 2 dias) y en el log; se pierde si el proceso reinicia.
 /// </summary>
 public sealed class AsambleaEnlacesService : IAsambleaEnlacesService
 {
     private static readonly TimeSpan OffsetColombia = TimeSpan.FromHours(-5);
+    private static readonly TimeSpan VidaEstado = TimeSpan.FromDays(2);
+    // Correos enviados en el request antes de programar el resto: si todos fallan (tipico de SMTP mal
+    // configurado) el admin lo ve de inmediato y no se programa nada.
+    private const int IntentosPrevios = 3;
 
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IAsambleaTokenService _tokens;
     private readonly IEmailSender _email;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<AsambleaEnlacesService> _logger;
 
     public AsambleaEnlacesService(PropiaDbContext db, ITenantContext tenantContext, IAsambleaTokenService tokens,
-        IEmailSender email, IServiceScopeFactory scopeFactory, ILogger<AsambleaEnlacesService> logger)
+        IEmailSender email, IServiceScopeFactory scopeFactory, IMemoryCache cache, ILogger<AsambleaEnlacesService> logger)
     {
         _db = db;
         _tenantContext = tenantContext;
         _tokens = tokens;
         _email = email;
         _scopeFactory = scopeFactory;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -139,8 +147,34 @@ public sealed class AsambleaEnlacesService : IAsambleaEnlacesService
         var conCorreo = destinatarios.Where(d => d.Email is not null).ToList();
         var sinCorreo = destinatarios.Where(d => d.Email is null).Select(d => d.Nombre).ToList();
         var tenantId = _tenantContext.CurrentTenantId!.Value;
+        if (conCorreo.Count == 0) return new EnvioEnlacesDto(destinatarios.Count, 0, sinCorreo);
 
-        if (conCorreo.Count > 0)
+        // Prueba en el request: hasta IntentosPrevios correos, uno a uno, hasta que uno salga.
+        var inicio = DateTimeOffset.UtcNow;
+        int enviados = 0, fallidos = 0, intentados = 0;
+        var errores = new List<string>();
+        foreach (var d in conCorreo.Take(IntentosPrevios))
+        {
+            intentados++;
+            var r = await EnviarAsync(sesionId, new[] { d }, baseUrl, ct);
+            enviados += r.Enviados;
+            fallidos += r.Fallidos;
+            errores.AddRange(r.Errores);
+            if (r.Enviados > 0) break;
+        }
+        if (enviados == 0)
+        {
+            GuardarEstado(tenantId, sesionId, new EstadoEnvioEnlacesDto(inicio, false, conCorreo.Count, 0, fallidos, errores));
+            var motivo = errores.FirstOrDefault() ?? "sin detalle";
+            throw new InvalidOperationException(
+                $"No se pudo enviar ningun correo ({motivo}). Revisa la configuracion de correo saliente de la plataforma; no se envio nada mas.");
+        }
+
+        var resto = conCorreo.Skip(intentados).ToList();
+        GuardarEstado(tenantId, sesionId,
+            new EstadoEnvioEnlacesDto(inicio, resto.Count > 0, conCorreo.Count, enviados, fallidos, errores));
+
+        if (resto.Count > 0)
         {
             // Fuera del request: scope propio + tenant fijado antes de la primera consulta (RLS). No usa
             // el CancellationToken del request, que se cancela al responder.
@@ -151,13 +185,18 @@ public sealed class AsambleaEnlacesService : IAsambleaEnlacesService
                     using var scope = _scopeFactory.CreateScope();
                     scope.ServiceProvider.GetRequiredService<ITenantContext>().SetTenant(tenantId);
                     var svc = scope.ServiceProvider.GetRequiredService<IAsambleaEnlacesService>();
-                    var r = await svc.EnviarAsync(sesionId, conCorreo, baseUrl, CancellationToken.None);
+                    var r = await svc.EnviarAsync(sesionId, resto, baseUrl, CancellationToken.None);
+                    var todosErrores = errores.Concat(r.Errores).Take(10).ToList();
+                    GuardarEstado(tenantId, sesionId, new EstadoEnvioEnlacesDto(inicio, false, conCorreo.Count,
+                        enviados + r.Enviados, fallidos + r.Fallidos, todosErrores));
                     _logger.LogInformation(
                         "Asambleas: enlaces de la sesion {SesionId} (tenant {TenantId}): {Enviados} enviados, {Fallidos} fallidos de {Total}. {Errores}",
-                        sesionId, tenantId, r.Enviados, r.Fallidos, conCorreo.Count, string.Join(" | ", r.Errores));
+                        sesionId, tenantId, enviados + r.Enviados, fallidos + r.Fallidos, conCorreo.Count, string.Join(" | ", todosErrores));
                 }
                 catch (Exception ex)
                 {
+                    GuardarEstado(tenantId, sesionId, new EstadoEnvioEnlacesDto(inicio, false, conCorreo.Count,
+                        enviados, fallidos, errores.Append($"El envio se interrumpio: {ex.Message}").ToList()));
                     _logger.LogError(ex, "Asambleas: fallo el envio de enlaces de la sesion {SesionId}.", sesionId);
                 }
             });
@@ -165,6 +204,17 @@ public sealed class AsambleaEnlacesService : IAsambleaEnlacesService
 
         return new EnvioEnlacesDto(destinatarios.Count, conCorreo.Count, sinCorreo);
     }
+
+    public EstadoEnvioEnlacesDto? EstadoEnvio(Guid sesionId)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        return tenantId is null ? null : _cache.Get<EstadoEnvioEnlacesDto>(ClaveEstado(tenantId.Value, sesionId));
+    }
+
+    private void GuardarEstado(Guid tenantId, Guid sesionId, EstadoEnvioEnlacesDto estado)
+        => _cache.Set(ClaveEstado(tenantId, sesionId), estado, VidaEstado);
+
+    private static string ClaveEstado(Guid tenantId, Guid sesionId) => $"asambleas:envio-enlaces:{tenantId:N}:{sesionId:N}";
 
     private static string? EmailValido(string? email)
     {

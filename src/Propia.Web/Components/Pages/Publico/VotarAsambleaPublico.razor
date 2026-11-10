@@ -31,13 +31,17 @@ else if (_errorCarga is not null)
 else if (_dto is not null)
 {
     <div class="asmp-hero">
-        <div class="asmp-eyebrow">@TipoTexto(_dto.Tipo)</div>
+        @if (!string.IsNullOrWhiteSpace(_dto.LogoUrl))
+        {
+            <img src="@_dto.LogoUrl" alt="@_dto.CopropiedadNombre" class="asmp-logo" />
+        }
+        @if (!string.IsNullOrWhiteSpace(_dto.CopropiedadNombre))
+        {
+            <div class="asmp-copropiedad">@_dto.CopropiedadNombre</div>
+        }
+        <div class="asmp-eyebrow mt-3">@TipoTexto(_dto.Tipo)</div>
         <div class="asmp-titulo">@_dto.Titulo</div>
-        <div class="asmp-meta">
-            <span>@_dto.FechaSesion.ToCo().ToString("dddd d 'de' MMMM, h:mm tt", _co)</span>
-            <span>&middot; @ModalidadTexto(_dto.Modalidad)</span>
-            @if (!string.IsNullOrWhiteSpace(_dto.LugarFisico)) { <span>&middot; @_dto.LugarFisico</span> }
-        </div>
+        <div class="asmp-meta">@MetaSesion(_dto)</div>
         @if (!string.IsNullOrWhiteSpace(_dto.EnlaceVideo) && _dto.Estado == EstadoSesion.EnCurso)
         {
             <a class="asmp-btn asmp-btn-ghost mt-3" href="@_dto.EnlaceVideo" target="_blank" rel="noopener">Entrar a la videollamada</a>
@@ -133,7 +137,7 @@ else if (_dto is not null)
                 {
                     @if (p.ModalidadVoto == ModalidadVoto.Secreto)
                     {
-                        <div class="asmp-small mb-2">Voto secreto: la administración no ve qué opción elegiste.</div>
+                        <div class="asmp-small mb-2">Votación secreta: la plataforma no le muestra a nadie, ni a la administración, qué opción elegiste; solo el resultado total.</div>
                     }
                     @foreach (var u in _dto.MisUnidades)
                     {
@@ -178,6 +182,15 @@ else if (_dto is not null)
                             <span class="asmp-small">Opción ganadora: @OpcionTexto(p.ResultadoOpcion)@(p.ResultadoPct is decimal pct ? $" ({pct.ToString("0.##", _co)}%)" : "")</span>
                         }
                     </div>
+                    @* Lo que voto cada unidad propia sigue visible despues del cierre (secreto: solo "votaste"). *@
+                    @foreach (var u in _dto.MisUnidades)
+                    {
+                        var voto = u.Votos.FirstOrDefault(v => v.VotacionId == p.VotacionId);
+                        if (voto is null) continue;
+                        <div class="asmp-voto">
+                            <span class="asmp-small">@(_dto.MisUnidades.Count > 1 ? $"Unidad {u.UnidadNumero}: " : "")@(voto.Opcion is null ? "Votaste (voto secreto)" : $"Tu voto: {OpcionTexto(voto.Opcion)}")</span>
+                        </div>
+                    }
                 }
             </div>
         }
@@ -195,18 +208,20 @@ else if (_dto is not null)
 </div>
 
 <style>
-    .asmp-wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px 40px; font-family: var(--propia-font-base); }
+    .asmp-wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; font-family: var(--propia-font-base); }
     .asmp-muted { color: var(--propia-text-muted); font-size: 13px; }
     .asmp-small { color: var(--propia-text-muted); font-size: 12.5px; line-height: 1.45; }
-    .asmp-hero { text-align: center; margin-bottom: 16px; }
+    .asmp-hero { text-align: center; margin-bottom: 18px; }
+    .asmp-logo { max-height: 62px; max-width: 220px; object-fit: contain; margin-bottom: 10px; }
+    .asmp-copropiedad { font-size: 13px; font-weight: 700; color: var(--propia-text-secondary); }
     .asmp-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--propia-text-muted); margin-bottom: 8px; text-transform: uppercase; }
-    .asmp-titulo { font-size: 21px; font-weight: 800; color: var(--propia-text-h1); line-height: 1.25; }
-    .asmp-meta { font-size: 13px; color: var(--propia-text-secondary); margin-top: 6px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .asmp-titulo { font-size: 19px; font-weight: 800; color: var(--propia-text-h1); line-height: 1.25; }
+    .asmp-meta { font-size: 13px; color: var(--propia-text-secondary); margin-top: 6px; }
     .asmp-hola { font-size: 14px; color: var(--propia-text-body); margin-top: 14px; }
-    .asmp-estado { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); }
+    .asmp-estado { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); }
     .asmp-estado-3 { background: var(--propia-success-bg); color: var(--propia-success); }
     .asmp-estado-2 { background: var(--propia-brand-soft); color: var(--propia-brand); }
-    .asmp-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: var(--propia-radius-card); padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--propia-shadow-card); }
+    .asmp-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: var(--propia-radius-card); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--propia-shadow-card); }
     .asmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .asmp-quorum-pct { font-size: 20px; font-weight: 800; color: var(--propia-text-h1); }
     .asmp-bar { position: relative; height: 10px; border-radius: var(--propia-radius-pill); background: var(--propia-border-divider); overflow: visible; margin-bottom: 8px; }
@@ -229,7 +244,7 @@ else if (_dto is not null)
     .asmp-chip.is-live { background: var(--propia-warning-bg); color: var(--propia-warning); }
     .asmp-punto { padding: 12px 0; }
     .asmp-punto + .asmp-punto { border-top: 1px solid var(--propia-border-divider); }
-    .asmp-punto.is-votando { background: var(--propia-brand-soft); margin: 0 -18px; padding: 12px 18px; }
+    .asmp-punto.is-votando { background: var(--propia-brand-soft); margin: 0 -20px; padding: 12px 20px; }
     .asmp-punto-head { display: flex; align-items: flex-start; gap: 10px; }
     .asmp-punto-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; background: var(--propia-bg-hover); color: var(--propia-text-secondary); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
     .asmp-punto-txt { flex: 1 1 auto; min-width: 0; }
@@ -244,7 +259,7 @@ else if (_dto is not null)
     .asmp-aviso { border-radius: var(--propia-radius-card-sm); padding: 10px 12px; margin-bottom: 14px; font-size: 13.5px; font-weight: 600; }
     .asmp-aviso.is-ok { background: var(--propia-success-bg); color: var(--propia-success); border: 1px solid var(--propia-success-border); }
     .asmp-aviso.is-err { background: var(--propia-error-bg); color: var(--propia-error-text); border: 1px solid var(--propia-error-border); }
-    .asmp-foot { text-align: center; font-size: 12px; color: var(--propia-text-faint); margin-top: 18px; }
+    .asmp-foot { text-align: center; font-size: 11px; color: var(--propia-text-faint); margin-top: 18px; }
     @@media (max-width: 480px) {
         .asmp-unidad { flex-direction: column; align-items: stretch; }
         .asmp-unidad .asmp-btn { width: 100%; }
@@ -381,6 +396,16 @@ else if (_dto is not null)
 
     private static string BarWidth(decimal pct)
         => Math.Clamp(pct, 0m, 100m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    // Fecha (hora Colombia) + modalidad + lugar en una sola linea que corta limpio (sin separador huerfano).
+    private static string MetaSesion(SesionResidenteDto d)
+    {
+        // La fecha con hora no se parte (espacios duros): evita "1:15 / p. m." en el celular.
+        var fecha = d.FechaSesion.ToCo().ToString("dddd d 'de' MMMM, h:mm tt", _co).Replace(' ', '\u00a0');
+        var partes = new List<string> { fecha, ModalidadTexto(d.Modalidad) };
+        if (!string.IsNullOrWhiteSpace(d.LugarFisico)) partes.Add(d.LugarFisico);
+        return string.Join("\u00a0\u00b7 ", partes);
+    }
 
     private static string TipoTexto(TipoSesion t) => t switch
     {

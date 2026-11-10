@@ -160,6 +160,12 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Estado del ultimo envio de enlaces (enviados / fallidos / motivos); 204 si no hubo envio.
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpGet("{id:guid}/enviar-enlaces/estado")]
+    public IActionResult EstadoEnvioEnlaces(Guid id, [FromServices] IAsambleaEnlacesService enlaces)
+        => enlaces.EstadoEnvio(id) is { } e ? Ok(e) : NoContent();
+
     // Votaciones
     [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/votaciones")]

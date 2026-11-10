@@ -215,7 +215,9 @@ public record SesionResidenteDto(
     string PersonaNombre,
     QuorumDto QuorumActual,
     IReadOnlyList<SesionPuntoResidenteDto> Puntos,
-    IReadOnlyList<MiUnidadSesionDto> MisUnidades);
+    IReadOnlyList<MiUnidadSesionDto> MisUnidades,
+    string CopropiedadNombre,
+    string? LogoUrl);
 
 /// <summary>Punto del orden del dia con su votacion mas reciente (resultado solo si ya cerro).</summary>
 public record SesionPuntoResidenteDto(
@@ -266,3 +268,7 @@ public record EnvioEnlacesDto(int Destinatarios, int ConCorreo, IReadOnlyList<st
 
 /// <summary>Resultado del lote de correos (se registra en el log del API).</summary>
 public record EnvioEnlacesResultado(int Enviados, int Fallidos, IReadOnlyList<string> Errores);
+
+/// <summary>Estado del ultimo envio de enlaces de una sesion (lo muestra la ficha del admin).</summary>
+public record EstadoEnvioEnlacesDto(DateTimeOffset Inicio, bool EnCurso, int Total, int Enviados, int Fallidos,
+    IReadOnlyList<string> Errores);

@@ -17,8 +17,12 @@ public interface IAsambleaEnlacesService
     Task<EnvioEnlacesResultado> EnviarAsync(Guid sesionId, IReadOnlyList<DestinatarioEnlaceDto> destinatarios, string baseUrl, CancellationToken ct);
 
     /// <summary>
-    /// Resuelve los destinatarios y lanza el envio en segundo plano (scope propio con el tenant fijado).
-    /// Devuelve de inmediato cuantos son y quienes no tienen correo. Null si la sesion no existe.
+    /// Resuelve los destinatarios, envia en el request hasta 3 correos de prueba y lanza el resto en
+    /// segundo plano (scope propio con el tenant fijado). Si ninguno de prueba sale lanza
+    /// InvalidOperationException y no programa nada. Null si la sesion no existe.
     /// </summary>
     Task<EnvioEnlacesDto?> ProgramarEnvioAsync(Guid sesionId, IReadOnlyCollection<Guid>? personaIds, string baseUrl, CancellationToken ct);
+
+    /// <summary>Estado del ultimo envio de la sesion (en memoria, 2 dias); null si no hubo envio.</summary>
+    EstadoEnvioEnlacesDto? EstadoEnvio(Guid sesionId);
 }

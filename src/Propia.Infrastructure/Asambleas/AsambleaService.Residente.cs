@@ -95,8 +95,16 @@ public partial class AsambleaService
             .Select(x => (x.Nombres + " " + x.Apellidos).Trim())
             .FirstOrDefaultAsync(ct) ?? "";
 
+        // Identidad de la copropiedad para el encabezado (mismo criterio que el PQRSD publico; LogoUrl relativa).
+        var tenantId = s.TenantId;
+        var copropiedad = await _db.Tenants.AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.Nombre, t.LogoUrl })
+            .FirstOrDefaultAsync(ct);
+
         return new SesionResidenteDto(s.Id, s.Titulo, s.Tipo, s.Modalidad, s.Estado, s.FechaSesion,
-            s.LugarFisico, s.EnlaceVideo, nombre, quorum, puntos, misUnidades);
+            s.LugarFisico, s.EnlaceVideo, nombre, quorum, puntos, misUnidades,
+            copropiedad?.Nombre ?? "", copropiedad?.LogoUrl);
     }
 
     public async Task<bool> MiCheckInAsync(Guid sesionId, Guid personaId, Guid unidadId, bool presente, CancellationToken ct)

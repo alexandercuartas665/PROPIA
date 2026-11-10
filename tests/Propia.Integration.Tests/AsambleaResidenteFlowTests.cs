@@ -228,13 +228,115 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    // ===================== Cierre de votacion (Ola A) =====================
+    // El escenario abre la votacion con NADIE presente: los copropietarios entran despues desde el
+    // celular. Antes el cierre dividia por los presentes AL ABRIR (0) y daba "Rechazado, Si 0 %".
+
+    [Fact]
+    public async Task Cierre_cuenta_sobre_los_presentes_al_cerrar_no_al_abrir()
+    {
+        var c = await EscenarioAsync("Asam Cierre Tarde");
+        var (svc, _, _) = Build(c.TenantId);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.Si, CancellationToken.None);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        Assert.Equal(ResultadoVotacion.Aprobado, r.ResultadoFinal);
+        Assert.Equal(100m, r.ResultadoPct);
+
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Llegada_tarde_no_infla_el_porcentaje_y_gana_la_mayoria_real()
+    {
+        var c = await EscenarioAsync("Asam Cierre Infla");
+        var (svc, _, _) = Build(c.TenantId);
+        await svc.MiCheckInAsync(c.SesionId, c.OtroDueno, c.UnidadOtroDueno, true, CancellationToken.None);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        // No 0.5 / Si 0.3 sobre 0.8 presentes: gana No con 62,5 % (antes: No > 100 % y salia Aprobado).
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.No, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.OtroDueno, c.UnidadOtroDueno, OpcionesVotoBase.Si, CancellationToken.None);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        Assert.Equal(OpcionesVotoBase.No, r.ResultadoOpcion);
+        Assert.Equal(62.5m, r.ResultadoPct);
+        Assert.Equal(ResultadoVotacion.Rechazado, r.ResultadoFinal);
+
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Quien_vota_y_se_retira_sigue_en_la_base()
+    {
+        var c = await EscenarioAsync("Asam Cierre Retiro");
+        var (svc, _, _) = Build(c.TenantId);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        await svc.MiCheckInAsync(c.SesionId, c.OtroDueno, c.UnidadOtroDueno, true, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.Si, CancellationToken.None);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, false, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.OtroDueno, c.UnidadOtroDueno, OpcionesVotoBase.No, CancellationToken.None);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        // Si 0.5 / base 0.8 (el que se retiro cuenta: su voto sigue valido) = 62,5 %, nunca mas de 100 %.
+        Assert.Equal(62.5m, r.ResultadoPct);
+        Assert.Equal(ResultadoVotacion.Aprobado, r.ResultadoFinal);
+
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Mayoria_calificada_se_mide_sobre_el_total_de_la_copropiedad()
+    {
+        var c = await EscenarioAsync("Asam Cierre Calif", TipoMayoria.Calificada, 70m);
+        var (svc, _, _) = Build(c.TenantId);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.Si, CancellationToken.None);
+
+        var r = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+
+        // Todos los presentes votaron Si, pero 0.5 de 1.0 de la copropiedad = 50 % < 70 % (art. 46).
+        Assert.Equal(50m, r.ResultadoPct);
+        Assert.Equal(ResultadoVotacion.Rechazado, r.ResultadoFinal);
+
+        await CleanTenant(c.TenantId);
+    }
+
+    [Fact]
+    public async Task Voto_secreto_nunca_expone_la_opcion_de_una_unidad()
+    {
+        var c = await EscenarioAsync("Asam Secreto", modalidad: ModalidadVoto.Secreto);
+        var (svc, _, _) = Build(c.TenantId);
+        await svc.MiCheckInAsync(c.SesionId, c.Dueno, c.UnidadDueno, true, CancellationToken.None);
+        await svc.MiVotoAsync(c.SesionId, c.VotacionId, c.Dueno, c.UnidadDueno, OpcionesVotoBase.No, CancellationToken.None);
+
+        var abierta = await svc.GetSesionAsync(c.SesionId, CancellationToken.None);
+        var votoAbierta = Assert.Single(abierta!.Puntos[0].Votacion!.Votos);
+        Assert.Equal("", votoAbierta.Opcion);
+
+        var cierre = await svc.CerrarVotacionAsync(c.VotacionId, new CerrarVotacionRequest(), CancellationToken.None);
+        Assert.Equal("", Assert.Single(cierre.Votos).Opcion);
+        Assert.Equal(OpcionesVotoBase.No, cierre.ResultadoOpcion);  // el agregado si se publica
+
+        var cerrada = await svc.GetSesionAsync(c.SesionId, CancellationToken.None);
+        var voto = Assert.Single(cerrada!.Puntos[0].Votacion!.Votos);
+        Assert.Equal("", voto.Opcion);
+        Assert.True(voto.EsSecreto);
+
+        await CleanTenant(c.TenantId);
+    }
+
     // ===================== Escenario =====================
 
     /// <summary>
     /// 3 unidades (0.5 / 0.3 / 0.2): Dueno es Propietario de la 1; OtroDueno de la 2 (y ExDueno con
     /// vinculo inactivo); la 3 sin dueno. Residente vive en la 1. Sesion EnCurso con votacion abierta.
     /// </summary>
-    private async Task<Escenario> EscenarioAsync(string nombre)
+    private async Task<Escenario> EscenarioAsync(string nombre,
+        TipoMayoria mayoria = TipoMayoria.Simple, decimal mayoriaPct = 50m, ModalidadVoto modalidad = ModalidadVoto.Publico)
     {
         var tenantId = await SeedTenantAsync(nombre);
         await SeedAdminAsync();
@@ -253,7 +355,7 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
             TipoSesion.AsambleaOrdinaria, ModalidadSesion.Virtual, "Asamblea residente",
             DateTimeOffset.UtcNow.AddDays(10), null, null,
-            new[] { new CrearPuntoRequest(1, "Aprobar presupuesto", null, true, TipoMayoria.Simple, 50m, ModalidadVoto.Publico, null) }),
+            new[] { new CrearPuntoRequest(1, "Aprobar presupuesto", null, true, mayoria, mayoriaPct, modalidad, null) }),
             CancellationToken.None);
         await svc.EnviarCitacionAsync(s.Id, new EnviarCitacionRequest(null), CancellationToken.None);
         await svc.AbrirSalaAsync(s.Id, CancellationToken.None);

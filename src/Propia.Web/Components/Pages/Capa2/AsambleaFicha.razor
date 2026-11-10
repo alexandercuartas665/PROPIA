@@ -64,6 +64,14 @@
                 @if (_s.Estado == EstadoSesion.Citada || _s.Estado == EstadoSesion.EnCurso)
                 {
                     <div class="mt-2"><button class="btn btn-sm btn-outline-primary" @onclick="() => _showEnlaces = true" disabled="@_busy">Enviar enlaces de voto</button></div>
+                    @if (_envio is not null)
+                    {
+                        <div class="small text-muted mt-1" title="@string.Join(" | ", _envio.Errores)">
+                            Último envío (@_envio.Inicio.LocalDateTime.ToString("HH:mm")):
+                            @(_envio.EnCurso ? "en curso, " : "")@_envio.Enviados de @_envio.Total enviados@(_envio.Fallidos > 0 ? $", {_envio.Fallidos} fallidos" : "")
+                            <button class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick="CargarEstadoEnvioAsync">actualizar</button>
+                        </div>
+                    }
                 }
                 @if (_miRuta is not null)
                 {
@@ -385,6 +393,7 @@
     private bool _showCerrar;
     private bool _showEnlaces;
     private string? _miRuta;
+    private EstadoEnvioEnlacesDto? _envio;
     private bool _quorumAlcanzado = true;
     private bool _showFirmar;
     private string? _narrativa;
@@ -410,6 +419,21 @@
         try { _s = await Auth().GetFromJsonAsync<SesionDetalleDto>($"/api/asambleas/{Id}"); }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
         await CargarMiEnlaceAsync();
+        await CargarEstadoEnvioAsync();
+    }
+
+    // Estado del ultimo envio de enlaces (en memoria del API). 204 = no hubo envio; 403 = sin permiso.
+    private async Task CargarEstadoEnvioAsync()
+    {
+        _envio = null;
+        if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/asambleas/{Id}/enviar-enlaces/estado");
+            if (resp.StatusCode == System.Net.HttpStatusCode.OK)
+                _envio = await resp.Content.ReadFromJsonAsync<EstadoEnvioEnlacesDto>();
+        }
+        catch { /* sin linea de estado */ }
     }
 
     // Via logueada (Ola 1.6): si quien mira es propietario o apoderado habilitado en la sesion, el API
@@ -455,7 +479,14 @@
                     : $"Enviando {(r.ConCorreo == 1 ? "1 correo" : $"{r.ConCorreo} correos")} con el enlace de voto (salen en segundo plano).{sin}";
                 _msgClass = r.ConCorreo == 0 ? "alert-warning" : "alert-success";
             }
-            else { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; }
+            else
+            {
+                var cuerpo = await resp.Content.ReadAsStringAsync();
+                try { _msg = System.Text.Json.JsonDocument.Parse(cuerpo).RootElement.GetProperty("error").GetString(); }
+                catch { _msg = cuerpo; }
+                _msgClass = "alert-danger";
+            }
+            await CargarEstadoEnvioAsync();
         }
         finally { _busy = false; _showEnlaces = false; }
     }
