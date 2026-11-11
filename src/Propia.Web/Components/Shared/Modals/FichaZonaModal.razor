@@ -22,7 +22,15 @@
 else
 {
 <div class="fz-head">
-    <div class="fz-head-ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
+    @* Con imagen, el cuadro del encabezado muestra la miniatura de la zona (opcion A). *@
+    @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+    {
+        <div class="fz-head-ic fz-head-ic--img" style="background-image:url('@_imagenUrl')"></div>
+    }
+    else
+    {
+        <div class="fz-head-ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"/></svg></div>
+    }
     <div class="fz-head-tt">
         <div class="fz-head-h">@_ficha.Zona.Nombre</div>
         <div class="fz-head-s">@_ficha.Zona.Categoria &middot; Aforo @(_aforo?.ToString() ?? "-") &middot; @_ficha.Zona.Estado</div>
@@ -332,17 +340,9 @@ else if (_tab == "historial")
     .fz-left { overflow-y: auto; padding: 18px 20px; border-right: 1px solid var(--propia-border-divider); background: var(--propia-bg-card-soft); display: flex; flex-direction: column; gap: 16px; }
     .fz-right { display: flex; flex-direction: column; min-height: 0; background: var(--propia-bg-card-soft); overflow: hidden; }
 
-    /* Preview: cubre la caja (cover) sin importar el tamano del original; clic para ver completa. */
-    .fz-img { width: 100%; height: 170px; border-radius: 12px; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--propia-border-divider); overflow: hidden; cursor: zoom-in; }
-    /* Lightbox: la imagen ORIGINAL completa (contain, sin recorte) centrada sobre un velo. */
-    .fz-lb { position: fixed; inset: 0; z-index: 5000; background: rgba(12,20,32,.82); display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
-    .fz-lb img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.5); }
-    .fz-lb-x { position: absolute; top: 18px; right: 22px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: var(--propia-text-inverse); cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .fz-lb-x:hover { background: rgba(255,255,255,.28); }
-    .fz-img-change { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; font-size: 11.5px; font-weight: 700; color: var(--propia-brand); cursor: pointer; }
-    .fz-resv { margin-top: 12px; }
-    .fz-img-drop { height: 150px; border-radius: 12px; border: 1.5px dashed var(--propia-text-faint); background: var(--propia-bg-card); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; color: var(--propia-brand); font-size: 12px; font-weight: 700; }
-    .fz-img-drop:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    /* La imagen es la tarjeta de identidad compartida (FichaIdentidad, clases .fid-*). */
+    .fz-resv { margin-top: 12px; display: flex; justify-content: center; }
+    .fz-head-ic--img { background-size: cover; background-position: center; background-repeat: no-repeat; box-shadow: 0 0 0 1px var(--propia-border-card); }
 
     .fz-block { }
     .fz-block-t { font-size: 11px; letter-spacing: .5px; color: var(--propia-text-faint); font-weight: 700; margin-bottom: 8px; }
@@ -447,6 +447,9 @@ else if (_tab == "historial")
         .fz-ft-add { grid-template-columns: 1fr 1fr; }
         .fz-left { border-right: 0; border-bottom: 1px solid var(--propia-border-divider); padding: 16px 14px; }
         .fz-ebody { padding: 16px 14px; }
+        /* Un solo scroll en movil: partir la altura en dos paneles recortaba la tarjeta de identidad. */
+        .fz-grid { overflow-y: auto; align-content: start; grid-template-columns: minmax(0, 1fr); }
+        .fz-left, .fz-ebody, .fz-right { overflow: visible; min-height: auto; }
     }
 </style>
 
@@ -465,7 +468,6 @@ else if (_tab == "historial")
 
     // estado editable de config
     private string? _imagenUrl;
-    private string? _verImagen;   // url mostrada en el lightbox (null = cerrado)
     // Programa de mantenimiento antiguo de la zona: ya no se edita desde la ficha (la
     // frecuencia la define ahora la regla del programador), pero se sigue leyendo y
     // guardando tal cual para no borrar el dato de las zonas que ya lo tenian.
@@ -553,34 +555,42 @@ else if (_tab == "historial")
 
     private async Task Recargar() => await CargarAsync();
 
-    // Bloque de imagen (imagen + cambiar/cargar + lightbox), usado en consulta Y en edicion para que la
-    // imagen este siempre en la misma ubicacion. La subida persiste al instante (SetZonaImagenAsync).
-    private RenderFragment BloqueImagen => @<div>
-        @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+    // Tarjeta de identidad (imagen + chips + datos clave), misma que la ficha de equipos; usada en
+    // consulta Y en edicion para que la imagen este siempre en la misma ubicacion. La subida persiste al
+    // instante (SetZonaImagenAsync). La zona no tiene endpoint para quitar la imagen: solo cambiarla.
+    private RenderFragment BloqueImagen => @<FichaIdentidad Seccion="IMAGEN DE LA ZONA"
+                                                           ImagenUrl="@_imagenUrl"
+                                                           Iniciales="@FichaIdentidad.InicialesDe(_ficha?.Zona.Nombre)"
+                                                           Subiendo="_subiendoImg"
+                                                           OnSubir="SubirImagen"
+                                                           Chips="ChipsIdentidad()"
+                                                           Datos="DatosIdentidad()" />;
+
+    private List<FichaIdentidad.Chip> ChipsIdentidad()
+    {
+        if (_ficha is null) return new();
+        var z = _ficha.Zona;
+        var estado = z.Estado switch
         {
-            <div class="fz-img" style="background-image:url('@_imagenUrl')" role="button" title="Ver imagen completa" @onclick='() => _verImagen = _imagenUrl'></div>
-            <label class="fz-img-change">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>@(_subiendoImg ? "Subiendo..." : "Cambiar imagen")
-                <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
-            </label>
-        }
-        else
+            EstadoZonaComunMantenimiento.Activa => new FichaIdentidad.Chip("Activa", "ok"),
+            EstadoZonaComunMantenimiento.EnMantenimiento => new FichaIdentidad.Chip("En mantenimiento", "warn"),
+            _ => new FichaIdentidad.Chip("Inactiva", "neutral"),
+        };
+        return new() { new(z.Categoria.ToString(), "brand"), estado };
+    }
+
+    private List<FichaIdentidad.Dato> DatosIdentidad()
+    {
+        if (_ficha is null) return new();
+        var datos = new List<FichaIdentidad.Dato>
         {
-            <label class="fz-img-drop">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
-                <span>@(_subiendoImg ? "Subiendo..." : "Cargar imagen")</span>
-                <InputFile OnChange="SubirImagen" accept="image/png,image/jpeg,image/webp" hidden disabled="@_subiendoImg" />
-            </label>
-        }
-        @* Lightbox: muestra la imagen ORIGINAL completa (sin recorte) al hacer clic. *@
-        @if (!string.IsNullOrWhiteSpace(_verImagen))
-        {
-            <div class="fz-lb" @onclick='() => _verImagen = null'>
-                <button class="fz-lb-x" type="button" title="Cerrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-                <img src="@_verImagen" alt="Imagen de la zona" />
-            </div>
-        }
-    </div>;
+            new("Aforo", _aforo is null ? null : $"{_aforo} personas"),
+            new("Reservable", _reservable ? "Sí" : "No"),
+        };
+        if (_reservable && _ficha.Zona.TarifaReserva is > 0)
+            datos.Add(new("Tarifa de reserva", $"$ {_ficha.Zona.TarifaReserva:N0}"));
+        return datos;
+    }
 
     private async Task SubirImagen(InputFileChangeEventArgs e)
     {
