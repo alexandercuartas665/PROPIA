@@ -18,6 +18,23 @@ public enum EstadoRegistroConsumo
     Estimado = 2
 }
 
+/// <summary>Cada cuanto factura el prestador (avanza el "proximo pago").</summary>
+public enum PeriodicidadServicio
+{
+    Mensual = 1,
+    Bimestral = 2,
+    Trimestral = 3,
+    Semestral = 6,
+    Anual = 12
+}
+
+/// <summary>Como entro un registro de consumo: leido de un recibo con IA o digitado a mano.</summary>
+public enum OrigenRegistroConsumo
+{
+    Manual = 1,
+    IA = 2
+}
+
 /// <summary>Estado de una reclamacion ante el prestador del servicio.</summary>
 public enum EstadoReclamacionServicio
 {

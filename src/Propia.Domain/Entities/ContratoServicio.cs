@@ -99,6 +99,11 @@ public class ContratoServicio : TenantEntity
     public Guid? ServicioId { get; set; }
     public Servicio? Servicio { get; set; }
 
+    /// <summary>Servicio publico (2.17) al que pertenece el contrato. Reemplaza en la UI al catalogo viejo de
+    /// servicios (ServicioId queda en la base sin mostrarse). Opcional.</summary>
+    public Guid? CuentaServicioPublicoId { get; set; }
+    public CuentaServicioPublico? CuentaServicioPublico { get; set; }
+
     /// <summary>FK logico a Expediente (modulo 2.15): un contrato puede pertenecer a un expediente.</summary>
     public Guid? ExpedienteId { get; set; }
 

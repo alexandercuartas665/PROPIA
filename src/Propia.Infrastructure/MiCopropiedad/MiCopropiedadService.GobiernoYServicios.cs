@@ -206,6 +206,7 @@ public partial class MiCopropiedadService
             DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta,
             RenovacionAutomatica = req.RenovacionAutomatica,
             ServicioId = req.ServicioId,
+            CuentaServicioPublicoId = await CuentaServicioPublicoValidaAsync(req.CuentaServicioPublicoId, ct),
             ExpedienteId = req.ExpedienteId,
             ProyectoTareaId = req.ProyectoTareaId,
             // ----- Campos del pedido de Contratos (Ola 1) -----
@@ -305,6 +306,7 @@ public partial class MiCopropiedadService
         {
             c.RenovacionAutomatica = req.RenovacionAutomatica;
             c.ServicioId = req.ServicioId;
+            c.CuentaServicioPublicoId = await CuentaServicioPublicoValidaAsync(req.CuentaServicioPublicoId, ct);
             c.ExpedienteId = req.ExpedienteId;
             c.ProyectoTareaId = req.ProyectoTareaId;
             // Tercero del Directorio (contratista): se persisten los FK del selector.
@@ -384,8 +386,13 @@ public partial class MiCopropiedadService
             c.AsociadoTipo, c.AsociadoId, asociadoNombre,
             c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo,
             c.TelefonoContratista, c.CorreoContratista, c.DireccionContratista,
-            c.FormaPago, c.TipoServicioTexto, c.RepresentanteLegal, c.Ciudad);
+            c.FormaPago, c.TipoServicioTexto, c.RepresentanteLegal, c.Ciudad,
+            c.CuentaServicioPublicoId);
     }
+
+    // El servicio publico del contrato debe ser de la copropiedad actual (query filter); si no, se ignora.
+    private async Task<Guid?> CuentaServicioPublicoValidaAsync(Guid? id, CancellationToken ct)
+        => id is { } g && await _db.CuentasServicioPublico.AnyAsync(x => x.Id == g, ct) ? g : null;
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
     {

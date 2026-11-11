@@ -184,6 +184,7 @@ public static class DependencyInjection
 
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
+        services.AddScoped<ServiciosPublicos.ReciboEjemploService>();
 
         // Servicios y contratos (Finanzas)
         services.AddScoped<Application.Servicios.IServiciosService, Servicios.ServiciosService>();

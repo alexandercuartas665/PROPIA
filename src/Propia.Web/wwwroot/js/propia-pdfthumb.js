@@ -157,5 +157,30 @@ window.propiaPdfThumb = (function () {
         } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo rasterizar', e); return { paginas: [], total: 0 }; }
     }
 
-    return { render: render, extraerTexto: extraerTexto, extraerTextoInfo: extraerTextoInfo, rasterizarPaginas: rasterizarPaginas };
+    // Foto de un recibo (JPG/PNG/WebP) -> JPEG base64 (SIN "data:") con el lado mayor en maxLado px, para mandarla
+    // directo a vision. Devuelve null si el navegador no puede decodificarla (HEIC y otros formatos).
+    async function redimensionarImagen(base64, mime, maxLado) {
+        maxLado = maxLado || 1600;
+        try {
+            var img = await new Promise(function (resolve, reject) {
+                var i = new Image();
+                i.onload = function () { resolve(i); };
+                i.onerror = function () { reject(new Error('imagen no legible')); };
+                i.src = 'data:' + (mime || 'image/jpeg') + ';base64,' + base64;
+            });
+            var w = img.naturalWidth, h = img.naturalHeight;
+            if (!w || !h) return null;
+            var k = Math.min(1, maxLado / Math.max(w, h));
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.round(w * k); canvas.height = Math.round(h * k);
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            var url = canvas.toDataURL('image/jpeg', 0.85);
+            var comma = url.indexOf(',');
+            return comma >= 0 ? url.slice(comma + 1) : url;
+        } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo leer la imagen', e); return null; }
+    }
+
+    return { render: render, extraerTexto: extraerTexto, extraerTextoInfo: extraerTextoInfo, rasterizarPaginas: rasterizarPaginas, redimensionarImagen: redimensionarImagen };
 })();

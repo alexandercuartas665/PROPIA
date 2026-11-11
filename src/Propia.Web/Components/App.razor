@@ -129,7 +129,7 @@
     <link rel="stylesheet" href="css/modules/tareas.css?v=58" />
     <link rel="stylesheet" href="css/modules/vistas.css?v=6" />
     <link rel="stylesheet" href="css/modules/pqrs.css?v=26" />
-    <link rel="stylesheet" href="css/modules/servicios.css?v=31" />
+    <link rel="stylesheet" href="css/modules/servicios.css?v=32" />
     <link rel="stylesheet" href="css/modules/ia-ingesta.css?v=1" />
     <link rel="stylesheet" href="css/modules/directorio.css?v=13" />
     <link rel="stylesheet" href="css/modules/mi-copropiedad.css?v=6" />
@@ -183,8 +183,8 @@
     <script src="js/propia-ui.js?v=26"></script>
 
     @* Miniaturas de PDF (carga multiple de contratos/polizas); pdf.js se carga perezoso desde asset local. *@
-    <script src="js/propia-pdfthumb.js?v=5"></script>
-    <script src="js/propia-iai.js?v=1"></script>
+    <script src="js/propia-pdfthumb.js?v=6"></script>
+    <script src="js/propia-iai.js?v=2"></script>
 
     @* SignalR para Conversaciones realtime. CDN para evitar agregar NuGet. *@
     <script src="https://unpkg.com/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
@@ -234,26 +234,19 @@
             // Reconexion tolerante: ~30 intentos cada 3s (~90s) antes de rendirse. Con el circuito
             // retenido en el servidor, al volver de una pestana quieta se reengancha sin recargar.
             Blazor.start({ circuit: circuitOpts });
-            // Si el overlay llega a failed/rejected (ya no reintenta), recarga sola tras 4s para no
-            // dejar al usuario con el boton "Recargar pagina" (que igual se conserva como respaldo).
+            // Recarga AUTOMATICA (el boton "Recargar pagina" queda solo de respaldo). Casos:
+            //  - failed/rejected (el servidor se reinicio o hubo deploy: el circuito ya no existe) -> recargar
+            //    apenas el servidor responda;
+            //  - reconectando mas de 15s -> el circuito no vuelve solo; recargar cuando haya servidor.
+            // Mientras el overlay esta visible se sondea /health cada 2s (un deploy tarda: un solo intento
+            // fallido dejaba al usuario con el boton). Recargar SOLO si el servidor responde: con el servidor
+            // caido un reload deja la pagina de error del navegador, que ya no se recupera sola.
             var m = document.getElementById('components-reconnect-modal');
             if (m && window.MutationObserver) {
                 var caido = function () { return m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected'); };
                 var visibleOverlay = function () { return caido() || m.classList.contains('components-reconnect-show'); };
                 var desde = 0;   // cuando aparecio el overlay (0 = oculto)
-                new MutationObserver(function () {
-                    desde = visibleOverlay() ? (desde || Date.now()) : 0;
-                    if (caido()) {
-                        setTimeout(function () { if (caido()) recargarSiHayServidor(); }, 4000);
-                    }
-                }).observe(m, { attributes: true, attributeFilter: ['class'] });
-
-                // Pestana en segundo plano / equipo suspendido: el navegador congela los timers, los
-                // reintentos se agotan y el setTimeout de arriba no corre hasta volver. Al volver a la
-                // pestana con el overlay abierto: reintentar YA y, si en 5s no recupero, recargar.
-                // Recargar SOLO si el servidor responde: si esta caido (ej. en pleno deploy) un reload deja la
-                // pagina de error del navegador, que ya no se recupera sola; mejor seguir esperando.
-                var recargando = false;
+                var recargando = false, sondeo = null;
                 var recargarSiHayServidor = function () {
                     if (recargando || !visibleOverlay()) return;
                     recargando = true;
@@ -262,16 +255,24 @@
                         .then(function (r) { if (r.ok && visibleOverlay()) location.reload(); else recargando = false; })
                         .catch(function () { recargando = false; });
                 };
+                var revisar = function () {
+                    if (!visibleOverlay()) { if (sondeo) { clearInterval(sondeo); sondeo = null; } return; }
+                    if (caido() || (desde && Date.now() - desde > 15000)) recargarSiHayServidor();
+                };
+                new MutationObserver(function () {
+                    desde = visibleOverlay() ? (desde || Date.now()) : 0;
+                    if (visibleOverlay() && !sondeo) sondeo = setInterval(revisar, 2000);
+                    if (caido()) revisar();
+                }).observe(m, { attributes: true, attributeFilter: ['class'] });
+
+                // Pestana en segundo plano / equipo suspendido: el navegador congela los timers. Al volver a la
+                // pestana con el overlay abierto: si ya se rindio, recargar YA (si hay servidor); si no,
+                // reintentar la reconexion y dejar que el sondeo decida.
                 document.addEventListener('visibilitychange', function () {
                     if (document.visibilityState !== 'visible' || !visibleOverlay()) return;
+                    if (caido()) { recargarSiHayServidor(); return; }
                     try { if (window.Blazor && Blazor.reconnect) Blazor.reconnect(); } catch (e) { }
-                    setTimeout(recargarSiHayServidor, 5000);
                 });
-                // Vigilante: overlay visible mas de 30s con la pestana al frente = no se va a
-                // recuperar solo (ej. red que volvio pero el circuito ya no existe); recargar.
-                setInterval(function () {
-                    if (desde && document.visibilityState === 'visible' && Date.now() - desde > 30000) recargarSiHayServidor();
-                }, 5000);
             }
         })();
     </script>

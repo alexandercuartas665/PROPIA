@@ -1,0 +1,601 @@
+@page "/servicios"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Globalization
+@using Propia.Application.ServiciosPublicos
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+@inject IModalService Modals
+@implements IDisposable
+
+<PageTitle>Servicios públicos - PROPIA</PageTitle>
+
+@* Modulo 2.17 Servicios publicos (/servicios). Copia de la replica (replica/servicios.html +
+   js/mod-servicios-publicos.js, PROPUESTAS.md seccion 3). Dos pestanas:
+     Configuracion     -> bandeja CANONICA de Unidades (DistribucionPanel: filtros, buscar, ordenar, agrupar,
+                          columnas, descarga, alta en linea, edicion en linea, clic derecho, seleccion, campos "+")
+                          con la referencia del contrato, periodicidad, dia de pago y topes de cada servicio.
+     Recibos y consumo -> carga de recibos (PDF o foto) que lee el Agente Documental (perfil recibo_servicio) con la
+                          transicion de Shared/IaIngesta; el servidor valida la referencia y los topes; consumo por
+                          servicio con la banda de topes, historial, desglose y reclamaciones.
+   El catalogo viejo "Servicios contratados" salio de aqui (se solapa con Contratos); /contratos vive en Servicios.razor.
+   Logica en ServiciosPublicosPagina.Config.cs y ServiciosPublicosPagina.Recibos.cs. *@
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+    return;
+}
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+}
+else
+{
+<div class="srv-wrap">
+    <div class="srv-head">
+        <div>
+            <h1 class="srv-title">Servicios públicos</h1>
+            <p class="srv-sub">Configura los servicios de la copropiedad y carga sus recibos: la IA extrae el consumo y avisa si se salen de los topes.</p>
+        </div>
+    </div>
+
+    <div class="srv-tabs">
+        <button class="srv-tab @(_tab == "config" ? "on" : "")" @onclick='() => _tab = "config"'><i class="fi fi-rr-settings-sliders"></i> Configuración</button>
+        <button class="srv-tab @(_tab == "recibos" ? "on" : "")" @onclick="() => IrRecibosAsync(null)"><i class="fi fi-rr-sparkles"></i> Recibos y consumo (IA)@if (PorRevisar > 0) { <text> </text><span class="srv-tab-n">@PorRevisar</span> }</button>
+    </div>
+
+    @if (_tab == "config")
+    {
+    <div class="spx-body">
+        <p class="spx-intro"><i class="fi fi-rr-info"></i><span>Configura aquí los servicios públicos de la copropiedad. La <b>referencia del contrato</b> es el número que trae el recibo: con ella la IA reconoce que el recibo es de tu copropiedad. Los <b>topes</b> (mínimo y máximo) disparan una alerta cuando un recibo se sale de ese rango.</span></p>
+        <div>
+            @{ var prox = ProximoKpi(); var nFuera = _cuentas.Count(Fuera); var nSin = _cuentas.Count(SinTopes); }
+            <div class="sp-kpis">
+                <div class="sp-kpi"><div class="sp-kpi-l">Servicios configurados</div><div class="sp-kpi-v">@_cuentas.Count</div></div>
+                <div class="sp-kpi"><div class="sp-kpi-l">Próximo pago</div><div class="sp-kpi-v spx-kpi-sm">@(prox is null ? "-" : ReglasServicioPublico.FechaCorta(prox.ProximoPago))</div>
+                    @if (prox is not null) { <div class="spx-kpi-s">@prox.Alias</div> }</div>
+                <div class="sp-kpi @(nFuera > 0 ? "danger" : "")"><div class="sp-kpi-l @(nFuera > 0 ? "danger" : "")">Último recibo fuera de tope</div><div class="sp-kpi-v @(nFuera > 0 ? "danger" : "")">@nFuera</div></div>
+                <div class="sp-kpi"><div class="sp-kpi-l">Sin topes definidos</div><div class="sp-kpi-v">@nSin</div></div>
+            </div>
+        </div>
+
+        <div class="spx-bandeja">
+            <div class="dst-filtros">
+                <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
+                <div class="dst-search">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                    <input class="dst-search-inp" placeholder="Buscar servicio, prestador o referencia..." @bind="_q" @bind:event="oninput" />
+                </div>
+                <div class="dst-filtros-spacer"></div>
+                <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="StateHasChanged" />
+                <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+                <div class="dst-menu-wrap">
+                    <button type="button" class="dst-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                        <span>Columnas</span>
+                    </button>
+                    @if (_showColMenu)
+                    {
+                        <div class="dst-menu-bd" @onclick="() => _showColMenu = false"></div>
+                        <div class="dst-menu dst-colmenu">
+                            <div class="dst-col-search">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                                <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
+                            </div>
+                            <div class="dst-col-list">
+                                @for (int ci = 0; ci < _cols.Count; ci++)
+                                {
+                                    var c = _cols[ci];
+                                    var idx = ci;
+                                    var label = LabelCol(c.Key);
+                                    if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                    <div class="dst-col-it">
+                                        <button class="dst-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverCol(c.Key, -1)">▲</button>
+                                        <button class="dst-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverCol(c.Key, 1)">▼</button>
+                                        <span class="dst-col-name">@label</span>
+                                        @if (idx == 0) { <span class="dst-col-fija">fija</span> }
+                                        else
+                                        {
+                                            <button class="dst-col-eye @(c.Visible ? "on" : "")" title="@(c.Visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleCol(c.Key)"><i class="fi @(c.Visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="dst-col-massacts">
+                                <button type="button" class="dst-col-mass" @onclick="OcultarTodasCol"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                                <button type="button" class="dst-col-mass" @onclick="MostrarTodasCol"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                                <button type="button" class="dst-col-reset" @onclick="RestablecerCol">Restablecer</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <TablaExportar Vista="VistaExport" />
+            </div>
+
+            @if (_sel.Count > 0)
+            {
+                <div class="dst-selbar">
+                    <span class="dst-selbar-n">@(_sel.Count + " servicio" + (_sel.Count == 1 ? "" : "s") + " seleccionado" + (_sel.Count == 1 ? "" : "s"))</span>
+                    <button type="button" class="dst-selbar-del" @onclick="() => _confirmDelSel = true">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                        Eliminar
+                    </button>
+                    <button type="button" class="dst-selbar-x" @onclick="() => _sel.Clear()">Deseleccionar</button>
+                </div>
+            }
+            @if (_confirmDelSel)
+            {
+                <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+                    <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                        <div class="dst-cfg-head"><strong>@("Eliminar " + _sel.Count + " servicio" + (_sel.Count == 1 ? "" : "s"))</strong></div>
+                        <div class="dst-cfg-sub">Se elimina la configuración y su historial de recibos. Los recibos nuevos con esa referencia ya no se reconocerán.</div>
+                        <div class="dst-cfg-actions">
+                            <button type="button" class="dst-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                            <button type="button" class="dst-selbar-del" @onclick="EliminarSeleccionadasAsync" disabled="@_delBusy">Si, eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (!_cargado)
+            {
+                <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+            }
+            else if (_cuentas.Count > 0 && Filtradas().Count == 0)
+            {
+                <div class="dst-empty">
+                    <strong>Ningún servicio coincide con el filtro.</strong>
+                    <span>Ajusta la búsqueda o limpia los filtros.</span>
+                </div>
+            }
+            else
+            {
+                var cols = ColsVis;
+                var niveles = Niveles;
+                <div class="dst-table">
+                    <div class="tblwrap">
+                    <div class="dst-scroll tblscroll">
+                    <table class="tbl">
+                        <colgroup>
+                            <col style="width:38px" /><col style="width:34px" />
+                            @foreach (var c in cols) { <col style="width:@AnchoCol(c.Key)" /> }
+                            <col style="width:76px" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="tbl-sel"><label class="tbl-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></th>
+                                <th class="tbl-exp"></th>
+                                @foreach (var c in cols)
+                                {
+                                    var clave = c.Key;
+                                    var lbl = c.Label;
+                                    <th class="tbl-th--menu" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                        @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorClic(clave)">
+                                        <span class="tbl-th-lbl">@lbl</span>
+                                        @SortInd(clave)
+                                        @ChevCol(clave, lbl)
+                                        <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(clave, 0)" @ondblclick:stopPropagation="true"></span>
+                                    </th>
+                                }
+                                <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => AbrirCampo(null)"><i class="fi fi-rr-plus"></i></button></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (niveles.Count > 0)
+                            {
+                                <TablaGruposRenderTr T="CuentaServicioDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" Colspan="@ColSpanTotal" />
+                            }
+                            else
+                            {
+                                @foreach (var c in Ordenadas()) { @FilaTpl(c) }
+                            }
+                            @if (_altaAbierta)
+                            {
+                                <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp">
+                                        <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearDesdeAltaAsync(true)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                        </button>
+                                    </td>
+                                    @foreach (var c in cols) { @AltaCelda(c.Key) }
+                                    <td class="tbl-addcol"></td>
+                                </tr>
+                                <tr class="newrow dst-nf-hint">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp"></td>
+                                    <td class="dst-nf-hint-cell" colspan="@(ColSpanTotal - 2)">
+                                        <span class="dst-nf-hint-txt">
+                                            <kbd class="dst-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                            <span class="dst-nf-hint-sep">&middot;</span>
+                                            <kbd class="dst-kbd">Esc</kbd> para cancelar
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr class="newrow" id="dst-cta-row">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp"></td>
+                                    <td colspan="@(ColSpanTotal - 2)">
+                                        <button type="button" class="row-add--sm" @onclick="() => _altaAbierta = true">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                            Agregar servicio
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div id="dst-inf-bottom" class="tbl-inf-sentinel"></div>
+                    </div>
+                    <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregar" title="Agregar servicio">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar servicio
+                    </button>
+                    </div>
+                    @if (niveles.Count == 0)
+                    {
+                        <div class="tbl-foot">@Filtradas().Count registros &middot; mostrando @Filtradas().Count</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    }
+    else
+    {
+    @* ==================== Recibos y consumo ==================== *@
+    <div class="spx-body spx-body--recibos" @ref="_recRef">
+        @{ var gasto = _cuentas.Sum(c => c.UltimoValor ?? 0); var nFueraR = _cuentas.Count(Fuera); }
+        <div class="sp-kpis">
+            <div class="sp-kpi"><div class="sp-kpi-l">Gasto del último periodo</div><div class="sp-kpi-v">@ReglasServicioPublico.Plata(gasto)</div></div>
+            <div class="sp-kpi"><div class="sp-kpi-l">Recibos leídos con IA</div><div class="sp-kpi-v">@(_resumen?.RecibosLeidosIa ?? 0)</div></div>
+            <div class="sp-kpi @(nFueraR > 0 ? "danger" : "")"><div class="sp-kpi-l @(nFueraR > 0 ? "danger" : "")">Servicios fuera de tope</div><div class="sp-kpi-v @(nFueraR > 0 ? "danger" : "")">@nFueraR</div></div>
+            <div class="sp-kpi"><div class="sp-kpi-l">Por revisar</div><div class="sp-kpi-v">@PorRevisar</div></div>
+        </div>
+        <div class="sp-card spx-carga"><div class="spx-carga-h"><div class="spx-carga-ic"><i class="fi fi-rr-sparkles"></i></div><div>
+            <div class="spx-carga-t">Cargar recibos con IA</div>
+            <div class="spx-carga-s">Sube uno o varios recibos (PDF o foto). La IA valida que sean de la copropiedad por la referencia del contrato, extrae consumo, valor, fecha límite y el desglose, y los compara con los topes.</div></div></div>
+            <IaDrop Que="los recibos" Formato="PDF o foto · máx. 20" Sub="Puedes subir varios a la vez: cada uno queda en Recibos por revisar para que lo confirmes." OnChange="OnRecibosSeleccionados" />
+            <div class="spx-ejemplos"><span class="spx-muted">¿Sin recibo a la mano? Prueba con uno de ejemplo:</span>
+                @foreach (var x in Ejemplos)
+                {
+                    var k = x.Clave;
+                    <button type="button" class="spx-chip" @onclick="() => EjemploAsync(k)"><i class="fi @x.Icono"></i> @x.Label</button>
+                }
+            </div>
+        </div>
+
+        @if (_cola.Count > 0)
+        {
+            <div class="spx-cola-h">Recibos por revisar</div>
+            <div class="spx-cola">
+                @foreach (var q in _cola)
+                {
+                    @ColaItem(q)
+                }
+            </div>
+        }
+
+        <div class="spx-cola-h">Consumo por servicio</div>
+        <div class="sp-grid spx-grid">
+            <div class="sp-cuentas"><div class="sp-cuentas-h">SERVICIOS</div><div class="sp-cuentas-list">
+                @foreach (var c in _cuentas.OrderBy(x => x.Alias, StringComparer.Create(new CultureInfo("es-CO"), true)))
+                {
+                    var t = TiposServicioPublico.De(c.Tipo);
+                    var id = c.Id;
+                    <button class="sp-cuenta @(_selId == c.Id ? "on" : "")" @onclick="() => SeleccionarAsync(id)"><div class="sp-cuenta-ic"><i class="fi @t.Icono"></i></div>
+                        <div class="sp-cuenta-b"><div class="sp-cuenta-a">@c.Alias</div><div class="sp-cuenta-p">@((c.Prestador ?? "") + " · " + (c.NumeroCuenta ?? "sin referencia"))</div></div>
+                        @if (Fuera(c)) { <span class="sp-dot"></span> }</button>
+                }
+            </div></div>
+            <div class="sp-detalle">
+                @if (_cuentas.Count == 0 || SelCuenta is null)
+                {
+                    <div class="sp-empty">Aún no hay servicios. Agrégalos en la pestaña Configuración.</div>
+                }
+                else
+                {
+                    @DetalleServicio(SelCuenta)
+                }
+            </div>
+        </div>
+    </div>
+    }
+    @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
+</div>
+
+@* ===== Modal: registrar a mano (la IA no pudo leer un recibo) ===== *@
+@if (_manualAbierto && SelCuenta is not null)
+{
+    <div class="srv-ov" @onclick="() => _manualAbierto = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-edit"></i></div>
+            <div style="flex:1;min-width:0;"><div class="srv-modal-title">@("Registrar a mano - " + SelCuenta.Alias)</div><div class="srv-sub" style="margin:2px 0 0;">Registra el consumo y valor del periodo.</div></div>
+            <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false"
+                                MostrarCancelar="true" Guardando="_busy"
+                                TituloGuardar="Confirmar registro" OnGuardar="GuardarManualAsync"
+                                OnCancelarEdicion="@(() => _manualAbierto = false)" OnCerrar="@(() => _manualAbierto = false)" />
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div><label class="srv-lbl">Año</label><input class="srv-input" type="number" @bind="_fm.Anio" /></div>
+                <div><label class="srv-lbl">Mes</label>
+                    <select class="srv-input" @bind="_fm.Mes">@for (int m = 1; m <= 12; m++) { <option value="@m">@MesNombre(m)</option> }</select>
+                </div>
+                <div><label class="srv-lbl">@("Consumo" + (string.IsNullOrEmpty(SelCuenta.UnidadMedida) ? "" : " (" + SelCuenta.UnidadMedida + ")"))</label><input class="srv-input" type="number" step="any" @bind="_fm.Consumo" /></div>
+                <div><label class="srv-lbl">Valor facturado (COP)</label><input class="srv-input" type="number" step="any" @bind="_fm.Valor" /></div>
+                <div><label class="srv-lbl">Estado</label>
+                    <select class="srv-input" @bind="_fm.Estado"><option value="@EstadoRegistroConsumo.Confirmado">Confirmado</option><option value="@EstadoRegistroConsumo.Estimado">Estimado</option></select>
+                </div>
+                <div class="srv-col-full"><label class="srv-lbl">Nota del administrador (opcional)</label><textarea class="srv-input" rows="2" @bind="_fm.Nota"></textarea></div>
+            </div>
+            @if (_modalErr is not null) { <div class="srv-banner err">@_modalErr</div> }
+        </div>
+    </div>
+}
+
+@* ===== Modal: nueva reclamacion (el modal actual) ===== *@
+@if (_reclAbierto && SelCuenta is not null)
+{
+    <div class="srv-ov" @onclick="() => _reclAbierto = false"></div>
+    <div class="srv-modal">
+        <div class="srv-modal-head">
+            <div class="srv-modal-ic"><i class="fi fi-rr-comment-alt"></i></div>
+            <div style="flex:1;min-width:0;"><div class="srv-modal-title">Nueva reclamación</div><div class="srv-sub" style="margin:2px 0 0;">@(SelCuenta.Alias + " - " + SelCuenta.Prestador)</div></div>
+            <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false"
+                                MostrarCancelar="true" Guardando="_busy"
+                                PuedeGuardar="@(!string.IsNullOrWhiteSpace(_frc.Motivo))"
+                                TituloGuardar="Radicar reclamación" OnGuardar="GuardarReclamacionAsync"
+                                OnCancelarEdicion="@(() => _reclAbierto = false)" OnCerrar="@(() => _reclAbierto = false)" />
+        </div>
+        <div class="srv-modal-body">
+            <div class="srv-grid">
+                <div class="srv-col-full"><label class="srv-lbl">Motivo *</label><input class="srv-input" @bind="_frc.Motivo" @bind:event="oninput" placeholder="Ej. Cobro excesivo" /></div>
+                <div class="srv-col-full"><label class="srv-lbl">N. de radicado</label><input class="srv-input" @bind="_frc.Radicado" placeholder="Radicado ante el prestador" /></div>
+                <div class="srv-col-full"><label class="srv-lbl">Descripción</label><textarea class="srv-input" rows="3" @bind="_frc.Descripcion"></textarea></div>
+            </div>
+            @if (_modalErr is not null) { <div class="srv-banner err">@_modalErr</div> }
+        </div>
+    </div>
+}
+}
+
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+@* El ModalHost vive en cada pagina (ver nota en MainLayout): ficha, desglose y confirmaciones. *@
+<ModalHost />
+
+@* Campos propios (columna "+"): el modal compartido de crear/editar campo, sobre /api/servicios-publicos/campos. *@
+@if (_campoAbierto)
+{
+    <CrearCampoModal Prefijo="servicios-publicos"
+                     RutaCatalogo="/api/servicios-publicos/campos"
+                     TituloSingular="servicio"
+                     Ejemplo="Ej. Medidor, Ubicación del contador"
+                     NotaPie="El campo se agrega como una columna al final de la tabla de servicios y se llena en la misma fila. Es exclusivo de esta copropiedad y funciona en filtros, agrupar, ordenar y en la descarga."
+                     Jwt="@_jwt"
+                     Editar="_campoEditar"
+                     TiposAvanzados="false"
+                     OfreceFuncion="false"
+                     Guardado="RecargarCamposAsync"
+                     Cerrado="() => { _campoAbierto = false; _campoEditar = null; }" />
+}
+@if (_campoEliminar is not null)
+{
+    <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _campoEliminar = null; }">
+        <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head"><strong>@("Eliminar el campo \"" + _campoEliminar.Label + "\"")</strong></div>
+            <div class="dst-cfg-sub">Se borra la columna y lo que tenga escrito en todos los servicios. Esta acción no se puede deshacer.</div>
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fbtn" @onclick="() => _campoEliminar = null" disabled="@_delBusy">Cancelar</button>
+                <button type="button" class="dst-selbar-del" @onclick="EliminarCampoAsync" disabled="@_delBusy">Si, eliminar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ===== Fila de la bandeja (todas las celdas editables en linea salvo PROXIMO PAGO y ULTIMO RECIBO) =====
+    private RenderFragment<CuentaServicioDto> FilaTpl => c => @<tr class="dst-row--tr @(_sel.Contains(c.Id) ? "dst-row-sel" : "") @(_recien.Contains(c.Id) ? "tbl-row-new" : "")" @key="c.Id" @oncontextmenu="e => AbrirCtx(e, c)" @oncontextmenu:preventDefault="true">
+        <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(c.Id)" @onchange="@(e => ToggleSel(c.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir el servicio" @onclick="() => AbrirFichaAsync(c)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var col in ColsVis) { @Celda(c, col.Key) }
+        <td class="tbl-addcol"></td>
+    </tr>;
+
+    private RenderFragment Celda(CuentaServicioDto c, string k) => k switch
+    {
+        "alias" => @<td><input class="tbl-cell" value="@c.Alias" placeholder="-" @onchange="e => EditarAsync(c, k, e.Value?.ToString())" /></td>,
+        "tipo" => @<td><select class="tbl-cell tbl-cell-lista" style="@TiposServicioPublico.EstiloChip(c.Tipo)" @onchange="e => EditarAsync(c, k, e.Value?.ToString())">
+                        @foreach (var t in TiposServicioPublico.Todos) { <option value="@t.Clave" selected="@(t.Valor == c.Tipo)">@t.Nombre</option> }
+                    </select></td>,
+        "prestador" => @<td><input class="tbl-cell" value="@c.Prestador" placeholder="-" @onchange="e => EditarAsync(c, k, e.Value?.ToString())" /></td>,
+        "numeroCuenta" => @<td><input class="tbl-cell" value="@c.NumeroCuenta" placeholder="-" @onchange="e => EditarAsync(c, k, e.Value?.ToString())" /></td>,
+        "periodicidad" => @<td><select class="tbl-cell tbl-cell-lista" @onchange="e => EditarAsync(c, k, e.Value?.ToString())">
+                        @foreach (var p in TiposServicioPublico.Periodicidades) { <option value="@p.Nombre" selected="@(p.Valor == c.Periodicidad)">@p.Nombre</option> }
+                    </select></td>,
+        "diaPago" => CeldaNum(c, k, c.DiaPago),
+        "proximo" => @<td class="tbl-ro">@ReglasServicioPublico.FechaCorta(c.ProximoPago)</td>,
+        "valorMin" => CeldaNum(c, k, c.ValorMin),
+        "valorMax" => CeldaNum(c, k, c.ValorMax),
+        "consumoMin" => CeldaNum(c, k, c.ConsumoMin),
+        "consumoMax" => CeldaNum(c, k, c.ConsumoMax),
+        "unidadMedida" => @<td><input class="tbl-cell" value="@c.UnidadMedida" placeholder="-" @onchange="e => EditarAsync(c, k, e.Value?.ToString())" /></td>,
+        "ultimo" => @<td class="tbl-ro"><span class="spx-ult">@if (c.UltimoValor is { } uv && c.UltimoAnio is { } ua && c.UltimoMes is { } um) { <b>@ReglasServicioPublico.Plata(uv)</b><text> </text><span class="spx-muted">@ReglasServicioPublico.PeriodoLabel(ua, um)</span><text> </text> }<SpxBadgeRango Rango="c.Rango" /></span></td>,
+        _ => CampoDe(k) is { } d ? CeldaPropia(c, d) : CeldaVacia
+    };
+    private RenderFragment CeldaNum(CuentaServicioDto c, string k, decimal? v)
+        => @<td><input class="tbl-cell tbl-cell-num" type="number" value="@(v?.ToString("0.##", CultureInfo.InvariantCulture))" placeholder="-" @onchange="e => EditarAsync(c, k, e.Value?.ToString())" /></td>;
+    private static RenderFragment CeldaVacia => @<td></td>;
+
+    // Celda editable de un campo propio segun su tipo; guarda al cambiar (PUT campos-valores).
+    private RenderFragment CeldaPropia(CuentaServicioDto c, CampoDinDef d)
+    {
+        var v = ValorPropio(c, d);
+        switch (d.Tipo)
+        {
+            case TipoCampoTablero.Seleccion:
+                return @<td><select class="tbl-cell tbl-cell-lista" @onchange="e => GuardarValorAsync(c, d, e.Value?.ToString())">
+                    <option value="" selected="@string.IsNullOrEmpty(v)">-</option>
+                    @foreach (var o in d.OpcionesArray()) { <option value="@o" selected="@(o == v)">@o</option> }
+                </select></td>;
+            case TipoCampoTablero.Booleano:
+                return @<td><label class="tbl-chk"><input type="checkbox" checked="@(v == "true")" @onchange="@(e => GuardarValorAsync(c, d, (bool)(e.Value ?? false) ? "true" : "false"))" /></label></td>;
+            case TipoCampoTablero.Fecha:
+                return @<td><input type="date" class="tbl-cell" value="@v" @onchange="e => GuardarValorAsync(c, d, e.Value?.ToString())" /></td>;
+            case TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje:
+                return @<td><input type="number" class="tbl-cell tbl-cell-num" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(c, d, e.Value?.ToString())" /></td>;
+            default:
+                return @<td><input class="tbl-cell" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(c, d, e.Value?.ToString())" /></td>;
+        }
+    }
+
+    // ===== Celdas de la fila de alta (como altaCelda de la replica) =====
+    private RenderFragment AltaCelda(string k) => k switch
+    {
+        "alias" => @<td class="nf-cell"><input class="nf-in" placeholder="SERVICIO" @bind="_nu.Alias" @bind:event="oninput" /></td>,
+        "tipo" => @<td class="nf-cell"><select class="nf-in" @bind="_nu.Tipo">
+                        <option value="">- elegir -</option>
+                        @foreach (var t in TiposServicioPublico.Todos) { <option value="@t.Clave">@t.Nombre</option> }
+                    </select></td>,
+        "prestador" => @<td class="nf-cell"><input class="nf-in" placeholder="PRESTADOR" @bind="_nu.Prestador" @bind:event="oninput" /></td>,
+        "numeroCuenta" => @<td class="nf-cell"><input class="nf-in" placeholder="Nº de contrato del recibo" @bind="_nu.Referencia" @bind:event="oninput" /></td>,
+        "periodicidad" => @<td class="nf-cell"><select class="nf-in" @bind="_nu.Periodicidad">
+                        <option value="">- elegir -</option>
+                        @foreach (var p in TiposServicioPublico.Periodicidades) { <option value="@p.Nombre">@p.Nombre</option> }
+                    </select></td>,
+        "diaPago" => @<td class="nf-cell"><input class="nf-in" type="number" step="any" placeholder="-" @bind="_nu.DiaPago" @bind:event="oninput" /></td>,
+        "valorMin" => @<td class="nf-cell"><input class="nf-in" type="number" step="any" placeholder="-" @bind="_nu.ValorMin" @bind:event="oninput" /></td>,
+        "valorMax" => @<td class="nf-cell"><input class="nf-in" type="number" step="any" placeholder="-" @bind="_nu.ValorMax" @bind:event="oninput" /></td>,
+        "consumoMin" => @<td class="nf-cell"><input class="nf-in" type="number" step="any" placeholder="-" @bind="_nu.ConsumoMin" @bind:event="oninput" /></td>,
+        "consumoMax" => @<td class="nf-cell"><input class="nf-in" type="number" step="any" placeholder="-" @bind="_nu.ConsumoMax" @bind:event="oninput" /></td>,
+        "unidadMedida" => @<td class="nf-cell"><input class="nf-in" placeholder="UNIDAD" @bind="_nu.Unidad" @bind:event="oninput" /></td>,
+        _ when EsCampoPropio(k) => @<td class="nf-mut" title="Se llena en la fila una vez creada">-</td>,
+        _ => @<td class="nf-mut" title="Se define en la ficha">En la ficha</td>
+    };
+
+    // ===== Recibos por revisar: lectura (panel de IaIngesta) -> tarjeta de revision de la replica =====
+    private RenderFragment ColaItem(ReciboEnCola q)
+    {
+        var ia = q.Ia;
+        if (ia.Estado is IaEstado.Cola or IaEstado.Leyendo or IaEstado.Ninguno)
+            return @<div class="spx-q-ia" @key="q.Id"><IaPanel Lectura="ia" FileName="@q.FileName" Thumb="@q.Thumb" Ext="@q.Ext" Doc="del recibo" PasosTexto="PasosRecibo" /></div>;
+        if (ia.Estado == IaEstado.Error || q.Eval is null)
+            return @<div class="spx-q-ia" @key="q.Id"><IaPanel Lectura="ia" FileName="@q.FileName" Ext="@q.Ext" Doc="del recibo" PasosTexto="PasosRecibo" />
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button></div></div>;
+        var v = q.Eval; var d = q.Req!; var t = TiposServicioPublico.De(q.TipoDetectado ?? TipoServicioPublico.EnergiaElectrica);
+        var anim = !q.AnimVista; q.AnimVista = true;
+        var cls = v.CuentaId is null ? " spx-q--ajeno" : (v.Rango is RangoRecibo.Alto or RangoRecibo.Bajo) ? " spx-q--alerta" : "";
+        var cuenta = v.CuentaId is { } cid ? _cuentas.FirstOrDefault(x => x.Id == cid) : null;
+        if (v.CuentaId is null)
+            return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
+                <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><span class="srv-badge danger">No es de la copropiedad</span></div>
+                <div class="spx-val spx-val--no"><i class="fi fi-rr-cross-circle"></i><div>La referencia <b>@(d.Referencia ?? "-")</b> (@(d.Prestador ?? "-"), titular @(d.Titular ?? "-")) no corresponde a ningún servicio configurado de la copropiedad. No se registra.</div></div>
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">Es nuestro: agregarlo como servicio</button>
+                    <button type="button" class="srv-btn-primary sm" @onclick="() => Descartar(q)">Descartar</button></div>
+            </div>;
+        return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
+            <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><SpxBadgeRango Rango="v.Rango" /></div>
+            <div class="spx-val spx-val--ok"><i class="fi fi-rr-check-circle"></i><div>Servicio de la copropiedad: <b>@v.CuentaAlias</b> · referencia @d.Referencia coincide.</div></div>
+            @if (v.Duplicado) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> @("Ya hay un recibo de " + v.PeriodoLabel + " para este servicio: al confirmar se reemplaza.")</div> }
+            @foreach (var m in v.Motivos) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div> }
+            @if (!v.CuadraDesglose) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> El desglose no cuadra con el total del recibo: revísalo antes de confirmar.</div> }
+            <div class="spx-q-body"><div class="spx-datos">
+                <div class="spx-dato"><span>Prestador</span><b>@(d.Prestador ?? cuenta?.Prestador ?? "-")</b></div>
+                <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
+                <div class="spx-dato"><span>Fecha límite de pago</span><b>@ReglasServicioPublico.FechaCorta(d.FechaLimitePago)</b></div>
+                @if (d.Consumo is { } con && con != 0)
+                {
+                    <div class="spx-dato"><span>Lecturas</span><b>@(ReglasServicioPublico.Num(d.LecturaAnterior) + " → " + ReglasServicioPublico.Num(d.LecturaActual))</b></div>
+                    <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Num(con) + " " + (v.Unidad ?? ""))</b></div>
+                }
+                <div class="spx-dato"><span>Valor a pagar</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
+                <div class="spx-dato"><span>Topes</span><b>@(ReglasServicioPublico.Plata(v.ValorMin) + " – " + ReglasServicioPublico.Plata(v.ValorMax))</b></div>
+            </div><div><div class="spx-sec spx-sec--sm">Desglose del recibo</div><SpxDesglose Conceptos="@(d.Conceptos ?? Array.Empty<ConceptoReciboDto>())" Total="@(d.ValorTotal ?? d.ValorPeriodo)" /></div></div>
+            <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
+                <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => ConfirmarAsync(q)"><i class="fi fi-rr-check"></i> Confirmar y registrar</button></div>
+        </div>;
+    }
+
+    // ===== Consumo por servicio: detalle (grafica con la banda de topes + historial + reclamaciones) =====
+    private RenderFragment DetalleServicio(CuentaServicioDto c)
+    {
+        var det = _detalle is not null && _detalle.Cuenta.Id == c.Id ? _detalle : null;
+        var rs = det?.Registros ?? (IReadOnlyList<RegistroConsumoDto>)Array.Empty<RegistroConsumoDto>();
+        var barras = rs.Take(6).Reverse().ToList();
+        var maxV = Math.Max(barras.Select(r => r.Valor).DefaultIfEmpty(0).Max(), Math.Max(c.ValorMax ?? 0, 1)) * 1.12m;
+        string Pct(decimal v) => (v / maxV * 100m).ToString("0.###", CultureInfo.InvariantCulture);
+        return @<text>
+            <div class="sp-card"><div class="sp-det-head"><div class="sp-det-id"><div class="sp-det-t">@c.Alias <SpxBadgeRango Rango="c.Rango" /></div>
+                <div class="sp-det-s">@((c.Prestador ?? "") + " · Ref. " + (c.NumeroCuenta ?? "-") + " · " + ReglasServicioPublico.Periodicidad(c.Periodicidad) + ", pago día " + (c.DiaPago?.ToString() ?? "-") + " · próximo " + ReglasServicioPublico.FechaCorta(c.ProximoPago))</div></div>
+                <button class="srv-btn-ghost sm" @onclick="AbrirManual"><i class="fi fi-rr-edit"></i> Registrar a mano</button>
+                <button class="srv-btn-ghost sm" @onclick="() => AbrirFichaAsync(c)"><i class="fi fi-rr-settings-sliders"></i> Topes</button></div>
+                @if (c.Motivos is { Count: > 0 } mot)
+                {
+                    <div class="spx-motivos">@foreach (var m in mot) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div> }</div>
+                }
+                <div class="sp-chart">
+                    @if (barras.Count == 0)
+                    {
+                        <div class="sp-empty sp-empty-sm">Sin recibos aún. Cárgalos arriba y la IA llena este historial.</div>
+                    }
+                    else
+                    {
+                        <div class="spx-bars-wrap"><div class="sp-bars">
+                            @foreach (var r in barras)
+                            {
+                                var hh = Math.Max((int)Math.Round(r.Valor / maxV * 100m, MidpointRounding.AwayFromZero), 4);
+                                <div class="sp-bar-col"><div class="sp-bar @(r.Rango is RangoRecibo.Alto or RangoRecibo.Bajo ? "alerta" : "")" style="height:@(hh)%" title="@ReglasServicioPublico.Plata(r.Valor)"></div><span class="sp-bar-lbl">@r.PeriodoLabel</span></div>
+                            }
+                        </div>
+                        @if (c.ValorMax is { } vmax) { <div class="spx-tope max" style="bottom:@(Pct(vmax))%"><span>@("Máx. " + ReglasServicioPublico.Plata(vmax))</span></div> }
+                        @if (c.ValorMin is { } vmin) { <div class="spx-tope min" style="bottom:@(Pct(vmin))%"><span>@("Mín. " + ReglasServicioPublico.Plata(vmin))</span></div> }
+                        </div>
+                        <div class="sp-prom">Valor facturado por periodo · la banda punteada son los topes del servicio.</div>
+                    }
+                </div></div>
+            @if (rs.Count > 0)
+            {
+                <div class="sp-card spx-hist-card"><div class="spx-hist-scroll"><table class="spx-hist"><thead><tr><th>Periodo</th><th class="r">Consumo</th><th class="r">Valor</th><th>Rango</th><th>Origen</th><th></th></tr></thead><tbody>
+                    @foreach (var r in rs)
+                    {
+                        var rr = r;
+                        <tr><td>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Num(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
+                            <td><SpxBadgeRango Rango="r.Rango" /></td>
+                            <td>@if (r.Origen == OrigenRegistroConsumo.IA) { <span class="spx-ia"><i class="fi fi-rr-sparkles"></i> IA</span> } else { <span class="spx-muted">@(r.Estado == EstadoRegistroConsumo.Estimado ? "Estimado" : "Manual")</span> }</td>
+                            <td class="r"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button></td></tr>
+                    }
+                    </tbody></table></div>
+                    <div class="sp-recl-bar"><button class="sp-recl-btn" @onclick="AbrirReclamacion"><i class="fi fi-rr-comment-alt"></i> @("Reclamaciones (" + (det?.Reclamaciones.Count ?? 0) + ")")</button></div></div>
+            }
+            @if (det is { Reclamaciones.Count: > 0 })
+            {
+                <div class="sp-card"><div class="sp-recl-h">RECLAMACIONES ANTE EL PRESTADOR</div><div class="sp-recl-list">
+                    @foreach (var rc in det.Reclamaciones)
+                    {
+                        <div class="sp-recl-item"><div class="sp-recl-top"><span class="sp-recl-motivo">@rc.Motivo</span><span class="srv-badge warn">@EstadoRecl(rc.Estado)</span></div>
+                            <div class="sp-recl-meta">@((rc.Radicado is { Length: > 0 } rad ? "Radicado " + rad + " - " : "") + FechaRecl(rc.Fecha))</div>
+                            @if (!string.IsNullOrEmpty(rc.Descripcion)) { <div class="sp-recl-desc">@rc.Descripcion</div> }</div>
+                    }
+                </div></div>
+            }
+        </text>;
+    }
+
+    private RenderFragment SortInd(string k)
+    {
+        var s = _sorts.FirstOrDefault(x => x.Key == k);
+        return s is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(s.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
+    }
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, EsCampoPropio(clave)), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+}

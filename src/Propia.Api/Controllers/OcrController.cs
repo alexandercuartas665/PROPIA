@@ -154,6 +154,9 @@ public class OcrController : ControllerBase
             }
         }
 
+        // Recibo: si la suma de los conceptos no cuadra con el total (+-1%), "conceptos" queda dudoso (conf baja).
+        if (perfilKey == "recibo_servicio") MarcarCuadreConceptos(valores);
+
         // Origen PDF (opcional): si el modulo manda el PDF en base64, lo guardamos tenant-scoped y
         // devolvemos su key para persistirla al guardar (igual que extraer-ia). No pasa por IA. Best-effort.
         string? pdfOrigenKey = null;
@@ -166,7 +169,14 @@ public class OcrController : ControllerBase
                 {
                     var bytes = Convert.FromBase64String(req.PdfBase64);
                     var mime = string.IsNullOrWhiteSpace(req.Mime) ? "application/pdf" : req.Mime!;
-                    var ext = mime.Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "pdf" : "bin";
+                    var ext = mime.ToLowerInvariant() switch
+                    {
+                        var m when m.Contains("pdf") => "pdf",
+                        var m when m.Contains("jpeg") || m.Contains("jpg") => "jpg",
+                        var m when m.Contains("png") => "png",
+                        var m when m.Contains("webp") => "webp",
+                        _ => "bin"
+                    };
                     var key = $"tenants/{tenantId}/extracciones/{Guid.NewGuid():N}.{ext}";
                     using var up = new MemoryStream(bytes);
                     await _blob.UploadAsync(key, up, mime, ct);
@@ -227,6 +237,23 @@ public class OcrController : ControllerBase
             sb.AppendLine("El CONTRATISTA es quien presta el servicio, ejecuta la obra o vende: NUNCA es la copropiedad.");
             if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"La copropiedad de este documento es \"{copropiedad}\": NO es el contratista.");
         }
+        else if (perfil == "recibo_servicio")
+        {
+            sb.AppendLine("ES UN RECIBO DE SERVICIO PUBLICO colombiano (EPM, Enel/Codensa, Vanti, Gases de Occidente, acueductos y");
+            sb.AppendLine("empresas de aseo municipales, operadores de internet y telefonia como Claro, Movistar, Tigo, ETB).");
+            sb.AppendLine("- referencia_contrato: el numero FIJO que identifica el servicio ante el prestador y se repite cada mes:");
+            sb.AppendLine("  numero de contrato, cuenta, NIC, NIU, codigo de suscriptor, matricula o referencia de pago. NUNCA es el NIT");
+            sb.AppendLine("  del prestador ni el numero de la factura (ese cambia cada mes). Devuelvelo tal como aparece.");
+            sb.AppendLine("- titular: el suscriptor o usuario a cuyo nombre esta el servicio; suele ser la copropiedad.");
+            if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"  La copropiedad que sube el recibo es \"{copropiedad}\": NO es el prestador.");
+            sb.AppendLine("- prestador: la empresa que presta el servicio y expide el recibo (no el banco ni el recaudador).");
+            sb.AppendLine("- Separa el valor del PERIODO (los cobros del mes) de los saldos anteriores, la mora o intereses y el TOTAL A PAGAR:");
+            sb.AppendLine("  valor_periodo = solo lo facturado en este periodo; saldo_anterior = deuda o saldo de periodos previos; valor_total = total a pagar.");
+            sb.AppendLine("- periodo_desde / periodo_hasta: el periodo facturado o de consumo. Si cruza dos meses, devuelve ambas fechas completas.");
+            sb.AppendLine("- consumo: la cantidad consumida (kWh, m3, minutos, GB) como numero, puede tener decimales. Lecturas del medidor si aparecen.");
+            sb.AppendLine("- conceptos: el desglose de cobros del periodo como lista [{\"concepto\": texto, \"valor\": numero}], en el orden del recibo,");
+            sb.AppendLine("  sin el total ni los subtotales. Devuelvelo como {\"valor\": [ ... ], \"conf\": 0.0-1.0}.");
+        }
         else if (perfil == "poliza")
         {
             sb.AppendLine("PARTES: la ASEGURADORA es la compania de seguros que expide la poliza. El TOMADOR y el ASEGURADO suelen ser");
@@ -259,6 +286,8 @@ public class OcrController : ControllerBase
                 "numero" => Application.Documentos.NormalizadorDocumental.Monto(raw) is { } n ? decimal.Truncate(n).ToString(CultureInfo.InvariantCulture) : null,
                 "fecha" => Application.Documentos.NormalizadorDocumental.Fecha(raw)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 "sino" => Application.Documentos.NormalizadorDocumental.SiNo(raw) is { } b ? (b ? "true" : "false") : null,
+                "decimal" => Application.Documentos.NormalizadorDocumental.Monto(raw)?.ToString("0.####", CultureInfo.InvariantCulture),
+                "lista" => NormalizarLista(raw),
                 _ => raw
             };
             if (!string.IsNullOrWhiteSpace(norm)) outp.Add((nombre, norm, conf));
@@ -281,6 +310,11 @@ public class OcrController : ControllerBase
         {
             foreach (var k in new[] { "aseguradora", "nit_aseguradora", "numero_poliza", "fecha_inicio", "fecha_fin" }) if (!Hay(k)) faltan.Add(k);
             if (!Hay("prima") && !Hay("valor_asegurado")) { faltan.Add("prima"); faltan.Add("valor_asegurado"); }
+        }
+        else if (perfil == "recibo_servicio")
+        {
+            foreach (var k in new[] { "referencia_contrato", "valor_total", "fecha_limite_pago" }) if (!Hay(k)) faltan.Add(k);
+            if (!Hay("periodo_desde") && !Hay("periodo_hasta")) { faltan.Add("periodo_desde"); faltan.Add("periodo_hasta"); }
         }
         return faltan;
     }
@@ -323,8 +357,53 @@ public class OcrController : ControllerBase
         System.Text.Json.JsonValueKind.Number => el.GetRawText(),
         System.Text.Json.JsonValueKind.True => "true",
         System.Text.Json.JsonValueKind.False => "false",
+        System.Text.Json.JsonValueKind.Array => el.GetRawText(),   // tipo "lista" (se normaliza en NormalizarLista)
         _ => null
     };
+
+    /// <summary>Tipo "lista" (desglose del recibo): arreglo [{concepto, valor}] -> JSON con el valor como numero
+    /// invariante. Descarta filas sin concepto o sin valor legible. Vacio -> null.</summary>
+    private static string? NormalizarLista(string raw)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+            var outp = new List<object>();
+            foreach (var it in doc.RootElement.EnumerateArray())
+            {
+                if (it.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+                var concepto = it.TryGetProperty("concepto", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String ? c.GetString()?.Trim() : null;
+                var v = it.TryGetProperty("valor", out var ve) ? LeerValor(ve) : null;
+                var monto = Application.Documentos.NormalizadorDocumental.Monto(v);
+                if (string.IsNullOrWhiteSpace(concepto) || monto is null) continue;
+                outp.Add(new { concepto, valor = monto.Value });
+            }
+            return outp.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(outp);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Si la suma de los conceptos no cuadra con valor_total ni con valor_periodo (+-1%), baja la confianza
+    /// de "conceptos" a 0.4: la tarjeta lo marca dudoso (ambar) para revisarlo.</summary>
+    private static void MarcarCuadreConceptos(List<(string Nombre, string? Valor, double? Conf)> valores)
+    {
+        var i = valores.FindIndex(v => v.Nombre == "conceptos");
+        if (i < 0) return;
+        decimal? Total(string k) => valores.FirstOrDefault(v => v.Nombre == k).Valor is { } s
+            && decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : null;
+        decimal[] montos;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(valores[i].Valor!);
+            montos = doc.RootElement.EnumerateArray().Select(x => x.GetProperty("valor").GetDecimal()).ToArray();
+        }
+        catch { return; }
+        // El desglose puede ser solo del periodo (sin saldos): cuadra contra el total o contra el valor del periodo.
+        var cuadra = Application.ServiciosPublicos.ReglasServicioPublico.CuadraDesglose(montos, Total("valor_total"))
+                  || Application.ServiciosPublicos.ReglasServicioPublico.CuadraDesglose(montos, Total("valor_periodo"));
+        if (!cuadra) valores[i] = (valores[i].Nombre, valores[i].Valor, Math.Min(valores[i].Conf ?? 1, 0.4));
+    }
 
     /// <summary>Paginas = total de paginas del PDF (para medir si el texto es pobre); Imagenes pueden venir JUNTO
     /// con Texto: el servidor decide la ruta (texto si es suficiente, vision si no).</summary>
@@ -333,7 +412,8 @@ public class OcrController : ControllerBase
     /// <summary>Campos objetivo por perfil (server-side; el cliente no define el schema).</summary>
     private static IReadOnlyList<CampoObjetivo> PerfilCampos(string? perfil) => (perfil ?? "").Trim().ToLowerInvariant() switch
     {
-        // Tipos: texto | nit (sin puntos, DV con guion) | moneda | numero (entero) | fecha (ISO) | sino (true/false).
+        // Tipos: texto | referencia (tal cual) | nit (sin puntos, DV con guion) | moneda | numero (entero) | decimal |
+        // fecha (ISO) | sino (true/false) | lista (JSON [{concepto, valor}]).
         // El servidor normaliza cada tipo despues de leer el JSON (NormalizarCampos).
         "poliza" => new[]
         {
@@ -372,6 +452,27 @@ public class OcrController : ControllerBase
             new CampoObjetivo("renovacion_automatica", "Si el contrato se prorroga o renueva automaticamente (si/no)", "sino"),
             new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia del contrato", "fecha"),
             new CampoObjetivo("fecha_fin", "Fecha de fin o terminacion del contrato", "fecha"),
+        },
+        "recibo_servicio" => new[]
+        {
+            new CampoObjetivo("referencia_contrato", "Referencia FIJA del servicio: numero de contrato, cuenta, NIC, NIU, codigo de suscriptor, matricula o referencia de pago. NUNCA el NIT ni el numero de factura", "referencia"),
+            new CampoObjetivo("prestador", "Empresa que presta el servicio y expide el recibo", "texto"),
+            new CampoObjetivo("nit_prestador", "NIT del prestador, con digito de verificacion si aparece", "nit"),
+            new CampoObjetivo("titular", "Suscriptor o titular del servicio (suele ser la copropiedad)", "texto"),
+            new CampoObjetivo("direccion_suministro", "Direccion donde se presta el servicio", "texto"),
+            new CampoObjetivo("tipo_servicio", "Tipo de servicio: energia, acueducto, gas, aseo, internet o telefonia", "texto"),
+            new CampoObjetivo("periodo_desde", "Fecha inicial del periodo facturado o de consumo", "fecha"),
+            new CampoObjetivo("periodo_hasta", "Fecha final del periodo facturado o de consumo", "fecha"),
+            new CampoObjetivo("fecha_expedicion", "Fecha de expedicion o emision del recibo", "fecha"),
+            new CampoObjetivo("fecha_limite_pago", "Fecha limite de pago u oportuna (pague hasta)", "fecha"),
+            new CampoObjetivo("lectura_anterior", "Lectura anterior del medidor, solo el numero", "numero"),
+            new CampoObjetivo("lectura_actual", "Lectura actual del medidor, solo el numero", "numero"),
+            new CampoObjetivo("consumo", "Consumo del periodo, solo el numero (puede tener decimales)", "decimal"),
+            new CampoObjetivo("unidad_medida", "Unidad del consumo: kWh, m3, minutos, GB", "texto"),
+            new CampoObjetivo("valor_periodo", "Valor facturado SOLO por el periodo (sin saldos anteriores ni mora), solo el numero", "moneda"),
+            new CampoObjetivo("saldo_anterior", "Saldo anterior, deuda o mora de periodos previos, solo el numero", "moneda"),
+            new CampoObjetivo("valor_total", "TOTAL A PAGAR del recibo, solo el numero", "moneda"),
+            new CampoObjetivo("conceptos", "Desglose de cobros del periodo: lista de objetos {concepto, valor}", "lista"),
         },
         _ => Array.Empty<CampoObjetivo>()
     };

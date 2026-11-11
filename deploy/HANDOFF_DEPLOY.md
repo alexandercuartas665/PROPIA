@@ -1,5 +1,36 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS (/servicios) CON RECIBOS LEIDOS POR IA + RECARGA AUTOMATICA AL RECONECTAR (2026-11-11): 1 MIGRACION
+> (aditiva + backfill) + API y Web cambian.**
+> - **MIGRACION `20261111202708_AddServiciosPublicosRecibosIA`** (va DESPUES de `AddCamposAgenteDocumental`):
+>   1. `cuentas_servicio_publico`: + `referencia_normalizada`, `periodicidad` (default 1 = Mensual), `dia_pago`, `valor_min`,
+>      `valor_max`, `consumo_min`, `consumo_max`. **Backfill** de `referencia_normalizada` (numero_cuenta sin espacios, puntos
+>      ni guiones, mayusculas) con el FORCE suspendido solo durante el UPDATE. Si una copropiedad tiene referencias
+>      DUPLICADAS, la cuenta mas antigua conserva la normalizada y las demas quedan en NULL: la migracion NO falla y las
+>      reporta con `RAISE NOTICE 'Servicios publicos: referencia duplicada ...'` -> **revisar la salida del deploy** y
+>      corregirlas en Servicios publicos > Configuracion. Luego crea el indice UNICO parcial (tenant_id, referencia_normalizada).
+>   2. `registros_consumo_servicio`: + `fecha_limite_pago`, `lectura_anterior`, `lectura_actual`, `origen` (default 1 = Manual),
+>      `archivo_key`, `archivo_nombre`.
+>   3. Tablas nuevas `registros_consumo_conceptos`, `servicio_publico_campo_definiciones`, `servicio_publico_campo_valores`
+>      con RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`.
+>   4. `contratos_servicio`: + `cuenta_servicio_publico_id` (FK SetNull a `cuentas_servicio_publico`). El vinculo viejo
+>      `servicio_id` (catalogo "Servicios contratados") se CONSERVA en la base, ya no se muestra.
+>   Down: borra columnas, tablas y FK.
+> - API: `PUT /api/servicios-publicos/cuentas/{id}` (merge), `POST .../recibos/evaluar|confirmar|agregar-servicio`,
+>   `GET .../recibos/ejemplo/{alto|ok|ajeno}` (PDF de ejemplo con **Chromium**: usa el mismo PuppeteerSharp que los PDF de
+>   PQRSD), campos propios `.../campos` y `.../campos-valores`. `/api/ocr/extraer-agente`: perfil nuevo `recibo_servicio`
+>   (tipos `lista`/`decimal`/`referencia`, cuadre del desglose, 2a pasada); el prompt va en el codigo. Fotos JPG/PNG/WebP van
+>   directo a vision.
+> - Web: `/servicios` es la pagina nueva `ServiciosPublicosPagina` (Configuracion + Recibos y consumo); `/contratos` sigue en
+>   Servicios.razor (sin el catalogo viejo). Bumps: `servicios.css?v=32`, `propia-iai.js?v=2`, `propia-pdfthumb.js?v=6`.
+>   `App.razor`: el overlay "Reconectando..." ahora sondea `/health` cada 2s y **recarga solo** apenas el servidor responde
+>   (antes un solo intento fallido durante el deploy dejaba al usuario con el boton "Recargar pagina").
+> - **Verificar en PROD tras aplicar**: `select count(*) from cuentas_servicio_publico where numero_cuenta is not null and
+>   referencia_normalizada is null` (= duplicados reportados, idealmente 0); `select relname, relforcerowsecurity from pg_class
+>   where relname in ('registros_consumo_conceptos','servicio_publico_campo_definiciones','servicio_publico_campo_valores')`
+>   -> `t`; en /servicios > Recibos y consumo, "Prueba con uno de ejemplo" lee el recibo con el Agente Documental.
+>   Sin config/env nueva.
+
 > **AGENTE DOCUMENTAL REFORZADO + TRANSICION "LA IA CONSUME EL DOCUMENTO" (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
 > - **MIGRACION `20261111163506_AddCamposAgenteDocumental`** (va DESPUES de `AddPlantillaCampos`): agrega columnas nullable
 >   a `polizas` (`nit_aseguradora`, `tomador`, `asegurado`, `valor_asegurado`, `prima`, `deducible`) y a `contratos_servicio`

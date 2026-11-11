@@ -1,0 +1,116 @@
+@* Ficha del servicio publico (expandir la fila de Configuracion o "Topes"): replica de fichaServicio() en
+   replica/js/mod-servicios-publicos.js. Datos del servicio / Pago / Topes para alertas / Ultimo recibo con sus
+   motivos. Guardar valida como la replica y hace PUT MERGE (los opcionales vacios se limpian con Limpiar).
+   Devuelve "guardado", "recibos" (ir a Recibos y consumo con este servicio) o null. *@
+@inherits ModalBase<string>
+@using System.Globalization
+@using Propia.Application.ServiciosPublicos
+@inject IHttpClientFactory HttpFactory
+
+@{ var t = TiposServicioPublico.De(Cuenta.Tipo); var rg = Rango(); }
+<div class="spx-ficha"><div class="srv-modal-head"><div class="srv-modal-ic"><i class="fi @t.Icono"></i></div>
+    <div style="flex:1;min-width:0;"><div class="srv-modal-title">@Cuenta.Alias</div><div class="srv-sub" style="margin:2px 0 0;">@(t.Nombre + (string.IsNullOrEmpty(Cuenta.Prestador) ? "" : " · " + Cuenta.Prestador))</div></div>
+    <button type="button" class="srv-btn-ghost sm" @onclick='() => Close("recibos")'><i class="fi fi-rr-chart-histogram"></i> Recibos y consumo</button>
+    <button type="button" class="srv-btn-primary sm" disabled="@_busy" @onclick="GuardarAsync">Guardar</button>
+    <button type="button" class="spx-x" aria-label="Cerrar" @onclick="Cancel"><i class="fi fi-rr-cross-small"></i></button></div>
+    <div class="srv-modal-body">
+        <div class="spx-sec">Datos del servicio</div><div class="srv-grid">
+            <div><label class="srv-lbl">Nombre del servicio *</label><input class="srv-input" @bind="_alias" @bind:event="oninput" placeholder="Ej. Energía - Zonas comunes" /></div>
+            <div><label class="srv-lbl">Tipo</label><select class="srv-input" @bind="_tipo">@foreach (var x in TiposServicioPublico.Todos) { <option value="@x.Valor">@x.Nombre</option> }</select></div>
+            <div><label class="srv-lbl">Prestador</label><input class="srv-input" @bind="_prestador" @bind:event="oninput" placeholder="EPM, Vanti..." /></div>
+            <div><label class="srv-lbl">Referencia del contrato de servicio *</label><input class="srv-input" @bind="_ref" @bind:event="oninput" placeholder="El número que aparece en el recibo" /></div>
+        </div><div class="spx-help"><i class="fi fi-rr-sparkles"></i> La IA compara esta referencia con la del recibo para saber que es de la copropiedad.</div>
+        <div class="spx-sec">Pago</div><div class="srv-grid">
+            <div><label class="srv-lbl">Periodicidad</label><select class="srv-input" @bind="_periodicidad">@foreach (var p in TiposServicioPublico.Periodicidades) { <option value="@p.Valor">@p.Nombre</option> }</select></div>
+            <div><label class="srv-lbl">Día de pago (1 a 31)</label><input class="srv-input" type="number" @bind="_dia" @bind:event="oninput" placeholder="15" /></div>
+            <div><label class="srv-lbl">Método de pago</label><input class="srv-input" @bind="_metodo" @bind:event="oninput" placeholder="Débito automático, PSE..." /></div>
+            <div><label class="srv-lbl">Próximo pago</label><div class="spx-ro">@ReglasServicioPublico.FechaCorta(Cuenta.ProximoPago)</div></div>
+        </div>
+        <div class="spx-sec">Topes para alertas</div><div class="srv-grid">
+            <div><label class="srv-lbl">Valor mínimo (COP)</label><input class="srv-input" type="number" @bind="_vmin" @bind:event="oninput" placeholder="0" /></div>
+            <div><label class="srv-lbl">Valor máximo (COP)</label><input class="srv-input" type="number" @bind="_vmax" @bind:event="oninput" placeholder="0" /></div>
+            <div><label class="srv-lbl">@("Consumo mínimo" + UnidadTxt)</label><input class="srv-input" type="number" @bind="_cmin" @bind:event="oninput" placeholder="Opcional" /></div>
+            <div><label class="srv-lbl">@("Consumo máximo" + UnidadTxt)</label><input class="srv-input" type="number" @bind="_cmax" @bind:event="oninput" placeholder="Opcional" /></div>
+            <div><label class="srv-lbl">Unidad de medida</label><input class="srv-input" @bind="_unidad" @bind:event="oninput" placeholder="kWh, m3..." /></div>
+        </div>
+        <div class="spx-help"><i class="fi fi-rr-bell"></i> Si un recibo queda por fuera del rango se marca "Sobre el tope" o "Bajo el mínimo" y se avisa.</div>
+        <div class="spx-sec">Último recibo</div>
+        @if (Cuenta.UltimoValor is { } uv && Cuenta.UltimoAnio is { } ua && Cuenta.UltimoMes is { } um)
+        {
+            <div class="spx-ult-card"><span><b>@ReglasServicioPublico.Plata(uv)</b> · @ReglasServicioPublico.PeriodoLabel(ua, um)@(Cuenta.UltimoConsumo is { } uc && uc != 0 ? " · " + ReglasServicioPublico.Num(uc) + " " + (Cuenta.UnidadMedida ?? "") : "")</span><SpxBadgeRango Rango="rg" /></div>
+            @foreach (var m in Cuenta.Motivos ?? Array.Empty<string>())
+            {
+                <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div>
+            }
+        }
+        else
+        {
+            <div class="spx-muted">Aún no se ha cargado ningún recibo.</div>
+        }
+        <div class="srv-banner err" hidden="@(_err is null)">@_err</div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public CuentaServicioDto Cuenta { get; set; } = default!;
+    [Parameter] public IReadOnlyList<CuentaServicioDto> Todas { get; set; } = Array.Empty<CuentaServicioDto>();
+    [Parameter] public string? Jwt { get; set; }
+
+    private string _alias = "", _prestador = "", _ref = "", _dia = "", _metodo = "", _unidad = "";
+    private string _vmin = "", _vmax = "", _cmin = "", _cmax = "";
+    private TipoServicioPublico _tipo;
+    private PeriodicidadServicio _periodicidad;
+    private string? _err;
+    private bool _busy;
+
+    // La etiqueta del consumo lleva la unidad CON la que se abrio la ficha (como la replica: f.unidadMedida).
+    private string UnidadTxt => string.IsNullOrWhiteSpace(Cuenta.UnidadMedida) ? "" : $" ({Cuenta.UnidadMedida})";
+    private RangoRecibo Rango() => Cuenta.Rango;
+
+    protected override void OnInitialized()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        _alias = Cuenta.Alias; _tipo = Cuenta.Tipo; _prestador = Cuenta.Prestador ?? ""; _ref = Cuenta.NumeroCuenta ?? "";
+        _periodicidad = Cuenta.Periodicidad; _dia = Cuenta.DiaPago?.ToString(inv) ?? ""; _metodo = Cuenta.MetodoPago ?? "";
+        _vmin = Cuenta.ValorMin?.ToString("0.##", inv) ?? ""; _vmax = Cuenta.ValorMax?.ToString("0.##", inv) ?? "";
+        _cmin = Cuenta.ConsumoMin?.ToString("0.##", inv) ?? ""; _cmax = Cuenta.ConsumoMax?.ToString("0.##", inv) ?? "";
+        _unidad = Cuenta.UnidadMedida ?? "";
+    }
+
+    private static decimal? N(string s) => SpxFormato.NumOrNull(s);
+
+    private async Task GuardarAsync()
+    {
+        _err = null;
+        var refTxt = _ref.Trim();
+        var refNorm = ReglasServicioPublico.NormalizarReferencia(refTxt);
+        var otra = refNorm is null ? null : Todas.FirstOrDefault(x => x.Id != Cuenta.Id && ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == refNorm);
+        var d = N(_dia);
+        if (_alias.Trim().Length == 0) _err = "El nombre del servicio es obligatorio.";
+        else if (refTxt.Length == 0) _err = "La referencia del contrato es obligatoria: sin ella la IA no reconoce los recibos.";
+        else if (otra is not null) _err = $"La referencia {refTxt} ya es de \"{otra.Alias}\".";
+        else if (d is { } dd && (dd < 1 || dd > 31)) _err = "El día de pago va de 1 a 31.";
+        else if (N(_vmin) is { } a && N(_vmax) is { } b && a > b) _err = "El valor mínimo no puede ser mayor que el máximo.";
+        else if (N(_cmin) is { } c && N(_cmax) is { } e && c > e) _err = "El consumo mínimo no puede ser mayor que el máximo.";
+        if (_err is not null) return;
+
+        var limpiar = new List<string>();
+        void Opc(string clave, string v) { if (v.Trim().Length == 0) limpiar.Add(clave); }
+        Opc("diaPago", _dia); Opc("metodoPago", _metodo); Opc("unidadMedida", _unidad);
+        Opc("valorMin", _vmin); Opc("valorMax", _vmax); Opc("consumoMin", _cmin); Opc("consumoMax", _cmax);
+        var req = new ActualizarCuentaServicioRequest(_tipo, _alias.Trim(), _prestador.Trim(), refTxt,
+            _metodo.Trim().Length == 0 ? null : _metodo.Trim(), _unidad.Trim().Length == 0 ? null : _unidad.Trim(),
+            _periodicidad, d is { } di ? (int)di : null, N(_vmin), N(_vmax), N(_cmin), N(_cmax), null, limpiar);
+        _busy = true;
+        try
+        {
+            var http = HttpFactory.CreateClient("PropiaApi");
+            if (!string.IsNullOrEmpty(Jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+            var r = await http.PutAsJsonAsync($"/api/servicios-publicos/cuentas/{Cuenta.Id}", req);
+            if (!r.IsSuccessStatusCode) { _err = await SpxFormato.ErrorDeAsync(r, "No se pudo guardar el servicio."); return; }
+            Close("guardado");
+        }
+        catch (Exception ex) { _err = ex.Message; }
+        finally { _busy = false; }
+    }
+}
