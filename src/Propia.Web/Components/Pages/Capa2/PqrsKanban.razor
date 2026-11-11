@@ -124,7 +124,7 @@
                 }
             </div>
 
-            <input class="pk-input" value="@_buscar" @oninput="e => { _buscar = e.Value?.ToString() ?? string.Empty; }" placeholder="Buscar por radicado o resumen..." />
+            <input class="pk-input" @bind="_buscar" @bind:event="oninput" placeholder="Buscar por radicado o resumen..." />
 
             <div class="pk-filters-spacer"></div>
 
@@ -1551,14 +1551,15 @@
                 else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Ocultar:
-                try
                 {
-                    await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config",
-                        new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(col.Key, null, null, Oculto: true, Entidad: "pqrsd"));
+                    // Fila COMPLETA (FilaConfigP): el PUT reemplaza la fila; mandar solo Oculto borraba alias,
+                    // opciones de lista, formato, orden y descripcion de la columna.
+                    bool fija = !col.Key.StartsWith("cd:", StringComparison.Ordinal) && (PqrsdCamposSistema.Por(col.Key)?.Fija ?? false);
+                    if (fija) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
+                    await GuardarCfgP(FilaConfigP(col.Key) with { Oculto = true });
                     await RecargarConfigPqrsdAsync();
-                    ColToast("Columna oculta. Usa Campos para restaurarla.");
+                    ColToast("Columna oculta. Usa Columnas para restaurarla.");
                 }
-                catch { ColToast("No se pudo ocultar la columna."); }
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:
@@ -2355,7 +2356,7 @@
     {
         _camposConfig.TryGetValue(k, out var c);
         return new GuardarUnidadCampoConfigRequest(k, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "pqrsd");
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "pqrsd", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgP(GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }

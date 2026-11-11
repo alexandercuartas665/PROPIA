@@ -129,6 +129,10 @@ else
     }
     else
     {
+        @* Embebido como Sub-tareas: el modal de la tarea ya da el contexto; sin cabecera del tablero
+           (nombre, avatares, "Nueva tarea"). La alta va por "Agregar subtarea" de la tabla. *@
+        @if (PadreTareaId is null)
+        {
         <div class="tb-board-head">
             @if (!Compacto && !SoloGeneral)
             {
@@ -173,6 +177,7 @@ else
                 }
             </div>
         </div>
+        }
 
         @* Pestanas Activos / Cerrados + buscador (las tareas cerradas desaparecen del tablero activo). *@
         <div class="tb-board-tabs">
@@ -186,6 +191,8 @@ else
             @* En Tarjetas y Tabla el buscador va junto al boton Filtros (toolbar); aqui solo
                queda para calendario y gantt, que no tienen toolbar propia. *@
             @if (_boardMode is "calendario" or "gantt") { <input class="tb-search" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por título o número..." /> }
+            @* Sub-tareas: sin cabecera, el selector de vista de Calendario/Gantt va aqui para poder volver. *@
+            @if (PadreTareaId is not null && !_verCerradas && _boardMode is "calendario" or "gantt") { @ModeSwitch }
         </div>
 
         @* KPIs del tablero retirados por decision de producto (vista tabla/tablero sin tarjetas KPI). *@
@@ -194,7 +201,7 @@ else
         @if (_verCerradas)
         {
             var qCerr = (_buscarTarea ?? "").Trim().ToLowerInvariant();
-            var cerradas = _board.Tareas
+            var cerradas = FiltrarPorPadre(_board.Tareas.ToList())
                 .Where(x => string.IsNullOrEmpty(qCerr) || x.Titulo.ToLowerInvariant().Contains(qCerr) || x.NumeroTarea.ToLowerInvariant().Contains(qCerr))
                 .OrderByDescending(x => x.CerradaAt)
                 .ToList();
@@ -350,8 +357,7 @@ else
                                         if (_composerReveal >= fidx)
                                         {
                                             <input class="tb-composer-sel tb-composer-appear" placeholder="@campo.Label"
-                                                   value="@(_composerDraft.Campos.GetValueOrDefault(campo.Id))"
-                                                   @oninput="@(e => _composerDraft.Campos[campo.Id] = e.Value?.ToString())"
+                                                   @bind:get="_composerDraft.Campos.GetValueOrDefault(campo.Id)"@bind:set="v => _composerDraft.Campos[campo.Id] = v" @bind:event="oninput"
                                                    @onfocus="@(() => RevealComposerNext(fidx))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, fidx))" />
                                         }
                                     }
@@ -525,7 +531,7 @@ else
                         <div class="tb-row-tit">
                             <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                                Agregar tarea
+                                @(PadreTareaId is null ? "Agregar tarea" : "Agregar subtarea")
                             </button>
                         </div>
                         @if (_colDesc) { <div class="tb-row-desc"></div> }
@@ -546,7 +552,8 @@ else
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
             </div>
             @* FAB flotante: aparece al desplazar (cuando la fila de alta no esta a la vista); oculto si se agrupa. *@
-            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0 || _altaTblOpen)" @onclick="FabAgregarTarea" title="Agregar tarea">
+            @* Embebido como Sub-tareas (dentro del modal): sin FAB, la lista es corta y el FAB tapaba la CTA. *@
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0 || _altaTblOpen || PadreTareaId is not null)" @onclick="FabAgregarTarea" title="Agregar tarea">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
@@ -1314,46 +1321,20 @@ else
                     {
                         <div class="tbc-mut">Guarda la tarea para poder agregarle subtareas.</div>
                     }
+                    else if (EsBoardForaneo || _board is null || string.IsNullOrEmpty(_jwt))
+                    {
+                        @* Tablero compartido/invitado: el modulo embebido no aplica (otra ruta de API); solo lectura. *@
+                        var kids = Hijos(d.Id.Value);
+                        <div class="tbc-mut">@(kids.Count == 0 ? "Sin subtareas todavia." : string.Join(" · ", kids.Select(k => k.Titulo)))</div>
+                    }
                     else
                     {
-                        var kids = Hijos(d.Id.Value);
-                        var padreCod = _tareas.FirstOrDefault(t => t.Id == d.Id.Value)?.NumeroTarea;
-                        <div class="tbc-subtbl-wrap">
-                            <table class="tbl tbc-subtbl">
-                                <thead>
-                                    <tr>
-                                        <th>SUBTAREA</th><th>CODIGO</th><th>ESTADO</th><th>ENCARGADO</th><th class="c">PROGRESO</th><th>PRIORIDAD</th><th>VENCE</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{ var ki = 0; }
-                                    @foreach (var k in kids)
-                                    {
-                                        var kid = k; ki++;
-                                        <tr class="tbc-subtr" @onclick="() => AbrirSubtareaDesdeModal(kid)" title="Abrir subtarea">
-                                            <td class="nom">@k.Titulo</td>
-                                            <td class="mut">@(string.IsNullOrWhiteSpace(padreCod) ? (string.IsNullOrWhiteSpace(k.NumeroTarea) ? "-" : k.NumeroTarea) : $"{padreCod}.{ki}")</td>
-                                            <td><span class="tbc-sub-est">@k.EstadoNombre</span></td>
-                                            <td class="mut">@(k.AsignadoNombre ?? "-")</td>
-                                            <td class="c">@k.Progreso%</td>
-                                            <td>@k.Prioridad</td>
-                                            <td class="mut">@(k.FechaVencimiento?.ToString("dd/MM/yyyy") ?? "-")</td>
-                                        </tr>
-                                    }
-                                    @if (kids.Count == 0)
-                                    {
-                                        <tr><td colspan="7" class="mut" style="text-align:center;padding:16px">Sin subtareas todavia.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                            @if (!EsBoardForaneo)
-                            {
-                                @* Crear subtarea = abrir el modal COMPLETO (como "+ Nueva tarea" de PQRSD crea una
-                                   tarea vinculada). Al guardar/cancelar se vuelve aqui con la nueva subtarea en la lista. *@
-                                <div class="tbc-sub-newbar">
-                                    <button class="tb-btn tb-btn-primary" @onclick="NuevaSubtareaDesdeModal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Nueva subtarea</button>
-                                </div>
-                            }
+                        @* Igual que la pestana Tareas de PQRSD: el modulo Tareas REAL embebido (barra de herramientas,
+                           vistas, alta en linea), filtrado a la descendencia de esta tarea. Lo que se crea en el
+                           nivel raiz nace como subtarea suya (PadreTareaId). *@
+                        <div class="tbc-sub-embed">
+                            <TableroTareas Jwt="@_jwt" TableroId="@BoardIdActual" PadreTareaId="@d.Id"
+                                           Compacto="true" VistaInicial="lista" OnCambio="OnSubtareasCambio" />
                         </div>
                     }
                 </div>
@@ -1862,6 +1843,9 @@ else
     [Parameter] public string VistaInicial { get; set; } = "tablero";
     /// <summary>El host refresca (ej. barra de avance del PQRSD) cuando cambia algo.</summary>
     [Parameter] public EventCallback OnCambio { get; set; }
+    /// <summary>Embebido en la pestana Sub-tareas de una tarea: solo su descendencia (los hijos directos
+    /// se tratan como raices) y lo que se crea en el nivel raiz nace como subtarea suya.</summary>
+    [Parameter] public Guid? PadreTareaId { get; set; }
 
     // Modulo "Tareas": abre SIEMPRE el tablero General (singleton), sin galeria ni switcher.
     [Parameter] public bool SoloGeneral { get; set; }
@@ -1875,9 +1859,29 @@ else
         (string.IsNullOrWhiteSpace(OrigenCodigo) ? "" : $"&origenCodigo={Uri.EscapeDataString(OrigenCodigo)}")
         + (OrigenEntidadId is { } oe ? $"&origenEntidadId={oe}" : "");
     // Inyecta el vinculo de modulo en una tarea creada desde el componente (asi nace ligada al PQRSD).
-    private CrearTareaRequest ConOrigen(CrearTareaRequest req) =>
-        string.IsNullOrWhiteSpace(OrigenCodigo) ? req
-            : req with { ModuloOrigenCodigo = OrigenCodigo, ModuloOrigenEntidadId = OrigenEntidadId };
+    private CrearTareaRequest ConOrigen(CrearTareaRequest req)
+    {
+        if (!string.IsNullOrWhiteSpace(OrigenCodigo))
+            req = req with { ModuloOrigenCodigo = OrigenCodigo, ModuloOrigenEntidadId = OrigenEntidadId };
+        // Embebido como Sub-tareas: una "tarea raiz" creada aqui es hija de la tarea anfitriona.
+        if (PadreTareaId is Guid pid && req.PadreId is null) req = req with { PadreId = pid };
+        return req;
+    }
+    // Embebido como Sub-tareas: deja solo la descendencia de PadreTareaId y sube sus hijos directos a raiz
+    // (la UI arma el arbol desde PadreId == null). Las ediciones no mandan PadreId, asi que no se desvinculan.
+    private List<TareaListaDto> FiltrarPorPadre(List<TareaListaDto> todas)
+    {
+        if (PadreTareaId is not Guid pid) return todas;
+        var ids = new HashSet<Guid> { pid };
+        for (var crecio = true; crecio;)
+        {
+            crecio = false;
+            foreach (var t in todas)
+                if (t.PadreId is Guid p && ids.Contains(p) && ids.Add(t.Id)) crecio = true;
+        }
+        return todas.Where(t => t.Id != pid && ids.Contains(t.Id))
+            .Select(t => t.PadreId == pid ? t with { PadreId = null } : t).ToList();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -2130,8 +2134,7 @@ else
             </div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
-                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." value="@sf.Titulo"
-                       @oninput="e => sf.Titulo = e.Value?.ToString() ?? string.Empty"
+                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." @bind="sf.Titulo"@bind:event="oninput"
                        @onkeydown="e => SubfilaKeydown(e, padre)" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))" /></div> }
@@ -2302,14 +2305,12 @@ else
                 break;
             case TablaColMenu.Accion.Ocultar:
                 {
-                    var ckey = col.EsDinamico ? "cd:" + col.Key : ConfigKeyFija(col.Key);
+                    // GuardarColCfgT manda la fila COMPLETA (alias/ancho/orden): el PUT reemplaza la fila y
+                    // mandar solo Oculto borraba el ancho y el orden guardados de la columna.
+                    var ckey = col.EsDinamico ? col.Key : ConfigKeyFija(col.Key);
                     if (ckey is null) { ColToast("Esta columna no se puede ocultar."); break; }
-                    if (_board is not null)
-                    {
-                        await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config",
-                            new GuardarUnidadCampoConfigRequest(ckey, null, null, Oculto: true));
-                        await RestaurarColsAsync();
-                    }
+                    await GuardarColCfgT(ckey, orden: null, oculto: true);
+                    await RestaurarColsAsync();
                 }
                 break;
             default:
@@ -2329,7 +2330,7 @@ else
     private static string? ConfigKeyFija(string sortKey) => sortKey switch
     {
         "descripcion" => "desc", "numero" => "cod", "asignado" => "resp", "etiq" => "etiq",
-        "prioridad" => "prio", "vence" => "due", "valor" => "valor", "origen" => "orig",
+        "prioridad" => "prio", "vence" => "due", "valor" => "valor", "origen" => "orig", "progreso" => "prog",
         _ => null
     };
     // Traduce la clave de una columna fija a la dimension de agrupacion (clave de _gruposT). null = no soportado.
@@ -3093,6 +3094,11 @@ else
     private string _subNew = "";
     private string _subtareaNew = "";
 
+    // La pestana Sub-tareas (modulo embebido) cambio algo: refrescar este board (progreso derivado del padre,
+    // chip "N sub", arbol de la lista). Sin re-disparar al host desde aqui: RecargarBoard ya avisa a OnCambio.
+    private Task OnSubtareasCambio() => RecargarBoard();
+    private Guid? BoardIdActual => _board?.Tablero.Id;
+
     // Crea una SUBTAREA real (tarea hija con PadreId) desde el modal de la tarjeta.
     // Al recargar el board, la hija aparece anidada en modo lista y suma al chip "N sub" en tarjetas.
     private async Task CrearSubtareaRapida()
@@ -3526,7 +3532,7 @@ else
 
     // Lista mutable de tareas (copia de _board.Tareas) para edicion inline optimista sin recargar todo el board.
     private List<TareaListaDto> _tareas = new();
-    private void SyncTareas() => _tareas = _board?.Tareas.ToList() ?? new();
+    private void SyncTareas() => _tareas = FiltrarPorPadre(_board?.Tareas.ToList() ?? new());
 
     // Pestana Activos / Cerrados: las cerradas desaparecen del tablero activo y se ven aparte.
     private bool _verCerradas;

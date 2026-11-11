@@ -187,7 +187,7 @@ else
                     </div>
                 }
             </div>
-            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." value="@_cFiltroTexto" @oninput="e => { _cFiltroTexto = e.Value?.ToString() ?? string.Empty; }" /></div>
+            <div class="ctr-search"><i class="fi fi-rr-search"></i><input placeholder="Buscar proveedor, NIT, tipo..." @bind="_cFiltroTexto" @bind:event="oninput" /></div>
             </div>
             @* Fila de controles canon (= Tareas): Ordenar/Agrupar/Columnas solo en Tabla; el switcher de vista
                va al final y SIEMPRE visible (en Tarjetas es el unico control, para poder volver a Tabla). *@
@@ -818,7 +818,7 @@ else
                                                     }
                                                     else
                                                     {
-                                                        <input class="ctr-inp" value="@NcCampo(cpoA.Id)" @oninput="e => SetNcCampo(cpoA.Id, e.Value?.ToString())" />
+                                                        <input class="ctr-inp" @bind:get="NcCampo(cpoA.Id)" @bind:set="v => SetNcCampo(cpoA.Id, v)" @bind:event="oninput" />
                                                     }
                                                 }
                                                 else { <span class="ctr-cval">-</span> }
@@ -2615,14 +2615,12 @@ else
                 else AbrirEditarCampoSistema(col.Key);   // sistema (incl. "etapa"=Estado): SIEMPRE el modal canonico EditarCampoSistemaModal
                 break;
             case TablaColMenu.Accion.Ocultar:
-                try
-                {
-                    await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config",
-                        new GuardarUnidadCampoConfigRequest(ConfigClave(col.Key), null, null, Oculto: true, Entidad: "contrato"));
-                    await CargarConfigContratoAsync();
-                    ColToast("Columna oculta. Usa Campos para restaurarla.");
-                }
-                catch { ColToast("No se pudo ocultar la columna."); }
+                // Fila COMPLETA (FilaConfigC): el PUT reemplaza la fila; mandar solo Oculto borraba alias,
+                // opciones de lista, formato, orden y descripcion de la columna.
+                if (EsFijaColC(col.Key)) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
+                await GuardarCfgC(FilaConfigC(col.Key) with { Oculto = true });
+                await CargarConfigContratoAsync();
+                ColToast("Columna oculta. Usa Columnas para restaurarla.");
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:
@@ -2769,7 +2767,7 @@ else
     {
         _cfgContrato.TryGetValue(ConfigClave(k), out var c);
         return new GuardarUnidadCampoConfigRequest(ConfigClave(k), c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "contrato");
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "contrato", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgC(GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
@@ -4309,9 +4307,8 @@ else
         _tCreating = false; _tNewKind = 0; _tNewDoc = _tNewNombres = _tNewApellidos = _tNewNit = _tNewRazon = "";
     }
 
-    private async Task OnPickerQuery(ChangeEventArgs e)
+    private async Task OnPickerQuery()
     {
-        _tQuery = e.Value?.ToString() ?? "";
         await BuscarTerceros();
     }
 
@@ -4618,7 +4615,7 @@ else
 
     // Panel de busqueda/alta de tercero (compartido por ejecutor y contacto).
     private RenderFragment PickerPanel() => @<div class="svc-picker">
-        <input class="srv-input" placeholder="Buscar por nombre, documento o NIT..." value="@_tQuery" @oninput="OnPickerQuery" />
+        <input class="srv-input" placeholder="Buscar por nombre, documento o NIT..." @bind="_tQuery" @bind:event="oninput" @bind:after="OnPickerQuery" />
         @if (!_tCreating)
         {
             <div class="svc-picker-results">
