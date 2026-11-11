@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Api.Authorization;
@@ -100,6 +101,71 @@ public class AsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // Enlace self-service (Ola 1) para que un copropietario/apoderado registre asistencia y vote sin
+    // login. Solo se emite si la persona tiene unidades habilitadas en la sesion. Vence 2 dias despues
+    // de la fecha de la sesion (o de hoy, si la sesion ya paso).
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpGet("{id:guid}/enlace-residente/{personaId:guid}")]
+    public async Task<IActionResult> EnlaceResidente(Guid id, Guid personaId,
+        [FromServices] IAsambleaTokenService tokens, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("tenant_id"), out var tenantId)) return Forbid();
+        var vista = await _svc.GetSesionParaResidenteAsync(id, personaId, ct);
+        if (vista is null) return NotFound();
+        if (vista.MisUnidades.Count == 0)
+            return BadRequest(new { error = "La persona no es propietaria ni apoderada con poder aprobado en esta sesion." });
+
+        var expira = AsambleaEnlace.Vencimiento(vista.FechaSesion, DateTimeOffset.UtcNow);
+        var token = tokens.Emitir(new AsambleaEnlaceToken(tenantId, id, personaId), expira);
+        return Ok(new EnlaceResidenteDto(token, AsambleaEnlace.Ruta(tenantId, token), expira));
+    }
+
+    // Via logueada (Ola 1.6): el copropietario/apoderado CON cuenta pide su propio enlace. Sin permiso
+    // de admin: la persona sale del JWT (nunca del cliente) y aplica el mismo gate de propiedad. 403 si
+    // no tiene unidades habilitadas en la sesion (la ficha lo usa para mostrar u ocultar el boton).
+    [HttpGet("{id:guid}/mi-enlace")]
+    public async Task<IActionResult> MiEnlace(Guid id, [FromServices] IAsambleaTokenService tokens, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("tenant_id"), out var tenantId)
+            || !Guid.TryParse(User.FindFirstValue("persona_id"), out var personaId))
+            return Forbid();
+        var vista = await _svc.GetSesionParaResidenteAsync(id, personaId, ct);
+        if (vista is null) return NotFound();
+        if (vista.MisUnidades.Count == 0)
+            return StatusCode(403, new { error = "No eres propietario ni apoderado con poder aprobado en esta asamblea." });
+
+        var expira = AsambleaEnlace.Vencimiento(vista.FechaSesion, DateTimeOffset.UtcNow);
+        var token = tokens.Emitir(new AsambleaEnlaceToken(tenantId, id, personaId), expira);
+        return Ok(new EnlaceResidenteDto(token, AsambleaEnlace.Ruta(tenantId, token), expira));
+    }
+
+    // Envia por correo el enlace self-service a cada propietario/apoderado habilitado (o a los
+    // PersonaIds indicados). Responde de inmediato; los correos salen en segundo plano. La base del
+    // enlace es App:PublicBaseUrl (prod); si no esta configurada, el origen del Web que llama.
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpPost("{id:guid}/enviar-enlaces")]
+    public async Task<IActionResult> EnviarEnlaces(Guid id, [FromBody] EnviarEnlacesRequest req,
+        [FromServices] IAsambleaEnlacesService enlaces, [FromServices] IConfiguration config, CancellationToken ct)
+    {
+        var baseUrl = (config["App:PublicBaseUrl"] ?? "").Trim();
+        if (string.IsNullOrEmpty(baseUrl)) baseUrl = (req.BaseUrl ?? "").Trim();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttps && u.Scheme != Uri.UriSchemeHttp))
+            return BadRequest(new { error = "No se pudo determinar la direccion publica de la aplicacion." });
+
+        try
+        {
+            var r = await enlaces.ProgramarEnvioAsync(id, req.PersonaIds, u.GetLeftPart(UriPartial.Authority), ct);
+            return r is null ? NotFound() : Ok(r);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    // Estado del ultimo envio de enlaces (enviados / fallidos / motivos); 204 si no hubo envio.
+    [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
+    [HttpGet("{id:guid}/enviar-enlaces/estado")]
+    public IActionResult EstadoEnvioEnlaces(Guid id, [FromServices] IAsambleaEnlacesService enlaces)
+        => enlaces.EstadoEnvio(id) is { } e ? Ok(e) : NoContent();
+
     // Votaciones
     [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Crear)]
     [HttpPost("{id:guid}/votaciones")]
@@ -165,6 +231,9 @@ public class AsambleaController : ControllerBase
 
     [RequierePermiso(ModuloCodigo.Asambleas, AccionPermiso.Editar)]
     [HttpPut("config")]
-    public async Task<IActionResult> ActualizarConfig([FromBody] AsambleaConfigDto req, CancellationToken ct)
-        => await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound();
+    public async Task<IActionResult> ActualizarConfig([FromBody] ActualizarAsambleaConfigRequest req, CancellationToken ct)
+    {
+        try { return await _svc.ActualizarConfigAsync(req, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 }

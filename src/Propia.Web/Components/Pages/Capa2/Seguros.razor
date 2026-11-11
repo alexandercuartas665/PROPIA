@@ -297,9 +297,9 @@
                                 <div class="@AltaCeldaClass(col)">
                                     @switch (col)
                                     {
-                                        case "numeropoliza": <input class="seg-nf-inp" value="@_npNumero" @oninput="e => _npNumero = e.Value?.ToString() ?? string.Empty" placeholder="N póliza" /> break;
-                                        case "aseguradora": <input class="seg-nf-inp" value="@_npAseguradora" @oninput="e => _npAseguradora = e.Value?.ToString() ?? string.Empty" placeholder="Aseguradora *" /> break;
-                                        case "corredor": <input class="seg-nf-inp" value="@_npCorredor" @oninput="e => _npCorredor = e.Value?.ToString() ?? string.Empty" placeholder="Corredor" /> break;
+                                        case "numeropoliza": <input class="seg-nf-inp" @bind="_npNumero" @bind:event="oninput" placeholder="N póliza" /> break;
+                                        case "aseguradora": <input class="seg-nf-inp" @bind="_npAseguradora" @bind:event="oninput" placeholder="Aseguradora *" /> break;
+                                        case "corredor": <input class="seg-nf-inp" @bind="_npCorredor" @bind:event="oninput" placeholder="Corredor" /> break;
                                         case "fechainicio": <input type="date" class="seg-nf-inp" value="@_npInicio" @oninput="e => _npInicio = e.Value?.ToString() ?? string.Empty" /> break;
                                         case "fechafin": <input type="date" class="seg-nf-inp" value="@_npFin" @oninput="e => _npFin = e.Value?.ToString() ?? string.Empty" /> break;
                                         case "valorpoliza": <input type="number" step="1000" class="seg-nf-inp" value="@_npValor" @oninput="e => _npValor = e.Value?.ToString() ?? string.Empty" placeholder="Valor" /> break;
@@ -517,7 +517,7 @@
                                 @switch (cm.Tipo)
                                 {
                                     case TipoCampoTablero.AreaTexto:
-                                        <textarea class="seg-input" rows="2" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())"></textarea>
+                                        <textarea class="seg-input" rows="2" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput"></textarea>
                                         break;
                                     case TipoCampoTablero.Numero:
                                     case TipoCampoTablero.Moneda:
@@ -539,7 +539,7 @@
                                         </select>
                                         break;
                                     default:
-                                        <input class="seg-input" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())" />
+                                        <input class="seg-input" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput" />
                                         break;
                                 }
                             </div>
@@ -1439,7 +1439,7 @@
     private Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest FilaConfigS(string clave)
     {
         _cfgPoliza.TryGetValue(clave, out var c);
-        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "poliza");
+        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "poliza", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgS(Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
@@ -1580,14 +1580,12 @@
                 else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Ocultar:
-                try
-                {
-                    await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config",
-                        new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(col.Key, null, null, Oculto: true, Entidad: "poliza"));
-                    await CargarConfigAsync();
-                    ColToast("Columna oculta. Usa Campos para restaurarla.");
-                }
-                catch { ColToast("No se pudo ocultar la columna."); }
+                // Fila COMPLETA (FilaConfigS): el PUT reemplaza la fila; mandar solo Oculto borraba alias,
+                // opciones de lista, formato, orden y descripcion de la columna.
+                if (EsFijaS(col.Key)) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
+                await GuardarCfgS(FilaConfigS(col.Key) with { Oculto = true });
+                await CargarConfigAsync();
+                ColToast("Columna oculta. Usa Columnas para restaurarla.");
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:

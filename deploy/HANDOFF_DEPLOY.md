@@ -1,5 +1,17 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **INTEGRACION ASAMBLEA (2026-11-11, merge en main): 1 MIGRACION NUEVA (ADITIVA) + API y Web cambian.**
+> - Voto self-service del residente (enlace firmado por token, pagina publica `/asambleas/...` sin login),
+>   envio de enlaces por correo, ola A (conteo al cierre, voto secreto, fallos de correo), criterio de mayoria
+>   configurable por copropiedad, y rutas publicas de Asambleas y PQRSD (`/pqr/{tenantId}`) que no exigen sesion.
+> - **MIGRACION `20261110201200_AsambleaCriterioMayoria`:** agrega la columna `criterio_mayoria` (int, NOT NULL,
+>   **DEFAULT 2** = "mas del porcentaje") a `asamblea_config`. No necesita datos ni backfill: las filas existentes
+>   toman el default. Ya aplicada en dev (`propia_dev`).
+> - **Aplicar en PROD:** `cd src/Propia.Api && dotnet ef database update --project ../Propia.Infrastructure --startup-project .`
+> - **Como desplegar:** redeploy de **API y Web** + la migracion. Sin config/env nueva (el correo usa el SMTP ya configurado).
+> - **Rollback:** redeploy previo; la columna puede quedarse (aditiva, con default).
+>
+
 > **VERSION A DESPLEGAR = 0.0.276 (Web) + API (nuevos endpoints)** (sigue a 0.0.275, 2026-11-04).
 > **1 MIGRACION NUEVA (ADITIVA) + LA API CAMBIA. Redeployar API y Web.**
 > **Contratos: el modal de Contrato queda identico a la maqueta (modal-contrato.html), hermano del de Poliza.**

@@ -44,6 +44,17 @@ public enum TipoMayoria
     Calificada = 2
 }
 
+/// <summary>
+/// Como se compara el % del "Si" contra la mayoria del punto al cerrar una votacion. Lo define cada
+/// copropiedad en la configuracion de Asambleas. MasDe = mayoria absoluta de la Ley 675 (un 50/50 con
+/// mayoria del 50 % NO aprueba); AlMenos = basta con alcanzar el % (el 50/50 aprueba).
+/// </summary>
+public enum CriterioMayoria
+{
+    AlMenos = 1,
+    MasDe = 2
+}
+
 /// <summary>Modalidad de votacion.</summary>
 public enum ModalidadVoto
 {

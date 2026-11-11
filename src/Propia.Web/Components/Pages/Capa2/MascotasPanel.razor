@@ -36,7 +36,7 @@ else
         <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
         <div class="mas-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input placeholder="Buscar nombre, raza, unidad o propietario..." value="@_q" @oninput="OnBuscar" />
+            <input placeholder="Buscar nombre, raza, unidad o propietario..." @bind="_q" @bind:event="oninput" @bind:after="OnBuscarDespues" />
         </div>
         <div class="mas-spacer"></div>
 
@@ -60,7 +60,7 @@ else
                 <div class="mas-menu mas-colmenu">
                     <div class="mas-col-search">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                        <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
+                        <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
                     </div>
                     <div class="mas-col-list">
                         @{ var _cols = ClavesOrdenadas().ToList(); }
@@ -232,8 +232,7 @@ else
                             }
                             else
                             {
-                                <input class="mas-row-inp" placeholder="@def.Label" value="@dv"
-                                       @oninput="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                                <input class="mas-row-inp" placeholder="@def.Label" @bind:get="dv"@bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
                             }
                             continue;
                         }
@@ -246,7 +245,7 @@ else
                                 </div>
                                 break;
                             case "nombre":
-                                <input class="mas-row-inp" @ref="_nombreRef" placeholder="Nombre" value="@_nuNombre" @oninput="OnNombreNuevo" />
+                                <input class="mas-row-inp" @ref="_nombreRef" placeholder="Nombre" @bind="_nuNombre" @bind:event="oninput" />
                                 break;
                             case "tipo":
                                 <select class="mas-row-inp" @bind="_nuTipoSel">
@@ -254,7 +253,7 @@ else
                                 </select>
                                 break;
                             case "raza":
-                                <input class="mas-row-inp" placeholder="Raza" value="@_nuRaza" @oninput="OnRazaNueva" />
+                                <input class="mas-row-inp" placeholder="Raza" @bind="_nuRaza" @bind:event="oninput" />
                                 break;
                             case "propietario":
                                 @* Override opcional del Directorio; si se deja vacio, se usa el dueno de la unidad. *@
@@ -978,7 +977,9 @@ else
             <div></div>
         }
     </div>;
-    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    // @bind (no value= + @oninput): solo @bind tiene la proteccion de Blazor contra el "eco" que, con
+    // latencia, devolvia un valor viejo y se comia letras al escribir rapido.
+    private void OnBuscarDespues() => _pagina = 1;
 
     // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
     private string _view = "tabla";
@@ -994,8 +995,6 @@ else
 
     // Ficha: setear (sel) o limpiar (null) el propietario override de la mascota; refresca tabla y ficha.
     private void AbrirUnidad(MascotaResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
-    private void OnNombreNuevo(ChangeEventArgs e) => _nuNombre = e.Value?.ToString() ?? string.Empty;
-    private void OnRazaNueva(ChangeEventArgs e) => _nuRaza = e.Value?.ToString() ?? string.Empty;
     private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
 
     private string? ValorDe(Guid mascotaId, Guid defId)
@@ -1413,7 +1412,7 @@ else
     {
         _cfg.TryGetValue(clave, out var c);
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg);
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgAsync(GuardarUnidadCampoConfigRequest req)
     {
@@ -1589,6 +1588,9 @@ else
                 AbrirCrearCampo();
                 break;
             case TablaColMenu.Accion.Ocultar:
+                // La 1a columna es fija: el menu Columnas no la deja ocultar ni volver a mostrar; ocultarla aqui
+                // la dejaba sin forma de restaurarla.
+                if (col.Key == ClavesOrdenadas().FirstOrDefault()) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
                 await ToggleVisibleColAsync(col.Key);
                 break;
             case TablaColMenu.Accion.Agrupar:

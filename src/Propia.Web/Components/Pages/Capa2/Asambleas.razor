@@ -15,7 +15,10 @@
         <h1 class="h3 mb-1 fw-semibold">Asambleas y Organos de Gobierno</h1>
         <p class="text-muted mb-0">Ciclo documental Ley 675/2001 + Decreto 1074/2015</p>
     </div>
-    <a class="btn" style="background: var(--propia-primary); color:white;" href="/asambleas/nueva">+ Nueva sesión</a>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary" @onclick="AbrirConfigAsync" disabled="@string.IsNullOrEmpty(_jwt)">Configuración</button>
+        <a class="btn" style="background: var(--propia-primary); color:white;" href="/asambleas/nueva">+ Nueva sesión</a>
+    </div>
 </div>
 
 @if (!_authChecked)
@@ -43,8 +46,8 @@
     <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
     <div class="asa-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input class="asa-search-inp" placeholder="Buscar por título..." value="@_q"
-               @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
+        <input class="asa-search-inp" placeholder="Buscar por título..." @bind="_q"
+               @bind:event="oninput" @bind:after="() => _pagina = 1" />
     </div>
     <div class="asa-tool-spacer"></div>
     <div class="asa-menu-wrap">
@@ -219,10 +222,121 @@
     [data-bs-theme="dark"] .asa-table tbody tr:hover td { background: var(--propia-bg-table-head); }
 </style>
 
+@* Modal Configuracion de asambleas (por copropiedad): criterio de mayoria + parametros de citacion *@
+@if (_asmCfg is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Configuración de asambleas</h5>
+                    <button type="button" class="btn-close" @onclick="() => _asmCfg = null"></button>
+                </div>
+                <div class="modal-body small">
+                    <label class="form-label fw-semibold mb-1">Criterio de mayoría al cerrar una votación</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="cm-masde" name="cm" checked="@(_asmCfg.Criterio == CriterioMayoria.MasDe)"
+                               @onchange="() => _asmCfg.Criterio = CriterioMayoria.MasDe" />
+                        <label class="form-check-label" for="cm-masde"><strong>Más del porcentaje</strong> (mayoría absoluta, Ley 675). Con mayoría del 50 %, un empate 50/50 <em>no</em> se aprueba.</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" id="cm-almenos" name="cm" checked="@(_asmCfg.Criterio == CriterioMayoria.AlMenos)"
+                               @onchange="() => _asmCfg.Criterio = CriterioMayoria.AlMenos" />
+                        <label class="form-check-label" for="cm-almenos"><strong>Al menos el porcentaje</strong>. Con mayoría del 50 %, un empate 50/50 <em>sí</em> se aprueba.</label>
+                    </div>
+                    <div class="text-muted mb-3">El porcentaje de cada punto (por ejemplo 50 % o 70 %) se define al crear la sesión. El cambio aplica a las votaciones que se cierren desde ahora.</div>
+
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-plazo">Plazo de citación (días)</label>
+                            <input id="cfg-plazo" type="number" min="0" max="60" class="form-control form-control-sm" @bind="_asmCfg.PlazoCitacionDias" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-poderes">Poderes por persona (0 = sin límite)</label>
+                            <input id="cfg-poderes" type="number" min="0" max="50" class="form-control form-control-sm" @bind="_asmCfg.LimitePoderes" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-gracia">Gracia de reconexión (segundos)</label>
+                            <input id="cfg-gracia" type="number" min="0" max="3600" class="form-control form-control-sm" @bind="_asmCfg.GraciaReconexionSeg" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-recordatorio">Recordatorio (días antes)</label>
+                            <input id="cfg-recordatorio" type="number" min="0" max="30" class="form-control form-control-sm" @bind="_asmCfg.NotifRecordatorioDias" />
+                        </div>
+                    </div>
+                    @if (_asmCfgError is not null) { <div class="alert alert-danger py-2 small mt-3 mb-0">@_asmCfgError</div> }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _asmCfg = null">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="GuardarConfigAsync" disabled="@_asmCfgBusy">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private string? _jwt;
     private bool _authChecked;
     private string? _msg; private string _msgClass = "alert-info";
+
+    // Configuracion de asambleas (modal). VM mutable para el formulario; el PUT es MERGE y se envia todo.
+    private sealed class ConfigVm
+    {
+        public CriterioMayoria Criterio { get; set; }
+        public int PlazoCitacionDias { get; set; }
+        public int LimitePoderes { get; set; }
+        public int GraciaReconexionSeg { get; set; }
+        public int NotifRecordatorioDias { get; set; }
+    }
+    private ConfigVm? _asmCfg;
+    private string? _asmCfgError;
+    private bool _asmCfgBusy;
+
+    private async Task AbrirConfigAsync()
+    {
+        _asmCfgError = null;
+        try
+        {
+            var c = await Auth().GetFromJsonAsync<AsambleaConfigDto>("/api/asambleas/config");
+            if (c is null) return;
+            _asmCfg = new ConfigVm
+            {
+                Criterio = c.CriterioMayoria,
+                PlazoCitacionDias = c.PlazoCitacionDias,
+                LimitePoderes = c.LimitePoderesPorPersona ?? 0,
+                GraciaReconexionSeg = c.GraciaReconexionSeg,
+                NotifRecordatorioDias = c.NotifRecordatorioDias
+            };
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+    }
+
+    private async Task GuardarConfigAsync()
+    {
+        if (_asmCfg is null) return;
+        _asmCfgBusy = true; _asmCfgError = null;
+        try
+        {
+            var req = new ActualizarAsambleaConfigRequest(_asmCfg.PlazoCitacionDias, _asmCfg.LimitePoderes,
+                _asmCfg.GraciaReconexionSeg, _asmCfg.NotifRecordatorioDias, _asmCfg.Criterio);
+            var resp = await Auth().PutAsJsonAsync("/api/asambleas/config", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _asmCfg = null;
+                _msg = "Configuración de asambleas guardada."; _msgClass = "alert-success";
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                _asmCfgError = "No tienes permiso para cambiar la configuración de asambleas.";
+            else
+            {
+                var cuerpo = await resp.Content.ReadAsStringAsync();
+                try { _asmCfgError = System.Text.Json.JsonDocument.Parse(cuerpo).RootElement.GetProperty("error").GetString(); }
+                catch { _asmCfgError = "No se pudo guardar la configuración."; }
+            }
+        }
+        catch (Exception ex) { _asmCfgError = ex.Message; }
+        finally { _asmCfgBusy = false; }
+    }
     private SesionBandejaDto? _b;
 
     // Barra / vista tabla canonica
@@ -367,7 +481,7 @@
     private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
     {
         var c = CfgDe(clave);
-        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }

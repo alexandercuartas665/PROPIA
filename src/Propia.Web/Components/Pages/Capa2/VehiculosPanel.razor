@@ -39,7 +39,7 @@ else
         <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
         <div class="veh-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input placeholder="Buscar placa, unidad o propietario..." value="@_q" @oninput="OnBuscar" />
+            <input placeholder="Buscar placa, unidad o propietario..." @bind="_q" @bind:event="oninput" @bind:after="OnBuscar" />
         </div>
         <div class="veh-spacer"></div>
 
@@ -63,7 +63,7 @@ else
                 <div class="veh-menu veh-colmenu">
                     <div class="veh-col-search">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                        <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
+                        <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
                     </div>
                     <div class="veh-col-list">
                         @{ var _cols = ClavesOrdenadas().ToList(); }
@@ -235,8 +235,7 @@ else
                             }
                             else
                             {
-                                <input class="veh-row-inp" placeholder="@def.Label" value="@dv"
-                                       @oninput="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                                <input class="veh-row-inp" placeholder="@def.Label" @bind:get="dv"@bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
                             }
                             continue;
                         }
@@ -249,7 +248,7 @@ else
                                 </div>
                                 break;
                             case "placa":
-                                <input class="veh-row-inp" @ref="_placaRef" placeholder="Placa" value="@_nuPlaca" @oninput="OnPlacaNueva" />
+                                <input class="veh-row-inp" @ref="_placaRef" placeholder="Placa" @bind="_nuPlaca" @bind:event="oninput" />
                                 break;
                             case "tipovehiculo":
                                 <select class="veh-row-inp" @bind="_nuTipo">
@@ -950,7 +949,7 @@ else
             <div></div>
         }
     </div>;
-    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    private void OnBuscar() => _pagina = 1;
 
     // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
     private string _view = "tabla";
@@ -966,7 +965,6 @@ else
 
     // Ficha: setear (sel) o limpiar (null) el propietario override del vehiculo; refresca tabla y ficha.
     private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
-    private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
     private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
 
     private string? ValorDe(Guid placaId, Guid defId)
@@ -1354,7 +1352,7 @@ else
     {
         _cfg.TryGetValue(clave, out var c);
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg);
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgAsync(GuardarUnidadCampoConfigRequest req)
     {
@@ -1530,6 +1528,9 @@ else
                 AbrirCrearCampo();
                 break;
             case TablaColMenu.Accion.Ocultar:
+                // La 1a columna es fija: el menu Columnas no la deja ocultar ni volver a mostrar; ocultarla aqui
+                // la dejaba sin forma de restaurarla.
+                if (col.Key == ClavesOrdenadas().FirstOrDefault()) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
                 await ToggleVisibleColAsync(col.Key);
                 break;
             case TablaColMenu.Accion.Agrupar:
