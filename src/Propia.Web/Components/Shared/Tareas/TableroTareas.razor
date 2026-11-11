@@ -470,7 +470,9 @@ else
                     @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
                        gestor (alias en columnas-config), se muestra el alias; si no, la etiqueta de fabrica.
                        Cada celda lleva la flecha (ChevCol) que abre el menu de columna (Oleada B). *@
-                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)</div>
+                    @* data-clave: lo usa propiaTablaResize para medir el ancho de partida. Como destino de reordenar es
+                       un no-op (titulo no esta en _colOrden: siempre va primero). *@
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" data-clave="titulo" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "titulo")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("titulo")' @ondblclick:stopPropagation="true"></span></div>
                     @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" data-clave="desc" @onmousedown='e => IniciarReorderTbl(e, "desc")' @onclick='() => SortBy("descripcion")'><span>@ColLabel("desc", "DESCRIPCION")</span>@ChevCol("descripcion", "DESCRIPCION", false)@ColorDot("desc")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "desc")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("desc")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" data-clave="cod" @onmousedown='e => IniciarReorderTbl(e, "cod")' @onclick='() => SortBy("numero")'><span>@ColLabel("cod", "CODIGO")</span>@SortInd("numero")@ChevCol("numero", "CODIGO", false)@ColorDot("cod")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "cod")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("cod")' @ondblclick:stopPropagation="true"></span></div> }
                     <div class="tb-lc tb-lc-est" data-clave="est" @onmousedown='e => IniciarReorderTbl(e, "est")'><span>@ColLabel("est", "ETAPA")</span>@ChevCol("est", "ETAPA", false)@ColorDot("est")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "est")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("est")' @ondblclick:stopPropagation="true"></span></div>
@@ -2939,8 +2941,10 @@ else
             var sb = new System.Text.StringBuilder("<style>");
             foreach (var kv in _colW)
             {
-                var sel = ColSelectores(kv.Key);
-                var hsel = ColHeaderSel(kv.Key);
+                // Titulo no esta en ColSelectores/ColHeaderSel (no se colorea ni se reordena): selector propio.
+                // .tb-lc-tit cubre tambien la celda lider de los agrupadores y de la fila de totales.
+                var sel = kv.Key == "titulo" ? ".tb-list .tb-row-tit" : ColSelectores(kv.Key);
+                var hsel = kv.Key == "titulo" ? ".tb-list .tb-lc-tit" : ColHeaderSel(kv.Key);
                 var all = string.Join(",", new[] { sel, hsel }.Where(s => s is not null));
                 if (all.Length == 0) continue;
                 sb.Append(all).Append("{flex:0 0 ").Append(kv.Value).Append("px !important;width:")
@@ -2972,6 +2976,7 @@ else
         _colOrden = keys;
         for (int i = 0; i < keys.Count; i++) await GuardarColCfgT(keys[i], orden: i, oculto: null);
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS (igual que OnColResize)
     }
     private async Task IniciarResizeTbl(MouseEventArgs e, string clave)
     { _selfTbl ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfTbl, clave, e.ClientX); } catch { } }
@@ -2984,6 +2989,7 @@ else
         _colCfg.TryGetValue(ConfigClaveDe(clave), out var ex);
         await GuardarColCfgT(clave, orden: null, oculto: null, setFormato: true, formato: ConAnchoTabla(ex?.Formato, w));
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS: sin esto el nuevo ancho solo se veia al recargar
     }
     private static int? AnchoDeFormatoTabla(string? json)
     {
