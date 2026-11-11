@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Propia.Application.Navegacion;
 using Propia.Domain.Entities;
 using Propia.Infrastructure.Persistence;
@@ -8,38 +7,27 @@ namespace Propia.Infrastructure.Navegacion;
 
 /// <summary>
 /// Menu de navegacion configurable GLOBAL: resuelve el base (MenuCatalog) con los overrides guardados y
-/// persiste el arreglo del editor como DELTAS vs el base (solo se guarda lo que cambia). Cachea el menu
-/// resuelto (una sola entrada, es global) con invalidacion al guardar + TTL de respaldo. La tabla
-/// menu_overrides es global (sin RLS), asi que se lee/escribe igual desde un contexto de tenant o de
-/// Super Admin. Concepto portado de ECOREX.tareas (menu data-driven).
+/// persiste el arreglo del editor como DELTAS vs el base (solo se guarda lo que cambia). SIN cache: el
+/// editor guarda por el API y el NavMenu lee en el proceso Web; un cache en memoria por proceso dejaba a
+/// las copropiedades con el menu viejo hasta su TTL (en dev son 2 procesos; en prod, con varias replicas).
+/// Leer ~50 filas por circuito es despreciable. La tabla menu_overrides es global (sin RLS), asi que se
+/// lee/escribe igual desde un contexto de tenant o de Super Admin. Concepto portado de ECOREX.tareas.
 /// </summary>
 public sealed class MenuConfigService : IMenuConfigService
 {
-    private const string CacheKey = "menu:resolved:v1";
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
-
     private readonly PropiaDbContext _db;
-    private readonly IMemoryCache _cache;
 
-    public MenuConfigService(PropiaDbContext db, IMemoryCache cache)
+    public MenuConfigService(PropiaDbContext db)
     {
         _db = db;
-        _cache = cache;
     }
 
     public async Task<ResolvedMenu> GetResolvedMenuAsync(CancellationToken ct = default)
     {
-        if (_cache.TryGetValue(CacheKey, out ResolvedMenu? cached) && cached is not null)
-        {
-            return cached;
-        }
-
         var overrides = await _db.MenuOverrides.AsNoTracking()
             .Select(o => new MenuOverrideData(o.NodeKey, o.Label, o.ParentKey, o.SortOrder, o.IsCustom, o.NodeType, o.Icon, o.Href, o.Hidden))
             .ToListAsync(ct);
-        var resolved = MenuCatalog.Resolve(overrides);
-        _cache.Set(CacheKey, resolved, CacheTtl);
-        return resolved;
+        return MenuCatalog.Resolve(overrides);
     }
 
     public async Task SaveArrangementAsync(SaveMenuArrangementRequest request, CancellationToken ct = default)
@@ -149,7 +137,6 @@ public sealed class MenuConfigService : IMenuConfigService
         _db.MenuOverrides.RemoveRange(current);
         if (rows.Count > 0) { _db.MenuOverrides.AddRange(rows); }
         await _db.SaveChangesAsync(ct);
-        _cache.Remove(CacheKey);
     }
 
     public async Task ResetAsync(CancellationToken ct = default)
@@ -160,7 +147,6 @@ public sealed class MenuConfigService : IMenuConfigService
             _db.MenuOverrides.RemoveRange(current);
             await _db.SaveChangesAsync(ct);
         }
-        _cache.Remove(CacheKey);
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
