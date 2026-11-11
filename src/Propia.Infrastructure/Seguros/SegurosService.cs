@@ -102,7 +102,14 @@ public class SegurosService : ISegurosService
             ValoresAgregados = Limpio(req.ValoresAgregados),
             Observaciones = Limpio(req.Observaciones),
             ExpedienteId = req.ExpedienteId,
-            PdfOrigenKey = Limpio(req.PdfOrigenKey)
+            PdfOrigenKey = Limpio(req.PdfOrigenKey),
+            // NIT sin puntos ni espacios (a mano o desde el Agente Documental): "900.456.789-1" -> "900456789-1".
+            NitAseguradora = Application.Documentos.NormalizadorDocumental.Nit(req.NitAseguradora),
+            Tomador = Limpio(req.Tomador),
+            Asegurado = Limpio(req.Asegurado),
+            ValorAsegurado = req.ValorAsegurado,
+            Prima = req.Prima,
+            Deducible = Limpio(req.Deducible)
         };
         _db.Polizas.Add(p);
         await _db.SaveChangesAsync(ct);
@@ -151,6 +158,12 @@ public class SegurosService : ISegurosService
         if (req.LimpiarExpediente) p.ExpedienteId = null;
         else if (req.ExpedienteId.HasValue) p.ExpedienteId = req.ExpedienteId;
         if (!string.IsNullOrWhiteSpace(req.PdfOrigenKey)) p.PdfOrigenKey = req.PdfOrigenKey;
+        if (req.NitAseguradora is not null) p.NitAseguradora = Application.Documentos.NormalizadorDocumental.Nit(req.NitAseguradora);
+        if (req.Tomador is not null) p.Tomador = Limpio(req.Tomador);
+        if (req.Asegurado is not null) p.Asegurado = Limpio(req.Asegurado);
+        if (req.ValorAsegurado.HasValue) p.ValorAsegurado = req.ValorAsegurado;
+        if (req.Prima.HasValue) p.Prima = req.Prima;
+        if (req.Deducible is not null) p.Deducible = Limpio(req.Deducible);
 
         // N-02: reinicia el control de alerta SOLO si cambio la vigencia (antes lo hacia en cada PUT).
         if (p.FechaInicio != fechaInicioAntes || p.FechaFin != fechaFinAntes)
@@ -253,7 +266,8 @@ public class SegurosService : ISegurosService
             p.Corredor, p.CorredorPersonaId, p.CorredorEmpresaId,
             p.FechaInicio, p.FechaFin, p.ValorPoliza, p.FormaPagoCuotas, p.PagoMensual,
             p.Cobertura, p.IncluyeZonasUnidades, p.ValoresAgregados, p.Observaciones,
-            p.ExpedienteId, dias, sem, reclCount, valores, !string.IsNullOrEmpty(p.PdfOrigenKey));
+            p.ExpedienteId, dias, sem, reclCount, valores, !string.IsNullOrEmpty(p.PdfOrigenKey),
+            p.NitAseguradora, p.Tomador, p.Asegurado, p.ValorAsegurado, p.Prima, p.Deducible);
     }
 
     // ----------------------------- Campos EAV -----------------------------

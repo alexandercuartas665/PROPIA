@@ -396,6 +396,8 @@ public partial class PropiaDbContext
             b.Property(x => x.TelefonoContratista).HasMaxLength(50);
             b.Property(x => x.CorreoContratista).HasMaxLength(200);
             b.Property(x => x.DireccionContratista).HasMaxLength(300);
+            b.Property(x => x.RepresentanteLegal).HasMaxLength(200);
+            b.Property(x => x.Ciudad).HasMaxLength(120);
             b.Property(x => x.Observaciones).HasMaxLength(1000);
             b.Property(x => x.ValorMensual).HasPrecision(12, 2);
             b.Property(x => x.Estado).HasDefaultValue(EstadoContrato.Vigente);
@@ -446,6 +448,12 @@ public partial class PropiaDbContext
             b.Property(x => x.Aseguradora).IsRequired().HasMaxLength(200);
             b.Property(x => x.Corredor).HasMaxLength(200);
             b.Property(x => x.ValorPoliza).HasPrecision(14, 2);
+            b.Property(x => x.NitAseguradora).HasMaxLength(30);
+            b.Property(x => x.Tomador).HasMaxLength(200);
+            b.Property(x => x.Asegurado).HasMaxLength(200);
+            b.Property(x => x.ValorAsegurado).HasPrecision(16, 2);
+            b.Property(x => x.Prima).HasPrecision(14, 2);
+            b.Property(x => x.Deducible).HasMaxLength(500);
             b.Property(x => x.Cobertura).HasMaxLength(4000);
             b.Property(x => x.ValoresAgregados).HasMaxLength(4000);
             b.Property(x => x.Observaciones).HasMaxLength(2000);

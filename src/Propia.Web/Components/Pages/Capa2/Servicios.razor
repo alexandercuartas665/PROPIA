@@ -999,7 +999,7 @@ else
 @if (_showModal)
 {
     <div class="srv-ov" @onclick="() => _showModal = false"></div>
-    <div class="srv-modal srv-modal-contrato">
+    <div class="srv-modal srv-modal-contrato" @ref="_modalCtrRef">
         <div class="srv-modal-head">
             <div class="srv-modal-ic"><i class="fi fi-rr-file-signature"></i></div>
             <div style="flex:1;min-width:0;">
@@ -1038,10 +1038,10 @@ else
                         {
                             var idx = i; var d = _draftsC[i];
                             <div class="srv-dr-card @(idx == _draftIdxC ? "sel" : "")" @onclick="() => SeleccionarDraftC(idx)">
-                                <div class="srv-dr-fic @(d.Thumb is not null ? "has-thumb" : "")">
+                                <IaFicha Lectura="d.Ia" Css="@("srv-dr-fic" + (d.Thumb is not null ? " has-thumb" : ""))">
                                     @if (d.Thumb is not null) { <img src="@d.Thumb" alt="@d.FileName" /> } else { <i class="fi fi-rr-file"></i> }
-                                </div>
-                                <div class="srv-dr-meta"><div class="srv-dr-nm">@d.FileName</div><div class="srv-dr-sz @(d.IaError ? "err" : "")">@if (d.IaLeyendo) { <span class="spinner-border spinner-border-sm srv-ia-spin" aria-hidden="true"></span> }@(d.IaEstado ?? TamBytes(d.Size))</div></div>
+                                </IaFicha>
+                                <div class="srv-dr-meta"><div class="srv-dr-nm">@d.FileName</div><div class="srv-dr-sz @(d.Ia.Estado == IaEstado.Error ? "err" : "")"><IaRail Lectura="d.Ia" Texto="@TamBytes(d.Size)" /></div></div>
                                 <span class="srv-dr-pill @PillClsC(d.Estado)">@PillTxtC(d.Estado)</span>
                             </div>
                         }
@@ -1051,47 +1051,35 @@ else
             <div class="srv-ctr-main">
             @if (_editId is null && MultiC && ActiveDraftC is { } actc)
             {
-                <div class="srv-dr-active"><i class="fi fi-rr-file"></i> Revisando <b>@actc.FileName</b> &middot; @(_draftIdxC + 1) de @_draftsC.Count <button type="button" class="srv-dr-releer" @onclick="ReleerActivoCAsync">Volver a leer</button> <button type="button" class="srv-dr-discard" @onclick="DescartarDraftC">Descartar</button></div>
+                <div class="srv-dr-active"><i class="fi fi-rr-file"></i> Revisando <b>@actc.FileName</b> &middot; @(_draftIdxC + 1) de @_draftsC.Count <button type="button" class="srv-dr-discard" @onclick="DescartarDraftC">Descartar</button></div>
             }
+            @* Carga con la transicion "la IA consume el documento" (Shared/IaIngesta, PROPUESTAS.md seccion 4): zona de
+               arrastrar, panel de lectura y resumen. Mismo componente y proceso que Nueva poliza. *@
             @if (_editId is null)
             {
-                <div class="sp-ocr" style="margin-bottom:12px;">
-                    <label class="sp-ocr-up">
-                        <i class="fi fi-rr-upload"></i>
-                        <span>@(MultiC ? "Agregar mas PDF" : "Cargar PDF (uno o varios)")</span>
-                        <InputFile OnChange="OnFilesSelectedC" accept=".pdf,image/*" multiple />
-                    </label>
-                    @if (!MultiC && _draftsC.Count == 1)
-                    {
-                        var d0 = _draftsC[0];
-                        <div class="sp-ocr-msg ok">1 PDF: @d0.FileName (se adjunta al crear)</div>
-                        @* Estado de la IA con 1 solo PDF (antes no se pintaba en ningun lado: ni "leyendo" ni el error). *@
-                        @if (!string.IsNullOrEmpty(d0.IaEstado))
-                        {
-                            <div class="sp-ocr-msg @(d0.IaLeyendo ? "busy" : d0.IaError ? "err" : "ok")" role="status">@if (d0.IaLeyendo) { <span class="spinner-border spinner-border-sm srv-ia-spin" aria-hidden="true"></span> }@d0.IaEstado</div>
-                        }
-                    }
+                <div class="iai-zona">
+                    <IaDrop Compacto="@(_draftsC.Count > 0)" Que="los contratos" OnChange="OnFilesSelectedC"
+                            Sub="La IA lee cada PDF y llena el contrato por ti: contratista, NIT, número, valores y vigencia. Puedes subir varios: cada uno queda como borrador para revisar." />
                     <div class="srv-ia-ctrl">
                         <label class="srv-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
-                        @if (_draftsC.Any(d => d.Estado != DraftEstadoC.Listo)) { <button type="button" class="srv-ia-btn" @onclick="LeerTodosCAsync">Leer todos con IA</button> }
+                        @if (_draftsC.Any(d => d.Estado != DraftEstadoC.Listo && d.Ia.Estado is IaEstado.Ninguno or IaEstado.Pendiente)) { <button type="button" class="srv-ia-btn" @onclick="LeerTodosCAsync">Leer todos con IA</button> }
                         @if (_iaTokensC > 0) { <span class="srv-ia-tok">IA: @FmtTok(_iaTokensC)</span> }
                     </div>
                 </div>
+                @if (ActiveDraftC is { } adc)
+                {
+                    <IaPanel Lectura="adc.Ia" FileName="@adc.FileName" Thumb="@adc.Thumb" Doc="del contrato" OnReleer="ReleerActivoCAsync" />
+                }
             }
             else
             {
-                <div class="sp-ocr" style="margin-bottom:12px;">
-                    <label class="sp-ocr-up">
-                        @if (_ocrCBusy) { <span class="spinner-border spinner-border-sm srv-ia-spin" aria-hidden="true"></span> } else { <i class="fi fi-rr-upload"></i> }
-                        <span>@(_ocrCBusy ? "Leyendo contrato con IA..." : "Cargar PDF y extraer (IA)")</span>
-                        <InputFile OnChange="OnOcrContrato" accept=".pdf,image/*" disabled="@_ocrCBusy" />
-                    </label>
-                    @if (!string.IsNullOrEmpty(_ocrCMsg)) { <div class="sp-ocr-msg @_ocrCMsgCls">@_ocrCMsg</div> }
-                </div>
-            }
-            @if (_editId is null && ActiveDraftC is { IaDudosos: { Count: > 0 } } adc)
-            {
-                <div class="srv-ia-warn">Revisa estos campos (lectura dudosa de la IA): <b>@string.Join(", ", adc.IaDudosos!)</b></div>
+                @if (!OcrDocCLeyendo)
+                {
+                    <div class="iai-zona">
+                        <IaDrop Compacto="true" Multiple="false" TituloCompacto="Actualizar desde un PDF" RestoCompacto="la IA relee el contrato y completa lo que falte" OnChange="OnOcrContrato" />
+                    </div>
+                }
+                <IaPanel Lectura="_ocrDocC" FileName="@_ocrDocCNombre" Doc="del contrato" />
             }
             <div class="srv-sec">Contratista (de Terceros)</div>
             <div class="srv-grid">
@@ -1099,23 +1087,27 @@ else
                     <label class="srv-lbl">Contratista * <span style="font-weight:400;color:var(--propia-text-muted);">(busca en el Directorio o crea uno nuevo)</span></label>
                     <SelectorPersona Jwt="@_jwt" Seleccionada="_contratistaSel" SeleccionadaChanged="OnContratistaSel"
                                      PermiteEmpresa="true" Placeholder="Buscar en Terceros por nombre, NIT o CC..." />
-                    <input class="srv-input @ClsDudosoC("contratista")" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
+                    <input class="srv-input @ClsDudosoC("contratista")" data-iai="contratista" style="margin-top:6px;" @bind="_f.Proveedor" @bind:event="oninput" placeholder="Nombre / razón social (se completa al elegirlo)" />
                 </div>
                 <div>
                     <label class="srv-lbl">NIT o CC</label>
-                    <input class="srv-input @ClsDudosoC("nit")" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
+                    <input class="srv-input @ClsDudosoC("nit")" data-iai="nit" @bind="_f.Nit" @bind:event="oninput" placeholder="NIT o documento del contratista" />
                 </div>
                 <div>
                     <label class="srv-lbl">Teléfono</label>
-                    <input class="srv-input" @bind="_f.TelefonoContratista" @bind:event="oninput" placeholder="Teléfono del contratista" />
+                    <input class="srv-input @ClsDudosoC("telefono_contratista")" data-iai="telefono_contratista" @bind="_f.TelefonoContratista" @bind:event="oninput" placeholder="Teléfono del contratista" />
                 </div>
                 <div>
                     <label class="srv-lbl">Correo</label>
-                    <input class="srv-input" @bind="_f.CorreoContratista" @bind:event="oninput" placeholder="Correo del contratista" />
+                    <input class="srv-input @ClsDudosoC("correo_contratista")" data-iai="correo_contratista" @bind="_f.CorreoContratista" @bind:event="oninput" placeholder="Correo del contratista" />
                 </div>
-                <div class="srv-col-full">
+                <div>
                     <label class="srv-lbl">Dirección</label>
-                    <input class="srv-input" @bind="_f.DireccionContratista" @bind:event="oninput" placeholder="Dirección del contratista" />
+                    <input class="srv-input @ClsDudosoC("direccion_contratista")" data-iai="direccion_contratista" @bind="_f.DireccionContratista" @bind:event="oninput" placeholder="Dirección del contratista" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Representante legal</label>
+                    <input class="srv-input @ClsDudosoC("representante_legal")" data-iai="representante_legal" @bind="_f.RepresentanteLegal" @bind:event="oninput" placeholder="Representante legal del contratista" />
                 </div>
             </div>
 
@@ -1158,18 +1150,22 @@ else
                 }
                 <div>
                     <label class="srv-lbl">Tipo de contrato</label>
-                    <select class="srv-input" @bind="_f.TipoContrato">
+                    <select class="srv-input @ClsDudosoC("tipo_contrato")" data-iai="tipo_contrato" @bind="_f.TipoContrato">
                         <option value="">- Sin especificar -</option>
                         @foreach (var t in OpcionesSisC("tipocontrato")) { <option value="@t">@t</option> }
                     </select>
                 </div>
                 <div>
                     <label class="srv-lbl">Número de contrato</label>
-                    <input class="srv-input @ClsDudosoC("numero_contrato")" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
+                    <input class="srv-input @ClsDudosoC("numero_contrato")" data-iai="numero_contrato" @bind="_f.NumeroContrato" @bind:event="oninput" placeholder="Consecutivo (opcional)" />
+                </div>
+                <div>
+                    <label class="srv-lbl">Ciudad</label>
+                    <input class="srv-input @ClsDudosoC("ciudad")" data-iai="ciudad" @bind="_f.Ciudad" @bind:event="oninput" placeholder="Ciudad del contrato" />
                 </div>
                 <div>
                     <label class="srv-lbl">Valor del contrato (COP)</label>
-                    <input class="srv-input @ClsDudosoC("valor_total")" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_total")" data-iai="valor_total" type="number" step="any" @bind="_f.ValorTotal" placeholder="0" />
                 </div>
                 @if (_editId is not null)
                 {
@@ -1183,26 +1179,26 @@ else
                 }
                 <div>
                     <label class="srv-lbl">Forma de pago (cuotas)</label>
-                    <input class="srv-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cantidad de cuotas" />
+                    <input class="srv-input @ClsDudosoC("forma_pago_cuotas")" data-iai="forma_pago_cuotas" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cantidad de cuotas" />
                 </div>
                 <div>
                     <label class="srv-lbl">Pago mensual</label>
-                    <label class="srv-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label>
+                    <label class="srv-check" data-iai="pago_mensual" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label>
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de inicio</label>
-                    <input class="srv-input @ClsDudosoC("fecha_inicio")" type="date" @bind="_f.Inicio" />
+                    <input class="srv-input @ClsDudosoC("fecha_inicio")" data-iai="fecha_inicio" type="date" @bind="_f.Inicio" />
                 </div>
                 <div>
                     <label class="srv-lbl">Fecha de finalizacion</label>
-                    <input class="srv-input @ClsDudosoC("fecha_fin")" type="date" @bind="_f.Fin" />
+                    <input class="srv-input @ClsDudosoC("fecha_fin")" data-iai="fecha_fin" type="date" @bind="_f.Fin" />
                 </div>
                 <div class="srv-col-full">
-                    <label class="srv-check"><input type="checkbox" @bind="_f.RenovacionAutomatica" /> Tiene cláusula de renovación automática</label>
+                    <label class="srv-check" data-iai="renovacion_automatica"><input type="checkbox" @bind="_f.RenovacionAutomatica" /> Tiene cláusula de renovación automática</label>
                 </div>
                 <div class="srv-col-full">
                     <label class="srv-lbl">Observaciones</label>
-                    <textarea class="srv-input @ClsDudosoC("objeto")" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
+                    <textarea class="srv-input @ClsDudosoC("objeto")" data-iai="objeto" rows="2" @bind="_f.Observaciones" @bind:event="oninput" placeholder="Ej. Renovación automática con 30 días de aviso."></textarea>
                 </div>
             </div>
 
@@ -1242,7 +1238,7 @@ else
                 </div>
                 <div>
                     <label class="srv-lbl">Valor mensual (COP)</label>
-                    <input class="srv-input @ClsDudosoC("valor_mensual")" type="number" step="any" @bind="_f.Valor" placeholder="0" />
+                    <input class="srv-input @ClsDudosoC("valor_mensual")" data-iai="valor_mensual" type="number" step="any" @bind="_f.Valor" placeholder="0" />
                 </div>
                 <div class="srv-note">Estos 3 campos no estan en la maqueta; se conservan a peticion porque hoy solo se capturan aqui.</div>
             </div>
@@ -2318,6 +2314,8 @@ else
         public string? TelefonoContratista { get; set; }
         public string? CorreoContratista { get; set; }
         public string? DireccionContratista { get; set; }
+        public string? RepresentanteLegal { get; set; }
+        public string? Ciudad { get; set; }
         public DateTime? Inicio { get; set; } = DateTime.Today;
         public DateTime? Fin { get; set; }
         public decimal? Valor { get; set; }
@@ -2380,6 +2378,14 @@ else
             }
             catch { }
         }
+        // Modal del contrato: soltar PDF en cualquier parte (velo "Suelta para que la IA los lea") y, tras una lectura
+        // del documento que se esta viendo, iluminar en secuencia los campos que lleno la IA (Shared/IaIngesta).
+        if (_showModal)
+        {
+            if (!_modalCtrWired) { _modalCtrWired = true; try { await Js.InvokeVoidAsync("propiaIai.wireDrop", _modalCtrRef); } catch { } }
+            if (_resaltarC is { } rz) { _resaltarC = null; try { await Js.InvokeVoidAsync("propiaIai.resaltar", _modalCtrRef, rz.Aplicadas, rz.Dudosas); } catch { } }
+        }
+        else _modalCtrWired = false;
         // Barra de scroll horizontal superior sincronizada con la tabla (solo en la lista de contratos).
         if (EsContratos && _vistaC != "tarjetas" && _jwt is not null && _contratos.Count > 0)
         {
@@ -3212,9 +3218,6 @@ else
 
     private void AbrirCargarRecibo() { _fr = new(); _spError = null; _ocrMsg = null; _spReciboModal = true; }
 
-    // ---- OCR IA: cargar el PDF del contrato y prellenar el formulario (perfil "contrato") ----
-    private bool _ocrCBusy;
-    private string? _ocrCMsg; private string _ocrCMsgCls = "ok";
 
     // ---- Fase 1: carga multiple de contratos (varios PDF en el mismo modal "Nuevo contrato") ----
     // Mismo patron que Seguros: cada PDF es un "draft" con su propio Form + bytes + estado; se revisan y
@@ -3232,11 +3235,8 @@ else
         public Guid? CreatedId;
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
-        public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
-        public bool IaLeyendo;     // la IA esta leyendo este PDF ahora (spinner)
-        public bool IaError;       // la ultima lectura fallo (IaEstado trae el detalle; se pinta en rojo)
-        public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
-        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
+        public IaLectura Ia = new();   // transicion "la IA consume el documento" (Shared/IaIngesta), compartida con Seguros
+        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en ambar
     }
     private List<ContratoDraft> _draftsC = new();
     private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
@@ -3282,24 +3282,20 @@ else
         var primero = _draftsC.Count;
         _draftsC.AddRange(nuevos);
         SeleccionarDraftC(primero);
-        StateHasChanged();   // pinta las tarjetas con icono de inmediato; la miniatura llega luego
-        foreach (var d in nuevos)
+        // Como la replica: todos quedan "En cola" (o "aun no se ha leido" con la IA apagada) DE INMEDIATO y la lectura
+        // arranca ya; las miniaturas se generan en paralelo y no la retrasan.
+        foreach (var d in nuevos) { if (_iaAuto) d.Ia.EnCola(); else d.Ia.Pendiente(); }
+        StateHasChanged();
+        _ = GenerarThumbsCAsync(nuevos);
+        if (_iaAuto) foreach (var d in nuevos) await ExtraerYLlenarDraftCAsync(d);
+    }
+
+    private async Task GenerarThumbsCAsync(List<ContratoDraft> lista)
+    {
+        foreach (var d in lista)
         {
             await GenerarThumbCAsync(d);
-            StateHasChanged();
-        }
-        if (_iaAuto)
-        {
-            foreach (var d in nuevos)
-            {
-                await ExtraerYLlenarDraftCAsync(d);   // arnes: pdf.js/vision -> DeepSeek -> llena el form
-                StateHasChanged();
-            }
-        }
-        else
-        {
-            foreach (var d in nuevos) { d.IaEstado = "Pendiente (Leer con IA)"; }
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -3410,7 +3406,8 @@ else
                 NumeroContrato: Limpio(_f.NumeroContrato), TipoContrato: _f.TipoContrato, Categoria: _f.Categoria,
                 ValorTotal: _f.ValorTotal, FormaPagoCuotas: _f.FormaPagoCuotas, PagoMensual: _f.PagoMensual,
                 AsociadoTipo: asocTipo, AsociadoId: asocId,
-                TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista)));
+                TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista),
+                RepresentanteLegal: Limpio(_f.RepresentanteLegal), Ciudad: Limpio(_f.Ciudad)));
         if (!resp.IsSuccessStatusCode) return (null, await MensajeErrorAsync(resp));
         Guid? id = null;
         try { id = (await resp.Content.ReadFromJsonAsync<ContratoServicioDto>())?.Id; } catch { }
@@ -3448,171 +3445,116 @@ else
         finally { _busy = false; }
     }
 
-    // Boton "Cargar PDF y extraer (IA)": SOLO DeepSeek. El texto lo saca pdf.js (local, capa de texto del
-    // PDF; sin OCR de IA) y el Agente Documental (DeepSeek) devuelve los campos. No usa Gemini/Azure.
+    // "Actualizar desde un PDF" (edicion): la misma transicion que Nuevo contrato (Shared/IaIngesta). La IA relee el
+    // contrato y completa el formulario; el humano revisa y guarda.
+    private IaLectura? _ocrDocC;
+    private string _ocrDocCNombre = "";
+    private bool OcrDocCLeyendo => _ocrDocC?.Estado is IaEstado.Leyendo or IaEstado.Cola;
     private async Task OnOcrContrato(InputFileChangeEventArgs e)
     {
         var file = e.File;
         if (file is null) return;
-        _ocrCBusy = true; _ocrCMsg = null;
+        _ocrDocC = new IaLectura(); _ocrDocCNombre = file.Name;
+        byte[] bytes;
         try
         {
-            byte[] bytes;
-            await using (var s = file.OpenReadStream(15 * 1024 * 1024))
-            {
-                using var msb = new MemoryStream();
-                await s.CopyToAsync(msb);
-                bytes = msb.ToArray();
-            }
-            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
-            if (!mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                _ocrCMsg = "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.";
-                _ocrCMsgCls = "err"; return;
-            }
-            var b64 = Convert.ToBase64String(bytes);
-            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, mime);
-            HttpResponseMessage resp;
-            if (!string.IsNullOrWhiteSpace(texto))
-            {
-                resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
-            }
-            else
-            {
-                // Escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas.
-                _ocrCMsg = "PDF escaneado: leyendo imagenes con IA..."; _ocrCMsgCls = "ok"; StateHasChanged();
-                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is null || ras.Paginas.Length == 0) { _ocrCMsg = "No se pudo leer el PDF."; _ocrCMsgCls = "err"; return; }
-                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = ras.Paginas });
-            }
-            if (!resp.IsSuccessStatusCode)
-            {
-                _ocrCMsg = "No se pudo leer el documento " + await DetalleErrorIaAsync(resp);
-                _ocrCMsgCls = "err"; return;
-            }
-            var r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
-            if (r?.Campos is null)
-            {
-                _ocrCMsg = "La IA no devolvio datos. Completa los campos manualmente.";
-                _ocrCMsgCls = "err"; return;
-            }
-            var aplicados = AplicarCamposContrato(r.Campos, _f);
-            _ocrCMsg = aplicados > 0
-                ? $"Documento leido con el Agente Documental (DeepSeek): {aplicados} campo(s) prellenado(s). Revisa y confirma."
-                : "El Agente Documental leyo el documento pero no encontro datos de contrato (contratista, NIT, valor, vigencia). Completa los campos manualmente.";
-            _ocrCMsgCls = aplicados > 0 ? "ok" : "err";
+            await using var s = file.OpenReadStream(15 * 1024 * 1024);
+            using var msb = new MemoryStream();
+            await s.CopyToAsync(msb);
+            bytes = msb.ToArray();
         }
-        catch (TaskCanceledException) { _ocrCMsg = "Error leyendo el documento: la IA tardo demasiado (tiempo agotado). Intenta de nuevo."; _ocrCMsgCls = "err"; }
-        catch (Exception ex) { _ocrCMsg = "Error leyendo el documento: " + ex.Message; _ocrCMsgCls = "err"; }
-        finally { _ocrCBusy = false; }
+        catch (Exception ex) { _ocrDocC.Fallo("No se pudo leer el archivo: " + ex.Message); return; }
+        var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
+        var res = await IaIngestaLector.LeerAsync(_ocrDocC, bytes, mime, file.Name, "contrato", Js, Auth, AuthLong,
+            campos => AplicarCamposContrato(campos, _f), EtiquetaCampoContrato,
+            "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.");
+        if (res is not null) { _ocrDudosasC = res.Dudosas.Count > 0 ? res.Dudosas.ToHashSet() : null; PedirResaltadoC(res); }
+        StateHasChanged();
     }
 
-    // Mapea los campos del perfil "contrato" (extraccion IA) al formulario f. best-effort; el humano confirma.
-    // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de contrato).
-    private int AplicarCamposContrato(List<OcrIaCampo> campos, Form f)
+    // Mapea los campos del perfil "contrato" (ya normalizados en el servidor: NIT sin puntos, montos y fechas ISO,
+    // si/no = true/false) al formulario f. Devuelve las CLAVES aplicadas (las que se resaltan y cuentan en el resumen).
+    private List<string> AplicarCamposContrato(IReadOnlyList<IaCampo> campos, Form f)
     {
-        var n = 0;
+        var ok = new List<string>();
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
         string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
-        var contratista = Val("contratista"); if (!string.IsNullOrWhiteSpace(contratista)) { f.Proveedor = contratista!; n++; }
-        var nit = Val("nit"); if (!string.IsNullOrWhiteSpace(nit)) { f.Nit = nit; n++; }
-        var num = Val("numero_contrato"); if (!string.IsNullOrWhiteSpace(num)) { f.NumeroContrato = num; n++; }
-        var contacto = Val("contacto"); if (!string.IsNullOrWhiteSpace(contacto)) { f.Contacto = contacto; n++; }
-        var vt = Val("valor_total");
-        if (!string.IsNullOrWhiteSpace(vt) && decimal.TryParse(vt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvt)) { f.ValorTotal = vvt; n++; }
-        var vm = Val("valor_mensual");
-        if (!string.IsNullOrWhiteSpace(vm) && decimal.TryParse(vm, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vvm)) { f.Valor = vvm; n++; }
-        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { f.Inicio = fdi; n++; }
-        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { f.Fin = fdf; n++; }
-        var objeto = Val("objeto");
-        if (!string.IsNullOrWhiteSpace(objeto))
-        {
-            f.Observaciones = string.IsNullOrWhiteSpace(f.Observaciones) ? objeto : $"{objeto}\n{f.Observaciones}";
-            n++;
-        }
-        return n;
+        bool Txt(string k, Action<string> set) { var v = Val(k); if (string.IsNullOrWhiteSpace(v)) return false; set(v.Trim()); ok.Add(k); return true; }
+        bool Dec(string k, Action<decimal> set) { var v = Val(k); if (!decimal.TryParse(v, System.Globalization.NumberStyles.Number, ci, out var d)) return false; set(d); ok.Add(k); return true; }
+        bool Fec(string k, Action<DateTime> set) { var v = Val(k); if (!DateTime.TryParseExact(v, "yyyy-MM-dd", ci, System.Globalization.DateTimeStyles.None, out var d)) return false; set(d); ok.Add(k); return true; }
+        bool SiNo(string k, Action<bool> set) { var v = Val(k); if (v is not ("true" or "false")) return false; set(v == "true"); ok.Add(k); return true; }
+
+        Txt("contratista", v => f.Proveedor = v);
+        Txt("nit", v => f.Nit = v);
+        Txt("representante_legal", v => f.RepresentanteLegal = v);
+        Txt("direccion_contratista", v => f.DireccionContratista = v);
+        Txt("telefono_contratista", v => f.TelefonoContratista = v);
+        Txt("correo_contratista", v => f.CorreoContratista = v);
+        Txt("ciudad", v => f.Ciudad = v);
+        Txt("numero_contrato", v => f.NumeroContrato = v);
+        // Tipo de contrato es una lista de la copropiedad: solo se elige si el texto coincide con una opcion.
+        var tc = Val("tipo_contrato");
+        if (!string.IsNullOrWhiteSpace(tc) && OpcionCoincidente(OpcionesSisC("tipocontrato"), tc) is { } op) { f.TipoContrato = op; ok.Add("tipo_contrato"); }
+        Dec("valor_total", v => f.ValorTotal = v);
+        Dec("valor_mensual", v => f.Valor = v);
+        Dec("forma_pago_cuotas", v => f.FormaPagoCuotas = (int)v);
+        SiNo("pago_mensual", v => f.PagoMensual = v);
+        SiNo("renovacion_automatica", v => f.RenovacionAutomatica = v);
+        Fec("fecha_inicio", v => f.Inicio = v);
+        Fec("fecha_fin", v => f.Fin = v);
+        Txt("objeto", v => f.Observaciones = string.IsNullOrWhiteSpace(f.Observaciones) ? v : $"{v}\n{f.Observaciones}");
+        return ok;
     }
 
-    // Fase 2 B1 (SOLO DeepSeek): el arnes pasa el TEXTO del PDF (pdf.js, local) al Agente Documental, que
-    // devuelve los campos y prellenan el formulario de ESTE draft. No usa Gemini/Azure. El humano revisa.
+    // Opcion de una lista cuyo texto coincide con el leido por la IA (sin mayusculas ni tildes; contiene en un sentido u otro).
+    private static string? OpcionCoincidente(IEnumerable<string> opciones, string valor)
+    {
+        static string N(string s) => new string(s.Normalize(System.Text.NormalizationForm.FormD)
+            .Where(ch => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(ch))
+            .ToArray()).ToLowerInvariant();
+        var v = N(valor);
+        if (v.Length < 3) return null;
+        return opciones.FirstOrDefault(o => N(o) == v) ?? opciones.FirstOrDefault(o => N(o).Length >= 4 && (v.Contains(N(o)) || N(o).Contains(v)));
+    }
+
+    // Lectura de UN borrador con el Agente Documental (Shared/IaIngesta: mismo proceso y transicion que Seguros).
     private async Task ExtraerYLlenarDraftCAsync(ContratoDraft d)
     {
-        if (d.Bytes.Length == 0 || !d.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase)) return;
-        try
+        var res = await IaIngestaLector.LeerAsync(d.Ia, d.Bytes, d.Mime, d.FileName, "contrato", Js, Auth, AuthLong,
+            campos => AplicarCamposContrato(campos, d.F), EtiquetaCampoContrato,
+            "La IA solo lee PDF con texto. Este archivo queda adjunto: llena los campos a mano.");
+        if (res is not null)
         {
-            // Pintar YA el estado "leyendo" (spinner): sin este render la UI quedaba muda hasta el final.
-            d.IaLeyendo = true; d.IaError = false;
-            d.IaEstado = "Leyendo con IA...";
-            StateHasChanged();
-            var b64 = Convert.ToBase64String(d.Bytes);
-            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
-            var notaPag = "";
-            string[]? imgs = null;   // null = ruta texto; no-null = ruta vision (escaneado)
-            if (string.IsNullOrWhiteSpace(texto))
-            {
-                // PDF escaneado (sin texto): rasterizar para DeepSeek VISION (deepseek-v4-flash).
-                d.IaEstado = "Escaneado: leyendo imagenes con IA...";
-                StateHasChanged();
-                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; d.IaError = true; return; }
-                if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
-                imgs = ras.Paginas;
-            }
-            // 1 reintento automatico si la IA no devuelve datos (la vision a veces falla la 1a pasada).
-            OcrIaResp? r = null;
-            for (var intento = 1; intento <= 2; intento++)
-            {
-                var resp = imgs is not null
-                    ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Imagenes = imgs })
-                    : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "contrato", Texto = texto });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = "Error IA " + await DetalleErrorIaAsync(resp); d.IaError = true; return; }
-                r = await resp.Content.ReadFromJsonAsync<OcrIaResp>();
-                if (r?.Campos is { Count: > 0 }) break;
-                if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
-            }
-            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
-            var aplicados = AplicarCamposContrato(r.Campos, d.F);
-            var bajas = r.Campos.Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor)).ToList();
-            var dudosos = bajas.Select(c => EtiquetaCampoContrato(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
-            d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
-            var claves = bajas.Select(c => c.Nombre).ToHashSet();
-            d.IaClavesDudosas = claves.Count > 0 ? claves : null;
-            var tok = r.InputTokens + r.OutputTokens;
-            _iaTokensC += tok;
-            d.IaEstado = aplicados > 0
-                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "") + (tok > 0 ? $" · {FmtTok(tok)}" : "") + notaPag
-                : "La IA no encontro datos de contrato" + notaPag;
+            d.IaClavesDudosas = res.Dudosas.Count > 0 ? res.Dudosas.ToHashSet() : null;
+            _iaTokensC += res.Tokens;
+            if (ReferenceEquals(d, ActiveDraftC)) PedirResaltadoC(res);
         }
-        catch (TaskCanceledException) { d.IaEstado = "Error IA: la lectura tardo demasiado (tiempo agotado). Intenta de nuevo."; d.IaError = true; }
-        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; d.IaError = true; }
-        finally { d.IaLeyendo = false; }
+        // Solo el documento que se esta viendo re-renderiza el modal (sus campos cambiaron); los demas ya
+        // actualizaron su tarjeta por su cuenta (IaRail/IaFicha).
+        if (ReferenceEquals(d, ActiveDraftC) || res is null) StateHasChanged();
     }
 
-    // Detalle legible del fallo de /api/ocr/extraer-agente ({ error = "..." }) para mostrarlo tal cual, en vez
-    // de un "IA no disponible" generico que no dice nada (caso real en prod: fallaba sin ningun mensaje).
-    private static async Task<string> DetalleErrorIaAsync(HttpResponseMessage resp)
-    {
-        string? det = null;
-        try { det = (await resp.Content.ReadFromJsonAsync<OcrError>())?.Error; } catch { /* cuerpo no JSON (502/504 del proxy) */ }
-        det = det switch
-        {
-            "agente_documental_no_disponible" => "el Agente Documental no esta activo en esta copropiedad (IA > Agentes).",
-            "texto_o_imagenes_requerido" => "el PDF no tiene texto ni paginas legibles.",
-            null or "" => resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                ? "la sesion vencio; recarga la pagina."
-                : (resp.ReasonPhrase ?? "sin detalle del servidor."),
-            _ => det
-        };
-        return $"({(int)resp.StatusCode}): {det}";
-    }
+    // Los campos que lleno la IA se iluminan EN SECUENCIA despues del render que los muestra (OnAfterRenderAsync).
+    private IaResultado? _resaltarC;
+    private ElementReference _modalCtrRef;
+    private bool _modalCtrWired;
+    private void PedirResaltadoC(IaResultado r) => _resaltarC = r;
 
-    // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
-    private string ClsDudosoC(string clave) => (ActiveDraftC?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+    // Devuelve la clase "ia-dudoso" si el campo se leyo con baja confianza (borrador activo, o "Actualizar desde un PDF").
+    private string ClsDudosoC(string clave)
+        => ((_editId is null ? ActiveDraftC?.IaClavesDudosas : _ocrDudosasC)?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+    private HashSet<string>? _ocrDudosasC;
 
+    // Etiqueta de cada clave del perfil "contrato" (chips de la transicion y del resumen).
     private static string? EtiquetaCampoContrato(string clave) => clave switch
     {
         "contratista" => "Contratista", "nit" => "NIT", "numero_contrato" => "N contrato",
         "objeto" => "Objeto", "valor_total" => "Valor total", "valor_mensual" => "Valor mensual",
-        "contacto" => "Contacto", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin", _ => null
+        "contacto" => "Contacto", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin",
+        "representante_legal" => "Representante legal", "direccion_contratista" => "Dirección",
+        "telefono_contratista" => "Teléfono", "correo_contratista" => "Correo", "ciudad" => "Ciudad",
+        "tipo_contrato" => "Tipo de contrato", "forma_pago_cuotas" => "Cuotas", "pago_mensual" => "Pago mensual",
+        "renovacion_automatica" => "Renovación automática", _ => null
     };
 
     // Reintento de UN draft: vuelve a leerlo con IA (p.ej. si quedo mal o fallo).
@@ -3627,16 +3569,10 @@ else
     // Lee con IA TODOS los drafts no leidos. Sirve de "leer manual" (IA automatica apagada) y de reintento.
     private async Task LeerTodosCAsync()
     {
-        foreach (var d in _draftsC)
-        {
-            if (d.Estado == DraftEstadoC.Listo) continue;
-            await ExtraerYLlenarDraftCAsync(d);
-            StateHasChanged();
-        }
+        var cola = _draftsC.Where(d => d.Estado != DraftEstadoC.Listo).ToList();
+        foreach (var d in cola) d.Ia.EnCola();
+        foreach (var d in cola) await ExtraerYLlenarDraftCAsync(d);
     }
-    private sealed record OcrIaResp(bool Ok, string? Proveedor, string? Modelo, List<OcrIaCampo>? Campos, string? PdfOrigenKey = null, int InputTokens = 0, int OutputTokens = 0);
-    private sealed record OcrIaCampo(string Nombre, string? Valor, double? Confianza);
-    private sealed record RasterResult(string[] Paginas, int Total);
     private int _iaTokensC;   // tokens acumulados de IA en este modal (transparencia de costo)
     private static string FmtTok(int t) => t >= 1000 ? (t / 1000.0).ToString("0.#") + "k tok" : t + " tok";
 
@@ -3956,7 +3892,7 @@ else
     private async Task AbrirModal(ContratoServicioDto? c)
     {
         _modalError = null;
-        _ocrCMsg = null;
+        _ocrDocC = null; _ocrDudosasC = null;
         LimpiarDraftsC();
         _contratoAdjuntos = new();
         _comentarios = new();
@@ -3983,6 +3919,7 @@ else
             {
                 Tipo = c.Tipo, Proveedor = c.Proveedor, Nit = c.NitProveedor, Contacto = c.Contacto,
                 TelefonoContratista = c.TelefonoContratista, CorreoContratista = c.CorreoContratista, DireccionContratista = c.DireccionContratista,
+                RepresentanteLegal = c.RepresentanteLegal, Ciudad = c.Ciudad,
                 Inicio = c.FechaInicio.ToDateTime(TimeOnly.MinValue),
                 Fin = c.FechaFin?.ToDateTime(TimeOnly.MinValue),
                 Valor = c.ValorMensual, Dias = c.DiasAnticipacionAlerta, Observaciones = c.Observaciones,
@@ -4129,7 +4066,8 @@ else
                         ValorTotal: _f.ValorTotal, FormaPagoCuotas: _f.FormaPagoCuotas, PagoMensual: _f.PagoMensual,
                         AsociadoTipo: asocTipo, AsociadoId: asocId, LimpiarAsociado: asocId is null,
                         ProveedorPersonaId: _f.ProveedorPersonaId, ProveedorEmpresaId: _f.ProveedorEmpresaId,
-                        TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista)));
+                        TelefonoContratista: Limpio(_f.TelefonoContratista), CorreoContratista: Limpio(_f.CorreoContratista), DireccionContratista: Limpio(_f.DireccionContratista),
+                        RepresentanteLegal: Limpio(_f.RepresentanteLegal) ?? "", Ciudad: Limpio(_f.Ciudad) ?? ""));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
             // Alta con 1 solo PDF (sin columna): adjuntar ese documento al contrato recien creado.

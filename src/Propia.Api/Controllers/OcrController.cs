@@ -111,43 +111,48 @@ public class OcrController : ControllerBase
             .FirstOrDefaultAsync(ct);
         if (agentId is null) return BadRequest(new { error = "agente_documental_no_disponible" });
 
-        // Prompt de EXTRACCION estricto (override del prompt del agente SOLO para esta llamada).
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Eres un extractor de datos de documentos. Te doy un documento (texto o imagenes) y debes responder");
-        sb.AppendLine("UNICAMENTE un objeto JSON. Por cada clave devuelve un objeto {\"valor\": <dato o null>, \"conf\": <0.0 a 1.0>}.");
-        sb.AppendLine("conf = que tan seguro estas de haber leido bien ese dato (1 = claro y legible; 0.5 = dudoso o borroso;");
-        sb.AppendLine("bajo = conjetura). Usa null en valor si el dato no aparece; no inventes.");
-        sb.AppendLine("No agregues explicaciones ni bloques de codigo: responde solo el JSON. Claves esperadas:");
-        foreach (var c in campos) { sb.AppendLine($"- \"{c.Nombre}\": {c.Descripcion} (tipo {c.Tipo})"); }
-        sb.AppendLine("Para montos devuelve solo el numero sin simbolos ni separadores de miles. Para fechas usa YYYY-MM-DD.");
+        // Nombre de la copropiedad: el contratista / la aseguradora NUNCA es ella (la IA a veces la toma como tal).
+        string? copropiedad = null;
+        if (Guid.TryParse(User.FindFirstValue("tenant_id"), out var tid))
+            copropiedad = await _db.Tenants.AsNoTracking().Where(t => t.Id == tid).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
 
-        List<Application.InfraestructuraIa.AiChatTurn> turns;
-        if (hayImagenes)
-        {
-            // VISION (PDF escaneado): las paginas van como imagenes JPEG en orden; DeepSeek (modelo de vision,
-            // deepseek-v4-flash) lee el texto de las imagenes y devuelve el JSON del perfil. Tope de paginas
-            // para acotar payload/tokens.
-            var imgs = req.Imagenes!
-                .Where(b => !string.IsNullOrWhiteSpace(b))
-                .Take(12)
-                .Select(b => new Application.InfraestructuraIa.AiInboundImage("image/jpeg", b))
-                .ToList();
-            turns = new()
-            {
-                new("user", $"Te entrego {imgs.Count} pagina(s) del documento como imagenes, en orden. " +
-                            "Lee el texto de las imagenes y devuelve UNICAMENTE el JSON con las claves indicadas.", imgs)
-            };
-        }
-        else
-        {
-            var texto = req.Texto!.Length > 60000 ? req.Texto[..60000] : req.Texto;
-            turns = new() { new("user", "TEXTO DEL DOCUMENTO:\n" + texto.Trim()) };
-        }
-        // bearerToken null => BuildToolSpecsAsync corta en seco => completion limpia (sin tools MCP).
-        var res = await _ai.TestChatAsync(agentId.Value, turns, systemPromptOverride: sb.ToString(), ct: ct);
+        // Ruta de lectura. Texto (pdf.js) si es suficiente; VISION si no hay texto o si es POBRE (pocas palabras por
+        // pagina: PDF escaneado con una capa de texto residual). Con vision se adjunta el texto que haya como apoyo.
+        var texto = string.IsNullOrWhiteSpace(req.Texto) ? null : (req.Texto.Length > 60000 ? req.Texto[..60000] : req.Texto).Trim();
+        var imgs = (req.Imagenes ?? new()).Where(b => !string.IsNullOrWhiteSpace(b)).Take(12)
+            .Select(b => new Application.InfraestructuraIa.AiInboundImage("image/jpeg", b)).ToList();
+        var paginas = Math.Max(1, req.Paginas ?? (imgs.Count > 0 ? imgs.Count : 1));
+        var usarVision = imgs.Count > 0 && (texto is null || EsTextoPobre(texto, paginas));
+        List<Application.InfraestructuraIa.AiChatTurn> Contenido(string instruccion) => usarVision
+            ? new() { new("user", $"Te entrego {imgs.Count} pagina(s) del documento como imagenes, en orden. {instruccion}"
+                + (texto is null ? "" : "\nTEXTO EXTRAIDO DEL PDF (incompleto; las imagenes mandan):\n" + texto), imgs) }
+            : new() { new("user", "TEXTO DEL DOCUMENTO:\n" + texto) };
+
+        // 1a pasada: todos los campos del perfil. bearerToken null => sin tools MCP (completion limpia).
+        var perfilKey = (req.Perfil ?? "").Trim().ToLowerInvariant();
+        var res = await _ai.TestChatAsync(agentId.Value,
+            Contenido("Lee el texto de las imagenes y devuelve UNICAMENTE el JSON con las claves indicadas."),
+            systemPromptOverride: PromptExtraccion(perfilKey, campos, copropiedad, null), ct: ct);
         if (!res.Ok) return BadRequest(new { error = res.Error ?? "fallo_agente" });
+        var valores = NormalizarCampos(ParseCamposJson(res.Text, campos), campos);
+        int inTok = res.InputTokens, outTok = res.OutputTokens, pasadas = 1;
 
-        var valores = ParseCamposJson(res.Text, campos);
+        // 2a pasada DIRIGIDA solo a los datos clave que faltaron (contratista/aseguradora, NIT, valores, fechas):
+        // el modelo suele saltarlos cuando estan en una clausula o en la hoja de firmas.
+        var faltan = ClavesFaltantes(perfilKey, valores);
+        if (faltan.Count > 0)
+        {
+            var objetivo = campos.Where(c => faltan.Contains(c.Nombre)).ToList();
+            var res2 = await _ai.TestChatAsync(agentId.Value,
+                Contenido("Busca SOLO los datos indicados y devuelve UNICAMENTE el JSON con esas claves."),
+                systemPromptOverride: PromptExtraccion(perfilKey, objetivo, copropiedad, faltan), ct: ct);
+            if (res2.Ok)
+            {
+                pasadas = 2; inTok += res2.InputTokens; outTok += res2.OutputTokens;
+                foreach (var v in NormalizarCampos(ParseCamposJson(res2.Text, objetivo), objetivo))
+                    if (!valores.Any(x => x.Nombre == v.Nombre)) valores.Add(v);
+            }
+        }
 
         // Origen PDF (opcional): si el modulo manda el PDF en base64, lo guardamos tenant-scoped y
         // devolvemos su key para persistirla al guardar (igual que extraer-ia). No pasa por IA. Best-effort.
@@ -176,10 +181,108 @@ public class OcrController : ControllerBase
             ok = true,
             modelo = "agente",
             pdfOrigenKey,
-            inputTokens = res.InputTokens,
-            outputTokens = res.OutputTokens,
+            inputTokens = inTok,
+            outputTokens = outTok,
+            ruta = usarVision ? "vision" : "texto",
+            pasadas,
             campos = valores.Select(v => new { Nombre = v.Nombre, Valor = v.Valor, Confianza = v.Conf })
         });
+    }
+
+    // Texto "pobre" = pocas palabras por pagina: casi seguro un escaneado con una capa de texto residual
+    // (sellos, numeros de pagina). Por debajo de esto se lee con vision.
+    private const int PalabrasMinPorPagina = 40;
+    private static bool EsTextoPobre(string texto, int paginas)
+        => texto.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length / (double)Math.Max(1, paginas) < PalabrasMinPorPagina;
+
+    /// <summary>Prompt de EXTRACCION (override del prompt del agente SOLO para esta llamada). Formatos colombianos,
+    /// donde buscar cada dato y quien NO es el contratista. soloFaltantes != null = 2a pasada dirigida.</summary>
+    private static string PromptExtraccion(string perfil, IReadOnlyList<CampoObjetivo> campos, string? copropiedad, IReadOnlyCollection<string>? soloFaltantes)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Eres un extractor de datos de documentos colombianos. Te doy un documento (texto o imagenes) y debes responder");
+        sb.AppendLine("UNICAMENTE un objeto JSON. Por cada clave devuelve un objeto {\"valor\": <dato o null>, \"conf\": <0.0 a 1.0>}.");
+        sb.AppendLine("conf = que tan seguro estas de haber leido bien ese dato (1 = claro y legible; 0.5 = dudoso o borroso;");
+        sb.AppendLine("bajo = conjetura). Usa null en valor si el dato no aparece; no inventes.");
+        sb.AppendLine("No agregues explicaciones ni bloques de codigo: responde solo el JSON.");
+        if (soloFaltantes is not null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("En una primera lectura NO se encontraron estos datos. Revisa el documento COMPLETO con cuidado:");
+            sb.AppendLine("encabezado, cada clausula (OBJETO, VALOR, PLAZO, VIGENCIA, FORMA DE PAGO, PARTES), la hoja de firmas,");
+            sb.AppendLine("los sellos y los anexos (RUT, camara de comercio, caratula de la poliza). Devuelve SOLO estas claves.");
+        }
+        sb.AppendLine();
+        sb.AppendLine("DONDE BUSCAR: los datos estan en el encabezado o caratula, en las clausulas, en la hoja de firmas y en los anexos.");
+        sb.AppendLine("FORMATOS (Colombia):");
+        sb.AppendLine("- Fechas: devuelvelas como YYYY-MM-DD aunque esten en texto (\"1 de enero de 2026\" -> 2026-01-01;");
+        sb.AppendLine("  \"a los quince (15) dias del mes de marzo de 2025\" -> 2025-03-15).");
+        sb.AppendLine("- Montos: solo el numero, sin simbolos. En Colombia el punto separa miles y la coma los decimales:");
+        sb.AppendLine("  \"$ 36.000.000,00\" -> 36000000. Si el valor esta en letras y en numeros, usa el de numeros.");
+        sb.AppendLine("- NIT o cedula: tal como aparece, con el digito de verificacion (\"900.456.789-1\").");
+        sb.AppendLine("- Si/No: devuelve \"si\" o \"no\". Numeros enteros: solo la cifra.");
+        if (perfil == "contrato")
+        {
+            sb.AppendLine("PARTES: el CONTRATANTE es la copropiedad (conjunto, edificio, propiedad horizontal) que recibe el servicio.");
+            sb.AppendLine("El CONTRATISTA es quien presta el servicio, ejecuta la obra o vende: NUNCA es la copropiedad.");
+            if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"La copropiedad de este documento es \"{copropiedad}\": NO es el contratista.");
+        }
+        else if (perfil == "poliza")
+        {
+            sb.AppendLine("PARTES: la ASEGURADORA es la compania de seguros que expide la poliza. El TOMADOR y el ASEGURADO suelen ser");
+            sb.AppendLine("la copropiedad. El CORREDOR o intermediario es una agencia distinta de la aseguradora.");
+            if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"La copropiedad es \"{copropiedad}\": NO es la aseguradora.");
+        }
+        sb.AppendLine();
+        sb.AppendLine("Claves esperadas:");
+        foreach (var c in campos) sb.AppendLine($"- \"{c.Nombre}\": {c.Descripcion} (tipo {c.Tipo})");
+        return sb.ToString();
+    }
+
+    /// <summary>Normaliza en el SERVIDOR (no se confia en el prompt): NIT sin puntos ni espacios con el DV separado
+    /// por guion, montos como numero invariante, fechas ISO, si/no como true/false. Lo que no se puede
+    /// interpretar se descarta (mejor vacio que un dato equivocado en el formulario).</summary>
+    private static List<(string Nombre, string? Valor, double? Conf)> NormalizarCampos(
+        List<(string Nombre, string? Valor, double? Conf)> valores, IReadOnlyList<CampoObjetivo> campos)
+    {
+        var outp = new List<(string, string?, double?)>();
+        foreach (var (nombre, valor, conf) in valores)
+        {
+            var tipo = campos.FirstOrDefault(c => c.Nombre == nombre)?.Tipo ?? "texto";
+            var raw = valor?.Trim();
+            if (string.IsNullOrWhiteSpace(raw) || raw.Equals("null", StringComparison.OrdinalIgnoreCase)
+                || raw.Equals("n/a", StringComparison.OrdinalIgnoreCase) || raw.StartsWith("no aparece", StringComparison.OrdinalIgnoreCase)) continue;
+            string? norm = tipo switch
+            {
+                "nit" => Application.Documentos.NormalizadorDocumental.Nit(raw),
+                "moneda" => Application.Documentos.NormalizadorDocumental.Monto(raw)?.ToString("0.##", CultureInfo.InvariantCulture),
+                "numero" => Application.Documentos.NormalizadorDocumental.Monto(raw) is { } n ? decimal.Truncate(n).ToString(CultureInfo.InvariantCulture) : null,
+                "fecha" => Application.Documentos.NormalizadorDocumental.Fecha(raw)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                "sino" => Application.Documentos.NormalizadorDocumental.SiNo(raw) is { } b ? (b ? "true" : "false") : null,
+                _ => raw
+            };
+            if (!string.IsNullOrWhiteSpace(norm)) outp.Add((nombre, norm, conf));
+        }
+        return outp;
+    }
+
+    /// <summary>Datos clave del perfil que faltaron en la 1a pasada (disparan la 2a pasada dirigida). Los valores
+    /// cuentan como uno: basta con que llegue el total, el mensual, la prima o el asegurado.</summary>
+    private static List<string> ClavesFaltantes(string perfil, List<(string Nombre, string? Valor, double? Conf)> valores)
+    {
+        bool Hay(string k) => valores.Any(v => v.Nombre == k);
+        var faltan = new List<string>();
+        if (perfil == "contrato")
+        {
+            foreach (var k in new[] { "contratista", "nit", "fecha_inicio", "fecha_fin" }) if (!Hay(k)) faltan.Add(k);
+            if (!Hay("valor_total") && !Hay("valor_mensual")) { faltan.Add("valor_total"); faltan.Add("valor_mensual"); }
+        }
+        else if (perfil == "poliza")
+        {
+            foreach (var k in new[] { "aseguradora", "nit_aseguradora", "numero_poliza", "fecha_inicio", "fecha_fin" }) if (!Hay(k)) faltan.Add(k);
+            if (!Hay("prima") && !Hay("valor_asegurado")) { faltan.Add("prima"); faltan.Add("valor_asegurado"); }
+        }
+        return faltan;
     }
 
     /// <summary>Parse tolerante del JSON del agente: por clave {valor, conf} (o un valor plano). Ignora lo ajeno al perfil.</summary>
@@ -223,30 +326,50 @@ public class OcrController : ControllerBase
         _ => null
     };
 
-    public sealed record ExtraerAgenteRequest(string? Perfil, string? Texto, string? PdfBase64 = null, string? Mime = null, string? FileName = null, List<string>? Imagenes = null);
+    /// <summary>Paginas = total de paginas del PDF (para medir si el texto es pobre); Imagenes pueden venir JUNTO
+    /// con Texto: el servidor decide la ruta (texto si es suficiente, vision si no).</summary>
+    public sealed record ExtraerAgenteRequest(string? Perfil, string? Texto, string? PdfBase64 = null, string? Mime = null, string? FileName = null, List<string>? Imagenes = null, int? Paginas = null);
 
     /// <summary>Campos objetivo por perfil (server-side; el cliente no define el schema).</summary>
     private static IReadOnlyList<CampoObjetivo> PerfilCampos(string? perfil) => (perfil ?? "").Trim().ToLowerInvariant() switch
     {
+        // Tipos: texto | nit (sin puntos, DV con guion) | moneda | numero (entero) | fecha (ISO) | sino (true/false).
+        // El servidor normaliza cada tipo despues de leer el JSON (NormalizarCampos).
         "poliza" => new[]
         {
-            new CampoObjetivo("aseguradora", "Nombre de la compania aseguradora", "texto"),
-            new CampoObjetivo("corredor", "Nombre del corredor o intermediario de seguros, si aparece", "texto"),
-            new CampoObjetivo("numero_poliza", "Numero de la poliza tal cual figura", "texto"),
-            new CampoObjetivo("ramo", "Ramo o tipo de seguro (ej. RCE, Todo Riesgo, Incendio, Manejo)", "texto"),
-            new CampoObjetivo("valor_poliza", "Valor asegurado o prima, solo el numero", "moneda"),
+            new CampoObjetivo("aseguradora", "Nombre de la compania aseguradora que expide la poliza (NO el corredor ni la copropiedad)", "texto"),
+            new CampoObjetivo("nit_aseguradora", "NIT de la compania aseguradora, con digito de verificacion si aparece", "nit"),
+            new CampoObjetivo("corredor", "Nombre del corredor, agencia o intermediario de seguros, si aparece", "texto"),
+            new CampoObjetivo("numero_poliza", "Numero de la poliza tal cual figura (no el numero de certificado ni de anexo, salvo que sea el unico)", "texto"),
+            new CampoObjetivo("ramo", "Ramo o tipo de seguro (ej. RCE, Todo Riesgo Danos Materiales, Incendio, Manejo, Copropiedades)", "texto"),
+            new CampoObjetivo("tomador", "Nombre del tomador de la poliza (quien la contrata)", "texto"),
+            new CampoObjetivo("asegurado", "Nombre del asegurado o beneficiario de la cobertura", "texto"),
+            new CampoObjetivo("valor_asegurado", "Valor asegurado total o suma asegurada, solo el numero", "moneda"),
+            new CampoObjetivo("prima", "Prima total a pagar por la poliza (con IVA si se indica el total), solo el numero", "moneda"),
+            new CampoObjetivo("deducible", "Deducible tal como lo expresa la poliza (porcentaje y minimo), en texto breve", "texto"),
+            new CampoObjetivo("forma_pago_cuotas", "Numero de cuotas en que se paga la prima, si se indica", "numero"),
+            new CampoObjetivo("pago_mensual", "Si la prima se paga mes a mes (si/no)", "sino"),
+            new CampoObjetivo("incluye_zonas_unidades", "Si la cobertura incluye las zonas comunes Y las unidades privadas (si/no)", "sino"),
             new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia", "fecha"),
             new CampoObjetivo("fecha_fin", "Fecha de fin de vigencia", "fecha"),
         },
         "contrato" => new[]
         {
-            new CampoObjetivo("contratista", "Nombre del contratista o proveedor (la empresa o persona que presta el servicio o ejecuta la obra, NO la copropiedad contratante)", "texto"),
-            new CampoObjetivo("nit", "NIT o documento de identificacion del contratista", "texto"),
+            new CampoObjetivo("contratista", "Nombre o razon social del CONTRATISTA o proveedor: quien presta el servicio, ejecuta la obra o vende. NUNCA la copropiedad contratante", "texto"),
+            new CampoObjetivo("nit", "NIT o cedula del contratista, con digito de verificacion si aparece", "nit"),
+            new CampoObjetivo("representante_legal", "Nombre del representante legal del contratista (si es una empresa)", "texto"),
+            new CampoObjetivo("direccion_contratista", "Direccion del contratista", "texto"),
+            new CampoObjetivo("telefono_contratista", "Telefono o celular del contratista (solo uno, el principal)", "texto"),
+            new CampoObjetivo("correo_contratista", "Correo electronico del contratista", "texto"),
+            new CampoObjetivo("ciudad", "Ciudad donde se firma o se ejecuta el contrato", "texto"),
             new CampoObjetivo("numero_contrato", "Numero o consecutivo del contrato, si aparece", "texto"),
+            new CampoObjetivo("tipo_contrato", "Tipo de contrato (prestacion de servicios, obra, suministro, mantenimiento, arrendamiento, vigilancia, consultoria...)", "texto"),
             new CampoObjetivo("objeto", "Objeto del contrato: resumen breve de que se contrata (obra, servicio, suministro)", "texto"),
             new CampoObjetivo("valor_total", "Valor total del contrato, solo el numero", "moneda"),
             new CampoObjetivo("valor_mensual", "Valor mensual o periodico, solo el numero, si el contrato lo indica", "moneda"),
-            new CampoObjetivo("contacto", "Telefono o correo de contacto del contratista, si aparece", "texto"),
+            new CampoObjetivo("forma_pago_cuotas", "Numero de cuotas o pagos pactados, si se indica", "numero"),
+            new CampoObjetivo("pago_mensual", "Si el contrato se paga mes a mes (si/no)", "sino"),
+            new CampoObjetivo("renovacion_automatica", "Si el contrato se prorroga o renueva automaticamente (si/no)", "sino"),
             new CampoObjetivo("fecha_inicio", "Fecha de inicio de vigencia del contrato", "fecha"),
             new CampoObjetivo("fecha_fin", "Fecha de fin o terminacion del contrato", "fecha"),
         },

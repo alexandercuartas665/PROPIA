@@ -1,5 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **AGENTE DOCUMENTAL REFORZADO + TRANSICION "LA IA CONSUME EL DOCUMENTO" (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
+> - **MIGRACION `20261111163506_AddCamposAgenteDocumental`** (va DESPUES de `AddPlantillaCampos`): agrega columnas nullable
+>   a `polizas` (`nit_aseguradora`, `tomador`, `asegurado`, `valor_asegurado`, `prima`, `deducible`) y a `contratos_servicio`
+>   (`representante_legal`, `ciudad`). Sin datos que migrar; las tablas ya tienen RLS. Down: borra las 8 columnas.
+> - `/api/ocr/extraer-agente`: perfiles ampliados (contrato y poliza), normalizacion en el servidor (NIT sin puntos con DV,
+>   montos, fechas en texto, si/no), vision si el texto del PDF es pobre (acepta `Imagenes` + `Texto` + `Paginas`) y 2a
+>   pasada dirigida cuando faltan datos clave. El prompt de EXTRACCION va en el codigo (llega con el deploy).
+> - **Prompt base del agente (chat)**: el seeder solo corre en Development, asi que en PROD se aplica con
+>   `deploy/sql/2026-11-11_agente_documental_prompt.sql` (owner `propia`; quita y repone el FORCE de `ai_agents` en la misma
+>   transaccion; pisa el prompt en todas las copropiedades, como el seeder). Probado en dev: 79/79. Opcional para la extraccion.
+> - Web: `css/modules/ia-ingesta.css?v=1`, `js/propia-iai.js?v=1`, `js/propia-pdfthumb.js?v=5`.
+> - **Verificar en PROD tras aplicar**: `\d polizas` y `\d contratos_servicio` muestran las columnas nuevas; en Contratos >
+>   Nuevo contrato, soltar un PDF muestra el panel de lectura y llena el formulario. Sin config/env nueva.
+
 > **PLANTILLAS: CAMPOS PROPIOS (columna "+") + ASUNTO COMPLETO EN EXCEL DE PQRSD (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
 > - **MIGRACION `20261111140504_AddPlantillaCampos`** (va DESPUES de `AddPlantillasDocumento`): crea
 >   `plantilla_campo_definiciones` y `plantilla_campo_valores` (FK en cascada a la definicion y a `plantillas_documento`),

@@ -1,0 +1,42 @@
+@* Linea de estado en la tarjeta del documento (columna de borradores; replica: RP.iaIngesta.railHtml): "En cola",
+   "Leyendo · N%" con mini barra de 3px, "N campos · revisa M", error corto ("Solo PDF") o el texto por defecto.
+   Se repinta SOLO (suscrito a IaLectura.Cambio): los documentos que no se estan viendo no re-renderizan el modal. *@
+@implements IDisposable
+
+<span class="iai-rail">
+    @switch (Lectura?.Estado)
+    {
+        case IaEstado.Cola:
+            <span class="iai-rl iai-rl--cola"><i class="fi fi-rr-clock"></i> En cola</span>
+            break;
+        case IaEstado.Leyendo:
+            <span class="iai-rl iai-rl--run">Leyendo · @Lectura.Pct%</span><span class="iai-mini"><i style="width:@(Lectura.Pct)%"></i></span>
+            break;
+        case IaEstado.Listo:
+            <span class="iai-rl iai-rl--ok"><i class="fi fi-rr-sparkles"></i> @Lectura.Campos.Count campos@(Lectura.Dudosos.Count > 0 ? " · revisa " + Lectura.Dudosos.Count : "")</span>
+            break;
+        case IaEstado.Error:
+            <span class="iai-rl iai-rl--err">@(Lectura.Corto ?? "No se pudo leer")</span>
+            break;
+        default:
+            <span class="iai-rl">@(string.IsNullOrEmpty(Texto) ? "Sin leer" : Texto)</span>
+            break;
+    }
+</span>
+
+@code {
+    [Parameter] public IaLectura? Lectura { get; set; }
+    /// <summary>Texto cuando no hay lectura (p. ej. el tamano del archivo).</summary>
+    [Parameter] public string? Texto { get; set; }
+
+    private IaLectura? _sub;
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_sub, Lectura)) return;
+        if (_sub is not null) _sub.Cambio -= OnCambio;
+        _sub = Lectura;
+        if (_sub is not null) _sub.Cambio += OnCambio;
+    }
+    private void OnCambio() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() { if (_sub is not null) _sub.Cambio -= OnCambio; }
+}

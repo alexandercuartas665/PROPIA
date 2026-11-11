@@ -18,7 +18,9 @@ public record PolizaDto(
     int? DiasParaVencer, SemaforoContrato Semaforo,
     int ReclamacionesCount = 0,
     IReadOnlyList<PolizaCampoValorDto>? CamposValores = null,
-    bool TienePdfOrigen = false);
+    bool TienePdfOrigen = false,
+    string? NitAseguradora = null, string? Tomador = null, string? Asegurado = null,
+    decimal? ValorAsegurado = null, decimal? Prima = null, string? Deducible = null);
 
 public record CrearPolizaRequest(
     string Aseguradora,
@@ -29,7 +31,9 @@ public record CrearPolizaRequest(
     decimal? ValorPoliza = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     string? Cobertura = null, bool IncluyeZonasUnidades = false,
     string? ValoresAgregados = null, string? Observaciones = null, Guid? ExpedienteId = null,
-    string? PdfOrigenKey = null);
+    string? PdfOrigenKey = null,
+    string? NitAseguradora = null, string? Tomador = null, string? Asegurado = null,
+    decimal? ValorAsegurado = null, decimal? Prima = null, string? Deducible = null);
 
 /// <summary>Actualiza la poliza (MERGE: se aplica lo provisto). LimpiarExpediente desconecta el expediente.</summary>
 /// <summary>Actualiza la poliza. N-02: es un MERGE (mismo criterio que contratos): un campo en null =
@@ -45,7 +49,9 @@ public record ActualizarPolizaRequest(
     string? Cobertura = null, bool? IncluyeZonasUnidades = null,
     string? ValoresAgregados = null, string? Observaciones = null,
     Guid? ExpedienteId = null, bool LimpiarExpediente = false,
-    string? PdfOrigenKey = null);
+    string? PdfOrigenKey = null,
+    string? NitAseguradora = null, string? Tomador = null, string? Asegurado = null,
+    decimal? ValorAsegurado = null, decimal? Prima = null, string? Deducible = null);
 
 // ----- Campos personalizados (EAV) de polizas -----
 public record PolizaCampoDto(Guid Id, string Label, int Orden, TipoCampoTablero Tipo, string? Opciones, string? Descripcion, bool Activo);

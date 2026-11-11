@@ -91,9 +91,44 @@ window.propiaPdfThumb = (function () {
         }
     }
 
+    // Paginas a leer de un PDF largo: las primeras (encabezado, clausulas) y las 2 ULTIMAS (firmas, anexos).
+    function paginasALeer(total, max) {
+        if (total <= max) { var t = []; for (var i = 1; i <= total; i++) t.push(i); return t; }
+        var out = [];
+        for (var p = 1; p <= max - 2; p++) out.push(p);
+        out.push(total - 1, total);
+        return out;
+    }
+
+    // Texto + total de paginas (Agente Documental: el servidor mide si el texto es "pobre" = pocas palabras por
+    // pagina y entonces lee con vision). Lee las primeras 13 y las 2 ultimas paginas. null si falla.
+    async function extraerTextoInfo(base64, mime) {
+        try {
+            if (mime && mime.indexOf('image/') === 0) { return null; }
+            var pdfjs = await ensurePdfjs();
+            var doc = await pdfjs.getDocument({ data: b64ToBytes(base64) }).promise;
+            var total = doc.numPages, partes = [];
+            var lista = paginasALeer(total, 15);
+            for (var i = 0; i < lista.length; i++) {
+                var page = await doc.getPage(lista[i]);
+                var tc = await page.getTextContent();
+                var linea = tc.items.map(function (it) { return it.str; }).join(' ');
+                if (linea) { partes.push(linea); }
+                try { page.cleanup(); } catch (e) { }
+            }
+            try { doc.cleanup(); doc.destroy(); } catch (e) { }
+            var txt = partes.join('\n').replace(/[ \t]+/g, ' ').trim();
+            return { texto: txt.length > 60000 ? txt.slice(0, 60000) : txt, paginas: total };
+        } catch (e) {
+            if (window.console) console.warn('propiaPdfThumb: no se pudo extraer texto', e);
+            return null;
+        }
+    }
+
     // Rasteriza cada pagina del PDF a JPEG base64 (SIN el prefijo "data:...") para mandarlas a un modelo de
-    // vision (DeepSeek). scale 2.0 ~= 150 DPI. Tope de paginas para acotar payload/tokens. Devuelve
-    // { paginas: [b64...], total: <paginas del PDF> } para avisar si se leyo parcial. {paginas:[],total:0} si falla.
+    // vision (DeepSeek). scale 2.0 ~= 150 DPI. Tope de paginas para acotar payload/tokens: en un PDF largo van
+    // las primeras y las 2 ultimas (firmas/anexos). Devuelve { paginas: [b64...], total: <paginas del PDF> }
+    // para avisar si se leyo parcial. {paginas:[],total:0} si falla.
     async function rasterizarPaginas(base64, maxPaginas) {
         maxPaginas = maxPaginas || 12;
         try {
@@ -101,9 +136,10 @@ window.propiaPdfThumb = (function () {
             var bytes = b64ToBytes(base64);
             var doc = await pdfjs.getDocument({ data: bytes }).promise;
             var total = doc.numPages;
-            var n = Math.min(total, maxPaginas);
+            var lista = paginasALeer(total, maxPaginas);
             var out = [];
-            for (var p = 1; p <= n; p++) {
+            for (var ix = 0; ix < lista.length; ix++) {
+                var p = lista[ix];
                 var page = await doc.getPage(p);
                 var vp = page.getViewport({ scale: 2.0 });
                 var canvas = document.createElement('canvas');
@@ -121,5 +157,5 @@ window.propiaPdfThumb = (function () {
         } catch (e) { if (window.console) console.warn('propiaPdfThumb: no se pudo rasterizar', e); return { paginas: [], total: 0 }; }
     }
 
-    return { render: render, extraerTexto: extraerTexto, rasterizarPaginas: rasterizarPaginas };
+    return { render: render, extraerTexto: extraerTexto, extraerTextoInfo: extraerTextoInfo, rasterizarPaginas: rasterizarPaginas };
 })();

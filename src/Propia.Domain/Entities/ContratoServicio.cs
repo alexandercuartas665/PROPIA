@@ -31,6 +31,10 @@ public class ContratoServicio : TenantEntity
     public string? TelefonoContratista { get; set; }
     public string? CorreoContratista { get; set; }
     public string? DireccionContratista { get; set; }
+    /// <summary>Representante legal del contratista (lo trae el contrato; lo llena el Agente Documental).</summary>
+    public string? RepresentanteLegal { get; set; }
+    /// <summary>Ciudad donde se celebra / ejecuta el contrato.</summary>
+    public string? Ciudad { get; set; }
 
     public DateOnly FechaInicio { get; set; }
     public DateOnly? FechaFin { get; set; }
