@@ -230,7 +230,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdRespuesta> PqrsdRespuestas => Set<PqrsdRespuesta>();
     public DbSet<PqrsdRespuestaVersion> PqrsdRespuestaVersiones => Set<PqrsdRespuestaVersion>();
     public DbSet<PqrsdRespuestaDestinatario> PqrsdRespuestaDestinatarios => Set<PqrsdRespuestaDestinatario>();
-    public DbSet<PqrsdPlantillaRespuesta> PqrsdPlantillasRespuesta => Set<PqrsdPlantillaRespuesta>();
+    public DbSet<PlantillaDocumento> PlantillasDocumento => Set<PlantillaDocumento>();
     public DbSet<PqrsdPlantillaSemilla> PqrsdPlantillasSemilla => Set<PqrsdPlantillaSemilla>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 

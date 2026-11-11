@@ -276,100 +276,13 @@ public partial class PqrsdService
     }
 
     // ===================== Plantillas de respuesta (combinacion de correspondencia) =====================
-
-    private static readonly (string Token, string Desc)[] _tokensPlantilla = new[]
-    {
-        ("copropiedad.nombre", "Nombre de la copropiedad"),
-        ("copropiedad.nit", "NIT de la copropiedad"),
-        ("copropiedad.direccion", "Direccion de la copropiedad"),
-        ("copropiedad.ciudad", "Ciudad"),
-        ("radicado.numero", "Numero de radicado"),
-        ("radicado.tipo", "Tipo de PQRSD"),
-        ("radicado.categoria", "Categoria"),
-        ("radicado.fecha", "Fecha de radicacion"),
-        ("radicado.estado", "Estado actual"),
-        ("solicitante.nombre", "Nombre del solicitante"),
-        ("solicitante.identificacion", "Identificacion del solicitante"),
-        ("solicitante.correo", "Correo del solicitante"),
-        ("solicitante.telefono", "Telefono del solicitante"),
-        ("usuario.nombre", "Nombre del solicitante (alias)"),
-        ("usuario.identificacion", "Identificacion del solicitante (alias)"),
-        ("unidad.numero", "Numero de la unidad"),
-        ("unidad.torre", "Torre/bloque de la unidad"),
-        ("unidad_privada.propietario", "Propietario de la unidad"),
-        ("unidad.propietario", "Propietario de la unidad (alias)"),
-        ("gestor.nombre", "Nombre de quien responde (usuario actual)"),
-        ("fecha.hoy", "Fecha de hoy"),
-    };
-
-    public IReadOnlyList<PqrsdTokenDto> ListarTokensPlantilla()
-        => _tokensPlantilla.Select(t => new PqrsdTokenDto("{" + t.Token + "}", t.Desc)).ToList();
-
-    public async Task<IReadOnlyList<PqrsdPlantillaDto>> ListarPlantillasAsync(CancellationToken ct)
-    {
-        await SembrarPlantillasDesdeSemillaSiVacioAsync(ct);
-        return await _db.PqrsdPlantillasRespuesta.AsNoTracking().Where(p => p.Activa)
-            .OrderBy(p => p.Orden).ThenBy(p => p.Nombre)
-            .Select(p => new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml)).ToListAsync(ct);
-    }
-
-    // "Nace con" las plantillas: si la copropiedad no tiene NINGUNA plantilla propia, copia las
-    // semillas activas del catalogo global (Super Admin). Idempotente: solo actua si esta vacio,
-    // asi el admin puede borrar las que no quiera sin que reaparezcan. Corre en el contexto del
-    // tenant actual (RLS ok: inserta filas de su propio tenant_id).
-    private async Task SembrarPlantillasDesdeSemillaSiVacioAsync(CancellationToken ct)
-    {
-        var tenantId = _tenantContext.CurrentTenantId;
-        if (tenantId is null) return;
-        if (await _db.PqrsdPlantillasRespuesta.AnyAsync(ct)) return;   // ya tiene (query filter -> del tenant)
-
-        var semillas = await _db.PqrsdPlantillasSemilla.AsNoTracking()
-            .Where(s => s.Activa).OrderBy(s => s.Orden).ThenBy(s => s.Nombre).ToListAsync(ct);
-        if (semillas.Count == 0) return;
-
-        foreach (var s in semillas)
-            _db.PqrsdPlantillasRespuesta.Add(new PqrsdPlantillaRespuesta
-            {
-                TenantId = tenantId.Value,
-                Nombre = s.Nombre,
-                CuerpoHtml = s.CuerpoHtml,
-                Activa = true,
-                Orden = s.Orden
-            });
-        await _db.SaveChangesAsync(ct);
-    }
-
-    public async Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct)
-    {
-        var count = await _db.PqrsdPlantillasRespuesta.CountAsync(ct);
-        var p = new PqrsdPlantillaRespuesta { Nombre = (req.Nombre ?? "Plantilla").Trim(), CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "", Activa = true, Orden = count };  // S-19
-        _db.PqrsdPlantillasRespuesta.Add(p);
-        await _db.SaveChangesAsync(ct);
-        return new PqrsdPlantillaDto(p.Id, p.Nombre, p.CuerpoHtml);
-    }
-
-    public async Task<bool> ActualizarPlantillaAsync(Guid id, GuardarPlantillaRequest req, CancellationToken ct)
-    {
-        var p = await _db.PqrsdPlantillasRespuesta.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (p is null) return false;
-        p.Nombre = (req.Nombre ?? p.Nombre).Trim();
-        p.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "";  // S-19
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    public async Task<bool> EliminarPlantillaAsync(Guid id, CancellationToken ct)
-    {
-        var p = await _db.PqrsdPlantillasRespuesta.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (p is null) return false;
-        _db.PqrsdPlantillasRespuesta.Remove(p);
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
+    // El CRUD de plantillas vive ahora en el catalogo central (PlantillasDocumentoService, /api/plantillas).
+    // PQRSD solo RESUELVE una plantilla de categoria "pqrsd" sobre un expediente.
 
     public async Task<string?> ResolverPlantillaAsync(Guid expedienteId, Guid plantillaId, CancellationToken ct)
     {
-        var plantilla = await _db.PqrsdPlantillasRespuesta.AsNoTracking().FirstOrDefaultAsync(p => p.Id == plantillaId, ct);
+        var plantilla = await _db.PlantillasDocumento.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == plantillaId && p.Categoria == Application.Plantillas.PlantillasCatalogo.Pqrsd, ct);
         if (plantilla is null) return null;
         var exp = await _db.PqrsdExpedientes.AsNoTracking()
             .Include(e => e.Categoria).Include(e => e.TipoConfig).Include(e => e.RadicadorPersona)
@@ -422,6 +335,8 @@ public partial class PqrsdService
             ["unidad_privada.propietario"] = propietario,
             ["unidad.propietario"] = propietario,
             ["gestor.nombre"] = gestorNombre ?? "",
+            // Dato comun del catalogo central: firmante del membrete; si no hay, quien responde.
+            ["administrador.nombre"] = string.IsNullOrWhiteSpace(tenant?.MembreteFirmanteNombre) ? (gestorNombre ?? "") : tenant!.MembreteFirmanteNombre!,
             ["fecha.hoy"] = DateTimeOffset.Now.ToLocalTime().ToString("dd 'de' MMMM 'de' yyyy", esCO),
         };
 

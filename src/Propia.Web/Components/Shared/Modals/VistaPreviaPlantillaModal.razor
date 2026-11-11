@@ -1,0 +1,51 @@
+@* Vista previa de una plantilla de documentos (Configuracion > Plantillas): reemplaza los datos {grupo.campo}
+   por los valores de EJEMPLO del catalogo y pinta el resultado sobre una hoja blanca (blanca tambien en modo
+   oscuro: es un documento a imprimir). Replica de vistaPrevia() en replica/js/mod-plantillas-doc.js. *@
+@inherits ModalBase<bool>
+@using Propia.Application.Plantillas
+
+<div class="pld-prev">
+    <div class="gpl-head">
+        <div class="gpl-eyebrow">VISTA PREVIA &middot; @((Nombre ?? "").ToUpper())</div>
+        <button type="button" class="gpl-x" @onclick="() => Close(false)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="pld-prev-hint"><i class="fi @Cat.Icono"></i> Así se verá con datos de ejemplo. Al usarla en @Cat.UsadaEn, los datos {grupo.campo} se reemplazan por los reales.</div>
+    <div class="pld-prev-paper">@((MarkupString)Resuelto)</div>
+</div>
+
+<style>
+    /* Cabecera compartida con el editor (.gpl-*, EditorPlantillaDocumentoModal). */
+    .gpl-head { display: flex; align-items: center; justify-content: space-between; }
+    .gpl-eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--propia-text-h1); }
+    .gpl-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    /* Vista previa */
+    .pld-prev { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 20px; }
+    .pld-prev-hint { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--propia-text-secondary); }
+    .pld-prev-hint i { color: var(--propia-brand); }
+    /* El papel es blanco en ambos temas (documento a imprimir), igual que la miniatura .pk-cfg-plt-page. */
+    .pld-prev-paper { max-height: 64vh; overflow-y: auto; padding: 40px 48px; border: 1px solid var(--propia-border-card); border-radius: 10px; background: var(--propia-paper-bg); color: var(--propia-paper-ink); font-size: 13.5px; line-height: 1.6; box-shadow: 0 8px 24px rgba(27, 42, 58, .10); }
+    @@media (max-width: 640px) {
+        .pld-prev-paper { padding: 24px 18px; }
+    }
+</style>
+
+@code {
+    [Parameter] public string? Nombre { get; set; }
+    [Parameter] public string? Categoria { get; set; }
+    [Parameter] public string? CuerpoHtml { get; set; }
+    /// <summary>Nombre de la copropiedad activa: valor de {copropiedad.nombre} (como la replica).</summary>
+    [Parameter] public string? CopropiedadNombre { get; set; }
+
+    private PlantillaCategoriaDto Cat => PlantillasCatalogo.Categoria(Categoria);
+
+    private string Resuelto
+    {
+        get
+        {
+            var mapa = PlantillasCatalogo.TokensDe(Categoria).ToDictionary(t => t.Token, t => t.Ejemplo, StringComparer.Ordinal);
+            if (!string.IsNullOrWhiteSpace(CopropiedadNombre)) mapa["{copropiedad.nombre}"] = CopropiedadNombre!;
+            return System.Text.RegularExpressions.Regex.Replace(CuerpoHtml ?? "", @"\{[a-z_]+\.[a-z_]+\}",
+                m => mapa.TryGetValue(m.Value, out var v) ? System.Net.WebUtility.HtmlEncode(v) : m.Value);
+        }
+    }
+}

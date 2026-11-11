@@ -93,8 +93,8 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         var detalle = await svc.GetRolDetalleAsync(admin.Id, CancellationToken.None);
 
         Assert.NotNull(detalle);
-        // 15 modulos x 6 acciones = 90 entradas en la matriz
-        Assert.Equal(15 * 6, detalle!.Permisos.Count);
+        // todos los modulos (ModuloCodigo.Todos) x 6 acciones = entradas en la matriz
+        Assert.Equal(ModuloCodigo.Todos.Length * 6, detalle!.Permisos.Count);
         Assert.All(detalle.Permisos, p => Assert.True(p.Habilitado));
         Assert.All(detalle.Permisos, p => Assert.Equal(NivelDato.Copropiedad, p.NivelDato));
     }

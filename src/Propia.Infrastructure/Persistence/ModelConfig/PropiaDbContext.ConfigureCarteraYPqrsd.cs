@@ -311,12 +311,15 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
-        modelBuilder.Entity<PqrsdPlantillaRespuesta>(b =>
+        // Catalogo central de plantillas de documentos (Configuracion > Plantillas). Reemplaza a
+        // pqrsd_plantillas_respuesta (sus filas se migraron con categoria "pqrsd").
+        modelBuilder.Entity<PlantillaDocumento>(b =>
         {
-            b.ToTable("pqrsd_plantillas_respuesta");
+            b.ToTable("plantillas_documento");
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Categoria).IsRequired().HasMaxLength(40);
             b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
-            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Categoria });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
