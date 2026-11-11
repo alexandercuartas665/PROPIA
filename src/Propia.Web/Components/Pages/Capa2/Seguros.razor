@@ -171,6 +171,11 @@
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            @if (_vista == "tabla")
+            {
+                <TablaExportar Vista="VistaExport" />
+            }
             @* Selector de vista: al final de la barra, como en el resto de modulos (antes vivia en el encabezado
                de la pagina, junto a "Nueva poliza"). Componente compartido TablaVistaToggle. *@
             <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tarjetas"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
@@ -2170,6 +2175,81 @@
         }
     }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // (buscador + reglas) y ordenadas (Filtradas ya aplica el orden) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombreS;   // nombre de la copropiedad para el encabezado del archivo
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumExportS(k), EsNumExportS(k) ? FormatoExportS(k) : null)).ToList();
+        ExportFila FilaX(PolizaDto p, IReadOnlyList<string>? ruta) => new(cols.Select(k => CeldaExportS(p, k)).ToList(), Ruta: ruta);
+
+        var lista = Filtradas;
+        var filas = new List<ExportFila>();
+        if (_gruposS.Count == 0) filas.AddRange(lista.Select(p => FilaX(p, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<PolizaDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(p => FilaX(p, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar(lista, _gruposS, ValorGrupoS), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (ResumenReglasS() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsS.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsS.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposS.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposS.Select(ColLabel)));
+        criterios.Add($"{lista.Count} pólizas");
+        return new ExportVista("Seguros", _copropiedadNombreS, columnas, filas, criterios, _gruposS.Select(ColLabel).ToList());
+    }
+    // Reglas activas del filtro como texto (mismo formato que FiltroDinamico.Resumen): "Campo operador valor".
+    private string ResumenReglasS()
+    {
+        var partes = _reglasS.Where(ReglaActivaS).Select(r =>
+        {
+            var campo = CamposFiltroS().FirstOrDefault(x => x.Key == r.Campo).Label ?? r.Campo;
+            var op = OperadoresS(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKindS(r.Campo) == "sel-estado"
+                ? r.Valor switch { "al-dia" => "Al dia", "por-vencer" => "Por vencer", "vencida" => "Vencida", _ => r.Valor }
+                : r.Valor;
+            return $"{campo} {op} {val}";
+        }).ToList();
+        return string.Join(_logicaS == "or" ? " O " : " Y ", partes);
+    }
+    // Columnas numericas de la descarga: las del total por columna + campos propios calculados.
+    private bool EsNumExportS(string k)
+        => EsNumericaColS(k) || CampoCustom(k)?.Tipo is TipoCampoTablero.Total or TipoCampoTablero.Formula;
+    // Formato de Excel: dinero con $ y miles (como "$" + N0 de la celda); resto General.
+    private string FormatoExportS(string k)
+        => k == "valorpoliza" || CampoCustom(k)?.Tipo == TipoCampoTablero.Moneda ? "\"$\"#,##0" : "General";
+    // Valor de una celda = lo que pinta la tabla: CeldaTextoP (sin el "-" de celda vacia), el texto del badge
+    // de vencimiento y los numeros como numero.
+    private object? CeldaExportS(PolizaDto p, string k)
+    {
+        if (k == "vencimiento") return TextoSemaforoBadgeS(p);
+        if (k == "reclamaciones") return p.ReclamacionesCount > 0 ? p.ReclamacionesCount : null;
+        if (EsNumExportS(k) && ValorNumColS(p, k) is { } num) return num;
+        var t = CeldaTextoP(p, k);
+        return string.IsNullOrWhiteSpace(t) || t == "-" ? null : t;
+    }
+    // Mismo texto que pinta SemaforoBadge (celda "Vencimiento").
+    private static string TextoSemaforoBadgeS(PolizaDto p) => p.Semaforo switch
+    {
+        SemaforoContrato.Rojo => p.DiasParaVencer is { } d && d < 0 ? "Vencida" : "Critico",
+        SemaforoContrato.Amarillo => p.DiasParaVencer is { } d ? $"{d} dias" : "Por vencer",
+        SemaforoContrato.Verde => p.DiasParaVencer is { } d ? $"{d} dias" : "Al dia",
+        _ => "Sin fin"
+    };
+
     private static string SemaforoTexto(SemaforoContrato s) => s switch
     {
         SemaforoContrato.Verde => "Al dia",
@@ -2234,6 +2314,7 @@
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
                 try { _gruposS = ParseGruposS(await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey)); } catch { }
                 try { CargarAggS(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyS)); } catch { }
+                try { _copropiedadNombreS = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarAsync();
             }
             else { Nav.NavigateTo("/login?returnUrl=%2Fseguros", true); return; }

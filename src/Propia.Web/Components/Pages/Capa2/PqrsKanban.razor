@@ -145,6 +145,8 @@
                 <TablaColumnasMenu Columnas="ColsVisibilidadPqr()" OnMover="MoverColPqr" OnToggleVisible="ToggleVisibleColPqr"
                                    OnEliminar="EliminarCampoColPqr" OnOcultarTodas="OcultarTodasColPqr"
                                    OnMostrarTodas="MostrarTodasColPqr" OnRestablecer="RestablecerColPqr" />
+                @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+                <TablaExportar Vista="VistaExport" />
             }
 
             @* Modos de vista DESPUES de Columnas, igual que el toggle de Unidades Privadas. En Cerrados no hay
@@ -1640,6 +1642,100 @@
         return seq;
     }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas de la
+    // pestana (Activos/Cerrados) que pasan buscador + filtros, en el orden de la tabla y, si esta agrupada,
+    // las cabeceras de grupo (mismo arbol TablaAgrupador que pinta TablaGruposRenderTr). =====
+    private string? _copropiedadNombreP;   // nombre de la copropiedad para el encabezado del archivo
+    private ExportVista VistaExport()
+    {
+        var cols = ColumnasVisibles.ToList();
+        var columnas = cols.Select(c => new ExportColumna(c.Label, EsNumExportP(c), EsNumExportP(c) ? FormatoExportP(c) : null)).ToList();
+        ExportFila Fila(PqrsdBandejaItemDto it, IReadOnlyList<string>? ruta) => new(cols.Select(c => CeldaExportP(it, c)).ToList(), Ruta: ruta);
+
+        var lista = RaicesOrdenadasPqr();
+        var filas = new List<ExportFila>();
+        if (_gruposPqr.Count == 0) filas.AddRange(lista.Select(it => Fila(it, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<PqrsdBandejaItemDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(it => Fila(it, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar(lista, _gruposPqr, ValorGrupoPqr), new());
+        }
+
+        var todas = ColsTodasOrdenadasPqr();
+        string Lbl(string k) => todas.FirstOrDefault(c => c.Key == k)?.Label ?? k;
+        var criterios = new List<string> { "Pestaña: " + (_verArchivados ? "Cerrados" : "Activos") };
+        if (!string.IsNullOrWhiteSpace(_buscar)) criterios.Add($"Búsqueda: \"{_buscar.Trim()}\"");
+        if (ResumenReglasP() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsPqr.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsPqr.Select(s => $"{Lbl(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposPqr.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposPqr.Select(Lbl)));
+        criterios.Add($"{lista.Count} PQRSD");
+        return new ExportVista("PQRSD", _copropiedadNombreP, columnas, filas, criterios, _gruposPqr.Select(Lbl).ToList());
+    }
+    // Reglas activas del filtro como texto (mismo formato que FiltroDinamico.Resumen): "Campo operador valor".
+    private string ResumenReglasP()
+    {
+        var partes = _reglas.Where(ReglaActiva).Select(r =>
+        {
+            var campo = CamposFiltro().FirstOrDefault(x => x.Key == r.Campo).Label ?? r.Campo;
+            var op = OperadoresDe(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKind(r.Campo) switch
+            {
+                "sel-tipo" => Enum.TryParse<TipoPqrsd>(r.Valor, out var t) ? TipoLabel(t) : r.Valor,
+                "sel-estado" => _estados.FirstOrDefault(e => e.Id.ToString() == r.Valor)?.Nombre ?? r.Valor,
+                "sel-sem" => Enum.TryParse<SemaforoPqrsd>(r.Valor, out var s) ? SemaforoLabel(s) : r.Valor,
+                _ => r.Valor
+            };
+            return $"{campo} {op} {val}";
+        }).ToList();
+        return string.Join(_filtroLogica == "or" ? " O " : " Y ", partes);
+    }
+    // Columnas numericas de la descarga: "Vence" (dias) y campos propios numericos/calculados.
+    private bool EsNumExportP(ColItem c)
+        => c.EsCustom
+            ? _campos.FirstOrDefault(d => d.Id == c.CampoId)?.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda
+                or TipoCampoTablero.Porcentaje or TipoCampoTablero.Total or TipoCampoTablero.Formula
+            : c.Key == "vence";
+    // Formato de Excel: "Vence" con el sufijo "d" de la celda; dinero con $ y miles; resto General.
+    private string FormatoExportP(ColItem c)
+    {
+        if (!c.EsCustom) return "0\"d\"";
+        return _campos.FirstOrDefault(d => d.Id == c.CampoId)?.Tipo == TipoCampoTablero.Moneda ? "\"$\"#,##0" : "General";
+    }
+    // Valor de una celda = lo que pinta FilaPqrTpl (etiquetas visibles, no claves internas).
+    private object? CeldaExportP(PqrsdBandejaItemDto it, ColItem c)
+    {
+        static object? T(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+        if (c.EsCustom)
+        {
+            var val = it.Campos?.FirstOrDefault(v => v.CampoId == c.CampoId)?.Valor;
+            if (EsNumExportP(c) && decimal.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num)) return num;
+            return T(val);
+        }
+        return c.Key switch
+        {
+            "radicado" => T(it.NumeroRadicado),
+            "asunto" => T(it.DescripcionResumen),
+            "tipo" => T(it.TipoNombre ?? TipoLabel(it.Tipo)),
+            "categoria" => T(it.CategoriaNombre),
+            "estado" => T(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre),
+            "semaforo" => T($"{SemaforoLabel(it.Semaforo)} {DiasSlaTexto(it)}".Trim()),
+            "radicador" => it.IdentidadReservada ? "[Reservada]" : T(it.RadicadorNombre),
+            "unidad" => T(it.UnidadNumero),
+            "vence" => it.DiasHastaVencimiento,
+            _ => null
+        };
+    }
+
     // ===================== Constructor de filtros (multi-regla Y/O, estilo Tareas) =====================
     private sealed class PqrRegla { public string Campo { get; set; } = "tipo"; public string Op { get; set; } = "es"; public string Valor { get; set; } = ""; }
     private readonly List<PqrRegla> _reglas = new();
@@ -1909,6 +2005,7 @@
             await RestaurarFiltrosAsync();
         }
         catch { }
+        try { _copropiedadNombreP = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
     }
 
     private HttpClient Auth()
