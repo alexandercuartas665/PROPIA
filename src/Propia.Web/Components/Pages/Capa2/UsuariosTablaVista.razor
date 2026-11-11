@@ -436,6 +436,68 @@
         // Clave no reconocida: no se emite valor (el motor la coloca en "(Sin dato)").
     }
 
+    // ===== Descargar la vista (TablaExportar del padre): columnas visibles en su orden con la etiqueta de la
+    // cabecera, TODAS las filas recibidas (ya filtradas y ordenadas por el padre) y, si esta agrupada, el mismo
+    // arbol que pinta TablaGruposRender. Texto de cada celda = el que muestra FilaTpl. =====
+    public (List<ExportColumna> Columnas, List<ExportFila> Filas) VistaExport()
+    {
+        var defs = Defs ?? new List<CampoDinDef>();
+        var columnas = Columnas.Select(k => new ExportColumna(LabelUp(k)))
+            .Concat(defs.Select(d => EsNumDinU(d)
+                ? new ExportColumna(d.Label.ToUpperInvariant(), true, FormatoExcelDinU(d))
+                : new ExportColumna(d.Label.ToUpperInvariant())))
+            .ToList();
+        ExportFila Fila(UsuarioListaDto u, IReadOnlyList<string>? ruta)
+            => new(Columnas.Select(k => TextoExportU(TextoCeldaU(u, k)))
+                .Concat(defs.Select(d => CeldaDinU(u, d))).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        if (!Agrupado) { filas.AddRange(Usuarios.Select(u => Fila(u, null))); return (columnas, filas); }
+        void Recorrer(IReadOnlyList<NodoGrupo<UsuarioListaDto>> nodos, List<string> ruta)
+        {
+            foreach (var n in nodos)
+            {
+                filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                var r = new List<string>(ruta) { n.Titulo };
+                if (n.EsHoja) filas.AddRange(n.Filas.Select(u => Fila(u, r)));
+                else Recorrer(n.Subgrupos, r);
+            }
+        }
+        Recorrer(TablaAgrupador.Agrupar<UsuarioListaDto>(Usuarios, Grupos!, ValorGrupoU), new());
+        return (columnas, filas);
+    }
+    // Texto visible de una celda fija (mismo que FilaTpl; los "-" de celda vacia salen vacios).
+    private static string? TextoCeldaU(UsuarioListaDto u, string k) => k switch
+    {
+        "tipo" => u.TipoDocumento.ToString(),
+        "documento" => u.Documento,
+        "usuario" => u.NombreCompleto,
+        "email" => u.Email,
+        "telefono" => u.Telefono,
+        "rol" => u.Roles.Count > 0 ? string.Join(", ", u.Roles.Select(r => r.Nombre)) : u.RolNombre,
+        "cargo" => string.Join(", ", u.Cargos),
+        "ultimoacceso" => u.UltimoAcceso?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Sin registro",
+        "fechavinculacion" => u.FechaVinculacion?.LocalDateTime.ToString("yyyy-MM-dd"),
+        "estado" => EstadoChip(u.Estado).Label,
+        _ => null
+    };
+    private static object? TextoExportU(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+    // Celda de un campo propio: numericos como numero; el resto, el valor guardado (como lo muestra FilaTpl).
+    private object? CeldaDinU(UsuarioListaDto u, CampoDinDef d)
+    {
+        var val = ValorDin(u.UsuarioTenantId, d.Id);
+        if (EsNumDinU(d))
+            return decimal.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+        return TextoExportU(val);
+    }
+    private static bool EsNumDinU(CampoDinDef d) => d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    // Formato numerico de Excel de un campo propio (mismo criterio que los totales de grupo: moneda $ sin decimales).
+    private static string FormatoExcelDinU(CampoDinDef d) => d.Tipo switch
+    {
+        TipoCampoTablero.Moneda => "\"$\" #,##0",
+        TipoCampoTablero.Porcentaje => "General\"%\"",
+        _ => "General"
+    };
+
     // Etiqueta de cabecera (en mayuscula) para una clave visible.
     private string LabelUp(string clave) => (ColLabels.TryGetValue(clave, out var l) ? l : clave).ToUpperInvariant();
 

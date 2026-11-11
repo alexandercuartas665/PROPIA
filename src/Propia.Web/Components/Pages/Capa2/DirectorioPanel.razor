@@ -143,6 +143,11 @@
                         </div>
                     }
                 </div>
+            @* Descargar la vista tabla de la pestana activa tal como se ve (Excel o CSV). Solo en Tabla. *@
+            @if (_view == "tabla")
+            {
+                <TablaExportar Vista="VistaExport" />
+            }
             @* Toggle Lista/Tabla dentro de la barra de filtros (como en los demas modulos),
                no en una fila propia. La vista la controla la pagina y se pasa a las vistas
                hijas, asi el Directorio se lee igual que Zonas / Equipos / Usuarios. *@
@@ -1308,6 +1313,127 @@
         "estado" => e.Estado.ToString(),
         _ => ""
     };
+
+    // ===== Descargar la vista tabla (TablaExportar) de la pestana activa tal como se ve: columnas visibles en
+    // su orden (fijas + campos propios, con la etiqueta de la cabecera), TODAS las filas filtradas y ordenadas
+    // (las recien creadas al final, como en la tabla) y, si esta agrupada, el arbol de TablaAgrupador. =====
+    private ExportVista VistaExport()
+    {
+        var empresas = _tab == "empresas";
+        var fijas = CatalogoActivoOrdenado.Where(c => ColVisibleDir(c.Key, c.Hideable)).ToList();
+        var defs = DefsVisibles();
+        var columnas = fijas.Select(c => new ExportColumna(ColLabelDir(c.Key, c.DefLabel)))
+            .Concat(defs.Select(d => EsNumDinDir(d)
+                ? new ExportColumna(d.Label.ToUpperInvariant(), true, FormatoExcelDinDir(d))
+                : new ExportColumna(d.Label.ToUpperInvariant())))
+            .ToList();
+
+        List<ExportFila> filas;
+        int total;
+        if (empresas)
+        {
+            ExportFila FilaE(EmpresaResumenDto e, IReadOnlyList<string>? ruta)
+                => new(fijas.Select(c => TextoExport(TextoCeldaEmpresa(e, c.Key)))
+                    .Concat(defs.Select(d => CeldaDinDir(e.RegistroCamposId, d))).ToList(), Ruta: ruta);
+            total = EmpresasFiltradas?.Count ?? 0;
+            filas = FilasExportDir(EmpresasParaVista() ?? new(), EmpresasFiltradas ?? new(), ValorGrupoEmpresa, FilaE);
+        }
+        else
+        {
+            ExportFila FilaP(PersonaResumenDto p, IReadOnlyList<string>? ruta)
+                => new(fijas.Select(c => TextoExport(TextoCeldaPersona(p, c.Key)))
+                    .Concat(defs.Select(d => CeldaDinDir(p.RegistroCamposId, d))).ToList(), Ruta: ruta);
+            total = PersonasFiltradas?.Count ?? 0;
+            filas = FilasExportDir(PersonasParaVista() ?? new(), PersonasFiltradas ?? new(), ValorGrupoPersona, FilaP);
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_query)) criterios.Add($"Búsqueda: \"{_query.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsDir.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsDir.Select(s => $"{LblClaveExportDir(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupar) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposDir.Select(LblClaveExportDir)));
+        criterios.Add(empresas ? $"{total} empresas" : $"{total} personas");
+
+        var copropiedad = CopropiedadNombre == "tu copropiedad" ? null : CopropiedadNombre;
+        return new ExportVista(empresas ? "Terceros - Empresas" : "Terceros - Personas", copropiedad, columnas, filas, criterios,
+            _agrupar ? _gruposDir.Select(LblClaveExportDir).ToList() : new List<string>());
+    }
+
+    // Filas de la descarga: sin agrupar = la lista que recibe la tabla; agrupado = el mismo arbol del motor
+    // compartido (sobre la lista filtrada y ordenada), con cabeceras de grupo y la ruta de cada fila.
+    private List<ExportFila> FilasExportDir<T>(List<T> planas, List<T> filtradas, Func<T, string, IEnumerable<ValorGrupo>> valorDe,
+        Func<T, IReadOnlyList<string>?, ExportFila> fila)
+    {
+        var filas = new List<ExportFila>();
+        if (!_agrupar) { filas.AddRange(planas.Select(x => fila(x, null))); return filas; }
+        void Recorrer(IReadOnlyList<NodoGrupo<T>> nodos, List<string> ruta)
+        {
+            foreach (var n in nodos)
+            {
+                filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                var r = new List<string>(ruta) { n.Titulo };
+                if (n.EsHoja) filas.AddRange(n.Filas.Select(x => fila(x, r)));
+                else Recorrer(n.Subgrupos, r);
+            }
+        }
+        Recorrer(TablaAgrupador.Agrupar(filtradas, _gruposDir, valorDe, "Sin etiqueta"), new());
+        return filas;
+    }
+
+    // Texto visible de las celdas fijas (mismo que pinta DirectorioPersonasVista / DirectorioEmpresasVista).
+    private static string? TextoCeldaPersona(PersonaResumenDto p, string k) => k switch
+    {
+        "nombres" => p.Nombres,
+        "apellidos" => p.Apellidos,
+        "tipo" => p.TipoDocumento.ToString(),
+        "doc" => p.Documento,
+        "email" => p.Email,
+        "telefono" => p.Telefono,
+        "estado" => p.Estado.ToString(),
+        "etiquetas" => p.Etiquetas is null ? null : string.Join(", ", p.Etiquetas.Select(e => e.Valor)),
+        _ => null
+    };
+    private static string? TextoCeldaEmpresa(EmpresaResumenDto e, string k) => k switch
+    {
+        "razon" => e.RazonSocial,
+        "comercial" => e.NombreComercial,
+        "nit" => e.Nit + (string.IsNullOrEmpty(e.DigitoVerificacion) ? "" : $"-{e.DigitoVerificacion}"),
+        "email" => e.Email,
+        "telefono" => e.Telefono,
+        "estado" => e.Estado.ToString(),
+        _ => null
+    };
+    private static object? TextoExport(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    // Celda de un campo propio: sin registro (sin unidad vinculada) la tabla muestra "-" -> vacio; numericos como
+    // numero; Usuario/Directorio con el nombre (ValorCampoDir, igual que la tabla); el resto, el valor guardado.
+    private object? CeldaDinDir(Guid? registro, CampoDinDef d)
+    {
+        if (registro is null) return null;
+        if (EsNumDinDir(d))
+        {
+            var raw = _valoresCampos.TryGetValue(registro.Value, out var m) && m.TryGetValue(d.Id, out var v) ? v : null;
+            return decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+        }
+        return TextoExport(ValorCampoDir(registro, "cd:" + d.Id));
+    }
+    private static bool EsNumDinDir(CampoDinDef d) => d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    // Formato numerico de Excel de un campo propio (mismo criterio que los totales de grupo: moneda $ sin decimales).
+    private static string FormatoExcelDinDir(CampoDinDef d) => d.Tipo switch
+    {
+        TipoCampoTablero.Moneda => "\"$\" #,##0",
+        TipoCampoTablero.Porcentaje => "General\"%\"",
+        _ => "General"
+    };
+    // Etiqueta de una clave para las lineas de criterios (orden / agrupado por).
+    private string LblClaveExportDir(string k)
+    {
+        if (k.StartsWith("cd:", StringComparison.Ordinal))
+            return Guid.TryParse(k.AsSpan(3), out var g) && _defsCampos.FirstOrDefault(d => d.Id == g) is { } d ? d.Label : k;
+        var c = CatalogoActivo.FirstOrDefault(x => x.Key == k);
+        if (c.Key is not null) return ColLabelDir(k, c.DefLabel);
+        return k == "etiquetas" ? "Etiquetas" : k;
+    }
 
     // ---- Seleccion multiple + quitar del directorio (inactivar vinculo; no hay borrado real) ----
     private void ToggleSelDir((Guid Id, bool On) x) { if (x.On) _sel.Add(x.Id); else _sel.Remove(x.Id); }

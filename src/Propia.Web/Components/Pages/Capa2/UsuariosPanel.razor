@@ -168,6 +168,8 @@
                             </div>
                         }
                     </div>
+                    @* Descargar la vista tabla tal como se ve (Excel o CSV); la arma UsuariosTablaVista. *@
+                    <TablaExportar Vista="VistaExport" />
                 }
                 @* Dos vistas, las mismas que el Directorio: Lista (filas con avatar) y Tabla
                    (todas las columnas + alta inline). Mismo toggle para que se lean igual. *@
@@ -312,7 +314,7 @@
                 }
                 @* Render-all: se alimenta la lista filtrada+ordenada COMPLETA (agrupada o no); el hijo
                    muestra el footer con el conteo y el FAB, y con agrupacion los oculta. *@
-                <UsuariosTablaVista Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones" CargoColores="_cargoColores" RolColores="_rolColores" EstadoColores="_estadoColores"
+                <UsuariosTablaVista @ref="_tablaU" Usuarios="lista" Grupos="_gruposU" Roles="_roles" CargoOpciones="_cargoOpciones" CargoColores="_cargoColores" RolColores="_rolColores" EstadoColores="_estadoColores"
                                     Total="lista.Count" CrearRolInline="CrearRolInlineAsync"
                                     OnEditar="AbrirEditar" OnReactivar="Reactivar" OnInvitar="InvitarUsuarioTabla"
                                     OnCrearAbrir="CrearUsuarioAbrirTabla"
@@ -928,6 +930,33 @@
     // Cambio de niveles desde el menu compartido: el reagrupado es automatico (render-all, sin pagina).
     private void OnGruposUChanged() { StateHasChanged(); }
 
+    // ===== Descargar la vista tabla (TablaExportar): columnas y filas las arma UsuariosTablaVista (tiene las
+    // celdas y el arbol de grupos que pinta); aqui van titulo, copropiedad y criterios. =====
+    private UsuariosTablaVista? _tablaU;
+    private string? _copropiedadNombre;   // para el titulo de la descarga
+    private ExportVista VistaExport()
+    {
+        var (columnas, filas) = _tablaU?.VistaExport() ?? (new List<ExportColumna>(), new List<ExportFila>());
+        string LblClave(string k)
+            => k.StartsWith("cd:", StringComparison.Ordinal)
+                ? (Guid.TryParse(k.AsSpan(3), out var g) && _defsCampos.FirstOrDefault(d => d.Id == g) is { } d ? d.Label : k)
+                : ColLabelU(k);
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_query)) criterios.Add($"Búsqueda: \"{_query.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsU.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsU.Select(s => $"{LblClave(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoU) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposU.Select(LblClave)));
+        criterios.Add($"{_listaNavU.Count} usuarios");
+        var pestana = _tab switch
+        {
+            EstadoUsuarioTenant.Pendiente => "Pendientes",
+            EstadoUsuarioTenant.Inactivo => "Inactivos",
+            _ => "Activos"
+        };
+        return new ExportVista($"Usuarios y Roles - {pestana}", _copropiedadNombre, columnas, filas, criterios,
+            _gruposU.Select(LblClave).ToList());
+    }
+
     private void OrdenarPorColumnaU(string clave)
     {
         var ex = _sortsU.FirstOrDefault(s => s.Key == clave);
@@ -1408,6 +1437,7 @@
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await RestaurarVistaAsync();
                 await CargarRolesAsync();
                 await CargarAsync();
