@@ -322,6 +322,24 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.TenantId, x.Categoria });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        // Campos propios de las plantillas (columna "+"): catalogo + valor, espejo de Zona.
+        modelBuilder.Entity<PlantillaCampoDefinicion>(b =>
+        {
+            b.ToTable("plantilla_campo_definiciones");
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PlantillaCampoValor>(b =>
+        {
+            b.ToTable("plantilla_campo_valores");
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Plantilla).WithMany().HasForeignKey(x => x.PlantillaDocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.PlantillaDocumentoId }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
 
         // Catalogo GLOBAL de plantillas semilla (operado por Super Admin). Sin tenant_id, sin RLS.
         modelBuilder.Entity<PqrsdPlantillaSemilla>(b =>

@@ -203,7 +203,7 @@ else
                                 <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(clave, 0)" @ondblclick:stopPropagation="true"></span>
                             </th>
                         }
-                        <th class="tbl-addcol"></th>
+                        <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => AbrirCampo(null)"><i class="fi fi-rr-plus"></i></button></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -238,7 +238,8 @@ else
                                         </select></td>
                                         break;
                                     default:
-                                        <td class="nf-mut" title="Se define en la ficha">En la ficha</td>
+                                        @if (EsCampoPropio(c.Key)) { <td class="nf-mut" title="Se llena en la fila una vez creada">-</td> }
+                                        else { <td class="nf-mut" title="Se define en la ficha">En la ficha</td> }
                                         break;
                                 }
                             }
@@ -292,6 +293,35 @@ else
 @* El ModalHost vive en cada pagina (ver nota en MainLayout): editor, vista previa y confirmaciones. *@
 <ModalHost />
 
+@* Campos propios (columna "+"): el modal compartido de crear/editar campo, sobre /api/plantillas/campos. *@
+@if (_campoAbierto)
+{
+    <CrearCampoModal Prefijo="plantillas"
+                     RutaCatalogo="/api/plantillas/campos"
+                     TituloSingular="plantilla"
+                     Ejemplo="Ej. Responsable, Revisada por el consejo"
+                     NotaPie="El campo se agrega como una columna al final de la tabla de plantillas y se llena en la misma fila. Es exclusivo de esta copropiedad y funciona en filtros, agrupar, ordenar y en la descarga."
+                     Jwt="@_jwt"
+                     Editar="_campoEditar"
+                     TiposAvanzados="false"
+                     OfreceFuncion="false"
+                     Guardado="RecargarCamposAsync"
+                     Cerrado="() => { _campoAbierto = false; _campoEditar = null; }" />
+}
+@if (_campoEliminar is not null)
+{
+    <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _campoEliminar = null; }">
+        <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head"><strong>Eliminar el campo "@_campoEliminar.Label"</strong></div>
+            <div class="dst-cfg-sub">Se borra la columna y lo que tenga escrito en todas las plantillas. Esta acción no se puede deshacer.</div>
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fbtn" @onclick="() => _campoEliminar = null" disabled="@_delBusy">Cancelar</button>
+                <button type="button" class="dst-selbar-del" @onclick="EliminarCampoAsync" disabled="@_delBusy">Si, eliminar</button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     /* Propuesta .pld-* (replica/css/replica.css, seccion PROPUESTAS DE DISENO) */
     .pld-bandeja { margin-top: 4px; }
@@ -339,7 +369,88 @@ else
     };
     private sealed class ColPref { public string Key { get; set; } = ""; public bool Visible { get; set; } = true; public int? W { get; set; } }
     private List<ColPref> _cols = ColsDef.Select(c => new ColPref { Key = c.Key }).ToList();
-    private static string LabelCol(string k) => ColsDef.FirstOrDefault(c => c.Key == k).Label ?? k;
+    private static string LabelFija(string k) => ColsDef.FirstOrDefault(c => c.Key == k).Label ?? k;
+    private string LabelCol(string k) => CampoDe(k) is { } d ? d.Label.ToUpperInvariant() : LabelFija(k);
+
+    // ===== Campos propios (columna "+"): catalogo /api/plantillas/campos + valores planos. Clave de columna "cd:{id}". =====
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<(Guid Plantilla, Guid Def), string> _vals = new();
+    private bool _campoAbierto;
+    private CampoDinDef? _campoEditar, _campoEliminar;
+    private static bool EsCampoPropio(string k) => k.StartsWith("cd:", StringComparison.Ordinal);
+    private CampoDinDef? CampoDe(string k) => EsCampoPropio(k) && Guid.TryParse(k.AsSpan(3), out var g) ? _defs.FirstOrDefault(d => d.Id == g) : null;
+    private string? ValorPropio(PlantillaDocumentoDto p, CampoDinDef d) => _vals.TryGetValue((p.Id, d.Id), out var v) ? v : null;
+    private static bool EsNumerico(CampoDinDef d) => d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    private static decimal? Num(string? v) => decimal.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : null;
+    // Texto visible de un valor propio (celda de solo lectura, titulo de grupo y descarga).
+    private static string TextoPropio(CampoDinDef d, string? v) => d.Tipo switch
+    {
+        _ when string.IsNullOrWhiteSpace(v) => "",
+        TipoCampoTablero.Booleano => v == "true" ? "Si" : "No",
+        TipoCampoTablero.Moneda when Num(v) is { } n => "$" + n.ToString("N0", Es),
+        TipoCampoTablero.Porcentaje when Num(v) is { } n => n.ToString("0.##", Es) + "%",
+        _ => v!
+    };
+    private void AbrirCampo(CampoDinDef? d) { _campoEditar = d; _campoAbierto = true; }
+    private async Task CargarCamposAsync()
+    {
+        try { _defs = await Auth().GetFromJsonAsync<List<CampoDinDef>>("/api/plantillas/campos") ?? new(); } catch { _defs = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<PlantillaCampoValorFlatDto>>("/api/plantillas/campos-valores") ?? new();
+            _vals = flat.Where(v => v.Valor is not null).GroupBy(v => (v.PlantillaId, v.DefinicionId)).ToDictionary(g => g.Key, g => g.First().Valor!);
+        }
+        catch { _vals = new(); }
+        SincronizarCols();
+    }
+    // Columnas propias: las nuevas al final (visibles); las borradas salen de la lista, de los grupos y del orden.
+    private void SincronizarCols()
+    {
+        _cols.RemoveAll(c => EsCampoPropio(c.Key) && CampoDe(c.Key) is null);
+        _grupos.RemoveAll(k => EsCampoPropio(k) && CampoDe(k) is null);
+        _sorts.RemoveAll(s => EsCampoPropio(s.Key) && CampoDe(s.Key) is null);
+        foreach (var d in _defs.OrderBy(d => d.Orden))
+            if (_cols.All(c => c.Key != "cd:" + d.Id)) _cols.Add(new ColPref { Key = "cd:" + d.Id });
+    }
+    private async Task RecargarCamposAsync()
+    {
+        _campoAbierto = false; _campoEditar = null;
+        await CargarCamposAsync();
+        await GuardarColsAsync();
+        StateHasChanged();
+    }
+    private async Task EliminarCampoAsync()
+    {
+        if (_campoEliminar is not { } d) return;
+        _delBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/plantillas/campos/{d.Id}");
+            if (!r.IsSuccessStatusCode) Mensaje(await ErrorDeAsync(r, "No se pudo eliminar el campo."), true);
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+        _delBusy = false; _campoEliminar = null;
+        await RecargarCamposAsync();
+    }
+    private async Task DuplicarCampoAsync(CampoDinDef d)
+    {
+        var r = await Auth().PostAsJsonAsync("/api/plantillas/campos",
+            new Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest(d.Label + " (copia)", d.Tipo, d.Opciones, d.Descripcion));
+        if (r.IsSuccessStatusCode) { await RecargarCamposAsync(); Mensaje("Campo duplicado.", false); }
+        else Mensaje(await ErrorDeAsync(r, "No se pudo duplicar el campo."), true);
+    }
+    private async Task GuardarValorAsync(PlantillaDocumentoDto p, CampoDinDef d, string? v)
+    {
+        v = string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+        if (v == ValorPropio(p, d)) return;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/plantillas/campos-valores/{p.Id}/{d.Id}", new Propia.Application.MiCopropiedad.SetCampoValorRequest(v));
+            if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo guardar."), true); return; }
+            if (v is null) _vals.Remove((p.Id, d.Id)); else _vals[(p.Id, d.Id)] = v;
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+    }
     private List<(string Key, string Label)> ColsVis => _cols.Where(c => c.Visible).Select(c => (c.Key, LabelCol(c.Key))).ToList();
     private int ColSpanTotal => ColsVis.Count + 3;
     private string AnchoCol(string k) => _cols.FirstOrDefault(c => c.Key == k)?.W is { } w ? $"{w}px" : ColsDef.FirstOrDefault(c => c.Key == k).Ancho ?? "160px";
@@ -362,7 +473,7 @@ else
     }
     private async Task OcultarTodasCol() { for (var i = 0; i < _cols.Count; i++) _cols[i].Visible = i == 0; await GuardarColsAsync(); }
     private async Task MostrarTodasCol() { foreach (var c in _cols) c.Visible = true; await GuardarColsAsync(); }
-    private async Task RestablecerCol() { _cols = ColsDef.Select(c => new ColPref { Key = c.Key }).ToList(); await GuardarColsAsync(); }
+    private async Task RestablecerCol() { _cols = ColsDef.Select(c => new ColPref { Key = c.Key }).ToList(); SincronizarCols(); await GuardarColsAsync(); }
     private Task GuardarColsAsync() => GuardarLocalAsync(ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols));
 
     // ---- Mover columna por ARRASTRE (propiaTablaColReorder) y ancho por arrastre (propiaTablaResize) ----
@@ -399,16 +510,24 @@ else
     // ===== Buscar + Filtros =====
     private string _q = "";
     private FiltroDinamico? _fd;
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new List<FiltroDinamico.CampoDef>
     {
         new() { Key = "nombre", Label = "NOMBRE", Kind = "texto" },
         new() { Key = "categoria", Label = "CATEGORÍA", Kind = "sel", Opciones = PlantillasCatalogo.Categorias.Select(c => (c.Clave, c.Nombre)).ToList() },
         new() { Key = "usadaEn", Label = "SE OFRECE EN", Kind = "texto" },
         new() { Key = "datos", Label = "DATOS QUE USA", Kind = "num" },
         new() { Key = "modificada", Label = "MODIFICADA", Kind = "fecha" },
-    };
-    private static string? ValorCampo(PlantillaDocumentoDto p, string campo) => campo switch
+    }.Concat(_defs.Select(d => new FiltroDinamico.CampoDef
     {
+        Key = "cd:" + d.Id, Label = d.Label.ToUpperInvariant(),
+        Kind = EsNumerico(d) ? "num" : d.Tipo == TipoCampoTablero.Fecha ? "fecha"
+             : d.Tipo is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano ? "sel" : "texto",
+        Opciones = d.Tipo == TipoCampoTablero.Booleano ? new List<(string, string)> { ("true", "Si"), ("false", "No") }
+                 : d.Tipo == TipoCampoTablero.Seleccion ? d.OpcionesArray().Select(o => (o, o)).ToList() : new List<(string, string)>()
+    })).ToList();
+    private string? ValorCampo(PlantillaDocumentoDto p, string campo) => campo switch
+    {
+        _ when CampoDe(campo) is { } d => ValorPropio(p, d),
         "nombre" => p.Nombre,
         "categoria" => p.Categoria,
         "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
@@ -434,8 +553,10 @@ else
         var dir = _sorts.Count == 1 && _sorts[0].Key == k ? -_sorts[0].Dir : 1;
         _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = dir } };
     }
-    private static IComparable ValorOrden(PlantillaDocumentoDto p, string k) => k switch
+    // Campo propio: numeros como numero (vacio al principio), el resto por su texto visible.
+    private IComparable ValorOrden(PlantillaDocumentoDto p, string k) => k switch
     {
+        _ when CampoDe(k) is { } d => EsNumerico(d) ? (IComparable)(Num(ValorPropio(p, d)) ?? decimal.MinValue) : TextoPropio(d, ValorPropio(p, d)),
         "nombre" => p.Nombre,
         "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
         "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
@@ -489,6 +610,14 @@ else
             yield return new ValorGrupo(d.ToString("yyyy-MM-dd"), FechaCorta(p.Modificada), Orden: -d.DayNumber);
             yield break;
         }
+        if (CampoDe(k) is { } cd)
+        {
+            var t = TextoPropio(cd, ValorPropio(p, cd));
+            var n = EsNumerico(cd) ? Num(ValorPropio(p, cd)) : null;
+            // Sin valor: no devuelve nada y el motor lo manda al grupo "(vacio)" al final (como los demas modulos).
+            if (t.Length > 0) yield return new ValorGrupo(t, t, Orden: n is { } x ? (int)Math.Clamp(x, int.MinValue, int.MaxValue) : 0);
+            yield break;
+        }
         var v = k == "datos" ? PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml).ToString() : ValorCampo(p, k);
         yield return string.IsNullOrWhiteSpace(v) ? new ValorGrupo("", "(vacio)") : new ValorGrupo(v!, v!);
     }
@@ -497,9 +626,17 @@ else
     private ExportVista VistaExport()
     {
         var cols = ColsVis;
-        var columnas = cols.Select(c => new ExportColumna(c.Label, c.Key == "datos", c.Key == "datos" ? "0" : null)).ToList();
+        string? FormatoPropio(CampoDinDef d) => d.Tipo switch
+        {
+            TipoCampoTablero.Moneda => "\"$\" #,##0", TipoCampoTablero.Porcentaje => "0.##\"%\"", _ => "General"
+        };
+        var columnas = cols.Select(c => CampoDe(c.Key) is { } d && EsNumerico(d)
+            ? new ExportColumna(c.Label, true, FormatoPropio(d))
+            : new ExportColumna(c.Label, c.Key == "datos", c.Key == "datos" ? "0" : null)).ToList();
         object? Celda(PlantillaDocumentoDto p, string k) => k switch
         {
+            _ when CampoDe(k) is { } d => EsNumerico(d) && Num(ValorPropio(p, d)) is { } n ? (object)n
+                                         : TextoPropio(d, ValorPropio(p, d)) is { Length: > 0 } t ? t : null,
             "nombre" => p.Nombre,
             "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
             "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
@@ -575,8 +712,30 @@ else
         "usadaEn" => @<td class="tbl-ro">@PlantillasCatalogo.Categoria(p.Categoria).UsadaEn</td>,
         "datos" => @<td class="tbl-ro">@PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml)</td>,
         "modificada" => @<td class="tbl-ro">@FechaCorta(p.Modificada)</td>,
-        _ => @<td></td>
+        _ => CampoDe(k) is { } d ? CeldaPropia(p, d) : CeldaVacia
     };
+    private static RenderFragment CeldaVacia => @<td></td>;
+    // Celda editable de un campo propio segun su tipo; guarda al cambiar (PUT campos-valores).
+    private RenderFragment CeldaPropia(PlantillaDocumentoDto p, CampoDinDef d)
+    {
+        var v = ValorPropio(p, d);
+        switch (d.Tipo)
+        {
+            case TipoCampoTablero.Seleccion:
+                return @<td><select class="tbl-cell tbl-cell-lista" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())">
+                    <option value="" selected="@string.IsNullOrEmpty(v)">-</option>
+                    @foreach (var o in d.OpcionesArray()) { <option value="@o" selected="@(o == v)">@o</option> }
+                </select></td>;
+            case TipoCampoTablero.Booleano:
+                return @<td><label class="tbl-chk"><input type="checkbox" checked="@(v == "true")" @onchange="@(e => GuardarValorAsync(p, d, (bool)(e.Value ?? false) ? "true" : "false"))" /></label></td>;
+            case TipoCampoTablero.Fecha:
+                return @<td><input type="date" class="tbl-cell" value="@v" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+            case TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje:
+                return @<td><input type="number" class="tbl-cell" style="text-align:right" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+            default:
+                return @<td><input class="tbl-cell" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+        }
+    }
     // Select tipo chip con el color de la categoria (mismo formato que SelectListaStyle de Unidades).
     private static string EstiloCat(string clave)
     {
@@ -692,7 +851,7 @@ else
 
     // ===== Menu de columna (flecha del encabezado) =====
     private TablaColMenu? _colMenu;
-    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, false), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, EsCampoPropio(clave)), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
     private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
     {
         var (accion, col) = a;
@@ -709,8 +868,12 @@ else
                 if (_cols.FindIndex(c => c.Key == col.Key) == 0) Mensaje("Esta columna es fija y no se puede ocultar.", false);
                 else await ToggleVisibleCol(col.Key);
                 break;
+            case TablaColMenu.Accion.Editar when CampoDe(col.Key) is { } de: AbrirCampo(de); break;
+            case TablaColMenu.Accion.Duplicar when CampoDe(col.Key) is { } dd: await DuplicarCampoAsync(dd); break;
+            case TablaColMenu.Accion.Eliminar when CampoDe(col.Key) is { } dx: _campoEliminar = dx; break;
+            case TablaColMenu.Accion.InsertarIzq or TablaColMenu.Accion.InsertarDer: AbrirCampo(null); break;
             case TablaColMenu.Accion.Duplicar: Mensaje("Solo se pueden duplicar campos propios.", false); break;
-            default: Mensaje("Plantillas no tiene campos propios: esta opción no aplica aquí.", false); break;
+            default: Mensaje("Esta opción solo aplica a los campos propios (los creados con +).", false); break;
         }
         StateHasChanged();
     }
@@ -792,6 +955,7 @@ else
                     _jwt = stored;
                     await CargarPreferenciasAsync();
                     await CargarAsync();
+                    await CargarCamposAsync();
                     await AbrirDesdeEnlaceAsync();
                 }
                 StateHasChanged();
@@ -847,7 +1011,8 @@ else
             if (!string.IsNullOrWhiteSpace(c) && System.Text.Json.JsonSerializer.Deserialize<List<ColPref>>(c) is { Count: > 0 } guard)
             {
                 // Conserva orden/visibilidad/ancho guardados; columnas nuevas al final; NOMBRE siempre 1a y visible.
-                var conocidas = guard.Where(x => ColsDef.Any(d => d.Key == x.Key)).GroupBy(x => x.Key).Select(x => x.First()).ToList();
+                // Las "cd:" (campos propios) se conservan aqui; SincronizarCols quita las borradas al cargar el catalogo.
+                var conocidas = guard.Where(x => ColsDef.Any(d => d.Key == x.Key) || EsCampoPropio(x.Key)).GroupBy(x => x.Key).Select(x => x.First()).ToList();
                 conocidas.AddRange(ColsDef.Where(d => conocidas.All(x => x.Key != d.Key)).Select(d => new ColPref { Key = d.Key }));
                 var fija = conocidas.First(x => x.Key == "nombre"); fija.Visible = true;
                 conocidas.Remove(fija); conocidas.Insert(0, fija);

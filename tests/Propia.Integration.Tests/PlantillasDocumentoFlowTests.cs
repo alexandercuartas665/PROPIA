@@ -97,6 +97,45 @@ public class PlantillasDocumentoFlowTests
         await CleanupTenantAsync(tB);
     }
 
+    [Fact]
+    public async Task Campos_propios_crud_valores_cascada_y_aislamiento()
+    {
+        var tA = await SeedTenantAsync("[PLT] campos A");
+        var tB = await SeedTenantAsync("[PLT] campos B");
+        var svcA = Build(tA);
+        var svcB = Build(tB);
+        var ct = CancellationToken.None;
+
+        var p = await svcA.CrearAsync(new GuardarPlantillaDocumentoRequest("Citacion", "asambleas", "<p>x</p>"), ct);
+        var def = await svcA.CrearCampoAsync(new Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest("Responsable", TipoCampoTablero.Texto), ct);
+        // Mismo nombre (sin importar mayusculas) devuelve el existente; Formula cae a Texto (sin motor de calculo).
+        Assert.Equal(def.Id, (await svcA.CrearCampoAsync(new Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest("responsable"), ct)).Id);
+        var fx = await svcA.CrearCampoAsync(new Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest("Calc", TipoCampoTablero.Formula, "{}"), ct);
+        Assert.Equal(TipoCampoTablero.Texto, fx.Tipo);
+
+        Assert.True(await svcA.SetValorAsync(p.Id, def.Id, " Ana ", ct));
+        Assert.Contains(await svcA.ListarValoresAsync(ct), v => v.PlantillaId == p.Id && v.DefinicionId == def.Id && v.Valor == "Ana");
+        Assert.True(await svcA.SetValorAsync(p.Id, def.Id, "Luis", ct));     // upsert, no duplica
+        Assert.Single(await svcA.ListarValoresAsync(ct));
+
+        // B no ve ni toca nada de A.
+        Assert.Empty(await svcB.ListarCamposAsync(ct));
+        Assert.Empty(await svcB.ListarValoresAsync(ct));
+        Assert.False(await svcB.SetValorAsync(p.Id, def.Id, "Hack", ct));
+        Assert.False(await svcB.EliminarCampoAsync(def.Id, ct));
+        Assert.False(await svcB.ActualizarCampoAsync(def.Id, new Propia.Application.MiCopropiedad.ActualizarCampoDefinicionRequest("X", TipoCampoTablero.Texto, null, 1), ct));
+        Assert.Equal("Luis", (await svcA.ListarValoresAsync(ct)).Single().Valor);
+
+        // Borrar la plantilla borra sus valores (cascada); borrar el campo deja el catalogo sin el.
+        Assert.True(await svcA.EliminarAsync(p.Id, ct));
+        Assert.Empty(await svcA.ListarValoresAsync(ct));
+        Assert.True(await svcA.EliminarCampoAsync(def.Id, ct));
+        Assert.DoesNotContain(await svcA.ListarCamposAsync(ct), d => d.Id == def.Id);
+
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
     // ----------------------------- infraestructura -----------------------------
 
     private IPlantillasDocumentoService Build(Guid tenantId)
@@ -128,6 +167,8 @@ public class PlantillasDocumentoFlowTests
     private async Task CleanupTenantAsync(Guid tenantId)
     {
         await using var ctx = OwnerDb();
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM plantilla_campo_valores WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM plantilla_campo_definiciones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM plantillas_documento WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");
     }

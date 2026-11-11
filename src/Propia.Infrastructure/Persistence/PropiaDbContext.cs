@@ -231,6 +231,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdRespuestaVersion> PqrsdRespuestaVersiones => Set<PqrsdRespuestaVersion>();
     public DbSet<PqrsdRespuestaDestinatario> PqrsdRespuestaDestinatarios => Set<PqrsdRespuestaDestinatario>();
     public DbSet<PlantillaDocumento> PlantillasDocumento => Set<PlantillaDocumento>();
+    public DbSet<PlantillaCampoDefinicion> PlantillaCamposDefiniciones => Set<PlantillaCampoDefinicion>();
+    public DbSet<PlantillaCampoValor> PlantillaCamposValores => Set<PlantillaCampoValor>();
     public DbSet<PqrsdPlantillaSemilla> PqrsdPlantillasSemilla => Set<PqrsdPlantillaSemilla>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 

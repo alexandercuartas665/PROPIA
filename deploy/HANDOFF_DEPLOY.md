@@ -1,5 +1,15 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PLANTILLAS: CAMPOS PROPIOS (columna "+") + ASUNTO COMPLETO EN EXCEL DE PQRSD (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
+> - **MIGRACION `20261111140504_AddPlantillaCampos`** (va DESPUES de `AddPlantillasDocumento`): crea
+>   `plantilla_campo_definiciones` y `plantilla_campo_valores` (FK en cascada a la definicion y a `plantillas_documento`),
+>   ambas con RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`. Sin datos que migrar. Down: borra las 2 tablas.
+> - API nueva: `/api/plantillas/campos` (GET/POST/PUT/DELETE) y `/api/plantillas/campos-valores` (GET, PUT
+>   `{plantillaId}/{definicionId}`); escrituras con permiso `PLANTILLAS:Editar`. `POST /api/pqrsd/descripciones` (lectura,
+>   permiso `PQRS:Ver`): texto completo del asunto para la descarga de la vista tabla.
+> - **Verificar en PROD tras aplicar**: `select relname, relrowsecurity, relforcerowsecurity from pg_class where relname like
+>   'plantilla_campo%'` -> ambas `t|t`. Sin config/env nueva.
+
 > **CONFIGURACION > PLANTILLAS DE DOCUMENTOS (2026-11-11): 1 MIGRACION (con DATOS + DROP) + API y Web cambian.**
 > - Modulo nuevo `/configuracion/plantillas`: catalogo central de plantillas (categorias pqrsd/cartera/asambleas/
 >   comunicaciones/contratos/reservas/certificados), API `/api/plantillas`, permiso nuevo `PLANTILLAS` en la matriz

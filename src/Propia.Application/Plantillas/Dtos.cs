@@ -12,3 +12,10 @@ public sealed record PlantillaDocumentoDto(Guid Id, string Nombre, string Catego
 /// <summary>Alta/edicion. En PUT es MERGE: un campo null no se toca (la tabla edita solo nombre o categoria).
 /// Orden (solo alta): posicion; null = al final. "Duplicar" pasa el de la original para quedar a su lado.</summary>
 public sealed record GuardarPlantillaDocumentoRequest(string? Nombre, string? Categoria, string? CuerpoHtml, int? Orden = null);
+
+/// <summary>Campo propio de las plantillas (columna "+"). Misma forma que el resto de catalogos de campos
+/// (CampoDinDef en la Web), asi lo consume el modal compartido CrearCampoModal.</summary>
+public sealed record PlantillaCampoDefinicionDto(Guid Id, string Label, int Orden, Propia.Domain.Enums.TipoCampoTablero Tipo, string? Opciones, string? Descripcion);
+
+/// <summary>Valor plano (plantilla + definicion) para pintar los campos propios como columnas sin N+1.</summary>
+public sealed record PlantillaCampoValorFlatDto(Guid PlantillaId, Guid DefinicionId, string? Valor);

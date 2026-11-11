@@ -146,7 +146,7 @@
                                    OnEliminar="EliminarCampoColPqr" OnOcultarTodas="OcultarTodasColPqr"
                                    OnMostrarTodas="MostrarTodasColPqr" OnRestablecer="RestablecerColPqr" />
                 @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
-                <TablaExportar Vista="VistaExport" />
+                <TablaExportar Vista="VistaExport" Preparar="CargarDescripcionesAsync" />
             }
 
             @* Modos de vista DESPUES de Columnas, igual que el toggle de Unidades Privadas. En Cerrados no hay
@@ -1726,7 +1726,17 @@
         if (!c.EsCustom) return "0\"d\"";
         return _campos.FirstOrDefault(d => d.Id == c.CampoId)?.Tipo == TipoCampoTablero.Moneda ? "\"$\"#,##0" : "General";
     }
-    // Valor de una celda = lo que pinta FilaPqrTpl (etiquetas visibles, no claves internas).
+    // La tabla muestra el asunto resumido (100 caracteres); al descargar se trae el texto completo de las filas
+    // de la vista (POST /api/pqrsd/descripciones). Si falla, el Excel sale con el resumen.
+    private Dictionary<Guid, string> _descCompletas = new();
+    private async Task CargarDescripcionesAsync()
+    {
+        var ids = RaicesOrdenadasPqr().Select(x => x.Id).ToList();
+        if (ids.Count == 0) return;
+        var r = await Auth().PostAsJsonAsync("/api/pqrsd/descripciones", ids);
+        if (r.IsSuccessStatusCode) _descCompletas = await r.Content.ReadFromJsonAsync<Dictionary<Guid, string>>() ?? new();
+    }
+    // Valor de una celda = lo que pinta FilaPqrTpl (etiquetas visibles, no claves internas); el asunto va completo.
     private object? CeldaExportP(PqrsdBandejaItemDto it, ColItem c)
     {
         static object? T(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
@@ -1739,7 +1749,7 @@
         return c.Key switch
         {
             "radicado" => T(it.NumeroRadicado),
-            "asunto" => T(it.DescripcionResumen),
+            "asunto" => T(_descCompletas.GetValueOrDefault(it.Id) ?? it.DescripcionResumen),
             "tipo" => T(it.TipoNombre ?? TipoLabel(it.Tipo)),
             "categoria" => T(it.CategoriaNombre),
             "estado" => T(_estados.FirstOrDefault(e => e.Id == it.EstadoId)?.Nombre),
