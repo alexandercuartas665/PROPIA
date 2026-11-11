@@ -101,6 +101,11 @@
                 <span>Campos</span>
             </button>
         </div>
+        @* Descargar la vista tabla tal como se ve (Excel o CSV). Solo en Tabla. *@
+        @if (_vistaProg == "tabla")
+        {
+            <TablaExportar Vista="VistaExportProg" />
+        }
         @* Selector de vista canon (orden del sistema: Tarjetas · Tabla · Calendario, como Tareas/PQRSD). *@
         <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tarjetas"), TablaVistaToggle.Tabla("tabla"), TablaVistaToggle.Calendario("calendario") })" Valor="@_vistaProg" OnCambiar="SetVistaProg" />
     </div>
@@ -439,6 +444,11 @@
                 <span>Campos</span>
             </button>
         </div>
+        @* Descargar la vista tabla tal como se ve (Excel o CSV). Solo en Tabla. *@
+        @if (_vistaInterv == "tabla")
+        {
+            <TablaExportar Vista="VistaExportInterv" />
+        }
         @* Selector de vista canon: Tarjetas (kanban por estado) · Tabla. *@
         <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tarjetas"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vistaInterv" OnCambiar="SetVistaInterv" />
     </div>
@@ -2019,6 +2029,112 @@ else if (_tab == "prog" && _vistaProg == "calendario")
         return TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(IntervFiltradas(), niveles, (i, k) => new[] { ValorGrupoInterv(i, k) }, "(vacio)"));
     }
 
+    // ===== Descarga de la vista tabla (TablaExportar), una por pestana: columnas visibles en su orden, TODAS las
+    // filas filtradas y ordenadas (no solo la pagina del pager) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombre;
+    private const string FmtMonedaM = "\"$\" #,##0";
+    private static string? NoVacioM(string? s) => string.IsNullOrWhiteSpace(s) || s == "-" ? null : s;
+    // Formato numerico de un campo propio (Numero/Moneda/Porcentaje van como numero); null = texto.
+    private static string? FormatoCampoM(TipoCampoTablero tipo) => tipo switch
+    {
+        TipoCampoTablero.Moneda => FmtMonedaM,
+        TipoCampoTablero.Numero or TipoCampoTablero.Porcentaje => "General",
+        _ => null
+    };
+    // Celda de un campo propio: el valor tal como se ve en el input/select; si es numerico, como numero.
+    private static object? CeldaCampoM(TipoCampoTablero tipo, string? valor)
+        => FormatoCampoM(tipo) is not null && decimal.TryParse(valor, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d)
+            ? d : NoVacioM(valor);
+    // Recorre el arbol de grupos (motor compartido) emitiendo cabeceras + filas con su Ruta.
+    private static void RecorrerGruposM<T>(IReadOnlyList<NodoGrupo<T>> nodos, List<string> ruta, List<ExportFila> filas, Func<T, IReadOnlyList<string>?, ExportFila> fila)
+    {
+        foreach (var n in nodos)
+        {
+            filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+            var r = new List<string>(ruta) { n.Titulo };
+            if (n.EsHoja) filas.AddRange(n.Filas.Select(x => fila(x, r)));
+            else RecorrerGruposM(n.Subgrupos, r, filas, fila);
+        }
+    }
+    private ExportVista VistaExportProg()
+    {
+        var cols = ProgColsVis.ToList();
+        var columnas = cols.Select(c =>
+        {
+            var f = c.Key == "costo" ? FmtMonedaM : CampoCustomProg(c.Key) is { } cd ? FormatoCampoM(cd.Tipo) : null;
+            return new ExportColumna(c.Label, f is not null, f);
+        }).ToList();
+        object? Celda(ProgramacionTareaDto p, string k) => k switch
+        {
+            "tipo" => p.ModuloOrigenCodigo == "zona" ? "Zona común" : "Equipo",
+            "activo" => NoVacioM(p.OrigenReferencia),
+            "titulo" => NoVacioM(p.Titulo),
+            "tercero" => p.ProveedorId is null ? null : NoVacioM(p.ProveedorNombre ?? NombreTercero(p.ProveedorId)),
+            "contrato" => p.ContratoId is null ? null : NoVacioM(NombreContrato(p.ContratoId)),
+            "costo" => p.CostoEstimado,
+            "tablero" => string.IsNullOrWhiteSpace(p.TableroNombre) ? "General" : p.TableroNombre,
+            "prioridad" => LblPrioProg(p.Prioridad),
+            "periodicidad" => p.Tipo == TipoProgramacion.Cron ? $"Cron: {p.CronExpresion}" : PeriodicidadProgLabel(p.Periodicidad),
+            "proxima" => p.FechaProximaEjecucion.ToString("yyyy-MM-dd"),
+            "responsables" => NoVacioM(string.Join(", ", p.Responsables.Select(r => r.Nombre))),
+            "activa" => p.Activa ? "Activa" : "Pausada",
+            _ => CampoCustomProg(k) is { } cd ? CeldaCampoM(cd.Tipo, ValorCampoProg(p.Id, cd.Id)) : null
+        };
+        ExportFila Fila(ProgramacionTareaDto p, IReadOnlyList<string>? ruta) => new(cols.Select(c => Celda(p, c.Key)).ToList(), Ruta: ruta);
+
+        var filtradas = ProgFiltradas().ToList();
+        var niveles = NivelesProg;
+        var filas = new List<ExportFila>();
+        if (niveles.Count == 0) filas.AddRange(filtradas.Select(p => Fila(p, null)));
+        else RecorrerGruposM(TablaAgrupador.Agrupar(filtradas, niveles, (p, k) => new[] { ValorGrupoProg(p, k) }, "(vacio)"), new(), filas, Fila);
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_progQuery)) criterios.Add($"Búsqueda: \"{_progQuery.Trim()}\"");
+        if (_fdProg?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsProg.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsProg.Select(s => $"{LabelColProg(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelColProg)));
+        criterios.Add($"{filtradas.Count} programaciones");
+        return new ExportVista("Mantenimiento - Programaciones", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelColProg).ToList());
+    }
+    private ExportVista VistaExportInterv()
+    {
+        var cols = IntervColsVis.ToList();
+        var columnas = cols.Select(c =>
+        {
+            var f = CampoCustomInterv(c.Key) is { } cd ? FormatoCampoM(cd.Tipo) : null;
+            return new ExportColumna(c.Label, f is not null, f);
+        }).ToList();
+        object? Celda(IntervencionListaDto i, string k) => k switch
+        {
+            "codigo" => NoVacioM(i.Codigo),
+            "activo" => NoVacioM(i.ActivoNombre),
+            "tipo" => LblIntTipo(i.Tipo),
+            "titulo" => NoVacioM(i.Titulo),
+            "estado" => LblIntEstado(i.Estado),
+            "prioridad" => LblIntPrio(i.Prioridad),
+            "proveedor" => NoVacioM(i.ProveedorNombre),
+            "programada" => i.FechaProgramada?.ToString("yyyy-MM-dd"),
+            "cierre" => i.FechaCierre?.ToString("yyyy-MM-dd"),
+            "tarea" => i.TareaId is null ? null : NoVacioM(i.TareaNumero),
+            _ => CampoCustomInterv(k) is { } cd ? CeldaCampoM(cd.Tipo, ValorCampoInterv(i.Id, cd.Id)) : null
+        };
+        ExportFila Fila(IntervencionListaDto i, IReadOnlyList<string>? ruta) => new(cols.Select(c => Celda(i, c.Key)).ToList(), Ruta: ruta);
+
+        var filtradas = IntervFiltradas().ToList();
+        var niveles = NivelesInterv;
+        var filas = new List<ExportFila>();
+        if (niveles.Count == 0) filas.AddRange(filtradas.Select(i => Fila(i, null)));
+        else RecorrerGruposM(TablaAgrupador.Agrupar(filtradas, niveles, (i, k) => new[] { ValorGrupoInterv(i, k) }, "(vacio)"), new(), filas, Fila);
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_intervQuery)) criterios.Add($"Búsqueda: \"{_intervQuery.Trim()}\"");
+        if (_fdInterv?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsInterv.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsInterv.Select(s => $"{LabelColInterv(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelColInterv)));
+        criterios.Add($"{filtradas.Count} intervenciones");
+        return new ExportVista("Mantenimiento - Intervenciones", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelColInterv).ToList());
+    }
+
     // Alta inline de intervencion (crea + tarea vinculada). Guarda los campos propios sobre la recien creada.
     private string _iaTipo = "Preventivo";
     private string _iaActivoId = "";
@@ -2431,6 +2547,8 @@ else if (_tab == "prog" && _vistaProg == "calendario")
             _gruposInterv = await LeerGruposAsync(GruposIntervKey);
             _vistaProg = await LeerVistaAsync(VistaProgKey, "tabla", "tarjetas", "tabla", "calendario");
             _vistaInterv = await LeerVistaAsync(VistaIntervKey, "tabla", "tarjetas", "tabla");
+            // Nombre de la copropiedad para la descarga de la vista (se lee una vez).
+            try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
             if (_gruposProg.Count > 0 || _gruposInterv.Count > 0 || _vistaProg != "tabla" || _vistaInterv != "tabla") StateHasChanged();
         }
         if (firstRender && _jwt is null)
