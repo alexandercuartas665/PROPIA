@@ -1010,17 +1010,35 @@
     {
         var items = PersonasFiltradas;
         if (!_agrupar || items is null) return null;
-        return TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoPersona, "Sin etiqueta")
-            .Select(n => new DirectorioPersonasVista.Grupo(n.Titulo, n.Color, n.Icono, n.Filas.ToList()))
+        return AplanarGrupos(TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoPersona, "Sin etiqueta"))
+            .Select(x => new DirectorioPersonasVista.Grupo(x.Nodo.Titulo, x.Nodo.Color, x.Nodo.Icono, x.Filas, x.Nodo.Nivel, x.Nodo.EsHoja))
             .ToList();
+    }
+
+    // Recorre el arbol de grupos en orden de pintado (cabecera, subgrupos, siguiente grupo). Cada nodo
+    // lleva TODAS las filas de su rama (sin repetir) para el conteo y los totales de su cabecera.
+    private static List<(NodoGrupo<T> Nodo, List<T> Filas)> AplanarGrupos<T>(IReadOnlyList<NodoGrupo<T>> nodos) where T : class
+    {
+        var res = new List<(NodoGrupo<T>, List<T>)>();
+        static IEnumerable<T> Hojas(NodoGrupo<T> n) => n.EsHoja ? n.Filas : n.Subgrupos.SelectMany(Hojas);
+        void Recorrer(IReadOnlyList<NodoGrupo<T>> ns)
+        {
+            foreach (var n in ns)
+            {
+                res.Add((n, Hojas(n).Distinct().ToList()));
+                if (!n.EsHoja) Recorrer(n.Subgrupos);
+            }
+        }
+        Recorrer(nodos);
+        return res;
     }
 
     private List<DirectorioEmpresasVista.Grupo>? GruposEmpresas()
     {
         var items = EmpresasFiltradas;
         if (!_agrupar || items is null) return null;
-        return TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoEmpresa, "Sin etiqueta")
-            .Select(n => new DirectorioEmpresasVista.Grupo(n.Titulo, n.Color, n.Icono, n.Filas.ToList()))
+        return AplanarGrupos(TablaAgrupador.Agrupar(items, _gruposDir, ValorGrupoEmpresa, "Sin etiqueta"))
+            .Select(x => new DirectorioEmpresasVista.Grupo(x.Nodo.Titulo, x.Nodo.Color, x.Nodo.Icono, x.Filas, x.Nodo.Nivel, x.Nodo.EsHoja))
             .ToList();
     }
 

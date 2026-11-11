@@ -2076,6 +2076,16 @@ else
             yield return new ValorGrupo(en, en, et?.Color, Orden: et?.Orden ?? 999);
             yield break;
         }
+        // Numericas: el titulo es el mismo texto que pinta la celda ("$150.000", "3 cuotas") y el
+        // Orden numerico evita que los grupos queden en orden alfabetico ("10" antes que "2").
+        if (clave is "valor" or "valortotal" or "cuotas")
+        {
+            decimal? n = clave switch { "valor" => c.ValorMensual, "valortotal" => c.ValorTotal, _ => c.FormaPagoCuotas };
+            if (n is null) yield break;
+            var tn = clave == "cuotas" ? $"{n:0} cuotas" : "$" + n.Value.ToString("N0");
+            yield return new ValorGrupo(tn, tn, Orden: (int)Math.Clamp(n.Value, int.MinValue, int.MaxValue));
+            yield break;
+        }
         var v = ValorOrdenC(c, clave);
         var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
         yield return new ValorGrupo(t, t);
@@ -3033,10 +3043,11 @@ else
             "fin" => c.FechaFin?.ToString("yyyy-MM-dd", ci) ?? "",
             "estado" => EstadoTextoContrato(c),
             "valortotal" => c.ValorTotal?.ToString(ci) ?? "",
-            "formapago" => c.FormaPagoCuotas?.ToString(ci) ?? "",
+            "formapago" => c.FormaPago ?? "",
+            "cuotas" => c.FormaPagoCuotas?.ToString(ci) ?? "",
             "pagomensual" => c.PagoMensual ? "Si" : "No",
             "obs" => c.Observaciones ?? "",
-            "tipo" => TipoLabel(c.Tipo),
+            "tipo" => TipoServTxt(c),
             "valor" => c.ValorMensual?.ToString(ci) ?? "",
             "etapa" => EtapaNombreDe(c.EtapaId),
             "contacto" => c.Contacto ?? "",
