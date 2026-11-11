@@ -91,6 +91,10 @@ else
                 </div>
             }
         </div>
+        @if (_vista == "tabla")
+        {
+            <TablaExportar Vista="VistaExport" />
+        }
         <TablaVistaToggle Opciones="@VistasOpc" Valor="@_vista" OnCambiar="SetVista" />
     </div>
 
@@ -487,6 +491,47 @@ else
         }
         var v = k == "datos" ? PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml).ToString() : ValorCampo(p, k);
         yield return string.IsNullOrWhiteSpace(v) ? new ValorGrupo("", "(vacio)") : new ValorGrupo(v!, v!);
+    }
+
+    // ===== Descargar la vista tabla tal como se ve (TablaExportar) =====
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVis;
+        var columnas = cols.Select(c => new ExportColumna(c.Label, c.Key == "datos", c.Key == "datos" ? "0" : null)).ToList();
+        object? Celda(PlantillaDocumentoDto p, string k) => k switch
+        {
+            "nombre" => p.Nombre,
+            "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
+            "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+            "datos" => (decimal)PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml),
+            "modificada" => FechaCorta(p.Modificada),
+            _ => null
+        };
+        ExportFila Fila(PlantillaDocumentoDto p, IReadOnlyList<string>? ruta) => new(cols.Select(c => Celda(p, c.Key)).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        var niveles = Niveles;
+        if (niveles.Count == 0) filas.AddRange(Ordenadas().Select(p => Fila(p, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<PlantillaDocumentoDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(p => Fila(p, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(ArbolGrupos(niveles), new());
+        }
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LabelCol(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelCol)));
+        criterios.Add($"{Filtradas().Count} plantillas");
+        return new ExportVista("Plantillas de documentos", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelCol).ToList());
     }
 
     // ===== Seleccion multiple + borrado masivo =====

@@ -69,6 +69,7 @@ else
                 <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
                 <TablaColumnasMenu Columnas="ColsVisibilidad()" OnMover="MoverColMenu" OnToggleVisible="ToggleVisibleCol"
                                    OnOcultarTodas="OcultarTodasCol" OnMostrarTodas="MostrarTodasCol" OnRestablecer="RestablecerCol" />
+                <TablaExportar Vista="VistaExport" />
             }
             <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Calendario("calendario"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
         </div>
@@ -759,6 +760,7 @@ else
     private string _vista = "calendario";   // calendario | tabla (persistida por navegador)
     private const string VistaKey = "propia_reservas_vista", GruposKey = "propia_reservas_grupos", ColsKey = "propia_reservas_cols";
     private string _q = "";
+    private string? _copropiedadNombre;   // titulo de la descarga
     private FiltroDinamico? _fd;
     private List<TablaOrdenarMenu.Sort> _sorts = new();
     private List<string> _grupos = new();
@@ -882,6 +884,53 @@ else
         };
     }
 
+    // ---- Descargar la vista tabla tal como se ve (TablaExportar): todas las filas filtradas y ordenadas o los grupos ----
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVis;
+        var columnas = cols.Select(c => new ExportColumna(c.Label)).ToList();
+        string Texto(ReservaDto r, string k) => k switch
+        {
+            "fecha" => FechaLarga(r.Fecha),
+            "horario" => HorarioTexto(r),
+            "zona" => r.ZonaNombre ?? "",
+            "unidad" => r.UnidadNumero ?? "",
+            "persona" => string.IsNullOrWhiteSpace(r.PersonaNombre) ? "-" : r.PersonaNombre!,
+            "estado" => EstadoTexto(r.Estado),
+            "codigo" => r.Codigo ?? "",
+            "pago" => PagoTexto(r),
+            "creada" => r.CreadoAt.ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd HH:mm"),
+            "entrega" => EntregaTexto(r),
+            _ => ""
+        };
+        ExportFila Fila(ReservaDto r, IReadOnlyList<string>? ruta)
+            => new(cols.Select(c => { var t = Texto(r, c.Key); return (object?)(string.IsNullOrWhiteSpace(t) ? null : t); }).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        var niveles = Niveles;
+        if (niveles.Count == 0) filas.AddRange(ReservasOrdenadas().Select(r => Fila(r, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<ReservaDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var rr = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(r => Fila(r, rr)));
+                    else Recorrer(n.Subgrupos, rr);
+                }
+            }
+            Recorrer(ArbolGrupos(niveles), new());
+        }
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LabelCol(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelCol)));
+        criterios.Add($"{ReservasFiltradas().Count()} reservas");
+        return new ExportVista("Reservas de zonas comunes", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelCol).ToList());
+    }
+
     // ---- Paginacion (sin agrupar) ----
     private IEnumerable<ReservaDto> PaginaActual()
     {
@@ -992,6 +1041,7 @@ else
     {
         try
         {
+            _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre");
             var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (v is "tabla" or "calendario") _vista = v;
             var g = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);
