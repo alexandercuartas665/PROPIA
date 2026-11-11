@@ -1,0 +1,58 @@
+@* Boton "Descargar" de la barra de la vista tabla (va al lado de "Columnas", solo en vista Tabla). Descarga la
+   vista TAL COMO SE VE (columnas visibles en su orden, filas filtradas/ordenadas, grupos) en Excel con los
+   colores de la marca o en CSV. El modulo arma la vista al hacer clic (Vista); aqui solo se genera y descarga. *@
+@inject IJSRuntime Js
+
+<div class="texp-wrap">
+    <button type="button" class="texp-btn @(_open ? "on" : "")" title="Descargar la vista (Excel o CSV)" @onclick="() => _open = !_open" disabled="@_busy">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16"/></svg>
+    </button>
+    @if (_open)
+    {
+        <div class="texp-bd" @onclick="() => _open = false"></div>
+        <div class="texp-menu">
+            <div class="texp-lbl">Descargar la vista</div>
+            <button type="button" class="texp-item" @onclick="() => DescargarAsync(true)"><i class="fi fi-rr-file-excel"></i> Excel (.xlsx)</button>
+            <button type="button" class="texp-item" @onclick="() => DescargarAsync(false)"><i class="fi fi-rr-file-csv"></i> CSV (.csv)</button>
+            <div class="texp-hint">Tal como se ve: columnas, filtros, orden y grupos.</div>
+        </div>
+    }
+</div>
+
+<style>
+    /* Boton sutil de la barra: mismo marco que Ordenar/Agrupar (.tord-btn), solo icono. */
+    .texp-wrap { position: relative; }
+    .texp-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); cursor: pointer; }
+    .texp-btn:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    .texp-btn.on { border-color: var(--propia-brand); background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .texp-btn:disabled { opacity: .6; cursor: default; }
+    .texp-bd { position: fixed; inset: 0; z-index: 40; }
+    .texp-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 220px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30, 40, 60, .18); padding: 6px; }
+    .texp-lbl { font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--propia-text-faint); padding: 8px 8px 4px; }
+    .texp-item { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; border-radius: 8px; padding: 8px 9px; font-size: 13px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; font-family: inherit; text-align: left; }
+    .texp-item:hover { background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .texp-item i { font-size: 15px; line-height: 1; color: var(--propia-brand); }
+    .texp-hint { font-size: 11px; color: var(--propia-text-muted); padding: 6px 9px 4px; border-top: 1px solid var(--propia-border-divider); margin-top: 4px; }
+</style>
+
+@code {
+    /// <summary>Arma la vista actual (se invoca al descargar, no en cada render).</summary>
+    [Parameter, EditorRequired] public Func<ExportVista> Vista { get; set; } = default!;
+
+    private bool _open, _busy;
+
+    private async Task DescargarAsync(bool excel)
+    {
+        _open = false;
+        _busy = true;
+        try
+        {
+            var v = Vista();
+            var bytes = excel ? TablaExportador.Xlsx(v) : TablaExportador.Csv(v);
+            var nombre = TablaExportador.NombreArchivo(v, excel ? "xlsx" : "csv");
+            var mime = excel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv;charset=utf-8";
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", nombre, mime, Convert.ToBase64String(bytes));
+        }
+        finally { _busy = false; }
+    }
+}
