@@ -405,6 +405,8 @@ public partial class PropiaDbContext
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.FechaFin);
             b.HasIndex(x => x.ServicioId);
+            b.HasOne(x => x.CuentaServicioPublico).WithMany().HasForeignKey(x => x.CuentaServicioPublicoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.CuentaServicioPublicoId);
             b.HasMany(x => x.Adjuntos).WithOne(a => a.Contrato!).HasForeignKey(a => a.ContratoId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
@@ -634,7 +636,15 @@ public partial class PropiaDbContext
             b.Property(x => x.MetodoPago).HasMaxLength(80);
             b.Property(x => x.UnidadMedida).HasMaxLength(20);
             b.Property(x => x.UmbralAlertaPct).HasDefaultValue(25);
+            b.Property(x => x.ReferenciaNormalizada).HasMaxLength(80);
+            b.Property(x => x.Periodicidad).HasDefaultValue(PeriodicidadServicio.Mensual);
+            b.Property(x => x.ValorMin).HasPrecision(14, 2);
+            b.Property(x => x.ValorMax).HasPrecision(14, 2);
+            b.Property(x => x.ConsumoMin).HasPrecision(14, 2);
+            b.Property(x => x.ConsumoMax).HasPrecision(14, 2);
             b.HasIndex(x => x.TenantId);
+            // Referencia unica por copropiedad (la IA reconoce el recibo por ella). Parcial: sin referencia no choca.
+            b.HasIndex(x => new { x.TenantId, x.ReferenciaNormalizada }).IsUnique().HasFilter("referencia_normalizada IS NOT NULL");
             b.HasMany(x => x.Registros).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(x => x.Reclamaciones).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
@@ -644,8 +654,40 @@ public partial class PropiaDbContext
             b.Property(x => x.Consumo).HasPrecision(14, 2);
             b.Property(x => x.Valor).HasPrecision(14, 2);
             b.Property(x => x.NotaAdmin).HasMaxLength(500);
+            b.Property(x => x.LecturaAnterior).HasPrecision(14, 2);
+            b.Property(x => x.LecturaActual).HasPrecision(14, 2);
+            b.Property(x => x.Origen).HasDefaultValue(OrigenRegistroConsumo.Manual);
+            b.Property(x => x.ArchivoKey).HasMaxLength(300);
+            b.Property(x => x.ArchivoNombre).HasMaxLength(200);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.CuentaServicioId, x.Anio, x.Mes });
+            b.HasMany(x => x.Conceptos).WithOne(c => c.Registro!).HasForeignKey(c => c.RegistroConsumoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<RegistroConsumoConcepto>(b =>
+        {
+            b.ToTable("registros_consumo_conceptos");
+            b.Property(x => x.Concepto).IsRequired().HasMaxLength(160);
+            b.Property(x => x.Valor).HasPrecision(14, 2);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.RegistroConsumoId);
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ServicioPublicoCampoDefinicion>(b =>
+        {
+            b.ToTable("servicio_publico_campo_definiciones");
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<ServicioPublicoCampoValor>(b =>
+        {
+            b.ToTable("servicio_publico_campo_valores");
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Cuenta).WithMany().HasForeignKey(x => x.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.CuentaServicioId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
         modelBuilder.Entity<ReclamacionServicio>(b =>

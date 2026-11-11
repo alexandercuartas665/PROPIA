@@ -32,11 +32,14 @@ public static class IaIngestaLector
         IaLectura ia, byte[] bytes, string mime, string fileName, string perfil,
         IJSRuntime js, Func<HttpClient> http, Func<HttpClient> httpLargo,
         Func<IReadOnlyList<IaCampo>, IReadOnlyList<string>> aplicar, Func<string, string?> etiqueta,
-        string msgNoPdf, bool guardarPdfOrigen = false)
+        string msgNoPdf, bool guardarPdfOrigen = false,
+        bool aceptarImagenes = false, Func<IReadOnlyList<IaCampo>, Task>? validar = null)
     {
-        if (bytes.Length == 0 || !mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
+        var esPdf = mime.Contains("pdf", StringComparison.OrdinalIgnoreCase);
+        var esImagen = aceptarImagenes && EsImagenSoportada(mime);
+        if (bytes.Length == 0 || (!esPdf && !esImagen))
         {
-            ia.Fallo(msgNoPdf, "Solo PDF");
+            ia.Fallo(msgNoPdf, aceptarImagenes ? "Formato no soportado" : "Solo PDF");
             return null;
         }
         try
@@ -46,17 +49,29 @@ public static class IaIngestaLector
             var b64 = Convert.ToBase64String(bytes);
 
             // 1) Leyendo el texto del PDF (pdf.js). Texto pobre o vacio -> imagenes de las paginas (vision).
+            //    Foto (solo si aceptarImagenes): va directo a vision, redimensionada a ~1600 px en el lado mayor.
             await ia.PasoAsync(1, 38);
-            var info = await js.InvokeAsync<Info?>("propiaPdfThumb.extraerTextoInfo", b64, mime);
-            var texto = info?.Texto;
-            var paginas = Math.Max(1, info?.Paginas ?? 1);
+            string? texto = null;
+            var paginas = 1;
             string[]? imgs = null;
-            var palabras = string.IsNullOrWhiteSpace(texto) ? 0 : texto.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-            if (palabras / (double)Math.Min(paginas, 15) < PalabrasMinPorPagina)
+            if (esImagen)
             {
-                var ras = await js.InvokeAsync<Raster?>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is { Paginas.Length: > 0 }) { imgs = ras.Paginas; paginas = Math.Max(paginas, ras.Total); }
-                else if (palabras == 0) { ia.Fallo("No se pudo leer el PDF: no tiene texto ni paginas legibles."); return null; }
+                var foto = await js.InvokeAsync<string?>("propiaPdfThumb.redimensionarImagen", b64, mime, 1600);
+                if (string.IsNullOrEmpty(foto)) { ia.Fallo(msgNoPdf, "Formato no soportado"); return null; }
+                imgs = new[] { foto };
+            }
+            else
+            {
+                var info = await js.InvokeAsync<Info?>("propiaPdfThumb.extraerTextoInfo", b64, mime);
+                texto = info?.Texto;
+                paginas = Math.Max(1, info?.Paginas ?? 1);
+                var palabras = string.IsNullOrWhiteSpace(texto) ? 0 : texto.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+                if (palabras / (double)Math.Min(paginas, 15) < PalabrasMinPorPagina)
+                {
+                    var ras = await js.InvokeAsync<Raster?>("propiaPdfThumb.rasterizarPaginas", b64, 12);
+                    if (ras is { Paginas.Length: > 0 }) { imgs = ras.Paginas; paginas = Math.Max(paginas, ras.Total); }
+                    else if (palabras == 0) { ia.Fallo("No se pudo leer el PDF: no tiene texto ni paginas legibles."); return null; }
+                }
             }
 
             // 2) Encontrando los datos: el Agente Documental (1 reintento si no devuelve nada; la vision a veces falla).
@@ -84,9 +99,10 @@ public static class IaIngestaLector
             var tokens = (r?.InputTokens ?? 0) + (r?.OutputTokens ?? 0);
             await ia.ChipsAsync(campos.Select(c => etiqueta(c.Nombre)).OfType<string>().Distinct().ToList());
 
-            // 3) Llenando el formulario.
+            // 3) Llenando el formulario (recibos: validando contra los servicios en el servidor).
             await ia.PasoAsync(3, 96);
             var aplicadas = aplicar(campos);
+            if (validar is not null) await validar(campos);
             var dudosas = campos.Where(c => c.Confianza is double cf && cf < ConfianzaDudosa && aplicadas.Contains(c.Nombre)).Select(c => c.Nombre).Distinct().ToList();
             await ia.TerminarAsync(
                 aplicadas.Select(etiqueta).OfType<string>().Distinct().ToList(),
@@ -97,6 +113,11 @@ public static class IaIngestaLector
         catch (TaskCanceledException) { ia.Fallo("La lectura tardó demasiado (tiempo agotado). Intenta de nuevo.", "Tiempo agotado"); return null; }
         catch (Exception ex) { ia.Fallo("No se pudo leer el documento: " + ex.Message, "Error IA"); return null; }
     }
+
+    /// <summary>Fotos que se mandan directo a vision (HEIC y otros: "Formato no soportado").</summary>
+    public static bool EsImagenSoportada(string mime)
+        => mime.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase) || mime.Equals("image/jpg", StringComparison.OrdinalIgnoreCase)
+        || mime.Equals("image/png", StringComparison.OrdinalIgnoreCase) || mime.Equals("image/webp", StringComparison.OrdinalIgnoreCase);
 
     // Detalle legible del fallo ({ error = "..." }) en vez de un "IA no disponible" generico.
     private static async Task<string> DetalleErrorAsync(HttpResponseMessage resp)

@@ -325,7 +325,9 @@ public record ContratoServicioDto(
     // Forma de pago (metodo, lista) + Tipo de servicio como texto (lista del catalogo).
     string? FormaPago = null, string? TipoServicioTexto = null,
     // Representante legal del contratista y ciudad del contrato (los trae el Agente Documental).
-    string? RepresentanteLegal = null, string? Ciudad = null);
+    string? RepresentanteLegal = null, string? Ciudad = null,
+    // Servicio publico (2.17) al que pertenece el contrato (reemplaza en la UI al catalogo viejo de servicios).
+    Guid? CuentaServicioPublicoId = null);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
 public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color, bool Activo = true);
@@ -368,7 +370,8 @@ public record CrearContratoServicioRequest(
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null,
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
     string? FormaPago = null, string? TipoServicioTexto = null,
-    string? RepresentanteLegal = null, string? Ciudad = null);
+    string? RepresentanteLegal = null, string? Ciudad = null,
+    Guid? CuentaServicioPublicoId = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
@@ -391,7 +394,9 @@ public record ActualizarContratoRequest(
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
     string? FormaPago = null, string? TipoServicioTexto = null,
-    string? RepresentanteLegal = null, string? Ciudad = null);
+    string? RepresentanteLegal = null, string? Ciudad = null,
+    // Vinculo: se aplica con ActualizarVinculos=true (como ServicioId).
+    Guid? CuentaServicioPublicoId = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

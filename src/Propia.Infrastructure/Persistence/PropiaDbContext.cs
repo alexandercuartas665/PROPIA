@@ -119,6 +119,9 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<CuentaServicioPublico> CuentasServicioPublico => Set<CuentaServicioPublico>();
     public DbSet<RegistroConsumoServicio> RegistrosConsumoServicio => Set<RegistroConsumoServicio>();
     public DbSet<ReclamacionServicio> ReclamacionesServicio => Set<ReclamacionServicio>();
+    public DbSet<RegistroConsumoConcepto> RegistrosConsumoConceptos => Set<RegistroConsumoConcepto>();
+    public DbSet<ServicioPublicoCampoDefinicion> ServicioPublicoCamposDefiniciones => Set<ServicioPublicoCampoDefinicion>();
+    public DbSet<ServicioPublicoCampoValor> ServicioPublicoCamposValores => Set<ServicioPublicoCampoValor>();
     public DbSet<MiembroConsejo> MiembrosConsejo => Set<MiembroConsejo>();
     public DbSet<TipoUnidadCustom> TiposUnidadCustom => Set<TipoUnidadCustom>();
     public DbSet<TipoCoeficiente> TiposCoeficiente => Set<TipoCoeficiente>();

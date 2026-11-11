@@ -1,0 +1,40 @@
+@* Desglose de un recibo registrado (boton "Desglose" del historial): replica de verDesglose() en
+   replica/js/mod-servicios-publicos.js. Motivos de alerta, datos del recibo, origen (con el archivo original si
+   se leyo con IA) y la tabla de conceptos con el total. Sin conceptos guardados (registros manuales o viejos)
+   muestra un unico concepto con el valor del periodo. *@
+@inherits ModalBase<bool>
+@using Propia.Application.ServiciosPublicos
+
+<div class="spx-ficha"><div class="srv-modal-head"><div class="srv-modal-ic"><i class="fi fi-rr-receipt"></i></div>
+    <div style="flex:1;min-width:0;"><div class="srv-modal-title">@("Recibo " + R.PeriodoLabel)</div><div class="srv-sub" style="margin:2px 0 0;">@(Cuenta.Alias + " · Ref. " + (Cuenta.NumeroCuenta ?? "-"))</div></div>
+    <SpxBadgeRango Rango="R.Rango" /><button type="button" class="spx-x" aria-label="Cerrar" @onclick="() => Close(false)"><i class="fi fi-rr-cross-small"></i></button></div>
+    <div class="srv-modal-body">
+        @foreach (var m in R.Motivos ?? Array.Empty<string>())
+        {
+            <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div>
+        }
+        <div class="spx-datos">
+            <div class="spx-dato"><span>Periodo</span><b>@R.PeriodoLabel</b></div>
+            @if (R.FechaLimitePago is { } fl) { <div class="spx-dato"><span>Fecha límite</span><b>@ReglasServicioPublico.FechaCorta(fl)</b></div> }
+            @if (R.Consumo != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Num(R.Consumo) + " " + (Cuenta.UnidadMedida ?? ""))</b></div> }
+            @if (R.LecturaAnterior is { } la) { <div class="spx-dato"><span>Lecturas</span><b>@(ReglasServicioPublico.Num(la) + " → " + ReglasServicioPublico.Num(R.LecturaActual))</b></div> }
+            <div class="spx-dato"><span>Origen</span><b>@if (R.Origen == OrigenRegistroConsumo.IA)
+                {
+                    <text>Leído con IA</text>@if (!string.IsNullOrEmpty(R.ArchivoNombre))
+                    {
+                        <text> (</text>@if (!string.IsNullOrEmpty(R.ArchivoUrl)) { <a class="spx-arch" href="@R.ArchivoUrl" target="_blank" rel="noopener">@R.ArchivoNombre</a> } else { @R.ArchivoNombre }<text>)</text>
+                    }
+                }
+                else { @(R.Estado == EstadoRegistroConsumo.Estimado ? "Estimado" : "Registro manual") }</b></div>
+        </div>
+        <div class="spx-sec spx-sec--sm">Desglose</div>
+        <SpxDesglose Conceptos="Lista" Total="R.Valor" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public CuentaServicioDto Cuenta { get; set; } = default!;
+    [Parameter] public RegistroConsumoDto R { get; set; } = default!;
+
+    private IReadOnlyList<ConceptoReciboDto> Lista => R.Conceptos is { Count: > 0 } c ? c : new[] { new ConceptoReciboDto("Valor del servicio", R.Valor) };
+}

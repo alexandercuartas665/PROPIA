@@ -14,7 +14,8 @@ window.propiaIai = (function () {
 
     function inputDe(el) { return el.querySelector('input[type=file][data-iai-input]:not([disabled])'); }
 
-    function wireDrop(el) {
+    // sub (opcional): texto bajo "Suelta para que la IA los lea" (recibos). Sin el, el de contratos y polizas.
+    function wireDrop(el, sub) {
         if (!el || el.__iaiDrop) return; el.__iaiDrop = true;
         var velo = null, n = 0;
         function tieneArchivos(e) { var t = e.dataTransfer && e.dataTransfer.types; return t && [].indexOf.call(t, 'Files') >= 0 && !!inputDe(el); }
@@ -24,7 +25,7 @@ window.propiaIai = (function () {
             if (!velo) {
                 velo = document.createElement('div');
                 velo.className = 'iai-velo';
-                velo.innerHTML = '<div><i class="fi fi-rr-cloud-upload"></i><b>Suelta para que la IA los lea</b><span>PDF de contratos o pólizas, uno o varios</span></div>';
+                velo.innerHTML = '<div><i class="fi fi-rr-cloud-upload"></i><b>Suelta para que la IA los lea</b><span>' + (sub || 'PDF de contratos o pólizas, uno o varios') + '</span></div>';
                 el.appendChild(velo);
             }
         });
@@ -53,5 +54,8 @@ window.propiaIai = (function () {
         });
     }
 
-    return { wireDrop: wireDrop, resaltar: resaltar };
+    // Abre el selector de archivos de la zona de carga (clic derecho "Cargar recibo con IA").
+    function elegir(el) { var i = el && inputDe(el); if (i) i.click(); }
+
+    return { wireDrop: wireDrop, resaltar: resaltar, elegir: elegir };
 })();
