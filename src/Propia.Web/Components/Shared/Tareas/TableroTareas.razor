@@ -470,7 +470,9 @@ else
                     @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
                        gestor (alias en columnas-config), se muestra el alias; si no, la etiqueta de fabrica.
                        Cada celda lleva la flecha (ChevCol) que abre el menu de columna (Oleada B). *@
-                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)</div>
+                    @* data-clave: lo usa propiaTablaResize para medir el ancho de partida. Como destino de reordenar es
+                       un no-op (titulo no esta en _colOrden: siempre va primero). *@
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" data-clave="titulo" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "titulo")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("titulo")' @ondblclick:stopPropagation="true"></span></div>
                     @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" data-clave="desc" @onmousedown='e => IniciarReorderTbl(e, "desc")' @onclick='() => SortBy("descripcion")'><span>@ColLabel("desc", "DESCRIPCION")</span>@ChevCol("descripcion", "DESCRIPCION", false)@ColorDot("desc")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "desc")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("desc")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" data-clave="cod" @onmousedown='e => IniciarReorderTbl(e, "cod")' @onclick='() => SortBy("numero")'><span>@ColLabel("cod", "CODIGO")</span>@SortInd("numero")@ChevCol("numero", "CODIGO", false)@ColorDot("cod")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "cod")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("cod")' @ondblclick:stopPropagation="true"></span></div> }
                     <div class="tb-lc tb-lc-est" data-clave="est" @onmousedown='e => IniciarReorderTbl(e, "est")'><span>@ColLabel("est", "ETAPA")</span>@ChevCol("est", "ETAPA", false)@ColorDot("est")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "est")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("est")' @ondblclick:stopPropagation="true"></span></div>
@@ -2939,8 +2941,10 @@ else
             var sb = new System.Text.StringBuilder("<style>");
             foreach (var kv in _colW)
             {
-                var sel = ColSelectores(kv.Key);
-                var hsel = ColHeaderSel(kv.Key);
+                // Titulo no esta en ColSelectores/ColHeaderSel (no se colorea ni se reordena): selector propio.
+                // .tb-lc-tit cubre tambien la celda lider de los agrupadores y de la fila de totales.
+                var sel = kv.Key == "titulo" ? ".tb-list .tb-row-tit" : ColSelectores(kv.Key);
+                var hsel = kv.Key == "titulo" ? ".tb-list .tb-lc-tit" : ColHeaderSel(kv.Key);
                 var all = string.Join(",", new[] { sel, hsel }.Where(s => s is not null));
                 if (all.Length == 0) continue;
                 sb.Append(all).Append("{flex:0 0 ").Append(kv.Value).Append("px !important;width:")
@@ -2972,6 +2976,7 @@ else
         _colOrden = keys;
         for (int i = 0; i < keys.Count; i++) await GuardarColCfgT(keys[i], orden: i, oculto: null);
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS (igual que OnColResize)
     }
     private async Task IniciarResizeTbl(MouseEventArgs e, string clave)
     { _selfTbl ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfTbl, clave, e.ClientX); } catch { } }
@@ -2984,6 +2989,7 @@ else
         _colCfg.TryGetValue(ConfigClaveDe(clave), out var ex);
         await GuardarColCfgT(clave, orden: null, oculto: null, setFormato: true, formato: ConAnchoTabla(ex?.Formato, w));
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS: sin esto el nuevo ancho solo se veia al recargar
     }
     private static int? AnchoDeFormatoTabla(string? json)
     {
@@ -3164,14 +3170,7 @@ else
     private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
     private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
 
-    private record ModeDef(string Key, string Label, string Icon);
-    private readonly List<ModeDef> _modes = new()
-    {
-        new("tablero", "Tarjetas", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='3' width='7' height='18' rx='1'/><rect x='14' y='3' width='7' height='12' rx='1'/></svg>"),
-        new("lista", "Tabla", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'/></svg>"),
-        new("calendario", "Calendario", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='4' width='18' height='18' rx='2'/><path d='M16 2v4M8 2v4M3 10h18'/></svg>"),
-        new("gantt", "Gantt", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M3 6h10M3 12h14M3 18h7'/></svg>"),
-    };
+    // Las vistas Tarjetas/Tabla/Calendario/Gantt las pinta el componente compartido TablaVistaToggle.
 
     private class TableroDraft
     {
@@ -3689,15 +3688,7 @@ else
     {
         @if (!_verCerradas)
         {
-            <div class="tb-modeswitch">
-                @foreach (var m in _modes)
-                {
-                    var mode = m.Key;
-                    <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
-                        @((MarkupString)m.Icon)<span>@m.Label</span>
-                    </button>
-                }
-            </div>
+            <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tablero"), TablaVistaToggle.Tabla("lista"), TablaVistaToggle.Calendario("calendario"), TablaVistaToggle.Gantt("gantt") })" Valor="@_boardMode" OnCambiar="SetBoardMode" />
         }
     };
 
