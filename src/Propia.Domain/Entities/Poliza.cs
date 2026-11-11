@@ -27,8 +27,22 @@ public class Poliza : TenantEntity
     public DateOnly? FechaInicio { get; set; }
     public DateOnly? FechaFin { get; set; }
 
-    /// <summary>Valor asegurado / valor de la poliza (COP).</summary>
+    /// <summary>Valor de la poliza (COP). Campo historico: hoy la poliza separa ValorAsegurado y Prima; si
+    /// Valor esta vacio, el Agente Documental lo llena con la prima.</summary>
     public decimal? ValorPoliza { get; set; }
+
+    /// <summary>NIT de la aseguradora, sin puntos ni espacios ("900456789-1").</summary>
+    public string? NitAseguradora { get; set; }
+    /// <summary>Tomador de la poliza (quien la contrata; normalmente la copropiedad).</summary>
+    public string? Tomador { get; set; }
+    /// <summary>Asegurado / beneficiario de la cobertura.</summary>
+    public string? Asegurado { get; set; }
+    /// <summary>Valor asegurado (suma asegurada, COP).</summary>
+    public decimal? ValorAsegurado { get; set; }
+    /// <summary>Prima: lo que cuesta la poliza (COP).</summary>
+    public decimal? Prima { get; set; }
+    /// <summary>Deducible tal como lo expresa la poliza (p. ej. "10% de la perdida, minimo 1 SMMLV").</summary>
+    public string? Deducible { get; set; }
 
     /// <summary>Forma de pago: cantidad de cuotas.</summary>
     public int? FormaPagoCuotas { get; set; }

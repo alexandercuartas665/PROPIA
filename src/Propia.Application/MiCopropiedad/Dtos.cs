@@ -323,7 +323,9 @@ public record ContratoServicioDto(
     // Contacto del contratista (snapshot). El "Contacto" unico se retira del modal; estos 3 lo reemplazan en la UI.
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
     // Forma de pago (metodo, lista) + Tipo de servicio como texto (lista del catalogo).
-    string? FormaPago = null, string? TipoServicioTexto = null);
+    string? FormaPago = null, string? TipoServicioTexto = null,
+    // Representante legal del contratista y ciudad del contrato (los trae el Agente Documental).
+    string? RepresentanteLegal = null, string? Ciudad = null);
 
 // ----- Etapas de flujo (Kanban) de contratos -----
 public record ContratoEtapaDto(Guid Id, string Nombre, int Orden, string? Color, bool Activo = true);
@@ -365,7 +367,8 @@ public record CrearContratoServicioRequest(
     decimal? ValorTotal = null, int? FormaPagoCuotas = null, bool PagoMensual = false,
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null,
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
-    string? FormaPago = null, string? TipoServicioTexto = null);
+    string? FormaPago = null, string? TipoServicioTexto = null,
+    string? RepresentanteLegal = null, string? Ciudad = null);
 
 /// <summary>
 /// Actualiza un contrato. Estado + dias siempre se aplican. Los demas campos son opcionales:
@@ -387,7 +390,8 @@ public record ActualizarContratoRequest(
     TipoActivoMantenimiento? AsociadoTipo = null, Guid? AsociadoId = null, bool LimpiarAsociado = false,
     Guid? ProveedorPersonaId = null, Guid? ProveedorEmpresaId = null, Guid? ContactoPersonaId = null,
     string? TelefonoContratista = null, string? CorreoContratista = null, string? DireccionContratista = null,
-    string? FormaPago = null, string? TipoServicioTexto = null);
+    string? FormaPago = null, string? TipoServicioTexto = null,
+    string? RepresentanteLegal = null, string? Ciudad = null);
 
 // ----- Zonas Comunes (seccion 6) -----
 public record ZonaComunDto(

@@ -55,8 +55,14 @@ Determina el tipo entre:
 
 ## Paso 2: Extrae los datos clave (NUNCA inventes)
 Reporta solo lo que el texto dice. Si un dato no aparece o es ambiguo, dejalo
-vacio y pidelo. Normaliza: moneda en COP sin simbolos, fechas como AAAA-MM-DD,
-mes como numero 1-12.
+vacio y pidelo. Busca en el encabezado, las clausulas, la hoja de firmas y los
+anexos. Normaliza (formatos colombianos):
+- Moneda en COP sin simbolos: "$ 36.000.000,00" -> 36000000 (punto = miles).
+- Fechas como AAAA-MM-DD aunque esten en texto: "1 de enero de 2026" -> 2026-01-01.
+- NIT o cedula sin puntos, comas ni espacios, con el digito de verificacion
+  separado por guion: "900.456.789-1" -> 900456789-1.
+- Mes como numero 1-12.
+- El contratista o la aseguradora NUNCA es la copropiedad.
 
 ## Paso 3: Propon la accion con tus herramientas
 - RECIBO: llama serviciospublicos_listar_cuentas y empareja la cuenta por

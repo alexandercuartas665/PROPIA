@@ -3558,6 +3558,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("categoria");
 
+                    b.Property<string>("Ciudad")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("ciudad");
+
                     b.Property<string>("Contacto")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
@@ -3660,6 +3665,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<bool>("RenovacionAutomatica")
                         .HasColumnType("boolean")
                         .HasColumnName("renovacion_automatica");
+
+                    b.Property<string>("RepresentanteLegal")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("representante_legal");
 
                     b.Property<Guid?>("ServicioId")
                         .HasColumnType("uuid")
@@ -11345,6 +11355,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("alerta_vencimiento_pct_notificado");
 
+                    b.Property<string>("Asegurado")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("asegurado");
+
                     b.Property<string>("Aseguradora")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -11385,6 +11400,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("Deducible")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("deducible");
+
                     b.Property<Guid?>("ExpedienteId")
                         .HasColumnType("uuid")
                         .HasColumnName("expediente_id");
@@ -11405,6 +11425,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("incluye_zonas_unidades");
 
+                    b.Property<string>("NitAseguradora")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("nit_aseguradora");
+
                     b.Property<string>("NumeroPoliza")
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
@@ -11423,9 +11448,19 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("pdf_origen_key");
 
+                    b.Property<decimal?>("Prima")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("prima");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tomador")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("tomador");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -11434,6 +11469,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
+
+                    b.Property<decimal?>("ValorAsegurado")
+                        .HasPrecision(16, 2)
+                        .HasColumnType("numeric(16,2)")
+                        .HasColumnName("valor_asegurado");
 
                     b.Property<decimal?>("ValorPoliza")
                         .HasPrecision(14, 2)
