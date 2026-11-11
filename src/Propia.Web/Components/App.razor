@@ -232,15 +232,40 @@
             // dejar al usuario con el boton "Recargar pagina" (que igual se conserva como respaldo).
             var m = document.getElementById('components-reconnect-modal');
             if (m && window.MutationObserver) {
+                var caido = function () { return m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected'); };
+                var visibleOverlay = function () { return caido() || m.classList.contains('components-reconnect-show'); };
+                var desde = 0;   // cuando aparecio el overlay (0 = oculto)
                 new MutationObserver(function () {
-                    if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
-                        setTimeout(function () {
-                            if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
-                                location.reload();
-                            }
-                        }, 4000);
+                    desde = visibleOverlay() ? (desde || Date.now()) : 0;
+                    if (caido()) {
+                        setTimeout(function () { if (caido()) recargarSiHayServidor(); }, 4000);
                     }
                 }).observe(m, { attributes: true, attributeFilter: ['class'] });
+
+                // Pestana en segundo plano / equipo suspendido: el navegador congela los timers, los
+                // reintentos se agotan y el setTimeout de arriba no corre hasta volver. Al volver a la
+                // pestana con el overlay abierto: reintentar YA y, si en 5s no recupero, recargar.
+                // Recargar SOLO si el servidor responde: si esta caido (ej. en pleno deploy) un reload deja la
+                // pagina de error del navegador, que ya no se recupera sola; mejor seguir esperando.
+                var recargando = false;
+                var recargarSiHayServidor = function () {
+                    if (recargando || !visibleOverlay()) return;
+                    recargando = true;
+                    // /health (GET liviano); la pagina Blazor responde 404 a HEAD.
+                    fetch('/health', { cache: 'no-store' })
+                        .then(function (r) { if (r.ok && visibleOverlay()) location.reload(); else recargando = false; })
+                        .catch(function () { recargando = false; });
+                };
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState !== 'visible' || !visibleOverlay()) return;
+                    try { if (window.Blazor && Blazor.reconnect) Blazor.reconnect(); } catch (e) { }
+                    setTimeout(recargarSiHayServidor, 5000);
+                });
+                // Vigilante: overlay visible mas de 30s con la pestana al frente = no se va a
+                // recuperar solo (ej. red que volvio pero el circuito ya no existe); recargar.
+                setInterval(function () {
+                    if (desde && document.visibilityState === 'visible' && Date.now() - desde > 30000) recargarSiHayServidor();
+                }, 5000);
             }
         })();
     </script>

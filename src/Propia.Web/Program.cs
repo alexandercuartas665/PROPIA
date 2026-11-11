@@ -68,7 +68,8 @@ builder.Services.AddRazorComponents()
         // Retener el circuito desconectado varios minutos: si el usuario deja la pestana quieta
         // o hay un microcorte de red, al volver se reengancha al MISMO circuito (conserva estado)
         // en vez de fallar y mostrar "Recargar pagina".
-        o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+        // 15 min (antes 5): una pestana dejada quieta un rato vuelve al MISMO circuito sin recargar.
+        o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(15);
         o.DisconnectedCircuitMaxRetained = 200;
     })
     .AddHubOptions(o =>
