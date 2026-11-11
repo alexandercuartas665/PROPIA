@@ -52,33 +52,31 @@ else
     }
     else
     {
-        @* ---------- Buscador + tarjetas de zonas reservables ---------- *@
-        <div class="rs-zonasearch">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input class="rs-zonasearch-inp" placeholder="Buscar zona común..." @bind="_zonaBuscar" @bind:event="oninput" />
-        </div>
-        <div class="rs-zonas">
-            @foreach (var z in ZonasFiltradas)
+        @* ---------- Barra canonica (= modulos vista tabla): Filtros, Buscar, Ordenar/Agrupar/Columnas (solo
+           Tabla) y selector de vista Calendario | Tabla. Las tarjetas de zonas se retiraron (no escalan con
+           muchas zonas): configurar una zona = clic en su nombre en la agenda. ---------- *@
+        <div class="mod-filtros rs-toolbar">
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="OnFiltroChanged" />
+            <div class="mod-search" style="flex:1 1 180px; max-width:255px; min-width:160px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                @* Sin value= (convencion del equipo): asi el re-render por tecla no "come" letras. *@
+                <input class="mod-search-inp" placeholder="Buscar zona, unidad o reserva..." @oninput="OnBuscar" />
+            </div>
+            <div style="flex:1;"></div>
+            @if (_vista == "tabla")
             {
-                var zid = z.ZonaComunId;
-                <div class="rs-zona-card" @onclick="() => AbrirConfig(zid)" title="Configurar zona">
-                    @if (!string.IsNullOrEmpty(z.FotoUrl))
-                    {
-                        <img class="rs-zona-img" src="@z.FotoUrl" alt="@z.Nombre" />
-                    }
-                    else
-                    {
-                        <div class="rs-zona-ic">
-                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="@IconoZona(z.Nombre)"></path></svg>
-                        </div>
-                    }
-                    <div class="rs-zona-nom">@z.Nombre</div>
-                    <div class="rs-zona-meta">Aforo @(z.Aforo?.ToString() ?? "-") &middot; @TarifaTexto(z)</div>
-                </div>
+                <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
+                <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+                <TablaColumnasMenu Columnas="ColsVisibilidad()" OnMover="MoverColMenu" OnToggleVisible="ToggleVisibleCol"
+                                   OnOcultarTodas="OcultarTodasCol" OnMostrarTodas="MostrarTodasCol" OnRestablecer="RestablecerCol" />
             }
-            @if (ZonasFiltradas.Count == 0) { <div class="rs-zonas-empty">Sin zonas que coincidan con "@_zonaBuscar".</div> }
+            <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Calendario("calendario"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
         </div>
 
+        @if (_vista == "calendario")
+        {
+        var filtr = ReservasFiltradas().Where(r => EsActiva(r.Estado)).ToList();
+        var zonasAgenda = ZonasAgenda(filtr);
         @* ---------- Agenda semanal de ocupacion ---------- *@
         <div class="rs-card">
             <div class="rs-card-head">
@@ -109,13 +107,18 @@ else
                     </div>
                 }
                 @* filas por zona *@
-                @foreach (var z in ZonasReservables)
+                @foreach (var z in zonasAgenda)
                 {
-                    <div class="rs-row-label">@z.Nombre</div>
+                    var zcfg = z.ZonaComunId;
+                    @* Clic en el nombre = configurar la zona (antes era la tarjeta de la zona). *@
+                    <button type="button" class="rs-row-label rs-row-label-btn" title="Configurar zona" @onclick="() => AbrirConfig(zcfg)">
+                        <span>@z.Nombre</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                    </button>
                     @foreach (var d in DiasSemana)
                     {
                         var hoy = d == DateOnly.FromDateTime(AhoraColombia().Date);
-                        var celdas = ReservasDe(z.ZonaComunId, d);
+                        var celdas = filtr.Where(r => r.ZonaComunId == z.ZonaComunId && r.Fecha == d).OrderBy(r => r.HoraInicio).ToList();
                         var zid = z.ZonaComunId;
                         var dd = d;
                         <div class="rs-cell @(hoy ? "is-today" : "")">
@@ -143,18 +146,20 @@ else
                     }
                 }
             </div>
+            @if (zonasAgenda.Count == 0) { <div class="rs-list-empty">Sin zonas ni reservas que coincidan con el filtro o la búsqueda.</div> }
         </div>
 
-        @* ---------- Proximas reservas ---------- *@
+        @* ---------- Proximas reservas (respetan filtros y busqueda) ---------- *@
+        var proximas = Proximas(filtr);
         <div class="rs-card">
             <div class="rs-card-title rs-card-title-pad">Próximas reservas</div>
-            @if (Proximas.Count == 0)
+            @if (proximas.Count == 0)
             {
                 <div class="rs-list-empty">Sin reservas próximas.</div>
             }
             else
             {
-                @foreach (var r in Proximas)
+                @foreach (var r in proximas)
                 {
                     var rid = r.Id; var rr = r;
                     <div class="rs-resv rs-resv-click" @onclick="() => AbrirEditar(rr)" title="Editar o cancelar reserva">
@@ -210,8 +215,57 @@ else
                 }
             </div>
         }
+        }
+        else
+        {
+            @* ---------- Vista Tabla: una reserva por fila (frame canonico .tbl). Expansor y clic derecho abren
+               las acciones; encabezado = ordenar al clic + flecha con el menu de columna. ---------- *@
+            var niveles = Niveles;
+            var total = ReservasFiltradas().Count();
+            <div class="tblwrap rs-tblwrap">
+                <div class="tblscroll">
+                    <table class="tbl">
+                        <thead>
+                            <tr>
+                                <th class="tbl-exp"></th>
+                                @foreach (var c in ColsVis)
+                                {
+                                    var ck = c.Key;
+                                    <th class="tbl-th--menu" @onclick="() => OrdenarPorClic(ck)">
+                                        <span class="tbl-th-lbl">@c.Label</span>@SortInd(ck)@ChevCol(ck, c.Label)
+                                    </th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (niveles.Count == 0)
+                            {
+                                @foreach (var r in PaginaActual()) { @FilaTpl(r) }
+                            }
+                            else
+                            {
+                                <TablaGruposRenderTr T="ReservaDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" />
+                            }
+                        </tbody>
+                    </table>
+                    @if (total == 0) { <div class="rs-list-empty">Sin reservas que coincidan con el filtro o la búsqueda.</div> }
+                </div>
+                @if (niveles.Count == 0)
+                {
+                    <TablaPager Total="total" Pagina="_pagina" PorPagina="_porPagina" Entidad="reservas"
+                                PaginaChanged="v => _pagina = v" PorPaginaChanged="v => { _porPagina = v; _pagina = 1; }" />
+                }
+                else
+                {
+                    <div class="tbl-foot"><span>Mostrando <strong>@total</strong> reservas</span></div>
+                }
+            </div>
+        }
     }
 </div>
+
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
 @* ===================== Modal Nueva reserva ===================== *@
 @if (_showReservar)
@@ -489,14 +543,15 @@ else
 
     .rs-empty { background: var(--propia-bg-card); border: 1px dashed var(--propia-text-faint); border-radius: 14px; padding: 28px; text-align: center; color: var(--propia-text-muted); font-size: 13.5px; }
 
-    .rs-zonas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .rs-zona-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; padding: 16px; box-shadow: 0 1px 2px rgba(45,62,80,.05); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
-    .rs-zona-card:hover { border-color: var(--propia-brand); box-shadow: 0 8px 20px rgba(109,79,227,.1); }
-    .rs-zona-ic { width: 38px; height: 38px; border-radius: 10px; background: var(--propia-brand-soft); color: var(--propia-brand); display: flex; align-items: center; justify-content: center; margin-bottom: 11px; }
-    .rs-zona-img { width: 100%; height: 92px; object-fit: cover; border-radius: 10px; margin-bottom: 11px; display: block; background: var(--propia-bg-hover); }
-    .rs-zonasearch { display: flex; align-items: center; gap: 9px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 10px; padding: 8px 13px; margin-bottom: 13px; color: var(--propia-text-muted); max-width: 380px; }
-    .rs-zonasearch-inp { border: 0; outline: 0; background: transparent; flex: 1; font-size: 13px; color: var(--propia-text-body); font-family: inherit; }
-    .rs-zonas-empty { color: var(--propia-text-muted); font-size: 13px; padding: 12px 4px; }
+    /* Barra canonica (= modulos vista tabla) y vista Tabla sobre el frame compartido .tbl (tabla-base.css). */
+    .rs-toolbar { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .rs-tblwrap { margin-bottom: 16px; }
+    .rs-tblwrap .rs-list-empty { padding: 18px 20px; }
+    /* Nombre de la zona en la agenda = boton "Configurar zona" (reemplaza la tarjeta de la zona). */
+    .rs-row-label-btn { width: 100%; gap: 6px; justify-content: space-between; background: transparent; border: 0; border-bottom: 1px solid var(--propia-border-divider); text-align: left; cursor: pointer; font-family: inherit; }
+    .rs-row-label-btn svg { flex-shrink: 0; color: var(--propia-text-faint); opacity: 0; transition: opacity .12s; }
+    .rs-row-label-btn:hover { background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .rs-row-label-btn:hover svg { opacity: 1; color: var(--propia-brand); }
     .rs-resv-click { cursor: pointer; }
     .rs-resv-click:hover { background: var(--propia-brand-soft-2); }
     .rs-editar { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-brand); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -505,10 +560,7 @@ else
     .rs-foot-right { display: flex; gap: 9px; }
     .rs-btn-danger { background: var(--propia-bg-card); color: #D7263D; border: 1px solid #F2CFC9; }
     .rs-btn-danger:hover { background: var(--propia-danger-soft); }
-    [data-bs-theme="dark"] .rs-zonasearch { background: var(--propia-bg-card-soft); border-color: var(--propia-border-card); }
     [data-bs-theme="dark"] .rs-editar { background: var(--propia-bg-card); border-color: var(--propia-border-card); }
-    .rs-zona-nom { font-size: 13.5px; font-weight: 700; color: var(--propia-text-body); }
-    .rs-zona-meta { font-size: 11.5px; color: var(--propia-text-faint); margin-top: 2px; }
 
     .rs-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 14px; box-shadow: 0 1px 2px rgba(45,62,80,.05); overflow: hidden; margin-bottom: 16px; }
     .rs-card-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--propia-border-divider); flex-wrap: wrap; }
@@ -687,10 +739,260 @@ else
     private List<ZonaGaleriaDto> ZonasReservables =>
         _galeria?.Where(z => z.Reservable).ToList() ?? new();
 
-    private string _zonaBuscar = "";
-    private List<ZonaGaleriaDto> ZonasFiltradas =>
-        string.IsNullOrWhiteSpace(_zonaBuscar) ? ZonasReservables
-        : ZonasReservables.Where(z => z.Nombre.Contains(_zonaBuscar.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+    // ===== Barra canonica: vista, busqueda, filtros, orden, agrupar, columnas (canon = Mantenimiento) =====
+    private string _vista = "calendario";   // calendario | tabla (persistida por navegador)
+    private const string VistaKey = "propia_reservas_vista", GruposKey = "propia_reservas_grupos", ColsKey = "propia_reservas_cols";
+    private string _q = "";
+    private FiltroDinamico? _fd;
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private List<string> _grupos = new();
+    private int _pagina = 1, _porPagina = 25;
+
+    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    private void OnFiltroChanged() { _pagina = 1; StateHasChanged(); }
+    private async Task SetVista(string v) { _vista = v == "tabla" ? "tabla" : "calendario"; await GuardarLocalAsync(VistaKey, _vista); }
+
+    // Reservas que pasan Filtros + Buscar (las usan la agenda, Proximas y la tabla).
+    private IEnumerable<ReservaDto> ReservasFiltradas()
+    {
+        var q = _q.Trim();
+        return _reservas.Where(r =>
+            (q.Length == 0 || $"{r.Codigo} {r.ZonaNombre} {r.UnidadNumero} {r.PersonaNombre}".Contains(q, StringComparison.OrdinalIgnoreCase))
+            && (_fd?.Pasa(campo => ValorCampo(r, campo)) ?? true));
+    }
+    // Zonas de la agenda: todas sin filtro; con filtro/busqueda, las que coinciden por nombre o tienen reservas.
+    private List<ZonaGaleriaDto> ZonasAgenda(List<ReservaDto> filtradas)
+    {
+        var q = _q.Trim();
+        if (q.Length == 0 && !(_fd?.Hay ?? false)) return ZonasReservables;
+        var conReserva = filtradas.Select(r => r.ZonaComunId).ToHashSet();
+        return ZonasReservables.Where(z => conReserva.Contains(z.ZonaComunId)
+            || (q.Length > 0 && !(_fd?.Hay ?? false) && z.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList();
+    }
+
+    // Columnas de la tabla: clave, etiqueta, visible por defecto. "fecha" es la fija (primera, no se oculta).
+    private static readonly (string Key, string Label, bool Vis)[] ColsDef =
+    {
+        ("fecha", "Fecha", true), ("horario", "Horario", true), ("zona", "Zona", true), ("unidad", "Unidad", true),
+        ("persona", "Responsable", true), ("estado", "Estado", true), ("codigo", "Código", true), ("pago", "Pago", true),
+        ("creada", "Creada", false), ("entrega", "Entrega", false)
+    };
+    private const string ColFija = "fecha";
+    private sealed class ColPref { public string Key { get; set; } = ""; public bool Visible { get; set; } }
+    private List<ColPref> _cols = ColsDef.Select(c => new ColPref { Key = c.Key, Visible = c.Vis }).ToList();
+    private static string LabelCol(string k) => ColsDef.FirstOrDefault(c => c.Key == k).Label ?? k;
+    private List<(string Key, string Label)> ColsVis => _cols.Where(c => c.Visible).Select(c => (c.Key, LabelCol(c.Key))).ToList();
+
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "zona", Label = "Zona", Kind = "sel", Opciones = ZonasReservables.Select(z => (z.Nombre, z.Nombre)).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel", Opciones = Enum.GetValues<EstadoReserva>().Select(e => (e.ToString(), EstadoTexto(e))).ToList() },
+        new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
+        new() { Key = "unidad", Label = "Unidad", Kind = "texto" },
+        new() { Key = "persona", Label = "Responsable", Kind = "texto" },
+        new() { Key = "codigo", Label = "Código", Kind = "texto" },
+    };
+    private static string? ValorCampo(ReservaDto r, string campo) => campo switch
+    {
+        "zona" => r.ZonaNombre,
+        "estado" => r.Estado.ToString(),
+        "fecha" => r.Fecha.ToString("yyyy-MM-dd"),
+        "unidad" => r.UnidadNumero,
+        "persona" => r.PersonaNombre,
+        "codigo" => r.Codigo,
+        _ => ""
+    };
+
+    // ---- Ordenar (menu compartido + clic en el encabezado) ----
+    private List<TablaOrdenarMenu.Col> ColsOrdenables() => ColsVis.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
+    private void OnSortsChanged() { _pagina = 1; StateHasChanged(); }
+    private void OrdenarPorClic(string k)
+    {
+        var dir = _sorts.Count == 1 && _sorts[0].Key == k ? -_sorts[0].Dir : 1;
+        _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = dir } };
+        _pagina = 1;
+    }
+    private static IComparable ValorOrden(ReservaDto r, string k) => k switch
+    {
+        "fecha" => r.Fecha.ToDateTime(r.HoraInicio),
+        "horario" => r.HoraInicio,
+        "zona" => r.ZonaNombre ?? "",
+        "unidad" => r.UnidadNumero ?? "",
+        "persona" => r.PersonaNombre ?? "",
+        "estado" => (int)r.Estado,
+        "codigo" => r.Codigo ?? "",
+        "pago" => r.MontoPago ?? 0m,
+        "creada" => r.CreadoAt,
+        "entrega" => r.EntregadaAt ?? DateTimeOffset.MinValue,
+        _ => ""
+    };
+    private IEnumerable<ReservaDto> ReservasOrdenadas()
+    {
+        var src = ReservasFiltradas();
+        if (_sorts.Count == 0) return src;   // por defecto: orden del API (fecha mas reciente primero)
+        IOrderedEnumerable<ReservaDto>? o = null;
+        foreach (var s in _sorts)
+        {
+            Func<ReservaDto, IComparable> sel = r => ValorOrden(r, s.Key);
+            o = o is null ? (s.Dir >= 0 ? src.OrderBy(sel) : src.OrderByDescending(sel))
+                          : (s.Dir >= 0 ? o.ThenBy(sel) : o.ThenByDescending(sel));
+        }
+        return o!;
+    }
+    private RenderFragment SortInd(string k)
+    {
+        var s = _sorts.FirstOrDefault(x => x.Key == k);
+        return s is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(s.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
+    }
+
+    // ---- Agrupar (multi-nivel: TablaAgruparMenu + motor TablaAgrupador + render <tr> compartido) ----
+    private List<TablaAgruparMenu.Col> ColsAgrupables() => ColsVis.Select(c => new TablaAgruparMenu.Col(c.Key, c.Label)).ToList();
+    private List<string> Niveles => _grupos.Where(k => ColsVis.Any(c => c.Key == k)).ToList();
+    private async Task OnGruposChanged() { await GuardarLocalAsync(GruposKey, System.Text.Json.JsonSerializer.Serialize(_grupos)); StateHasChanged(); }
+    private IReadOnlyList<NodoGrupo<ReservaDto>> ArbolGrupos(List<string> niveles)
+        => TablaAgrupador.Agrupar(ReservasOrdenadas(), niveles, ValorGrupoDe, "(vacio)");
+    private IEnumerable<ValorGrupo> ValorGrupoDe(ReservaDto r, string k)
+    {
+        // Etiquetas legibles (las mismas de la tabla); Orden mantiene fechas/estados en su orden natural.
+        yield return k switch
+        {
+            "fecha" => new ValorGrupo(r.Fecha.ToString("yyyy-MM-dd"), FechaLarga(r.Fecha), Orden: r.Fecha.DayNumber),
+            "estado" => new ValorGrupo(r.Estado.ToString(), EstadoTexto(r.Estado), Orden: (int)r.Estado),
+            "horario" => new ValorGrupo(HorarioTexto(r), HorarioTexto(r)),
+            "pago" => new ValorGrupo(PagoTexto(r), PagoTexto(r)),
+            "creada" => new ValorGrupo(r.CreadoAt.ToString("yyyy-MM-dd"), FechaLarga(DateOnly.FromDateTime(r.CreadoAt.Date))),
+            "entrega" => new ValorGrupo(EntregaTexto(r), EntregaTexto(r)),
+            _ => ValorCampo(r, k) is { Length: > 0 } v ? new ValorGrupo(v, v) : new ValorGrupo("", "(vacio)")
+        };
+    }
+
+    // ---- Paginacion (sin agrupar) ----
+    private IEnumerable<ReservaDto> PaginaActual()
+    {
+        var filt = ReservasOrdenadas().ToList();
+        var totalPag = Math.Max(1, (int)Math.Ceiling(filt.Count / (double)_porPagina));
+        _pagina = Math.Clamp(_pagina, 1, totalPag);
+        return filt.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+    }
+
+    // ---- Columnas (TablaColumnasMenu; preferencia por navegador, Reservas no tiene campos propios) ----
+    private List<TablaColumnasMenu.Col> ColsVisibilidad()
+        => _cols.Select(c => new TablaColumnasMenu.Col(c.Key, LabelCol(c.Key), false, c.Visible,
+               Movible: c.Key != ColFija, Ocultable: c.Key != ColFija)).ToList();
+    private async Task MoverColMenu((string Key, int Dir) a)
+    {
+        var i = _cols.FindIndex(c => c.Key == a.Key); var j = i + a.Dir;
+        if (i <= 0 || j <= 0 || j >= _cols.Count) return;   // la 1a columna (fecha) queda fija
+        (_cols[i], _cols[j]) = (_cols[j], _cols[i]);
+        await GuardarColsAsync();
+    }
+    private async Task ToggleVisibleCol(string k)
+    {
+        if (k == ColFija) return;
+        var c = _cols.FirstOrDefault(x => x.Key == k); if (c is null) return;
+        c.Visible = !c.Visible;
+        await GuardarColsAsync();
+    }
+    private async Task OcultarTodasCol() { foreach (var c in _cols) c.Visible = c.Key == ColFija; await GuardarColsAsync(); }
+    private async Task MostrarTodasCol() { foreach (var c in _cols) c.Visible = true; await GuardarColsAsync(); }
+    private async Task RestablecerCol() { _cols = ColsDef.Select(c => new ColPref { Key = c.Key, Visible = c.Vis }).ToList(); await GuardarColsAsync(); }
+    private Task GuardarColsAsync() => GuardarLocalAsync(ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols));
+
+    // ---- Menu de columna (flecha del encabezado) ----
+    private TablaColMenu? _colMenu;
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, false), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.OrdenarDesc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key)) await _fd.AgregarReglaCampo(col.Key);
+                else Aviso("Filtrar por este campo no está disponible; usa el botón Filtros.");
+                break;
+            case TablaColMenu.Accion.Agrupar: _grupos = new() { col.Key }; await OnGruposChanged(); break;
+            case TablaColMenu.Accion.Ocultar:
+                if (col.Key == ColFija) Aviso("Esta columna es fija y no se puede ocultar.");
+                else { await ToggleVisibleCol(col.Key); Aviso("Columna oculta. Usa Columnas para restaurarla."); }
+                break;
+            default:
+                Aviso("Reservas no tiene campos propios: esta opción no aplica aquí.");
+                break;
+        }
+        StateHasChanged();
+    }
+    private void Aviso(string m) { _msg = m; _msgClass = "alert-info"; }
+
+    // ---- Clic derecho en una fila: acciones de la reserva ----
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtx(MouseEventArgs e, ReservaDto r)
+    {
+        var items = new List<TablaCtxMenu.Item> { new("Abrir / reprogramar", "fi-rr-edit", OnClick: () => { AbrirEditar(r); return Task.CompletedTask; }) };
+        // El menu invoca un Func<Task> (no EventCallback): esta pagina no se repinta sola tras la accion.
+        if (r.Estado == EstadoReserva.PendienteAprobacion) items.Add(new("Aprobar", "fi-rr-check", OnClick: async () => { await AprobarReserva(r.Id); StateHasChanged(); }));
+        if (EsActiva(r.Estado))
+        {
+            items.Add(new(Sep: true));
+            items.Add(new("Cancelar reserva", "fi-rr-cross-circle", Danger: true, OnClick: async () => { await CancelarReserva(r.Id); StateHasChanged(); }));
+        }
+        _ctxItems = items; _ctxX = e.ClientX; _ctxY = e.ClientY; _ctxOpen = true;
+    }
+
+    // ---- Fila y celdas de la tabla ----
+    private RenderFragment<ReservaDto> FilaTpl => r => @<tr @oncontextmenu="e => AbrirCtx(e, r)" @oncontextmenu:preventDefault="true">
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir la reserva" @onclick="() => AbrirEditar(r)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var c in ColsVis) { @Celda(r, c.Key) }
+    </tr>;
+    private RenderFragment Celda(ReservaDto r, string k) => k switch
+    {
+        "fecha" => @<td class="nom">@FechaLarga(r.Fecha)</td>,
+        "horario" => @<td>@HorarioTexto(r)</td>,
+        "zona" => @<td>@r.ZonaNombre</td>,
+        "unidad" => @<td><span class="u-cod">@r.UnidadNumero</span></td>,
+        "persona" => @<td>@(string.IsNullOrWhiteSpace(r.PersonaNombre) ? "-" : r.PersonaNombre)</td>,
+        "estado" => @<td><span class="rs-badge" style="color:@EstadoFg(r.Estado);background:@EstadoBg(r.Estado)">@EstadoTexto(r.Estado)</span></td>,
+        "codigo" => @<td class="mut">@r.Codigo</td>,
+        "pago" => @<td>@PagoTexto(r)</td>,
+        "creada" => @<td class="mut">@r.CreadoAt.ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd HH:mm")</td>,
+        "entrega" => @<td class="mut">@EntregaTexto(r)</td>,
+        _ => @<td></td>
+    };
+    private static string FechaLarga(DateOnly d) => Cap(d.ToString("ddd d MMM yyyy", Es));
+    private static string HorarioTexto(ReservaDto r) => $"{ShortHora(r.HoraInicio)} - {ShortHora(r.HoraFin)}";
+    private static string PagoTexto(ReservaDto r) => r.MontoPago is > 0 ? "$ " + r.MontoPago.Value.ToString("N0", Es) + (r.EstadoPago is { } ep ? $" ({ep})" : "") : "Gratis";
+    private static string EntregaTexto(ReservaDto r) => r.DevueltaAt is not null ? "Devuelta" : r.EntregadaAt is not null ? "Entregada" : "-";
+
+    // ---- Persistencia por navegador (vista, grupos, columnas). Tolerante: sin storage queda el default. ----
+    private async Task GuardarLocalAsync(string k, string v) { try { await Js.InvokeVoidAsync("localStorage.setItem", k, v); } catch { } }
+    private async Task CargarPreferenciasAsync()
+    {
+        try
+        {
+            var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
+            if (v is "tabla" or "calendario") _vista = v;
+            var g = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);
+            if (!string.IsNullOrWhiteSpace(g)) _grupos = System.Text.Json.JsonSerializer.Deserialize<List<string>>(g) ?? new();
+            var c = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
+            if (!string.IsNullOrWhiteSpace(c) && System.Text.Json.JsonSerializer.Deserialize<List<ColPref>>(c) is { Count: > 0 } guard)
+            {
+                // Conserva orden/visibilidad guardados; columnas nuevas del catalogo se agregan al final; fecha siempre 1a y visible.
+                var conocidas = guard.Where(x => ColsDef.Any(d => d.Key == x.Key)).ToList();
+                conocidas.AddRange(ColsDef.Where(d => conocidas.All(x => x.Key != d.Key)).Select(d => new ColPref { Key = d.Key, Visible = d.Vis }));
+                var fija = conocidas.First(x => x.Key == ColFija); fija.Visible = true;
+                conocidas.Remove(fija); conocidas.Insert(0, fija);
+                _cols = conocidas;
+            }
+        }
+        catch { }
+    }
 
     // Editar / reprogramar una reserva (abre tarjeta -> cambiar fecha/hora o cancelar)
     private bool _editOpen;
@@ -786,9 +1088,9 @@ else
         }
     }
 
-    private List<ReservaDto> Proximas =>
-        _reservas.Where(r => EsActiva(r.Estado) && r.Fecha >= DateOnly.FromDateTime(AhoraColombia().Date))
-                 .OrderBy(r => r.Fecha).ThenBy(r => r.HoraInicio).Take(8).ToList();
+    private static List<ReservaDto> Proximas(IEnumerable<ReservaDto> fuente) =>
+        fuente.Where(r => EsActiva(r.Estado) && r.Fecha >= DateOnly.FromDateTime(AhoraColombia().Date))
+              .OrderBy(r => r.Fecha).ThenBy(r => r.HoraInicio).Take(8).ToList();
 
     private class ConfigEdit
     {
@@ -822,6 +1124,7 @@ else
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                await CargarPreferenciasAsync();
                 await CargarTodoAsync();
                 StateHasChanged();
             }
@@ -847,10 +1150,6 @@ else
     {
         _reservas = await Auth().GetFromJsonAsync<List<ReservaDto>>("/api/reservas") ?? new();
     }
-
-    private List<ReservaDto> ReservasDe(Guid zonaId, DateOnly fecha) =>
-        _reservas.Where(r => r.ZonaComunId == zonaId && r.Fecha == fecha && EsActiva(r.Estado))
-                 .OrderBy(r => r.HoraInicio).ToList();
 
     private void CambiarSemana(int d) => _rsWeek += d;
 
@@ -1155,16 +1454,6 @@ else
         EstadoReserva.Completada => "#EEF3F8",
         _ => "#FDE7E7"
     };
-
-    private static string IconoZona(string nombre)
-    {
-        var n = (nombre ?? "").ToLowerInvariant();
-        if (n.Contains("bbq") || n.Contains("parrilla") || n.Contains("terraza")) return "M6 3v4M10 3v4M14 3v4M4 11h16l-1 9H5z";
-        if (n.Contains("cancha") || n.Contains("tenis") || n.Contains("futbol") || n.Contains("deport")) return "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20M2 12h20M12 2v20";
-        if (n.Contains("gim") || n.Contains("gym")) return "M6 7v10M18 7v10M4 9v6M20 9v6M6 12h12";
-        if (n.Contains("piscina") || n.Contains("pool")) return "M2 16c2 0 2 1.5 4 1.5S10 16 12 16s2 1.5 4 1.5 2-1.5 4-1.5M2 12c2 0 2 1.5 4 1.5S10 12 12 12";
-        return "M3 21h18M5 21V8h14v13M9 12h.01M15 12h.01"; // salon / default
-    }
 
     private HttpClient Auth()
     {
