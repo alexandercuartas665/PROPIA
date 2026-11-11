@@ -16,7 +16,7 @@ namespace Propia.Infrastructure.Asambleas;
 /// Modulo 2.8 Asambleas y Organos de Gobierno - spec v1.0 MVP.
 /// Ciclo: Borrador -> Citada -> EnCurso -> (Cerrada | QuorumFallido).
 /// </summary>
-public class AsambleaService : IAsambleaService
+public partial class AsambleaService : IAsambleaService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
@@ -152,11 +152,7 @@ public class AsambleaService : IAsambleaService
             VotacionDto? votDto = null;
             if (votacionesPorPunto.TryGetValue(p.Id, out var v))
             {
-                var votosDto = (p.ModalidadVoto == ModalidadVoto.Secreto && v.Estado == EstadoVotacion.Abierta)
-                    ? new List<VotoDto>()
-                    : v.Votos.Select(x => new VotoDto(
-                        x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
-                        x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
+                var votosDto = MapearVotos(v.Votos);
                 votDto = new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
                     v.QuorumAlAbrirPct, v.CoeficienteTotalSala,
                     v.ResultadoOpcion, v.ResultadoPct, v.ResultadoFinal, votosDto);
@@ -408,7 +404,13 @@ public class AsambleaService : IAsambleaService
         return true;
     }
 
-    public async Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+    public Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+        => CheckInParticipanteCoreAsync(sesionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien registra su propia asistencia (flujo self-service). Null = flujo admin,
+    // que conserva la persona del participante en el quorum log.
+    private async Task<bool> CheckInParticipanteCoreAsync(Guid sesionId, CheckInParticipanteRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var p = await _db.SesionParticipantes
             .FirstOrDefaultAsync(x => x.SesionId == sesionId && x.UnidadPrivadaId == req.UnidadPrivadaId, ct);
@@ -443,7 +445,7 @@ public class AsambleaService : IAsambleaService
         {
             SesionId = sesionId,
             Evento = req.Presente ? EventoQuorum.Ingreso : EventoQuorum.Salida,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = p.UnidadPrivadaId,
             Coeficiente = p.Coeficiente,
             QuorumAcumuladoPct = pct
@@ -491,7 +493,13 @@ public class AsambleaService : IAsambleaService
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, null, null, null, new List<VotoDto>());
     }
 
-    public async Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+    public Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+        => EmitirVotoCoreAsync(votacionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien emite el voto (propietario o apoderado, flujo self-service). Null = flujo
+    // admin, que conserva la persona del participante en el voto.
+    private async Task<bool> EmitirVotoCoreAsync(Guid votacionId, EmitirVotoRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var v = await _db.Votaciones.Include(x => x.Punto).FirstOrDefaultAsync(x => x.Id == votacionId, ct);
         if (v is null) return false;
@@ -519,7 +527,7 @@ public class AsambleaService : IAsambleaService
         _db.Votos.Add(new Voto
         {
             VotacionId = votacionId,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = req.UnidadPrivadaId,
             CoeficienteAportado = p.Coeficiente,
             Opcion = req.Opcion,
@@ -545,16 +553,37 @@ public class AsambleaService : IAsambleaService
             var grupos = v.Votos.GroupBy(x => x.Opcion)
                 .Select(g => new { Opcion = g.Key, Coef = g.Sum(x => x.CoeficienteAportado) })
                 .OrderByDescending(x => x.Coef).ToList();
-            var totalCoefVotado = grupos.Sum(g => g.Coef);
             var ganadora = grupos.First();
             v.ResultadoOpcion = ganadora.Opcion;
-            v.ResultadoPct = v.CoeficienteTotalSala > 0
-                ? Math.Round(ganadora.Coef / v.CoeficienteTotalSala * 100m, 2) : 0m;
 
-            // Determinar Aprobado/Rechazado: si la opcion "Si" supera la mayoria configurada
+            // Base del porcentaje, calculada AL CERRAR (no al abrir: con el voto self-service la gente
+            // llega despues de abrir la votacion). Ley 675: mayoria simple (art. 45) = coeficientes
+            // representados en la reunion -> presentes al cierre + quien voto y luego se retiro (su voto
+            // cuenta y no puede pasar del 100 %); mayoria calificada (art. 46) = total de coeficientes de
+            // la copropiedad (todas las unidades citadas a la sesion).
+            var participantes = await _db.SesionParticipantes.AsNoTracking()
+                .Where(x => x.SesionId == v.SesionId)
+                .Select(x => new { x.UnidadPrivadaId, x.Coeficiente, x.Presente })
+                .ToListAsync(ct);
+            var votaron = v.Votos.Select(x => x.UnidadPrivadaId).ToHashSet();
+            var baseCoef = v.Punto!.TipoMayoria == TipoMayoria.Calificada
+                ? participantes.Sum(x => x.Coeficiente)
+                : participantes.Where(x => x.Presente || votaron.Contains(x.UnidadPrivadaId)).Sum(x => x.Coeficiente);
+
+            v.ResultadoPct = baseCoef > 0 ? Math.Round(ganadora.Coef / baseCoef * 100m, 2) : 0m;
+
+            // Aprobado/Rechazado: el % del "Si" contra la mayoria del punto, con el criterio de la
+            // copropiedad (MasDe = mayoria absoluta, un empate no aprueba; AlMenos = basta alcanzarla).
+            // Sin fila de config = default de la entidad (MasDe).
+            var criterio = await _db.AsambleaConfigs.AsNoTracking()
+                .Select(c => (CriterioMayoria?)c.CriterioMayoria)
+                .FirstOrDefaultAsync(ct) ?? CriterioMayoria.MasDe;
             var siCoef = grupos.FirstOrDefault(g => g.Opcion == OpcionesVotoBase.Si)?.Coef ?? 0m;
-            var siPct = v.CoeficienteTotalSala > 0 ? siCoef / v.CoeficienteTotalSala * 100m : 0m;
-            v.ResultadoFinal = siPct >= v.Punto!.MayoriaPct ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
+            var siPct = baseCoef > 0 ? siCoef / baseCoef * 100m : 0m;
+            var aprobado = criterio == CriterioMayoria.AlMenos
+                ? siPct >= v.Punto.MayoriaPct
+                : siPct > v.Punto.MayoriaPct;
+            v.ResultadoFinal = aprobado ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
         }
         else
         {
@@ -566,12 +595,17 @@ public class AsambleaService : IAsambleaService
         v.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        var votosDto = v.Votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId,
-            x.CoeficienteAportado, x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
         return new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, v.ResultadoOpcion, v.ResultadoPct,
-            v.ResultadoFinal, votosDto);
+            v.ResultadoFinal, MapearVotos(v.Votos));
     }
+
+    // Voto secreto: nunca sale la opcion de una unidad, ni con la votacion abierta ni cerrada (antes se
+    // revelaba al cerrar a cualquier usuario del tenant). Se conserva quien voto (participacion) y el
+    // coeficiente para el conteo; el resultado agregado vive en ResultadoOpcion/ResultadoPct.
+    private static List<VotoDto> MapearVotos(IEnumerable<Voto> votos)
+        => votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
+            x.EsSecreto ? "" : x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
 
     // ===================== Cierre =====================
 
@@ -698,17 +732,31 @@ public class AsambleaService : IAsambleaService
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.AsNoTracking().FirstAsync(ct);
         return new AsambleaConfigDto(c.PlazoCitacionDias, c.LimitePoderesPorPersona,
-            c.GraciaReconexionSeg, c.NotifRecordatorioDias);
+            c.GraciaReconexionSeg, c.NotifRecordatorioDias, c.CriterioMayoria);
     }
 
-    public async Task<bool> ActualizarConfigAsync(AsambleaConfigDto req, CancellationToken ct)
+    // MERGE: solo lo que viene en el request (null = no tocar). Rangos sanos para que un valor absurdo no
+    // rompa la citacion o los recordatorios.
+    public async Task<bool> ActualizarConfigAsync(ActualizarAsambleaConfigRequest req, CancellationToken ct)
     {
+        if (req.PlazoCitacionDias is < 0 or > 60)
+            throw new InvalidOperationException("El plazo de citacion debe estar entre 0 y 60 dias.");
+        if (req.LimitePoderesPorPersona is < 0 or > 50)
+            throw new InvalidOperationException("El limite de poderes por persona debe estar entre 0 (sin limite) y 50.");
+        if (req.GraciaReconexionSeg is < 0 or > 3600)
+            throw new InvalidOperationException("La gracia de reconexion debe estar entre 0 y 3600 segundos.");
+        if (req.NotifRecordatorioDias is < 0 or > 30)
+            throw new InvalidOperationException("El recordatorio debe estar entre 0 y 30 dias antes.");
+        if (req.CriterioMayoria is { } cm && !Enum.IsDefined(cm))
+            throw new InvalidOperationException("Criterio de mayoria invalido.");
+
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.FirstAsync(ct);
-        c.PlazoCitacionDias = req.PlazoCitacionDias;
-        c.LimitePoderesPorPersona = req.LimitePoderesPorPersona;
-        c.GraciaReconexionSeg = req.GraciaReconexionSeg;
-        c.NotifRecordatorioDias = req.NotifRecordatorioDias;
+        if (req.PlazoCitacionDias is int plazo) c.PlazoCitacionDias = plazo;
+        if (req.LimitePoderesPorPersona is int lim) c.LimitePoderesPorPersona = lim == 0 ? null : lim;
+        if (req.GraciaReconexionSeg is int gracia) c.GraciaReconexionSeg = gracia;
+        if (req.NotifRecordatorioDias is int rec) c.NotifRecordatorioDias = rec;
+        if (req.CriterioMayoria is { } criterio) c.CriterioMayoria = criterio;
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

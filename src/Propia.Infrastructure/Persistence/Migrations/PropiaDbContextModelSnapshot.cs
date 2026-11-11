@@ -1622,6 +1622,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
 
+                    b.Property<int>("CriterioMayoria")
+                        .HasColumnType("integer")
+                        .HasColumnName("criterio_mayoria");
+
                     b.Property<int>("GraciaReconexionSeg")
                         .HasColumnType("integer")
                         .HasColumnName("gracia_reconexion_seg");
