@@ -100,6 +100,8 @@ else
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            <TablaExportar Vista="VistaExport" />
         }
         else
         {
@@ -1218,6 +1220,61 @@ else
     // creadas se empujan al FINAL (OrderBy estable) hasta el proximo refresco.
     private IEnumerable<ResidenteResumenDto> PaginaR()
         => _resRecienCreados.Count == 0 ? Filtrados : Filtrados.OrderBy(r => _resRecienCreados.Contains(r.UnidadPersonaId) ? 1 : 0);
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (el mismo orden que pinta la tabla) y, si esta agrupada, las cabeceras de grupo. =====
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumericaR(k), EsNumericaR(k) ? FormatoExcelR(k) : null)).ToList();
+        ExportFila Fila(ResidenteResumenDto r, IReadOnlyList<string>? ruta)
+            => new(cols.Select(k => EsNumericaR(k) ? ValorNumR(r, k) : (object?)TextoCeldaR(r, k)).ToList(), Ruta: ruta);
+
+        var filas = new List<ExportFila>();
+        if (!_agrupadoR) filas.AddRange(PaginaR().Select(r => Fila(r, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<ResidenteResumenDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var rr = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(r => Fila(r, rr)));
+                    else Recorrer(n.Subgrupos, rr);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar<ResidenteResumenDto>(Filtrados, _gruposR, ValorGrupoR), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoR) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposR.Select(ColLabel)));
+        criterios.Add($"{Filtrados.Count} residentes");
+        return new ExportVista("Residentes", _copNombre, columnas, filas, criterios, _gruposR.Select(ColLabel).ToList());
+    }
+    // Texto visible de una celda: SortStrR (mismo texto que ordena/agrupa: rol con su etiqueta, habita Si/No,
+    // Directorio con el nombre); el campo Usuario muestra el nombre del usuario del tenant elegido en su select.
+    private string? TextoCeldaR(ResidenteResumenDto r, string k)
+    {
+        string? t;
+        if (CampoCustom(k) is { Tipo: TipoCampoTablero.Usuario } cu)
+        {
+            var val = ValorDe(r.UnidadPersonaId, cu.Id);
+            t = _usuariosTenant.FirstOrDefault(u => u.PersonaId.ToString() == val)?.NombreCompleto;
+        }
+        else t = SortStrR(r, k);
+        return string.IsNullOrWhiteSpace(t) ? null : t;
+    }
+    // Formato numerico de Excel de un campo propio numerico: moneda con $, porcentaje con %, numero general.
+    private string FormatoExcelR(string k) => CampoCustom(k)?.Tipo switch
+    {
+        TipoCampoTablero.Moneda => "\"$\" #,##0",
+        TipoCampoTablero.Porcentaje => "General\"%\"",
+        _ => "General"
+    };
 
     // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La pinta
     // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'r'.

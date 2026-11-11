@@ -69,6 +69,7 @@ else
                 <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
                 <TablaColumnasMenu Columnas="ColsVisibilidad()" OnMover="MoverColMenu" OnToggleVisible="ToggleVisibleCol"
                                    OnOcultarTodas="OcultarTodasCol" OnMostrarTodas="MostrarTodasCol" OnRestablecer="RestablecerCol" />
+                <TablaExportar Vista="VistaExport" />
             }
             <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Calendario("calendario"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
         </div>
@@ -112,7 +113,18 @@ else
                     var zcfg = z.ZonaComunId;
                     @* Clic en el nombre = configurar la zona (antes era la tarjeta de la zona). *@
                     <button type="button" class="rs-row-label rs-row-label-btn" title="Configurar zona" @onclick="() => AbrirConfig(zcfg)">
-                        <span>@z.Nombre</span>
+                        <span class="rs-row-zona">
+                            @* Miniatura de la zona: su foto o, si no tiene, las iniciales (como la tarjeta de identidad). *@
+                            @if (!string.IsNullOrWhiteSpace(z.FotoUrl))
+                            {
+                                <span class="rs-row-thumb" style="background-image:url('@z.FotoUrl')"></span>
+                            }
+                            else
+                            {
+                                <span class="rs-row-thumb rs-row-thumb--ini">@FichaIdentidad.InicialesDe(z.Nombre)</span>
+                            }
+                            <span class="rs-row-zona-nm">@z.Nombre</span>
+                        </span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
                     </button>
                     @foreach (var d in DiasSemana)
@@ -552,6 +564,11 @@ else
     .rs-row-label-btn svg { flex-shrink: 0; color: var(--propia-text-faint); opacity: 0; transition: opacity .12s; }
     .rs-row-label-btn:hover { background: var(--propia-brand-soft-2); color: var(--propia-brand); }
     .rs-row-label-btn:hover svg { opacity: 1; color: var(--propia-brand); }
+    /* Miniatura de la zona en la primera columna de la agenda. */
+    .rs-row-zona { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .rs-row-zona-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .rs-row-thumb { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px; background-size: cover; background-position: center; background-color: var(--propia-border-divider); box-shadow: 0 0 0 1px var(--propia-border-card); }
+    .rs-row-thumb--ini { display: inline-flex; align-items: center; justify-content: center; background: var(--propia-brand-soft); color: var(--propia-brand); font-size: 11.5px; font-weight: 800; box-shadow: none; }
     .rs-resv-click { cursor: pointer; }
     .rs-resv-click:hover { background: var(--propia-brand-soft-2); }
     .rs-editar { width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-brand); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -743,6 +760,7 @@ else
     private string _vista = "calendario";   // calendario | tabla (persistida por navegador)
     private const string VistaKey = "propia_reservas_vista", GruposKey = "propia_reservas_grupos", ColsKey = "propia_reservas_cols";
     private string _q = "";
+    private string? _copropiedadNombre;   // titulo de la descarga
     private FiltroDinamico? _fd;
     private List<TablaOrdenarMenu.Sort> _sorts = new();
     private List<string> _grupos = new();
@@ -866,6 +884,53 @@ else
         };
     }
 
+    // ---- Descargar la vista tabla tal como se ve (TablaExportar): todas las filas filtradas y ordenadas o los grupos ----
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVis;
+        var columnas = cols.Select(c => new ExportColumna(c.Label)).ToList();
+        string Texto(ReservaDto r, string k) => k switch
+        {
+            "fecha" => FechaLarga(r.Fecha),
+            "horario" => HorarioTexto(r),
+            "zona" => r.ZonaNombre ?? "",
+            "unidad" => r.UnidadNumero ?? "",
+            "persona" => string.IsNullOrWhiteSpace(r.PersonaNombre) ? "-" : r.PersonaNombre!,
+            "estado" => EstadoTexto(r.Estado),
+            "codigo" => r.Codigo ?? "",
+            "pago" => PagoTexto(r),
+            "creada" => r.CreadoAt.ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd HH:mm"),
+            "entrega" => EntregaTexto(r),
+            _ => ""
+        };
+        ExportFila Fila(ReservaDto r, IReadOnlyList<string>? ruta)
+            => new(cols.Select(c => { var t = Texto(r, c.Key); return (object?)(string.IsNullOrWhiteSpace(t) ? null : t); }).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        var niveles = Niveles;
+        if (niveles.Count == 0) filas.AddRange(ReservasOrdenadas().Select(r => Fila(r, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<ReservaDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var rr = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(r => Fila(r, rr)));
+                    else Recorrer(n.Subgrupos, rr);
+                }
+            }
+            Recorrer(ArbolGrupos(niveles), new());
+        }
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LabelCol(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelCol)));
+        criterios.Add($"{ReservasFiltradas().Count()} reservas");
+        return new ExportVista("Reservas de zonas comunes", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelCol).ToList());
+    }
+
     // ---- Paginacion (sin agrupar) ----
     private IEnumerable<ReservaDto> PaginaActual()
     {
@@ -976,6 +1041,7 @@ else
     {
         try
         {
+            _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre");
             var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (v is "tabla" or "calendario") _vista = v;
             var g = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);

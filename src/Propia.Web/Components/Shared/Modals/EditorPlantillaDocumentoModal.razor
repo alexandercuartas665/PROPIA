@@ -1,0 +1,292 @@
+@* Editor de UNA plantilla de documentos (Configuracion > Plantillas). Parte del gestor de PQRSD
+   (antes GestionarPlantillasPqrsdModal, clases .gpl-*): la bandeja de atras ya es la lista, asi que aqui NO hay
+   lista de plantillas. Su columna izquierda es el panel "Datos para reemplazo": los datos {grupo.campo}
+   de la categoria (propios + comunes); clic = insertar en el cursor de TinyMCE (propiaTiny). Replica de
+   gestor() en replica/js/mod-plantillas-doc.js. Devuelve true si guardo o elimino algo. *@
+@inherits ModalBase<bool>
+@using Propia.Application.Plantillas
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<div class="gpl pld-gestor">
+    <div class="gpl-head">
+        <div class="gpl-eyebrow">@(_editId is null ? "NUEVA PLANTILLA" : "EDITAR PLANTILLA")</div>
+        <button type="button" class="gpl-x" @onclick="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="gpl-body">
+        <div class="gpl-list pld-datos">
+            <div class="pld-datos-h">Datos para reemplazo</div>
+            <div class="pld-datos-sub">Clic en un dato para insertarlo donde está el cursor. Al usar la plantilla se cambia por el valor real.</div>
+            @ListaDatos
+        </div>
+        <div class="gpl-edit">
+            <div class="pld-edit-top">
+                <input class="gpl-nombre" placeholder="Nombre de la plantilla" @bind="_nombre" @bind:event="oninput" />
+                <label class="pld-cat"><span>Categoría</span>
+                    <select class="pld-cat-sel" @bind="_categoria">
+                        @foreach (var c in PlantillasCatalogo.Categorias) { <option value="@c.Clave">@c.Nombre</option> }
+                    </select>
+                </label>
+            </div>
+            <div class="pld-usada">Se ofrece en: <b>@Cat.UsadaEn</b></div>
+            @* Celular: la columna de datos no cabe; un boton despliega la misma lista como menu sobre el editor. *@
+            <div class="pld-ins-wrap">
+                <button type="button" class="pld-ins-btn @(_datosAbierto ? "on" : "")" @onclick="() => _datosAbierto = !_datosAbierto">
+                    <i class="fi fi-rr-plus"></i> Insertar dato <i class="fi @(_datosAbierto ? "fi-rr-angle-small-up" : "fi-rr-angle-small-down")"></i>
+                </button>
+                @if (_datosAbierto)
+                {
+                    <div class="pld-ins-bd" @onclick="() => _datosAbierto = false"></div>
+                    <div class="pld-ins-menu">@ListaDatos</div>
+                }
+            </div>
+            <textarea id="pld-ed"></textarea>
+            <div>@if (!string.IsNullOrEmpty(_msg)) { <div class="gpl-msg @(_err ? "err" : "ok")">@_msg</div> }</div>
+            <div class="gpl-foot">
+                <span>
+                    @* Eliminar vive en el pie (antes era la "x" de cada item de la lista); solo si la plantilla ya existe. *@
+                    @if (_editId is not null)
+                    {
+                        <button type="button" class="pld-btn-del" @onclick="EliminarAsync"><i class="fi fi-rr-trash"></i> Eliminar</button>
+                    }
+                </span>
+                <span class="pld-foot-acts">
+                    <button type="button" class="pld-btn-ghost" @onclick="VistaPreviaAsync"><i class="fi fi-rr-eye"></i> Vista previa</button>
+                    <button type="button" class="gpl-btn-brand" @onclick="GuardarAsync" disabled="@_busy">Guardar plantilla</button>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Gestor de PQRSD (.gpl-*), mismos valores; los hex sueltos pasaron a tokens. */
+    .gpl { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+    .gpl-head { display: flex; align-items: center; justify-content: space-between; }
+    .gpl-eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--propia-text-h1); }
+    .gpl-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .gpl-body { display: grid; grid-template-columns: 240px 1fr; gap: 14px; min-height: 420px; }
+    .gpl-list { display: flex; flex-direction: column; gap: 6px; border-right: 1px solid var(--propia-border-divider); padding-right: 12px; }
+    .gpl-edit { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .gpl-nombre { border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 9px 12px; font-size: 14px; font-weight: 700; color: var(--propia-text-h1); background: var(--propia-bg-card); outline: none; }
+    .gpl-nombre:focus { border-color: var(--propia-brand); }
+    .gpl-msg { font-size: 12px; font-weight: 600; }
+    .gpl-msg.err { color: var(--propia-danger); } .gpl-msg.ok { color: var(--propia-ok); }
+    .gpl-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .gpl-btn-brand { padding: 9px 16px; border-radius: 8px; background: var(--propia-brand); color: var(--propia-text-inverse); font-weight: 700; font-size: 13px; border: 0; cursor: pointer; }
+    .gpl-btn-brand:disabled { opacity: .5; }
+    /* Gestor (propuesta .pld-*) */
+    .pld-gestor { padding: 16px 18px 18px; max-height: 94vh; overflow-y: auto; box-sizing: border-box; }
+    .pld-gestor .gpl-body { min-height: 520px; }
+    .pld-gestor .gpl-body { grid-template-columns: 270px 1fr; }
+    /* Columna izquierda = "Datos para reemplazo" (en vez de la lista de plantillas: la bandeja ya es la lista) */
+    /* contain:size = la columna no empuja el alto: toma el del editor (stretch del grid) y la lista hace scroll. */
+    .pld-datos { gap: 4px; min-height: 0; contain: size; }
+    .pld-datos-h { font-size: 13px; font-weight: 800; color: var(--propia-text-h1); }
+    .pld-datos-sub { font-size: 11.5px; line-height: 1.45; color: var(--propia-text-muted); margin-bottom: 4px; }
+    .pld-datos-q { height: 34px; padding: 0 10px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); color: var(--propia-text-h1); font-size: 12.5px; margin-bottom: 2px; }
+    .pld-datos-q:focus { outline: none; border-color: var(--propia-brand); }
+    .pld-datos-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; flex: 1; padding-right: 2px; }
+    .pld-tok { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 6px 9px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); cursor: pointer; }
+    .pld-tok:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .pld-tok-code { font-family: 'Cascadia Code', Consolas, monospace; font-size: 11.5px; font-weight: 600; color: var(--propia-brand); }
+    .pld-tok-desc { font-size: 11.5px; color: var(--propia-text-secondary); }
+    .pld-tok-empty { font-size: 12px; color: var(--propia-text-muted); padding: 8px 2px; }
+    .pld-btn-del { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--propia-danger); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+    .pld-btn-del:hover { border-color: var(--propia-danger); }
+    .pld-grp { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--propia-text-muted); }
+    .pld-grp i { font-size: 12px; line-height: 1; color: var(--propia-brand); }
+    .pld-edit-top { display: flex; gap: 10px; align-items: flex-end; }
+    .pld-edit-top .gpl-nombre { flex: 1; min-width: 0; }
+    .pld-cat { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: var(--propia-text-muted); }
+    .pld-cat-sel { height: 40px; min-width: 170px; padding: 0 10px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); color: var(--propia-text-h1); font-size: 13px; font-weight: 600; }
+    .pld-usada { font-size: 12px; color: var(--propia-text-secondary); }
+    .pld-usada b { color: var(--propia-text-h1); }
+    .pld-foot-acts { display: flex; gap: 8px; flex: 0 0 auto; }
+    .pld-btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-h1); font-weight: 700; font-size: 13px; cursor: pointer; }
+    .pld-btn-ghost:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
+    /* Boton "Insertar dato" + menu: solo en celular (en escritorio esta la columna de la izquierda). */
+    .pld-ins-wrap { display: none; position: relative; }
+    .pld-ins-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-brand); font-weight: 700; font-size: 13px; cursor: pointer; }
+    .pld-ins-btn.on, .pld-ins-btn:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
+    .pld-ins-btn i { font-size: 12px; line-height: 1; }
+    .pld-ins-bd { position: fixed; inset: 0; z-index: 40; }
+    .pld-ins-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 41; display: flex; flex-direction: column; gap: 4px; max-height: 55vh; padding: 10px; border: 1px solid var(--propia-border-card); border-radius: 10px; background: var(--propia-bg-card); box-shadow: 0 10px 28px rgba(27,42,58,.18); }
+    @@media (max-width: 640px) {
+        .pld-edit-top { flex-direction: column; align-items: stretch; }
+        .pld-gestor .gpl-body { grid-template-columns: 1fr; min-height: 0; }
+        .pld-datos { display: none; }
+        .pld-ins-wrap { display: block; }
+    }
+</style>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Plantilla a editar; null = nueva.</summary>
+    [Parameter] public PlantillaDocumentoDto? Plantilla { get; set; }
+    /// <summary>Categoria inicial de una plantilla nueva (por defecto PQRSD).</summary>
+    [Parameter] public string? Categoria { get; set; }
+    [Parameter] public string? CopropiedadNombre { get; set; }
+
+    private const string EdSel = "#pld-ed";
+    private Guid? _editId;
+    private string _nombre = "";
+    private string _categoria = PlantillasCatalogo.Pqrsd;
+    private string _q = "";
+    private string? _msg;
+    private bool _err, _busy, _cambio, _initEditor = true;
+
+    private PlantillaCategoriaDto Cat => PlantillasCatalogo.Categoria(_categoria);
+
+    protected override void OnInitialized()
+    {
+        _editId = Plantilla?.Id;
+        _nombre = Plantilla?.Nombre ?? "";
+        _categoria = PlantillasCatalogo.Categoria(Plantilla?.Categoria ?? Categoria).Clave;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_initEditor)
+        {
+            _initEditor = false;
+            try { await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, Plantilla?.CuerpoHtml ?? ""); } catch { }
+        }
+    }
+
+    private static IReadOnlyList<PlantillaTokenDto> PropiosDe(string categoria)
+        => PlantillasCatalogo.TokensPorCategoria.TryGetValue(categoria, out var l) ? l : Array.Empty<PlantillaTokenDto>();
+
+    private List<PlantillaTokenDto> Filtrar(IReadOnlyList<PlantillaTokenDto> lista)
+    {
+        var q = _q.Trim();
+        return q.Length == 0 ? lista.ToList()
+            : lista.Where(t => (t.Token + " " + t.Descripcion).Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private RenderFragment TokRow(PlantillaTokenDto t) =>@<button type="button" class="pld-tok" title="Insertar @t.Token (ej.: @t.Ejemplo)" @onclick="() => InsertarAsync(t.Token)"><span class="pld-tok-code">@t.Token</span><span class="pld-tok-desc">@t.Descripcion</span></button>;
+
+    // Buscador + lista de datos (propios de la categoria + comunes). La usan la columna de escritorio y el menu de celular.
+    private bool _datosAbierto;
+    private RenderFragment ListaDatos => __builder =>
+    {
+        var pro = Filtrar(PropiosDe(_categoria));
+        var com = Filtrar(PlantillasCatalogo.TokensComunes);
+        <input class="pld-datos-q" type="search" placeholder="Buscar dato..." @bind="_q" @bind:event="oninput" />
+        <div class="pld-datos-list">
+            @if (pro.Count > 0)
+            {
+                <div class="pld-grp"><i class="fi @Cat.Icono"></i> Datos de @Cat.Nombre</div>
+                @foreach (var t in pro) { @TokRow(t) }
+            }
+            @if (com.Count > 0)
+            {
+                <div class="pld-grp"><i class="fi fi-rr-building"></i> Comunes (toda plantilla)</div>
+                @foreach (var t in com) { @TokRow(t) }
+            }
+            @if (pro.Count == 0 && com.Count == 0)
+            {
+                <div class="pld-tok-empty">Ningún dato coincide con "@_q".</div>
+            }
+        </div>
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task InsertarAsync(string token)
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.insert", EdSel, token); } catch { }
+        _datosAbierto = false;   // celular: el menu se cierra al insertar
+    }
+
+    private async Task<string> CuerpoAsync()
+    {
+        try { return await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel) ?? ""; } catch { return ""; }
+    }
+
+    private async Task VistaPreviaAsync()
+    {
+        var cuerpo = await CuerpoAsync();
+        await Modals.OpenAsync<VistaPreviaPlantillaModal, bool>(
+            new ModalParameters()
+                .Set("Nombre", string.IsNullOrWhiteSpace(_nombre) ? "Plantilla sin nombre" : _nombre.Trim())
+                .Set("Categoria", _categoria)
+                .Set("CuerpoHtml", cuerpo)
+                .Set("CopropiedadNombre", CopropiedadNombre),
+            new ModalOptions { Width = "820px" });
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre)) { _err = true; _msg = "Ponle un nombre a la plantilla."; return; }
+        _busy = true; _msg = null; _err = false;
+        try
+        {
+            var req = new GuardarPlantillaDocumentoRequest(_nombre.Trim(), _categoria, await CuerpoAsync());
+            var resp = _editId is { } id
+                ? await Auth().PutAsJsonAsync($"/api/plantillas/{id}", req)
+                : await Auth().PostAsJsonAsync("/api/plantillas", req);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (!string.IsNullOrEmpty(nuevo)) Jwt = nuevo;
+                _err = true; _msg = "La sesión se renovó. Vuelve a guardar."; return;
+            }
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = await ErrorDeAsync(resp, "No se pudo guardar."); return; }
+            var dto = await resp.Content.ReadFromJsonAsync<PlantillaDocumentoDto>();
+            if (_editId is null && dto is not null) _editId = dto.Id;   // una nueva, al guardarse, pasa a "Editar"
+            _cambio = true;
+            _msg = "Plantilla guardada."; _err = false;
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_editId is not { } id) return;
+        var nombre = string.IsNullOrWhiteSpace(_nombre) ? (Plantilla?.Nombre ?? "") : _nombre.Trim();
+        var ok = await Modals.ConfirmAsync(
+            $"La plantilla dejará de estar disponible en {Cat.UsadaEn}. Los documentos ya generados no cambian.",
+            titulo: $"Eliminar \"{nombre}\"", confirmar: "Sí, eliminar");
+        if (!ok) return;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/plantillas/{id}");
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = await ErrorDeAsync(resp, "No se pudo eliminar."); StateHasChanged(); return; }
+            await DestruirEditorAsync();
+            Close(true);
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; StateHasChanged(); }
+    }
+
+    private static async Task<string> ErrorDeAsync(HttpResponseMessage resp, string porDefecto)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción.";
+        try
+        {
+            var txt = await resp.Content.ReadAsStringAsync();
+            if (System.Text.Json.JsonDocument.Parse(txt).RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+
+    private async Task DestruirEditorAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
+    }
+
+    private async Task Cerrar()
+    {
+        await DestruirEditorAsync();
+        Close(_cambio);
+    }
+}

@@ -253,6 +253,8 @@ else
                             </div>
                         }
                     </div>
+                    @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+                    <TablaExportar Vista="VistaExport" />
                 }
                 @* Selector de vista canon (componente compartido TablaVistaToggle): ultimo control de la barra,
                    tras Columnas. Siempre visible para poder alternar Tarjetas <-> Tabla desde cualquier vista. *@
@@ -1321,7 +1323,7 @@ else
                 </div>
 
                 <div class="srv-attach">
-                    <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Archivos del contrato (@_contratoAdjuntos.Count)</div>
+                    <div class="srv-attach-h"><i class="fi fi-rr-clip"></i> Documentos del contrato (@_contratoAdjuntos.Count)</div>
                     @* Panel de documentos comun (canon PQRSD): miniaturas + visor inline + lightbox. *@
                     <DocumentosPanel Documentos="DocsItemsContrato()" Subiendo="_attachBusy" Padding="0"
                                      EmptyHint="Sube el contrato firmado, la póliza de cumplimiento y los anexos."
@@ -2074,6 +2076,16 @@ else
             yield return new ValorGrupo(en, en, et?.Color, Orden: et?.Orden ?? 999);
             yield break;
         }
+        // Numericas: el titulo es el mismo texto que pinta la celda ("$150.000", "3 cuotas") y el
+        // Orden numerico evita que los grupos queden en orden alfabetico ("10" antes que "2").
+        if (clave is "valor" or "valortotal" or "cuotas")
+        {
+            decimal? n = clave switch { "valor" => c.ValorMensual, "valortotal" => c.ValorTotal, _ => c.FormaPagoCuotas };
+            if (n is null) yield break;
+            var tn = clave == "cuotas" ? $"{n:0} cuotas" : "$" + n.Value.ToString("N0");
+            yield return new ValorGrupo(tn, tn, Orden: (int)Math.Clamp(n.Value, int.MinValue, int.MaxValue));
+            yield break;
+        }
         var v = ValorOrdenC(c, clave);
         var t = string.IsNullOrWhiteSpace(v) ? "(Sin dato)" : v;
         yield return new ValorGrupo(t, t);
@@ -2090,6 +2102,127 @@ else
         }
         foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(filtrados, _gruposC, ValorGrupoC)))
             yield return el;
+    }
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // (buscador + reglas) y ordenadas como la tabla y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombreC;   // nombre de la copropiedad para el encabezado del archivo
+    // Misma lista que pinta la tabla: ContratosFiltrados + el orden multi-criterio del boton "Ordenar".
+    private List<ContratoServicioDto> ContratosVistaC()
+    {
+        var filtrados = ContratosFiltrados().ToList();
+        if (_sortsC.Count > 0)
+        {
+            filtrados = filtrados
+                .OrderBy(c => c, Comparer<ContratoServicioDto>.Create((a, b) =>
+                {
+                    foreach (var s in _sortsC)
+                    {
+                        var cmp = CmpOrdC(ValorOrdenC(a, s.Key), ValorOrdenC(b, s.Key)) * s.Dir;
+                        if (cmp != 0) return cmp;
+                    }
+                    return 0;
+                }))
+                .ToList();
+        }
+        return filtrados;
+    }
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumExportC(k), EsNumExportC(k) ? FormatoExportC(k) : null)).ToList();
+        ExportFila Fila(ContratoServicioDto c, IReadOnlyList<string>? ruta) => new(cols.Select(k => CeldaExportC(c, k)).ToList(), Ruta: ruta);
+
+        var lista = ContratosVistaC();
+        var filas = new List<ExportFila>();
+        if (_gruposC.Count == 0) filas.AddRange(lista.Select(c => Fila(c, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<ContratoServicioDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(c => Fila(c, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar(lista, _gruposC, ValorGrupoC), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_cFiltroTexto)) criterios.Add($"Búsqueda: \"{_cFiltroTexto.Trim()}\"");
+        if (ResumenReglasC() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsC.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsC.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposC.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposC.Select(ColLabel)));
+        criterios.Add($"{lista.Count} contratos");
+        return new ExportVista("Contratos", _copropiedadNombreC, columnas, filas, criterios, _gruposC.Select(ColLabel).ToList());
+    }
+    // Reglas activas del filtro como texto (mismo formato que FiltroDinamico.Resumen): "Campo operador valor".
+    private string ResumenReglasC()
+    {
+        var partes = _reglasC.Where(ReglaActivaC).Select(r =>
+        {
+            var campo = CamposFiltroC().FirstOrDefault(x => x.Key == r.Campo).Label ?? r.Campo;
+            var op = OperadoresC(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKindC(r.Campo) switch
+            {
+                "sel-tipo" => int.TryParse(r.Valor, out var t) ? TipoLabel((TipoServicio)t) : r.Valor,
+                "sel-estado" => r.Valor switch { "vigente" => "Vigente", "por-vencer" => "Por vencer", "vencido" => "Vencido", "renovacion" => "En renovacion", _ => r.Valor },
+                _ => r.Valor
+            };
+            return $"{campo} {op} {val}";
+        }).ToList();
+        return string.Join(_logicaC == "or" ? " O " : " Y ", partes);
+    }
+    // Columnas numericas de la descarga: dinero, dias de alerta, cuotas y campos propios numericos/calculados.
+    private bool EsNumExportC(string k)
+        => k is "valor" or "valortotal" or "dias" or "cuotas"
+           || CampoDinC(k)?.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje
+                                 or TipoCampoTablero.Total or TipoCampoTablero.Formula;
+    // Formato de Excel: dinero con $ y miles (como "$" + N0 de la celda); cuotas con su sufijo; resto General.
+    private string FormatoExportC(string k)
+    {
+        if (k is "valor" or "valortotal" || CampoDinC(k)?.Tipo == TipoCampoTablero.Moneda) return "\"$\"#,##0";
+        if (k == "cuotas") return "0\" cuotas\"";
+        return "General";
+    }
+    // Valor de una celda = lo que pinta la tabla (sin los marcadores de celda vacia "+ tipo", "+ fecha", "-").
+    private object? CeldaExportC(ContratoServicioDto c, string k)
+    {
+        static object? T(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+        switch (k)
+        {
+            case "tercero": return T(c.Proveedor);
+            case "tipo": return T(TipoServTxt(c));
+            case "inicio": return c.FechaInicio.ToString("yyyy-MM-dd");
+            case "fin": return c.FechaFin?.ToString("yyyy-MM-dd");
+            case "valor": return c.ValorMensual;
+            case "valortotal": return c.ValorTotal;
+            case "estado":
+                return c.Estado == EstadoContrato.Vencido ? "Vencido"
+                    : c.AlertaVencimiento ? $"Vence en {c.DiasParaVencer} dias"
+                    : c.Estado == EstadoContrato.EnRenovacion ? "En renovación"
+                    : "Vigente";
+            case "etapa": return T(_etapas.FirstOrDefault(x => x.Id == c.EtapaId)?.Nombre);
+            case "contacto": return T(c.Contacto);
+            case "renov": return c.RenovacionAutomatica ? "Si" : "No";
+            case "dias": return c.DiasAnticipacionAlerta;
+            case "obs": return T(c.Observaciones);
+            case "numero": return T(c.NumeroContrato);
+            case "tipocontrato": return T(c.TipoContrato);
+            case "categoria": return T(c.Categoria);
+            case "asociado": return T(c.AsociadoNombre);
+            case "formapago": return T(c.FormaPago);
+            case "cuotas": return c.FormaPagoCuotas;
+            case "pagomensual": return c.PagoMensual ? "Si" : "No";
+        }
+        if (_cCampos.FirstOrDefault(x => x.Id.ToString() == k) is not { } cpo) return null;
+        var raw = ValorCampo(c, cpo.Id);
+        if (EsNumExportC(k) && decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num)) return num;
+        return T(raw);
     }
 
     private string EtapaNombreDe(Guid? id) => _etapas.FirstOrDefault(e => e.Id == id)?.Nombre ?? "(sin etapa)";
@@ -2240,6 +2373,7 @@ else
             {
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_view_contratos"); if (v == "tarjetas" || v == "tabla") _vistaC = v; } catch { }
                 try { CargarAggC(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyC)); } catch { }
+                try { _copropiedadNombreC = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
                 _authChecked = true;
                 if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarAsync(); StateHasChanged(); }
@@ -2909,10 +3043,11 @@ else
             "fin" => c.FechaFin?.ToString("yyyy-MM-dd", ci) ?? "",
             "estado" => EstadoTextoContrato(c),
             "valortotal" => c.ValorTotal?.ToString(ci) ?? "",
-            "formapago" => c.FormaPagoCuotas?.ToString(ci) ?? "",
+            "formapago" => c.FormaPago ?? "",
+            "cuotas" => c.FormaPagoCuotas?.ToString(ci) ?? "",
             "pagomensual" => c.PagoMensual ? "Si" : "No",
             "obs" => c.Observaciones ?? "",
-            "tipo" => TipoLabel(c.Tipo),
+            "tipo" => TipoServTxt(c),
             "valor" => c.ValorMensual?.ToString(ci) ?? "",
             "etapa" => EtapaNombreDe(c.EtapaId),
             "contacto" => c.Contacto ?? "",

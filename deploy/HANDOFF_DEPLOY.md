@@ -1,5 +1,30 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PLANTILLAS: CAMPOS PROPIOS (columna "+") + ASUNTO COMPLETO EN EXCEL DE PQRSD (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
+> - **MIGRACION `20261111140504_AddPlantillaCampos`** (va DESPUES de `AddPlantillasDocumento`): crea
+>   `plantilla_campo_definiciones` y `plantilla_campo_valores` (FK en cascada a la definicion y a `plantillas_documento`),
+>   ambas con RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`. Sin datos que migrar. Down: borra las 2 tablas.
+> - API nueva: `/api/plantillas/campos` (GET/POST/PUT/DELETE) y `/api/plantillas/campos-valores` (GET, PUT
+>   `{plantillaId}/{definicionId}`); escrituras con permiso `PLANTILLAS:Editar`. `POST /api/pqrsd/descripciones` (lectura,
+>   permiso `PQRS:Ver`): texto completo del asunto para la descarga de la vista tabla.
+> - **Verificar en PROD tras aplicar**: `select relname, relrowsecurity, relforcerowsecurity from pg_class where relname like
+>   'plantilla_campo%'` -> ambas `t|t`. Sin config/env nueva.
+
+> **CONFIGURACION > PLANTILLAS DE DOCUMENTOS (2026-11-11): 1 MIGRACION (con DATOS + DROP) + API y Web cambian.**
+> - Modulo nuevo `/configuracion/plantillas`: catalogo central de plantillas (categorias pqrsd/cartera/asambleas/
+>   comunicaciones/contratos/reservas/certificados), API `/api/plantillas`, permiso nuevo `PLANTILLAS` en la matriz
+>   de Roles. PQRSD (Configurar > Plantillas y la columna PLANTILLAS de Responder) lee de aqui.
+> - **MIGRACION `20261111102427_AddPlantillasDocumento`** (en este orden, en una sola migracion):
+>   1. crea `plantillas_documento` (RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`);
+>   2. **copia** las filas activas de `pqrsd_plantillas_respuesta` con `categoria='pqrsd'` (mismo id/tenant/fechas;
+>      quita el FORCE de la tabla vieja antes de leer, para que el owner vea TODAS las filas aunque no sea superusuario);
+>   3. **BORRA `pqrsd_plantillas_respuesta`** (decision de Alex). El Down la recrea y devuelve las de PQRSD.
+>   4. **menu**: si existe la seccion custom "Configuracion" (menu_overrides, node_type=section), agrega el override
+>      `cfg-plantillas` ahi con el sort_order de `mi-config-hub` (queda despues de "Copropiedad"). Idempotente.
+> - **Verificar en PROD tras aplicar**: `select count(*) from plantillas_documento` == filas activas que tenia
+>   `pqrsd_plantillas_respuesta` (en dev: 90 filas / 18 tenants); y que el item aparece en Configuracion.
+> - Sin config/env nueva. Bump de `propia-tokens.css?v=11` (tokens `--propia-paper-*`).
+
 > **INTEGRACION ASAMBLEA (2026-11-11, merge en main): 1 MIGRACION NUEVA (ADITIVA) + API y Web cambian.**
 > - Voto self-service del residente (enlace firmado por token, pagina publica `/asambleas/...` sin login),
 >   envio de enlaces por correo, ola A (conteo al cierre, voto secreto, fallos de correo), criterio de mayoria

@@ -29,7 +29,7 @@ else if (Vista == "lista")
                 if (item.EsGrupo)
                 {
                     var g = item.Grupo!;
-                    <div class="dtab-group">
+                    <div class="dtab-group" style="padding-left:@(14 + g.Nivel * 18)px;">
                         <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
                         <span class="dtab-group-n">@g.Items.Count</span>
                     </div>
@@ -137,7 +137,7 @@ else
                     var allKeys = AllKeysE();
                     var idxAgg = allKeys.FindIndex(k => ModoActivoE(k) != "off");
                     <div class="dtab-grouprow dve-grid dtab-group--row" style="grid-template-columns:@GridCols">
-                        <div class="dtab-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString());">
+                        <div class="dtab-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(g.Nivel * 18)px;">
                             <span class="dir-tag dir-tag--et dtab-group-chip">@g.Titulo</span>
                             <span class="dtab-group-n">@g.Items.Count</span>
                         </div>
@@ -454,7 +454,9 @@ else
     private Task GuardarDin(Guid reg, Guid defId, string? val) => OnGuardarDinamico.InvokeAsync((reg, defId, val));
 
     /// <summary>Un grupo de la vista agrupada: cabecera (etiqueta) + sus empresas.</summary>
-    public sealed record Grupo(string Titulo, string? Color, string? Icono, List<EmpresaResumenDto> Items);
+    // Items = todas las filas bajo el grupo (conteo y totales); con varios niveles solo el grupo hoja
+    // (EsHoja) pinta sus filas y los demas solo su cabecera, sangrada por Nivel.
+    public sealed record Grupo(string Titulo, string? Color, string? Icono, List<EmpresaResumenDto> Items, int Nivel = 0, bool EsHoja = true);
 
     // ===== Totales por columna en grupos: numericas = solo campos propios; Contar sobre cualquier columna. =====
     private CampoDinDef? DefDeE(string key) => key.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(3), out var g) && Defs is not null ? Defs.FirstOrDefault(d => d.Id == g) : null;
@@ -525,6 +527,7 @@ else
             foreach (var g in Grupos)
             {
                 yield return new FilaRender(true, g, null);
+                if (!g.EsHoja) continue;
                 foreach (var e in g.Items) yield return new FilaRender(false, null, e);
             }
         }

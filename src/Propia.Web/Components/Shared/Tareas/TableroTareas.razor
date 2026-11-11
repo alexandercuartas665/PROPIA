@@ -939,7 +939,7 @@ else
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Sub-tareas @if (d.Id is not null) { var nk = Hijos(d.Id.Value).Count; if (nk > 0) { <span class="tbc-tab-badge">@nk</span> } }
                 </button>
                 <button type="button" class="tbc-tab @(_cardTab == "archivos" ? "on" : "")" @onclick='() => _cardTab = "archivos"'>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Documentos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
                 </button>
                 <button type="button" class="tbc-tab @(_cardTab == "historial" ? "on" : "")" @onclick='() => _cardTab = "historial"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Historial @if (d.Historial.Count > 0) { <span class="tbc-tab-badge">@d.Historial.Count</span> }
@@ -2024,6 +2024,9 @@ else
     private Func<TareaListaDto, object?> ClaveOrdenT(string col) => col switch
     {
         "titulo" => t => t.Titulo,
+        "descripcion" => t => t.Descripcion ?? "",
+        "est" => t => _board?.Estados.Select((e, i) => (e.Id, i)).FirstOrDefault(x => x.Id == t.EstadoId).i ?? 0,
+        "etiq" => t => string.Join(", ", t.Etiquetas.Select(e => e.Nombre)),
         "numero" => t => t.NumeroTarea ?? "",
         "asignado" => t => t.AsignadoNombre ?? "",
         "progreso" => t => t.Progreso,
@@ -2648,6 +2651,144 @@ else
             foreach (var g in items.GroupBy(key).OrderBy(x => x.Key, StringComparer.CurrentCultureIgnoreCase))
                 yield return (g.Key, null, (Guid?)null, g.ToList());
         }
+    }
+
+    // ===== Descarga de la vista Tabla (TablaExportar): columnas visibles en el orden pintado, TODAS las tareas
+    // raiz filtradas y ordenadas (mas las subtareas desplegadas, tal como se ven) y, si esta agrupada, las
+    // cabeceras de grupo (mismo recorrido que RenderGruposLista/RenderArbol). =====
+    private string? _copropiedadNombre;
+    private string LabelExportT(string k)
+        => Guid.TryParse(k, out var gid) ? (CamposDelTablero.FirstOrDefault(c => c.Id == gid)?.Label ?? k) : MenuLabelT(k, DefaultLabelFija(k));
+    private ExportVista VistaExportT()
+    {
+        // Orden pintado (CSS order): Titulo; los campos Total (sin orden propio, quedan tras Titulo en orden DOM);
+        // luego las reordenables visibles segun _colOrden.
+        var cols = new List<string> { "titulo" };
+        cols.AddRange(CamposVisibles.Where(c => c.Tipo == TipoCampoTablero.Total).Select(c => c.Id.ToString()));
+        foreach (var k in _colOrden)
+        {
+            if (Guid.TryParse(k, out var gid)) { if (CamposVisibles.Any(c => c.Id == gid)) cols.Add(k); }
+            else if (VisibleFija(k)) cols.Add(k);
+        }
+        const string FmtMoneda = "\"$\" #,##0";
+        TableroCampoDto? Campo(string k) => Guid.TryParse(k, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g) : null;
+        string? FormatoNum(string k) => k switch
+        {
+            "valor" => FmtMoneda,
+            "prog" => "0\"%\"",
+            _ => Campo(k) switch
+            {
+                { Tipo: TipoCampoTablero.Moneda or TipoCampoTablero.Total } => FmtMoneda,
+                { Tipo: TipoCampoTablero.Numero } => "General",
+                _ => null
+            }
+        };
+        var columnas = cols.Select(k => { var f = FormatoNum(k); return new ExportColumna(LabelExportT(k), f is not null, f); }).ToList();
+
+        static string? NoVacio(string? s) => string.IsNullOrWhiteSpace(s) || s == "-" ? null : s;
+        static decimal? Dec(string? s) => decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ? d : null;
+        object? Celda(TareaListaDto t, string k, string? cod, int depth)
+        {
+            switch (k)
+            {
+                case "titulo": return depth > 0 ? new string(' ', (depth - 1) * 2) + (char)0x2514 + " " + t.Titulo : t.Titulo;
+                case "desc": return NoVacio(t.Descripcion);
+                case "cod": return NoVacio(cod);
+                case "est": return depth > 0 ? "Subtarea" : t.EstadoNombre;
+                case "resp": return NoVacio(string.Join(", ", (t.Responsables ?? new List<ResponsableMiniDto>()).Select(r => r.Nombre)));
+                case "prog": return (decimal)t.Progreso;
+                case "etiq": return NoVacio(string.Join(", ", t.Etiquetas.Select(e => e.Nombre)));
+                case "prio": return PrioNombreOf(t);
+                case "due": return t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : null;
+                case "valor": return t.Valor;
+                case "orig":
+                    var tipo = t.OrigenTipo switch { "inmueble" => "Inmueble", "zona" => "Zona comun", "equipo" => "Equipo/activo", _ => null };
+                    var rel = tipo is null ? null : (string.IsNullOrWhiteSpace(t.OrigenReferencia) ? tipo : $"{tipo}: {t.OrigenReferencia}");
+                    var mod = string.IsNullOrEmpty(t.ModuloOrigenCodigo) ? null : OrigenModulo.Etiqueta(t.ModuloOrigenCodigo);
+                    return NoVacio(string.Join(" - ", new[] { mod, rel }.Where(x => !string.IsNullOrWhiteSpace(x))));
+            }
+            if (Campo(k) is not { } c) return null;
+            switch (c.Tipo)
+            {
+                case TipoCampoTablero.Total:
+                    return ParseCamposSuma(c.CamposSuma).Select(id => Dec(CampoDeTarea(t, id))).Where(d => d.HasValue).Sum(d => d!.Value);
+                case TipoCampoTablero.Numero:
+                case TipoCampoTablero.Moneda:
+                    return c.PermiteVarios ? NoVacio(CampoDisplay(t, c)) : Dec(CampoDeTarea(t, c.Id)) ?? (object?)NoVacio(CampoDeTarea(t, c.Id));
+                case TipoCampoTablero.Formula:
+                    // Calculado: la celda muestra el valor tal cual; si es numero va como numero.
+                    var fv = CampoValor(t, c.Id);
+                    return Dec(fv) ?? (object?)NoVacio(fv);
+                default:
+                    return NoVacio(CampoDisplay(t, c));
+            }
+        }
+
+        var filas = new List<ExportFila>();
+        var nSub = 0;
+        // Fila + subtareas desplegadas (como RenderArbol: solo si la fila esta expandida, hasta 3 niveles).
+        void Arbol(TareaListaDto t, int depth, string? codigo, IReadOnlyList<string>? ruta)
+        {
+            var cod = string.IsNullOrWhiteSpace(codigo) ? t.NumeroTarea : codigo;
+            filas.Add(new ExportFila(cols.Select(k => Celda(t, k, cod, depth)).ToList(), Ruta: ruta));
+            if (depth > 0) nSub++;
+            if (_expandidas.Contains(t.Id) && depth < 3)
+            {
+                var kids = Hijos(t.Id);
+                for (int i = 0; i < kids.Count; i++) Arbol(kids[i], depth + 1, $"{cod}.{i + 1}", ruta);
+            }
+        }
+        var raices = _tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList();
+        if (_gruposT.Count == 0)
+        {
+            foreach (var t in AplicarSort(raices)) Arbol(t, 0, null, null);
+        }
+        else
+        {
+            void Grupos(List<TareaListaDto> items, int nivel, List<string> ruta)
+            {
+                var esUltimo = nivel + 1 >= _gruposT.Count;
+                foreach (var part in ParticionarLista(items, _gruposT[nivel]))
+                {
+                    filas.Add(ExportFila.DeGrupo(part.Titulo, nivel, part.Items.Count));
+                    var r = new List<string>(ruta) { part.Titulo };
+                    if (esUltimo) { foreach (var t in AplicarSort(part.Items)) Arbol(t, 0, null, r); }
+                    else Grupos(part.Items, nivel + 1, r);
+                }
+            }
+            Grupos(raices, 0, new());
+        }
+
+        string LblOrden(string k) => k switch
+        {
+            "descripcion" => LabelExportT("desc"), "numero" => LabelExportT("cod"), "asignado" => LabelExportT("resp"),
+            "progreso" => LabelExportT("prog"), "prioridad" => LabelExportT("prio"), "vence" => LabelExportT("due"),
+            "origen" => LabelExportT("orig"), _ => LabelExportT(k)
+        };
+        var agrupables = ColsAgrupablesT();
+        string LblGrupo(string k) => agrupables.FirstOrDefault(c => c.Key == k)?.Label ?? k;
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_buscarTarea)) criterios.Add($"Búsqueda: \"{_buscarTarea.Trim()}\"");
+        var activas = _reglas.Where(ReglaActiva).Select(r =>
+        {
+            var campo = CampoFiltroLabel(r.Campo);
+            var op = OperadoresDe(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKind(r.Campo) switch
+            {
+                "sel-estado" => _board?.Estados.FirstOrDefault(e => e.Id.ToString() == r.Valor)?.Nombre ?? r.Valor,
+                "etiqueta" => _etiquetasCat.FirstOrDefault(e => e.Id.ToString() == r.Valor)?.Nombre ?? r.Valor,
+                _ => r.Valor
+            };
+            return $"{campo} {op} {val}";
+        }).ToList();
+        if (activas.Count > 0) criterios.Add("Filtros: " + string.Join(_filtroLogica == "or" ? " O " : " Y ", activas));
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LblOrden(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposT.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposT.Select(LblGrupo)));
+        criterios.Add($"{raices.Count} tareas" + (nSub > 0 ? $" (+{nSub} subtareas desplegadas)" : ""));
+
+        var titulo = _board is null ? "Tareas" : $"Tareas - {_board.Tablero.Nombre}";
+        return new ExportVista(titulo, _copropiedadNombre, columnas, filas, criterios, _gruposT.Select(LblGrupo).ToList());
     }
 
     // ---- Tiempo en el estado actual (indicador de tarjeta + tooltip en lista/calendario/gantt) ----
@@ -3353,6 +3494,11 @@ else
             try { await Js.InvokeVoidAsync("propiaUI.scrollBottom", ".tbc-chat-scroll"); } catch { }
         }
 
+        // Nombre de la copropiedad para la descarga de la vista (se lee una vez).
+        if (firstRender)
+        {
+            try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
+        }
         if (!firstRender || _jwt is not null) return;
         try
         {
@@ -3683,6 +3829,11 @@ else
                     }
                 </PieExtra>
             </TablaColumnasMenu>
+        }
+        @* Descargar la vista tabla tal como se ve (Excel o CSV). Solo en Tabla y no embebida como Sub-tareas. *@
+        @if (_boardMode == "lista" && PadreTareaId is null)
+        {
+            <TablaExportar Vista="VistaExportT" />
         }
         @* Modos de vista DESPUES de Columnas, igual que el toggle de Unidades Privadas (pedido de Alex). *@
         @ModeSwitch

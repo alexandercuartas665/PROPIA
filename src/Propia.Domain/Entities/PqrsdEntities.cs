@@ -119,22 +119,10 @@ public class PqrsdExpediente : TenantEntity
 }
 
 /// <summary>
-/// Plantilla de respuesta reutilizable (combinacion de correspondencia). El cuerpo HTML puede
-/// contener tokens tipo {copropiedad.nombre} que se reemplazan por datos reales del sistema al
-/// usar la plantilla sobre un expediente. Configurable por copropiedad.
-/// </summary>
-public class PqrsdPlantillaRespuesta : TenantEntity
-{
-    public string Nombre { get; set; } = string.Empty;
-    public string CuerpoHtml { get; set; } = string.Empty;
-    public bool Activa { get; set; } = true;
-    public int Orden { get; set; }
-}
-
-/// <summary>
 /// Plantilla SEMILLA de respuesta PQRSD: catalogo GLOBAL administrado por el operador (Super Admin,
-/// Capa 0). Cada copropiedad nueva "nace" con una copia de estas plantillas en su propio catalogo
-/// (<see cref="PqrsdPlantillaRespuesta"/>), que luego puede editar sin afectar la semilla global.
+/// Capa 0). Cada copropiedad nueva "nace" con una copia de estas plantillas en su catalogo central de
+/// plantillas de documentos (<see cref="PlantillaDocumento"/>, categoria "pqrsd"), que luego puede
+/// editar sin afectar la semilla global.
 /// </summary>
 public class PqrsdPlantillaSemilla : BaseEntity
 {

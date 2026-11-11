@@ -94,6 +94,11 @@ else
                 </div>
             }
         </div>
+        @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+        @if (_view == "tabla")
+        {
+            <TablaExportar Vista="VistaExport" />
+        }
         @* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). *@
         <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("cards"), TablaVistaToggle.Tabla("tabla") })" Valor="@_view" OnCambiar="SetVista" />
     </div>
@@ -760,11 +765,11 @@ else
     private List<TablaAgruparMenu.Col> ColsAgrupablesM()
         => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
-    // Valor de una dimension de agrupacion para una mascota. Reusa SortStr (resuelve toda clave fija + "cd:"),
-    // asi cualquier columna agrupa igual que ordena.
+    // Valor de una dimension de agrupacion para una mascota: el texto de la celda (TextoCeldaM, que reusa
+    // SortStr), asi un campo de persona o usuario agrupa por el nombre que se ve y no por el id guardado.
     private IEnumerable<Propia.Web.Components.Shared.ValorGrupo> ValorGrupoM(MascotaResumenDto v, string clave)
     {
-        var val = SortStr(v, clave);
+        var val = TextoCeldaM(v, clave);
         var t = string.IsNullOrWhiteSpace(val) ? "(Sin dato)" : val;
         yield return new(t, t);
     }
@@ -782,6 +787,63 @@ else
         var desde = (_pagina - 1) * _porPagina;
         return Filtradas.Skip(desde).Take(_porPagina);
     }
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (el mismo orden que pinta la tabla) y, si esta agrupada, las cabeceras de grupo. =====
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumericaM(k), EsNumericaM(k) ? FormatoExcelM(k) : null)).ToList();
+        ExportFila Fila(MascotaResumenDto v, IReadOnlyList<string>? ruta)
+            => new(cols.Select(k => EsNumericaM(k) ? ValorNumM(v, k) : (object?)TextoCeldaM(v, k)).ToList(), Ruta: ruta);
+
+        var filas = new List<ExportFila>();
+        if (!_agrupadoM) filas.AddRange(MascotasRenderM().Select(v => Fila(v, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<MascotaResumenDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(v => Fila(v, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar<MascotaResumenDto>(Filtradas, _gruposM, ValorGrupoM), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoM) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposM.Select(ColLabel)));
+        criterios.Add($"{Filtradas.Count} mascotas");
+        return new ExportVista("Mascotas", _copNombre, columnas, filas, criterios, _gruposM.Select(ColLabel).ToList());
+    }
+    // Texto visible de una celda: SortStr (tipo = etiqueta efectiva, propia o del enum); Directorio con el
+    // nombre y Usuario con el nombre del usuario del tenant elegido en su select.
+    private string? TextoCeldaM(MascotaResumenDto v, string k)
+    {
+        string? t;
+        var cd = CampoCustom(k);
+        if (cd is { Tipo: TipoCampoTablero.Directorio }) t = NombrePersona(ValorDe(v.MascotaId, cd.Id));
+        else if (cd is { Tipo: TipoCampoTablero.Usuario })
+        {
+            var val = ValorDe(v.MascotaId, cd.Id);
+            t = _usuariosTenant.FirstOrDefault(u => u.PersonaId.ToString() == val)?.NombreCompleto;
+        }
+        else t = SortStr(v, k);
+        return string.IsNullOrWhiteSpace(t) ? null : t;
+    }
+    // Formato numerico de Excel de un campo propio numerico: moneda con $, porcentaje con %, numero general.
+    private string FormatoExcelM(string k) => CampoCustom(k)?.Tipo switch
+    {
+        TipoCampoTablero.Moneda => "\"$\" #,##0",
+        TipoCampoTablero.Porcentaje => "General\"%\"",
+        _ => "General"
+    };
 
     // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La
     // pinta TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro 'v' es

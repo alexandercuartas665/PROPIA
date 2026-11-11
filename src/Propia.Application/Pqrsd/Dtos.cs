@@ -294,17 +294,6 @@ public record CrearRespuestaBorradorRequest(string? Asunto, string CuerpoHtml,
 /// <summary>Archiva (true) o desarchiva (false) una respuesta.</summary>
 public record ArchivarRespuestaRequest(bool Archivar);
 
-// ===================== Plantillas de respuesta (combinacion de correspondencia) =====================
-
-/// <summary>Plantilla reutilizable; el cuerpo puede tener tokens {grupo.campo} que se resuelven al usarla.</summary>
-public record PqrsdPlantillaDto(Guid Id, string Nombre, string CuerpoHtml);
-
-/// <summary>Crear/actualizar plantilla.</summary>
-public record GuardarPlantillaRequest(string Nombre, string CuerpoHtml);
-
-/// <summary>Un token disponible para plantillas (para el palette del editor).</summary>
-public record PqrsdTokenDto(string Token, string Descripcion);
-
 // ===================== Requests =====================
 
 public record RadicarPqrsdRequest(

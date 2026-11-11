@@ -101,6 +101,8 @@
             </div>
         }
     </div>
+    @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Modulo solo-tabla. *@
+    <TablaExportar Vista="VistaExport" />
 </div>
 
 @* === Tabla (header sticky opaco; las filas pasan por debajo) === *@
@@ -375,11 +377,11 @@
     {
         new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
         new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = Enum.GetValues<TipoSesion>().Select(t => (t.ToString(), t.ToString())).ToList() },
+                Opciones = Enum.GetValues<TipoSesion>().Select(t => (t.ToString(), TipoTexto(t))).ToList() },
         new() { Key = "modalidad", Label = "Modalidad", Kind = "sel",
                 Opciones = Enum.GetValues<ModalidadSesion>().Select(m => (m.ToString(), m.ToString())).ToList() },
         new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoSesion>().Select(e => (e.ToString(), e.ToString())).ToList() },
+                Opciones = Enum.GetValues<EstadoSesion>().Select(e => (e.ToString(), EstadoTexto(e))).ToList() },
         new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
         new() { Key = "puntos", Label = "Puntos", Kind = "num" },
         new() { Key = "participantes", Label = "Participantes", Kind = "num" },
@@ -423,9 +425,9 @@
     private IEnumerable<SesionListaDto> Ordenar(IEnumerable<SesionListaDto> src) => _sortCol switch
     {
         "titulo" => _sortAsc ? src.OrderBy(s => s.Titulo) : src.OrderByDescending(s => s.Titulo),
-        "tipo" => _sortAsc ? src.OrderBy(s => s.Tipo.ToString()) : src.OrderByDescending(s => s.Tipo.ToString()),
+        "tipo" => _sortAsc ? src.OrderBy(s => TipoTexto(s.Tipo)) : src.OrderByDescending(s => TipoTexto(s.Tipo)),
         "modalidad" => _sortAsc ? src.OrderBy(s => s.Modalidad.ToString()) : src.OrderByDescending(s => s.Modalidad.ToString()),
-        "estado" => _sortAsc ? src.OrderBy(s => s.Estado.ToString()) : src.OrderByDescending(s => s.Estado.ToString()),
+        "estado" => _sortAsc ? src.OrderBy(s => EstadoTexto(s.Estado)) : src.OrderByDescending(s => EstadoTexto(s.Estado)),
         "puntos" => _sortAsc ? src.OrderBy(s => s.CantidadPuntos) : src.OrderByDescending(s => s.CantidadPuntos),
         "participantes" => _sortAsc ? src.OrderBy(s => s.CantidadParticipantes) : src.OrderByDescending(s => s.CantidadParticipantes),
         _ => _sortAsc ? src.OrderBy(s => s.FechaSesion) : src.OrderByDescending(s => s.FechaSesion),
@@ -436,14 +438,88 @@
 
     private string GrupoClave(SesionListaDto s) => _agruparPor switch
     {
-        "estado" => s.Estado.ToString(),
-        "tipo" => s.Tipo.ToString(),
+        "estado" => EstadoTexto(s.Estado),
+        "tipo" => TipoTexto(s.Tipo),
         "modalidad" => s.Modalidad.ToString(),
         _ => "",
     };
 
+    // Textos visibles de los enums (la celda, el titulo de grupo, el orden y la descarga usan el mismo).
+    private static string TipoTexto(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Asamblea ordinaria",
+        TipoSesion.AsambleaExtraordinaria => "Asamblea extraordinaria",
+        TipoSesion.Consejo => "Consejo de administración",
+        TipoSesion.Comite => "Comité",
+        _ => t.ToString()
+    };
+    private static string EstadoTexto(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Borrador => "Borrador",
+        EstadoSesion.Citada => "Citada",
+        EstadoSesion.EnCurso => "En curso",
+        EstadoSesion.Cerrada => "Cerrada",
+        EstadoSesion.QuorumFallido => "Quórum fallido",
+        EstadoSesion.Cancelada => "Cancelada",
+        _ => ""
+    };
+
     private IEnumerable<SesionListaDto> Pagina =>
         Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (no solo la pagina actual) y, si esta agrupada, las cabeceras de grupo (mismo GroupBy). =====
+    private string? _copropiedadNombre;
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles.ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNum(k), EsNum(k) ? "General" : null)).ToList();
+        object? Celda(SesionListaDto s, string k)
+        {
+            if (k == "puntos") return (decimal)s.CantidadPuntos;
+            if (k == "participantes") return (decimal)s.CantidadParticipantes;
+            var t = TextoCelda(s, k);
+            return string.IsNullOrWhiteSpace(t) ? null : t;
+        }
+        ExportFila Fila(SesionListaDto s, IReadOnlyList<string>? ruta) => new(cols.Select(k => Celda(s, k)).ToList(), Ruta: ruta);
+
+        var lista = Filtrados;
+        var filas = new List<ExportFila>();
+        if (_agruparPor == "") filas.AddRange(lista.Select(s => Fila(s, null)));
+        else
+        {
+            foreach (var g in Grupos)
+            {
+                var miembros = g.ToList();
+                filas.Add(ExportFila.DeGrupo(g.Key, 0, miembros.Count));
+                var ruta = new[] { g.Key };
+                filas.AddRange(miembros.Select(s => Fila(s, ruta)));
+            }
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (Catalogo.Any(c => c.Key == _sortCol)) criterios.Add($"Orden: {ColLabel(_sortCol)} {(_sortAsc ? "ascendente" : "descendente")}");
+        if (_agruparPor != "") criterios.Add("Agrupado por: " + AgruparLabel(_agruparPor));
+        criterios.Add($"{lista.Count} asambleas");
+
+        return new ExportVista("Asambleas y Organos de Gobierno", _copropiedadNombre, columnas, filas, criterios,
+            _agruparPor == "" ? new List<string>() : new List<string> { AgruparLabel(_agruparPor) });
+    }
+    // Texto de una celda tal como se ve (mismo contenido que CeldaContenido): titulo + sus insignias, tipo con su
+    // texto (TipoTexto), modalidad con el nombre del enum, fecha local "yyyy-MM-dd HH:mm" y el texto de la insignia de estado.
+    private static string TextoCelda(SesionListaDto s, string key) => key switch
+    {
+        "titulo" => s.Titulo + (s.SegundaConvocatoria ? " - 2da convocatoria" : "") + (s.ActaPublicada ? " - Acta publicada" : ""),
+        "tipo" => TipoTexto(s.Tipo),
+        "modalidad" => s.Modalidad.ToString(),
+        "fecha" => s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
+        "estado" => EstadoTexto(s.Estado),
+        "puntos" => s.CantidadPuntos.ToString(),
+        "participantes" => s.CantidadParticipantes.ToString(),
+        _ => "",
+    };
 
     // ===== Interacciones de la barra =====
     private void Ordenar(string k)
@@ -607,7 +683,7 @@
                 if (s.ActaPublicada) builder.AddMarkupContent(3, " <span class=\"badge bg-success ms-1\">Acta publicada</span>");
                 break;
             case "tipo":
-                builder.AddMarkupContent(0, $"<span class=\"badge bg-light text-dark border\">{s.Tipo}</span>");
+                builder.AddMarkupContent(0, $"<span class=\"badge bg-light text-dark border\">{TipoTexto(s.Tipo)}</span>");
                 break;
             case "modalidad":
                 builder.AddContent(0, s.Modalidad.ToString());
@@ -637,6 +713,7 @@
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 _jwt = stored;
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -657,7 +734,7 @@
         EstadoSesion.Citada => new MarkupString("<span class='badge bg-info text-dark'>Citada</span>"),
         EstadoSesion.EnCurso => new MarkupString("<span class='badge bg-primary'>En curso</span>"),
         EstadoSesion.Cerrada => new MarkupString("<span class='badge bg-success'>Cerrada</span>"),
-        EstadoSesion.QuorumFallido => new MarkupString("<span class='badge bg-warning text-dark'>Quorum fallido</span>"),
+        EstadoSesion.QuorumFallido => new MarkupString("<span class='badge bg-warning text-dark'>Quórum fallido</span>"),
         EstadoSesion.Cancelada => new MarkupString("<span class='badge bg-secondary'>Cancelada</span>"),
         _ => new MarkupString("")
     };

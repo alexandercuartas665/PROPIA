@@ -432,6 +432,11 @@ else
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            @if (_vista == "tabla")
+            {
+                <TablaExportar Vista="VistaExportU" />
+            }
             @* Toggle Lista/Tabla, igual que en los demas modulos: la seleccion se recuerda por
                modulo (propia_view_unidades) y sobrevive al cierre de sesion. *@
             <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("lista"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
@@ -1624,6 +1629,61 @@ else
     }
     private async Task SetGrupoU(string clave) { _gruposU = new() { clave }; await OnGruposUChanged(); }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (no solo el lote pintado por el scroll infinito) y, si esta agrupada, las cabeceras de grupo. =====
+    private ExportVista VistaExportU()
+    {
+        var cols = ColumnasVisibles.ToList();
+        string Lbl(ColItem it) => it.EsCustom ? it.Campo!.Label : Etiqueta(it.Def!);
+        var columnas = cols.Select(it => new ExportColumna(Lbl(it), EsColNumerica(it), EsColNumerica(it) ? FormatoExcelU(it) : null)).ToList();
+        object? Celda(UnidadDto u, ColItem it)
+        {
+            if (EsColNumerica(it)) return ValorNumU(u, it);
+            var s = SortStr(u, it.Key);
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+        ExportFila Fila(UnidadDto u, IReadOnlyList<string>? ruta) => new(cols.Select(it => Celda(u, it)).ToList(), Ruta: ruta);
+
+        var filas = new List<ExportFila>();
+        if (_gruposU.Count == 0) filas.AddRange(Filtradas.Select(u => Fila(u, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<UnidadDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(u => Fila(u, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(ArbolGrupos(), new());
+        }
+
+        string LblClave(string k) => cols.FirstOrDefault(c => c.Key == k) is { } c ? Lbl(c) : k;
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LblClave(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposU.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposU.Select(LblClave)));
+        criterios.Add($"{Filtradas.Count} unidades");
+
+        return new ExportVista("Unidades Privadas", _resumen?.Identidad.Nombre, columnas, filas, criterios,
+            _gruposU.Select(LblClave).ToList());
+    }
+    // Formato numerico de Excel de una columna: moneda con $, porcentaje con %, y los decimales/miles configurados.
+    private string FormatoExcelU(ColItem it)
+    {
+        var tipo = it.EsCustom ? it.Campo!.Tipo : TipoSistema(it.Def!.Key);
+        var fmt = FormatoDe(it.Key);
+        var dec = Math.Clamp(fmt.Dec ?? (tipo == TipoCampoTablero.Moneda ? 0 : 2), 0, 6);
+        var num = ((fmt.Miles || tipo == TipoCampoTablero.Moneda) ? "#,##0" : "0") + (dec > 0 ? "." + new string('0', dec) : "");
+        if (tipo == TipoCampoTablero.Moneda) return "\"$\" " + num;
+        if (EsPorcentajeCol(it)) return num + "\"%\"";
+        return fmt.Dec is null && !fmt.Miles ? "General" : num;
+    }
+
     // Arbol de grupos anidados (motor compartido). Filtradas ya excluye anexos (van bajo su principal).
     private IReadOnlyList<NodoGrupo<UnidadDto>> ArbolGrupos()
         => TablaAgrupador.Agrupar(Filtradas, _gruposU, ValorGrupoU);
@@ -2766,6 +2826,7 @@ else
             "parqueaderos" => u.Parqueaderos?.ToString(ci) ?? "",
             "cuota" => u.CuotaMensual?.ToString(ci) ?? "",
             "observaciones" => u.Observaciones ?? "",
+            "pagaadmin" => u.PagaAdministracion ? "Si" : "No",
             "agrupacion" => AgrupacionDe(u),
             _ => ""
         };

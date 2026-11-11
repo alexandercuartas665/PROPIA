@@ -130,6 +130,8 @@ else
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            <TablaExportar Vista="VistaExport" />
         }
         else
         {
@@ -1042,6 +1044,65 @@ else
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
     private void OnGruposZChanged() { _paginaZ = 1; }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (no solo el lote del scroll infinito) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombre;
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumericaZ(k), EsNumericaZ(k) ? FormatoExcelZ(k) : null)).ToList();
+        object? Celda(ZonaComunDto z, string k)
+        {
+            if (EsNumericaZ(k)) return ValorNumZ(z, k);
+            var s = TextoCeldaZ(z, k);
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+        ExportFila Fila(ZonaComunDto z, IReadOnlyList<string>? ruta) => new(cols.Select(k => Celda(z, k)).ToList(), Ruta: ruta);
+
+        var lista = Filtradas().ToList();
+        var filas = new List<ExportFila>();
+        if (!_agrupadoZ) filas.AddRange(lista.Select(z => Fila(z, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<ZonaComunDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(z => Fila(z, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar<ZonaComunDto>(lista, _gruposZ, ValorGrupoZona), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsZ.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsZ.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoZ) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposZ.Select(ColLabel)));
+        criterios.Add($"{lista.Count} zonas");
+
+        return new ExportVista("Zonas Comunes", _copropiedadNombre, columnas, filas, criterios, _gruposZ.Select(ColLabel).ToList());
+    }
+    // Texto de una celda no numerica tal como se ve: listas con su etiqueta visible (la del select); el resto
+    // (textos, Si/No y campos propios "cd:", incluidas formulas) via SortStrZ.
+    private string TextoCeldaZ(ZonaComunDto z, string k) => k switch
+    {
+        "categoria" => LblCatZn(z.Categoria),
+        "estado" => LblEstZn(z.Estado),
+        _ => SortStrZ(z, k)
+    };
+    // Formato numerico de Excel: moneda con $ (tarifa y campos Moneda), porcentaje con %.
+    private string FormatoExcelZ(string k)
+    {
+        var tipo = CampoCustom(k)?.Tipo;
+        if (k == "tarifa" || tipo == TipoCampoTablero.Moneda) return "\"$\" #,##0";
+        if (tipo == TipoCampoTablero.Porcentaje) return "General\"%\"";
+        return "General";
+    }
+
     // Clic derecho -> "Agrupar por esta columna": un unico nivel (vacio limpia). Reusa el menu compartido.
     private void SetAgruparZ(string k) { _gruposZ = string.IsNullOrEmpty(k) ? new() : new() { k }; _paginaZ = 1; }
 
@@ -1369,6 +1430,7 @@ else
                 _jwt = stored;
                 await RestaurarVistaAsync();
                 try { CargarAggZ(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyZ)); } catch { }
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }

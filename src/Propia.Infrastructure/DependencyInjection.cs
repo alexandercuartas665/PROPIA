@@ -230,6 +230,9 @@ public static class DependencyInjection
         services.AddScoped<Application.Pqrsd.IPqrsdRespuestaPdfService, Pqrsd.PqrsdRespuestaPdfService>();
         services.AddScoped<Application.Pqrsd.IPqrsdPlantillaSemillaService, Pqrsd.PqrsdPlantillaSemillaService>();
 
+        // Configuracion > Plantillas de documentos (catalogo central; PQRSD lee su categoria)
+        services.AddScoped<Application.Plantillas.IPlantillasDocumentoService, Plantillas.PlantillasDocumentoService>();
+
         // Documentos con membrete (header/footer configurable) - HTML compuesto reutilizable
         services.AddSingleton<Application.Documents.IMembreteDocumentBuilder, Documents.MembreteDocumentBuilder>();
         // HTML -> PDF (Chromium headless). Singleton: reutiliza el navegador entre requests.
