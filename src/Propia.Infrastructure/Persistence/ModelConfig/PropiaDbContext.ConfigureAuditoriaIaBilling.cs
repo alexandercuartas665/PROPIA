@@ -176,6 +176,18 @@ public partial class PropiaDbContext
             // Inmutabilidad: trigger PostgreSQL agregado en migracion posterior.
         });
 
+        // Tokens de API de la Consola A&D (global, sin tenant): solo el hash del token.
+        modelBuilder.Entity<SuperAdminApiToken>(b =>
+        {
+            b.ToTable("super_admin_api_tokens");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Prefijo).IsRequired().HasMaxLength(16);
+            b.Property(x => x.TokenHash).IsRequired().HasMaxLength(64);
+            b.Property(x => x.UltimoUsoIp).HasMaxLength(45);
+            b.HasIndex(x => x.TokenHash).IsUnique();
+            b.HasOne(x => x.SuperAdminUsuario).WithMany().HasForeignKey(x => x.SuperAdminUsuarioId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         // -------------------- Integraciones de plataforma (Super Admin) --------------------
         modelBuilder.Entity<EmailConfig>(b =>
         {

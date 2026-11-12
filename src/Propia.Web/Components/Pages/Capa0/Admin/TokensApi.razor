@@ -1,0 +1,193 @@
+@page "/admin/tokens-api"
+@layout AdminLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.SuperAdmin
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Tokens de API - Plataforma</PageTitle>
+
+@* Tokens de API de la Consola A&D: permiten llamar la API de Super Admin (semillas: listas, agentes IA, plantillas,
+   menu, roles base, comunicados, etiquetas, reportes, planes...) desde scripts o herramientas, con
+   Authorization: Bearer pak_... El token actua como el Super Admin que lo crea. Se muestra UNA sola vez. *@
+
+<div class="d-flex align-items-center justify-content-between mb-1">
+    <h1 class="h3 mb-0">Tokens de API</h1>
+    <button class="btn btn-dark" @onclick="() => { _mostrarForm = true; _creado = null; _error = null; }">+ Nuevo token</button>
+</div>
+<p class="text-muted mb-4">Para usar la API de Super Admin desde scripts o herramientas (semillas, listas, agentes, plantillas y el resto de la consola). Cada token actúa con tus permisos; guárdalo como una contraseña.</p>
+
+@if (_creado is not null)
+{
+    <div class="card mb-4 border-success">
+        <div class="card-body">
+            <h5 class="mb-1">Token creado: @_creado.Info.Nombre</h5>
+            <p class="text-muted small mb-2">Cópialo ahora: no se volverá a mostrar. Si lo pierdes, revócalo y crea otro.</p>
+            <div class="input-group mb-2">
+                <input class="form-control font-monospace" readonly value="@_creado.Token" />
+                <button class="btn btn-outline-dark" @onclick="CopiarAsync"><i class="fi fi-rr-copy-alt me-1"></i>@(_copiado ? "Copiado" : "Copiar")</button>
+            </div>
+            <div class="small text-muted">Ejemplo:</div>
+            <pre class="bg-light border rounded p-2 small mb-2">curl -H "Authorization: Bearer @_creado.Token" @(Base)api/admin/semillas</pre>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => _creado = null">Listo, ya lo guardé</button>
+        </div>
+    </div>
+}
+
+@if (_mostrarForm && _creado is null)
+{
+    <div class="card mb-4 border-dark">
+        <div class="card-body">
+            <h5>Nuevo token</h5>
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Nombre</label><input class="form-control" @bind="_nombre" @bind:event="oninput" placeholder="Ej.: Claude Code, script de semillas" /></div>
+                <div class="col-md-3">
+                    <label class="form-label">Vence</label>
+                    <select class="form-select" @bind="_dias">
+                        <option value="30">En 30 días</option>
+                        <option value="90">En 90 días</option>
+                        <option value="365">En 1 año</option>
+                        <option value="0">No vence</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2">@_error</div> }
+                    <button class="btn btn-dark me-2" @onclick="CrearAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear token")</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => _mostrarForm = false">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_tokens is null)
+{
+    <div class="text-center py-5"><div class="spinner-border"></div></div>
+}
+else
+{
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Nombre</th><th>Token</th><th>Creado por</th><th>Creado</th><th>Vence</th><th>Último uso</th><th>Estado</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @if (_tokens.Count == 0)
+                    {
+                        <tr><td colspan="8" class="text-muted text-center py-4">Aún no hay tokens. Crea uno con "+ Nuevo token".</td></tr>
+                    }
+                    @foreach (var t in _tokens)
+                    {
+                        var tt = t;
+                        <tr>
+                            <td class="fw-semibold">@t.Nombre</td>
+                            <td class="font-monospace small">@(t.Prefijo)…</td>
+                            <td class="small">@t.CreadoPorEmail</td>
+                            <td class="small">@Fecha(t.CreadoAt)</td>
+                            <td class="small">@(t.ExpiraAt is { } e ? Fecha(e) : "No vence")</td>
+                            <td class="small">@(t.UltimoUsoAt is { } u ? Fecha(u) + (string.IsNullOrEmpty(t.UltimoUsoIp) ? "" : " · " + t.UltimoUsoIp) : "Nunca")</td>
+                            <td><span class="badge @(t.Estado == "Activo" ? "bg-success" : "bg-secondary")">@t.Estado</span></td>
+                            <td class="text-end">
+                                @if (t.Estado == "Activo")
+                                {
+                                    @if (_confirmar == t.Id)
+                                    {
+                                        <button class="btn btn-danger btn-sm me-1" @onclick="() => RevocarAsync(tt)" disabled="@_busy">Sí, revocar</button>
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => _confirmar = null">Cancelar</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-outline-danger btn-sm" @onclick="() => _confirmar = tt.Id">Revocar</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-muted small mt-3 mb-0">Con un token no se pueden crear ni revocar tokens, ni cambiar el MFA o el equipo A&amp;D: eso exige iniciar sesión. Las escrituras hechas con un token quedan en el log de la consola. Índice de todo lo que se siembra: <code>GET @(Base)api/admin/semillas</code>.</p>
+}
+
+@code {
+    private string? _jwt;
+    private List<ApiTokenDto>? _tokens;
+    private bool _mostrarForm, _busy, _copiado;
+    private string _nombre = "";
+    private int _dias = 90;
+    private string? _error;
+    private ApiTokenCreadoDto? _creado;
+    private Guid? _confirmar;
+
+    private string Base => Nav.BaseUri;
+    private static string Fecha(DateTimeOffset d) => d.ToLocalTime().ToString("dd MMM yyyy HH:mm");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_admin_jwt");
+            if (string.IsNullOrWhiteSpace(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            _jwt = jwt;
+            await CargarAsync();
+            StateHasChanged();
+        }
+        catch { _tokens ??= new(); }
+    }
+
+    private async Task CargarAsync()
+    {
+        try { _tokens = await Auth().GetFromJsonAsync<List<ApiTokenDto>>("/api/admin/api-tokens") ?? new(); }
+        catch (Exception ex) { _tokens = new(); _error = ex.Message; }
+    }
+
+    private async Task CrearAsync()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/admin/api-tokens", new CrearApiTokenRequest(_nombre, _dias > 0 ? _dias : null));
+            if (!resp.IsSuccessStatusCode) { _error = await ErrorDeAsync(resp); return; }
+            _creado = await resp.Content.ReadFromJsonAsync<ApiTokenCreadoDto>();
+            _copiado = false; _mostrarForm = false; _nombre = ""; _dias = 90;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RevocarAsync(ApiTokenDto t)
+    {
+        _busy = true;
+        try { await Auth().DeleteAsync($"/api/admin/api-tokens/{t.Id}"); _confirmar = null; await CargarAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task CopiarAsync()
+    {
+        if (_creado is null) return;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _creado.Token); _copiado = true; } catch { }
+    }
+
+    private static async Task<string> ErrorDeAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var txt = await resp.Content.ReadAsStringAsync();
+            if (System.Text.Json.JsonDocument.Parse(txt).RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return $"No se pudo crear el token ({(int)resp.StatusCode}).";
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt)) http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+}

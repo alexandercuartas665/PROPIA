@@ -77,6 +77,7 @@ Mapa rapido por modulo (donde vive cada cosa):
 | Lectura de documentos con IA | `OcrController` (`/api/ocr/extraer-agente`, perfiles contrato/poliza/recibo_servicio) | Agente Documental | - | `Shared/IaIngesta/*` |
 | Agentes IA (semillas) | `AdminAiAgentTemplatesController`, `IaController` | `AiAgentTemplateService`, `AgentesSistemaService` | `AiAgentTemplate.cs`, `InfraestructuraIaEntities.cs` | `Capa0/Admin/PlantillasAgentesIa.razor`, `Capa2/IaAgentes.razor` |
 | Jobs | `MonitoriaController` (disparo manual) | `Infrastructure/Jobs/*Job.cs` | - | - |
+| API Super Admin (tokens + semillas) | `AdminApiTokensController`, `AdminSemillasController` (`GET /api/admin/semillas` = indice) | `SuperAdmin/ApiTokensService.cs`, `SemillasAdminService.cs` | `SuperAdminApiToken.cs` | `Capa0/Admin/TokensApi.razor` |
 
 Patron transversal de campos dinamicos: `<X>CampoDefinicion` (catalogo por tenant) + `<X>CampoValor` (EAV)
 + `<X>CampoConfig` (alias/oculto/orden de campos fijos). Existe para Unidad, Persona, Vehiculo, Mascota,
@@ -87,6 +88,10 @@ Agentes IA: **el Super Admin manda**. Las plantillas (Super Admin > Plantillas d
 (respeta los que la copropiedad edito, salvo forzar). Los agentes del sistema se buscan por CLAVE
 (`PlantillaAgente.ClaveDocumental` / `ClaveAuxiliar`, nunca por nombre) y se crean al usarlos si faltan.
 No hay scripts SQL de prompts.
+
+API de Super Admin desde scripts: token `pak_...` creado en Super Admin > Tokens de API (`Authorization: Bearer pak_...`,
+esquema `SuperAdminApiToken`, solo en la politica SuperAdmin). Con token NO se gestionan tokens, MFA ni el equipo A&D
+(`[SoloSesionInteractiva]`). La CSP no permite `eval`: desde C# usar funciones `window.propiaUI.*`.
 
 ## Multi-tenancy (regla critica)
 

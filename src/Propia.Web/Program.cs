@@ -189,7 +189,10 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
 // Autenticacion JWT (para la API). No interfiere con Blazor: las peticiones de pagina
 // no llevan Bearer, quedan anonimas y las paginas validan sesion client-side (SessionHelper).
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
+    .AddJwtBearer()
+    // Token de API de la Consola A&D (Bearer pak_...): solo lo usa la politica SuperAdmin.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, Propia.Api.Authorization.SuperAdminApiTokenHandler>(
+        Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme, null);
 
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtSettings>>((bearer, jwtOpts) =>
@@ -215,6 +218,8 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         {
             OnMessageReceived = ctx =>
             {
+                // Un token de API (pak_...) no es un JWT: lo resuelve el esquema SuperAdminApiToken.
+                if (Propia.Api.Authorization.SuperAdminApiTokenHandler.TraeToken(ctx.Request)) { ctx.NoResult(); return Task.CompletedTask; }
                 var accessToken = ctx.Request.Query["access_token"];
                 var path = ctx.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
@@ -226,8 +231,10 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 
 builder.Services.AddAuthorization(options =>
 {
+    // Acepta el JWT de la consola o un token de API de Super Admin (Bearer pak_...).
     options.AddPolicy(AdminController.SuperAdminPolicy, policy =>
-        policy.RequireAuthenticatedUser()
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme)
+              .RequireAuthenticatedUser()
               .RequireClaim("is_super_admin", "true"));
 });
 
