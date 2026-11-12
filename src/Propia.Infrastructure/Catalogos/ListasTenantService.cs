@@ -144,6 +144,10 @@ public sealed class ListasTenantService : IListasTenant, IOpcionesEfectivas
             porClave[r.Clave] = r;
             porLabel[(r.Label ?? "").Trim()] = r;
         }
+        // Overrides viejos guardados con el nombre crudo del enum (p. ej. "EnMantenimiento", antes de que la semilla
+        // usara la etiqueta legible): el nombre del enum tambien empareja con su base, para no duplicarla como propia.
+        foreach (var r in creadas)
+            if (r.Clave.StartsWith("e:", StringComparison.Ordinal)) porLabel.TryAdd(r.Clave[2..], r);
 
         var orden = creadas.Count;
         foreach (var op in ops)

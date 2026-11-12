@@ -60,6 +60,10 @@ public class FoldersController : ControllerBase
     [HttpGet("tarjetas")]
     public async Task<IActionResult> Tarjetas(CancellationToken ct) => Ok(await _svc.TarjetasAsync(ct));
 
+    /// <summary>Radicado que se asignara al proximo folder (se muestra antes de crear; lo genera el sistema).</summary>
+    [HttpGet("radicado-siguiente")]
+    public async Task<IActionResult> RadicadoSiguiente(CancellationToken ct) => Ok(await _svc.RadicadoSiguienteAsync(ct));
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetFolder(Guid id, CancellationToken ct)
     {

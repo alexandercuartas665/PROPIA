@@ -322,6 +322,15 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.TenantId, x.Categoria });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
+        // Encabezados y pies de pagina de los documentos (membretes). Un predeterminado por tipo y copropiedad.
+        modelBuilder.Entity<MembreteDocumento>(b =>
+        {
+            b.ToTable("membretes_documento");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Html).IsRequired().HasColumnType("text");
+            b.HasIndex(x => new { x.TenantId, x.Tipo }).IsUnique().HasFilter("predeterminado").HasDatabaseName("ux_membretes_documento_predeterminado");
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
         // Campos propios de las plantillas (columna "+"): catalogo + valor, espejo de Zona.
         modelBuilder.Entity<PlantillaCampoDefinicion>(b =>
         {

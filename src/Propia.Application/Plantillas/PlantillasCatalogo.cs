@@ -38,6 +38,9 @@ public static class PlantillasCatalogo
         ("copropiedad.nit", "NIT de la copropiedad", "811654321-1"),
         ("copropiedad.direccion", "Direccion de la copropiedad", "Calle 11 # 21-31"),
         ("copropiedad.ciudad", "Ciudad", "Medellín"),
+        ("copropiedad.telefono", "Telefono de la administracion", "604 444 1234"),
+        ("copropiedad.correo", "Correo de la administracion", "administracion@altosdelbosque.co"),
+        ("copropiedad.logo", "Logo de la copropiedad (imagen)", "[logo]"),
         ("administrador.nombre", "Nombre del administrador", "Admin Delegado Demo"),
         ("gestor.nombre", "Quien genera el documento (usuario actual)", "Admin Delegado Demo"),
         ("fecha.hoy", "Fecha de hoy", "10 de noviembre de 2026"));
@@ -88,6 +91,13 @@ public static class PlantillasCatalogo
         var propios = TokensPorCategoria.TryGetValue(Categoria(categoria).Clave, out var l) ? l : Array.Empty<PlantillaTokenDto>();
         return propios.Concat(TokensComunes).ToList();
     }
+
+    /// <summary>Datos que ofrece "Insertar dato:" en los encabezados y pies de pagina (replica TOKS_MB).</summary>
+    public static readonly IReadOnlyList<string> TokensMembrete = new[]
+    {
+        "copropiedad.logo", "copropiedad.nombre", "copropiedad.nit", "copropiedad.direccion", "copropiedad.ciudad",
+        "copropiedad.telefono", "copropiedad.correo", "administrador.nombre", "fecha.hoy"
+    };
 
     /// <summary>Cuantos datos {grupo.campo} distintos usa el cuerpo (columna "Datos que usa").</summary>
     public static int DatosQueUsa(string? cuerpoHtml)

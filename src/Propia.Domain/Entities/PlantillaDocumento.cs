@@ -15,6 +15,26 @@ public class PlantillaDocumento : TenantEntity
     public string Categoria { get; set; } = "pqrsd";
     public string CuerpoHtml { get; set; } = string.Empty;
     public int Orden { get; set; }
+
+    /// <summary>Encabezado que usa: el predeterminado de la copropiedad, ninguno o uno fijo (EncabezadoId).</summary>
+    public ModoMembrete EncabezadoModo { get; set; } = ModoMembrete.Predeterminado;
+    public Guid? EncabezadoId { get; set; }
+    /// <summary>Pie de pagina que usa: el predeterminado, ninguno o uno fijo (PieId).</summary>
+    public ModoMembrete PieModo { get; set; } = ModoMembrete.Predeterminado;
+    public Guid? PieId { get; set; }
+}
+
+/// <summary>
+/// Encabezado o pie de pagina reutilizable de los documentos de la copropiedad (institucional, Navidad...).
+/// Html con datos {copropiedad.*} que se resuelven al generar el documento. Uno por tipo es el Predeterminado
+/// (indice unico filtrado por tenant + tipo). La copropiedad nace con "Institucional" (encabezado y pie).
+/// </summary>
+public class MembreteDocumento : TenantEntity
+{
+    public TipoMembrete Tipo { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Html { get; set; } = string.Empty;
+    public bool Predeterminado { get; set; }
 }
 
 /// <summary>

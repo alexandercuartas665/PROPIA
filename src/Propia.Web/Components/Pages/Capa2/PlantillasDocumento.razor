@@ -3,6 +3,7 @@
 @using System.Globalization
 @using Propia.Application.Plantillas
 @using Propia.Web.Components.Shared.Modals
+@using Propia.Web.Components.Shared.Plantillas
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject IModalService Modals
@@ -35,6 +36,7 @@ else
         <p class="dst-pagesub">Las plantillas que usa todo el sistema: respuestas de PQRSD, paz y salvo, convocatorias, circulares, actas y certificados. Créalas una vez aquí y aparecen en cada módulo.</p>
     </div>
     <div class="dst-head-actions">
+        <button class="propia-btn-ghost" type="button" @onclick="AdministrarMembretesAsync"><i class="fi fi-rr-border-top"></i> Encabezados y pies</button>
         <button class="propia-btn-brand" type="button" @onclick="() => AbrirEditorAsync(null)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla
         </button>
@@ -151,7 +153,7 @@ else
                         @foreach (var p in ps)
                         {
                             <div class="pk-cfg-plt-card pld-card" title="@p.Nombre" @onclick="() => AbrirEditorAsync(p)">
-                                <div class="pk-cfg-plt-thumb" aria-hidden="true"><div class="pk-cfg-plt-page">@((MarkupString)p.CuerpoHtml)</div></div>
+                                <div class="pk-cfg-plt-thumb" aria-hidden="true"><div class="pk-cfg-plt-page pld-doc">@((MarkupString)PlantillaDoc.Componer(p.CuerpoHtml, p.Categoria, p.Encabezado, p.Pie, _copropiedadNombre, _mb, crudo: true))</div></div>
                                 <div class="pk-cfg-plt-nm">@p.Nombre</div>
                                 <div class="pld-card-cat"><i class="fi @c.Icono"></i> @PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml) datos &middot; @FechaCorta(p.Modificada)</div>
                                 <button type="button" class="pld-card-prev" title="Vista previa" @onclick:stopPropagation="true" @onclick="() => VistaPreviaAsync(p)"><i class="fi fi-rr-eye"></i></button>
@@ -365,6 +367,7 @@ else
     private static readonly (string Key, string Label, string Ancho)[] ColsDef =
     {
         ("nombre", "NOMBRE", "300px"), ("categoria", "CATEGORÍA", "180px"), ("usadaEn", "SE OFRECE EN", "300px"),
+        ("encabezado", "ENCABEZADO", "220px"), ("pie", "PIE DE PÁGINA", "200px"),
         ("datos", "DATOS QUE USA", "140px"), ("modificada", "MODIFICADA", "150px"),
     };
     private sealed class ColPref { public string Key { get; set; } = ""; public bool Visible { get; set; } = true; public int? W { get; set; } }
@@ -515,6 +518,8 @@ else
         new() { Key = "nombre", Label = "NOMBRE", Kind = "texto" },
         new() { Key = "categoria", Label = "CATEGORÍA", Kind = "sel", Opciones = PlantillasCatalogo.Categorias.Select(c => (c.Clave, c.Nombre)).ToList() },
         new() { Key = "usadaEn", Label = "SE OFRECE EN", Kind = "texto" },
+        new() { Key = "encabezado", Label = "ENCABEZADO", Kind = "sel", Opciones = OpcionesMb(TipoMembrete.Encabezado) },
+        new() { Key = "pie", Label = "PIE DE PÁGINA", Kind = "sel", Opciones = OpcionesMb(TipoMembrete.Pie) },
         new() { Key = "datos", Label = "DATOS QUE USA", Kind = "num" },
         new() { Key = "modificada", Label = "MODIFICADA", Kind = "fecha" },
     }.Concat(_defs.Select(d => new FiltroDinamico.CampoDef
@@ -531,6 +536,8 @@ else
         "nombre" => p.Nombre,
         "categoria" => p.Categoria,
         "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+        "encabezado" => p.Encabezado,
+        "pie" => p.Pie,
         "datos" => PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml).ToString(CultureInfo.InvariantCulture),
         "modificada" => p.Modificada.ToLocalTime().ToString("yyyy-MM-dd"),
         _ => ""
@@ -560,6 +567,8 @@ else
         "nombre" => p.Nombre,
         "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
         "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+        "encabezado" => TextoMb(p.Encabezado, TipoMembrete.Encabezado),
+        "pie" => TextoMb(p.Pie, TipoMembrete.Pie),
         "datos" => PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml),
         "modificada" => p.Modificada,
         _ => ""
@@ -604,6 +613,13 @@ else
             yield return new ValorGrupo(c.Clave, c.Nombre, Color: c.Color, Orden: orden);
             yield break;
         }
+        if (k is "encabezado" or "pie")
+        {
+            var t = k == "encabezado" ? TipoMembrete.Encabezado : TipoMembrete.Pie;
+            var sel = k == "encabezado" ? p.Encabezado : p.Pie;
+            yield return new ValorGrupo(sel, TextoMb(sel, t), Color: PlantillaDoc.ColorSel(sel));
+            yield break;
+        }
         if (k == "modificada")
         {
             var d = DateOnly.FromDateTime(p.Modificada.ToLocalTime().Date);
@@ -640,6 +656,8 @@ else
             "nombre" => p.Nombre,
             "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
             "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+            "encabezado" => TextoMb(p.Encabezado, TipoMembrete.Encabezado),
+            "pie" => TextoMb(p.Pie, TipoMembrete.Pie),
             "datos" => (decimal)PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml),
             "modificada" => FechaCorta(p.Modificada),
             _ => null
@@ -710,11 +728,21 @@ else
                             @foreach (var c in PlantillasCatalogo.Categorias) { <option value="@c.Clave" selected="@(c.Clave == p.Categoria)">@c.Nombre</option> }
                         </select></td>,
         "usadaEn" => @<td class="tbl-ro">@PlantillasCatalogo.Categoria(p.Categoria).UsadaEn</td>,
+        "encabezado" => CeldaMb(p, TipoMembrete.Encabezado),
+        "pie" => CeldaMb(p, TipoMembrete.Pie),
         "datos" => @<td class="tbl-ro">@PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml)</td>,
         "modificada" => @<td class="tbl-ro">@FechaCorta(p.Modificada)</td>,
         _ => CampoDe(k) is { } d ? CeldaPropia(p, d) : CeldaVacia
     };
     private static RenderFragment CeldaVacia => @<td></td>;
+    // ENCABEZADO / PIE DE PAGINA: select en linea (Predeterminado / Sin ... / cada uno del tipo).
+    private RenderFragment CeldaMb(PlantillaDocumentoDto p, TipoMembrete t)
+    {
+        var sel = t == TipoMembrete.Encabezado ? p.Encabezado : p.Pie;
+        return @<td><select class="tbl-cell tbl-cell-lista" style="@PlantillaDoc.EstiloSel(sel)" @onchange="e => EditarMbAsync(p, t, e.Value?.ToString())">
+            @foreach (var (v, l) in OpcionesMb(t)) { <option value="@v" selected="@(v == sel)">@l</option> }
+        </select></td>;
+    }
     // Celda editable de un campo propio segun su tipo; guarda al cambiar (PUT campos-valores).
     private RenderFragment CeldaPropia(PlantillaDocumentoDto p, CampoDinDef d)
     {
@@ -751,6 +779,13 @@ else
         if (v.Length == 0) { Mensaje("El nombre no puede quedar vacío.", true); await CargarAsync(); return; }
         if (v == p.Nombre) return;
         await ActualizarAsync(p, new GuardarPlantillaDocumentoRequest(v, null, null));
+    }
+    private async Task EditarMbAsync(PlantillaDocumentoDto p, TipoMembrete t, string? v)
+    {
+        v = string.IsNullOrWhiteSpace(v) ? MembreteEleccion.Predeterminado : v;
+        if (v == (t == TipoMembrete.Encabezado ? p.Encabezado : p.Pie)) return;
+        await ActualizarAsync(p, t == TipoMembrete.Encabezado ? new GuardarPlantillaDocumentoRequest(null, null, null, Encabezado: v) : new GuardarPlantillaDocumentoRequest(null, null, null, Pie: v));
+        await CargarMembretesAsync();   // cambian los "Lo usan N plantillas"
     }
     private async Task EditarCategoriaAsync(PlantillaDocumentoDto p, string? v)
     {
@@ -842,7 +877,7 @@ else
         var orden = p.Orden;
         try
         {
-            var r = await Auth().PostAsJsonAsync("/api/plantillas", new GuardarPlantillaDocumentoRequest(p.Nombre + " (copia)", p.Categoria, p.CuerpoHtml, orden));
+            var r = await Auth().PostAsJsonAsync("/api/plantillas", new GuardarPlantillaDocumentoRequest(p.Nombre + " (copia)", p.Categoria, p.CuerpoHtml, orden, p.Encabezado, p.Pie));
             if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo duplicar la plantilla."), true); return; }
             await CargarAsync();
         }
@@ -885,8 +920,20 @@ else
             new ModalParameters()
                 .Set("Jwt", _jwt)
                 .Set("Plantilla", p)
+                .Set("Membretes", _mb)
                 .Set("CopropiedadNombre", _copropiedadNombre),
             new ModalOptions { Width = "1056px" });
+        await CargarAsync();
+        await CargarMembretesAsync();
+        StateHasChanged();
+    }
+    private async Task AdministrarMembretesAsync()
+    {
+        await Modals.OpenAsync<GestionarMembretesModal, bool>(
+            new ModalParameters().Set("Jwt", _jwt).Set("CopropiedadNombre", _copropiedadNombre),
+            new ModalOptions { Width = "1056px" });
+        // Al eliminar uno fijado, sus plantillas pasan a Predeterminado: se recargan ambas listas.
+        await CargarMembretesAsync();
         await CargarAsync();
         StateHasChanged();
     }
@@ -896,8 +943,26 @@ else
                 .Set("Nombre", p.Nombre)
                 .Set("Categoria", p.Categoria)
                 .Set("CuerpoHtml", p.CuerpoHtml)
+                .Set("Encabezado", p.Encabezado)
+                .Set("Pie", p.Pie)
+                .Set("Membretes", _mb)
                 .Set("CopropiedadNombre", _copropiedadNombre),
             new ModalOptions { Width = "820px" });
+
+    // ===== Encabezados y pies de pagina (membretes) =====
+    private MembretesDto? _mb;
+    private async Task CargarMembretesAsync()
+    {
+        try { _mb = await Auth().GetFromJsonAsync<MembretesDto>("/api/plantillas/membretes"); } catch { }
+    }
+    // Opciones de las columnas ENCABEZADO / PIE (se rearman al crear, renombrar o borrar membretes).
+    private List<(string, string)> OpcionesMb(TipoMembrete t)
+        => new List<(string, string)> { (MembreteEleccion.Predeterminado, "Predeterminado"), (MembreteEleccion.Ninguno, PlantillaDoc.NingunoTipo(t)) }
+            .Concat((_mb?.Items ?? Array.Empty<MembreteDto>()).Where(m => m.Tipo == t).Select(m => (m.Id.ToString(), m.Nombre))).ToList();
+    private string TextoMb(string? sel, TipoMembrete t)
+        => sel == MembreteEleccion.Ninguno ? PlantillaDoc.NingunoTipo(t)
+         : string.IsNullOrEmpty(sel) || sel == MembreteEleccion.Predeterminado ? "Predeterminado"
+         : PlantillaDoc.De(_mb, sel, t)?.Nombre ?? "Predeterminado";
 
     // ===== Datos =====
     private HttpClient Auth()
@@ -955,6 +1020,7 @@ else
                     _jwt = stored;
                     await CargarPreferenciasAsync();
                     await CargarAsync();
+                    await CargarMembretesAsync();
                     await CargarCamposAsync();
                     await AbrirDesdeEnlaceAsync();
                 }

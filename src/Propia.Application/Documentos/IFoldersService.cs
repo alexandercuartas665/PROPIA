@@ -14,6 +14,8 @@ public interface IFoldersService
     Task<IReadOnlyList<FolderTarjetaDto>> TarjetasAsync(CancellationToken ct);
     Task<FolderDetalleDto?> GetFolderAsync(Guid id, CancellationToken ct);
     Task<FolderNodoDto> CrearFolderAsync(CrearFolderRequest req, CancellationToken ct);
+    /// <summary>Radicado que tomaria el proximo folder (RAD-AAAA-NNNN, consecutivo anual de la copropiedad).</summary>
+    Task<RadicadoSiguienteDto> RadicadoSiguienteAsync(CancellationToken ct);
     Task<bool> ActualizarFolderAsync(Guid id, ActualizarFolderRequest req, CancellationToken ct);
     /// <summary>Elimina el folder solo si ni el ni sus subfolders tienen documentos con archivo.</summary>
     Task<bool> EliminarFolderAsync(Guid id, CancellationToken ct);

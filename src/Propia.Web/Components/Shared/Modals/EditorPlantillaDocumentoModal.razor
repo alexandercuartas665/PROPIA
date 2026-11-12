@@ -5,6 +5,8 @@
    gestor() en replica/js/mod-plantillas-doc.js. Devuelve true si guardo o elimino algo. *@
 @inherits ModalBase<bool>
 @using Propia.Application.Plantillas
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Plantillas
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
@@ -41,7 +43,19 @@
                     <div class="pld-ins-menu">@ListaDatos</div>
                 }
             </div>
+            @* Encabezado y pie que usa la plantilla + franjas que muestran como quedan, arriba y abajo del editor. *@
+            <div class="pld-mb-row">
+                <label class="pld-cat"><span>@PlantillaDoc.NombreTipo(TipoMembrete.Encabezado)</span>
+                    <select class="pld-cat-sel" value="@_enc" @onchange="e => _enc = e.Value?.ToString() ?? MembreteEleccion.Predeterminado">@OpcionesMb(TipoMembrete.Encabezado, _enc)</select>
+                </label>
+                <label class="pld-cat"><span>@PlantillaDoc.NombreTipo(TipoMembrete.Pie)</span>
+                    <select class="pld-cat-sel" value="@_pie" @onchange="e => _pie = e.Value?.ToString() ?? MembreteEleccion.Predeterminado">@OpcionesMb(TipoMembrete.Pie, _pie)</select>
+                </label>
+                <button type="button" class="pld-btn-ghost pld-mb-adm" @onclick="AdministrarAsync"><i class="fi fi-rr-settings-sliders"></i> Administrar encabezados y pies</button>
+            </div>
+            @Banda(TipoMembrete.Encabezado)
             <textarea id="pld-ed"></textarea>
+            @Banda(TipoMembrete.Pie)
             <div>@if (!string.IsNullOrEmpty(_msg)) { <div class="gpl-msg @(_err ? "err" : "ok")">@_msg</div> }</div>
             <div class="gpl-foot">
                 <span>
@@ -60,67 +74,6 @@
     </div>
 </div>
 
-<style>
-    /* Gestor de PQRSD (.gpl-*), mismos valores; los hex sueltos pasaron a tokens. */
-    .gpl { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
-    .gpl-head { display: flex; align-items: center; justify-content: space-between; }
-    .gpl-eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--propia-text-h1); }
-    .gpl-x { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-    .gpl-body { display: grid; grid-template-columns: 240px 1fr; gap: 14px; min-height: 420px; }
-    .gpl-list { display: flex; flex-direction: column; gap: 6px; border-right: 1px solid var(--propia-border-divider); padding-right: 12px; }
-    .gpl-edit { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
-    .gpl-nombre { border: 1px solid var(--propia-border-card); border-radius: 8px; padding: 9px 12px; font-size: 14px; font-weight: 700; color: var(--propia-text-h1); background: var(--propia-bg-card); outline: none; }
-    .gpl-nombre:focus { border-color: var(--propia-brand); }
-    .gpl-msg { font-size: 12px; font-weight: 600; }
-    .gpl-msg.err { color: var(--propia-danger); } .gpl-msg.ok { color: var(--propia-ok); }
-    .gpl-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .gpl-btn-brand { padding: 9px 16px; border-radius: 8px; background: var(--propia-brand); color: var(--propia-text-inverse); font-weight: 700; font-size: 13px; border: 0; cursor: pointer; }
-    .gpl-btn-brand:disabled { opacity: .5; }
-    /* Gestor (propuesta .pld-*) */
-    .pld-gestor { padding: 16px 18px 18px; max-height: 94vh; overflow-y: auto; box-sizing: border-box; }
-    .pld-gestor .gpl-body { min-height: 520px; }
-    .pld-gestor .gpl-body { grid-template-columns: 270px 1fr; }
-    /* Columna izquierda = "Datos para reemplazo" (en vez de la lista de plantillas: la bandeja ya es la lista) */
-    /* contain:size = la columna no empuja el alto: toma el del editor (stretch del grid) y la lista hace scroll. */
-    .pld-datos { gap: 4px; min-height: 0; contain: size; }
-    .pld-datos-h { font-size: 13px; font-weight: 800; color: var(--propia-text-h1); }
-    .pld-datos-sub { font-size: 11.5px; line-height: 1.45; color: var(--propia-text-muted); margin-bottom: 4px; }
-    .pld-datos-q { height: 34px; padding: 0 10px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); color: var(--propia-text-h1); font-size: 12.5px; margin-bottom: 2px; }
-    .pld-datos-q:focus { outline: none; border-color: var(--propia-brand); }
-    .pld-datos-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; flex: 1; padding-right: 2px; }
-    .pld-tok { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 6px 9px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); cursor: pointer; }
-    .pld-tok:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
-    .pld-tok-code { font-family: 'Cascadia Code', Consolas, monospace; font-size: 11.5px; font-weight: 600; color: var(--propia-brand); }
-    .pld-tok-desc { font-size: 11.5px; color: var(--propia-text-secondary); }
-    .pld-tok-empty { font-size: 12px; color: var(--propia-text-muted); padding: 8px 2px; }
-    .pld-btn-del { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--propia-danger); font-weight: 700; font-size: 12.5px; cursor: pointer; }
-    .pld-btn-del:hover { border-color: var(--propia-danger); }
-    .pld-grp { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--propia-text-muted); }
-    .pld-grp i { font-size: 12px; line-height: 1; color: var(--propia-brand); }
-    .pld-edit-top { display: flex; gap: 10px; align-items: flex-end; }
-    .pld-edit-top .gpl-nombre { flex: 1; min-width: 0; }
-    .pld-cat { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: var(--propia-text-muted); }
-    .pld-cat-sel { height: 40px; min-width: 170px; padding: 0 10px; border: 1px solid var(--propia-border-card); border-radius: 8px; background: var(--propia-bg-card); color: var(--propia-text-h1); font-size: 13px; font-weight: 600; }
-    .pld-usada { font-size: 12px; color: var(--propia-text-secondary); }
-    .pld-usada b { color: var(--propia-text-h1); }
-    .pld-foot-acts { display: flex; gap: 8px; flex: 0 0 auto; }
-    .pld-btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-h1); font-weight: 700; font-size: 13px; cursor: pointer; }
-    .pld-btn-ghost:hover { border-color: var(--propia-brand); color: var(--propia-brand); }
-    /* Boton "Insertar dato" + menu: solo en celular (en escritorio esta la columna de la izquierda). */
-    .pld-ins-wrap { display: none; position: relative; }
-    .pld-ins-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-brand); font-weight: 700; font-size: 13px; cursor: pointer; }
-    .pld-ins-btn.on, .pld-ins-btn:hover { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); }
-    .pld-ins-btn i { font-size: 12px; line-height: 1; }
-    .pld-ins-bd { position: fixed; inset: 0; z-index: 40; }
-    .pld-ins-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 41; display: flex; flex-direction: column; gap: 4px; max-height: 55vh; padding: 10px; border: 1px solid var(--propia-border-card); border-radius: 10px; background: var(--propia-bg-card); box-shadow: 0 10px 28px rgba(27,42,58,.18); }
-    @@media (max-width: 640px) {
-        .pld-edit-top { flex-direction: column; align-items: stretch; }
-        .pld-gestor .gpl-body { grid-template-columns: 1fr; min-height: 0; }
-        .pld-datos { display: none; }
-        .pld-ins-wrap { display: block; }
-    }
-</style>
-
 @code {
     [Parameter] public string? Jwt { get; set; }
     /// <summary>Plantilla a editar; null = nueva.</summary>
@@ -128,8 +81,11 @@
     /// <summary>Categoria inicial de una plantilla nueva (por defecto PQRSD).</summary>
     [Parameter] public string? Categoria { get; set; }
     [Parameter] public string? CopropiedadNombre { get; set; }
+    /// <summary>Biblioteca de encabezados y pies (si no llega, se carga al abrir).</summary>
+    [Parameter] public MembretesDto? Membretes { get; set; }
 
     private const string EdSel = "#pld-ed";
+    private string _enc = MembreteEleccion.Predeterminado, _pie = MembreteEleccion.Predeterminado;
     private Guid? _editId;
     private string _nombre = "";
     private string _categoria = PlantillasCatalogo.Pqrsd;
@@ -139,11 +95,55 @@
 
     private PlantillaCategoriaDto Cat => PlantillasCatalogo.Categoria(_categoria);
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _editId = Plantilla?.Id;
         _nombre = Plantilla?.Nombre ?? "";
         _categoria = PlantillasCatalogo.Categoria(Plantilla?.Categoria ?? Categoria).Clave;
+        _enc = Plantilla?.Encabezado ?? MembreteEleccion.Predeterminado;
+        _pie = Plantilla?.Pie ?? MembreteEleccion.Predeterminado;
+        if (Membretes is null) await CargarMembretesAsync();
+    }
+
+    // ===== Encabezado y pie de la plantilla =====
+    private async Task CargarMembretesAsync()
+    {
+        try { Membretes = await Auth().GetFromJsonAsync<MembretesDto>("/api/plantillas/membretes"); } catch { }
+    }
+
+    // <option>s: Predeterminado (X) / Sin encabezado | Sin pie de pagina / cada uno del tipo (replica mbOptsHtml).
+    private RenderFragment OpcionesMb(TipoMembrete t, string sel) => __builder =>
+    {
+        <option value="@MembreteEleccion.Predeterminado" selected="@(sel == MembreteEleccion.Predeterminado)">@PlantillaDoc.SelTexto(Membretes, MembreteEleccion.Predeterminado, t)</option>
+        <option value="@MembreteEleccion.Ninguno" selected="@(sel == MembreteEleccion.Ninguno)">@PlantillaDoc.NingunoTipo(t)</option>
+        @foreach (var m in (Membretes?.Items ?? Array.Empty<MembreteDto>()).Where(x => x.Tipo == t))
+        {
+            <option value="@m.Id" selected="@(sel == m.Id.ToString())">@(m.Nombre + (m.Predeterminado ? " (predeterminado)" : ""))</option>
+        }
+    };
+
+    // Franja con el membrete elegido ya resuelto (encima o debajo del editor).
+    private RenderFragment Banda(TipoMembrete t) => __builder =>
+    {
+        var m = PlantillaDoc.De(Membretes, t == TipoMembrete.Encabezado ? _enc : _pie, t);
+        <div class="pld-mb-band pld-mb-band--@(t == TipoMembrete.Encabezado ? "enc" : "pie") @(m is null ? "is-none" : "")">
+            <div class="pld-mb-band-tag"><i class="fi @PlantillaDoc.IconoTipo(t)"></i> @PlantillaDoc.NombreTipo(t) &middot; @(m?.Nombre ?? PlantillaDoc.NingunoTipo(t))</div>
+            @if (m is not null) { <div class="pld-mb-band-doc">@((MarkupString)PlantillaDoc.Resolver(m.Html, _categoria, CopropiedadNombre, Membretes, conDatosDoc: false))</div> }
+        </div>
+    };
+
+    // Administrar: al volver, si borraron el que estaba elegido, la plantilla pasa al predeterminado.
+    private async Task AdministrarAsync()
+    {
+        Guid? sel = Guid.TryParse(_enc, out var g) ? g : null;
+        var cambio = await Modals.OpenAsync<GestionarMembretesModal, bool>(
+            new ModalParameters().Set("Jwt", Jwt).Set("SelId", sel).Set("CopropiedadNombre", CopropiedadNombre),
+            new ModalOptions { Width = "1056px" });
+        await CargarMembretesAsync();
+        if (PlantillaDoc.De(Membretes, _enc, TipoMembrete.Encabezado) is { } e && Guid.TryParse(_enc, out var ge) && e.Id != ge) _enc = MembreteEleccion.Predeterminado;
+        if (PlantillaDoc.De(Membretes, _pie, TipoMembrete.Pie) is { } f && Guid.TryParse(_pie, out var gf) && f.Id != gf) _pie = MembreteEleccion.Predeterminado;
+        if (cambio) _cambio = true;
+        StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -219,6 +219,9 @@
                 .Set("Nombre", string.IsNullOrWhiteSpace(_nombre) ? "Plantilla sin nombre" : _nombre.Trim())
                 .Set("Categoria", _categoria)
                 .Set("CuerpoHtml", cuerpo)
+                .Set("Encabezado", _enc)
+                .Set("Pie", _pie)
+                .Set("Membretes", Membretes)
                 .Set("CopropiedadNombre", CopropiedadNombre),
             new ModalOptions { Width = "820px" });
     }
@@ -229,7 +232,7 @@
         _busy = true; _msg = null; _err = false;
         try
         {
-            var req = new GuardarPlantillaDocumentoRequest(_nombre.Trim(), _categoria, await CuerpoAsync());
+            var req = new GuardarPlantillaDocumentoRequest(_nombre.Trim(), _categoria, await CuerpoAsync(), Encabezado: _enc, Pie: _pie);
             var resp = _editId is { } id
                 ? await Auth().PutAsJsonAsync($"/api/plantillas/{id}", req)
                 : await Auth().PostAsJsonAsync("/api/plantillas", req);

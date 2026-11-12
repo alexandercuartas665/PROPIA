@@ -7,11 +7,14 @@
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject IModalService Modals
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Documentos - PROPIA</PageTitle>
 
 @* Modulo 2.15 Documentos (v2 "Folders", maqueta expedientes-v2). 2 vistas:
-     Folders  -> /api/folders  (tarjetas de los folders raiz; "Configurar folders" y "Nuevo folder")
+     Folders  -> /api/folders  (bandeja canonica Galeria | Tabla de los folders raiz, ver Documentos.Expedientes.cs;
+                 "Configurar folders" y "Nuevo folder")
      Archivo central -> /api/documentos (sin cambios).
    CSS del modulo en css/modules/folders.css, acotado bajo el wrapper .xpd (igual que la maqueta). *@
 
@@ -58,49 +61,218 @@ else
         <div class="doc-banner @(_msgClass == "alert-danger" ? "err" : (_msgClass == "alert-success" ? "ok" : "info"))" role="status">@_msg</div>
     }
 
-    @* ====================== VISTA FOLDERS ====================== *@
+    @* ====================== VISTA FOLDERS ======================
+       Bandeja CANONICA (DistribucionPanel: Filtros / Buscar / Ordenar / Agrupar / Columnas / Descargar) con
+       selector Galeria | Tabla. Logica en Documentos.Expedientes.cs. *@
     @if (_view == "folders")
     {
-        @if (_tarjetas is null)
-        {
-            <div class="doc-loading"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-        }
-        else if (_tarjetas.Count == 0)
-        {
-            <div class="doc-empty"><i class="fi fi-rr-folder-open"></i><div>Aún no hay folders. Crea el primero con "Nuevo folder" o configura la estructura.</div></div>
-        }
-        else
-        {
-            <div class="exp-grid">
-                @foreach (var t in _tarjetas)
-                {
-                    var tt = t;
-                    var pct = t.Total > 0 ? (int)Math.Round(t.Cargados * 100.0 / t.Total) : 0;
-                    <button type="button" class="exp-card" @onclick="() => AbrirFolder(tt)" title="Abrir el folder @t.Nombre">
-                        <div class="exp-card-top">
-                            <span class="exp-serie xpd-brand-pill"><i class="fi fi-rr-folder" style="margin-right:4px"></i>@(t.Subfolders == 1 ? "1 subfolder" : $"{t.Subfolders} subfolders")</span>
-                            @if (!string.IsNullOrEmpty(t.Codigo)) { <span class="exp-codigo">@t.Codigo</span> }
-                        </div>
-                        <div class="exp-nombre">@t.Nombre</div>
-                        <div class="exp-subserie">@(t.Total == 1 ? "1 documento" : $"{t.Total} documentos")@(t.UltimaCarga is { } uc ? $" · última carga {uc.LocalDateTime:dd MMM yyyy}" : "")</div>
-                        <div class="exp-progress">
-                            <div class="exp-bar" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100"><div class="exp-bar-fill" style="width:@pct%"></div></div>
-                            <span class="exp-count">@t.Cargados/@t.Total</span>
-                        </div>
-                        <div class="exp-badges">
-                            @if (t.Cargados == t.Total && t.Total > 0)
-                            {
-                                <span class="exp-badge ok"><i class="fi fi-rr-check"></i> Folder completo</span>
-                            }
-                            else if (t.PendientesObligatorios > 0)
-                            {
-                                <span class="exp-badge pend"><i class="fi fi-rr-exclamation"></i> @(t.PendientesObligatorios == 1 ? "1 obligatorio sin cargar" : $"{t.PendientesObligatorios} obligatorios sin cargar")</span>
-                            }
-                        </div>
+        <div class="exp-bandeja">
+            <div class="dst-filtros">
+                <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
+                <div class="dst-search">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                    <input class="dst-search-inp" placeholder="Buscar folder o radicado..." @bind="_q" @bind:event="oninput" />
+                </div>
+                <div class="dst-filtros-spacer"></div>
+                <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="StateHasChanged" />
+                <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+                <div class="dst-menu-wrap">
+                    <button type="button" class="dst-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                        <span>Columnas</span>
                     </button>
+                    @if (_showColMenu)
+                    {
+                        <div class="dst-menu-bd" @onclick="() => _showColMenu = false"></div>
+                        <div class="dst-menu dst-colmenu">
+                            <div class="dst-col-search">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                                <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
+                            </div>
+                            <div class="dst-col-list">
+                                @for (int ci = 0; ci < _cols.Count; ci++)
+                                {
+                                    var c = _cols[ci];
+                                    var idx = ci;
+                                    var label = LabelCol(c.Key);
+                                    if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                                    <div class="dst-col-it">
+                                        <button class="dst-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverCol(c.Key, -1)">▲</button>
+                                        <button class="dst-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverCol(c.Key, 1)">▼</button>
+                                        <span class="dst-col-name">@label</span>
+                                        @if (idx == 0) { <span class="dst-col-fija">fija</span> }
+                                        else
+                                        {
+                                            <button class="dst-col-eye @(c.Visible ? "on" : "")" title="@(c.Visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleCol(c.Key)"><i class="fi @(c.Visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="dst-col-massacts">
+                                <button type="button" class="dst-col-mass" @onclick="OcultarTodasCol"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                                <button type="button" class="dst-col-mass" @onclick="MostrarTodasCol"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                                <button type="button" class="dst-col-reset" @onclick="RestablecerCol">Restablecer</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                @if (_vistaExp == "tabla")
+                {
+                    <TablaExportar Vista="VistaExport" />
                 }
+                <TablaVistaToggle Opciones="@VistasExpOpc" Valor="@_vistaExp" OnCambiar="SetVistaExp" />
             </div>
-        }
+
+            @if (_sel.Count > 0 && _vistaExp == "tabla")
+            {
+                <div class="dst-selbar">
+                    <span class="dst-selbar-n">@(_sel.Count + " folder" + (_sel.Count == 1 ? "" : "s") + " seleccionado" + (_sel.Count == 1 ? "" : "s"))</span>
+                    <button type="button" class="dst-selbar-del" @onclick="() => _confirmDelSel = true">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                        Eliminar
+                    </button>
+                    <button type="button" class="dst-selbar-x" @onclick="() => _sel.Clear()">Deseleccionar</button>
+                </div>
+            }
+            @if (_confirmDelSel)
+            {
+                <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+                    <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                        <div class="dst-cfg-head"><strong>@("Eliminar " + _sel.Count + " folder" + (_sel.Count == 1 ? "" : "s"))</strong></div>
+                        <div class="dst-cfg-sub">Se eliminan con sus subfolders. Solo se permite si ningún documento tiene archivo.</div>
+                        <div class="dst-cfg-actions">
+                            <button type="button" class="dst-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                            <button type="button" class="dst-selbar-del" @onclick="EliminarSeleccionadasAsync" disabled="@_delBusy">Si, eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (_tarjetas is null)
+            {
+                <div class="doc-loading"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+            }
+            else if (_vistaExp == "galeria")
+            {
+                var filas = Ordenadas().ToList();
+                if (filas.Count == 0 && HayFiltroExp)
+                {
+                    <div class="dst-empty"><strong>Ningún folder coincide con el filtro.</strong><span>Ajusta la búsqueda o limpia los filtros.</span></div>
+                }
+                else if (filas.Count == 0)
+                {
+                    <div class="doc-empty"><i class="fi fi-rr-folder-open"></i><div>Aún no hay folders. Crea el primero con "Nuevo folder" o configura la estructura.</div></div>
+                }
+                else
+                {
+                    <div class="exp-grid">
+                        @foreach (var t in filas) { @TarjetaFolder(t) }
+                    </div>
+                }
+            }
+            else if (_tarjetas.Count > 0 && Filtradas().Count == 0)
+            {
+                <div class="dst-empty"><strong>Ningún folder coincide con el filtro.</strong><span>Ajusta la búsqueda o limpia los filtros.</span></div>
+            }
+            else
+            {
+                var cols = ColsVis;
+                var niveles = Niveles;
+                <div class="dst-table">
+                    <div class="tblwrap">
+                    <div class="dst-scroll tblscroll">
+                    <table class="tbl">
+                        <colgroup>
+                            <col style="width:38px" /><col style="width:34px" />
+                            @foreach (var c in cols) { <col style="width:@AnchoCol(c.Key)" /> }
+                            <col style="width:76px" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="tbl-sel"><label class="tbl-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></th>
+                                <th class="tbl-exp"></th>
+                                @foreach (var c in cols)
+                                {
+                                    var clave = c.Key;
+                                    var lbl = c.Label;
+                                    <th class="tbl-th--menu" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                        @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorClic(clave)">
+                                        <span class="tbl-th-lbl">@lbl</span>
+                                        @SortInd(clave)
+                                        @ChevCol(clave, lbl)
+                                        <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(clave, 0)" @ondblclick:stopPropagation="true"></span>
+                                    </th>
+                                }
+                                <th class="tbl-addcol"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (niveles.Count > 0)
+                            {
+                                <TablaGruposRenderTr T="FolderTarjetaDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" Colspan="@ColSpanTotal" />
+                            }
+                            else
+                            {
+                                @foreach (var t in Ordenadas()) { @FilaTpl(t) }
+                            }
+                            @if (_altaAbierta)
+                            {
+                                <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp">
+                                        <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearDesdeAltaAsync(true)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                        </button>
+                                    </td>
+                                    @foreach (var c in cols)
+                                    {
+                                        if (c.Key == "nombre") { <td class="nf-cell"><input class="nf-in" placeholder="FOLDER" @bind="_nuNombre" @bind:event="oninput" /></td> }
+                                        else { <td class="nf-mut" title="Se define en la ficha">En la ficha</td> }
+                                    }
+                                    <td class="tbl-addcol"></td>
+                                </tr>
+                                <tr class="newrow dst-nf-hint">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp"></td>
+                                    <td class="dst-nf-hint-cell" colspan="@(ColSpanTotal - 2)">
+                                        <span class="dst-nf-hint-txt">
+                                            <kbd class="dst-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                            <span class="dst-nf-hint-sep">&middot;</span>
+                                            <kbd class="dst-kbd">Esc</kbd> para cancelar
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr class="newrow" id="dst-cta-row">
+                                    <td class="tbl-sel"></td>
+                                    <td class="tbl-exp"></td>
+                                    <td colspan="@(ColSpanTotal - 2)">
+                                        <button type="button" class="row-add--sm" @onclick="() => _altaAbierta = true">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                            Agregar folder
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div id="dst-inf-bottom" class="tbl-inf-sentinel"></div>
+                    </div>
+                    <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregar" title="Agregar folder">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Agregar folder
+                    </button>
+                    </div>
+                    @if (niveles.Count == 0)
+                    {
+                        <div class="tbl-foot">@Filtradas().Count registros &middot; mostrando @Filtradas().Count</div>
+                    }
+                </div>
+            }
+        </div>
+        @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
     }
     else
     {
@@ -208,10 +380,10 @@ else
 @* ===================== Modal: configurar folders (3 columnas) ===================== *@
 @if (_showCfg)
 {
-    <ConfigurarFoldersModal Jwt="@_jwt" Cambio="CargarFoldersAsync" Cerrado="() => _showCfg = false" />
+    <ConfigurarFoldersModal Jwt="@_jwt" FolderInicial="_cfgFolderId" Cambio="CargarFoldersAsync" Cerrado="() => { _showCfg = false; _cfgFolderId = null; }" />
 }
 
-@* ===================== Modal: explorador de folders (5 columnas) ===================== *@
+@* ===================== Modal: explorador de folders (Estructura | Documentos | Chat) ===================== *@
 @if (_explorarId is { } xid)
 {
     <ExploradorFoldersModal Jwt="@_jwt" FolderInicial="xid" @bind-ChatOculto="_chatOculto" Cambio="CargarFoldersAsync" Cerrado="() => _explorarId = null" />
@@ -350,6 +522,8 @@ else
 </div>
 }
 
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
 <ModalHost />
 
 @code {
@@ -394,14 +568,25 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _jwt is not null) return;
-        try
+        if (firstRender && _jwt is null)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored)) { _jwt = stored; await CargarFoldersAsync(); StateHasChanged(); }
+            try
+            {
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    _jwt = stored;
+                    await CargarPreferenciasExpAsync();
+                    await CargarFoldersAsync();
+                    AbrirDesdeEnlace();
+                }
+                StateHasChanged();
+            }
+            catch { }
+            return;
         }
-        catch { }
+        await DespuesDeRenderBandejaAsync();
     }
 
     private async Task SetView(string v)
@@ -418,6 +603,8 @@ else
         {
             var http = Auth();
             _tarjetas = await http.GetFromJsonAsync<List<FolderTarjetaDto>>("/api/folders/tarjetas") ?? new();
+            _recien.RemoveWhere(id => _tarjetas.All(t => t.Id != id));
+            _sel.RemoveWhere(id => _tarjetas.All(t => t.Id != id));
             _arbol = await http.GetFromJsonAsync<List<FolderNodoDto>>("/api/folders/arbol") ?? new();
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
@@ -432,7 +619,7 @@ else
     private async Task OnFolderCreado(FolderNodoDto f)
     {
         _showNuevo = false;
-        _msg = $"Folder “{f.Nombre}” creado."; _msgClass = "alert-success";
+        _msg = $"Folder “{f.Nombre}” creado con radicado {f.Radicado}."; _msgClass = "alert-success";
         await CargarFoldersAsync();
     }
 
@@ -624,4 +811,73 @@ else
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
     }
+}
+
+@code {
+    // ===== Bandeja de expedientes: fila de la Tabla (solo FOLDER se edita en linea) y tarjeta de la Galeria =====
+    private RenderFragment<FolderTarjetaDto> FilaTpl => t => @<tr class="dst-row--tr @(_sel.Contains(t.Id) ? "dst-row-sel" : "") @(_recien.Contains(t.Id) ? "tbl-row-new" : "")" @key="t.Id" @oncontextmenu="e => AbrirCtx(e, t)" @oncontextmenu:preventDefault="true">
+        <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(t.Id)" @onchange="@(e => ToggleSel(t.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir el folder" @onclick="() => AbrirFolder(t)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var col in ColsVis) { @CeldaFolder(t, col.Key) }
+        <td class="tbl-addcol"></td>
+    </tr>;
+
+    private RenderFragment CeldaFolder(FolderTarjetaDto t, string k)
+    {
+        switch (k)
+        {
+            case "nombre":
+                return @<td><input class="tbl-cell" value="@t.Nombre" placeholder="-" @onchange="e => RenombrarAsync(t, e.Value?.ToString())" /></td>;
+            case "radicado":
+                return @<td class="tbl-ro" title="Se asigna al crear el folder"><span class="exp-rad exp-rad--tbl"><i class="fi fi-rr-hastag"></i>@(t.Radicado ?? "-")</span></td>;
+            case "avance":
+                var pct = PctDe(t);
+                return @<td class="tbl-ro"><div class="exp-progress exp-progress--tbl"><div class="exp-bar"><div class="exp-bar-fill" style="width:@(pct)%"></div></div><span class="exp-count">@t.Cargados/@t.Total</span></div></td>;
+            case "pend":
+                if (t.Cargados == t.Total && t.Total > 0) return @<td class="tbl-ro"><span class="exp-badge ok"><i class="fi fi-rr-check"></i> Completo</span></td>;
+                if (t.PendientesObligatorios > 0) return @<td class="tbl-ro"><span class="exp-badge pend"><i class="fi fi-rr-exclamation"></i> @t.PendientesObligatorios sin cargar</span></td>;
+                return @<td class="tbl-ro">-</td>;
+            default:
+                return @<td class="tbl-ro">@TextoCelda(t, k)</td>;
+        }
+    }
+
+    private RenderFragment TarjetaFolder(FolderTarjetaDto t)
+    {
+        var pct = PctDe(t);
+        return @<button type="button" class="exp-card" @key="t.Id" @onclick="() => AbrirFolder(t)" @oncontextmenu="e => AbrirCtx(e, t)" @oncontextmenu:preventDefault="true" title="Abrir el folder @t.Nombre">
+            <div class="exp-card-top">
+                <span class="exp-serie xpd-brand-pill"><i class="fi fi-rr-folder" style="margin-right:4px"></i>@(t.Subfolders == 1 ? "1 subfolder" : $"{t.Subfolders} subfolders")</span>
+                @if (!string.IsNullOrEmpty(t.Codigo)) { <span class="exp-codigo">@t.Codigo</span> }
+                @if (!string.IsNullOrEmpty(t.Radicado)) { <span class="exp-rad" title="Radicado del expediente"><i class="fi fi-rr-hastag"></i>@t.Radicado</span> }
+            </div>
+            <div class="exp-nombre">@t.Nombre</div>
+            <div class="exp-subserie">@(t.Total == 1 ? "1 documento" : $"{t.Total} documentos")@(t.UltimaCarga is { } uc ? " · última carga " + FechaCorta(uc) : "")</div>
+            <div class="exp-progress">
+                <div class="exp-bar" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100"><div class="exp-bar-fill" style="width:@(pct)%"></div></div>
+                <span class="exp-count">@t.Cargados/@t.Total</span>
+            </div>
+            <div class="exp-badges">
+                @if (t.Cargados == t.Total && t.Total > 0)
+                {
+                    <span class="exp-badge ok"><i class="fi fi-rr-check"></i> Folder completo</span>
+                }
+                else if (t.PendientesObligatorios > 0)
+                {
+                    <span class="exp-badge pend"><i class="fi fi-rr-exclamation"></i> @(t.PendientesObligatorios == 1 ? "1 obligatorio sin cargar" : $"{t.PendientesObligatorios} obligatorios sin cargar")</span>
+                }
+            </div>
+        </button>;
+    }
+
+    private RenderFragment SortInd(string k)
+    {
+        var s = _sorts.FirstOrDefault(x => x.Key == k);
+        return s is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(s.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
+    }
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, false), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 }

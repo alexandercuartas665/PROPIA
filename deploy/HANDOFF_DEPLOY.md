@@ -1,5 +1,45 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **ETIQUETAS LEGIBLES EN LISTAS DE ENUM + FIN DE `eval` BLOQUEADO POR LA CSP (2026-11-12): 1 MIGRACION (solo datos) +
+> Infrastructure y Web cambian.**
+> - **MIGRACION `20261112100618_CorregirEtiquetasListasEnum`** (va DESPUES de `AddMembretesDocumento`; sin cambio de
+>   esquema): en `catalogo_opciones` y `lista_opciones` pasa a texto legible las etiquetas sembradas con el nombre crudo
+>   del enum: Mantenimiento estado de intervencion `EnEjecucion`/`EnRevision` -> "En ejecución"/"En revisión",
+>   periodicidad `Unica` -> "Única"; Equipos categoria `Climatizacion`/`Recreacion` -> con tilde; Zonas categoria
+>   `Circulacion` -> "Circulación" y estado `EnMantenimiento` -> "En mantenimiento"; Directorio sexo `NoBinario`/
+>   `NoIdentificado` -> "No binario"/"No identificado". SOLO donde la etiqueta es exactamente la cruda (no pisa lo que
+>   A&D renombro ni lo que la copropiedad edito: `override_visual = false`). Suspende el FORCE de `lista_opciones` solo
+>   durante el UPDATE. Claves `e:<Enum>` y registros sin cambios. En dev: 0 etiquetas crudas restantes.
+> - La semilla (`CatalogoListasSeeder.EtiquetasEnum`) ya siembra las legibles; el fold de overrides viejos acepta el
+>   nombre crudo como alias (no duplica opciones).
+> - **Web**: la CSP no permite `eval`; 8 llamadas `Js.InvokeVoidAsync("eval", ...)` fallaban en silencio. La mas grave:
+>   al terminar el Onboarding (paso 5, activar) la sesion no se guardaba ni redirigia a /mi-copropiedad. Ahora usan
+>   funciones de `propia-ui.js` (`?v=28`) y el boton de Google navega con `NavigationManager`.
+> - **Verificar en PROD tras aplicar**: `select lista, clave, label from catalogo_opciones where label in ('EnEjecucion','EnRevision','Unica','Climatizacion','Recreacion','Circulacion','EnMantenimiento','NoBinario','NoIdentificado');`
+>   (0 filas). Sin config/env nueva.
+
+> **EXPEDIENTES (/documentos) CON BANDEJA + RADICADO, Y ENCABEZADOS Y PIES DE PAGINA EN PLANTILLAS (2026-11-11, Web 0.0.281 /
+> API 0.0.216): 2 MIGRACIONES (aditivas) + API y Web cambian.**
+> - **MIGRACION `20261112020601_AddFolderRadicado`** (va DESPUES de `AddAgentesPlantillaVersion`): `folders` + `radicado`
+>   (varchar 20) con indice UNICO parcial `(tenant_id, radicado) WHERE radicado IS NOT NULL`. **Backfill**: RAD-AAAA-NNNN a todos
+>   los folders existentes, consecutivo ANUAL por copropiedad (anio de `created_at` en hora de Colombia) en orden de creacion
+>   (desempate: raiz antes que subfolder, orden, nombre). Suspende el FORCE de `folders` solo durante el UPDATE. En dev: 50
+>   folders, 0 sin radicado. Los folders nuevos toman el siguiente al crearse (`FoldersService.CrearFolderAsync`, reintenta si
+>   choca el indice); la estructura base sembrada tambien los lleva.
+> - **MIGRACION `20261112025452_AddMembretesDocumento`**: tabla nueva `membretes_documento` (encabezados y pies de pagina,
+>   RLS FORCE + policy + GRANT a propia_app, indice unico parcial: un predeterminado por tipo y copropiedad) y
+>   `plantillas_documento` + `encabezado_modo`, `encabezado_id`, `pie_modo`, `pie_id` (default 0 = Predeterminado: las
+>   plantillas existentes quedan en Predeterminado). Sin backfill: cada copropiedad nace con "Institucional" (encabezado y pie)
+>   la primera vez que se consultan sus membretes o se compone un documento, armado con su config de membrete
+>   (`membrete_color_acento`, `membrete_linea_legal`, `membrete_contacto_footer`, `membrete_mostrar_logo`).
+> - **Cambio visible en PQRSD**: el PDF / vista previa de la respuesta oficial se compone con el encabezado y el pie
+>   PREDETERMINADOS de la copropiedad (antes el membrete era fijo en codigo). El Institucional replica el aspecto anterior
+>   (identidad + tipo/radicado/fecha a la derecha + linea de color; pie con linea legal, contacto y "Operado por").
+>   Firmante y numeracion siguen saliendo de la config del tenant.
+> - **Verificar en PROD tras aplicar**: `select count(*) filter (where radicado is null), count(*) from folders;` (0 nulos);
+>   abrir /documentos (Galeria / Tabla con RADICADO); abrir Configuracion > Plantillas de documentos > "Encabezados y pies"
+>   (debe aparecer Institucional x2) y generar la vista previa de una respuesta PQRSD. Sin config/env nueva.
+
 > **AGENTES SEMILLA CON ACTUALIZACION DESDE EL SUPER ADMIN (2026-11-11, Web 0.0.280): 1 MIGRACION (aditiva + backfill) +
 > API y Web cambian.**
 > - **MIGRACION `20261111234845_AddAgentesPlantillaVersion`** (va DESPUES de `AddServiciosPublicosRecibosIA`):
