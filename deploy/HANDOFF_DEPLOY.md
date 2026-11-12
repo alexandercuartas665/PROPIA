@@ -1,5 +1,15 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PLANTILLAS DE WHATSAPP (2026-11-12, rama feat/plantillas-whatsapp integrada a main): 1 MIGRACION (TABLA NUEVA con RLS) + API y Web.**
+> - **MIGRACION `20261105113252_AddPlantillasWhatsApp`**: tabla `plantillas_whatsapp` (tenant, RLS ENABLE + FORCE + policy
+>   tenant_isolation + GRANT a propia_app, en la misma migracion). OJO: queda INTERCALADA (timestamp anterior a migraciones de
+>   main ya aplicadas en prod); `dotnet ef database update` la aplica igual porque no esta en `__EFMigrationsHistory`. No regenerar.
+>   Correrla a mano DESPUES del deploy, solo cuando Alex lo pida. En dev ya esta aplicada.
+> - Pagina `/ia/plantillas` (menu Comunicacion y documentos, "Plantillas de WhatsApp", orden 11). Endpoints `api/ia/plantillas*`
+>   (importar desde YCloud por la linea WhatsApp, {id}, {id}/archivar, {id}/probar). Sin config nueva: usa ApiKey + FromNumber de
+>   la linea YCloud y resuelve la WABA por API.
+> - **Verificar en PROD tras aplicar**: `select relforcerowsecurity from pg_class where relname='plantillas_whatsapp';` (t).
+
 > **PORTERIA: HUECOS DE OPERACION + UX GUARDA DE EDAD + MANUAL (2026-11-12): 1 MIGRACION (solo columnas) + API y Web + 1 AJUSTE DE MENU.**
 > - **MIGRACION `20261112201435_PorteriaHuecosOperacion`** (va DESPUES de `AsambleaOla5Sala`): `correspondencias.entregado_doc`
 >   (varchar 60), `correspondencias.recordatorios` (int, default 0), `correspondencias.ultimo_recordatorio_at`,
