@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Propia.Application.Common;
 using Propia.Application.InfraestructuraIa;
 using Propia.Domain.Entities;
+using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.InfraestructuraIa;
@@ -11,11 +13,13 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
 {
     private readonly PropiaDbContext _db;
     private readonly ILogger<AiAgentTemplateService> _logger;
+    private readonly ITenantContext _tenant;
 
-    public AiAgentTemplateService(PropiaDbContext db, ILogger<AiAgentTemplateService> logger)
+    public AiAgentTemplateService(PropiaDbContext db, ILogger<AiAgentTemplateService> logger, ITenantContext tenant)
     {
         _db = db;
         _logger = logger;
+        _tenant = tenant;
     }
 
     public async Task<List<AiAgentTemplateDto>> GetListAsync(CancellationToken ct = default)
@@ -54,6 +58,16 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
             t = loaded;
             t.UpdatedAt = DateTimeOffset.UtcNow;
             t.UpdatedBy = actorId;
+
+            // Version: sube si cambia lo que "Actualizar copropiedades" propaga: prompt, tools, proveedor o modelo.
+            var toolsAntes = await _db.AiAgentTemplateMcpTools.AsNoTracking().Where(x => x.TemplateId == existingId)
+                .Select(x => x.ConnectionCode + "|" + x.ToolName).ToListAsync(ct);
+            var toolsDespues = req.Tools.Select(x => x.ConnectionCode.Trim() + "|" + x.ToolName.Trim()).Distinct().ToList();
+            if (!string.Equals(t.SystemPrompt, req.SystemPrompt ?? "", StringComparison.Ordinal)
+                || !toolsAntes.OrderBy(x => x).SequenceEqual(toolsDespues.OrderBy(x => x))
+                || t.Provider != req.Provider
+                || !string.Equals(t.Model ?? "", req.Model?.Trim() ?? "", StringComparison.Ordinal))
+                t.Version++;
 
             await _db.AiAgentTemplateMcpTools
                 .Where(x => x.TemplateId == existingId)
@@ -154,36 +168,10 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         {
             try
             {
-                var agent = new AiAgent
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tenantId,
-                    // El nombre admite placeholders (ej. "Asistente de {COPROPIEDAD_NOMBRE}") para que el
-                    // agente clonado quede rotulado con la copropiedad, como el demo.
-                    Name = ReplacePlaceholders(template.Name, copropiedadNombre, organizacionNombre),
-                    Role = template.Role,
-                    Provider = template.Provider,
-                    Model = template.Model,
-                    SystemPrompt = ReplacePlaceholders(template.SystemPrompt, copropiedadNombre, organizacionNombre),
-                    IsActive = true,
-                    SortOrder = template.SortOrder,
-                    CreatedAt = DateTimeOffset.UtcNow
-                };
+                // Mismo agente que "Actualizar copropiedades" y la creacion al primer uso (vinculo + version + huella).
+                var (agent, tools) = PlantillaAgenteFabrica.Nuevo(template, tenantId, copropiedadNombre, organizacionNombre);
                 _db.AiAgents.Add(agent);
-
-                foreach (var tool in template.McpTools.Where(x =>
-                    McpConnectionCatalog.Find(x.ConnectionCode)?.PlatformOnly != true))
-                {
-                    _db.AiAgentMcpTools.Add(new AiAgentMcpTool
-                    {
-                        Id = Guid.NewGuid(),
-                        TenantId = tenantId,
-                        AgentId = agent.Id,
-                        ConnectionCode = tool.ConnectionCode,
-                        ToolName = tool.ToolName,
-                        CreatedAt = DateTimeOffset.UtcNow
-                    });
-                }
+                _db.AiAgentMcpTools.AddRange(tools);
 
                 await _db.SaveChangesAsync(ct);
                 copied++;
@@ -197,6 +185,169 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         }
 
         return copied;
+    }
+
+    // ===================== "Actualizar copropiedades" =====================
+
+    private sealed record Copropiedad(Guid Id, string Nombre, string? Org);
+
+    // Copropiedades vigentes (las canceladas/eliminadas no se tocan). Tenants es global (sin RLS).
+    private Task<List<Copropiedad>> CopropiedadesAsync(CancellationToken ct)
+        => _db.Tenants.AsNoTracking()
+            .Where(t => t.Estado != EstadoCopropiedad.CanceladoArchivado && t.Estado != EstadoCopropiedad.Eliminado)
+            .OrderBy(t => t.Nombre)
+            .Select(t => new Copropiedad(t.Id, t.Nombre, t.Organizacion != null ? t.Organizacion.Nombre : null))
+            .ToListAsync(ct);
+
+    // El agente de la copropiedad activa que salio de la plantilla; si no hay vinculo, el que tenga el nombre
+    // de la plantilla (agentes viejos).
+    private async Task<AiAgent?> AgenteDeAsync(AiAgentTemplate t, string nombreRender, CancellationToken ct)
+        => await _db.AiAgents.Where(a => a.TemplateId == t.Id).OrderByDescending(a => a.IsActive).ThenBy(a => a.CreatedAt).FirstOrDefaultAsync(ct)
+           ?? await _db.AiAgents.Where(a => a.TemplateId == null && a.Name == nombreRender).OrderByDescending(a => a.IsActive).FirstOrDefaultAsync(ct);
+
+    private static EstadoPropagacion Estado(AiAgentTemplate t, AiAgent? a, string promptRender)
+    {
+        if (a is null) return EstadoPropagacion.Falta;
+        if (a.TemplateVersion == t.Version && a.SystemPrompt == promptRender && a.Provider == t.Provider && (a.Model ?? "") == (t.Model ?? ""))
+            return EstadoPropagacion.AlDia;
+        if (PlantillaAgenteFabrica.Editado(a)) return EstadoPropagacion.Editado;
+        // Sin huella (agente viejo sin vinculo): si su prompt no es el de la plantilla, se trata como editado.
+        if (a.TemplatePromptHash is null && a.SystemPrompt != promptRender) return EstadoPropagacion.Editado;
+        return EstadoPropagacion.Desactualizado;
+    }
+
+    // Recorre las copropiedades fijando el tenant por cada una (RLS de ai_agents) y lo restaura al final.
+    private async Task PorCopropiedadAsync(Func<Copropiedad, Task> accion, CancellationToken ct)
+    {
+        var previo = _tenant.CurrentTenantId;
+        try
+        {
+            foreach (var c in await CopropiedadesAsync(ct))
+            {
+                _tenant.SetTenant(c.Id);
+                await _db.Database.CloseConnectionAsync();   // el interceptor aplica app.tenant_id al reabrir
+                await accion(c);
+            }
+        }
+        finally
+        {
+            if (previo is Guid p) _tenant.SetTenant(p); else _tenant.Clear();
+            await _db.Database.CloseConnectionAsync();
+        }
+    }
+
+    public async Task<PropagacionPreviewDto?> PreviewPropagacionAsync(Guid templateId, CancellationToken ct = default)
+    {
+        var t = await _db.AiAgentTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == templateId, ct);
+        if (t is null) return null;
+        if (t.PlatformKey is not null) throw new InvalidOperationException("Es un agente de plataforma: no se copia a las copropiedades.");
+        var filas = new List<PropagacionFilaDto>();
+        await PorCopropiedadAsync(async c =>
+        {
+            var a = await AgenteDeAsync(t, PlantillaAgente.Render(t.Name, c.Nombre, c.Org), ct);
+            filas.Add(new PropagacionFilaDto(c.Id, c.Nombre, Estado(t, a, PlantillaAgente.Render(t.SystemPrompt, c.Nombre, c.Org)), a?.Name, a?.TemplateVersion));
+        }, ct);
+        return new PropagacionPreviewDto(t.Id, t.Name, t.Version,
+            filas.Count(f => f.Estado == EstadoPropagacion.AlDia), filas.Count(f => f.Estado == EstadoPropagacion.Desactualizado),
+            filas.Count(f => f.Estado == EstadoPropagacion.Editado), filas.Count(f => f.Estado == EstadoPropagacion.Falta), filas);
+    }
+
+    public async Task<PropagacionResultadoDto?> PropagarAsync(Guid templateId, PropagarPlantillaRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default)
+    {
+        var t = await _db.AiAgentTemplates.AsNoTracking().Include(x => x.McpTools).FirstOrDefaultAsync(x => x.Id == templateId, ct);
+        if (t is null) return null;
+        if (t.PlatformKey is not null) throw new InvalidOperationException("Es un agente de plataforma: no se copia a las copropiedades.");
+        int actualizadas = 0, creadas = 0, respetadas = 0, alDia = 0, errores = 0;
+        await PorCopropiedadAsync(async c =>
+        {
+            try
+            {
+                var prompt = PlantillaAgente.Render(t.SystemPrompt, c.Nombre, c.Org);
+                var a = await AgenteDeAsync(t, PlantillaAgente.Render(t.Name, c.Nombre, c.Org), ct);
+                var estado = Estado(t, a, prompt);
+                if (estado == EstadoPropagacion.AlDia) { alDia++; return; }
+                if (estado == EstadoPropagacion.Falta)
+                {
+                    if (!req.CrearFaltantes || !t.IsActive) { respetadas++; return; }
+                    var (nuevo, toolsNuevo) = PlantillaAgenteFabrica.Nuevo(t, c.Id, c.Nombre, c.Org);
+                    _db.AiAgents.Add(nuevo);
+                    _db.AiAgentMcpTools.AddRange(toolsNuevo);
+                    await _db.SaveChangesAsync(ct);
+                    creadas++;
+                    return;
+                }
+                if (estado == EstadoPropagacion.Editado && !req.ForzarEditadas) { respetadas++; return; }
+
+                await ActualizarAgenteAsync(t, a!, prompt, ct);
+                actualizadas++;
+            }
+            catch (Exception ex)
+            {
+                errores++;
+                _db.ChangeTracker.Clear();
+                _logger.LogError(ex, "No se pudo actualizar la plantilla {TemplateId} en la copropiedad {TenantId}", t.Id, c.Id);
+            }
+        }, ct);
+
+        _db.SuperAdminLogs.Add(new SuperAdminLog
+        {
+            ActorId = actorId,
+            ActorEmail = actorEmail,
+            Accion = "AI_AGENT_TEMPLATE_PROPAGATE",
+            EntidadAfectada = $"AiAgentTemplate:{t.Id} v{t.Version} (actualizadas {actualizadas}, creadas {creadas}, respetadas {respetadas}, errores {errores}{(req.ForzarEditadas ? ", forzado" : "")})",
+            Ip = ip,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+        return new PropagacionResultadoDto(actualizadas, creadas, respetadas, alDia, errores);
+    }
+
+    // Lleva UN agente a la version actual de su plantilla: prompt, proveedor y modelo de IA, vinculo + version + huella
+    // y tools que falten. Queda en el historial del agente para que la copropiedad pueda volver a su version anterior.
+    private async Task ActualizarAgenteAsync(AiAgentTemplate t, AiAgent a, string prompt, CancellationToken ct)
+    {
+        a.SystemPrompt = prompt;
+        a.Provider = t.Provider;
+        a.Model = t.Model;
+        a.TemplateId = t.Id;
+        a.TemplateVersion = t.Version;
+        a.TemplatePromptHash = PlantillaAgente.Hash(prompt);
+        var enrutados = await _db.AiAgentPrompts.AsNoTracking().Where(p => p.AgentId == a.Id).OrderBy(p => p.SortOrder)
+            .Select(p => new AgentPromptSnapshotDto(p.Name, p.Rule, p.Body, p.SortOrder)).ToListAsync(ct);
+        a.PromptHistoryJson = AiAgentService.PushPromptVersion(a.PromptHistoryJson,
+            new AiAgentService.StoredPromptVersion(DateTimeOffset.UtcNow, prompt, enrutados));
+        var actuales = await _db.AiAgentMcpTools.AsNoTracking().Where(x => x.AgentId == a.Id).ToListAsync(ct);
+        _db.AiAgentMcpTools.AddRange(PlantillaAgenteFabrica.ToolsFaltantes(t, a, actuales));
+        await _db.SaveChangesAsync(ct);
+    }
+
+    // Plantilla + prompt renderizado para el agente de la copropiedad activa (RLS: solo agentes del tenant).
+    private async Task<(AiAgent Agente, AiAgentTemplate Plantilla, string Prompt)?> PlantillaDeAgenteAsync(Guid agentId, CancellationToken ct)
+    {
+        if (_tenant.CurrentTenantId is not Guid tid) return null;
+        var a = await _db.AiAgents.FirstOrDefaultAsync(x => x.Id == agentId, ct);
+        if (a?.TemplateId is not Guid templateId) return null;
+        var t = await _db.AiAgentTemplates.AsNoTracking().Include(x => x.McpTools).FirstOrDefaultAsync(x => x.Id == templateId, ct);
+        if (t is null) return null;
+        var c = await _db.Tenants.AsNoTracking().Where(x => x.Id == tid)
+            .Select(x => new Copropiedad(x.Id, x.Nombre, x.Organizacion != null ? x.Organizacion.Nombre : null)).FirstAsync(ct);
+        return (a, t, PlantillaAgente.Render(t.SystemPrompt, c.Nombre, c.Org));
+    }
+
+    private static AgentePlantillaInfoDto Info(AiAgentTemplate t, AiAgent a, string prompt)
+    {
+        var estado = Estado(t, a, prompt);
+        return new AgentePlantillaInfoDto(t.Id, t.Name, t.Version, a.TemplateVersion, estado == EstadoPropagacion.Editado, estado == EstadoPropagacion.AlDia);
+    }
+
+    public async Task<AgentePlantillaInfoDto?> InfoPlantillaDeAgenteAsync(Guid agentId, CancellationToken ct = default)
+        => await PlantillaDeAgenteAsync(agentId, ct) is { } x ? Info(x.Plantilla, x.Agente, x.Prompt) : null;
+
+    public async Task<AgentePlantillaInfoDto?> AplicarPlantillaAAgenteAsync(Guid agentId, CancellationToken ct = default)
+    {
+        if (await PlantillaDeAgenteAsync(agentId, ct) is not { } x) return null;
+        await ActualizarAgenteAsync(x.Plantilla, x.Agente, x.Prompt, ct);
+        return Info(x.Plantilla, x.Agente, x.Prompt);
     }
 
     public async Task<List<ImportableAgentDto>> ListImportSourcesAsync(CancellationToken ct = default)
@@ -376,5 +527,5 @@ public sealed class AiAgentTemplateService : IAiAgentTemplateService
         t.IsActive, t.IncludeInOnboarding, t.SortOrder,
         t.McpTools.OrderBy(x => x.ConnectionCode).ThenBy(x => x.ToolName)
             .Select(x => new AiAgentTemplateToolDto(x.ConnectionCode, x.ToolName)).ToList(),
-        t.PlatformKey);
+        t.PlatformKey, t.Version, t.Clave);
 }

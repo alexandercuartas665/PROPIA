@@ -69,6 +69,8 @@ public static class DependencyInjection
         services.AddSingleton<ITotpService, TotpService>();  // sin estado
         services.AddScoped<ISuperAdminAuthService, SuperAdminAuthService>();
         services.AddScoped<ISuperAdminService, SuperAdminService>();
+        services.AddScoped<IApiTokensService, ApiTokensService>();
+        services.AddScoped<ISemillasAdminService, SemillasAdminService>();
 
         // Catalogo global de listas (editable desde la consola A&D). Lector con cache de proceso.
         services.AddScoped<Application.Catalogos.ICatalogoListas, Catalogos.CatalogoListasService>();
@@ -134,6 +136,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAsistenteCamposService, InfraestructuraIa.AsistenteCamposService>();
         services.AddScoped<Application.Cierre.IMotivosCierreService, Cierre.MotivosCierreService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentesSistema, InfraestructuraIa.AgentesSistemaService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
@@ -185,6 +188,7 @@ public static class DependencyInjection
 
         // Modulo 2.17 Servicios publicos
         services.AddScoped<Application.ServiciosPublicos.IServiciosPublicosService, ServiciosPublicos.ServiciosPublicosService>();
+        services.AddScoped<ServiciosPublicos.ReciboEjemploService>();
 
         // Servicios y contratos (Finanzas)
         services.AddScoped<Application.Servicios.IServiciosService, Servicios.ServiciosService>();
@@ -231,6 +235,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Pqrsd.IPqrsdRespuestaPdfService, Pqrsd.PqrsdRespuestaPdfService>();
         services.AddScoped<Application.Pqrsd.IPqrsdPlantillaSemillaService, Pqrsd.PqrsdPlantillaSemillaService>();
 
+        // Configuracion > Plantillas de documentos (catalogo central; PQRSD lee su categoria)
+        services.AddScoped<Application.Plantillas.IPlantillasDocumentoService, Plantillas.PlantillasDocumentoService>();
+        services.AddScoped<Application.Plantillas.IMembretesService, Plantillas.MembretesService>();
+
         // Documentos con membrete (header/footer configurable) - HTML compuesto reutilizable
         services.AddSingleton<Application.Documents.IMembreteDocumentBuilder, Documents.MembreteDocumentBuilder>();
         // HTML -> PDF (Chromium headless). Singleton: reutiliza el navegador entre requests.
@@ -246,6 +254,12 @@ public static class DependencyInjection
 
         // Modulo 2.8 Asambleas y Organos de Gobierno
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
+        services.AddSingleton<Application.Asambleas.IAsambleaTokenService, Asambleas.AsambleaTokenService>();
+        services.AddScoped<Application.Asambleas.IAsambleaEnlacesService, Asambleas.AsambleaEnlacesService>();
+        services.AddScoped<Application.Asambleas.IAsambleaConvocatoriaService, Asambleas.AsambleaConvocatoriaService>();
+        services.AddScoped<Application.Asambleas.IAsambleaActaService, Asambleas.AsambleaActaService>();
+        services.AddSingleton<Application.Asambleas.ITranscripcionProvider, Asambleas.NavegadorTranscripcionProvider>();
+        services.AddSingleton<Application.Asambleas.IVideoSalaProvider, Asambleas.LiveKitVideoSalaProvider>();
 
         // Modulo 2.11 Mantenimiento y Activos
         services.AddScoped<Application.Mantenimiento.IMantenimientoService, Mantenimiento.MantenimientoService>();

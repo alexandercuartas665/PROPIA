@@ -1,5 +1,243 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **ASAMBLEAS OLA 5: SALA VIRTUAL CON LIVEKIT (2026-11-12): 1 MIGRACION (solo columnas) + CONFIG NUEVA (env) + API y Web.**
+> - **MIGRACION `20261112172720_AsambleaOla5Sala`** (va DESPUES de `AsambleaOla4Transcripcion`): `sesiones.grabacion_egress_id`
+>   (varchar 100), `sesiones.grabacion_iniciada_en`, `sesion_participantes.salida_pendiente_en` (timestamptz, nullable). Sin
+>   tablas nuevas (RLS ya existente) y sin datos tocados.
+> - **VARIABLES NUEVAS en Railway (API y Web)** - las carga Alex con su cuenta de LiveKit (Cloud o propio):
+>   `LiveKit__Url` (wss://<proyecto>.livekit.cloud), `LiveKit__ApiKey`, `LiveKit__ApiSecret`. Sin ellas la ficha muestra
+>   "La sala virtual no está configurada" y todo lo demas funciona igual.
+> - **Webhook en LiveKit** (Settings > Webhooks): URL `https://app.propia-ad.com/api/livekit/webhook` (o el host del API), firmado
+>   con la misma API key. Sin webhook la videollamada funciona pero la asistencia NO se marca sola.
+> - **Grabacion (opcional)**: `LiveKit__Grabacion__Bucket`, `__AccessKey`, `__Secret`, `__Endpoint` (R2:
+>   https://<account>.r2.cloudflarestorage.com), `__Region` (auto), `__PublicUrl` (dominio publico del bucket para descargar).
+>   Usar un token R2 propio con permiso solo de escritura en ese bucket (LiveKit lo recibe para subir el MP4). Sin estas
+>   variables el boton Grabar queda deshabilitado. La grabacion real (egress) NO se probo: solo con tests.
+> - Funcionamiento: la administracion entra como moderadora desde la ficha (pestana Sala virtual); el copropietario o apoderado
+>   entra desde su enlace de la asamblea. Al entrar quedan PRESENTES todas sus unidades habilitadas; al salir, la salida se
+>   confirma tras la gracia de reconexion (Configuracion de asambleas, 60 s por defecto). Manos, palabra, chat y "silenciar a
+>   todos" van por el canal de datos de LiveKit (el chat no se guarda). Cliente `livekit-client@2.5.7` desde jsdelivr (CSP ya
+>   lo permite). `propia-sala.js?v=2`, `asambleas.css?v=3`.
+> - Gotcha local: el webhook a `http://host.docker.internal:5153` falla porque el API redirige a https con certificado de
+>   localhost; para probar en local se levanta una instancia del API solo en http (otro puerto) para el webhook.
+
+> **ASAMBLEAS OLA 4: TRANSCRIPCION DE LA SESION (2026-11-12): 1 MIGRACION (TABLA NUEVA con RLS) + API y Web.**
+> - **MIGRACION `20261112162627_AsambleaOla4Transcripcion`** (va DESPUES de `AsambleaOla3Acta`): tabla nueva
+>   `sesion_transcripcion_lineas` (sesion, punto, hora, tipo Voz/Sistema, persona, unidad, autor, texto, confianza, origen) con
+>   tenant_id, **RLS ENABLE + FORCE + policy tenant_isolation + GRANT a propia_app** (en la misma migracion) e indice
+>   (sesion_id, hora); `sesiones.transcripcion_activa` (bool, default false). Sin datos tocados.
+> - Bitacora: eventos del sistema automaticos (sala, instalacion, puntos, votaciones con resultado, poderes, cierre) + voz a
+>   texto con "Mi voz a texto" (Web Speech API del NAVEGADOR, Chrome/Edge; el servidor solo recibe texto). Proveedor de pago
+>   preparado detras de `ITranscripcionProvider` (hoy `NavegadorTranscripcionProvider`). Endpoints: `GET/POST
+>   api/asambleas/{id}/transcripcion`, `PUT {id}/transcripcion/activa`.
+> - Subtitulos en la pagina publica del residente (refresco cada 4 s con transcripcion activa). El acta (ola 3) usa la
+>   transcripcion: resumen por punto en el borrador base y texto completo para la IA. `propia-ui.js?v=30`.
+> - El microfono requiere HTTPS (o localhost) y permiso del navegador: en prod (https://app.propia-ad.com) aplica.
+> - **Verificar en PROD tras aplicar**: `select relforcerowsecurity from pg_class where relname='sesion_transcripcion_lineas';` (t).
+
+> **ASAMBLEAS OLA 3: ACTA REDACTADA POR IA + DOBLE FIRMA + PUBLICACION (2026-11-12): 1 MIGRACION (aditiva) + API y Web.**
+> - **MIGRACION `20261112151947_AsambleaOla3Acta`** (va DESPUES de `AsambleaOla2Ley675`): solo columnas en `actas` (numero,
+>   borrador_html, estado/error/fecha de redaccion, redactada_por_ia, editada, firma presidente y secretario: fecha, usuario,
+>   metodo, ip; comunicado_id) + indice UNICO parcial `(tenant_id, numero) WHERE numero IS NOT NULL`. Sin datos tocados.
+> - **Agente IA nuevo "Redactor de actas"** (clave `redactor-actas`): lo siembra `AgenteActaAsambleaSeeder` al arrancar (Api y
+>   Web), con el primer proveedor habilitado; cada copropiedad recibe su agente al primer uso. **Verificar en PROD que el
+>   proveedor/API key de IA este vigente** (en dev la key estaba "cifrada con version anterior" y la redaccion cayo al
+>   borrador base, que es el comportamiento previsto).
+> - Al cerrar con quorum: acta No. AAAA-NNN + borrador base con los datos del sistema + redaccion por IA en segundo plano.
+>   Editar/Regenerar solo sin firmas. Firmas: presidente y secretario desde su cuenta o con codigo de 6 digitos al correo
+>   (SMTP global). Con las dos -> inmutable con hash SHA-256. **En Development el codigo NO se envia por correo: vuelve en la
+>   respuesta** (como /dev/login); en Production siempre se envia.
+> - Publicar: PDF con membrete (plantilla "Acta de asamblea", categoria Asambleas, se crea sola si falta) en Documentos +
+>   comunicado en BORRADOR en Comunicaciones (no se envia solo). Plazo legal mostrado: 20 dias habiles (art. 47).
+> - Se retiraron la firma unica vieja (`FirmarActaAsync` con narrativa) y su DTO. `propia-ui.js?v=29` (`propiaUI.htmlDe`).
+> - **Verificar en PROD tras aplicar**: el agente "Redactor de actas" aparece en Super Admin > Plantillas de Agentes IA.
+
+> **ASAMBLEAS: BANDEJA CANONICA + FICHA Y ASISTENTE EN MODAL (ola 1) Y REGLAS DE LA LEY 675 (ola 2) (2026-11-12): 1 MIGRACION
+> (aditiva) + API y Web cambian.**
+> - **MIGRACION `20261112131928_AsambleaOla2Ley675`** (va DESPUES de `AddSuperAdminApiTokens`): solo columnas nuevas, sin
+>   tablas ni datos tocados. `sesiones`: `sala_propia` (bool, default false), `presidente_persona_id`, `presidente_nombre`,
+>   `secretario_persona_id`, `secretario_nombre`, `instalada_en`, `quorum_instalacion_pct`, `justificacion_quorum`,
+>   `motivo_cancelacion`, `punto_actual_id` (todas nullable). `sesion_documentos`: `tipo` (int, default 0 = Otro). Las tablas
+>   ya tienen RLS: no hay policy nueva.
+> - **Comportamiento nuevo (Ley 675)**: sin INSTALACION (presidente + secretario, con quorum) no se abren votaciones; el
+>   quorum es "MAS de la mitad" (o el criterio de Configuracion) y en segunda convocatoria basta un numero plural (2+
+>   unidades); al cerrar, el quorum es el de la instalacion (corregirlo exige justificacion) y los puntos sin tratar quedan
+>   "No tratado"; no se cierra con una votacion abierta; una votacion a la vez. **Sesiones que esten EN CURSO al desplegar
+>   no tienen instalacion: hay que instalarlas antes de abrir votaciones** (o cerrarlas con correccion justificada).
+> - Al CITAR se valida el plazo de citacion (ordinaria bloquea; extraordinaria/consejo/comite pide confirmacion -> 409) y se
+>   genera la **Convocatoria en PDF** (membrete predeterminado + Chromium + storage) como documento de la sesion. Si el PDF
+>   falla, la citacion queda hecha y responde con aviso. Los participantes se citan a nombre del PROPIETARIO activo de la
+>   unidad (antes: el admin como placeholder).
+> - Endpoints nuevos en `api/asambleas`: `PUT {id}` (MERGE), `DELETE {id}` (solo Borrador/Cancelada), `POST {id}/puntos`,
+>   `DELETE puntos/{id}`, `PUT {id}/cancelar`, `POST {id}/segunda-convocatoria` (3er dia habil 8 p. m. con festivos),
+>   `PUT {id}/instalar`, `PUT puntos/{id}/iniciar|tratado`, `POST votaciones/{id}/votar-bloque`, `POST {id}/documentos/archivo`.
+>   Poderes: un poder por unidad, apoderado del directorio de la copropiedad, limite por persona de Configuracion.
+> - **Web**: `/asambleas` = bandeja canonica de solo lectura; la ficha y "Nueva sesion" son modales (`/asambleas/{id}` y
+>   `/asambleas/nueva` quedan como enlaces). Paginas `AsambleaFicha`/`AsambleaNueva` borradas. CSS nuevo
+>   `css/modules/asambleas.css?v=1`, `bandeja-canonica.css?v=3`. Manual estatico en `/ayuda/asambleas.html` (+ imagenes).
+> - Sin config/env nueva. **Verificar en PROD tras aplicar**: abrir /asambleas, crear una sesion de prueba en Borrador,
+>   citarla (ver la Convocatoria en Documentos) y eliminarla/cancelarla.
+
+> **API DE SUPER ADMIN CON TOKENS + API DE TODAS LAS SEMILLAS (2026-11-12): 1 MIGRACION (tabla nueva global) + API y Web.**
+> - **MIGRACION `20261112110203_AddSuperAdminApiTokens`** (va DESPUES de `CorregirEtiquetasListasEnum`): tabla global
+>   `super_admin_api_tokens` (sin tenant_id, sin RLS; FK a `super_admin_usuarios`, indice unico por `token_hash`) + GRANT a
+>   propia_app. Solo guarda el sha256 del token.
+> - **Tokens**: Super Admin > Plataforma > "Tokens de API" crea tokens `pak_...` (se muestran UNA vez; vencen en 30/90/365
+>   dias o nunca; se revocan). Con `Authorization: Bearer pak_...` se llama TODA la API de Super Admin (politica SuperAdmin),
+>   con el poder del Super Admin que lo creo, EXCEPTO: gestionar tokens, MFA y alta/baja del equipo A&D (exigen sesion).
+>   No abre endpoints de copropiedad. Escrituras con token -> `super_admin_logs` (`API_TOKEN_USO`).
+> - **Semillas**: `GET /api/admin/semillas` = indice de todo lo que siembra el Super Admin con sus rutas. Nuevos CRUD en
+>   `/api/admin/semillas/{roles|comunicados|etiquetas-directorio|etiquetas-documentos|reportes}` (PUT MERGE; reportes
+>   solo editar/activar; "Administrador" no se renombra ni desactiva; rol en uso no se elimina).
+> - Auth: nuevo esquema `SuperAdminApiToken` en los dos hosts (Api y Web); el JwtBearer ignora los `pak_`. Sin config/env nueva.
+> - **Verificar en PROD tras aplicar**: entrar a Super Admin > Tokens de API, crear uno de 30 dias, probar
+>   `curl -H "Authorization: Bearer pak_..." https://app.propia-ad.com/api/admin/semillas` (200) y revocarlo (401).
+
+> **ETIQUETAS LEGIBLES EN LISTAS DE ENUM + FIN DE `eval` BLOQUEADO POR LA CSP (2026-11-12): 1 MIGRACION (solo datos) +
+> Infrastructure y Web cambian.**
+> - **MIGRACION `20261112100618_CorregirEtiquetasListasEnum`** (va DESPUES de `AddMembretesDocumento`; sin cambio de
+>   esquema): en `catalogo_opciones` y `lista_opciones` pasa a texto legible las etiquetas sembradas con el nombre crudo
+>   del enum: Mantenimiento estado de intervencion `EnEjecucion`/`EnRevision` -> "En ejecución"/"En revisión",
+>   periodicidad `Unica` -> "Única"; Equipos categoria `Climatizacion`/`Recreacion` -> con tilde; Zonas categoria
+>   `Circulacion` -> "Circulación" y estado `EnMantenimiento` -> "En mantenimiento"; Directorio sexo `NoBinario`/
+>   `NoIdentificado` -> "No binario"/"No identificado". SOLO donde la etiqueta es exactamente la cruda (no pisa lo que
+>   A&D renombro ni lo que la copropiedad edito: `override_visual = false`). Suspende el FORCE de `lista_opciones` solo
+>   durante el UPDATE. Claves `e:<Enum>` y registros sin cambios. En dev: 0 etiquetas crudas restantes.
+> - La semilla (`CatalogoListasSeeder.EtiquetasEnum`) ya siembra las legibles; el fold de overrides viejos acepta el
+>   nombre crudo como alias (no duplica opciones).
+> - **Web**: la CSP no permite `eval`; 8 llamadas `Js.InvokeVoidAsync("eval", ...)` fallaban en silencio. La mas grave:
+>   al terminar el Onboarding (paso 5, activar) la sesion no se guardaba ni redirigia a /mi-copropiedad. Ahora usan
+>   funciones de `propia-ui.js` (`?v=28`) y el boton de Google navega con `NavigationManager`.
+> - **Verificar en PROD tras aplicar**: `select lista, clave, label from catalogo_opciones where label in ('EnEjecucion','EnRevision','Unica','Climatizacion','Recreacion','Circulacion','EnMantenimiento','NoBinario','NoIdentificado');`
+>   (0 filas). Sin config/env nueva.
+
+> **EXPEDIENTES (/documentos) CON BANDEJA + RADICADO, Y ENCABEZADOS Y PIES DE PAGINA EN PLANTILLAS (2026-11-11, Web 0.0.281 /
+> API 0.0.216): 2 MIGRACIONES (aditivas) + API y Web cambian.**
+> - **MIGRACION `20261112020601_AddFolderRadicado`** (va DESPUES de `AddAgentesPlantillaVersion`): `folders` + `radicado`
+>   (varchar 20) con indice UNICO parcial `(tenant_id, radicado) WHERE radicado IS NOT NULL`. **Backfill**: RAD-AAAA-NNNN a todos
+>   los folders existentes, consecutivo ANUAL por copropiedad (anio de `created_at` en hora de Colombia) en orden de creacion
+>   (desempate: raiz antes que subfolder, orden, nombre). Suspende el FORCE de `folders` solo durante el UPDATE. En dev: 50
+>   folders, 0 sin radicado. Los folders nuevos toman el siguiente al crearse (`FoldersService.CrearFolderAsync`, reintenta si
+>   choca el indice); la estructura base sembrada tambien los lleva.
+> - **MIGRACION `20261112025452_AddMembretesDocumento`**: tabla nueva `membretes_documento` (encabezados y pies de pagina,
+>   RLS FORCE + policy + GRANT a propia_app, indice unico parcial: un predeterminado por tipo y copropiedad) y
+>   `plantillas_documento` + `encabezado_modo`, `encabezado_id`, `pie_modo`, `pie_id` (default 0 = Predeterminado: las
+>   plantillas existentes quedan en Predeterminado). Sin backfill: cada copropiedad nace con "Institucional" (encabezado y pie)
+>   la primera vez que se consultan sus membretes o se compone un documento, armado con su config de membrete
+>   (`membrete_color_acento`, `membrete_linea_legal`, `membrete_contacto_footer`, `membrete_mostrar_logo`).
+> - **Cambio visible en PQRSD**: el PDF / vista previa de la respuesta oficial se compone con el encabezado y el pie
+>   PREDETERMINADOS de la copropiedad (antes el membrete era fijo en codigo). El Institucional replica el aspecto anterior
+>   (identidad + tipo/radicado/fecha a la derecha + linea de color; pie con linea legal, contacto y "Operado por").
+>   Firmante y numeracion siguen saliendo de la config del tenant.
+> - **Verificar en PROD tras aplicar**: `select count(*) filter (where radicado is null), count(*) from folders;` (0 nulos);
+>   abrir /documentos (Galeria / Tabla con RADICADO); abrir Configuracion > Plantillas de documentos > "Encabezados y pies"
+>   (debe aparecer Institucional x2) y generar la vista previa de una respuesta PQRSD. Sin config/env nueva.
+
+> **AGENTES SEMILLA CON ACTUALIZACION DESDE EL SUPER ADMIN (2026-11-11, Web 0.0.280): 1 MIGRACION (aditiva + backfill) +
+> API y Web cambian.**
+> - **MIGRACION `20261111234845_AddAgentesPlantillaVersion`** (va DESPUES de `AddServiciosPublicosRecibosIA`):
+>   `ai_agent_templates` + `version` (default 1) + `clave` (unica, parcial); `ai_agents` + `template_id` (FK SetNull),
+>   `template_version`, `template_prompt_hash`. Backfill: clave `agente-documental` / `auxiliar-administrativo` a las
+>   plantillas con esos nombres, y ENLACE de cada agente de copropiedad con su plantilla por nombre (con los placeholders
+>   reemplazados) + huella del prompt que la plantilla le habria puesto (si el prompt actual difiere, cuenta como EDITADO por
+>   la copropiedad y la actualizacion lo respeta). Suspende el FORCE de `ai_agents` solo durante el UPDATE. En dev: 80
+>   Auxiliar (80 intactos), 80 Documental (78 intactos, 2 editados), 3 Asistente; 20 agentes propios quedan sin plantilla.
+> - Las semillas `AgenteDocumentalSeeder` y `AuxiliarAdministrativoSeeder` ahora corren en TODOS los ambientes pero SOLO
+>   crean la plantilla si falta (no pisan prompts ni tocan agentes). **Se retira** `deploy/sql/2026-11-11_agente_documental_prompt.sql`:
+>   las mejoras de prompt se hacen en Super Admin > Plantillas de Agentes IA y se llevan con "Actualizar copropiedades".
+> - "Actualizar copropiedades" lleva prompt, tools, PROVEEDOR y MODELO de la plantilla (la version sube si cambia cualquiera).
+> - La lectura con IA (Contratos, Seguros, Servicios publicos) y el Auxiliar Administrativo buscan su agente por la CLAVE de la
+>   plantilla (no por nombre) y, si la copropiedad no lo tiene, lo CREAN al usarlo desde la plantilla.
+> - **ANTES de usar en PROD**: en Super Admin > Plantillas de Agentes IA, revisar que "Agente Documental" y "Auxiliar
+>   Administrativo" tengan el **proveedor con llave valida** (los agentes que se creen al usarlo toman el proveedor de la
+>   plantilla; en dev la plantilla decia Gemini y la copropiedad demo usaba DeepSeek).
+> - **Verificar en PROD tras aplicar**: `select name, clave, version from ai_agent_templates;` (las 2 claves asignadas);
+>   `select count(*) filter (where template_id is not null), count(*) from ai_agents;`; abrir Plantillas de Agentes IA >
+>   "Actualizar copropiedades" en el Agente Documental y revisar la vista previa (sin aplicar si no hace falta).
+>   Sin config/env nueva.
+
+> **SERVICIOS PUBLICOS (/servicios) CON RECIBOS LEIDOS POR IA + RECARGA AUTOMATICA AL RECONECTAR (2026-11-11): 1 MIGRACION
+> (aditiva + backfill) + API y Web cambian.**
+> - **MIGRACION `20261111202708_AddServiciosPublicosRecibosIA`** (va DESPUES de `AddCamposAgenteDocumental`):
+>   1. `cuentas_servicio_publico`: + `referencia_normalizada`, `periodicidad` (default 1 = Mensual), `dia_pago`, `valor_min`,
+>      `valor_max`, `consumo_min`, `consumo_max`. **Backfill** de `referencia_normalizada` (numero_cuenta sin espacios, puntos
+>      ni guiones, mayusculas) con el FORCE suspendido solo durante el UPDATE. Si una copropiedad tiene referencias
+>      DUPLICADAS, la cuenta mas antigua conserva la normalizada y las demas quedan en NULL: la migracion NO falla y las
+>      reporta con `RAISE NOTICE 'Servicios publicos: referencia duplicada ...'` -> **revisar la salida del deploy** y
+>      corregirlas en Servicios publicos > Configuracion. Luego crea el indice UNICO parcial (tenant_id, referencia_normalizada).
+>   2. `registros_consumo_servicio`: + `fecha_limite_pago`, `lectura_anterior`, `lectura_actual`, `origen` (default 1 = Manual),
+>      `archivo_key`, `archivo_nombre`.
+>   3. Tablas nuevas `registros_consumo_conceptos`, `servicio_publico_campo_definiciones`, `servicio_publico_campo_valores`
+>      con RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`.
+>   4. `contratos_servicio`: + `cuenta_servicio_publico_id` (FK SetNull a `cuentas_servicio_publico`). El vinculo viejo
+>      `servicio_id` (catalogo "Servicios contratados") se CONSERVA en la base, ya no se muestra.
+>   Down: borra columnas, tablas y FK.
+> - API: `PUT /api/servicios-publicos/cuentas/{id}` (merge), `POST .../recibos/evaluar|confirmar|agregar-servicio`,
+>   `GET .../recibos/ejemplo/{alto|ok|ajeno}` (PDF de ejemplo con **Chromium**: usa el mismo PuppeteerSharp que los PDF de
+>   PQRSD), campos propios `.../campos` y `.../campos-valores`. `/api/ocr/extraer-agente`: perfil nuevo `recibo_servicio`
+>   (tipos `lista`/`decimal`/`referencia`, cuadre del desglose, 2a pasada); el prompt va en el codigo. Fotos JPG/PNG/WebP van
+>   directo a vision.
+> - Web: `/servicios` es la pagina nueva `ServiciosPublicosPagina` (Configuracion + Recibos y consumo); `/contratos` sigue en
+>   Servicios.razor (sin el catalogo viejo). Bumps: `servicios.css?v=32`, `propia-iai.js?v=2`, `propia-pdfthumb.js?v=6`.
+>   `App.razor`: el overlay "Reconectando..." ahora sondea `/health` cada 2s y **recarga solo** apenas el servidor responde
+>   (antes un solo intento fallido durante el deploy dejaba al usuario con el boton "Recargar pagina").
+> - **Verificar en PROD tras aplicar**: `select count(*) from cuentas_servicio_publico where numero_cuenta is not null and
+>   referencia_normalizada is null` (= duplicados reportados, idealmente 0); `select relname, relforcerowsecurity from pg_class
+>   where relname in ('registros_consumo_conceptos','servicio_publico_campo_definiciones','servicio_publico_campo_valores')`
+>   -> `t`; en /servicios > Recibos y consumo, "Prueba con uno de ejemplo" lee el recibo con el Agente Documental.
+>   Sin config/env nueva.
+
+> **AGENTE DOCUMENTAL REFORZADO + TRANSICION "LA IA CONSUME EL DOCUMENTO" (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
+> - **MIGRACION `20261111163506_AddCamposAgenteDocumental`** (va DESPUES de `AddPlantillaCampos`): agrega columnas nullable
+>   a `polizas` (`nit_aseguradora`, `tomador`, `asegurado`, `valor_asegurado`, `prima`, `deducible`) y a `contratos_servicio`
+>   (`representante_legal`, `ciudad`). Sin datos que migrar; las tablas ya tienen RLS. Down: borra las 8 columnas.
+> - `/api/ocr/extraer-agente`: perfiles ampliados (contrato y poliza), normalizacion en el servidor (NIT sin puntos con DV,
+>   montos, fechas en texto, si/no), vision si el texto del PDF es pobre (acepta `Imagenes` + `Texto` + `Paginas`) y 2a
+>   pasada dirigida cuando faltan datos clave. El prompt de EXTRACCION va en el codigo (llega con el deploy).
+> - **Prompt base del agente (chat)**: el seeder solo corre en Development, asi que en PROD se aplica con
+>   `deploy/sql/2026-11-11_agente_documental_prompt.sql` (owner `propia`; quita y repone el FORCE de `ai_agents` en la misma
+>   transaccion; pisa el prompt en todas las copropiedades, como el seeder). Probado en dev: 79/79. Opcional para la extraccion.
+> - Web: `css/modules/ia-ingesta.css?v=1`, `js/propia-iai.js?v=1`, `js/propia-pdfthumb.js?v=5`.
+> - **Verificar en PROD tras aplicar**: `\d polizas` y `\d contratos_servicio` muestran las columnas nuevas; en Contratos >
+>   Nuevo contrato, soltar un PDF muestra el panel de lectura y llena el formulario. Sin config/env nueva.
+
+> **PLANTILLAS: CAMPOS PROPIOS (columna "+") + ASUNTO COMPLETO EN EXCEL DE PQRSD (2026-11-11): 1 MIGRACION ADITIVA + API y Web cambian.**
+> - **MIGRACION `20261111140504_AddPlantillaCampos`** (va DESPUES de `AddPlantillasDocumento`): crea
+>   `plantilla_campo_definiciones` y `plantilla_campo_valores` (FK en cascada a la definicion y a `plantillas_documento`),
+>   ambas con RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`. Sin datos que migrar. Down: borra las 2 tablas.
+> - API nueva: `/api/plantillas/campos` (GET/POST/PUT/DELETE) y `/api/plantillas/campos-valores` (GET, PUT
+>   `{plantillaId}/{definicionId}`); escrituras con permiso `PLANTILLAS:Editar`. `POST /api/pqrsd/descripciones` (lectura,
+>   permiso `PQRS:Ver`): texto completo del asunto para la descarga de la vista tabla.
+> - **Verificar en PROD tras aplicar**: `select relname, relrowsecurity, relforcerowsecurity from pg_class where relname like
+>   'plantilla_campo%'` -> ambas `t|t`. Sin config/env nueva.
+
+> **CONFIGURACION > PLANTILLAS DE DOCUMENTOS (2026-11-11): 1 MIGRACION (con DATOS + DROP) + API y Web cambian.**
+> - Modulo nuevo `/configuracion/plantillas`: catalogo central de plantillas (categorias pqrsd/cartera/asambleas/
+>   comunicaciones/contratos/reservas/certificados), API `/api/plantillas`, permiso nuevo `PLANTILLAS` en la matriz
+>   de Roles. PQRSD (Configurar > Plantillas y la columna PLANTILLAS de Responder) lee de aqui.
+> - **MIGRACION `20261111102427_AddPlantillasDocumento`** (en este orden, en una sola migracion):
+>   1. crea `plantillas_documento` (RLS FORCE + policy `tenant_isolation` + GRANT a `propia_app`);
+>   2. **copia** las filas activas de `pqrsd_plantillas_respuesta` con `categoria='pqrsd'` (mismo id/tenant/fechas;
+>      quita el FORCE de la tabla vieja antes de leer, para que el owner vea TODAS las filas aunque no sea superusuario);
+>   3. **BORRA `pqrsd_plantillas_respuesta`** (decision de Alex). El Down la recrea y devuelve las de PQRSD.
+>   4. **menu**: si existe la seccion custom "Configuracion" (menu_overrides, node_type=section), agrega el override
+>      `cfg-plantillas` ahi con el sort_order de `mi-config-hub` (queda despues de "Copropiedad"). Idempotente.
+> - **Verificar en PROD tras aplicar**: `select count(*) from plantillas_documento` == filas activas que tenia
+>   `pqrsd_plantillas_respuesta` (en dev: 90 filas / 18 tenants); y que el item aparece en Configuracion.
+> - Sin config/env nueva. Bump de `propia-tokens.css?v=11` (tokens `--propia-paper-*`).
+
+> **INTEGRACION ASAMBLEA (2026-11-11, merge en main): 1 MIGRACION NUEVA (ADITIVA) + API y Web cambian.**
+> - Voto self-service del residente (enlace firmado por token, pagina publica `/asambleas/...` sin login),
+>   envio de enlaces por correo, ola A (conteo al cierre, voto secreto, fallos de correo), criterio de mayoria
+>   configurable por copropiedad, y rutas publicas de Asambleas y PQRSD (`/pqr/{tenantId}`) que no exigen sesion.
+> - **MIGRACION `20261110201200_AsambleaCriterioMayoria`:** agrega la columna `criterio_mayoria` (int, NOT NULL,
+>   **DEFAULT 2** = "mas del porcentaje") a `asamblea_config`. No necesita datos ni backfill: las filas existentes
+>   toman el default. Ya aplicada en dev (`propia_dev`).
+> - **Aplicar en PROD:** `cd src/Propia.Api && dotnet ef database update --project ../Propia.Infrastructure --startup-project .`
+> - **Como desplegar:** redeploy de **API y Web** + la migracion. Sin config/env nueva (el correo usa el SMTP ya configurado).
+> - **Rollback:** redeploy previo; la columna puede quedarse (aditiva, con default).
+>
+
 > **VERSION A DESPLEGAR = 0.0.276 (Web) + API (nuevos endpoints)** (sigue a 0.0.275, 2026-11-04).
 > **1 MIGRACION NUEVA (ADITIVA) + LA API CAMBIA. Redeployar API y Web.**
 > **Contratos: el modal de Contrato queda identico a la maqueta (modal-contrato.html), hermano del de Poliza.**

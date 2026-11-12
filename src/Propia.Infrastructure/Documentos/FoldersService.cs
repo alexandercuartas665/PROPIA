@@ -77,7 +77,7 @@ public class FoldersService : IFoldersService
             conteos.TryGetValue(f.Id, out var c);
             return new FolderNodoDto(f.Id, f.ParentId, f.Nombre, f.Codigo, f.Descripcion, f.Orden,
                 c?.Activos ?? 0, c?.Archivados ?? 0, hijos.Count,
-                camposPorFolder.TryGetValue(f.Id, out var cp) ? cp : new List<FolderCampoDto>(), hijos);
+                camposPorFolder.TryGetValue(f.Id, out var cp) ? cp : new List<FolderCampoDto>(), hijos, f.Radicado);
         }
 
         return (hijosPor.TryGetValue(Guid.Empty, out var raices) ? raices : new List<Folder>()).Select(Nodo).ToList();
@@ -116,7 +116,7 @@ public class FoldersService : IFoldersService
                 foreach (var h in n.Hijos) Visitar(h, false);
             }
             Visitar(raiz, true);
-            tarjetas.Add(new FolderTarjetaDto(raiz.Id, raiz.Nombre, raiz.Codigo, raiz.Descripcion, subfolders, total, cargados, pendObl, ultima));
+            tarjetas.Add(new FolderTarjetaDto(raiz.Id, raiz.Nombre, raiz.Codigo, raiz.Descripcion, subfolders, total, cargados, pendObl, ultima, raiz.Radicado));
         }
         return tarjetas;
     }
@@ -154,7 +154,7 @@ public class FoldersService : IFoldersService
             ultimas.TryGetValue(d.Id, out var u) ? u : null)).ToList();
 
         return new FolderDetalleDto(f.Id, f.ParentId, f.Nombre, f.Codigo, f.Descripcion, ruta, subfolders, propios, heredados,
-            docsDto.Where(d => !d.Archivado).ToList(), docsDto.Where(d => d.Archivado).ToList());
+            docsDto.Where(d => !d.Archivado).ToList(), docsDto.Where(d => d.Archivado).ToList(), f.Radicado);
     }
 
     public async Task<FolderNodoDto> CrearFolderAsync(CrearFolderRequest req, CancellationToken ct)
@@ -176,8 +176,37 @@ public class FoldersService : IFoldersService
             Codigo = req.ParentId is null ? null : await GenerarCodigoAsync(nombre, req.ParentId.Value, ct)
         };
         _db.Folders.Add(f);
-        await _db.SaveChangesAsync(ct);
-        return new FolderNodoDto(f.Id, f.ParentId, f.Nombre, f.Codigo, f.Descripcion, f.Orden, 0, 0, 0, Array.Empty<FolderCampoDto>(), Array.Empty<FolderNodoDto>());
+        // Radicado: consecutivo anual. Dos altas simultaneas pueden tomar el mismo numero: el indice unico
+        // (tenant, radicado) rechaza la segunda y se reintenta con el siguiente.
+        for (var intento = 0; ; intento++)
+        {
+            f.Radicado = await SiguienteRadicadoAsync(ct);
+            try { await _db.SaveChangesAsync(ct); break; }
+            catch (DbUpdateException) when (intento < 4) { }
+        }
+        return new FolderNodoDto(f.Id, f.ParentId, f.Nombre, f.Codigo, f.Descripcion, f.Orden, 0, 0, 0, Array.Empty<FolderCampoDto>(), Array.Empty<FolderNodoDto>(), f.Radicado);
+    }
+
+    public async Task<RadicadoSiguienteDto> RadicadoSiguienteAsync(CancellationToken ct)
+    {
+        RequireTenant();
+        return new RadicadoSiguienteDto(await SiguienteRadicadoAsync(ct));
+    }
+
+    /// <summary>Anio del radicado: hora de Colombia (UTC-5, sin horario de verano).</summary>
+    private static int AnioRadicado() => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-5)).Year;
+
+    private static string FormatoRadicado(int anio, int n) => $"RAD-{anio}-{n:D4}";
+
+    /// <summary>Siguiente radicado del anio en curso para la copropiedad activa (RLS + filtro de tenant).</summary>
+    private async Task<string> SiguienteRadicadoAsync(CancellationToken ct)
+    {
+        var anio = AnioRadicado();
+        var pref = $"RAD-{anio}-";
+        var usados = await _db.Folders.AsNoTracking().Where(x => x.Radicado != null && x.Radicado.StartsWith(pref))
+            .Select(x => x.Radicado!).ToListAsync(ct);
+        var max = usados.Select(r => int.TryParse(r.AsSpan(pref.Length), out var n) ? n : 0).DefaultIfEmpty(0).Max();
+        return FormatoRadicado(anio, max + 1);
     }
 
     public async Task<bool> ActualizarFolderAsync(Guid id, ActualizarFolderRequest req, CancellationToken ct)
@@ -943,9 +972,12 @@ public class FoldersService : IFoldersService
         };
 
         var fo = 0;
+        // Radicados de la estructura base en orden de creacion (la copropiedad aun no tiene folders).
+        var anio = AnioRadicado();
+        var rad = 0;
         foreach (var (folderNombre, subs) in data)
         {
-            var raiz = new Folder { TenantId = tenantId, Nombre = folderNombre, Orden = fo++ };
+            var raiz = new Folder { TenantId = tenantId, Nombre = folderNombre, Orden = fo++, Radicado = FormatoRadicado(anio, ++rad) };
             _db.Folders.Add(raiz);
             var co = 0;
             foreach (var (label, tipo, desc) in camposBase)
@@ -953,7 +985,7 @@ public class FoldersService : IFoldersService
             var so = 0;
             foreach (var (subNombre, docs) in subs)
             {
-                var sub = new Folder { TenantId = tenantId, ParentId = raiz.Id, Nombre = subNombre, Orden = so++ };
+                var sub = new Folder { TenantId = tenantId, ParentId = raiz.Id, Nombre = subNombre, Orden = so++, Radicado = FormatoRadicado(anio, ++rad) };
                 _db.Folders.Add(sub);
                 var dOrden = 0;
                 foreach (var doc in docs)

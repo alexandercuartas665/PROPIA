@@ -1,0 +1,586 @@
+@page "/publico/asambleas/{TenantId:guid}/{Token}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Asambleas
+@using Propia.Domain.Enums
+@layout Propia.Web.Components.Layout.PublicLayout
+@implements IDisposable
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+@* Asambleas Ola 1: el copropietario (o su apoderado) registra asistencia y vota desde el enlace que le
+   envia la administracion, sin login. Toda la logica y el gate de propiedad viven en el API publico
+   (PublicAsambleaController); esta pagina solo pinta la vista y refresca cada 10 s mientras la sesion
+   esta en curso para que vea abrir/cerrar votaciones sin recargar. *@
+
+<PageTitle>Asamblea - PROPIA</PageTitle>
+
+<div class="asmp-wrap">
+@if (_cargando)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" style="color: var(--propia-brand);"></div>
+        <p class="asmp-muted mt-3">Cargando asamblea...</p>
+    </div>
+}
+else if (_errorCarga is not null)
+{
+    <div class="asmp-card text-center">
+        <h4 class="mb-2">Asamblea no disponible</h4>
+        <p class="asmp-muted mb-0">@_errorCarga</p>
+    </div>
+}
+else if (_dto is not null)
+{
+    <div class="asmp-hero">
+        @if (!string.IsNullOrWhiteSpace(_dto.LogoUrl))
+        {
+            <img src="@_dto.LogoUrl" alt="@_dto.CopropiedadNombre" class="asmp-logo" />
+        }
+        @if (!string.IsNullOrWhiteSpace(_dto.CopropiedadNombre))
+        {
+            <div class="asmp-copropiedad">@_dto.CopropiedadNombre</div>
+        }
+        <div class="asmp-eyebrow mt-3">@TipoTexto(_dto.Tipo)</div>
+        <div class="asmp-titulo">@_dto.Titulo</div>
+        <div class="asmp-meta">@MetaSesion(_dto)</div>
+        @if (!string.IsNullOrWhiteSpace(_dto.EnlaceVideo) && _dto.Estado == EstadoSesion.EnCurso)
+        {
+            <a class="asmp-btn asmp-btn-ghost mt-3" href="@_dto.EnlaceVideo" target="_blank" rel="noopener">Entrar a la videollamada</a>
+        }
+        <div class="asmp-hola">Hola, <strong>@_dto.PersonaNombre</strong></div>
+        <span class="asmp-estado asmp-estado-@((int)_dto.Estado)">@EstadoTexto(_dto.Estado)</span>
+    </div>
+
+    @if (_aviso is not null)
+    {
+        <div class="asmp-aviso @(_avisoOk ? "is-ok" : "is-err")" role="status">@_aviso</div>
+    }
+
+    <div class="asmp-card">
+        <div class="asmp-row">
+            <div class="asmp-eyebrow mb-0">QUÓRUM</div>
+            <span class="asmp-quorum-pct">@_dto.QuorumActual.PctRepresentado.ToString("0.##", _co)%</span>
+        </div>
+        <div class="asmp-bar">
+            <div class="asmp-bar-fill @(_dto.QuorumActual.Alcanzado ? "is-ok" : "")" style="width: @BarWidth(_dto.QuorumActual.PctRepresentado)"></div>
+            @if (_dto.QuorumActual.PctRequerido is decimal req)
+            {
+                <div class="asmp-bar-req" style="left: @BarWidth(req)" title="Requerido"></div>
+            }
+        </div>
+        <div class="asmp-small">
+            @_dto.QuorumActual.ParticipantesPresentes de @_dto.QuorumActual.ParticipantesTotales unidades presentes
+            @if (_dto.QuorumActual.PctRequerido is decimal r2)
+            {
+                <span> &middot; requerido @r2.ToString("0.##", _co)% &middot; @(_dto.QuorumActual.Alcanzado ? "alcanzado" : "aún no se alcanza")</span>
+            }
+        </div>
+    </div>
+
+    @if (_dto.SalaPropia && _dto.Estado == EstadoSesion.EnCurso)
+    {
+        @* Sala virtual de PROPIA (ola 5): video con LiveKit. Al entrar quedan presentes sus unidades (webhook). *@
+        <div class="asm-sala-res">
+            <div class="asm-stage">
+                <div class="asm-stage-top">
+                    @if (_salaConectada) { <span class="asm-live">EN VIVO</span><span>@_enSala en la sala</span> }
+                    else { <span>Sala virtual de la asamblea</span> }
+                    @if (_dto.TranscripcionActiva) { <span class="asm-txon"><i class="fi fi-rr-subtitles"></i> Transcribiendo para el acta</span> }
+                    @if (_salaEstado == "reconectando") { <span class="asm-rec">Reconectando...</span> }
+                </div>
+                @if (_salaAviso is not null) { <div class="asm-stage-aviso">@_salaAviso <button type="button" class="asm-stage-aviso-x" @onclick="() => _salaAviso = null" aria-label="Cerrar aviso">&times;</button></div> }
+                @if (_tengoPalabra) { <div class="asm-stage-aviso">@(_mic ? "Tienes la palabra." : "Tienes la palabra: activa tu micrófono para hablar.")</div> }
+                @if (!_salaConectada)
+                {
+                    <div class="asm-prejoin">
+                        <div class="asm-tile-av"><i class="fi fi-rr-video-camera-alt"></i></div>
+                        <div class="asm-prejoin-t">Entra a la sala</div>
+                        <div class="asm-prejoin-s">Al entrar quedas presente con tus unidades habilitadas. Si sales, tu salida se registra después de un momento por si te reconectas.</div>
+                        <div class="asm-prejoin-op">
+                            <label><input type="checkbox" @bind="_conMic" /> Micrófono</label>
+                            <label><input type="checkbox" @bind="_conCam" /> Cámara</label>
+                        </div>
+                        <button type="button" class="btn btn-primary" @onclick="EntrarSalaAsync" disabled="@_salaConectando">@(_salaConectando ? "Conectando..." : "Entrar a la sala")</button>
+                    </div>
+                }
+                <div class="asm-grid asm-grid--sm @(_salaConectada ? "" : "d-none")" id="@GridId"></div>
+                @if (_salaConectada)
+                {
+                    <div class="asm-ctrls">
+                        <button type="button" class="asm-ctrl @(_mic ? "on" : "")" title="@(_mic ? "Silenciar" : "Activar micrófono")" @onclick="MicAsync"><i class="fi fi-rr-@(_mic ? "microphone" : "microphone-slash")"></i><span>@(_mic ? "Silenciar" : "Micrófono")</span></button>
+                        <button type="button" class="asm-ctrl @(_cam ? "on" : "")" title="@(_cam ? "Apagar cámara" : "Encender cámara")" @onclick="CamAsync"><i class="fi fi-rr-@(_cam ? "video-camera-alt" : "video-slash")"></i><span>@(_cam ? "Apagar cámara" : "Cámara")</span></button>
+                        <button type="button" class="asm-ctrl @(_mano ? "on" : "")" title="@(_mano ? "Bajar la mano" : "Pedir la palabra")" @onclick="ManoAsync"><i class="fi fi-rr-hand"></i><span>@(_mano ? "Bajar la mano" : "Pedir la palabra")</span></button>
+                        <button type="button" class="asm-ctrl asm-ctrl--salir" title="Salir de la sala" @onclick="SalirSalaAsync"><i class="fi fi-rr-phone-slash"></i><span>Salir</span></button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_dto.TranscripcionActiva)
+    {
+        @* Subtitulos de la transcripcion en vivo (ola 4). Aviso de tratamiento de datos (Ley 1581 de 2012). *@
+        <div class="asmp-card">
+            <div class="asmp-row">
+                <div class="asmp-eyebrow mb-0">TRANSCRIPCIÓN EN VIVO</div>
+                <span class="asmp-small">Esta sesión se transcribe para elaborar el acta (Ley 1581 de 2012).</span>
+            </div>
+            @if (_dto.Subtitulos is { Count: > 0 } subs)
+            {
+                @foreach (var l in subs)
+                {
+                    <div class="asmp-subt"><b>@l.AutorNombre@(l.UnidadNumero is null ? "" : $" ({l.UnidadNumero})"):</b> @l.Texto</div>
+                }
+            }
+            else { <div class="asmp-small">Aún no hay intervenciones transcritas.</div> }
+        </div>
+    }
+
+    <div class="asmp-card">
+        <div class="asmp-eyebrow">MI ASISTENCIA</div>
+        @if (_dto.Estado == EstadoSesion.Citada)
+        {
+            <div class="asmp-nota">La sala aún no está abierta. Cuando la administración la abra podrás registrar tu asistencia aquí mismo; esta página se actualiza sola.</div>
+        }
+        @foreach (var u in _dto.MisUnidades)
+        {
+            <div class="asmp-unidad">
+                <div class="asmp-unidad-info">
+                    <div class="asmp-unidad-num">Unidad @u.UnidadNumero</div>
+                    <div class="asmp-small">
+                        Coeficiente @u.Coeficiente.ToString("0.####", _co)
+                        &middot; @(u.PorPoder ? "por poder" : "propietario")
+                    </div>
+                </div>
+                @if (u.Presente)
+                {
+                    <div class="asmp-unidad-acts">
+                        <span class="asmp-chip is-ok">Presente</span>
+                        @if (_dto.Estado == EstadoSesion.EnCurso)
+                        {
+                            <button class="asmp-link" disabled="@_ocupado" @onclick="() => AsistenciaAsync(u.UnidadPrivadaId, false)">Me retiro</button>
+                        }
+                    </div>
+                }
+                else if (_dto.Estado == EstadoSesion.EnCurso)
+                {
+                    <button class="asmp-btn" disabled="@_ocupado" @onclick="() => AsistenciaAsync(u.UnidadPrivadaId, true)">Registrar asistencia</button>
+                }
+                else
+                {
+                    <span class="asmp-chip">Ausente</span>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="asmp-card">
+        <div class="asmp-eyebrow">ORDEN DEL DÍA</div>
+        @if (_dto.Puntos.Count == 0)
+        {
+            <div class="asmp-muted">La administración aún no ha publicado el orden del día.</div>
+        }
+        @foreach (var p in _dto.Puntos)
+        {
+            var abierta = p.VotacionId.HasValue && p.VotacionEstado == EstadoVotacion.Abierta;
+            <div class="asmp-punto @(abierta ? "is-votando" : "")">
+                <div class="asmp-punto-head">
+                    <span class="asmp-punto-num">@p.Numero</span>
+                    <div class="asmp-punto-txt">
+                        <div class="asmp-punto-tit">@p.Titulo</div>
+                        @if (!string.IsNullOrWhiteSpace(p.Descripcion)) { <div class="asmp-small">@p.Descripcion</div> }
+                        @if (abierta) { <span class="asmp-chip is-live mt-2">Votación abierta</span> }
+                    </div>
+                </div>
+
+                @if (abierta)
+                {
+                    @if (p.ModalidadVoto == ModalidadVoto.Secreto)
+                    {
+                        <div class="asmp-small mb-2">Votación secreta: la plataforma no le muestra a nadie, ni a la administración, qué opción elegiste; solo el resultado total.</div>
+                    }
+                    @foreach (var u in _dto.MisUnidades)
+                    {
+                        var voto = u.Votos.FirstOrDefault(v => v.VotacionId == p.VotacionId);
+                        var clave = (p.VotacionId!.Value, u.UnidadPrivadaId);
+                        <div class="asmp-voto">
+                            @if (_dto.MisUnidades.Count > 1) { <div class="asmp-voto-unidad">Unidad @u.UnidadNumero</div> }
+                            @if (voto is not null)
+                            {
+                                <div class="asmp-chip is-ok">Voto registrado@(voto.Opcion is null ? "" : $": {OpcionTexto(voto.Opcion)}")</div>
+                            }
+                            else if (!u.Presente)
+                            {
+                                <div class="asmp-small">Registra la asistencia de esta unidad para poder votar.</div>
+                            }
+                            else
+                            {
+                                <div class="asmp-opciones">
+                                    @foreach (var op in p.OpcionesVoto)
+                                    {
+                                        var sel = _seleccion.TryGetValue(clave, out var s) && s == op;
+                                        <button class="asmp-op @(sel ? "is-sel" : "")" disabled="@_ocupado" @onclick="() => Elegir(clave, op)">@OpcionTexto(op)</button>
+                                    }
+                                </div>
+                                @if (_seleccion.TryGetValue(clave, out var elegida))
+                                {
+                                    <div class="asmp-confirmar">
+                                        <span class="asmp-small">Tu voto no se puede cambiar después de enviarlo.</span>
+                                        <button class="asmp-btn" disabled="@_ocupado" @onclick="() => VotarAsync(p.VotacionId!.Value, u.UnidadPrivadaId, elegida)">Confirmar: @OpcionTexto(elegida)</button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+                else if (p.VotacionEstado == EstadoVotacion.Cerrada && p.ResultadoFinal is not null)
+                {
+                    <div class="asmp-resultado">
+                        <span class="asmp-chip @(p.ResultadoFinal == ResultadoVotacion.Aprobado ? "is-ok" : "")">@ResultadoTexto(p.ResultadoFinal.Value)</span>
+                        @if (!string.IsNullOrWhiteSpace(p.ResultadoOpcion))
+                        {
+                            <span class="asmp-small">Opción ganadora: @OpcionTexto(p.ResultadoOpcion)@(p.ResultadoPct is decimal pct ? $" ({pct.ToString("0.##", _co)}%)" : "")</span>
+                        }
+                    </div>
+                    @* Lo que voto cada unidad propia sigue visible despues del cierre (secreto: solo "votaste"). *@
+                    @foreach (var u in _dto.MisUnidades)
+                    {
+                        var voto = u.Votos.FirstOrDefault(v => v.VotacionId == p.VotacionId);
+                        if (voto is null) continue;
+                        <div class="asmp-voto">
+                            <span class="asmp-small">@(_dto.MisUnidades.Count > 1 ? $"Unidad {u.UnidadNumero}: " : "")@(voto.Opcion is null ? "Votaste (voto secreto)" : $"Tu voto: {OpcionTexto(voto.Opcion)}")</span>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+
+    <div class="asmp-foot">
+        @if (_dto.Estado == EstadoSesion.EnCurso || _dto.Estado == EstadoSesion.Citada)
+        {
+            <span>Se actualiza automáticamente. </span>
+        }
+        <button class="asmp-link" disabled="@_ocupado" @onclick="RefrescarAsync">Actualizar ahora</button>
+        <div class="mt-2">Operado por A&amp;D GROUP S.A.S. &middot; PROPIA</div>
+    </div>
+}
+</div>
+
+<style>
+    .asmp-wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; font-family: var(--propia-font-base); }
+    .asmp-muted { color: var(--propia-text-muted); font-size: 13px; }
+    .asmp-small { color: var(--propia-text-muted); font-size: 12.5px; line-height: 1.45; }
+    .asmp-hero { text-align: center; margin-bottom: 18px; }
+    .asmp-logo { max-height: 62px; max-width: 220px; object-fit: contain; margin-bottom: 10px; }
+    .asmp-copropiedad { font-size: 13px; font-weight: 700; color: var(--propia-text-secondary); }
+    .asmp-eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--propia-text-muted); margin-bottom: 8px; text-transform: uppercase; }
+    .asmp-titulo { font-size: 19px; font-weight: 800; color: var(--propia-text-h1); line-height: 1.25; }
+    .asmp-meta { font-size: 13px; color: var(--propia-text-secondary); margin-top: 6px; }
+    .asmp-hola { font-size: 14px; color: var(--propia-text-body); margin-top: 14px; }
+    .asmp-estado { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); }
+    .asmp-estado-3 { background: var(--propia-success-bg); color: var(--propia-success); }
+    .asmp-estado-2 { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .asmp-subt { font-size: 14px; line-height: 1.45; padding: 6px 10px; margin-top: 6px; border-radius: 8px; background: var(--propia-bg-card-soft); color: var(--propia-text-body); }
+    .asmp-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: var(--propia-radius-card); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--propia-shadow-card); }
+    .asmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .asmp-quorum-pct { font-size: 20px; font-weight: 800; color: var(--propia-text-h1); }
+    .asmp-bar { position: relative; height: 10px; border-radius: var(--propia-radius-pill); background: var(--propia-border-divider); overflow: visible; margin-bottom: 8px; }
+    .asmp-bar-fill { height: 100%; border-radius: var(--propia-radius-pill); background: var(--propia-brand); transition: width .3s; }
+    .asmp-bar-fill.is-ok { background: var(--propia-success); }
+    .asmp-bar-req { position: absolute; top: -4px; width: 2px; height: 18px; background: var(--propia-text-h1); }
+    .asmp-nota { font-size: 13px; color: var(--propia-text-body); background: var(--propia-info-bg); border: 1px solid var(--propia-info-border); border-radius: var(--propia-radius-card-sm); padding: 10px 12px; margin-bottom: 10px; }
+    .asmp-unidad { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+    .asmp-unidad + .asmp-unidad { border-top: 1px solid var(--propia-border-divider); }
+    .asmp-unidad-num { font-size: 15px; font-weight: 700; color: var(--propia-text-h1); }
+    .asmp-unidad-acts { display: flex; align-items: center; gap: 10px; }
+    .asmp-btn { border: 0; border-radius: var(--propia-radius-input); background: var(--propia-brand); color: var(--propia-text-inverse); font-weight: 700; font-size: 14px; padding: 10px 16px; min-height: 44px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    .asmp-btn:hover { background: var(--propia-brand-hover); color: var(--propia-text-inverse); }
+    .asmp-btn:disabled, .asmp-op:disabled, .asmp-link:disabled { opacity: .55; cursor: default; }
+    .asmp-btn-ghost { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .asmp-btn-ghost:hover { background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .asmp-link { border: 0; background: none; color: var(--propia-brand); font-size: 13px; font-weight: 600; padding: 4px; cursor: pointer; text-decoration: underline; }
+    .asmp-chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); white-space: nowrap; }
+    .asmp-chip.is-ok { background: var(--propia-success-bg); color: var(--propia-success); }
+    .asmp-chip.is-live { background: var(--propia-warning-bg); color: var(--propia-warning); }
+    .asmp-punto { padding: 12px 0; }
+    .asmp-punto + .asmp-punto { border-top: 1px solid var(--propia-border-divider); }
+    .asmp-punto.is-votando { background: var(--propia-brand-soft); margin: 0 -20px; padding: 12px 20px; }
+    .asmp-punto-head { display: flex; align-items: flex-start; gap: 10px; }
+    .asmp-punto-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; background: var(--propia-bg-hover); color: var(--propia-text-secondary); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .asmp-punto-txt { flex: 1 1 auto; min-width: 0; }
+    .asmp-punto-tit { font-size: 14.5px; font-weight: 700; color: var(--propia-text-h1); }
+    .asmp-voto { margin: 12px 0 0 36px; }
+    .asmp-voto-unidad { font-size: 12px; font-weight: 700; color: var(--propia-text-secondary); margin-bottom: 6px; }
+    .asmp-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+    .asmp-op { min-height: 48px; border: 2px solid var(--propia-border-input); border-radius: var(--propia-radius-input); background: var(--propia-bg-card); color: var(--propia-text-h1); font-weight: 700; font-size: 15px; cursor: pointer; }
+    .asmp-op.is-sel { border-color: var(--propia-brand); background: var(--propia-brand-soft-2); color: var(--propia-brand); }
+    .asmp-confirmar { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .asmp-resultado { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0 36px; }
+    .asmp-aviso { border-radius: var(--propia-radius-card-sm); padding: 10px 12px; margin-bottom: 14px; font-size: 13.5px; font-weight: 600; }
+    .asmp-aviso.is-ok { background: var(--propia-success-bg); color: var(--propia-success); border: 1px solid var(--propia-success-border); }
+    .asmp-aviso.is-err { background: var(--propia-error-bg); color: var(--propia-error-text); border: 1px solid var(--propia-error-border); }
+    .asmp-foot { text-align: center; font-size: 11px; color: var(--propia-text-faint); margin-top: 18px; }
+    @@media (max-width: 480px) {
+        .asmp-unidad { flex-direction: column; align-items: stretch; }
+        .asmp-unidad .asmp-btn { width: 100%; }
+        .asmp-unidad > .asmp-chip { align-self: flex-start; }
+        .asmp-voto, .asmp-resultado { margin-left: 0; }
+    }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+    [Parameter] public string Token { get; set; } = "";
+
+    private static readonly System.Globalization.CultureInfo _co = new("es-CO");
+
+    private bool _cargando = true;
+    private bool _ocupado;
+    private string? _errorCarga;
+    private string? _aviso;
+    private bool _avisoOk;
+    private SesionResidenteDto? _dto;
+    private readonly Dictionary<(Guid VotacionId, Guid UnidadId), string> _seleccion = new();
+    private CancellationTokenSource? _cts;
+
+    private string BaseUrl => $"/api/publico/asambleas/{TenantId}/sesion/{Uri.EscapeDataString(Token)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var resp = await Http().GetAsync(BaseUrl);
+            if (resp.IsSuccessStatusCode)
+                _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>();
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                _errorCarga = "Este enlace no es válido o ya venció. Pide uno nuevo a la administración.";
+            else
+                _errorCarga = await LeerErrorAsync(resp) ?? "La asamblea no está disponible.";
+        }
+        catch (Exception ex) { _errorCarga = ex.Message; }
+        finally { _cargando = false; }
+
+        if (_dto is not null)
+        {
+            _cts = new CancellationTokenSource();
+            _ = SondearAsync(_cts.Token);
+        }
+    }
+
+    // Refresco periodico mientras la sesion sigue viva (Citada / EnCurso). No interrumpe una accion en curso.
+    private async Task SondearAsync(CancellationToken ct)
+    {
+        // Cada 10 s; con la transcripcion activa cada 4 s para que los subtitulos sigan la conversacion.
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        var ticks = 0;
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (_ocupado || _dto is null) continue;
+                if (_dto.Estado is not (EstadoSesion.Citada or EstadoSesion.EnCurso)) break;
+                if (!_dto.TranscripcionActiva && !_salaConectada && ++ticks % 3 != 0) continue;
+                var resp = await Http().GetAsync(BaseUrl, ct);
+                if (!resp.IsSuccessStatusCode) continue;
+                var nuevo = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>(cancellationToken: ct);
+                if (nuevo is null || _ocupado) continue;
+                _dto = nuevo;
+                if (_salaConectada && nuevo.Estado != EstadoSesion.EnCurso) await InvokeAsync(SalirSalaAsync);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefrescarAsync()
+    {
+        _ocupado = true;
+        _aviso = null;
+        try
+        {
+            var resp = await Http().GetAsync(BaseUrl);
+            if (resp.IsSuccessStatusCode) _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>();
+            else Avisar(await LeerErrorAsync(resp) ?? "No se pudo actualizar.", false);
+        }
+        catch (Exception ex) { Avisar(ex.Message, false); }
+        finally { _ocupado = false; }
+    }
+
+    private Task AsistenciaAsync(Guid unidadId, bool presente)
+        => EnviarAsync($"{BaseUrl}/asistencia", new MiAsistenciaRequest(unidadId, presente),
+            presente ? "Asistencia registrada." : "Registramos tu retiro de la asamblea.");
+
+    private async Task VotarAsync(Guid votacionId, Guid unidadId, string opcion)
+    {
+        await EnviarAsync($"{BaseUrl}/voto", new MiVotoRequest(votacionId, unidadId, opcion), "Tu voto quedó registrado.");
+        _seleccion.Remove((votacionId, unidadId));
+    }
+
+    private async Task EnviarAsync<T>(string url, T body, string ok)
+    {
+        if (_ocupado) return;
+        _ocupado = true;
+        _aviso = null;
+        try
+        {
+            var resp = await Http().PostAsJsonAsync(url, body);
+            if (resp.IsSuccessStatusCode)
+            {
+                _dto = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>() ?? _dto;
+                Avisar(ok, true);
+            }
+            else
+            {
+                Avisar(await LeerErrorAsync(resp) ?? "No se pudo completar la acción.", false);
+                // El estado pudo cambiar (votacion cerrada, sala cerrada): se refresca para no quedar desfasado.
+                var r = await Http().GetAsync(BaseUrl);
+                if (r.IsSuccessStatusCode) _dto = await r.Content.ReadFromJsonAsync<SesionResidenteDto>() ?? _dto;
+            }
+        }
+        catch (Exception ex) { Avisar(ex.Message, false); }
+        finally { _ocupado = false; }
+    }
+
+    private void Elegir((Guid, Guid) clave, string op) => _seleccion[clave] = op;
+
+    private void Avisar(string texto, bool ok) { _aviso = texto; _avisoOk = ok; }
+
+    private HttpClient Http() => HttpFactory.CreateClient("PropiaApi");
+
+    private static async Task<string?> LeerErrorAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var json = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            return json.TryGetProperty("error", out var e) ? e.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    private static string BarWidth(decimal pct)
+        => Math.Clamp(pct, 0m, 100m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    // Fecha (hora Colombia) + modalidad + lugar en una sola linea que corta limpio (sin separador huerfano).
+    private static string MetaSesion(SesionResidenteDto d)
+    {
+        // La fecha con hora no se parte (espacios duros): evita "1:15 / p. m." en el celular.
+        var fecha = d.FechaSesion.ToCo().ToString("dddd d 'de' MMMM, h:mm tt", _co).Replace(' ', '\u00a0');
+        var partes = new List<string> { fecha, ModalidadTexto(d.Modalidad) };
+        if (!string.IsNullOrWhiteSpace(d.LugarFisico)) partes.Add(d.LugarFisico);
+        return string.Join("\u00a0\u00b7 ", partes);
+    }
+
+    private static string TipoTexto(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Asamblea ordinaria",
+        TipoSesion.AsambleaExtraordinaria => "Asamblea extraordinaria",
+        TipoSesion.Consejo => "Consejo de administración",
+        TipoSesion.Comite => "Comité",
+        _ => "Asamblea"
+    };
+
+    private static string ModalidadTexto(ModalidadSesion m) => m switch
+    {
+        ModalidadSesion.Presencial => "Presencial",
+        ModalidadSesion.Virtual => "Virtual",
+        ModalidadSesion.Mixta => "Mixta",
+        _ => ""
+    };
+
+    private static string EstadoTexto(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Citada => "Convocada",
+        EstadoSesion.EnCurso => "En curso",
+        EstadoSesion.Cerrada => "Cerrada",
+        EstadoSesion.QuorumFallido => "Sin quórum",
+        EstadoSesion.Cancelada => "Cancelada",
+        _ => e.ToString()
+    };
+
+    private static string ResultadoTexto(ResultadoVotacion r) => r switch
+    {
+        ResultadoVotacion.Aprobado => "Aprobado",
+        ResultadoVotacion.Rechazado => "No aprobado",
+        _ => "Sin resultado"
+    };
+
+    private static string OpcionTexto(string op) => op switch
+    {
+        OpcionesVotoBase.Si => "Sí",
+        OpcionesVotoBase.Abstencion => "Abstención",
+        _ => op
+    };
+
+    // ===================== Sala virtual (ola 5) =====================
+    private sealed record SalaPart(string Id, string Nombre, bool Yo, bool Mano);
+    private static readonly System.Text.Json.JsonSerializerOptions JsonWeb = new(System.Text.Json.JsonSerializerDefaults.Web);
+    private bool _salaConectada, _salaConectando, _conMic = true, _conCam, _mic, _cam, _mano, _tengoPalabra;
+    private string? _salaAviso, _salaEstado, _miIdentidad;
+    private int _enSala;
+    private DotNetObjectReference<VotarAsambleaPublico>? _ref;
+    private string GridId => "asmp-grid-" + Token.GetHashCode().ToString("x");
+
+    private async Task EntrarSalaAsync()
+    {
+        _salaAviso = null; _salaConectando = true;
+        try
+        {
+            var resp = await Http().PostAsync(BaseUrl + "/sala", null);
+            if (!resp.IsSuccessStatusCode) { _salaAviso = await LeerErrorAsync(resp) ?? "No se pudo entrar a la sala."; return; }
+            var a = (await resp.Content.ReadFromJsonAsync<SalaAccesoDto>())!;
+            _miIdentidad = a.Identidad;
+            _ref ??= DotNetObjectReference.Create(this);
+            var res = await Js.InvokeAsync<string>("propiaSala.conectar", _ref, GridId, a.Url, a.Token, _conMic, _conCam);
+            if (res.StartsWith("error:")) { _salaAviso = "No se pudo entrar a la sala: " + res[6..]; return; }
+            _salaConectada = true; _salaEstado = "conectado";
+            _mic = _conMic && res != "ok:sin-microfono"; _cam = _conCam && res != "ok:sin-camara";
+            if (res == "ok:sin-microfono") _salaAviso = "Tu navegador no dio permiso para el micrófono: entraste sin audio.";
+            else if (res == "ok:sin-camara") _salaAviso = "Tu navegador no dio permiso para la cámara: entraste sin video.";
+        }
+        catch (Exception ex) { _salaAviso = ex.Message; }
+        finally { _salaConectando = false; }
+    }
+    private async Task SalirSalaAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaSala.salir"); } catch { }
+        _salaConectada = false; _mic = _cam = _mano = _tengoPalabra = false; _enSala = 0;
+    }
+    private async Task MicAsync() { _mic = await Js.InvokeAsync<bool>("propiaSala.microfono", !_mic); if (_mic) _tengoPalabra = false; }
+    private async Task CamAsync()
+    {
+        var quiero = !_cam;
+        _cam = await Js.InvokeAsync<bool>("propiaSala.camara", quiero);
+        if (quiero && !_cam) _salaAviso = "No se pudo encender la cámara (permiso del navegador).";
+    }
+    private async Task ManoAsync() { _mano = !_mano; await Js.InvokeVoidAsync("propiaSala.mano", _mano); }
+
+    [JSInvokable]
+    public void SalaParticipantes(string json)
+    {
+        var l = System.Text.Json.JsonSerializer.Deserialize<List<SalaPart>>(json, JsonWeb) ?? new();
+        _enSala = l.Count;
+        if (l.FirstOrDefault(x => x.Yo) is { } yo) _mano = yo.Mano;
+        StateHasChanged();
+    }
+    [JSInvokable] public void SalaChat(string autor, string texto, bool yo) { }
+    [JSInvokable] public void SalaPalabra(string identidad) { _tengoPalabra = identidad == _miIdentidad && !string.IsNullOrEmpty(identidad); StateHasChanged(); }
+    [JSInvokable] public void SalaAviso(string texto) { _salaAviso = texto; StateHasChanged(); }
+    [JSInvokable] public void SalaMicrofono(bool on) { _mic = on; StateHasChanged(); }
+    [JSInvokable]
+    public void SalaEstado(string estado)
+    {
+        _salaEstado = estado;
+        if (estado.StartsWith("desconectado")) { _salaConectada = false; _enSala = 0; _mano = _tengoPalabra = false; }
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        if (_salaConectada) { try { _ = Js.InvokeVoidAsync("propiaSala.salir"); } catch { } }
+        _ref?.Dispose();
+    }
+}

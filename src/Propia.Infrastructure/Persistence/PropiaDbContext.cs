@@ -44,6 +44,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
+    public DbSet<SuperAdminApiToken> SuperAdminApiTokens => Set<SuperAdminApiToken>();
     // Catalogo global de listas (editable desde la consola A&D). Tabla GLOBAL, sin tenant/RLS.
     public DbSet<CatalogoOpcion> CatalogoOpciones => Set<CatalogoOpcion>();
     // Ola 4: copia POR TENANT de las listas del sistema (materializada desde el catalogo global).
@@ -119,6 +120,9 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<CuentaServicioPublico> CuentasServicioPublico => Set<CuentaServicioPublico>();
     public DbSet<RegistroConsumoServicio> RegistrosConsumoServicio => Set<RegistroConsumoServicio>();
     public DbSet<ReclamacionServicio> ReclamacionesServicio => Set<ReclamacionServicio>();
+    public DbSet<RegistroConsumoConcepto> RegistrosConsumoConceptos => Set<RegistroConsumoConcepto>();
+    public DbSet<ServicioPublicoCampoDefinicion> ServicioPublicoCamposDefiniciones => Set<ServicioPublicoCampoDefinicion>();
+    public DbSet<ServicioPublicoCampoValor> ServicioPublicoCamposValores => Set<ServicioPublicoCampoValor>();
     public DbSet<MiembroConsejo> MiembrosConsejo => Set<MiembroConsejo>();
     public DbSet<TipoUnidadCustom> TiposUnidadCustom => Set<TipoUnidadCustom>();
     public DbSet<TipoCoeficiente> TiposCoeficiente => Set<TipoCoeficiente>();
@@ -230,7 +234,10 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdRespuesta> PqrsdRespuestas => Set<PqrsdRespuesta>();
     public DbSet<PqrsdRespuestaVersion> PqrsdRespuestaVersiones => Set<PqrsdRespuestaVersion>();
     public DbSet<PqrsdRespuestaDestinatario> PqrsdRespuestaDestinatarios => Set<PqrsdRespuestaDestinatario>();
-    public DbSet<PqrsdPlantillaRespuesta> PqrsdPlantillasRespuesta => Set<PqrsdPlantillaRespuesta>();
+    public DbSet<PlantillaDocumento> PlantillasDocumento => Set<PlantillaDocumento>();
+    public DbSet<MembreteDocumento> MembretesDocumento => Set<MembreteDocumento>();
+    public DbSet<PlantillaCampoDefinicion> PlantillaCamposDefiniciones => Set<PlantillaCampoDefinicion>();
+    public DbSet<PlantillaCampoValor> PlantillaCamposValores => Set<PlantillaCampoValor>();
     public DbSet<PqrsdPlantillaSemilla> PqrsdPlantillasSemilla => Set<PqrsdPlantillaSemilla>();
     public DbSet<PqrsdTipo> PqrsdTipos => Set<PqrsdTipo>();
 
@@ -244,6 +251,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<SesionParticipante> SesionParticipantes => Set<SesionParticipante>();
     public DbSet<SesionPoder> SesionPoderes => Set<SesionPoder>();
     public DbSet<SesionQuorumLog> SesionQuorumLog => Set<SesionQuorumLog>();
+    public DbSet<SesionTranscripcionLinea> SesionTranscripcionLineas => Set<SesionTranscripcionLinea>();
     public DbSet<Votacion> Votaciones => Set<Votacion>();
     public DbSet<Voto> Votos => Set<Voto>();
     public DbSet<Acta> Actas => Set<Acta>();

@@ -1,0 +1,96 @@
+@* Estado de la lectura del documento activo (replica: RP.iaIngesta.panelHtml): en cola · leyendo (hoja con barrido,
+   4 pasos con check, barra con brillo y datos encontrados apareciendo) · listo (resumen con los campos llenados y
+   los dudosos, tokens y "Volver a leer") · pendiente ("Leer con IA") · error. Se repinta SOLO al cambiar la
+   lectura (suscrito a IaLectura.Cambio). La entrada (.iai-anim) solo cuando el estado es nuevo para ESE
+   documento: un re-render o volver a abrirlo no la repite (IaLectura.Visto, como d.ia._visto en la replica). *@
+@implements IDisposable
+
+@if (Lectura is { } ia)
+{
+    switch (ia.Estado)
+    {
+        case IaEstado.Leyendo:
+            <div class="iai-panel @Anim" role="status" aria-live="polite">
+                <div class="iai-doc"><div class="iai-paper">@if (Thumb is not null) { <img src="@Thumb" alt="" /> } else { <b></b>@for (var k = 0; k < 9; k++) { <i style="width:@(48 + (k * 23) % 47)%"></i> } }</div><div class="iai-beam"></div><span class="iai-ext">@Ext</span></div>
+                <div class="iai-info">
+                    <div class="iai-t"><span class="iai-spark"><i class="fi fi-rr-sparkles"></i></span><span>La IA está leyendo <b>@FileName</b></span></div>
+                    <ol class="iai-pasos">
+                        @for (var i = 0; i < 4; i++)
+                        {
+                            var cls = i < ia.Paso ? "ok" : i == ia.Paso ? "run" : "";
+                            <li class="iai-paso @cls"><span class="iai-paso-ic">@if (i < ia.Paso) { <i class="fi fi-rr-check"></i> } else if (i == ia.Paso) { <span class="iai-spin"></span> } else { @(i + 1) }</span>@Pasos[i]</li>
+                        }
+                    </ol>
+                    <div class="iai-bar"><i style="width:@(ia.Pct)%"></i></div>
+                    <div class="iai-chips">@foreach (var l in ia.Encontrados) { <span class="iai-chip"><i class="fi fi-rr-check"></i>@l</span> }</div>
+                </div>
+            </div>
+            break;
+        case IaEstado.Cola:
+            <div class="iai-card @Anim"><span class="iai-card-ic"><i class="fi fi-rr-clock"></i></span><div><b>@FileName</b> está en cola.<div class="iai-card-s">La IA lo lee apenas termine con el anterior. Mientras tanto puedes revisar los que ya están listos.</div></div></div>
+            break;
+        case IaEstado.Listo:
+            var dud = ia.Dudosos;
+            <div class="iai-done @(dud.Count > 0 ? "iai-done--rev" : "") @Anim"><span class="iai-done-ic"><i class="fi @(dud.Count > 0 ? "fi-rr-triangle-warning" : "fi-rr-check")"></i></span>
+                <div class="iai-done-b"><div class="iai-done-t">@if (ia.Campos.Count > 0) { <text>La IA llenó <b>@ia.Campos.Count campos</b> de @FileName</text> } else { <text>La IA leyó @FileName pero no encontró datos @Doc</text> }</div>
+                    @if (dud.Count > 0) { <div class="iai-done-s">Revisa los marcados en ámbar: la lectura no fue clara.</div> } else { <div class="iai-done-s">Revisa y guarda. Los campos llenados se resaltaron en el formulario.</div> }
+                    <div class="iai-chips">@foreach (var l in ia.Campos) { var r = dud.Contains(l); <span class="iai-chip @(r ? "rev" : "")"><i class="fi @(r ? "fi-rr-triangle-warning" : "fi-rr-check")"></i>@l</span> }</div></div>
+                <div class="iai-done-acts">@if (ia.Tokens > 0) { <span class="iai-tok">@IaLectura.FmtTok(ia.Tokens)</span> }@if (OnReleer.HasDelegate) { <button type="button" class="iai-btn" @onclick="OnReleer"><i class="fi fi-rr-refresh"></i> Volver a leer</button> }</div></div>
+            break;
+        case IaEstado.Error:
+            <div class="iai-card iai-card--err @Anim"><span class="iai-card-ic"><i class="fi fi-rr-cross-circle"></i></span><div><b>@FileName</b><div class="iai-card-s">@(ia.Msg ?? "No se pudo leer el documento.")</div></div></div>
+            break;
+        case IaEstado.Pendiente:
+            <div class="iai-card @Anim"><span class="iai-card-ic"><i class="fi fi-rr-document"></i></span><div><b>@FileName</b> aún no se ha leído.<div class="iai-card-s">Actívalo con "Leer con IA" o llena los campos a mano.</div></div>@if (OnReleer.HasDelegate) { <button type="button" class="iai-btn iai-btn--brand" @onclick="OnReleer"><i class="fi fi-rr-sparkles"></i> Leer con IA</button> }</div>
+            break;
+    }
+}
+
+@code {
+    [Parameter] public IaLectura? Lectura { get; set; }
+    [Parameter] public string FileName { get; set; } = "";
+    /// <summary>Miniatura de la primera pagina (data URL); sin ella la hoja se dibuja con lineas.</summary>
+    [Parameter] public string? Thumb { get; set; }
+    /// <summary>"del contrato" | "de la póliza".</summary>
+    [Parameter] public string Doc { get; set; } = "del documento";
+    /// <summary>"Volver a leer" (listo) / "Leer con IA" (pendiente). Sin callback no se muestra el boton.</summary>
+    [Parameter] public EventCallback OnReleer { get; set; }
+
+    /// <summary>Textos de los 4 pasos (recibos: "Leyendo el recibo" / "Validando contra tus servicios"). Null = los de contratos y polizas.</summary>
+    [Parameter] public string[]? PasosTexto { get; set; }
+    /// <summary>Etiqueta de la hoja ("PDF", "JPG"...).</summary>
+    [Parameter] public string Ext { get; set; } = "PDF";
+
+    private string[] Pasos => PasosTexto is { Length: 4 } p ? p : new[] { "Subiendo el archivo", "Leyendo el texto del PDF", "Encontrando los datos " + Doc, "Llenando el formulario" };
+
+    private IaLectura? _sub;
+    private IaEstado _estadoVisto = IaEstado.Ninguno;
+    private bool _anim;
+    // .iai-anim una sola vez por estado: si el documento ya habia mostrado este estado (otra instancia del panel,
+    // p. ej. al cambiar de borrador y volver) no se repite.
+    private string Anim => _anim ? "iai-anim" : "";
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_sub, Lectura))
+        {
+            if (_sub is not null) _sub.Cambio -= OnCambio;
+            _sub = Lectura;
+            if (_sub is not null) _sub.Cambio += OnCambio;
+            _estadoVisto = IaEstado.Ninguno;
+        }
+        EvaluarAnim();
+    }
+
+    private void EvaluarAnim()
+    {
+        if (Lectura is null || Lectura.Estado == _estadoVisto) return;
+        _estadoVisto = Lectura.Estado;
+        _anim = Lectura.Visto != Lectura.Estado;
+        Lectura.Visto = Lectura.Estado;
+    }
+
+    private void OnCambio() => _ = InvokeAsync(() => { EvaluarAnim(); StateHasChanged(); });
+
+    public void Dispose() { if (_sub is not null) _sub.Cambio -= OnCambio; }
+}

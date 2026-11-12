@@ -54,6 +54,19 @@ public class AiAgentTemplate : BaseEntity
 
     public int SortOrder { get; set; }
 
+    /// <summary>
+    /// Version de la plantilla: sube cada vez que el Super Admin cambia el prompt o las tools. Los agentes
+    /// de las copropiedades guardan la version que tienen aplicada (AiAgent.TemplateVersion) y "Actualizar
+    /// copropiedades" lleva las que esten atrasadas a la version actual.
+    /// </summary>
+    public int Version { get; set; } = 1;
+
+    /// <summary>
+    /// Clave de AGENTE DEL SISTEMA (ej. "agente-documental"): el codigo lo busca por esta clave (no por el
+    /// nombre, que la copropiedad puede cambiar). Null en plantillas normales. Unica.
+    /// </summary>
+    public string? Clave { get; set; }
+
     public ICollection<AiAgentTemplateMcpTool> McpTools { get; set; } = new List<AiAgentTemplateMcpTool>();
 }
 

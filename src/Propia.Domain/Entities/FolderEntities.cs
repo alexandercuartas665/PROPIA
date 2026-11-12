@@ -27,6 +27,12 @@ public class Folder : TenantEntity
     /// <summary>Codigo corto opcional (ej. ACT-001). Se conserva el de los expedientes migrados.</summary>
     public string? Codigo { get; set; }
 
+    /// <summary>
+    /// Radicado del expediente: consecutivo ANUAL por copropiedad RAD-AAAA-NNNN. Lo asigna el sistema al crear el
+    /// folder (a cualquier nivel) y no se edita. Unico por copropiedad.
+    /// </summary>
+    public string? Radicado { get; set; }
+
     public string? Descripcion { get; set; }
 
     /// <summary>Orden entre hermanos.</summary>

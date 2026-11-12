@@ -190,12 +190,15 @@ public partial class MiCopropiedadService
             ProveedorPersonaId = req.ProveedorPersonaId,
             ProveedorEmpresaId = req.ProveedorEmpresaId,
             Proveedor = req.Proveedor,
-            NitProveedor = req.NitProveedor,
+            // NIT siempre sin puntos ni espacios (a mano o desde el Agente Documental): "900.456.789-1" -> "900456789-1".
+            NitProveedor = Application.Documentos.NormalizadorDocumental.Nit(req.NitProveedor),
             ContactoPersonaId = req.ContactoPersonaId,
             Contacto = req.Contacto,
             TelefonoContratista = req.TelefonoContratista,
             CorreoContratista = req.CorreoContratista,
             DireccionContratista = req.DireccionContratista,
+            RepresentanteLegal = string.IsNullOrWhiteSpace(req.RepresentanteLegal) ? null : req.RepresentanteLegal.Trim(),
+            Ciudad = string.IsNullOrWhiteSpace(req.Ciudad) ? null : req.Ciudad.Trim(),
             FechaInicio = req.FechaInicio,
             FechaFin = req.FechaFin,
             ValorMensual = req.ValorMensual,
@@ -203,6 +206,7 @@ public partial class MiCopropiedadService
             DiasAnticipacionAlerta = req.DiasAnticipacionAlerta <= 0 ? 30 : req.DiasAnticipacionAlerta,
             RenovacionAutomatica = req.RenovacionAutomatica,
             ServicioId = req.ServicioId,
+            CuentaServicioPublicoId = await CuentaServicioPublicoValidaAsync(req.CuentaServicioPublicoId, ct),
             ExpedienteId = req.ExpedienteId,
             ProyectoTareaId = req.ProyectoTareaId,
             // ----- Campos del pedido de Contratos (Ola 1) -----
@@ -275,7 +279,9 @@ public partial class MiCopropiedadService
         // MERGE de datos del contrato (solo lo provisto; conserva el resto). La tool MCP no manda estos.
         if (req.Tipo.HasValue) c.Tipo = req.Tipo.Value;
         if (!string.IsNullOrWhiteSpace(req.Proveedor)) c.Proveedor = req.Proveedor.Trim();
-        if (req.NitProveedor is not null) c.NitProveedor = string.IsNullOrWhiteSpace(req.NitProveedor) ? null : req.NitProveedor.Trim();
+        if (req.NitProveedor is not null) c.NitProveedor = Application.Documentos.NormalizadorDocumental.Nit(req.NitProveedor);
+        if (req.RepresentanteLegal is not null) c.RepresentanteLegal = string.IsNullOrWhiteSpace(req.RepresentanteLegal) ? null : req.RepresentanteLegal.Trim();
+        if (req.Ciudad is not null) c.Ciudad = string.IsNullOrWhiteSpace(req.Ciudad) ? null : req.Ciudad.Trim();
         if (req.Contacto is not null) c.Contacto = string.IsNullOrWhiteSpace(req.Contacto) ? null : req.Contacto.Trim();
         if (req.TelefonoContratista is not null) c.TelefonoContratista = string.IsNullOrWhiteSpace(req.TelefonoContratista) ? null : req.TelefonoContratista.Trim();
         if (req.CorreoContratista is not null) c.CorreoContratista = string.IsNullOrWhiteSpace(req.CorreoContratista) ? null : req.CorreoContratista.Trim();
@@ -300,6 +306,7 @@ public partial class MiCopropiedadService
         {
             c.RenovacionAutomatica = req.RenovacionAutomatica;
             c.ServicioId = req.ServicioId;
+            c.CuentaServicioPublicoId = await CuentaServicioPublicoValidaAsync(req.CuentaServicioPublicoId, ct);
             c.ExpedienteId = req.ExpedienteId;
             c.ProyectoTareaId = req.ProyectoTareaId;
             // Tercero del Directorio (contratista): se persisten los FK del selector.
@@ -379,8 +386,13 @@ public partial class MiCopropiedadService
             c.AsociadoTipo, c.AsociadoId, asociadoNombre,
             c.ProveedorPersonaId, c.ProveedorEmpresaId, c.ContactoPersonaId, semaforo,
             c.TelefonoContratista, c.CorreoContratista, c.DireccionContratista,
-            c.FormaPago, c.TipoServicioTexto);
+            c.FormaPago, c.TipoServicioTexto, c.RepresentanteLegal, c.Ciudad,
+            c.CuentaServicioPublicoId);
     }
+
+    // El servicio publico del contrato debe ser de la copropiedad actual (query filter); si no, se ignora.
+    private async Task<Guid?> CuentaServicioPublicoValidaAsync(Guid? id, CancellationToken ct)
+        => id is { } g && await _db.CuentasServicioPublico.AnyAsync(x => x.Id == g, ct) ? g : null;
 
     public async Task<bool> EliminarContratoAsync(Guid contratoId, CancellationToken ct)
     {

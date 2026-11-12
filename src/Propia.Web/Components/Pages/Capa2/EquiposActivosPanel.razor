@@ -96,7 +96,7 @@ else
                     <div class="ea-menu ea-colmenu">
                         <div class="ea-col-search">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                            <input placeholder="Buscar campo..." value="@_colQE" @oninput="@(e => _colQE = e.Value?.ToString() ?? string.Empty)" />
+                            <input placeholder="Buscar campo..." @bind="_colQE" @bind:event="oninput" />
                         </div>
                         <div class="ea-col-list">
                             @{ var _colsE = ClavesOrdenadas().ToList(); }
@@ -130,6 +130,8 @@ else
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            <TablaExportar Vista="VistaExport" />
         }
         else
         {
@@ -141,16 +143,7 @@ else
                 </button>
             </div>
         }
-        <div class="ea-viewtoggle">
-            <button type="button" class="ea-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                Tarjetas
-            </button>
-            <button type="button" class="ea-vt @(_view == "list" ? "on" : "")" @onclick='() => SetVista("list")' title="Tabla">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
-                Tabla
-            </button>
-        </div>
+        <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("cards"), TablaVistaToggle.Tabla("list") })" Valor="@_view" OnCambiar="SetVista" />
     </div>
 
     @if (_view == "cards")
@@ -669,6 +662,7 @@ else
                 _jwt = stored;
                 await RestaurarVistaAsync();
                 try { CargarAggE(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyE)); } catch { }
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarAsync();
                 StateHasChanged();
             }
@@ -899,7 +893,7 @@ else
     {
         _cfgEquipo.TryGetValue(clave, out var c);
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: "equipo");
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: "equipo", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgEAsync(GuardarUnidadCampoConfigRequest req)
     {
@@ -1030,6 +1024,9 @@ else
                 AbrirCrearCampoE();
                 break;
             case TablaColMenu.Accion.Ocultar:
+                // La 1a columna es fija: el menu Columnas no la deja ocultar ni volver a mostrar; ocultarla aqui
+                // la dejaba sin forma de restaurarla.
+                if (col.Key == ClavesOrdenadas().FirstOrDefault()) { ColToastE("Esta columna es fija y no se puede ocultar."); break; }
                 await ToggleVisibleColEAsync(col.Key);   // el header solo pinta columnas visibles, asi que aqui oculta
                 break;
             case TablaColMenu.Accion.Agrupar:
@@ -1197,6 +1194,66 @@ else
 
     // Cambio de niveles desde el menu compartido: solo resetea la pagina (el reagrupado es automatico).
     private void OnGruposEChanged() { _pagina = 1; }
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (no solo el lote del scroll infinito) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombre;
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumericaE(k), EsNumericaE(k) ? FormatoExcelE(k) : null)).ToList();
+        object? Celda(EquipoActivoDto e, string k)
+        {
+            if (EsNumericaE(k)) return ValorNumE(e, k);
+            var s = TextoCeldaE(e, k);
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+        ExportFila Fila(EquipoActivoDto e, IReadOnlyList<string>? ruta) => new(cols.Select(k => Celda(e, k)).ToList(), Ruta: ruta);
+
+        var lista = Filtrados().ToList();
+        var filas = new List<ExportFila>();
+        if (!_agrupadoE) filas.AddRange(lista.Select(e => Fila(e, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<EquipoActivoDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(e => Fila(e, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar<EquipoActivoDto>(lista, _gruposE, ValorGrupoE), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsE.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsE.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoE) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposE.Select(ColLabel)));
+        criterios.Add($"{lista.Count} equipos");
+
+        return new ExportVista("Equipos y Activos", _copropiedadNombre, columnas, filas, criterios, _gruposE.Select(ColLabel).ToList());
+    }
+    // Texto de una celda no numerica tal como se ve: listas con su etiqueta visible (la del select); el resto
+    // (textos, Si/No, fechas yyyy-MM-dd del input date y campos propios "cd:", incluidas formulas) via SortStrE.
+    private string TextoCeldaE(EquipoActivoDto e, string k) => k switch
+    {
+        "categoria" => LblCatEq(e.Categoria),
+        "tipo" => LblTipoEq(e.Tipo),
+        "estado" => EstadoTextoCorto(e.Estado),
+        _ => SortStrE(e, k)
+    };
+    // Formato numerico de Excel: moneda con $ (valor de adquisicion y campos Moneda), porcentaje con %.
+    private string FormatoExcelE(string k)
+    {
+        var tipo = CampoCustom(k)?.Tipo;
+        if (k == "valoradq" || tipo == TipoCampoTablero.Moneda) return "\"$\" #,##0";
+        if (tipo == TipoCampoTablero.Porcentaje) return "General\"%\"";
+        return "General";
+    }
 
     // Pagina actual de la vista tabla SIN agrupacion (footer canonico). Con agrupacion se muestran los
     // grupos completos (sin paginar), asi que este helper solo se usa en el modo no agrupado.
@@ -1870,7 +1927,7 @@ else
 
     .ea-bar-spacer { flex: 1 1 auto; }
     .ea-menu-wrap { position: relative; }
-    .ea-fbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--propia-text-secondary); background: var(--propia-bg-card); cursor: pointer; font-family: inherit; }
+    .ea-fbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 12px; font-size: 12.5px; font-weight: 700; color: var(--propia-text-secondary); background: var(--propia-bg-card); cursor: pointer; font-family: inherit; }
     .ea-fbtn.on { border-color: var(--propia-brand); color: var(--propia-brand); background: var(--propia-brand-soft-2); }
     /* Toggle Tarjetas/Tabla: control SEGMENTADO tipo pildora, milimetrico a la maqueta. */
     .ea-viewtoggle { display: inline-flex; gap: 3px; background: var(--propia-bg-app); border: 1px solid var(--propia-border-card); border-radius: 11px; padding: 4px; }

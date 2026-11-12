@@ -15,7 +15,7 @@ namespace Propia.Integration.Tests;
 
 /// <summary>Tests del modulo 2.8 Asambleas y Organos de Gobierno (spec v1.0 MVP).</summary>
 [Collection(nameof(PostgresCollection))]
-public class AsambleaFlowTests : IAsyncLifetime
+public partial class AsambleaFlowTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fx;
     private IServiceProvider _services = null!;
@@ -99,7 +99,8 @@ public class AsambleaFlowTests : IAsyncLifetime
     {
         var tenantId = await SeedTenantAsync("Asam Ciclo");
         await SeedPersonaConApplicationUser(tenantId);
-        await SeedUnidadesAsync(tenantId, 2);
+        var unidadesCiclo = await SeedUnidadesAsync(tenantId, 2);
+        await DuenosAsync(tenantId);
         var (svc, _, _) = Build(tenantId);
 
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
@@ -114,7 +115,10 @@ public class AsambleaFlowTests : IAsyncLifetime
         Assert.Equal(EstadoSesion.EnCurso, enCurso!.Estado);
         Assert.NotNull(enCurso.HoraApertura);
 
-        await svc.CerrarSesionAsync(s.Id, new CerrarSesionRequest(true), CancellationToken.None);
+        foreach (var u in unidadesCiclo)
+            await svc.CheckInParticipanteAsync(s.Id, new CheckInParticipanteRequest(u, true), CancellationToken.None);
+        await svc.InstalarAsync(s.Id, new InstalarSesionRequest(unidadesCiclo[0], null), CancellationToken.None);
+        await svc.CerrarSesionAsync(s.Id, new CerrarSesionRequest(), CancellationToken.None);
         var cerrada = await svc.GetSesionAsync(s.Id, CancellationToken.None);
         Assert.Equal(EstadoSesion.Cerrada, cerrada!.Estado);
         Assert.True(cerrada.QuorumAlcanzado);
@@ -125,11 +129,41 @@ public class AsambleaFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Eliminar_solo_borrador_o_cancelada_y_fecha_con_offset_se_guarda_en_UTC()
+    {
+        var tenantId = await SeedTenantAsync("Asam Eliminar");
+        await SeedPersonaConApplicationUser(tenantId);
+        await SeedUnidadesAsync(tenantId, 2);
+        var (svc, _, _) = Build(tenantId);
+        var ct = CancellationToken.None;
+        CrearSesionRequest Req(string t) => new(
+            TipoSesion.AsambleaExtraordinaria, ModalidadSesion.Virtual, t,
+            new DateTimeOffset(2030, 3, 10, 19, 0, 0, TimeSpan.FromHours(-5)), null, null,
+            new[] { new CrearPuntoRequest(1, "P1", null, true, TipoMayoria.Simple, 50m, ModalidadVoto.Publico, null) });
+
+        // La fecha con offset -05:00 (lo que manda el asistente) se guarda como el mismo instante en UTC.
+        var borrador = await svc.CrearSesionAsync(Req("Borrador"), ct);
+        Assert.Equal(new DateTimeOffset(2030, 3, 11, 0, 0, 0, TimeSpan.Zero), borrador.FechaSesion.ToUniversalTime());
+
+        var citada = await svc.CrearSesionAsync(Req("Citada"), ct);
+        await svc.EnviarCitacionAsync(citada.Id, new EnviarCitacionRequest(null), ct);
+
+        Assert.True(await svc.EliminarSesionAsync(borrador.Id, ct));
+        Assert.Null(await svc.GetSesionAsync(borrador.Id, ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.EliminarSesionAsync(citada.Id, ct));
+        Assert.NotNull(await svc.GetSesionAsync(citada.Id, ct));
+        Assert.False(await svc.EliminarSesionAsync(Guid.NewGuid(), ct));
+
+        await CleanTenant(tenantId);
+    }
+
+    [Fact]
     public async Task Votacion_ponderada_por_coeficiente_aprueba_si_pasa_mayoria_simple()
     {
         var tenantId = await SeedTenantAsync("Asam Votacion");
         await SeedPersonaConApplicationUser(tenantId);
         var unidades = await SeedUnidadesAsync(tenantId, 3, coeficientes: new[] { 0.4m, 0.3m, 0.3m });
+        await DuenosAsync(tenantId);
         var (svc, _, _) = Build(tenantId);
 
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
@@ -143,6 +177,7 @@ public class AsambleaFlowTests : IAsyncLifetime
         // Check-in de todas las unidades
         foreach (var u in unidades)
             await svc.CheckInParticipanteAsync(s.Id, new CheckInParticipanteRequest(u, true), CancellationToken.None);
+        await svc.InstalarAsync(s.Id, new InstalarSesionRequest(unidades[0], null), CancellationToken.None);
 
         var d = await svc.GetSesionAsync(s.Id, CancellationToken.None);
         var puntoId = d!.Puntos[0].Id;
@@ -168,6 +203,7 @@ public class AsambleaFlowTests : IAsyncLifetime
         var tenantId = await SeedTenantAsync("Asam RN09");
         await SeedPersonaConApplicationUser(tenantId);
         var unidades = await SeedUnidadesAsync(tenantId, 1, coeficientes: new[] { 1m });
+        await DuenosAsync(tenantId);
         var (svc, _, _) = Build(tenantId);
 
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
@@ -178,6 +214,7 @@ public class AsambleaFlowTests : IAsyncLifetime
         await svc.EnviarCitacionAsync(s.Id, new EnviarCitacionRequest(null), CancellationToken.None);
         await svc.AbrirSalaAsync(s.Id, CancellationToken.None);
         await svc.CheckInParticipanteAsync(s.Id, new CheckInParticipanteRequest(unidades[0], true), CancellationToken.None);
+        await svc.InstalarAsync(s.Id, new InstalarSesionRequest(unidades[0], null), CancellationToken.None);
 
         var d = await svc.GetSesionAsync(s.Id, CancellationToken.None);
         var v = await svc.AbrirVotacionAsync(s.Id, new AbrirVotacionRequest(d!.Puntos[0].Id), CancellationToken.None);
@@ -185,48 +222,6 @@ public class AsambleaFlowTests : IAsyncLifetime
         await svc.EmitirVotoAsync(v.Id, new EmitirVotoRequest(unidades[0], OpcionesVotoBase.Si), CancellationToken.None);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.EmitirVotoAsync(v.Id, new EmitirVotoRequest(unidades[0], OpcionesVotoBase.No), CancellationToken.None));
-
-        await CleanTenant(tenantId);
-    }
-
-    [Fact]
-    public async Task Firmar_acta_genera_hash_SHA256_y_la_marca_inmutable()
-    {
-        var tenantId = await SeedTenantAsync("Asam Acta");
-        await SeedPersonaConApplicationUser(tenantId);
-        await SeedUnidadesAsync(tenantId, 1);
-        var (svc, _, _) = Build(tenantId);
-
-        var s = await svc.CrearSesionAsync(new CrearSesionRequest(
-            TipoSesion.AsambleaOrdinaria, ModalidadSesion.Virtual, "X",
-            DateTimeOffset.UtcNow.AddDays(10), null, null,
-            new[] { new CrearPuntoRequest(1, "P", null, false, TipoMayoria.Simple, 50m, ModalidadVoto.Publico, null) }),
-            CancellationToken.None);
-        await svc.EnviarCitacionAsync(s.Id, new EnviarCitacionRequest(null), CancellationToken.None);
-        await svc.AbrirSalaAsync(s.Id, CancellationToken.None);
-        await svc.CerrarSesionAsync(s.Id, new CerrarSesionRequest(true), CancellationToken.None);
-
-        var d = await svc.GetSesionAsync(s.Id, CancellationToken.None);
-        var actaId = d!.Acta!.Id;
-
-        await svc.FirmarActaAsync(actaId, new FirmarActaRequest(
-            "Narrativa del secretario: la sesion transcurrio con normalidad.",
-            TipoFirmaActa.ElectronicaNativa), CancellationToken.None);
-
-        var firmada = await svc.GetSesionAsync(s.Id, CancellationToken.None);
-        Assert.Equal(EstadoActa.Firmada, firmada!.Acta!.Estado);
-        Assert.NotNull(firmada.Acta.HashDocumento);
-        Assert.Equal(64, firmada.Acta.HashDocumento!.Length);  // SHA-256 hex = 64 chars
-        Assert.NotNull(firmada.Acta.TimestampFirma);
-
-        // RN-10: ya no es editable
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.FirmarActaAsync(actaId, new FirmarActaRequest("otra", TipoFirmaActa.ElectronicaNativa), CancellationToken.None));
-
-        // Publicar
-        await svc.PublicarActaAsync(actaId, new PublicarActaRequest(), CancellationToken.None);
-        var pub = await svc.GetSesionAsync(s.Id, CancellationToken.None);
-        Assert.NotNull(pub!.Acta!.PublicadaEn);
 
         await CleanTenant(tenantId);
     }
@@ -359,7 +354,11 @@ public class AsambleaFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesion_puntos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesiones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asamblea_config WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_personas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM plantillas_documento WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
+        foreach (var id in _personasExtra) await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {id}");
+        _personasExtra.Clear();
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {_userId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM personas WHERE id = {_personaId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM tenants WHERE id = {tenantId}");

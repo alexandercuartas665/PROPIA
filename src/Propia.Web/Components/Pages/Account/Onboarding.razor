@@ -338,21 +338,15 @@
             var r = await resp.Content.ReadFromJsonAsync<ActivacionResponse>();
             if (r is not null)
             {
-                // BUG FIX validacion MCP: persistimos el JWT + navegamos en un solo eval
-                // atomico. Las 3 escrituras separadas + forceLoad rompen el circuit Blazor
+                // BUG FIX validacion MCP: persistimos el JWT + navegamos en UNA llamada JS
+                // atomica. Las 3 escrituras separadas + forceLoad rompen el circuit Blazor
                 // antes de que SignalR confirme las escrituras al navegador (sessionStorage
-                // queda vacio al cargar /mi-copropiedad). Un solo eval garantiza atomicidad.
+                // queda vacio al cargar /mi-copropiedad). Antes era un eval, que la CSP bloquea.
                 // En modulo 2.5 esto se mueve a cookie HttpOnly del lado servidor.
-                var script = string.Concat(
-                    "window.propiaAuth.save(",
-                        System.Text.Json.JsonSerializer.Serialize(r.AccessToken), ",",
-                        System.Text.Json.JsonSerializer.Serialize(r.TenantId.ToString()), ",",
-                        System.Text.Json.JsonSerializer.Serialize(r.CopropiedadNombre), ");",
-                    "setTimeout(function(){ window.location.href = '/mi-copropiedad'; }, 1200);");
                 _paso = 99;
                 StateHasChanged();
-                await Js.InvokeVoidAsync("eval", script);
-                return; // El eval se encarga del redirect; no caemos al NavigateTo de abajo.
+                await Js.InvokeVoidAsync("propiaUI.guardarSesionEIr", r.AccessToken, r.TenantId.ToString(), r.CopropiedadNombre, "/mi-copropiedad", 1200);
+                return; // La funcion JS se encarga del redirect; no caemos al NavigateTo de abajo.
             }
             _paso = 99;
             StateHasChanged();

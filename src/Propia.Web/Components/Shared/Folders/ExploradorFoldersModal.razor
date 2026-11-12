@@ -1,18 +1,14 @@
 @* ============================================================================================
-   EXPLORADOR DE FOLDERS (Documentos v2, maqueta expedientes-v2 · abrirExpediente). Modal casi pantalla
-   completa (98vw x 95vh) con 5 columnas y separadores REDIMENSIONABLES (grip con puntos; anchos persisten
-   en localStorage via propiaUI.explorerSplits):
-     Col 1 ESTRUCTURA: arbol de folders (navegar / seleccionar / expandir).
-     Col 2 DOCUMENTOS del folder como MINIATURAS tipo pagina (badge de extension por color, badge de
-           versiones, acciones al hover: duplicar / ver versiones / archivar; seccion "Archivados (N)"
-           colapsable con restaurar) + "Cargar documento" (abre CargarDocumentoModal) + ZIP del folder.
-     Col 3 VISOR: vista previa del documento (imagen / PDF / texto / Excel-Word) + Reemplazar / Descargar.
-     Col 4 METADATOS: captura por documento (ficha por campo con pill de tipo + control + descripcion); se
-           guarda por campo al cambiar; aviso de obligatorios pendientes.
-     Col 5 CHAT: conversar con los documentos del folder. OCULTABLE desde la cabecera; la conversacion vive
-           en la pagina (persiste al ocultar/mostrar, cambiar de folder y reabrir). La respuesta de la IA
-           se conecta en la Ola 3: hoy responde un asistente de vista previa con datos reales del folder.
-   Un documento con archivo NUNCA se elimina: se archiva y se puede restaurar.
+   EXPLORADOR DE FOLDERS (Documentos v2; replica PROPUESTAS.md seccion 2). Modal grande con 3 columnas:
+     ESTRUCTURA (arbol) | DOCUMENTOS (Miniaturas o Tabla, propia_expedientes_vista) | CHAT (ocultable).
+   Solo Estructura y Chat se redimensionan (propiaUI.explorerSplits, clave propia.folders.colw.v3); Documentos
+   ocupa el centro. El clic en un documento abre el modal "Documento" (.xdv-*: visor + metadatos), que va SOBRE el
+   explorador y navega < n / total > entre los documentos del mismo grupo (activos o archivados). Clic derecho en
+   una fila o miniatura = menu de acciones. Esc cierra en orden: Cargar -> Versiones -> Documento -> Explorador.
+   Responsive: tablet (<=1180px) Estructura | Documentos y el chat como panel que se desliza encima (arranca
+   cerrado); celular (<=700px) pantalla completa con pestanas Folders / Documentos (n) / Chat IA.
+   La conversacion vive en el API (por copropiedad + folder raiz + usuario). Un documento con archivo NUNCA se
+   elimina: se archiva y se puede restaurar.
    ============================================================================================ *@
 @using Propia.Application.Documentos
 @using Propia.Domain.Enums
@@ -26,18 +22,29 @@
             <div class="exp-modal-icon" style="color:var(--propia-brand);background:var(--propia-brand-soft)"><i class="fi fi-rr-folder-tree"></i></div>
             <div style="min-width:0;">
                 <div class="exp-modal-title" id="xf-title">Folders de la copropiedad</div>
-                <div class="doc-sub" style="margin:2px 0 0;">Navega la estructura, selecciona un documento y conversa con la IA.</div>
+                <div class="doc-sub xf-head-sub" style="margin:2px 0 0;">Navega la estructura, abre un documento para verlo y capturar sus metadatos, y conversa con la IA.</div>
             </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-            <button type="button" class="doc-btn-ghost sm" @onclick="ToggleChat" title="@(ChatOculto ? "Mostrar chat" : "Ocultar chat")">
+            <div class="xf-vista" role="group" aria-label="Vista de los documentos">
+                <button type="button" class="xf-vista-b @(_vista == "mini" ? "on" : "")" aria-pressed="@((_vista == "mini").ToString().ToLowerInvariant())" title="Ver en miniaturas" @onclick='() => SetVista("mini")'><i class="fi fi-rr-apps"></i><span>Miniaturas</span></button>
+                <button type="button" class="xf-vista-b @(_vista == "tabla" ? "on" : "")" aria-pressed="@((_vista == "tabla").ToString().ToLowerInvariant())" title="Ver en tabla" @onclick='() => SetVista("tabla")'><i class="fi fi-rr-list"></i><span>Tabla</span></button>
+            </div>
+            <button type="button" class="doc-btn-ghost sm xf-chat-tog" @onclick="ToggleChat" title="@(ChatOculto ? "Mostrar chat" : "Ocultar chat")">
                 <i class="fi @(ChatOculto ? "fi-rr-comment-alt" : "fi-rr-angle-double-small-right")"></i> @(ChatOculto ? "Mostrar chat" : "Ocultar chat")
             </button>
             <button type="button" class="doc-x" @onclick="Cerrar" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
         </div>
     </div>
 
-    <div class="exp-cols fbrowse-flex @(ChatOculto ? "chat-hidden" : "")">
+    @* Celular: las 3 columnas son pestanas (una a la vez); en escritorio/tablet no se ven. *@
+    <div class="xf-mtabs" role="tablist">
+        <button type="button" role="tab" aria-selected="@((_panel == "struct").ToString().ToLowerInvariant())" class="xf-mtab @(_panel == "struct" ? "on" : "")" @onclick='() => SetPanel("struct")'><i class="fi fi-rr-folder-tree"></i> Folders</button>
+        <button type="button" role="tab" aria-selected="@((_panel == "docs").ToString().ToLowerInvariant())" class="xf-mtab @(_panel == "docs" ? "on" : "")" @onclick='() => SetPanel("docs")'><i class="fi fi-rr-document"></i> @("Documentos" + (_detalle is not null ? $" ({_detalle.Documentos.Count})" : ""))</button>
+        <button type="button" role="tab" aria-selected="@((_panel == "chat").ToString().ToLowerInvariant())" class="xf-mtab @(_panel == "chat" ? "on" : "")" @onclick='() => SetPanel("chat")'><i class="fi fi-rr-comment-alt"></i> Chat IA</button>
+    </div>
+
+    <div class="exp-cols fbrowse-flex xf-p-@(_panel) @(ChatOculto ? "chat-hidden" : "")">
         @* ---------------- Col 1: estructura ---------------- *@
         <div class="exp-col exp-col-struct" style="flex:0 0 222px">
             <div class="exp-col-head"><div class="exp-sec-title">Estructura de folders</div></div>
@@ -48,10 +55,11 @@
         </div>
         <div class="exp-split" data-resize="struct" data-side="left" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
 
-        @* ---------------- Col 2: documentos (miniaturas) ---------------- *@
-        <div class="exp-col exp-col-docs" style="flex:0 0 262px">
+        @* ---------------- Col 2: documentos (miniaturas o tabla) ---------------- *@
+        <div class="exp-col exp-col-docs xf-docs-wide" style="flex:1 1 0">
             <div class="exp-col-head">
                 <div class="exp-sec-title">Documentos @if (_detalle is not null) { <span class="doc-sub">&middot; @_detalle.Nombre</span> }</div>
+                @if (!string.IsNullOrEmpty(_detalle?.Radicado)) { <span class="exp-rad" title="Radicado del expediente"><i class="fi fi-rr-hastag"></i>@_detalle.Radicado</span> }
                 <button type="button" class="exp-ico-btn" title="Descargar el folder y sus subfolders en un ZIP" @onclick="DescargarZip" disabled="@(_detalle is null || _busyZip)"><i class="fi @(_busyZip ? "fi-rr-spinner" : "fi-rr-folder-download")"></i></button>
             </div>
             @if (_detalle is null)
@@ -60,10 +68,15 @@
             }
             else
             {
-                <div class="exp-docs-scroll">
+                var enTabla = _vista == "tabla";
+                <div class="exp-docs-scroll @(enTabla ? "xft-docs" : "")">
                     @if (_detalle.Documentos.Count == 0)
                     {
                         <div class="doc-sub" style="padding:14px;">Este folder no tiene documentos activos. Cárgalos abajo.</div>
+                    }
+                    else if (enTabla)
+                    {
+                        @TablaDocs(_detalle.Documentos, false)
                     }
                     else
                     {
@@ -79,9 +92,13 @@
                             </button>
                             @if (_verArchivados)
                             {
-                                <div class="exp-thumbs exp-thumbs--arch">
-                                    @foreach (var d in _detalle.Archivados) { @Miniatura(d, true) }
-                                </div>
+                                if (enTabla) { @TablaDocs(_detalle.Archivados, true) }
+                                else
+                                {
+                                    <div class="exp-thumbs exp-thumbs--arch">
+                                        @foreach (var d in _detalle.Archivados) { @Miniatura(d, true) }
+                                    </div>
+                                }
                             }
                         </div>
                     }
@@ -91,117 +108,9 @@
                 </div>
             }
         </div>
-        <div class="exp-split" data-resize="docs" data-side="left" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
 
-        @* ---------------- Col 3: visor ---------------- *@
-        <div class="exp-col exp-col-center" style="flex:1 1 0">
-            @if (Doc is null)
-            {
-                <div class="exp-viewer-empty"><i class="fi fi-rr-eye"></i><div>Selecciona un documento para verlo.</div></div>
-            }
-            else
-            {
-                <div class="exp-viewer-bar">
-                    <div class="doc-ficon sm"><i class="fi fi-rr-document"></i></div>
-                    <div style="flex:1;min-width:0;">
-                        <div class="doc-row-name">@(Doc.ArchivoNombre ?? Doc.Nombre)</div>
-                        <div class="doc-sub" style="margin:0;">
-                            @_detalle!.Nombre
-                            @if (_visorVersionNum > 0) { <text> &middot; versión @_visorVersionNum (anterior) &middot; </text><button type="button" class="exp-ver-link" @onclick="() => CargarVisorActual(Doc)">volver a la actual</button> }
-                            else if (Doc.NumeroVersiones > 1) { <text> &middot; versión actual (v@(Doc.NumeroVersiones))</text> }
-                            else if (!Doc.Cargado) { <text> &middot; sin archivo</text> }
-                        </div>
-                    </div>
-                    @if (!Doc.Archivado)
-                    {
-                        <button type="button" class="doc-btn-soft sm" @onclick="() => AbrirCargarVersion(Doc)">@(Doc.Cargado ? "Reemplazar" : "Cargar archivo")</button>
-                    }
-                    <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(Doc)" disabled="@(!Doc.Cargado)"><i class="fi fi-rr-download"></i> Descargar</button>
-                </div>
-                <div class="exp-viewer-body">
-                    @if (!Doc.Cargado)
-                    {
-                        <div class="exp-viewer-empty">
-                            <i class="fi fi-rr-cloud-upload"></i>
-                            <div>Esta casilla aún no tiene archivo.@(Doc.Obligatorio ? " Es obligatoria en el folder." : "")</div>
-                            @if (!Doc.Archivado) { <button type="button" class="doc-btn-primary sm" @onclick="() => AbrirCargarVersion(Doc)"><i class="fi fi-rr-cloud-upload"></i> Cargar archivo</button> }
-                        </div>
-                    }
-                    else if (_visorCargando)
-                    {
-                        <div class="exp-viewer-empty"><i class="fi fi-rr-spinner"></i><div>Cargando documento...</div></div>
-                    }
-                    else if (_visorKind == "image" && !string.IsNullOrEmpty(_visorDataUri))
-                    {
-                        <img class="exp-viewer-img" src="@_visorDataUri" alt="@_visorNombre" />
-                    }
-                    else if (_visorKind == "pdf" && !string.IsNullOrEmpty(_visorDataUri))
-                    {
-                        <iframe class="exp-viewer-frame" src="@_visorDataUri" title="@_visorNombre"></iframe>
-                    }
-                    else if (_visorKind == "text")
-                    {
-                        <pre class="exp-viewer-text">@_visorTexto</pre>
-                    }
-                    else if (_visorKind == "html" && !string.IsNullOrEmpty(_visorHtml))
-                    {
-                        <div class="exp-viewer-html">@((MarkupString)_visorHtml)</div>
-                    }
-                    else
-                    {
-                        <div class="exp-viewer-empty">
-                            <i class="fi fi-rr-file"></i>
-                            <div>Vista previa no disponible para este tipo de archivo. Descárgalo para verlo.</div>
-                            <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(Doc)"><i class="fi fi-rr-download"></i> Descargar</button>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-        <div class="exp-split" data-resize="meta" data-side="right" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
-
-        @* ---------------- Col 4: metadatos (captura) ---------------- *@
-        <div class="exp-col exp-col-meta" style="flex:0 0 306px">
-            <div class="exp-col-head" style="padding:14px 4px 6px;"><div class="exp-sec-title">Metadatos del documento</div></div>
-            @if (Doc is null)
-            {
-                <div class="doc-sub" style="padding:8px 4px;">Selecciona un documento para capturar sus metadatos.</div>
-            }
-            else
-            {
-                <div class="doc-sub" style="padding:0 4px 10px;">Captura los valores. Una IA los usa para indexar y buscar dentro del documento.</div>
-                @if (_faltan.Count > 0)
-                {
-                    <div class="exp-cap-warn"><i class="fi fi-rr-exclamation"></i><span>Obligatorios sin valor: @string.Join(", ", _faltan).</span></div>
-                }
-                @if (_guardadoOk) { <div class="exp-cap-saved"><i class="fi fi-rr-check"></i> Guardado.</div> }
-                @if (_capError is not null) { <div class="doc-banner err" style="margin:0 4px 10px;">@_capError</div> }
-                <div class="exp-cap-scroll">
-                    @if (_esquema is null) { <div class="doc-sub" style="padding:0 4px;">Cargando...</div> }
-                    else if (_esquema.Count == 0) { <div class="doc-sub" style="padding:0 4px;">Este documento no tiene metadatos definidos. Agrégalos en "Configurar folders".</div> }
-                    else
-                    {
-                        <div class="exp-cap">
-                            @foreach (var c in _esquema)
-                            {
-                                var cc = c;
-                                <div class="exp-cap-fld">
-                                    <div class="exp-cap-head">
-                                        <span class="exp-cap-name">@c.Label@(c.Obligatorio ? " *" : "")</span>
-                                        <span class="exp-cap-type @FolderUi.CatClase(c.Tipo)">@FolderUi.TipoCorto(c.Tipo)</span>
-                                    </div>
-                                    <FolderCampoInput Campo="cc" Valor="@ValorDe(cc.Id)" ValorChanged="v => GuardarValor(cc, v)" />
-                                    @if (!string.IsNullOrEmpty(c.Descripcion)) { <div class="exp-cap-desc"><i class="fi fi-rr-sparkles"></i><span>@c.Descripcion</span></div> }
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-
-        @* ---------------- Col 5: chat (ocultable) ---------------- *@
-        @if (!ChatOculto)
+        @* ---------------- Col 3: chat (ocultable; en celular se pinta si su pestana esta activa) ---------------- *@
+        @if (!ChatOculto || _panel == "chat")
         {
             <div class="exp-split" data-resize="chat" data-side="right" title="Arrastra para cambiar el ancho" role="separator" aria-orientation="vertical"><span class="exp-split-grip"><i class="fi fi-rr-grip-dots-vertical"></i></span></div>
             <div class="exp-col exp-col-chat" style="flex:0 0 322px">
@@ -249,6 +158,116 @@
     </div>
 </div>
 
+@* ===================== Modal "Documento" (visor + metadatos), sobre el explorador ===================== *@
+@if (_verDoc && Doc is { } doc && _detalle is { } det)
+{
+    var grupo = doc.Archivado ? det.Archivados : det.Documentos;
+    var gi = grupo.ToList().FindIndex(x => x.Id == doc.Id);
+    var prev = gi > 0 ? grupo[gi - 1] : null;
+    var next = gi >= 0 && gi < grupo.Count - 1 ? grupo[gi + 1] : null;
+    <div class="doc-ov xdv-ov" @onclick="CerrarDocumento"></div>
+    <div class="exp-modal xdv-modal" role="dialog" aria-modal="true" aria-labelledby="xdv-title" tabindex="-1" @onkeydown="OnDocKey">
+        <div class="exp-modal-head xdv-head">
+            <div class="xdv-head-l">
+                <div class="xdv-nav">
+                    <button type="button" class="exp-ico-btn" title="Documento anterior" disabled="@(prev is null)" @onclick="() => NavDoc(prev)"><i class="fi fi-rr-angle-small-left"></i></button>
+                    <span class="xdv-nav-n">@(gi + 1) / @grupo.Count</span>
+                    <button type="button" class="exp-ico-btn" title="Documento siguiente" disabled="@(next is null)" @onclick="() => NavDoc(next)"><i class="fi fi-rr-angle-small-right"></i></button>
+                </div>
+                <div class="doc-ficon sm"><i class="fi fi-rr-document"></i></div>
+                <div class="xdv-tit">
+                    <div class="exp-modal-title" id="xdv-title">@doc.Nombre @if (doc.Archivado) { <span class="exp-cap-type cat-otro">Archivado</span> }</div>
+                    <div class="doc-sub xdv-sub">
+                        @(doc.ArchivoNombre ?? "Sin archivo") &middot; @det.Nombre@(string.IsNullOrEmpty(det.Radicado) ? "" : $" ({det.Radicado})")
+                        @if (_visorVersionNum > 0) { <text> &middot; versión @_visorVersionNum (anterior) &middot; </text><button type="button" class="exp-ver-link" @onclick="() => CargarVisorActual(doc)">volver a la actual</button> }
+                        else if (doc.NumeroVersiones > 1) { <text> &middot; versión actual (v@(doc.NumeroVersiones))</text> }
+                    </div>
+                </div>
+            </div>
+            <div class="xdv-acts">
+                @if (doc.NumeroVersiones > 0) { <button type="button" class="doc-btn-ghost sm" @onclick="() => VerVersiones(doc)"><i class="fi fi-rr-time-past"></i> Versiones (@doc.NumeroVersiones)</button> }
+                @if (!doc.Archivado) { <button type="button" class="doc-btn-soft sm" @onclick="() => AbrirCargarVersion(doc)"><i class="fi fi-rr-cloud-upload"></i> @(doc.Cargado ? "Reemplazar" : "Cargar archivo")</button> }
+                <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(doc)" disabled="@(!doc.Cargado)"><i class="fi fi-rr-download"></i> Descargar</button>
+                <button type="button" class="doc-x" @onclick="CerrarDocumento" aria-label="Cerrar"><i class="fi fi-rr-cross-small"></i></button>
+            </div>
+        </div>
+        <div class="xdv-body">
+            <div class="xdv-viewer">
+                <div class="exp-viewer-body">
+                    @if (!doc.Cargado)
+                    {
+                        <div class="exp-viewer-empty">
+                            <i class="fi fi-rr-cloud-upload"></i>
+                            <div>Esta casilla aún no tiene archivo.@(doc.Obligatorio ? " Es obligatoria en el folder." : "")</div>
+                            @if (!doc.Archivado) { <button type="button" class="doc-btn-primary sm" @onclick="() => AbrirCargarVersion(doc)"><i class="fi fi-rr-cloud-upload"></i> Cargar archivo</button> }
+                        </div>
+                    }
+                    else if (_visorCargando)
+                    {
+                        <div class="exp-viewer-empty"><i class="fi fi-rr-spinner"></i><div>Cargando documento...</div></div>
+                    }
+                    else if (_visorKind == "image" && !string.IsNullOrEmpty(_visorDataUri))
+                    {
+                        <img class="exp-viewer-img" src="@_visorDataUri" alt="@_visorNombre" />
+                    }
+                    else if (_visorKind == "pdf" && !string.IsNullOrEmpty(_visorDataUri))
+                    {
+                        <iframe class="exp-viewer-frame" src="@_visorDataUri" title="@_visorNombre"></iframe>
+                    }
+                    else if (_visorKind == "text")
+                    {
+                        <pre class="exp-viewer-text">@_visorTexto</pre>
+                    }
+                    else if (_visorKind == "html" && !string.IsNullOrEmpty(_visorHtml))
+                    {
+                        <div class="exp-viewer-html">@((MarkupString)_visorHtml)</div>
+                    }
+                    else
+                    {
+                        <div class="exp-viewer-empty">
+                            <i class="fi fi-rr-file"></i>
+                            <div>Vista previa no disponible para este tipo de archivo. Descárgalo para verlo.</div>
+                            <button type="button" class="doc-btn-primary sm" @onclick="() => Descargar(doc)"><i class="fi fi-rr-download"></i> Descargar</button>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="xdv-meta">
+                <div class="exp-sec-title">Metadatos del documento</div>
+                <div class="doc-sub xdv-meta-sub">Captura los valores. Una IA los usa para indexar y buscar dentro del documento.</div>
+                @if (_faltan.Count > 0)
+                {
+                    <div class="exp-cap-warn"><i class="fi fi-rr-exclamation"></i><span>Obligatorios sin valor: @string.Join(", ", _faltan).</span></div>
+                }
+                @if (_guardadoOk) { <div class="exp-cap-saved"><i class="fi fi-rr-check"></i> Guardado.</div> }
+                @if (_capError is not null) { <div class="doc-banner err" style="margin:0 0 10px;">@_capError</div> }
+                <div class="exp-cap-scroll xdv-cap-scroll">
+                    @if (_esquema is null) { <div class="doc-sub">Cargando...</div> }
+                    else if (_esquema.Count == 0) { <div class="doc-sub">Este documento no tiene metadatos definidos. Agrégalos en "Configurar folders".</div> }
+                    else
+                    {
+                        <div class="exp-cap">
+                            @foreach (var c in _esquema)
+                            {
+                                var cc = c;
+                                <div class="exp-cap-fld">
+                                    <div class="exp-cap-head">
+                                        <span class="exp-cap-name">@c.Label@(c.Obligatorio ? " *" : "")</span>
+                                        <span class="exp-cap-type @FolderUi.CatClase(c.Tipo)">@FolderUi.TipoCorto(c.Tipo)</span>
+                                        @if (!string.IsNullOrEmpty(c.HeredadoDe)) { <span class="doc-sub" style="font-size:10.5px;">&middot; @c.HeredadoDe</span> }
+                                    </div>
+                                    <FolderCampoInput Campo="cc" Valor="@ValorDe(cc.Id)" ValorChanged="v => GuardarValor(cc, v)" />
+                                    @if (!string.IsNullOrEmpty(c.Descripcion)) { <div class="exp-cap-desc"><i class="fi fi-rr-sparkles"></i><span>@c.Descripcion</span></div> }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_cargarAbierto)
 {
     <CargarDocumentoModal Jwt="@Jwt" FolderId="@_cargarFolderId" DocumentoId="@_cargarDocId" NombreContexto="@_cargarNombre"
@@ -258,8 +277,8 @@
 @if (_versionesDoc is not null)
 {
     var vd = _versionesDoc;
-    <div class="doc-ov" @onclick="() => _versionesDoc = null"></div>
-    <div class="doc-modal xv-modal" style="width:min(460px,96vw);" role="dialog" aria-modal="true" aria-labelledby="xv-title" @onkeydown="@(e => { if (e.Key == "Escape") _versionesDoc = null; })">
+    <div class="doc-ov doc-ov--top" @onclick="() => _versionesDoc = null"></div>
+    <div class="doc-modal xv-modal" style="width:min(460px,96vw);" role="dialog" aria-modal="true" aria-labelledby="xv-title" tabindex="-1" @onkeydown="@(e => { if (e.Key == "Escape") _versionesDoc = null; })">
         <div class="doc-modal-head">
             <div style="display:flex;align-items:center;gap:10px;min-width:0;">
                 <div class="doc-ficon sm"><i class="fi fi-rr-time-past"></i></div>
@@ -296,6 +315,8 @@
     </div>
 }
 
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
 @code {
     [Parameter] public string? Jwt { get; set; }
     /// <summary>Folder con el que abre (tarjeta pulsada).</summary>
@@ -314,6 +335,10 @@
     private bool _verArchivados;
     private bool _hubo;
     private bool _busyZip;
+    // Vista de los documentos (mini | tabla, propia_expedientes_vista), pestana activa en celular y modal Documento.
+    private string _vista = "mini";
+    private string _panel = "docs";
+    private bool _verDoc, _focoDoc, _focoExplorador;
 
     // Visor
     private bool _visorCargando;
@@ -361,12 +386,33 @@
     {
         try
         {
-            await Js.InvokeVoidAsync("propiaUI.explorerSplits", ".xf-modal", "propia.folders.colw");
-            if (first) await Js.InvokeVoidAsync("propiaUI.modalFocus", ".xf-modal");
+            await Js.InvokeVoidAsync("propiaUI.explorerSplits", ".xf-modal", "propia.folders.colw.v3");
+            if (first)
+            {
+                await Js.InvokeVoidAsync("propiaUI.modalFocus", ".xf-modal");
+                var v = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_expedientes_vista");
+                var ancho = await Js.InvokeAsync<int>("propiaUI.anchoVentana");
+                var cambio = false;
+                if (v == "tabla") { _vista = "tabla"; cambio = true; }
+                // Tablet / celular: el chat arranca cerrado (es un panel que se desliza encima).
+                if (ancho <= 1180 && !ChatOculto) { ChatOculto = true; await ChatOcultoChanged.InvokeAsync(true); cambio = true; }
+                if (cambio) StateHasChanged();
+            }
+            // Modal Documento: trampa de foco (Tab) y foco en el propio modal (no en un boton: Esc y flechas quedan aqui).
+            if (_focoDoc) { _focoDoc = false; await Js.InvokeVoidAsync("propiaUI.modalFocus", ".xdv-modal"); await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".xdv-modal"); }
+            if (_focoExplorador) { _focoExplorador = false; await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".xf-modal"); }
             if (_chatScroll) { _chatScroll = false; await Js.InvokeVoidAsync("propiaUI.scrollBottom", ".xf-chat"); }
         }
         catch { }
     }
+
+    private async Task SetVista(string v)
+    {
+        _vista = v == "tabla" ? "tabla" : "mini";
+        try { await Js.InvokeVoidAsync("localStorage.setItem", "propia_expedientes_vista", _vista); } catch { }
+    }
+
+    private void SetPanel(string p) { _panel = p; if (p == "chat") _chatScroll = true; }
 
     // ===================== Arbol =====================
     private RenderFragment Nodo(FolderNodoDto f, int depth) => __builder =>
@@ -428,7 +474,14 @@
 
     private async Task Seleccionar(Guid id)
     {
-        _sel = id; _docSel = Guid.Empty; _detalle = null; _esquema = null; _verArchivados = false;
+        _sel = id; _docSel = Guid.Empty; _detalle = null; _esquema = null; _verArchivados = false; _verDoc = false;
+        // Celular: si el folder tiene documentos se pasa a la pestana Documentos; si solo tiene subfolders, se
+        // despliega en el arbol y se queda en Folders.
+        if (Buscar(_arbol, id) is { } n)
+        {
+            if (n.Documentos + n.Archivados > 0 || n.Hijos.Count == 0) _panel = "docs";
+            else { _panel = "struct"; _abiertos.Add(id); }
+        }
         LimpiarVisor();
         await CargarDetalleAsync();
         var raiz = RaizDe(id);
@@ -453,7 +506,7 @@
         _hubo = true;
         await CargarArbolAsync();
         await CargarDetalleAsync();
-        if (_docSel != Guid.Empty && Doc is null) { _docSel = Guid.Empty; LimpiarVisor(); _esquema = null; }
+        if (_docSel != Guid.Empty && Doc is null) { _docSel = Guid.Empty; _verDoc = false; LimpiarVisor(); _esquema = null; }
     }
 
     // ===================== Documentos (miniaturas) =====================
@@ -463,7 +516,7 @@
         var sel = _docSel == d.Id;
         var titulo = archivado ? d.Nombre + " (archivado)" : d.Nombre;
         var clases = "exp-thumb" + (sel ? " sel" : "") + (archivado ? " exp-thumb--arch" : "") + (d.Cargado ? "" : " exp-thumb--vacio");
-        <div class="@clases" role="button" tabindex="0" title="@titulo" @onclick="() => SelDoc(d)" @onkeydown="e => OnThumbKey(e, d)">
+        <div class="@clases" role="button" tabindex="0" title="@titulo" @onclick="() => SelDoc(d, true)" @onkeydown="e => OnThumbKey(e, d)" @oncontextmenu="e => AbrirCtxDoc(e, d)" @oncontextmenu:preventDefault="true">
             <div class="exp-thumb-paper">
                 <div class="exp-thumb-head"><span class="exp-thumb-ext @extClase">@(d.Cargado ? ext : "VACÍO")</span></div>
                 <div class="exp-thumb-title">@d.Nombre</div>
@@ -491,14 +544,103 @@
         </div>
     };
 
-    private async Task OnThumbKey(KeyboardEventArgs e, FolderDocumentoDto d) { if (e.Key == "Enter" || e.Key == " ") await SelDoc(d); }
+    private async Task OnThumbKey(KeyboardEventArgs e, FolderDocumentoDto d) { if (e.Key == "Enter" || e.Key == " ") await SelDoc(d, true); }
 
-    private async Task SelDoc(FolderDocumentoDto d)
+    /// <summary>Selecciona un documento (esquema + visor). abrir=true abre el modal Documento.</summary>
+    private async Task SelDoc(FolderDocumentoDto d, bool abrir = false)
     {
         _docSel = d.Id; _guardadoOk = false; _capError = null;
+        if (abrir) { if (!_verDoc) _focoDoc = true; _verDoc = true; }
         LimpiarVisor();
         await CargarEsquemaAsync(d);
         if (d.Cargado) await CargarVisorActual(d);
+    }
+
+    private async Task NavDoc(FolderDocumentoDto? d) { if (d is not null) await SelDoc(d, true); }
+
+    private void CerrarDocumento() { _verDoc = false; _focoExplorador = true; }
+
+    private void OnDocKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape" || _cargarAbierto || _versionesDoc is not null) return; // los cierra su propio modal
+        CerrarDocumento();
+    }
+
+    // ===================== Vista Tabla de los documentos =====================
+    // Clic (o Enter) en la fila abre el modal Documento; las acciones de la miniatura viven en el clic derecho.
+    private RenderFragment TablaDocs(IReadOnlyList<FolderDocumentoDto> lista, bool archivados) => __builder =>
+    {
+        <div class="tblwrap xft-wrap">
+            <div class="tblscroll xft-scroll">
+                <table class="tbl xft-tbl">
+                    <thead><tr><th>DOCUMENTO</th><th>ESTADO</th><th>METADATOS</th><th class="xft-num xft-c-opc">VERSIONES</th><th class="xft-c-opc">ACTUALIZADO</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in lista)
+                        {
+                            var dd = d;
+                            var (ext, extClase) = FolderUi.ExtBadge(d.ArchivoNombre);
+                            var esq = EsquemaEfectivo(d);
+                            var capt = esq.Count(c => !string.IsNullOrWhiteSpace(ValorGuardado(d, c.Id)));
+                            var faltan = esq.Where(c => c.Obligatorio && string.IsNullOrWhiteSpace(ValorGuardado(d, c.Id))).Select(c => c.Label).ToList();
+                            <tr class="xft-row @(_docSel == d.Id ? "sel" : "") @(archivados ? "xft-row--arch" : "")" tabindex="0" title="Abrir el documento · clic derecho para más acciones"
+                                @onclick="() => SelDoc(dd, true)" @onkeydown="e => OnThumbKey(e, dd)" @oncontextmenu="e => AbrirCtxDoc(e, dd)" @oncontextmenu:preventDefault="true">
+                                <td class="xft-c-doc"><span class="xft-doc"><span class="exp-thumb-ext @extClase">@(d.Cargado ? ext : "VACÍO")</span><span class="xft-2l"><b>@d.Nombre</b>
+                                    <small title="@d.ArchivoNombre">@(d.Cargado ? $"{d.ArchivoNombre} · {FolderUi.FormatBytes(d.ArchivoTamano)}" : "Sin archivo cargado")</small></span></span></td>
+                                <td>
+                                    @if (archivados) { <span class="xft-est xft-est--arch"><i class="fi fi-rr-archive"></i> Archivado</span> }
+                                    else if (d.Cargado) { <span class="xft-est xft-est--ok"><i class="fi fi-rr-check-circle"></i> Cargado</span> }
+                                    else { <span class="xft-est xft-est--vacio"><i class="fi fi-rr-cloud-upload"></i> @(d.Obligatorio ? "Falta (obligatorio)" : "Sin archivo")</span> }
+                                </td>
+                                <td>
+                                    @if (esq.Count == 0) { <span class="doc-sub">-</span> }
+                                    else
+                                    {
+                                        <span class="xft-meta @(faltan.Count > 0 ? "is-warn" : "")" title="@(faltan.Count > 0 ? "Obligatorios sin valor: " + string.Join(", ", faltan) : null)">@if (faltan.Count > 0) { <i class="fi fi-rr-exclamation"></i><text> </text> }@capt de @esq.Count</span>
+                                    }
+                                </td>
+                                <td class="xft-num xft-c-opc">@(d.NumeroVersiones > 0 ? d.NumeroVersiones.ToString() : "-")</td>
+                                <td class="xft-c-opc">@(d.UltimaVersionAt is { } u ? u.LocalDateTime.ToString("dd MMM yyyy") : "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="xft-foot">@(lista.Count == 1 ? "1 documento" : $"{lista.Count} documentos")<span class="doc-sub xft-hint-m"> · clic derecho en una fila para más acciones</span><span class="doc-sub xft-hint-t"> · mantén presionada una fila para más acciones</span></div>
+        </div>
+    };
+
+    // Esquema efectivo de un documento: metadatos heredados de la cadena de folders + los del folder + los propios.
+    private List<FolderCampoDto> EsquemaEfectivo(FolderDocumentoDto d)
+        => (_detalle?.CamposHeredados ?? Array.Empty<FolderCampoDto>()).Concat(_detalle?.CamposPropios ?? Array.Empty<FolderCampoDto>()).Concat(d.CamposPropios).ToList();
+
+    private static string? ValorGuardado(FolderDocumentoDto d, Guid defId) => d.Valores.FirstOrDefault(v => v.DefinicionId == defId)?.Valor;
+
+    // ===================== Clic derecho en una fila o miniatura =====================
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtxDoc(MouseEventArgs e, FolderDocumentoDto d)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        var items = new List<TablaCtxMenu.Item> { new("Abrir documento", "fi-rr-eye", OnClick: async () => { await SelDoc(d, true); StateHasChanged(); }) };
+        if (d.Archivado)
+        {
+            items.Add(new(Sep: true));
+            items.Add(new("Restaurar documento", "fi-rr-rotate-right", OnClick: async () => { await Restaurar(d); StateHasChanged(); }));
+        }
+        else
+        {
+            items.Add(new(d.Cargado ? "Reemplazar archivo" : "Cargar archivo", "fi-rr-cloud-upload", OnClick: () => { AbrirCargarVersion(d); StateHasChanged(); return Task.CompletedTask; }));
+            items.Add(new("Duplicar documento", "fi-rr-copy-alt", OnClick: async () => { await Duplicar(d); StateHasChanged(); }));
+            items.Add(new($"Ver versiones ({d.NumeroVersiones})", "fi-rr-time-past", OnClick: async () => { await VerVersiones(d); StateHasChanged(); }));
+            if (d.Cargado) items.Add(new("Descargar", "fi-rr-download", OnClick: () => Descargar(d)));
+            items.Add(new(Sep: true));
+            items.Add(d.Cargado
+                ? new("Archivar (no se elimina)", "fi-rr-archive", OnClick: async () => { await Archivar(d); StateHasChanged(); })
+                : new("Quitar casilla vacía", "fi-rr-trash", Danger: true, OnClick: async () => { await QuitarCasilla(d); StateHasChanged(); }));
+        }
+        _ctxItems = items;
+        _ctxOpen = true;
     }
 
     private async Task Duplicar(FolderDocumentoDto d)
@@ -515,7 +657,7 @@
     private async Task Archivar(FolderDocumentoDto d)
     {
         var r = await Auth().PostAsync($"/api/folders/documentos/{d.Id}/archivar", null);
-        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; LimpiarVisor(); _esquema = null; } _verArchivados = true; await Recargar(); }
+        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; _verDoc = false; LimpiarVisor(); _esquema = null; } _verArchivados = true; await Recargar(); }
     }
 
     private async Task Restaurar(FolderDocumentoDto d)
@@ -527,7 +669,7 @@
     private async Task QuitarCasilla(FolderDocumentoDto d)
     {
         var r = await Auth().DeleteAsync($"/api/folders/documentos/{d.Id}");
-        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; _esquema = null; } await Recargar(); }
+        if (r.IsSuccessStatusCode) { if (_docSel == d.Id) { _docSel = Guid.Empty; _verDoc = false; _esquema = null; } await Recargar(); }
     }
 
     private void AbrirCargarNuevo()
@@ -572,7 +714,9 @@
     private async Task VerVersion(FolderDocumentoDto d, FolderVersionDto v)
     {
         _versionesDoc = null;
-        if (_docSel != d.Id) { _docSel = d.Id; await CargarEsquemaAsync(d); }
+        if (_docSel != d.Id) { _docSel = d.Id; _guardadoOk = false; _capError = null; await CargarEsquemaAsync(d); }
+        if (!_verDoc) _focoDoc = true;
+        _verDoc = true;
         _visorVersionNum = v.Numero;
         await CargarVisorDesde($"/api/folders/documentos/{d.Id}/versiones/{v.Id}/preview");
     }
@@ -745,6 +889,7 @@
     {
         if (e.Key != "Escape") return;
         if (_cargarAbierto || _versionesDoc is not null) return; // los cierra su propio modal
+        if (_verDoc) { CerrarDocumento(); return; }
         await Cerrar();
     }
 

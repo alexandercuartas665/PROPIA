@@ -110,6 +110,20 @@ public class PqrsdController : ControllerBase
         [FromQuery] bool archivados, CancellationToken ct)
         => Ok(await _svc.GetBandejaAsync(estado, tipo, categoriaId, q, archivados, ct));
 
+    /// <summary>Texto COMPLETO del asunto de los radicados pedidos (la bandeja lo trae resumido a 100). Lo usa la
+    /// descarga de la vista tabla. Es lectura: POST solo para no poner cientos de ids en la URL. Tenant por
+    /// query filter + RLS; ids ajenos simplemente no vuelven.</summary>
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
+    [HttpPost("descripciones")]
+    public async Task<IActionResult> Descripciones([FromBody] List<Guid> ids, CancellationToken ct)
+    {
+        if (ids is null || ids.Count == 0) return Ok(new Dictionary<Guid, string>());
+        var lote = ids.Distinct().Take(1000).ToList();
+        var res = await _db.PqrsdExpedientes.AsNoTracking().Where(x => lote.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Descripcion, ct);
+        return Ok(res);
+    }
+
     // --- Tablero: columnas (estados) configurables ---
     [HttpGet("estados")]
     public async Task<IActionResult> ListarEstados(CancellationToken ct) => Ok(await _svc.ListarEstadosAsync(ct));
@@ -864,28 +878,7 @@ public class PqrsdController : ControllerBase
         return Ok(new { enviadosCorreo, enviadosWhatsapp = enviadosWa, errores });
     }
 
-    // --- Plantillas de respuesta (combinacion de correspondencia) ---
-    [HttpGet("plantillas/tokens")]
-    public IActionResult ListarTokensPlantilla() => Ok(_svc.ListarTokensPlantilla());
-
-    [HttpGet("plantillas")]
-    public async Task<IActionResult> ListarPlantillas(CancellationToken ct) => Ok(await _svc.ListarPlantillasAsync(ct));
-
-    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
-    [HttpPost("plantillas")]
-    public async Task<IActionResult> CrearPlantilla([FromBody] GuardarPlantillaRequest req, CancellationToken ct)
-        => Ok(await _svc.CrearPlantillaAsync(req, ct));
-
-    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
-    [HttpPut("plantillas/{plantillaId:guid}")]
-    public async Task<IActionResult> ActualizarPlantilla(Guid plantillaId, [FromBody] GuardarPlantillaRequest req, CancellationToken ct)
-        => await _svc.ActualizarPlantillaAsync(plantillaId, req, ct) ? NoContent() : NotFound();
-
-    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)]
-    [HttpDelete("plantillas/{plantillaId:guid}")]
-    public async Task<IActionResult> EliminarPlantilla(Guid plantillaId, CancellationToken ct)
-        => await _svc.EliminarPlantillaAsync(plantillaId, ct) ? NoContent() : NotFound();
-
+    // --- Plantillas de respuesta: el catalogo vive en /api/plantillas?categoria=pqrsd (PlantillasController) ---
     // Devuelve el cuerpo de la plantilla con los tokens ya reemplazados por los datos del expediente.
     [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Ver)]
     [HttpGet("{id:guid}/plantillas/{plantillaId:guid}/resuelta")]

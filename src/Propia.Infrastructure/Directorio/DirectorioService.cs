@@ -327,9 +327,18 @@ public class DirectorioService : IDirectorioService
 
     // ============================ Empresa ============================
 
+    // NIT normalizado (sin puntos/espacios/prefijos) y SIN el digito de verificacion ("900456789-1" -> "900456789").
+    private static string NitSinDv(string? nit)
+    {
+        var n = Application.Documentos.NormalizadorDocumental.Nit(nit) ?? "";
+        var guion = n.IndexOf('-');
+        return guion >= 0 ? n[..guion] : n;
+    }
+
     public async Task<EmpresaDetalleDto?> BuscarEmpresaPorNitAsync(string nit, CancellationToken ct)
     {
-        var nitN = (nit ?? "").Trim().Replace(".", "").Replace("-", "");
+        // Mismo normalizador que el Agente Documental: sin puntos/espacios; el DV ("-1") no es parte de Nit.
+        var nitN = NitSinDv(nit);
         if (string.IsNullOrEmpty(nitN)) return null;
         var e = await _db.Empresas.IgnoreQueryFilters()
             .Include(x => x.RepresentanteLegal)
@@ -352,15 +361,17 @@ public class DirectorioService : IDirectorioService
         if (string.IsNullOrWhiteSpace(req.Nit)) throw new InvalidOperationException("NIT obligatorio.");
         if (string.IsNullOrWhiteSpace(req.RazonSocial) || req.RazonSocial.Trim().Length < 3)
             throw new InvalidOperationException("Razon social minimo 3 caracteres.");
-        var nitN = req.Nit.Trim().Replace(".", "").Replace("-", "");
-        if (!nitN.All(char.IsDigit)) throw new InvalidOperationException("NIT debe contener solo digitos.");
+        // "900.456.789-1" -> Nit "900456789" + DV "1" (si el DV no vino aparte). Mismo normalizador que la IA.
+        var nitNorm = Application.Documentos.NormalizadorDocumental.Nit(req.Nit) ?? "";
+        var nitN = NitSinDv(nitNorm);
+        if (nitN.Length == 0 || !nitN.All(char.IsDigit)) throw new InvalidOperationException("NIT debe contener solo digitos.");
 
         var existente = await _db.Empresas.IgnoreQueryFilters()
             .FirstOrDefaultAsync(e => e.Nit == nitN, ct);
         if (existente is not null)
             throw new InvalidOperationException("Esta empresa ya existe en la plataforma. Vinculala en lugar de crearla.");
 
-        var dv = req.DigitoVerificacion;
+        var dv = string.IsNullOrWhiteSpace(req.DigitoVerificacion) && nitNorm.Contains('-') ? nitNorm[(nitNorm.IndexOf('-') + 1)..] : req.DigitoVerificacion;
         if (string.IsNullOrEmpty(dv))
             dv = CalcularDigitoVerificacionNit(nitN);
         else if (dv != CalcularDigitoVerificacionNit(nitN))
@@ -438,9 +449,12 @@ public class DirectorioService : IDirectorioService
             .Where(e => empresasIds.Contains(e.Id));
         if (!string.IsNullOrEmpty(q))
         {
+            // El NIT se busca por sus digitos: "900.456" encuentra "900456789" (solo si lo buscado es un numero).
+            var qNit = q.All(c => char.IsDigit(c) || c is '.' or '-' or ',' or ' ') ? NitSinDv(q) : q;
+            if (qNit.Length == 0) qNit = q;
             empresasQuery = empresasQuery.Where(e =>
                 e.RazonSocial.ToLower().Contains(q) ||
-                e.Nit.Contains(q) ||
+                e.Nit.Contains(qNit) ||
                 (e.NombreComercial != null && e.NombreComercial.ToLower().Contains(q)) ||
                 (e.Email != null && e.Email.ToLower().Contains(q)));
         }

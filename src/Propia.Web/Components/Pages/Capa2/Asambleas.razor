@@ -1,559 +1,377 @@
 @page "/asambleas"
+@page "/asambleas/nueva"
+@page "/asambleas/{Id:guid}"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Asambleas
 @using Propia.Application.MiCopropiedad
 @using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Asambleas
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject IModalService Modals
 @implements IDisposable
 
 <PageTitle>Asambleas - PROPIA</PageTitle>
 
-<div class="mb-4 d-flex justify-content-between align-items-start">
+@* Modulo 2.8 Asambleas. Bandeja CANONICA (= Unidades / replica RP.modAsambleas): Filtros / Buscar / Ordenar /
+   Agrupar / Columnas / Descargar + toggle Tarjetas | Tabla, de SOLO LECTURA (el ciclo de la sesion se gestiona en
+   la ficha). La ficha y el asistente "Nueva sesion" se abren en MODAL encima de la bandeja; /asambleas/{Id} y
+   /asambleas/nueva quedan como enlaces profundos que abren ese modal. Logica en Asambleas.Bandeja.cs. *@
+
+<div class="mb-4 d-flex justify-content-between align-items-start gap-2 flex-wrap">
     <div>
         <h1 class="h3 mb-1 fw-semibold">Asambleas y Organos de Gobierno</h1>
         <p class="text-muted mb-0">Ciclo documental Ley 675/2001 + Decreto 1074/2015</p>
     </div>
-    <a class="btn" style="background: var(--propia-primary); color:white;" href="/asambleas/nueva">+ Nueva sesión</a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="/ayuda/asambleas.html" target="_blank" rel="noopener" title="Manual de usuario del módulo">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Manual
+        </a>
+        <button type="button" class="btn btn-outline-secondary" @onclick="AbrirGobiernoAsync" disabled="@string.IsNullOrEmpty(_jwt)" title="Consejo de administración, comités y revisor fiscal">Órganos de gobierno</button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="AbrirConfigAsync" disabled="@string.IsNullOrEmpty(_jwt)">Configuración</button>
+        <button type="button" class="btn" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="AbrirNuevaAsync" disabled="@string.IsNullOrEmpty(_jwt)">+ Nueva sesión</button>
+    </div>
 </div>
 
 @if (!_authChecked)
 {
     <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-    return;
 }
-
-@if (string.IsNullOrEmpty(_jwt))
+else if (string.IsNullOrEmpty(_jwt))
 {
     <AuthMessage />
-    return;
 }
-
-@if (_b is null)
+else if (_b is null)
 {
-    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
-    return;
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+    else { <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div> }
 }
+else
+{
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
-@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
-
-@* === Barra de herramientas canonica: [Filtros] [Buscar] ... spacer ... [Agrupar] [Campos] === *@
-<div class="asa-tool">
-    <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
-    <div class="asa-search">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input class="asa-search-inp" placeholder="Buscar por título..." value="@_q"
-               @oninput="@(e => { _q = e.Value?.ToString() ?? string.Empty; _pagina = 1; })" />
-    </div>
-    <div class="asa-tool-spacer"></div>
-    <div class="asa-menu-wrap">
-        <button type="button" class="asa-fbtn @(_agruparPor != "" ? "on" : "")" @onclick="() => _showAgrupar = !_showAgrupar" title="Agrupar asambleas">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-            <span>Agrupar@(_agruparPor != "" ? ": " + AgruparLabel(_agruparPor) : "")</span>
-        </button>
-        @if (_showAgrupar)
-        {
-            <div class="asa-menu-bd" @onclick="() => _showAgrupar = false"></div>
-            <div class="asa-menu">
-                @foreach (var (gk, gl) in AgruparOpciones)
-                {
-                    var key = gk;
-                    <button class="asa-menu-it @(_agruparPor == key ? "on" : "")" @onclick="() => SetAgrupar(key)">@gl</button>
-                }
+    <div class="asm-bandeja">
+        <div class="dst-filtros">
+            <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
+            <div class="dst-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="dst-search-inp" placeholder="Buscar por título..." @bind="_q" @bind:event="oninput" />
             </div>
-        }
-    </div>
-    <div class="asa-menu-wrap">
-        <button type="button" class="asa-fbtn @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos y columnas de la tabla">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>
-            <span>Campos</span>
-        </button>
-        @if (_showCampos)
-        {
-            <div class="asa-menu-bd" @onclick="() => _showCampos = false"></div>
-            <div class="asa-colsmenu">
-                <div class="asa-colsmenu-h">COLUMNAS (orden y visibilidad)</div>
-                @for (int i = 0; i < _colOrder.Count; i++)
+            <div class="dst-filtros-spacer"></div>
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="StateHasChanged" />
+            <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+            <div class="dst-menu-wrap">
+                <button type="button" class="dst-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y ancho">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+                    <span>Columnas</span>
+                </button>
+                @if (_showColMenu)
                 {
-                    var idx = i;
-                    var col = Catalogo.First(c => c.Key == _colOrder[idx]);
-                    var key = col.Key;
-                    <div class="asa-colsmenu-i">
-                        <div class="asa-colsmenu-ord">
-                            <button class="asa-colsmenu-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)" title="Subir">&#9650;</button>
-                            <button class="asa-colsmenu-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)" title="Bajar">&#9660;</button>
+                    <div class="dst-menu-bd" @onclick="() => _showColMenu = false"></div>
+                    <div class="dst-menu dst-colmenu">
+                        <div class="dst-col-search">
+                            <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
                         </div>
-                        <label class="asa-cfg-vis" title="@(col.Hideable ? "Mostrar u ocultar" : "Columna requerida, siempre visible")">
-                            <input type="checkbox" checked="@(!_colHidden.Contains(key))" disabled="@(!col.Hideable)" @onchange="@(e => SetColVisible(key, (bool)(e.Value ?? false)))" />
-                        </label>
-                        <span class="asa-colsmenu-lbl">@col.Label</span>
-                        @if (!col.Hideable) { <span class="asa-cfg-req">fija</span> }
+                        <div class="dst-col-list">
+                            @for (var i = 0; i < _colOrder.Count; i++)
+                            {
+                                var idx = i;
+                                var key = _colOrder[idx];
+                                var label = ColLabel(key);
+                                if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
+                                var visible = !_colHidden.Contains(key);
+                                <div class="dst-col-it">
+                                    <button class="dst-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverCol(idx, -1)">▲</button>
+                                    <button class="dst-col-mv" disabled="@(idx == 0 || idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)">▼</button>
+                                    <span class="dst-col-name">@label</span>
+                                    @if (idx == 0) { <span class="dst-col-fija">fija</span> }
+                                    else
+                                    {
+                                        <button class="dst-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => SetColVisible(key, !visible)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="dst-col-massacts">
+                            <button type="button" class="dst-col-mass" @onclick="OcultarTodo"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                            <button type="button" class="dst-col-mass" @onclick="MostrarTodo"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                            <button type="button" class="dst-col-reset" @onclick="RestablecerCol">Restablecer</button>
+                        </div>
                     </div>
                 }
-                <div class="asa-colsmenu-acts">
-                    <button type="button" class="asa-colsmenu-act" @onclick="MostrarTodo">Mostrar todo</button>
-                    <button type="button" class="asa-colsmenu-act" @onclick="OcultarTodo">Ocultar todo</button>
+            </div>
+            @if (_vista == "tabla")
+            {
+                <TablaExportar Vista="VistaExport" />
+            }
+            <TablaVistaToggle Opciones="@VistasOpc" Valor="@_vista" OnCambiar="SetVista" />
+        </div>
+
+        @if (_sel.Count > 0 && _vista == "tabla")
+        {
+            <div class="dst-selbar">
+                <span class="dst-selbar-n">@(_sel.Count + " seleccionada" + (_sel.Count == 1 ? "" : "s"))</span>
+                <button type="button" class="dst-selbar-del" @onclick="() => _confirmDel = true">
+                    <i class="fi fi-rr-trash"></i> Eliminar
+                </button>
+                <button type="button" class="dst-selbar-x" @onclick="() => _sel.Clear()">Deseleccionar</button>
+            </div>
+        }
+        @if (_confirmDel)
+        {
+            <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _confirmDel = false; }">
+                <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                    <div class="dst-cfg-head"><strong>@("Eliminar " + _sel.Count + " sesión" + (_sel.Count == 1 ? "" : "es"))</strong></div>
+                    <div class="dst-cfg-sub">Solo se pueden eliminar sesiones en Borrador o Canceladas. Las que ya siguen su ciclo (citada, en curso, cerrada) no se borran.</div>
+                    <div class="dst-cfg-actions">
+                        <button type="button" class="dst-fbtn" @onclick="() => _confirmDel = false" disabled="@_delBusy">Cancelar</button>
+                        <button type="button" class="dst-selbar-del" @onclick="EliminarSeleccionadasAsync" disabled="@_delBusy">Si, eliminar</button>
+                    </div>
                 </div>
             </div>
         }
-    </div>
-</div>
 
-@* === Tabla (header sticky opaco; las filas pasan por debajo) === *@
-<div class="asa-box">
-    <div class="asa-table-wrap">
-        <table class="asa-table">
-            <colgroup>
-                <col style="width:34px" />
-                @foreach (var key in ColsVisibles) { <col style="@ColStyle(key)" /> }
-                <col style="width:70px" />
-            </colgroup>
-            <thead>
-                <tr>
-                    <th class="asa-th-exp"></th>
-                    @foreach (var key in ColsVisibles)
-                    {
-                        var k = key;
-                        <th class="@(EsNum(k) ? "asa-th-num" : "")" data-clave="@k" title="Clic: ordenar | arrastra: mover columna" @onmousedown="e => IniciarReorder(e, k)" @onclick="() => Ordenar(k)">
-                            <span class="asa-th-lbl">@ColLabel(k)@(_sortCol == k ? (_sortAsc ? " ▲" : " ▼") : "")</span>
-                            <span class="asa-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(k)" @ondblclick:stopPropagation="true"></span>
-                        </th>
-                    }
-                    <th class="asa-th-act"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @if (_agruparPor == "")
+        @if (_vista == "tarjetas")
+        {
+            var niveles = Niveles;
+            var filas = Ordenadas().ToList();
+            <div class="dst-table">
+                @if (filas.Count == 0)
                 {
-                    @foreach (var s in Pagina)
-                    {
-                        @RenderFila(s)
-                    }
+                    <div class="dst-empty"><strong>Ninguna asamblea coincide con el filtro.</strong><span>Ajusta la búsqueda o los filtros.</span></div>
+                }
+                else if (niveles.Count > 0)
+                {
+                    <div class="dst-lista">
+                        @foreach (var item in Aplanar(ArbolGrupos(niveles)))
+                        {
+                            if (item.Grupo is { } g)
+                            {
+                                <div class="dst-group" style="padding-left:@(16 + g.Nivel * 16)px;"><span class="dst-group-t">@g.Titulo</span><span class="dst-group-n">@g.Conteo</span></div>
+                            }
+                            else { @TarjetaTpl(item.Fila!) }
+                        }
+                    </div>
                 }
                 else
                 {
-                    @foreach (var g in Grupos)
-                    {
-                        <tr class="asa-grp-row">
-                            <td class="asa-grp-cell" colspan="@(ColsVisibles.Count() + 2)">@g.Key <span class="asa-grp-count">@g.Count()</span></td>
-                        </tr>
-                        @foreach (var s in g)
-                        {
-                            @RenderFila(s)
-                        }
-                    }
+                    <div class="dst-lista">
+                        @foreach (var s in filas) { @TarjetaTpl(s) }
+                    </div>
                 }
-            </tbody>
-        </table>
+            </div>
+        }
+        else if (Items.Count > 0 && Filtradas().Count == 0)
+        {
+            <div class="dst-empty"><strong>Ninguna asamblea coincide con el filtro.</strong><span>Ajusta la búsqueda o los filtros.</span></div>
+        }
+        else
+        {
+            var cols = ColsVisibles.ToList();
+            var niveles = Niveles;
+            <div class="dst-table">
+                <div class="tblwrap">
+                <div class="dst-scroll tblscroll">
+                <table class="tbl">
+                    <colgroup>
+                        <col style="width:38px" /><col style="width:34px" />
+                        @foreach (var k in cols) { <col style="@ColStyle(k)" /> }
+                        <col style="width:56px" />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="tbl-sel"><label class="tbl-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></th>
+                            <th class="tbl-exp"></th>
+                            @foreach (var k in cols)
+                            {
+                                var clave = k;
+                                var lbl = ColLabel(k);
+                                <th class="tbl-th--menu @(EsNum(k) ? "tbl-num" : "")" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                    @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorClic(clave)">
+                                    <span class="tbl-th-lbl">@lbl</span>
+                                    @SortInd(clave)
+                                    @ChevCol(clave, lbl)
+                                    <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(clave, 0)" @ondblclick:stopPropagation="true"></span>
+                                </th>
+                            }
+                            <th class="tbl-addcol"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (niveles.Count > 0)
+                        {
+                            <TablaGruposRenderTr T="SesionListaDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" Colspan="@ColSpanTotal" CabeceraTemplate="CabeceraGrupoTpl" />
+                        }
+                        else
+                        {
+                            @foreach (var s in Ordenadas()) { @FilaTpl(s) }
+                        }
+                    </tbody>
+                </table>
+                </div>
+                </div>
+                @if (niveles.Count == 0)
+                {
+                    <div class="tbl-foot">@Filtradas().Count registros &middot; mostrando @Filtradas().Count</div>
+                }
+            </div>
+        }
     </div>
+    @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
+}
 
-    @* Footer canonico: siempre visible sin agrupacion, incluso con 0 filas. Con agrupacion no se pagina. *@
-    @if (_agruparPor == "")
-    {
-        <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="asambleas"
-                    PaginaChanged="p => { _pagina = p; }"
-                    PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
-    }
-</div>
+@* Modal Configuracion de asambleas (por copropiedad): criterio de mayoria + parametros de citacion *@
+@if (_asmCfg is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Configuración de asambleas</h5>
+                    <button type="button" class="btn-close" @onclick="() => _asmCfg = null"></button>
+                </div>
+                <div class="modal-body small">
+                    <label class="form-label fw-semibold mb-1">Criterio de mayoría al cerrar una votación</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="cm-masde" name="cm" checked="@(_asmCfg.Criterio == CriterioMayoria.MasDe)"
+                               @onchange="() => _asmCfg.Criterio = CriterioMayoria.MasDe" />
+                        <label class="form-check-label" for="cm-masde"><strong>Más del porcentaje</strong> (mayoría absoluta, Ley 675). Con mayoría del 50 %, un empate 50/50 <em>no</em> se aprueba.</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" id="cm-almenos" name="cm" checked="@(_asmCfg.Criterio == CriterioMayoria.AlMenos)"
+                               @onchange="() => _asmCfg.Criterio = CriterioMayoria.AlMenos" />
+                        <label class="form-check-label" for="cm-almenos"><strong>Al menos el porcentaje</strong>. Con mayoría del 50 %, un empate 50/50 <em>sí</em> se aprueba.</label>
+                    </div>
+                    <div class="text-muted mb-3">El porcentaje de cada punto (por ejemplo 50 % o 70 %) se define al crear la sesión. El cambio aplica a las votaciones que se cierren desde ahora.</div>
 
-<style>
-    .asa-tool { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-    .asa-tool-spacer { flex: 1; }
-    .asa-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 0 11px; background: var(--propia-bg-card); }
-    .asa-search svg { color: var(--propia-text-faint); flex-shrink: 0; }
-    .asa-search:focus-within { border-color: var(--propia-brand, var(--propia-brand)); }
-    .asa-search-inp { border: 0; outline: none; padding: 8px 0; font-size: 12.5px; color: var(--propia-text-body); font-family: inherit; width: 210px; background: transparent; }
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-plazo">Plazo de citación (días)</label>
+                            <input id="cfg-plazo" type="number" min="0" max="60" class="form-control form-control-sm" @bind="_asmCfg.PlazoCitacionDias" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-poderes">Poderes por persona (0 = sin límite)</label>
+                            <input id="cfg-poderes" type="number" min="0" max="50" class="form-control form-control-sm" @bind="_asmCfg.LimitePoderes" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-gracia">Gracia de reconexión (segundos)</label>
+                            <input id="cfg-gracia" type="number" min="0" max="3600" class="form-control form-control-sm" @bind="_asmCfg.GraciaReconexionSeg" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1" for="cfg-recordatorio">Recordatorio (días antes)</label>
+                            <input id="cfg-recordatorio" type="number" min="0" max="30" class="form-control form-control-sm" @bind="_asmCfg.NotifRecordatorioDias" />
+                        </div>
+                    </div>
+                    @if (_asmCfgError is not null) { <div class="alert alert-danger py-2 small mt-3 mb-0">@_asmCfgError</div> }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _asmCfg = null">Cancelar</button>
+                    <button class="btn btn-sm btn-primary" @onclick="GuardarConfigAsync" disabled="@_asmCfgBusy">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
-    .asa-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    .asa-fbtn:hover { border-color: #CBD6E2; }
-    .asa-fbtn.on { background: var(--propia-brand-soft); border-color: var(--propia-brand-border); color: var(--propia-brand, var(--propia-brand)); }
-
-    .asa-menu-wrap { position: relative; }
-    .asa-menu-bd { position: fixed; inset: 0; z-index: 40; }
-    .asa-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 180px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 6px; }
-    .asa-menu-it { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); cursor: pointer; font-family: inherit; }
-    .asa-menu-it:hover { background: var(--propia-brand-soft); }
-    .asa-menu-it.on { background: var(--propia-brand-soft); color: var(--propia-brand, var(--propia-brand)); }
-
-    .asa-colsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; min-width: 240px; background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px; box-shadow: 0 12px 30px rgba(30,40,60,.18); padding: 8px; }
-    .asa-colsmenu-h { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); padding: 4px 6px 8px; }
-    .asa-colsmenu-i { display: flex; align-items: center; gap: 8px; padding: 4px 6px; }
-    .asa-colsmenu-ord { display: flex; flex-direction: column; }
-    .asa-colsmenu-mv { border: 0; background: transparent; color: var(--propia-text-muted); cursor: pointer; font-size: 9px; line-height: 1; padding: 1px; }
-    .asa-colsmenu-mv:disabled { opacity: .3; cursor: default; }
-    .asa-colsmenu-lbl { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--propia-text-body); }
-    .asa-cfg-req { font-size: 10px; color: var(--propia-text-faint); font-weight: 700; }
-    .asa-colsmenu-acts { display: flex; gap: 6px; border-top: 1px solid var(--propia-border-divider); margin-top: 6px; padding-top: 8px; }
-    .asa-colsmenu-act { flex: 1; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 7px; padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: var(--propia-text-secondary); cursor: pointer; font-family: inherit; }
-    .asa-colsmenu-act:hover { background: var(--propia-brand-soft); border-color: var(--propia-brand-border); color: var(--propia-brand, var(--propia-brand)); }
-
-    .asa-box { border: 1px solid var(--propia-border-card); border-radius: 12px; overflow: hidden; background: var(--propia-bg-card); }
-    .asa-table-wrap { overflow: auto; max-height: calc(100vh - 260px); }
-    .asa-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: max-content; }
-    .asa-table thead th { position: sticky; top: 0; z-index: 8; background: var(--propia-bg-table-head); border-bottom: 1px solid var(--propia-border-divider); padding: 10px 14px; text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--propia-text-faint); text-transform: uppercase; white-space: nowrap; cursor: pointer; user-select: none; box-shadow: 0 2px 4px -2px rgba(27,42,58,.12); }
-    .asa-table thead th.asa-th-num { text-align: right; }
-    .asa-table thead th.asa-th-exp, .asa-table thead th.asa-th-act { cursor: default; }
-    .asa-th-exp { width: 34px; }
-    .asa-th-act { width: 70px; }
-    /* Handle de redimensionar (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. El th sticky
-       ya ancla el absolute; cursor grab via [data-clave]. */
-    .asa-col-rz { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 9; }
-    .asa-col-rz::after { content: ""; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 2px; background: transparent; transition: background .12s; }
-    .asa-col-rz:hover::after { background: var(--propia-brand); }
-    .asa-table tbody td { padding: 9px 14px; border-bottom: 1px solid var(--propia-border-divider); font-size: 13px; color: var(--propia-text-body); vertical-align: middle; }
-    .asa-table tbody tr:hover td { background: var(--propia-bg-hover); }
-    .asa-td-exp { width: 34px; text-align: center; padding: 0 4px; }
-    .asa-exp { border: 0; background: transparent; color: var(--propia-text-faint); cursor: pointer; opacity: 0; padding: 4px; }
-    .asa-table tbody tr:hover .asa-exp { opacity: 1; }
-    .asa-td-num { text-align: right; }
-    .asa-td-titulo strong { font-weight: 600; color: var(--propia-text-h1); }
-
-    .asa-grp-row td { background: var(--propia-bg-hover); }
-    .asa-grp-cell { font-size: 12px; font-weight: 700; color: var(--propia-text-secondary); text-transform: uppercase; letter-spacing: .3px; }
-    .asa-grp-count { display: inline-flex; min-width: 20px; justify-content: center; margin-left: 8px; background: var(--propia-border-card); color: var(--propia-text-secondary); border-radius: 10px; padding: 0 7px; font-size: 11px; }
-
-    [data-bs-theme="dark"] .asa-box { background: var(--propia-bg-card); border-color: var(--propia-border-card); }
-    [data-bs-theme="dark"] .asa-table thead th { background: var(--propia-bg-table-head); color: var(--propia-text-muted); }
-    [data-bs-theme="dark"] .asa-table tbody td { color: var(--propia-text-body); border-color: var(--propia-border-card); }
-    [data-bs-theme="dark"] .asa-table tbody tr:hover td { background: var(--propia-bg-table-head); }
-</style>
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOferta" />
+<ModalHost />
 
 @code {
-    private string? _jwt;
-    private bool _authChecked;
-    private string? _msg; private string _msgClass = "alert-info";
-    private SesionBandejaDto? _b;
+    // ===== Fila de la Tabla (solo lectura: clic / expandir abren la ficha) =====
+    private RenderFragment<SesionListaDto> FilaTpl => s => @<tr class="dst-row--tr @(_sel.Contains(s.Id) ? "dst-row-sel" : "")" @key="s.Id" @oncontextmenu="e => AbrirCtx(e, s)" @oncontextmenu:preventDefault="true">
+        <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(s.Id)" @onchange="@(e => ToggleSel(s.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir la asamblea" @onclick="() => AbrirFichaAsync(s.Id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var k in ColsVisibles) { @Celda(s, k) }
+        <td class="tbl-addcol"></td>
+    </tr>;
 
-    // Barra / vista tabla canonica
-    private FiltroDinamico? _fd;
-    private string _q = "";
-    private bool _showAgrupar; private bool _showCampos;
-    private string _agruparPor = "";
-    private string _sortCol = "fecha"; private bool _sortAsc = false;   // fecha desc por defecto
-    private int _pagina = 1; private int _porPagina = 25;
-
-    private sealed record ColDef(string Key, string Label, bool Hideable, bool Numeric);
-    private static readonly ColDef[] Catalogo =
+    private RenderFragment Celda(SesionListaDto s, string k)
     {
-        new("titulo", "Titulo", false, false),
-        new("tipo", "Tipo", true, false),
-        new("modalidad", "Modalidad", true, false),
-        new("fecha", "Fecha", true, false),
-        new("estado", "Estado", true, false),
-        new("puntos", "Puntos", true, true),
-        new("participantes", "Participantes", true, true),
-    };
-    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
-    private readonly HashSet<string> _colHidden = new();
-
-    // Config de columnas por copropiedad (orden/visibilidad/ancho), entidad 'asamblea'.
-    private const string EntCfg = "asamblea";
-    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
-    private DotNetObjectReference<Asambleas>? _self;
-
-    private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
-    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
-    private static bool EsNum(string k) => Catalogo.First(c => c.Key == k).Numeric;
-
-    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
-    {
-        new() { Key = "titulo", Label = "Titulo", Kind = "texto" },
-        new() { Key = "tipo", Label = "Tipo", Kind = "sel",
-                Opciones = Enum.GetValues<TipoSesion>().Select(t => (t.ToString(), t.ToString())).ToList() },
-        new() { Key = "modalidad", Label = "Modalidad", Kind = "sel",
-                Opciones = Enum.GetValues<ModalidadSesion>().Select(m => (m.ToString(), m.ToString())).ToList() },
-        new() { Key = "estado", Label = "Estado", Kind = "sel",
-                Opciones = Enum.GetValues<EstadoSesion>().Select(e => (e.ToString(), e.ToString())).ToList() },
-        new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
-        new() { Key = "puntos", Label = "Puntos", Kind = "num" },
-        new() { Key = "participantes", Label = "Participantes", Kind = "num" },
-    };
-
-    private static readonly (string, string)[] AgruparOpciones =
-    {
-        ("", "Sin agrupar"), ("estado", "Estado"), ("tipo", "Tipo"), ("modalidad", "Modalidad"),
-    };
-    private static string AgruparLabel(string v) => v switch
-    { "estado" => "Estado", "tipo" => "Tipo", "modalidad" => "Modalidad", _ => "" };
-
-    // ===== Pipeline: filtrar -> ordenar -> (agrupar | paginar) =====
-    private IReadOnlyList<SesionListaDto> Items => _b?.Items ?? Array.Empty<SesionListaDto>();
-
-    private string? ValorCrudo(SesionListaDto s, string key) => key switch
-    {
-        "titulo" => s.Titulo,
-        "tipo" => s.Tipo.ToString(),
-        "modalidad" => s.Modalidad.ToString(),
-        "estado" => s.Estado.ToString(),
-        "fecha" => s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd"),
-        "puntos" => s.CantidadPuntos.ToString(),
-        "participantes" => s.CantidadParticipantes.ToString(),
-        _ => null,
-    };
-
-    private List<SesionListaDto> Filtrados
-    {
-        get
-        {
-            var q = Items.AsEnumerable();
-            if (!string.IsNullOrWhiteSpace(_q))
-                q = q.Where(s => s.Titulo.Contains(_q, StringComparison.OrdinalIgnoreCase));
-            if (_fd is not null)
-                q = q.Where(s => _fd.Pasa(key => ValorCrudo(s, key)));
-            return Ordenar(q).ToList();
-        }
-    }
-
-    private IEnumerable<SesionListaDto> Ordenar(IEnumerable<SesionListaDto> src) => _sortCol switch
-    {
-        "titulo" => _sortAsc ? src.OrderBy(s => s.Titulo) : src.OrderByDescending(s => s.Titulo),
-        "tipo" => _sortAsc ? src.OrderBy(s => s.Tipo.ToString()) : src.OrderByDescending(s => s.Tipo.ToString()),
-        "modalidad" => _sortAsc ? src.OrderBy(s => s.Modalidad.ToString()) : src.OrderByDescending(s => s.Modalidad.ToString()),
-        "estado" => _sortAsc ? src.OrderBy(s => s.Estado.ToString()) : src.OrderByDescending(s => s.Estado.ToString()),
-        "puntos" => _sortAsc ? src.OrderBy(s => s.CantidadPuntos) : src.OrderByDescending(s => s.CantidadPuntos),
-        "participantes" => _sortAsc ? src.OrderBy(s => s.CantidadParticipantes) : src.OrderByDescending(s => s.CantidadParticipantes),
-        _ => _sortAsc ? src.OrderBy(s => s.FechaSesion) : src.OrderByDescending(s => s.FechaSesion),
-    };
-
-    private IEnumerable<IGrouping<string, SesionListaDto>> Grupos =>
-        Filtrados.GroupBy(GrupoClave).OrderBy(g => g.Key);
-
-    private string GrupoClave(SesionListaDto s) => _agruparPor switch
-    {
-        "estado" => s.Estado.ToString(),
-        "tipo" => s.Tipo.ToString(),
-        "modalidad" => s.Modalidad.ToString(),
-        _ => "",
-    };
-
-    private IEnumerable<SesionListaDto> Pagina =>
-        Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
-
-    // ===== Interacciones de la barra =====
-    private void Ordenar(string k)
-    {
-        if (_sortCol == k) _sortAsc = !_sortAsc;
-        else { _sortCol = k; _sortAsc = true; }
-    }
-
-    private void SetAgrupar(string v) { _agruparPor = v; _showAgrupar = false; _pagina = 1; }
-
-    private async Task MoverCol(int idx, int delta)
-    {
-        var j = idx + delta;
-        if (j < 0 || j >= _colOrder.Count) return;
-        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
-        for (int i = 0; i < _colOrder.Count; i++) await GuardarCfg(FilaConfig(_colOrder[i]) with { Orden = i });
-        await CargarConfigAsync();
-    }
-
-    private async Task SetColVisible(string key, bool visible)
-    {
-        if (!Catalogo.First(c => c.Key == key).Hideable) return;
-        if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
-        await GuardarCfg(FilaConfig(key) with { Oculto = !visible });
-        await CargarConfigAsync();
-    }
-
-    private async Task MostrarTodo()
-    { foreach (var c in Catalogo) await GuardarCfg(FilaConfig(c.Key) with { Oculto = false }); await CargarConfigAsync(); }
-    private async Task OcultarTodo()
-    { foreach (var c in Catalogo.Where(c => c.Hideable)) await GuardarCfg(FilaConfig(c.Key) with { Oculto = true }); await CargarConfigAsync(); }
-
-    // ===== Config de columnas (orden/visibilidad/ancho) por copropiedad, entidad 'asamblea' =====
-    private UnidadCampoConfigDto? CfgDe(string k) => _cfg.TryGetValue(k, out var c) ? c : null;
-    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
-    {
-        var c = CfgDe(clave);
-        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg);
-    }
-    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
-    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
-    private async Task CargarConfigAsync()
-    {
-        try
-        {
-            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
-            _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
-        }
-        catch { _cfg = new(StringComparer.Ordinal); }
-        _colOrder = Catalogo.Select((c, i) => (c.Key, ord: CfgDe(c.Key)?.Orden ?? (1000 + i)))
-                            .OrderBy(x => x.ord).Select(x => x.Key).ToList();
-        _colHidden.Clear();
-        foreach (var c in Catalogo) if (c.Hideable && (CfgDe(c.Key)?.Oculto ?? false)) _colHidden.Add(c.Key);
-        HidratarAnchos();
-    }
-    private void HidratarAnchos()
-    {
-        _colW.Clear();
-        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
-    }
-    private static int? AnchoDeFormato(string? json)
-    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
-    private static string? ConAncho(string? json, int? w)
-    {
-        System.Text.Json.Nodes.JsonObject o;
-        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
-        catch { o = new(); }
-        if (w is null) o.Remove("w"); else o["w"] = w.Value;
-        return o.Count == 0 ? null : o.ToJsonString();
-    }
-    private string ColStyle(string k) => $"width:{(_colW.TryGetValue(k, out var w) ? w : AnchoDefault(k))}px";
-    private static int AnchoDefault(string k) => k switch
-    { "titulo" => 320, "fecha" => 160, "modalidad" => 150, "estado" => 140, "participantes" => 130, "puntos" => 100, _ => 140 };
-
-    // ===== Reordenar (drag) + redimensionar columnas (JS compartido) =====
-    private async Task IniciarReorder(MouseEventArgs e, string k)
-    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
-    [JSInvokable]
-    public async Task OnColReorder(string src, string dest)
-    {
-        if (src == dest) return;
-        var keys = ColsVisibles.ToList();
-        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
-        if (from < 0 || to < 0) return;
-        keys.RemoveAt(from); keys.Insert(to, src);
-        var full = keys.Concat(_colOrder.Where(k => !keys.Contains(k))).ToList();
-        for (int i = 0; i < full.Count; i++) await GuardarCfg(FilaConfig(full[i]) with { Orden = i });
-        await CargarConfigAsync(); StateHasChanged();
-    }
-    private async Task IniciarResize(MouseEventArgs e, string k)
-    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
-    private Task ResetResize(string k) => OnColResize(k, 0);
-    [JSInvokable]
-    public async Task OnColResize(string clave, int width)
-    {
-        int? w = width <= 0 ? null : Math.Max(70, width);
-        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
-        await GuardarCfg(FilaConfig(clave) with { Formato = ConAncho(CfgDe(clave)?.Formato, w) });
-        await CargarConfigAsync(); StateHasChanged();
-    }
-    public void Dispose() { _self?.Dispose(); }
-
-    // ===== Render de fila (columnas dinamicas segun orden/visibilidad) =====
-    private RenderFragment RenderFila(SesionListaDto s) => builder =>
-    {
-        var seq = 0;
-        builder.OpenElement(seq++, "tr");
-        builder.AddAttribute(seq++, "class", "asa-row");
-
-        // Expander (abre la sesion)
-        builder.OpenElement(seq++, "td");
-        builder.AddAttribute(seq++, "class", "asa-td-exp");
-        builder.OpenElement(seq++, "button");
-        builder.AddAttribute(seq++, "type", "button");
-        builder.AddAttribute(seq++, "class", "asa-exp");
-        builder.AddAttribute(seq++, "title", "Abrir la asamblea");
-        builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => Ir(s.Id)));
-        builder.AddMarkupContent(seq++, "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7\"/></svg>");
-        builder.CloseElement();
-        builder.CloseElement();
-
-        foreach (var key in ColsVisibles)
-        {
-            builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "class", CeldaClase(key));
-            builder.AddAttribute(seq++, "style", "cursor:pointer;");
-            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => Ir(s.Id)));
-            builder.AddContent(seq++, CeldaContenido(s, key));
-            builder.CloseElement();
-        }
-
-        // Acciones
-        builder.OpenElement(seq++, "td");
-        builder.AddAttribute(seq++, "class", "asa-td-act");
-        builder.OpenElement(seq++, "a");
-        builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-dark");
-        builder.AddAttribute(seq++, "href", $"/asambleas/{s.Id}");
-        builder.AddContent(seq++, "Ver");
-        builder.CloseElement();
-        builder.CloseElement();
-
-        builder.CloseElement();
-    };
-
-    private static string CeldaClase(string key) => key switch
-    {
-        "titulo" => "asa-td-titulo",
-        "puntos" or "participantes" => "asa-td-num",
-        _ => "",
-    };
-
-    private RenderFragment CeldaContenido(SesionListaDto s, string key) => builder =>
-    {
-        switch (key)
+        switch (k)
         {
             case "titulo":
-                builder.OpenElement(0, "strong");
-                builder.AddContent(1, s.Titulo);
-                builder.CloseElement();
-                if (s.SegundaConvocatoria) builder.AddMarkupContent(2, " <span class=\"badge bg-warning text-dark ms-1\">2da convocatoria</span>");
-                if (s.ActaPublicada) builder.AddMarkupContent(3, " <span class=\"badge bg-success ms-1\">Acta publicada</span>");
-                break;
+                return @<td class="tbl-ro" style="cursor:pointer" @onclick="() => AbrirFichaAsync(s.Id)"><strong>@s.Titulo</strong>@if (s.SegundaConvocatoria) {<span class="badge bg-warning text-dark ms-1">2da convocatoria</span>}@if (s.ActaPublicada) {<span class="badge bg-success ms-1">Acta publicada</span>}</td>;
             case "tipo":
-                builder.AddMarkupContent(0, $"<span class=\"badge bg-light text-dark border\">{s.Tipo}</span>");
-                break;
-            case "modalidad":
-                builder.AddContent(0, s.Modalidad.ToString());
-                break;
-            case "fecha":
-                builder.AddContent(0, s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm"));
-                break;
+                return @<td class="tbl-ro"><span class="badge bg-light text-dark border">@TipoTexto(s.Tipo)</span></td>;
             case "estado":
-                builder.AddContent(0, RenderEstado(s.Estado));
-                break;
+                return @<td class="tbl-ro">@BadgeEstado(s.Estado)</td>;
             case "puntos":
-                builder.AddContent(0, s.CantidadPuntos);
-                break;
             case "participantes":
-                builder.AddContent(0, s.CantidadParticipantes);
-                break;
+                return @<td class="tbl-ro tbl-num">@TextoCelda(s, k)</td>;
+            default:
+                return @<td class="tbl-ro">@TextoCelda(s, k)</td>;
         }
-    };
+    }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender || _jwt is not null) return;
-        try
+    // ===== Vista Tarjetas (lista compacta, como la replica) =====
+    private RenderFragment TarjetaTpl(SesionListaDto s) => @<div class="dst-lrow" title="Abrir la asamblea" @key="s.Id" @onclick="() => AbrirFichaAsync(s.Id)" @oncontextmenu="e => AbrirCtx(e, s)" @oncontextmenu:preventDefault="true">
+        <span class="dst-lav"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7h8l1 4H7zM5 11h14v1a7 7 0 0 1-14 0zM12 19v2M9 21h6"/></svg></span>
+        <span class="dst-lmain"><span class="dst-lnum">@s.Titulo</span><span class="dst-lmeta">@TipoTexto(s.Tipo) &middot; @s.Modalidad &middot; @s.FechaSesion.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span></span>
+        <span class="dst-lprop">@BadgeEstado(s.Estado)@if (s.SegundaConvocatoria) {<span class="badge bg-warning text-dark ms-1">2da conv.</span>}</span>
+        <span class="dst-ltags"><span class="dst-ltag">@s.CantidadPuntos puntos</span><span class="dst-ltag">@s.CantidadParticipantes unidades</span></span>
+        <svg class="dst-lchev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--propia-text-faint);"><path d="M9 6l6 6-6 6"/></svg>
+    </div>;
+
+    // ===== Cabecera de grupo con totales por columna (Suma/Prom/Min/Max/Contar) =====
+    private RenderFragment<NodoGrupo<SesionListaDto>> CabeceraGrupoTpl => nodo =>
+    @<tr class="tgrt-hd tgrt-l@(nodo.Nivel > 2 ? 2 : nodo.Nivel)">
+        @{
+            var colsG = ColsVisibles.ToList();
+            var idxAgg = colsG.FindIndex(c => ModoActivo(c) != "off");
+        }
+        @if (idxAgg < 0)
         {
-            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
-            _authChecked = true;
-            if (!string.IsNullOrWhiteSpace(stored))
-            {
-                _jwt = stored;
-                await CargarAsync();
-                StateHasChanged();
-            }
-            else { StateHasChanged(); }
+            <td colspan="@ColSpanTotal">
+                <span class="tgrt-lead" style="padding-left:@(14 + nodo.Nivel * 16)px;">
+                    <span class="tgrt-tit">@nodo.Titulo</span>
+                    <span class="tgrt-cnt">@nodo.Conteo</span>
+                </span>
+            </td>
         }
-        catch { }
-    }
+        else
+        {
+            var miembros = TodasFilas(nodo);
+            <td colspan="@(2 + idxAgg)">
+                <span class="tgrt-lead" style="padding-left:@(14 + nodo.Nivel * 16)px;">
+                    <span class="tgrt-tit">@nodo.Titulo</span>
+                    <span class="tgrt-cnt">@nodo.Conteo</span>
+                </span>
+            </td>
+            @for (int ci = idxAgg; ci < colsG.Count; ci++)
+            {
+                var colG = colsG[ci];
+                var (hayG, txtG, tagG) = AggCelda(miembros, colG);
+                <td class="tgrt-agg">
+                    @if (hayG)
+                    {
+                        <span class="tgrt-aggv" title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="tgrt-aggtag">@tagG</span> }</span>
+                    }
+                </td>
+            }
+            <td class="tbl-addcol"></td>
+        }
+    </tr>;
 
-    private async Task CargarAsync()
+    private RenderFragment SortInd(string k)
     {
-        try { _b = await Auth().GetFromJsonAsync<SesionBandejaDto>("/api/asambleas"); await CargarConfigAsync(); }
-        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        var s = _sorts.FirstOrDefault(x => x.Key == k);
+        return s is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(s.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
     }
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, false), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
 
-    private MarkupString RenderEstado(EstadoSesion e) => e switch
+    private static RenderFragment BadgeEstado(EstadoSesion e) => e switch
     {
-        EstadoSesion.Borrador => new MarkupString("<span class='badge bg-light text-dark border'>Borrador</span>"),
-        EstadoSesion.Citada => new MarkupString("<span class='badge bg-info text-dark'>Citada</span>"),
-        EstadoSesion.EnCurso => new MarkupString("<span class='badge bg-primary'>En curso</span>"),
-        EstadoSesion.Cerrada => new MarkupString("<span class='badge bg-success'>Cerrada</span>"),
-        EstadoSesion.QuorumFallido => new MarkupString("<span class='badge bg-warning text-dark'>Quorum fallido</span>"),
-        EstadoSesion.Cancelada => new MarkupString("<span class='badge bg-secondary'>Cancelada</span>"),
-        _ => new MarkupString("")
+        EstadoSesion.Borrador => @<span class="badge bg-light text-dark border">Borrador</span>,
+        EstadoSesion.Citada => @<span class="badge bg-info text-dark">Citada</span>,
+        EstadoSesion.EnCurso => @<span class="badge bg-primary">En curso</span>,
+        EstadoSesion.Cerrada => @<span class="badge bg-success">Cerrada</span>,
+        EstadoSesion.QuorumFallido => @<span class="badge bg-warning text-dark">Quórum fallido</span>,
+        EstadoSesion.Cancelada => @<span class="badge bg-secondary">Cancelada</span>,
+        _ => __b => { }
     };
-
-    private void Ir(Guid id) => Nav.NavigateTo($"/asambleas/{id}");
-
-    private HttpClient Auth()
-    {
-        var http = HttpFactory.CreateClient("PropiaApi");
-        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
-        return http;
-    }
 }

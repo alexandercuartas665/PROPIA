@@ -145,11 +145,13 @@ public static class ModuloCodigo
     public const string Comunicaciones = "COMUNICACIONES";
     public const string Documentos = "DOCUMENTOS";
     public const string Reportes = "REPORTES";
+    /// <summary>Configuracion > Plantillas de documentos (catalogo central que usa todo el sistema).</summary>
+    public const string Plantillas = "PLANTILLAS";
 
     public static readonly string[] Todos = new[]
     {
         Dashboard, MiCopropiedad, Directorio, UsuariosAccesos,
         Presupuesto, Cartera, Asambleas, Pqrs, Tareas, Mantenimiento,
-        Porteria, Reservas, Comunicaciones, Documentos, Reportes
+        Porteria, Reservas, Comunicaciones, Documentos, Reportes, Plantillas
     };
 }

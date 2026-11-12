@@ -129,6 +129,10 @@ else
     }
     else
     {
+        @* Embebido como Sub-tareas: el modal de la tarea ya da el contexto; sin cabecera del tablero
+           (nombre, avatares, "Nueva tarea"). La alta va por "Agregar subtarea" de la tabla. *@
+        @if (PadreTareaId is null)
+        {
         <div class="tb-board-head">
             @if (!Compacto && !SoloGeneral)
             {
@@ -173,6 +177,7 @@ else
                 }
             </div>
         </div>
+        }
 
         @* Pestanas Activos / Cerrados + buscador (las tareas cerradas desaparecen del tablero activo). *@
         <div class="tb-board-tabs">
@@ -186,6 +191,8 @@ else
             @* En Tarjetas y Tabla el buscador va junto al boton Filtros (toolbar); aqui solo
                queda para calendario y gantt, que no tienen toolbar propia. *@
             @if (_boardMode is "calendario" or "gantt") { <input class="tb-search" @bind="_buscarTarea" @bind:event="oninput" placeholder="Buscar por título o número..." /> }
+            @* Sub-tareas: sin cabecera, el selector de vista de Calendario/Gantt va aqui para poder volver. *@
+            @if (PadreTareaId is not null && !_verCerradas && _boardMode is "calendario" or "gantt") { @ModeSwitch }
         </div>
 
         @* KPIs del tablero retirados por decision de producto (vista tabla/tablero sin tarjetas KPI). *@
@@ -194,7 +201,7 @@ else
         @if (_verCerradas)
         {
             var qCerr = (_buscarTarea ?? "").Trim().ToLowerInvariant();
-            var cerradas = _board.Tareas
+            var cerradas = FiltrarPorPadre(_board.Tareas.ToList())
                 .Where(x => string.IsNullOrEmpty(qCerr) || x.Titulo.ToLowerInvariant().Contains(qCerr) || x.NumeroTarea.ToLowerInvariant().Contains(qCerr))
                 .OrderByDescending(x => x.CerradaAt)
                 .ToList();
@@ -350,8 +357,7 @@ else
                                         if (_composerReveal >= fidx)
                                         {
                                             <input class="tb-composer-sel tb-composer-appear" placeholder="@campo.Label"
-                                                   value="@(_composerDraft.Campos.GetValueOrDefault(campo.Id))"
-                                                   @oninput="@(e => _composerDraft.Campos[campo.Id] = e.Value?.ToString())"
+                                                   @bind:get="_composerDraft.Campos.GetValueOrDefault(campo.Id)"@bind:set="v => _composerDraft.Campos[campo.Id] = v" @bind:event="oninput"
                                                    @onfocus="@(() => RevealComposerNext(fidx))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, fidx))" />
                                         }
                                     }
@@ -470,12 +476,14 @@ else
                     @* Los <span> usan ColLabel(clave, DEFECTO): si la copropiedad renombro la columna en el
                        gestor (alias en columnas-config), se muestra el alias; si no, la etiqueta de fabrica.
                        Cada celda lleva la flecha (ChevCol) que abre el menu de columna (Oleada B). *@
-                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)</div>
+                    @* data-clave: lo usa propiaTablaResize para medir el ancho de partida. Como destino de reordenar es
+                       un no-op (titulo no esta en _colOrden: siempre va primero). *@
+                    <div class="tb-lc tb-lc-tit tb-lc-sort @(_pinTitulo ? "tb-pin tb-pin-h" : "")" data-clave="titulo" @onclick='() => SortBy("titulo")'><span>@ColLabel("titulo", "TITULO")</span>@SortInd("titulo")@ChevCol("titulo", "TITULO", false)<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "titulo")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("titulo")' @ondblclick:stopPropagation="true"></span></div>
                     @if (_colDesc) { <div class="tb-lc tb-lc-desc tb-lc-sort" data-clave="desc" @onmousedown='e => IniciarReorderTbl(e, "desc")' @onclick='() => SortBy("descripcion")'><span>@ColLabel("desc", "DESCRIPCION")</span>@ChevCol("descripcion", "DESCRIPCION", false)@ColorDot("desc")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "desc")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("desc")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colCodigo) { <div class="tb-lc tb-lc-cod tb-lc-sort" data-clave="cod" @onmousedown='e => IniciarReorderTbl(e, "cod")' @onclick='() => SortBy("numero")'><span>@ColLabel("cod", "CODIGO")</span>@SortInd("numero")@ChevCol("numero", "CODIGO", false)@ColorDot("cod")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "cod")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("cod")' @ondblclick:stopPropagation="true"></span></div> }
                     <div class="tb-lc tb-lc-est" data-clave="est" @onmousedown='e => IniciarReorderTbl(e, "est")'><span>@ColLabel("est", "ETAPA")</span>@ChevCol("est", "ETAPA", false)@ColorDot("est")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "est")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("est")' @ondblclick:stopPropagation="true"></span></div>
                     @if (_colResp) { <div class="tb-lc tb-lc-resp tb-lc-sort" data-clave="resp" @onmousedown='e => IniciarReorderTbl(e, "resp")' @onclick='() => SortBy("asignado")'><span>@ColLabel("resp", "ASIGNADO")</span>@SortInd("asignado")@ChevCol("asignado", "ASIGNADO", false)@ColorDot("resp")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "resp")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("resp")' @ondblclick:stopPropagation="true"></span></div> }
-                    <div class="tb-lc tb-lc-prog tb-lc-sort" data-clave="prog" @onmousedown='e => IniciarReorderTbl(e, "prog")' @onclick='() => SortBy("progreso")'><span>@ColLabel("prog", "PROGRESO")</span>@SortInd("progreso")@ChevCol("progreso", "PROGRESO", false)@ColorDot("prog")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "prog")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("prog")' @ondblclick:stopPropagation="true"></span></div>
+                    @if (_colProg) { <div class="tb-lc tb-lc-prog tb-lc-sort" data-clave="prog" @onmousedown='e => IniciarReorderTbl(e, "prog")' @onclick='() => SortBy("progreso")'><span>@ColLabel("prog", "PROGRESO")</span>@SortInd("progreso")@ChevCol("progreso", "PROGRESO", false)@ColorDot("prog")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "prog")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("prog")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colEtiq) { <div class="tb-lc tb-lc-etiq" data-clave="etiq" @onmousedown='e => IniciarReorderTbl(e, "etiq")'><span>@ColLabel("etiq", "ETIQUETAS")</span>@ChevCol("etiq", "ETIQUETAS", false)@ColorDot("etiq")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "etiq")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("etiq")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colPrio) { <div class="tb-lc tb-lc-prio tb-lc-sort" data-clave="prio" @onmousedown='e => IniciarReorderTbl(e, "prio")' @onclick='() => SortBy("prioridad")'><span>@ColLabel("prio", "PRIORIDAD")</span>@SortInd("prioridad")@ChevCol("prioridad", "PRIORIDAD", false)@ColorDot("prio")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "prio")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("prio")' @ondblclick:stopPropagation="true"></span></div> }
                     @if (_colDue) { <div class="tb-lc tb-lc-due tb-lc-sort" data-clave="due" @onmousedown='e => IniciarReorderTbl(e, "due")' @onclick='() => SortBy("vence")'><span>@ColLabel("due", "VENCE")</span>@SortInd("vence")@ChevCol("vence", "VENCE", false)@ColorDot("due")<span class="tb-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniciarResizeTbl(e, "due")' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeTbl("due")' @ondblclick:stopPropagation="true"></span></div> }
@@ -523,14 +531,14 @@ else
                         <div class="tb-row-tit">
                             <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                                Agregar tarea
+                                @(PadreTareaId is null ? "Agregar tarea" : "Agregar subtarea")
                             </button>
                         </div>
                         @if (_colDesc) { <div class="tb-row-desc"></div> }
                         @if (_colCodigo) { <div class="tb-row-cod"></div> }
                         <div class="tb-row-cell-est"></div>
                         @if (_colResp) { <div class="tb-row-resp"></div> }
-                        <div class="tb-row-prog"></div>
+                        @if (_colProg) { <div class="tb-row-prog"></div> }
                         @if (_colEtiq) { <div class="tb-row-etiq"></div> }
                         @if (_colPrio) { <div class="tb-row-prio"></div> }
                         @if (_colDue) { <div class="tb-row-due"></div> }
@@ -544,7 +552,8 @@ else
                    los subtotales por grupo (chips en el titulo de cada grupo) se mantienen. *@
             </div>
             @* FAB flotante: aparece al desplazar (cuando la fila de alta no esta a la vista); oculto si se agrupa. *@
-            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0 || _altaTblOpen)" @onclick="FabAgregarTarea" title="Agregar tarea">
+            @* Embebido como Sub-tareas (dentro del modal): sin FAB, la lista es corta y el FAB tapaba la CTA. *@
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisible || _gruposT.Count > 0 || _altaTblOpen || PadreTareaId is not null)" @onclick="FabAgregarTarea" title="Agregar tarea">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
@@ -930,7 +939,7 @@ else
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Sub-tareas @if (d.Id is not null) { var nk = Hijos(d.Id.Value).Count; if (nk > 0) { <span class="tbc-tab-badge">@nk</span> } }
                 </button>
                 <button type="button" class="tbc-tab @(_cardTab == "archivos" ? "on" : "")" @onclick='() => _cardTab = "archivos"'>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Archivos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>Documentos @if (d.Adjuntos.Count > 0) { <span class="tbc-tab-badge">@d.Adjuntos.Count</span> }
                 </button>
                 <button type="button" class="tbc-tab @(_cardTab == "historial" ? "on" : "")" @onclick='() => _cardTab = "historial"'>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Historial @if (d.Historial.Count > 0) { <span class="tbc-tab-badge">@d.Historial.Count</span> }
@@ -1312,46 +1321,20 @@ else
                     {
                         <div class="tbc-mut">Guarda la tarea para poder agregarle subtareas.</div>
                     }
+                    else if (EsBoardForaneo || _board is null || string.IsNullOrEmpty(_jwt))
+                    {
+                        @* Tablero compartido/invitado: el modulo embebido no aplica (otra ruta de API); solo lectura. *@
+                        var kids = Hijos(d.Id.Value);
+                        <div class="tbc-mut">@(kids.Count == 0 ? "Sin subtareas todavia." : string.Join(" · ", kids.Select(k => k.Titulo)))</div>
+                    }
                     else
                     {
-                        var kids = Hijos(d.Id.Value);
-                        var padreCod = _tareas.FirstOrDefault(t => t.Id == d.Id.Value)?.NumeroTarea;
-                        <div class="tbc-subtbl-wrap">
-                            <table class="tbl tbc-subtbl">
-                                <thead>
-                                    <tr>
-                                        <th>SUBTAREA</th><th>CODIGO</th><th>ESTADO</th><th>ENCARGADO</th><th class="c">PROGRESO</th><th>PRIORIDAD</th><th>VENCE</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{ var ki = 0; }
-                                    @foreach (var k in kids)
-                                    {
-                                        var kid = k; ki++;
-                                        <tr class="tbc-subtr" @onclick="() => AbrirSubtareaDesdeModal(kid)" title="Abrir subtarea">
-                                            <td class="nom">@k.Titulo</td>
-                                            <td class="mut">@(string.IsNullOrWhiteSpace(padreCod) ? (string.IsNullOrWhiteSpace(k.NumeroTarea) ? "-" : k.NumeroTarea) : $"{padreCod}.{ki}")</td>
-                                            <td><span class="tbc-sub-est">@k.EstadoNombre</span></td>
-                                            <td class="mut">@(k.AsignadoNombre ?? "-")</td>
-                                            <td class="c">@k.Progreso%</td>
-                                            <td>@k.Prioridad</td>
-                                            <td class="mut">@(k.FechaVencimiento?.ToString("dd/MM/yyyy") ?? "-")</td>
-                                        </tr>
-                                    }
-                                    @if (kids.Count == 0)
-                                    {
-                                        <tr><td colspan="7" class="mut" style="text-align:center;padding:16px">Sin subtareas todavia.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
-                            @if (!EsBoardForaneo)
-                            {
-                                @* Crear subtarea = abrir el modal COMPLETO (como "+ Nueva tarea" de PQRSD crea una
-                                   tarea vinculada). Al guardar/cancelar se vuelve aqui con la nueva subtarea en la lista. *@
-                                <div class="tbc-sub-newbar">
-                                    <button class="tb-btn tb-btn-primary" @onclick="NuevaSubtareaDesdeModal"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Nueva subtarea</button>
-                                </div>
-                            }
+                        @* Igual que la pestana Tareas de PQRSD: el modulo Tareas REAL embebido (barra de herramientas,
+                           vistas, alta en linea), filtrado a la descendencia de esta tarea. Lo que se crea en el
+                           nivel raiz nace como subtarea suya (PadreTareaId). *@
+                        <div class="tbc-sub-embed">
+                            <TableroTareas Jwt="@_jwt" TableroId="@BoardIdActual" PadreTareaId="@d.Id"
+                                           Compacto="true" VistaInicial="lista" OnCambio="OnSubtareasCambio" />
                         </div>
                     }
                 </div>
@@ -1860,6 +1843,9 @@ else
     [Parameter] public string VistaInicial { get; set; } = "tablero";
     /// <summary>El host refresca (ej. barra de avance del PQRSD) cuando cambia algo.</summary>
     [Parameter] public EventCallback OnCambio { get; set; }
+    /// <summary>Embebido en la pestana Sub-tareas de una tarea: solo su descendencia (los hijos directos
+    /// se tratan como raices) y lo que se crea en el nivel raiz nace como subtarea suya.</summary>
+    [Parameter] public Guid? PadreTareaId { get; set; }
 
     // Modulo "Tareas": abre SIEMPRE el tablero General (singleton), sin galeria ni switcher.
     [Parameter] public bool SoloGeneral { get; set; }
@@ -1873,9 +1859,29 @@ else
         (string.IsNullOrWhiteSpace(OrigenCodigo) ? "" : $"&origenCodigo={Uri.EscapeDataString(OrigenCodigo)}")
         + (OrigenEntidadId is { } oe ? $"&origenEntidadId={oe}" : "");
     // Inyecta el vinculo de modulo en una tarea creada desde el componente (asi nace ligada al PQRSD).
-    private CrearTareaRequest ConOrigen(CrearTareaRequest req) =>
-        string.IsNullOrWhiteSpace(OrigenCodigo) ? req
-            : req with { ModuloOrigenCodigo = OrigenCodigo, ModuloOrigenEntidadId = OrigenEntidadId };
+    private CrearTareaRequest ConOrigen(CrearTareaRequest req)
+    {
+        if (!string.IsNullOrWhiteSpace(OrigenCodigo))
+            req = req with { ModuloOrigenCodigo = OrigenCodigo, ModuloOrigenEntidadId = OrigenEntidadId };
+        // Embebido como Sub-tareas: una "tarea raiz" creada aqui es hija de la tarea anfitriona.
+        if (PadreTareaId is Guid pid && req.PadreId is null) req = req with { PadreId = pid };
+        return req;
+    }
+    // Embebido como Sub-tareas: deja solo la descendencia de PadreTareaId y sube sus hijos directos a raiz
+    // (la UI arma el arbol desde PadreId == null). Las ediciones no mandan PadreId, asi que no se desvinculan.
+    private List<TareaListaDto> FiltrarPorPadre(List<TareaListaDto> todas)
+    {
+        if (PadreTareaId is not Guid pid) return todas;
+        var ids = new HashSet<Guid> { pid };
+        for (var crecio = true; crecio;)
+        {
+            crecio = false;
+            foreach (var t in todas)
+                if (t.PadreId is Guid p && ids.Contains(p) && ids.Add(t.Id)) crecio = true;
+        }
+        return todas.Where(t => t.Id != pid && ids.Contains(t.Id))
+            .Select(t => t.PadreId == pid ? t with { PadreId = null } : t).ToList();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -2018,6 +2024,9 @@ else
     private Func<TareaListaDto, object?> ClaveOrdenT(string col) => col switch
     {
         "titulo" => t => t.Titulo,
+        "descripcion" => t => t.Descripcion ?? "",
+        "est" => t => _board?.Estados.Select((e, i) => (e.Id, i)).FirstOrDefault(x => x.Id == t.EstadoId).i ?? 0,
+        "etiq" => t => string.Join(", ", t.Etiquetas.Select(e => e.Nombre)),
         "numero" => t => t.NumeroTarea ?? "",
         "asignado" => t => t.AsignadoNombre ?? "",
         "progreso" => t => t.Progreso,
@@ -2128,8 +2137,7 @@ else
             </div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
-                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." value="@sf.Titulo"
-                       @oninput="e => sf.Titulo = e.Value?.ToString() ?? string.Empty"
+                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." @bind="sf.Titulo"@bind:event="oninput"
                        @onkeydown="e => SubfilaKeydown(e, padre)" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))" /></div> }
@@ -2148,7 +2156,7 @@ else
                     </select>
                 </div>
             }
-            <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
+            @if (_colProg) { <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div> }
             @if (_colEtiq) { @AltaEtqCell(sf, padre.Id) }
             @if (_colPrio)
             {
@@ -2300,14 +2308,12 @@ else
                 break;
             case TablaColMenu.Accion.Ocultar:
                 {
-                    var ckey = col.EsDinamico ? "cd:" + col.Key : ConfigKeyFija(col.Key);
+                    // GuardarColCfgT manda la fila COMPLETA (alias/ancho/orden): el PUT reemplaza la fila y
+                    // mandar solo Oculto borraba el ancho y el orden guardados de la columna.
+                    var ckey = col.EsDinamico ? col.Key : ConfigKeyFija(col.Key);
                     if (ckey is null) { ColToast("Esta columna no se puede ocultar."); break; }
-                    if (_board is not null)
-                    {
-                        await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config",
-                            new GuardarUnidadCampoConfigRequest(ckey, null, null, Oculto: true));
-                        await RestaurarColsAsync();
-                    }
+                    await GuardarColCfgT(ckey, orden: null, oculto: true);
+                    await RestaurarColsAsync();
                 }
                 break;
             default:
@@ -2327,7 +2333,7 @@ else
     private static string? ConfigKeyFija(string sortKey) => sortKey switch
     {
         "descripcion" => "desc", "numero" => "cod", "asignado" => "resp", "etiq" => "etiq",
-        "prioridad" => "prio", "vence" => "due", "valor" => "valor", "origen" => "orig",
+        "prioridad" => "prio", "vence" => "due", "valor" => "valor", "origen" => "orig", "progreso" => "prog",
         _ => null
     };
     // Traduce la clave de una columna fija a la dimension de agrupacion (clave de _gruposT). null = no soportado.
@@ -2429,7 +2435,7 @@ else
         @if (_colCodigo) { <div class="tb-lc tb-lc-cod"></div> }
         <div class="tb-lc tb-lc-est"></div>
         @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
-        <div class="tb-lc tb-lc-prog"></div>
+        @if (_colProg) { <div class="tb-lc tb-lc-prog"></div> }
         @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"></div> }
         @if (_colPrio) { <div class="tb-lc tb-lc-prio"></div> }
         @if (_colDue) { <div class="tb-lc tb-lc-due"></div> }
@@ -2542,7 +2548,7 @@ else
         @if (_colCodigo) { <div class="tb-lc tb-lc-cod"></div> }
         <div class="tb-lc tb-lc-est"></div>
         @if (_colResp) { <div class="tb-lc tb-lc-resp"></div> }
-        <div class="tb-lc tb-lc-prog"></div>
+        @if (_colProg) { <div class="tb-lc tb-lc-prog"></div> }
         @if (_colEtiq) { <div class="tb-lc tb-lc-etiq"></div> }
         @if (_colPrio) { <div class="tb-lc tb-lc-prio"></div> }
         @if (_colDue) { <div class="tb-lc tb-lc-due"></div> }
@@ -2647,6 +2653,144 @@ else
         }
     }
 
+    // ===== Descarga de la vista Tabla (TablaExportar): columnas visibles en el orden pintado, TODAS las tareas
+    // raiz filtradas y ordenadas (mas las subtareas desplegadas, tal como se ven) y, si esta agrupada, las
+    // cabeceras de grupo (mismo recorrido que RenderGruposLista/RenderArbol). =====
+    private string? _copropiedadNombre;
+    private string LabelExportT(string k)
+        => Guid.TryParse(k, out var gid) ? (CamposDelTablero.FirstOrDefault(c => c.Id == gid)?.Label ?? k) : MenuLabelT(k, DefaultLabelFija(k));
+    private ExportVista VistaExportT()
+    {
+        // Orden pintado (CSS order): Titulo; los campos Total (sin orden propio, quedan tras Titulo en orden DOM);
+        // luego las reordenables visibles segun _colOrden.
+        var cols = new List<string> { "titulo" };
+        cols.AddRange(CamposVisibles.Where(c => c.Tipo == TipoCampoTablero.Total).Select(c => c.Id.ToString()));
+        foreach (var k in _colOrden)
+        {
+            if (Guid.TryParse(k, out var gid)) { if (CamposVisibles.Any(c => c.Id == gid)) cols.Add(k); }
+            else if (VisibleFija(k)) cols.Add(k);
+        }
+        const string FmtMoneda = "\"$\" #,##0";
+        TableroCampoDto? Campo(string k) => Guid.TryParse(k, out var g) ? CamposDelTablero.FirstOrDefault(c => c.Id == g) : null;
+        string? FormatoNum(string k) => k switch
+        {
+            "valor" => FmtMoneda,
+            "prog" => "0\"%\"",
+            _ => Campo(k) switch
+            {
+                { Tipo: TipoCampoTablero.Moneda or TipoCampoTablero.Total } => FmtMoneda,
+                { Tipo: TipoCampoTablero.Numero } => "General",
+                _ => null
+            }
+        };
+        var columnas = cols.Select(k => { var f = FormatoNum(k); return new ExportColumna(LabelExportT(k), f is not null, f); }).ToList();
+
+        static string? NoVacio(string? s) => string.IsNullOrWhiteSpace(s) || s == "-" ? null : s;
+        static decimal? Dec(string? s) => decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ? d : null;
+        object? Celda(TareaListaDto t, string k, string? cod, int depth)
+        {
+            switch (k)
+            {
+                case "titulo": return depth > 0 ? new string(' ', (depth - 1) * 2) + (char)0x2514 + " " + t.Titulo : t.Titulo;
+                case "desc": return NoVacio(t.Descripcion);
+                case "cod": return NoVacio(cod);
+                case "est": return depth > 0 ? "Subtarea" : t.EstadoNombre;
+                case "resp": return NoVacio(string.Join(", ", (t.Responsables ?? new List<ResponsableMiniDto>()).Select(r => r.Nombre)));
+                case "prog": return (decimal)t.Progreso;
+                case "etiq": return NoVacio(string.Join(", ", t.Etiquetas.Select(e => e.Nombre)));
+                case "prio": return PrioNombreOf(t);
+                case "due": return t.FechaVencimiento.HasValue ? FechaCorta(t.FechaVencimiento.Value) : null;
+                case "valor": return t.Valor;
+                case "orig":
+                    var tipo = t.OrigenTipo switch { "inmueble" => "Inmueble", "zona" => "Zona comun", "equipo" => "Equipo/activo", _ => null };
+                    var rel = tipo is null ? null : (string.IsNullOrWhiteSpace(t.OrigenReferencia) ? tipo : $"{tipo}: {t.OrigenReferencia}");
+                    var mod = string.IsNullOrEmpty(t.ModuloOrigenCodigo) ? null : OrigenModulo.Etiqueta(t.ModuloOrigenCodigo);
+                    return NoVacio(string.Join(" - ", new[] { mod, rel }.Where(x => !string.IsNullOrWhiteSpace(x))));
+            }
+            if (Campo(k) is not { } c) return null;
+            switch (c.Tipo)
+            {
+                case TipoCampoTablero.Total:
+                    return ParseCamposSuma(c.CamposSuma).Select(id => Dec(CampoDeTarea(t, id))).Where(d => d.HasValue).Sum(d => d!.Value);
+                case TipoCampoTablero.Numero:
+                case TipoCampoTablero.Moneda:
+                    return c.PermiteVarios ? NoVacio(CampoDisplay(t, c)) : Dec(CampoDeTarea(t, c.Id)) ?? (object?)NoVacio(CampoDeTarea(t, c.Id));
+                case TipoCampoTablero.Formula:
+                    // Calculado: la celda muestra el valor tal cual; si es numero va como numero.
+                    var fv = CampoValor(t, c.Id);
+                    return Dec(fv) ?? (object?)NoVacio(fv);
+                default:
+                    return NoVacio(CampoDisplay(t, c));
+            }
+        }
+
+        var filas = new List<ExportFila>();
+        var nSub = 0;
+        // Fila + subtareas desplegadas (como RenderArbol: solo si la fila esta expandida, hasta 3 niveles).
+        void Arbol(TareaListaDto t, int depth, string? codigo, IReadOnlyList<string>? ruta)
+        {
+            var cod = string.IsNullOrWhiteSpace(codigo) ? t.NumeroTarea : codigo;
+            filas.Add(new ExportFila(cols.Select(k => Celda(t, k, cod, depth)).ToList(), Ruta: ruta));
+            if (depth > 0) nSub++;
+            if (_expandidas.Contains(t.Id) && depth < 3)
+            {
+                var kids = Hijos(t.Id);
+                for (int i = 0; i < kids.Count; i++) Arbol(kids[i], depth + 1, $"{cod}.{i + 1}", ruta);
+            }
+        }
+        var raices = _tareas.Where(x => x.PadreId == null).Where(PasaFiltros).ToList();
+        if (_gruposT.Count == 0)
+        {
+            foreach (var t in AplicarSort(raices)) Arbol(t, 0, null, null);
+        }
+        else
+        {
+            void Grupos(List<TareaListaDto> items, int nivel, List<string> ruta)
+            {
+                var esUltimo = nivel + 1 >= _gruposT.Count;
+                foreach (var part in ParticionarLista(items, _gruposT[nivel]))
+                {
+                    filas.Add(ExportFila.DeGrupo(part.Titulo, nivel, part.Items.Count));
+                    var r = new List<string>(ruta) { part.Titulo };
+                    if (esUltimo) { foreach (var t in AplicarSort(part.Items)) Arbol(t, 0, null, r); }
+                    else Grupos(part.Items, nivel + 1, r);
+                }
+            }
+            Grupos(raices, 0, new());
+        }
+
+        string LblOrden(string k) => k switch
+        {
+            "descripcion" => LabelExportT("desc"), "numero" => LabelExportT("cod"), "asignado" => LabelExportT("resp"),
+            "progreso" => LabelExportT("prog"), "prioridad" => LabelExportT("prio"), "vence" => LabelExportT("due"),
+            "origen" => LabelExportT("orig"), _ => LabelExportT(k)
+        };
+        var agrupables = ColsAgrupablesT();
+        string LblGrupo(string k) => agrupables.FirstOrDefault(c => c.Key == k)?.Label ?? k;
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_buscarTarea)) criterios.Add($"Búsqueda: \"{_buscarTarea.Trim()}\"");
+        var activas = _reglas.Where(ReglaActiva).Select(r =>
+        {
+            var campo = CampoFiltroLabel(r.Campo);
+            var op = OperadoresDe(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKind(r.Campo) switch
+            {
+                "sel-estado" => _board?.Estados.FirstOrDefault(e => e.Id.ToString() == r.Valor)?.Nombre ?? r.Valor,
+                "etiqueta" => _etiquetasCat.FirstOrDefault(e => e.Id.ToString() == r.Valor)?.Nombre ?? r.Valor,
+                _ => r.Valor
+            };
+            return $"{campo} {op} {val}";
+        }).ToList();
+        if (activas.Count > 0) criterios.Add("Filtros: " + string.Join(_filtroLogica == "or" ? " O " : " Y ", activas));
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LblOrden(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposT.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposT.Select(LblGrupo)));
+        criterios.Add($"{raices.Count} tareas" + (nSub > 0 ? $" (+{nSub} subtareas desplegadas)" : ""));
+
+        var titulo = _board is null ? "Tareas" : $"Tareas - {_board.Tablero.Nombre}";
+        return new ExportVista(titulo, _copropiedadNombre, columnas, filas, criterios, _gruposT.Select(LblGrupo).ToList());
+    }
+
     // ---- Tiempo en el estado actual (indicador de tarjeta + tooltip en lista/calendario/gantt) ----
     private static string TiempoRelativo(DateTimeOffset? desde)
     {
@@ -2676,6 +2820,7 @@ else
     private bool _pinTitulo = true;  // columna Titulo SIEMPRE fija (sin boton)
     private bool _colResp = true; private bool _colEtiq = true; private bool _colPrio = true; private bool _colDue = true;
     private bool _colValor = true; private bool _colDesc = true; private bool _colOrigen = true; private bool _colCodigo = true;
+    private bool _colProg = true;
 
     // Visibilidad por campo dinamico del tablero. Se guarda el set de OCULTOS (vacio = todos
     // visibles), para conservar el comportamiento previo (los campos siempre se mostraban).
@@ -2700,8 +2845,8 @@ else
     // Catalogo de columnas de SISTEMA del tablero, inyectado al gestor unificado (Catalogo). Mismas claves
     // que usa la tabla. Tipo FIJO (TiposIntercambiables vacio) + SinFormato: en el gestor cada columna solo
     // admite renombre (alias) + mostrar/ocultar + reordenar; el tipo real no se cambia aqui y no hay editor
-    // de formato. titulo/est/prog van Fija=true (no ocultables: coincide con el markup, que las fuerza
-    // visibles). Las opciones de estados/etiquetas/prioridad se administran en su sitio (Configurar), no aqui.
+    // de formato. titulo/est van Fija=true (no ocultables: coincide con el markup, que las fuerza
+    // visibles); prog es ocultable (2026-11-10). Las opciones de estados/etiquetas/prioridad se administran en su sitio (Configurar), no aqui.
     private static readonly TipoCampoTablero[] TipoFijo = Array.Empty<TipoCampoTablero>();
     private static readonly List<CampoSistemaDef> ColumnasSistemaCatalogo = new()
     {
@@ -2710,7 +2855,7 @@ else
         new("cod", "Codigo", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Consecutivo de la tarea"),
         new("est", "Etapa", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Columnas del tablero; se editan en Configurar"),
         new("resp", "Asignado", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
-        new("prog", "Progreso", TipoCampoTablero.Texto, VisibleDefault: true, Fija: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Porcentaje calculado"),
+        new("prog", "Progreso", TipoCampoTablero.Texto, VisibleDefault: true, TiposIntercambiables: TipoFijo, SinFormato: true, Ayuda: "Porcentaje calculado"),
         new("etiq", "Etiquetas", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
         new("prio", "Prioridad", TipoCampoTablero.Texto, TiposIntercambiables: TipoFijo, SinFormato: true),
         new("due", "Vence", TipoCampoTablero.Fecha, TiposIntercambiables: TipoFijo, SinFormato: true),
@@ -2720,7 +2865,7 @@ else
 
     private void ColsReset()   // defaults: todo visible, titulo SIEMPRE fijo
     {
-        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = true;
+        _colResp = _colEtiq = _colPrio = _colDue = _colDesc = _colValor = _colOrigen = _colCodigo = _colProg = true;
         _pinTitulo = true;
         _colsCampoOcultos = new();
         _colOrden = new();
@@ -2739,8 +2884,9 @@ else
                 $"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config") ?? new();
             _colCfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
 
-            // est/prog no se pueden ocultar (se fuerzan visibles en el markup); titulo va siempre fijo.
+            // est no se puede ocultar (columnas del kanban, forzada visible en el markup); titulo va siempre fijo.
             _colDesc = !CfgOculto("desc"); _colCodigo = !CfgOculto("cod"); _colResp = !CfgOculto("resp");
+            _colProg = !CfgOculto("prog");
             _colEtiq = !CfgOculto("etiq"); _colPrio = !CfgOculto("prio"); _colDue = !CfgOculto("due");
             _colValor = !CfgOculto("valor"); _colOrigen = !CfgOculto("orig");
             _colsCampoOcultos = CamposDelTablero.Where(c => CfgOculto("cd:" + c.Id)).Select(c => c.Id).ToHashSet();
@@ -2756,7 +2902,8 @@ else
     }
 
     // ===== "Columnas" (menu inline, homogeneo con Unidades): lista para TablaColumnasMenu + orden/visibilidad =====
-    // Lista en el ORDEN actual: titulo (fija) + las reordenables (_colOrden). Etapa/Progreso se ven pero no se ocultan.
+    // Lista en el ORDEN actual: titulo (fija) + las reordenables (_colOrden). Etapa se ve pero no se oculta
+    // (son las columnas del kanban). Progreso SI se oculta (pedido de Alex 2026-11-10).
     private List<TablaColumnasMenu.Col> ColsVisibilidadT()
     {
         var list = new List<TablaColumnasMenu.Col>
@@ -2773,7 +2920,7 @@ else
             }
             else
             {
-                bool ocultable = k != "est" && k != "prog";   // Etapa y Progreso no se ocultan
+                bool ocultable = k != "est";   // Etapa no se oculta
                 list.Add(new(k, MenuLabelT(k, DefaultLabelFija(k)), false, VisibleFija(k), Movible: true, Ocultable: ocultable));
             }
         }
@@ -2790,7 +2937,7 @@ else
         => _colCfg.TryGetValue(ConfigClaveDe(k), out var c) && !string.IsNullOrWhiteSpace(c.Alias) ? c.Alias! : defTitle;
     private bool VisibleFija(string k) => k switch
     {
-        "est" => true, "prog" => true,
+        "est" => true, "prog" => _colProg,
         "desc" => _colDesc, "cod" => _colCodigo, "resp" => _colResp, "etiq" => _colEtiq,
         "prio" => _colPrio, "due" => _colDue, "valor" => _colValor, "orig" => _colOrigen, _ => true
     };
@@ -2818,7 +2965,7 @@ else
     {
         foreach (var k in _colOrden)
         {
-            if (!Guid.TryParse(k, out _) && (k == "est" || k == "prog")) continue;
+            if (!Guid.TryParse(k, out _) && k == "est") continue;
             await GuardarColCfgT(k, orden: null, oculto: true);
         }
         await RestaurarColsAsync();
@@ -2936,8 +3083,10 @@ else
             var sb = new System.Text.StringBuilder("<style>");
             foreach (var kv in _colW)
             {
-                var sel = ColSelectores(kv.Key);
-                var hsel = ColHeaderSel(kv.Key);
+                // Titulo no esta en ColSelectores/ColHeaderSel (no se colorea ni se reordena): selector propio.
+                // .tb-lc-tit cubre tambien la celda lider de los agrupadores y de la fila de totales.
+                var sel = kv.Key == "titulo" ? ".tb-list .tb-row-tit" : ColSelectores(kv.Key);
+                var hsel = kv.Key == "titulo" ? ".tb-list .tb-lc-tit" : ColHeaderSel(kv.Key);
                 var all = string.Join(",", new[] { sel, hsel }.Where(s => s is not null));
                 if (all.Length == 0) continue;
                 sb.Append(all).Append("{flex:0 0 ").Append(kv.Value).Append("px !important;width:")
@@ -2969,6 +3118,7 @@ else
         _colOrden = keys;
         for (int i = 0; i < keys.Count; i++) await GuardarColCfgT(keys[i], orden: i, oculto: null);
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS (igual que OnColResize)
     }
     private async Task IniciarResizeTbl(MouseEventArgs e, string clave)
     { _selfTbl ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _selfTbl, clave, e.ClientX); } catch { } }
@@ -2981,6 +3131,7 @@ else
         _colCfg.TryGetValue(ConfigClaveDe(clave), out var ex);
         await GuardarColCfgT(clave, orden: null, oculto: null, setFormato: true, formato: ConAnchoTabla(ex?.Formato, w));
         await RestaurarColsAsync();
+        StateHasChanged();   // invocado desde JS: sin esto el nuevo ancho solo se veia al recargar
     }
     private static int? AnchoDeFormatoTabla(string? json)
     {
@@ -3084,6 +3235,11 @@ else
     private string _subNew = "";
     private string _subtareaNew = "";
 
+    // La pestana Sub-tareas (modulo embebido) cambio algo: refrescar este board (progreso derivado del padre,
+    // chip "N sub", arbol de la lista). Sin re-disparar al host desde aqui: RecargarBoard ya avisa a OnCambio.
+    private Task OnSubtareasCambio() => RecargarBoard();
+    private Guid? BoardIdActual => _board?.Tablero.Id;
+
     // Crea una SUBTAREA real (tarea hija con PadreId) desde el modal de la tarjeta.
     // Al recargar el board, la hija aparece anidada en modo lista y suma al chip "N sub" en tarjetas.
     private async Task CrearSubtareaRapida()
@@ -3161,14 +3317,7 @@ else
     private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
     private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
 
-    private record ModeDef(string Key, string Label, string Icon);
-    private readonly List<ModeDef> _modes = new()
-    {
-        new("tablero", "Tarjetas", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='3' width='7' height='18' rx='1'/><rect x='14' y='3' width='7' height='12' rx='1'/></svg>"),
-        new("lista", "Tabla", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'/></svg>"),
-        new("calendario", "Calendario", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='4' width='18' height='18' rx='2'/><path d='M16 2v4M8 2v4M3 10h18'/></svg>"),
-        new("gantt", "Gantt", "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M3 6h10M3 12h14M3 18h7'/></svg>"),
-    };
+    // Las vistas Tarjetas/Tabla/Calendario/Gantt las pinta el componente compartido TablaVistaToggle.
 
     private class TableroDraft
     {
@@ -3345,6 +3494,11 @@ else
             try { await Js.InvokeVoidAsync("propiaUI.scrollBottom", ".tbc-chat-scroll"); } catch { }
         }
 
+        // Nombre de la copropiedad para la descarga de la vista (se lee una vez).
+        if (firstRender)
+        {
+            try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
+        }
         if (!firstRender || _jwt is not null) return;
         try
         {
@@ -3524,7 +3678,7 @@ else
 
     // Lista mutable de tareas (copia de _board.Tareas) para edicion inline optimista sin recargar todo el board.
     private List<TareaListaDto> _tareas = new();
-    private void SyncTareas() => _tareas = _board?.Tareas.ToList() ?? new();
+    private void SyncTareas() => _tareas = FiltrarPorPadre(_board?.Tareas.ToList() ?? new());
 
     // Pestana Activos / Cerrados: las cerradas desaparecen del tablero activo y se ven aparte.
     private bool _verCerradas;
@@ -3676,6 +3830,11 @@ else
                 </PieExtra>
             </TablaColumnasMenu>
         }
+        @* Descargar la vista tabla tal como se ve (Excel o CSV). Solo en Tabla y no embebida como Sub-tareas. *@
+        @if (_boardMode == "lista" && PadreTareaId is null)
+        {
+            <TablaExportar Vista="VistaExportT" />
+        }
         @* Modos de vista DESPUES de Columnas, igual que el toggle de Unidades Privadas (pedido de Alex). *@
         @ModeSwitch
     };
@@ -3686,15 +3845,7 @@ else
     {
         @if (!_verCerradas)
         {
-            <div class="tb-modeswitch">
-                @foreach (var m in _modes)
-                {
-                    var mode = m.Key;
-                    <button class="tb-mode @(_boardMode == mode ? "on" : "")" @onclick="() => SetBoardMode(mode)" title="@m.Label">
-                        @((MarkupString)m.Icon)<span>@m.Label</span>
-                    </button>
-                }
-            </div>
+            <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tablero"), TablaVistaToggle.Tabla("lista"), TablaVistaToggle.Calendario("calendario"), TablaVistaToggle.Gantt("gantt") })" Valor="@_boardMode" OnCambiar="SetBoardMode" />
         }
     };
 
@@ -4280,7 +4431,9 @@ else
                     }
                 </div>
             }
-            @* ---- PROGRESO ---- *@
+            @* ---- PROGRESO (ocultable desde el menu Columnas) ---- *@
+            @if (_colProg)
+            {
             <div class="tb-row-prog">
                 @if (t.CantidadSubtareas == 0)
                 {
@@ -4292,6 +4445,7 @@ else
                 }
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@t.Progreso%</span>
             </div>
+            }
             @* ---- ETIQUETAS (chips contenidos; texto editable inline + swatch de color al final) ---- *@
             @if (_colEtiq)
             {
@@ -4835,7 +4989,7 @@ else
                     </select>
                 </div>
             }
-            <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div>
+            @if (_colProg) { <div class="tb-row-prog"><span class="tb-nf-mut">&mdash;</span></div> }
             @if (_colEtiq) { @AltaEtqCell(nf, estadoId) }
             @if (_colPrio)
             {
@@ -4877,7 +5031,7 @@ else
             @if (_colCodigo) { <div class="tb-row-cod"></div> }
             <div class="tb-row-cell-est"></div>
             @if (_colResp) { <div class="tb-row-resp"></div> }
-            <div class="tb-row-prog"></div>
+            @if (_colProg) { <div class="tb-row-prog"></div> }
             @if (_colEtiq) { <div class="tb-row-etiq"></div> }
             @if (_colPrio) { <div class="tb-row-prio"></div> }
             @if (_colDue) { <div class="tb-row-due"></div> }

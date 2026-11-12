@@ -122,13 +122,7 @@ public interface IPqrsdService
     /// <summary>Compone el HTML del documento oficial (membrete + cuerpo) para vista previa o PDF. Null si no existe expediente/tenant.</summary>
     Task<string?> ComponerDocumentoRespuestaAsync(Guid expedienteId, string cuerpoHtml, CancellationToken ct);
 
-    // Plantillas de respuesta (combinacion de correspondencia)
-    /// <summary>Catalogo de tokens disponibles para plantillas (con su descripcion).</summary>
-    IReadOnlyList<PqrsdTokenDto> ListarTokensPlantilla();
-    Task<IReadOnlyList<PqrsdPlantillaDto>> ListarPlantillasAsync(CancellationToken ct);
-    Task<PqrsdPlantillaDto> CrearPlantillaAsync(GuardarPlantillaRequest req, CancellationToken ct);
-    Task<bool> ActualizarPlantillaAsync(Guid id, GuardarPlantillaRequest req, CancellationToken ct);
-    Task<bool> EliminarPlantillaAsync(Guid id, CancellationToken ct);
+    // Plantillas de respuesta: el catalogo vive en IPlantillasDocumentoService (categoria "pqrsd").
     /// <summary>Devuelve el cuerpo de la plantilla con los tokens reemplazados por los datos reales del expediente.</summary>
     Task<string?> ResolverPlantillaAsync(Guid expedienteId, Guid plantillaId, CancellationToken ct);
 

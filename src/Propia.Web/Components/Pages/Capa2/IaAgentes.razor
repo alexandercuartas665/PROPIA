@@ -5,6 +5,7 @@
 @inject IHttpClientFactory HttpFactory
 @inject IJSRuntime Js
 @inject NavigationManager Nav
+@inject ILogger<IaAgentes> Log
 
 <PageTitle>Agentes de IA - PROPIA</PageTitle>
 
@@ -147,6 +148,24 @@ else
                     <div class="col-5"><label class="form-label small">Modelo</label><input class="form-control" @bind="_form.Model" @bind:event="oninput" placeholder="(por defecto)" /></div>
                 </div>
 
+                @if (_plantilla is { } pl)
+                {
+                    @* Agente que salio de una plantilla de A&D: version aplicada y si la copropiedad lo edito. *@
+                    <div class="alert @(pl.AlDia ? "alert-light" : "alert-info") py-2 px-3 small d-flex align-items-center gap-2 flex-wrap">
+                        <span><b>Plantilla de A&amp;D:</b> @pl.Plantilla &middot; @(pl.VersionAplicada is { } va ? "versión " + va : "sin versión") de @pl.VersionActual</span>
+                        <span class="text-muted">@PlantillaEstado(pl)</span>
+                        @if (!pl.AlDia && !_confirmPlantilla)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-dark ms-auto" @onclick="() => _confirmPlantilla = true" disabled="@_busy">Volver a la versión de A&amp;D</button>
+                        }
+                        @if (_confirmPlantilla)
+                        {
+                            <span class="w-100">El prompt base vuelve a la versión actual de A&amp;D. Tu versión queda en el historial y la puedes restaurar.</span>
+                            <button type="button" class="btn btn-sm btn-dark" @onclick="AplicarPlantillaAsync" disabled="@_busy">Sí, volver</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _confirmPlantilla = false" disabled="@_busy">Cancelar</button>
+                        }
+                    </div>
+                }
                 <label class="form-label small mb-1">Prompt base (comportamiento principal)</label>
                 <div class="ag-toolbar">
                     <button type="button" class="ag-fmt" title="Negrita" @onclick='() => Fmt("*","*")'><b>B</b></button>
@@ -657,7 +676,7 @@ else
                                 📎
                                 <InputFile OnChange="OnAttachChanged" accept="image/*,audio/*,application/pdf" disabled="@(_busy || _pendingAttach is not null)" style="display:none;" />
                             </label>
-                            <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(e => { if (e.Key == "Enter") _ = ProbarChatAsync(); })" disabled="@_busy" />
+                            <input class="form-control" placeholder="Mensaje del residente..." @bind="_chatInput" @bind:event="oninput" @onkeydown="@(async e => { if (e.Key == "Enter") await ProbarChatAsync(); })" disabled="@_busy" />
                             <button class="btn" style="background: var(--propia-primary); color:var(--propia-bg-card);" @onclick="ProbarChatAsync" disabled="@(_busy || (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null))">Enviar</button>
                         </div>
                     </div>
@@ -1113,6 +1132,37 @@ else
         await CargarDetalleAsync(id);
     }
 
+    // ----- Plantilla de A&D del agente (si salio de una): version y "Volver a la version de A&D" -----
+    private AgentePlantillaInfoDto? _plantilla;
+    private bool _confirmPlantilla;
+    private static string PlantillaEstado(AgentePlantillaInfoDto p)
+        => p.AlDia ? "Al día." : p.Editado
+            ? "Editaste el prompt: las actualizaciones de A&D lo respetan."
+            : "Hay una versión nueva de A&D.";
+    private async Task CargarPlantillaAsync(Guid id)
+    {
+        _confirmPlantilla = false;
+        try
+        {
+            var r = await Auth().GetAsync($"/api/ia/agentes/{id}/plantilla");
+            _plantilla = r.StatusCode == System.Net.HttpStatusCode.OK ? await r.Content.ReadFromJsonAsync<AgentePlantillaInfoDto>() : null;
+        }
+        catch { _plantilla = null; }
+    }
+    private async Task AplicarPlantillaAsync()
+    {
+        if (_detalle is null) return;
+        _busy = true; _confirmPlantilla = false;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/ia/agentes/{_detalle.Agent.Id}/plantilla/aplicar", null);
+            if (r.IsSuccessStatusCode) await CargarDetalleAsync(_detalle.Agent.Id);
+            else _editError = "No se pudo aplicar la plantilla.";
+        }
+        catch (Exception ex) { _editError = ex.Message; }
+        finally { _busy = false; }
+    }
+
     private async Task CargarDetalleAsync(Guid id)
     {
         _detalle = await Auth().GetFromJsonAsync<AiAgentDetailDto>($"/api/ia/agentes/{id}");
@@ -1127,6 +1177,7 @@ else
                 SaludarConLogo = _detalle.Agent.SaludarConLogo
             };
         }
+        await CargarPlantillaAsync(id);
         await ReloadBindingsAsync(id);
         await ReloadCacheAsync();
         if (_versionsOpen) { await ReloadVersionsAsync(); }
@@ -1353,6 +1404,11 @@ else
         if (_detalle is null) return;
         if (string.IsNullOrWhiteSpace(_chatInput) && _pendingAttach is null) return;
         _busy = true; _chatError = null; _phoneInfo = null;
+        // Diagnostico "UI pensando pero server 200": marcamos inicio/fin del handler. Si el log muestra
+        // FIN con ok=... y la UI del cliente sigue en "Escribiendo...", la respuesta se produjo y el
+        // problema es la entrega/pintado server->cliente (circuito), no este metodo.
+        var _probarSw = System.Diagnostics.Stopwatch.StartNew();
+        Log.LogInformation("[PROBAR] inicio agente={AgentId}", _detalle.Agent.Id);
 
         var userText = _chatInput.Trim();
         var attach = _pendingAttach;
@@ -1415,7 +1471,13 @@ else
             else { _chatError = r?.Error ?? "No se pudo obtener respuesta."; }
         }
         catch (Exception ex) { _chatError = ex.Message; }
-        finally { _busy = false; }
+        finally
+        {
+            _busy = false;
+            _probarSw.Stop();
+            Log.LogInformation("[PROBAR] fin agente={AgentId} ok={Ok} ms={Ms} -> _busy=false + render emitido",
+                _detalle?.Agent.Id, _chatError is null, _probarSw.ElapsedMilliseconds);
+        }
     }
 
     private async Task OnAttachChanged(InputFileChangeEventArgs e)

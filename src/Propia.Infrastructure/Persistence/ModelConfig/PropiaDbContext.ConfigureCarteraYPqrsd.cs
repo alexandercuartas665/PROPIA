@@ -311,12 +311,42 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
-        modelBuilder.Entity<PqrsdPlantillaRespuesta>(b =>
+        // Catalogo central de plantillas de documentos (Configuracion > Plantillas). Reemplaza a
+        // pqrsd_plantillas_respuesta (sus filas se migraron con categoria "pqrsd").
+        modelBuilder.Entity<PlantillaDocumento>(b =>
         {
-            b.ToTable("pqrsd_plantillas_respuesta");
+            b.ToTable("plantillas_documento");
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Categoria).IsRequired().HasMaxLength(40);
             b.Property(x => x.CuerpoHtml).IsRequired().HasColumnType("text");
+            b.HasIndex(x => new { x.TenantId, x.Categoria });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        // Encabezados y pies de pagina de los documentos (membretes). Un predeterminado por tipo y copropiedad.
+        modelBuilder.Entity<MembreteDocumento>(b =>
+        {
+            b.ToTable("membretes_documento");
+            b.Property(x => x.Nombre).IsRequired().HasMaxLength(120);
+            b.Property(x => x.Html).IsRequired().HasColumnType("text");
+            b.HasIndex(x => new { x.TenantId, x.Tipo }).IsUnique().HasFilter("predeterminado").HasDatabaseName("ux_membretes_documento_predeterminado");
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        // Campos propios de las plantillas (columna "+"): catalogo + valor, espejo de Zona.
+        modelBuilder.Entity<PlantillaCampoDefinicion>(b =>
+        {
+            b.ToTable("plantilla_campo_definiciones");
+            b.Property(x => x.Label).IsRequired().HasMaxLength(80);
             b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.TenantId, x.Label }).IsUnique();
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+        modelBuilder.Entity<PlantillaCampoValor>(b =>
+        {
+            b.ToTable("plantilla_campo_valores");
+            b.HasOne(x => x.Definicion).WithMany().HasForeignKey(x => x.DefinicionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Plantilla).WithMany().HasForeignKey(x => x.PlantillaDocumentoId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.DefinicionId, x.PlantillaDocumentoId }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

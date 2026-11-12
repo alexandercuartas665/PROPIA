@@ -39,7 +39,7 @@ else
         <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
         <div class="veh-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input placeholder="Buscar placa, unidad o propietario..." value="@_q" @oninput="OnBuscar" />
+            <input placeholder="Buscar placa, unidad o propietario..." @bind="_q" @bind:event="oninput" @bind:after="OnBuscar" />
         </div>
         <div class="veh-spacer"></div>
 
@@ -63,7 +63,7 @@ else
                 <div class="veh-menu veh-colmenu">
                     <div class="veh-col-search">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                        <input placeholder="Buscar campo..." value="@_colQ" @oninput="@(e => _colQ = e.Value?.ToString() ?? string.Empty)" />
+                        <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
                     </div>
                     <div class="veh-col-list">
                         @{ var _cols = ClavesOrdenadas().ToList(); }
@@ -97,17 +97,13 @@ else
                 </div>
             }
         </div>
+        @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+        @if (_view == "tabla")
+        {
+            <TablaExportar Vista="VistaExport" />
+        }
         @* Toggle Tarjetas / Tabla (canon = Equipos/Zonas/Residentes). *@
-        <div class="veh-viewtoggle">
-            <button type="button" class="veh-vt @(_view == "cards" ? "on" : "")" @onclick='() => SetVista("cards")' title="Tarjetas">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                Tarjetas
-            </button>
-            <button type="button" class="veh-vt @(_view == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")' title="Tabla">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
-                Tabla
-            </button>
-        </div>
+        <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("cards"), TablaVistaToggle.Tabla("tabla") })" Valor="@_view" OnCambiar="SetVista" />
     </div>
 
     @if (!string.IsNullOrEmpty(_msg)) { <div class="veh-msg @(_msgError ? "err" : "ok")">@_msg</div> }
@@ -244,8 +240,7 @@ else
                             }
                             else
                             {
-                                <input class="veh-row-inp" placeholder="@def.Label" value="@dv"
-                                       @oninput="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                                <input class="veh-row-inp" placeholder="@def.Label" @bind:get="dv"@bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
                             }
                             continue;
                         }
@@ -258,7 +253,7 @@ else
                                 </div>
                                 break;
                             case "placa":
-                                <input class="veh-row-inp" @ref="_placaRef" placeholder="Placa" value="@_nuPlaca" @oninput="OnPlacaNueva" />
+                                <input class="veh-row-inp" @ref="_placaRef" placeholder="Placa" @bind="_nuPlaca" @bind:event="oninput" />
                                 break;
                             case "tipovehiculo":
                                 <select class="veh-row-inp" @bind="_nuTipo">
@@ -745,11 +740,12 @@ else
         => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
 
     // Valor de una dimension de agrupacion para un vehiculo. "tipovehiculo" usa su etiqueta; el resto
-    // (placa, unidad, propietario y "cd:") se resuelve con SortStr, asi cualquier columna agrupa igual que ordena.
+    // (placa, unidad, propietario y "cd:") toma el texto de la celda (TextoCeldaV), asi un campo de persona
+    // o usuario agrupa por el nombre que se ve y no por el id guardado.
     private IEnumerable<ValorGrupo> ValorGrupoV(VehiculoResumenDto v, string clave)
     {
         if (clave == "tipovehiculo") { var t = TipoLabel(v.TipoVehiculo); yield return new(t, t); yield break; }
-        var val = SortStr(v, clave);
+        var val = TextoCeldaV(v, clave);
         var tv = string.IsNullOrWhiteSpace(val) ? "(Sin dato)" : val;
         yield return new(tv, tv);
     }
@@ -767,6 +763,64 @@ else
         var desde = (_pagina - 1) * _porPagina;
         return Filtradas.Skip(desde).Take(_porPagina);
     }
+
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // y ordenadas (el mismo orden que pinta la tabla) y, si esta agrupada, las cabeceras de grupo. =====
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumericaV(k), EsNumericaV(k) ? FormatoExcelV(k) : null)).ToList();
+        ExportFila Fila(VehiculoResumenDto v, IReadOnlyList<string>? ruta)
+            => new(cols.Select(k => EsNumericaV(k) ? ValorNumV(v, k) : (object?)TextoCeldaV(v, k)).ToList(), Ruta: ruta);
+
+        var filas = new List<ExportFila>();
+        if (!_agrupadoV) filas.AddRange(VehiculosRenderV().Select(v => Fila(v, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<VehiculoResumenDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(v => Fila(v, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar<VehiculoResumenDto>(Filtradas, _gruposV, ValorGrupoV), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_agrupadoV) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposV.Select(ColLabel)));
+        criterios.Add($"{Filtradas.Count} vehículos");
+        return new ExportVista("Vehículos", _copNombre, columnas, filas, criterios, _gruposV.Select(ColLabel).ToList());
+    }
+    // Texto visible de una celda: tipo con su etiqueta (TipoLabel, como el select y el agrupado), Directorio con
+    // el nombre, Usuario con el nombre del usuario del tenant elegido en su select; el resto = SortStr.
+    private string? TextoCeldaV(VehiculoResumenDto v, string k)
+    {
+        string? t;
+        var cd = CampoCustom(k);
+        if (k == "tipovehiculo") t = TipoLabel(v.TipoVehiculo);
+        else if (cd is { Tipo: TipoCampoTablero.Directorio }) t = NombrePersona(ValorDe(v.PlacaId, cd.Id));
+        else if (cd is { Tipo: TipoCampoTablero.Usuario })
+        {
+            var val = ValorDe(v.PlacaId, cd.Id);
+            t = _usuariosTenant.FirstOrDefault(u => u.PersonaId.ToString() == val)?.NombreCompleto;
+        }
+        else t = SortStr(v, k);
+        return string.IsNullOrWhiteSpace(t) ? null : t;
+    }
+    // Formato numerico de Excel de un campo propio numerico: moneda con $, porcentaje con %, numero general.
+    private string FormatoExcelV(string k) => CampoCustom(k)?.Tipo switch
+    {
+        TipoCampoTablero.Moneda => "\"$\" #,##0",
+        TipoCampoTablero.Porcentaje => "General\"%\"",
+        _ => "General"
+    };
 
     // Fila hoja de la vista tabla (misma fila editable para el modo agrupado y el no agrupado). La pinta
     // TablaGruposRender (agrupado) o el foreach de la pagina (no agrupado). El parametro es 'v', igual
@@ -959,7 +1013,7 @@ else
             <div></div>
         }
     </div>;
-    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; _pagina = 1; }
+    private void OnBuscar() => _pagina = 1;
 
     // Vista Tarjetas / Tabla (recordada por modulo en localStorage, canon = Equipos/Zonas/Residentes).
     private string _view = "tabla";
@@ -975,7 +1029,6 @@ else
 
     // Ficha: setear (sel) o limpiar (null) el propietario override del vehiculo; refresca tabla y ficha.
     private void AbrirUnidad(VehiculoResumenDto v) => Nav.NavigateTo($"/distribucion?unidad={v.UnidadId}");
-    private void OnPlacaNueva(ChangeEventArgs e) => _nuPlaca = e.Value?.ToString() ?? string.Empty;
     private void SetDinamicoNuevo(Guid defId, string? valor) => _nuDinamicos[defId] = valor ?? string.Empty;
 
     private string? ValorDe(Guid placaId, Guid defId)
@@ -1363,7 +1416,7 @@ else
     {
         _cfg.TryGetValue(clave, out var c);
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg);
+            Oculto: c?.Oculto ?? !VisibleColDefault(clave), Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgAsync(GuardarUnidadCampoConfigRequest req)
     {
@@ -1539,6 +1592,9 @@ else
                 AbrirCrearCampo();
                 break;
             case TablaColMenu.Accion.Ocultar:
+                // La 1a columna es fija: el menu Columnas no la deja ocultar ni volver a mostrar; ocultarla aqui
+                // la dejaba sin forma de restaurarla.
+                if (col.Key == ClavesOrdenadas().FirstOrDefault()) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
                 await ToggleVisibleColAsync(col.Key);
                 break;
             case TablaColMenu.Accion.Agrupar:
@@ -1731,7 +1787,7 @@ else
     .veh-spacer { flex: 1; }
     .veh-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); border-radius: 9px; padding: 0 10px; height: 36px; color: var(--propia-text-muted); }
     .veh-search input { border: 0; outline: 0; background: transparent; font-size: 13px; color: var(--propia-text-body); width: 230px; font-family: inherit; }
-    .veh-fbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .veh-fbtn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-muted); font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
     .veh-fbtn.on { background: var(--propia-brand-soft); border-color: var(--propia-brand-soft); color: var(--propia-brand); }
     .veh-menu-wrap { position: relative; }
     .veh-menu-bd { position: fixed; inset: 0; z-index: 40; }

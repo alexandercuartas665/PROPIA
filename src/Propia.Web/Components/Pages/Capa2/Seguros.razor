@@ -27,16 +27,7 @@
         @if (_authChecked && _jwt is not null)
         {
             <div class="seg-head-actions">
-                <div class="seg-toggle">
-                    <button type="button" class="seg-vt @(_vista == "tarjetas" ? "on" : "")" @onclick='() => SetVista("tarjetas")'>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                        Tarjetas
-                    </button>
-                    <button type="button" class="seg-vt @(_vista == "tabla" ? "on" : "")" @onclick='() => SetVista("tabla")'>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
-                        Tabla
-                    </button>
-                </div>
+                @* El selector Tarjetas/Tabla se movio a la barra de herramientas (TablaVistaToggle), como el resto. *@
                 <button class="propia-btn-brand" @onclick="() => AbrirModal(null)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
                     Nueva póliza
@@ -180,6 +171,14 @@
                     </div>
                 }
             </div>
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Solo en Tabla. *@
+            @if (_vista == "tabla")
+            {
+                <TablaExportar Vista="VistaExport" />
+            }
+            @* Selector de vista: al final de la barra, como en el resto de modulos (antes vivia en el encabezado
+               de la pagina, junto a "Nueva poliza"). Componente compartido TablaVistaToggle. *@
+            <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tarjetas"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
         </div>
 
         @* Menu de columna (estilo Airtable): lo abre la flecha del header de cada columna. Calca de Tareas.
@@ -290,8 +289,10 @@
                         <div class="seg-row seg-newrow seg-newrow--edit seg-grid" style="@GridStyle()" @onkeydown="OnAltaKeydownS">
                             <div class="seg-sel"></div>
                             <div class="seg-exp-col">
-                                @* Expander del alta (como Unidades): crea la poliza con lo escrito y abre su ficha para completar. *@
-                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Crear y abrir la ficha para completar" @onclick="() => CrearPolizaDesdeAltaAsync(true)" disabled="@_creandoInline">
+                                @* Expander del alta (como Mantenimiento): abre el modal "Nueva poliza" con lo ya escrito,
+                                   SIN crear nada; se termina y guarda en el modal. Antes creaba primero y, sin aseguradora,
+                                   fallaba con "Indica la aseguradora" aunque el usuario solo queria seguir en el modal. *@
+                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Abrir el formulario completo con lo escrito" @onclick="AbrirModalDesdeAltaAsync" disabled="@_creandoInline">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
                             </div>
@@ -301,9 +302,9 @@
                                 <div class="@AltaCeldaClass(col)">
                                     @switch (col)
                                     {
-                                        case "numeropoliza": <input class="seg-nf-inp" value="@_npNumero" @oninput="e => _npNumero = e.Value?.ToString() ?? string.Empty" placeholder="N póliza" /> break;
-                                        case "aseguradora": <input class="seg-nf-inp" value="@_npAseguradora" @oninput="e => _npAseguradora = e.Value?.ToString() ?? string.Empty" placeholder="Aseguradora *" /> break;
-                                        case "corredor": <input class="seg-nf-inp" value="@_npCorredor" @oninput="e => _npCorredor = e.Value?.ToString() ?? string.Empty" placeholder="Corredor" /> break;
+                                        case "numeropoliza": <input class="seg-nf-inp" @bind="_npNumero" @bind:event="oninput" placeholder="N póliza" /> break;
+                                        case "aseguradora": <input class="seg-nf-inp" @bind="_npAseguradora" @bind:event="oninput" placeholder="Aseguradora *" /> break;
+                                        case "corredor": <input class="seg-nf-inp" @bind="_npCorredor" @bind:event="oninput" placeholder="Corredor" /> break;
                                         case "fechainicio": <input type="date" class="seg-nf-inp" value="@_npInicio" @oninput="e => _npInicio = e.Value?.ToString() ?? string.Empty" /> break;
                                         case "fechafin": <input type="date" class="seg-nf-inp" value="@_npFin" @oninput="e => _npFin = e.Value?.ToString() ?? string.Empty" /> break;
                                         case "valorpoliza": <input type="number" step="1000" class="seg-nf-inp" value="@_npValor" @oninput="e => _npValor = e.Value?.ToString() ?? string.Empty" placeholder="Valor" /> break;
@@ -385,7 +386,7 @@
 @if (_modal)
 {
     <div class="seg-ov" @onclick="() => _modal = false"></div>
-    <div class="seg-modal">
+    <div class="seg-modal" @ref="_modalSegRef">
         <div class="seg-modal-head">
             <div class="seg-modal-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg></div>
             <div style="flex:1;min-width:0;">
@@ -422,10 +423,10 @@
                         {
                             var idx = i; var d = _drafts[i];
                             <div class="seg-dr-card @(idx == _draftIdx ? "sel" : "")" @onclick="() => SeleccionarDraft(idx)">
-                                <div class="seg-dr-fic @(d.Thumb is not null ? "has-thumb" : "")">
+                                <IaFicha Lectura="d.Ia" Css="@("seg-dr-fic" + (d.Thumb is not null ? " has-thumb" : ""))">
                                     @if (d.Thumb is not null) { <img src="@d.Thumb" alt="@d.FileName" /> } else { <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> }
-                                </div>
-                                <div class="seg-dr-meta"><div class="seg-dr-nm">@d.FileName</div><div class="seg-dr-sz">@(d.IaEstado ?? TamKb(d.Size))</div></div>
+                                </IaFicha>
+                                <div class="seg-dr-meta"><div class="seg-dr-nm">@d.FileName</div><div class="seg-dr-sz @(d.Ia.Estado == IaEstado.Error ? "err" : "")"><IaRail Lectura="d.Ia" Texto="@TamKb(d.Size)" /></div></div>
                                 <span class="seg-dr-pill @PillCls(d.Estado)">@PillTxt(d.Estado)</span>
                             </div>
                         }
@@ -435,65 +436,67 @@
             <div class="seg-mainpane">
                 @if (_editId is null && Multi && ActiveDraft is { } act)
                 {
-                    <div class="seg-dr-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Revisando <b>@act.FileName</b> &middot; @(_draftIdx + 1) de @_drafts.Count <button type="button" class="seg-dr-releer" @onclick="ReleerActivoAsync">Volver a leer</button></div>
+                    <div class="seg-dr-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Revisando <b>@act.FileName</b> &middot; @(_draftIdx + 1) de @_drafts.Count</div>
                 }
-                @* Cargar PDF: en alta, uno o varios (se revisan uno por uno); en edicion, OCR del PDF origen. *@
-                <div class="seg-ocr">
-                    @if (_editId is null)
-                    {
-                        <label class="seg-ocr-btn">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                            @(Multi ? "Agregar mas PDF" : "Cargar PDF (uno o varios)")
-                            <InputFile OnChange="OnFilesSelected" accept=".pdf,image/*" multiple hidden />
-                        </label>
-                        @if (!Multi && _drafts.Count == 1) { <span class="seg-ocr-msg">1 PDF: @_drafts[0].FileName (se adjunta al crear)</span> }
+                @* Carga con la transicion "la IA consume el documento" (Shared/IaIngesta, PROPUESTAS.md seccion 4): zona de
+                   arrastrar, panel de lectura y resumen. Mismo componente y proceso que Nuevo contrato. *@
+                @if (_editId is null)
+                {
+                    <div class="iai-zona">
+                        <IaDrop Compacto="@(_drafts.Count > 0)" Que="las pólizas" OnChange="OnFilesSelected"
+                                Sub="La IA lee cada PDF y llena la póliza por ti: aseguradora, corredor, número, valor y vigencia. Puedes subir varias: cada una queda como borrador para revisar." />
                         <div class="seg-ia-ctrl">
                             <label class="seg-ia-auto"><input type="checkbox" @bind="_iaAuto" /> Leer con IA automaticamente</label>
-                            @if (_drafts.Any(d => d.Estado != DraftEstado.Listo)) { <button type="button" class="seg-ia-btn" @onclick="LeerTodosAsync">Leer todos con IA</button> }
+                            @if (_drafts.Any(d => d.Estado != DraftEstado.Listo && d.Ia.Estado is IaEstado.Ninguno or IaEstado.Pendiente)) { <button type="button" class="seg-ia-btn" @onclick="LeerTodosAsync">Leer todos con IA</button> }
                             @if (_iaTokens > 0) { <span class="seg-ia-tok">IA: @FmtTok(_iaTokens)</span> }
                         </div>
-                    }
-                    else
+                    </div>
+                    @if (ActiveDraft is { } adp)
                     {
-                        <label class="seg-ocr-btn @(_ocrBusy ? "busy" : "")">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                            @(_ocrBusy ? "Leyendo póliza..." : "Cargar PDF y extraer (IA)")
-                            <InputFile OnChange="OnOcrFile" accept=".pdf,image/*" hidden disabled="@_ocrBusy" />
-                        </label>
-                        @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
+                        <IaPanel Lectura="adp.Ia" FileName="@adp.FileName" Thumb="@adp.Thumb" Doc="de la póliza" OnReleer="ReleerActivoAsync" />
+                    }
+                }
+                else
+                {
+                    <div class="iai-zona iai-zona--row">
+                        @if (!OcrDocLeyendo)
+                        {
+                            <IaDrop Compacto="true" Multiple="false" TituloCompacto="Actualizar desde un PDF" RestoCompacto="la IA relee la póliza y completa lo que falte" OnChange="OnOcrFile" />
+                        }
                         @if (_f.TienePdfOrigen)
                         {
-                            <button type="button" class="seg-ocr-btn" style="margin-left:auto;" @onclick="DescargarPdfOrigen">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg>
-                                Ver PDF origen
-                            </button>
+                            <button type="button" class="seg-ocr-btn" @onclick="DescargarPdfOrigen"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5 5 5-5M5 20h14"/></svg> Ver PDF origen </button>
                         }
-                    }
-                </div>
-                @if (_editId is null && ActiveDraft is { IaDudosos: { Count: > 0 } } adp)
-                {
-                    <div class="seg-ia-warn">Revisa estos campos (lectura dudosa de la IA): <b>@string.Join(", ", adp.IaDudosos!)</b></div>
+                        @if (_ocrMsg is not null) { <span class="seg-ocr-msg">@_ocrMsg</span> }
+                    </div>
+                    <IaPanel Lectura="_ocrDoc" FileName="@_ocrDocNombre" Doc="de la póliza" />
                 }
 
                 <div class="seg-grid-form">
                     <div class="seg-col-full">
                         <label class="seg-lbl">Aseguradora * <span class="seg-hint">(busca en el Directorio o crea)</span></label>
                         <SelectorPersona Jwt="@_jwt" Seleccionada="_aseguradoraSel" SeleccionadaChanged="OnAseguradoraSel" PermiteEmpresa="true" Placeholder="Buscar aseguradora (empresa o persona)..." />
-                        <input class="seg-input @ClsDudoso("aseguradora")" style="margin-top:6px;" @bind="_f.Aseguradora" @bind:event="oninput" placeholder="Nombre de la aseguradora" />
+                        <input class="seg-input @ClsDudoso("aseguradora")" data-iai="aseguradora" style="margin-top:6px;" @bind="_f.Aseguradora" @bind:event="oninput" placeholder="Nombre de la aseguradora" />
                     </div>
                     <div class="seg-col-full">
                         <label class="seg-lbl">Corredor de seguro <span class="seg-hint">(opcional, del Directorio)</span></label>
                         <SelectorPersona Jwt="@_jwt" Seleccionada="_corredorSel" SeleccionadaChanged="OnCorredorSel" PermiteEmpresa="true" Placeholder="Buscar corredor..." />
-                        <input class="seg-input @ClsDudoso("corredor")" style="margin-top:6px;" @bind="_f.Corredor" @bind:event="oninput" placeholder="Nombre del corredor" />
+                        <input class="seg-input @ClsDudoso("corredor")" data-iai="corredor" style="margin-top:6px;" @bind="_f.Corredor" @bind:event="oninput" placeholder="Nombre del corredor" />
                     </div>
-                    <div><label class="seg-lbl">Número de póliza</label><input class="seg-input @ClsDudoso("numero_poliza")" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
-                    <div><label class="seg-lbl">Valor de póliza (COP)</label><input class="seg-input @ClsDudoso("valor_poliza")" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
-                    <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input @ClsDudoso("fecha_inicio")" type="date" @bind="_f.Inicio" /></div>
-                    <div><label class="seg-lbl">Fecha de finalización</label><input class="seg-input @ClsDudoso("fecha_fin")" type="date" @bind="_f.Fin" /></div>
-                    <div><label class="seg-lbl">Forma de pago (cuotas)</label><input class="seg-input" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cuotas" /></div>
-                    <div><label class="seg-lbl">Pago mensual</label><label class="seg-check" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label></div>
-                    <div class="seg-col-full"><label class="seg-check"><input type="checkbox" @bind="_f.IncluyeZonasUnidades" /> Incluye zonas y unidades privadas</label></div>
-                    <div class="seg-col-full"><label class="seg-lbl">Cobertura</label><textarea class="seg-input" rows="2" @bind="_f.Cobertura" placeholder="Condiciones de cobertura"></textarea></div>
+                    <div><label class="seg-lbl">Número de póliza</label><input class="seg-input @ClsDudoso("numero_poliza")" data-iai="numero_poliza" @bind="_f.NumeroPoliza" @bind:event="oninput" placeholder="Nro" /></div>
+                    <div><label class="seg-lbl">NIT de la aseguradora</label><input class="seg-input @ClsDudoso("nit_aseguradora")" data-iai="nit_aseguradora" @bind="_f.NitAseguradora" @bind:event="oninput" placeholder="NIT sin puntos" /></div>
+                    <div><label class="seg-lbl">Tomador</label><input class="seg-input @ClsDudoso("tomador")" data-iai="tomador" @bind="_f.Tomador" @bind:event="oninput" placeholder="Quien contrata la póliza" /></div>
+                    <div><label class="seg-lbl">Asegurado</label><input class="seg-input @ClsDudoso("asegurado")" data-iai="asegurado" @bind="_f.Asegurado" @bind:event="oninput" placeholder="Asegurado / beneficiario" /></div>
+                    <div><label class="seg-lbl">Valor de póliza (COP)</label><input class="seg-input @ClsDudoso("valor_poliza")" data-iai="valor_poliza" type="number" step="any" @bind="_f.ValorPoliza" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Valor asegurado (COP)</label><input class="seg-input @ClsDudoso("valor_asegurado")" data-iai="valor_asegurado" type="number" step="any" @bind="_f.ValorAsegurado" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Prima (COP)</label><input class="seg-input @ClsDudoso("prima")" data-iai="prima" type="number" step="any" @bind="_f.Prima" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Deducible</label><input class="seg-input @ClsDudoso("deducible")" data-iai="deducible" @bind="_f.Deducible" @bind:event="oninput" placeholder="Ej. 10% de la pérdida, mín. 1 SMMLV" /></div>
+                    <div><label class="seg-lbl">Fecha de inicio</label><input class="seg-input @ClsDudoso("fecha_inicio")" data-iai="fecha_inicio" type="date" @bind="_f.Inicio" /></div>
+                    <div><label class="seg-lbl">Fecha de finalización</label><input class="seg-input @ClsDudoso("fecha_fin")" data-iai="fecha_fin" type="date" @bind="_f.Fin" /></div>
+                    <div><label class="seg-lbl">Forma de pago (cuotas)</label><input class="seg-input @ClsDudoso("forma_pago_cuotas")" data-iai="forma_pago_cuotas" type="number" min="1" @bind="_f.FormaPagoCuotas" placeholder="Cuotas" /></div>
+                    <div><label class="seg-lbl">Pago mensual</label><label class="seg-check" data-iai="pago_mensual" style="margin-top:6px;"><input type="checkbox" @bind="_f.PagoMensual" /> Se paga mensualmente</label></div>
+                    <div class="seg-col-full"><label class="seg-check" data-iai="incluye_zonas_unidades"><input type="checkbox" @bind="_f.IncluyeZonasUnidades" /> Incluye zonas y unidades privadas</label></div>
+                    <div class="seg-col-full"><label class="seg-lbl">Cobertura</label><textarea class="seg-input @ClsDudoso("ramo")" data-iai="ramo" rows="2" @bind="_f.Cobertura" placeholder="Condiciones de cobertura"></textarea></div>
                     <div class="seg-col-full"><label class="seg-lbl">Valores agregados</label><textarea class="seg-input" rows="2" @bind="_f.ValoresAgregados"></textarea></div>
                     <div class="seg-col-full"><label class="seg-lbl">Observaciones</label><textarea class="seg-input" rows="2" @bind="_f.Observaciones"></textarea></div>
 
@@ -509,7 +512,7 @@
                                 @switch (cm.Tipo)
                                 {
                                     case TipoCampoTablero.AreaTexto:
-                                        <textarea class="seg-input" rows="2" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())"></textarea>
+                                        <textarea class="seg-input" rows="2" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput"></textarea>
                                         break;
                                     case TipoCampoTablero.Numero:
                                     case TipoCampoTablero.Moneda:
@@ -531,7 +534,7 @@
                                         </select>
                                         break;
                                     default:
-                                        <input class="seg-input" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())" />
+                                        <input class="seg-input" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput" />
                                         break;
                                 }
                             </div>
@@ -935,6 +938,14 @@
     .seg-ocr-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--propia-brand, var(--propia-brand)); cursor: pointer; }
     .seg-ocr-btn.busy { opacity: .6; pointer-events: none; }
     .seg-ocr-msg { font-size: 11.5px; color: var(--propia-text-secondary); }
+    /* Estado de la lectura con IA (1 PDF): en curso con spinner, ok o error con detalle (2026-11-10). */
+    .seg-ia-estado { display: flex; align-items: center; margin: 0 0 12px; font-size: 12px; font-weight: 600; padding: 8px 11px; border-radius: 8px; }
+    .seg-ia-estado.busy { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .seg-ia-estado.ok { color: var(--propia-success); background: var(--propia-bg-card-soft); }
+    .seg-ia-estado.err { color: var(--propia-danger); background: var(--propia-danger-soft); }
+    .seg-ia-spin { width: 12px; height: 12px; border-width: 2px; margin-right: 7px; flex-shrink: 0; color: var(--propia-brand); }
+    .seg-dr-sz .seg-ia-spin { width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+    .seg-dr-sz.err { color: var(--propia-danger); font-weight: 700; }
     /* Ola 1: control de IA (auto/leer todos) + aviso de campos dudosos (baja confianza) */
     .seg-ia-ctrl { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; flex-basis: 100%; }
     .seg-ia-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--propia-text-secondary); cursor: pointer; margin: 0; }
@@ -1123,8 +1134,7 @@
     private PersonaCandidatoDto? _aseguradoraSel;
     private PersonaCandidatoDto? _corredorSel;
 
-    // OCR
-    private bool _ocrBusy;
+    // OCR: mensaje de la descarga del PDF origen (la lectura usa la transicion de Shared/IaIngesta)
     private string? _ocrMsg;
 
     // ---- Fase 1: carga multiple de polizas (varios PDF en el mismo modal "Nueva poliza") ----
@@ -1146,9 +1156,8 @@
         public Guid? CreatedId;
         public string? Error;
         public string? Thumb;   // miniatura (dataURL) de la 1a pagina del PDF / la imagen misma
-        public string? IaEstado;   // estado del prellenado con IA (Agente Documental / DeepSeek)
-        public List<string>? IaDudosos;   // etiquetas de campos con lectura dudosa (baja confianza), para el aviso
-        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en rojo
+        public IaLectura Ia = new();   // transicion "la IA consume el documento" (Shared/IaIngesta), compartida con Contratos
+        public HashSet<string>? IaClavesDudosas;   // claves de perfil dudosas, para pintar el input en ambar
     }
     private List<PolizaDraft> _drafts = new();
     private bool _iaAuto = true;   // leer con IA automaticamente al soltar (control de costo: apagar = manual)
@@ -1194,24 +1203,20 @@
         var primeroNuevo = _drafts.Count;   // SeleccionarDraft persiste el draft actual antes de cambiar
         _drafts.AddRange(nuevos);
         SeleccionarDraft(primeroNuevo);
-        StateHasChanged();   // pinta las tarjetas con icono de inmediato; la miniatura llega luego
-        foreach (var d in nuevos)
+        // Como la replica: todos quedan "En cola" (o "aun no se ha leido" con la IA apagada) DE INMEDIATO y la lectura
+        // arranca ya; las miniaturas se generan en paralelo y no la retrasan.
+        foreach (var d in nuevos) { if (_iaAuto) d.Ia.EnCola(); else d.Ia.Pendiente(); }
+        StateHasChanged();
+        _ = GenerarThumbsAsync(nuevos);
+        if (_iaAuto) foreach (var d in nuevos) await ExtraerYLlenarDraftAsync(d);
+    }
+
+    private async Task GenerarThumbsAsync(List<PolizaDraft> lista)
+    {
+        foreach (var d in lista)
         {
             await GenerarThumbAsync(d);
-            StateHasChanged();
-        }
-        if (_iaAuto)
-        {
-            foreach (var d in nuevos)
-            {
-                await ExtraerYLlenarDraftAsync(d);   // arnes: pdf.js/vision -> DeepSeek -> llena el form
-                StateHasChanged();
-            }
-        }
-        else
-        {
-            foreach (var d in nuevos) { d.IaEstado = "Pendiente (Leer con IA)"; }
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -1318,7 +1323,8 @@
             _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
             _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
             _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
-            _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey));
+            _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey,
+            Limpio(_f.NitAseguradora), Limpio(_f.Tomador), Limpio(_f.Asegurado), _f.ValorAsegurado, _f.Prima, Limpio(_f.Deducible)));
         if (!resp.IsSuccessStatusCode) return (null, await MensajeErrorAsync(resp));
         Guid? id = null;
         try { id = (await resp.Content.ReadFromJsonAsync<PolizaDto>())?.Id; } catch { }
@@ -1421,7 +1427,7 @@
     private Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest FilaConfigS(string clave)
     {
         _cfgPoliza.TryGetValue(clave, out var c);
-        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "poliza");
+        return new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "poliza", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfgS(Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
@@ -1562,14 +1568,12 @@
                 else AbrirEditarCampoSistema(col.Key);   // sistema: editor focalizado (alias/descripcion/visibilidad)
                 break;
             case TablaColMenu.Accion.Ocultar:
-                try
-                {
-                    await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config",
-                        new Propia.Application.MiCopropiedad.GuardarUnidadCampoConfigRequest(col.Key, null, null, Oculto: true, Entidad: "poliza"));
-                    await CargarConfigAsync();
-                    ColToast("Columna oculta. Usa Campos para restaurarla.");
-                }
-                catch { ColToast("No se pudo ocultar la columna."); }
+                // Fila COMPLETA (FilaConfigS): el PUT reemplaza la fila; mandar solo Oculto borraba alias,
+                // opciones de lista, formato, orden y descripcion de la columna.
+                if (EsFijaS(col.Key)) { ColToast("Esta columna es fija y no se puede ocultar."); break; }
+                await GuardarCfgS(FilaConfigS(col.Key) with { Oculto = true });
+                await CargarConfigAsync();
+                ColToast("Columna oculta. Usa Columnas para restaurarla.");
                 break;
             case TablaColMenu.Accion.InsertarIzq:
             case TablaColMenu.Accion.InsertarDer:
@@ -1739,6 +1743,8 @@
         public DateTime? Inicio = DateTime.Today;
         public DateTime? Fin;
         public decimal? ValorPoliza;
+        public string? NitAseguradora, Tomador, Asegurado, Deducible;
+        public decimal? ValorAsegurado, Prima;
         public int? FormaPagoCuotas;
         public bool PagoMensual;
         public string? Cobertura;
@@ -1749,6 +1755,7 @@
         public string? PdfOrigenKey;      // key R2 del PDF origen (se persiste al guardar)
         public bool TienePdfOrigen;       // la poliza cargada ya tiene PDF origen (para el link de descarga)
     }
+    private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     public sealed record ExpedienteLite(Guid Id, string? Codigo, string Nombre, string? Ruta = null)
     {
@@ -2154,6 +2161,81 @@
         }
     }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas visibles en su orden, TODAS las filas filtradas
+    // (buscador + reglas) y ordenadas (Filtradas ya aplica el orden) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombreS;   // nombre de la copropiedad para el encabezado del archivo
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNumExportS(k), EsNumExportS(k) ? FormatoExportS(k) : null)).ToList();
+        ExportFila FilaX(PolizaDto p, IReadOnlyList<string>? ruta) => new(cols.Select(k => CeldaExportS(p, k)).ToList(), Ruta: ruta);
+
+        var lista = Filtradas;
+        var filas = new List<ExportFila>();
+        if (_gruposS.Count == 0) filas.AddRange(lista.Select(p => FilaX(p, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<PolizaDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(p => FilaX(p, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar(lista, _gruposS, ValorGrupoS), new());
+        }
+
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (ResumenReglasS() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sortsS.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sortsS.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_gruposS.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _gruposS.Select(ColLabel)));
+        criterios.Add($"{lista.Count} pólizas");
+        return new ExportVista("Seguros", _copropiedadNombreS, columnas, filas, criterios, _gruposS.Select(ColLabel).ToList());
+    }
+    // Reglas activas del filtro como texto (mismo formato que FiltroDinamico.Resumen): "Campo operador valor".
+    private string ResumenReglasS()
+    {
+        var partes = _reglasS.Where(ReglaActivaS).Select(r =>
+        {
+            var campo = CamposFiltroS().FirstOrDefault(x => x.Key == r.Campo).Label ?? r.Campo;
+            var op = OperadoresS(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = FiltroKindS(r.Campo) == "sel-estado"
+                ? r.Valor switch { "al-dia" => "Al dia", "por-vencer" => "Por vencer", "vencida" => "Vencida", _ => r.Valor }
+                : r.Valor;
+            return $"{campo} {op} {val}";
+        }).ToList();
+        return string.Join(_logicaS == "or" ? " O " : " Y ", partes);
+    }
+    // Columnas numericas de la descarga: las del total por columna + campos propios calculados.
+    private bool EsNumExportS(string k)
+        => EsNumericaColS(k) || CampoCustom(k)?.Tipo is TipoCampoTablero.Total or TipoCampoTablero.Formula;
+    // Formato de Excel: dinero con $ y miles (como "$" + N0 de la celda); resto General.
+    private string FormatoExportS(string k)
+        => k == "valorpoliza" || CampoCustom(k)?.Tipo == TipoCampoTablero.Moneda ? "\"$\"#,##0" : "General";
+    // Valor de una celda = lo que pinta la tabla: CeldaTextoP (sin el "-" de celda vacia), el texto del badge
+    // de vencimiento y los numeros como numero.
+    private object? CeldaExportS(PolizaDto p, string k)
+    {
+        if (k == "vencimiento") return TextoSemaforoBadgeS(p);
+        if (k == "reclamaciones") return p.ReclamacionesCount > 0 ? p.ReclamacionesCount : null;
+        if (EsNumExportS(k) && ValorNumColS(p, k) is { } num) return num;
+        var t = CeldaTextoP(p, k);
+        return string.IsNullOrWhiteSpace(t) || t == "-" ? null : t;
+    }
+    // Mismo texto que pinta SemaforoBadge (celda "Vencimiento").
+    private static string TextoSemaforoBadgeS(PolizaDto p) => p.Semaforo switch
+    {
+        SemaforoContrato.Rojo => p.DiasParaVencer is { } d && d < 0 ? "Vencida" : "Critico",
+        SemaforoContrato.Amarillo => p.DiasParaVencer is { } d ? $"{d} dias" : "Por vencer",
+        SemaforoContrato.Verde => p.DiasParaVencer is { } d ? $"{d} dias" : "Al dia",
+        _ => "Sin fin"
+    };
+
     private static string SemaforoTexto(SemaforoContrato s) => s switch
     {
         SemaforoContrato.Verde => "Al dia",
@@ -2186,6 +2268,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Modal de la poliza: soltar PDF en cualquier parte (velo "Suelta para que la IA los lea") y, tras una lectura
+        // del documento que se esta viendo, iluminar en secuencia los campos que lleno la IA (Shared/IaIngesta).
+        if (_modal)
+        {
+            if (!_modalSegWired) { _modalSegWired = true; try { await Js.InvokeVoidAsync("propiaIai.wireDrop", _modalSegRef); } catch { } }
+            if (_resaltarS is { } rz) { _resaltarS = null; try { await Js.InvokeVoidAsync("propiaIai.resaltar", _modalSegRef, rz.Aplicadas, rz.Dudosas); } catch { } }
+        }
+        else _modalSegWired = false;
         // FAB + scroll infinito: observar .seg-scroll cuando la tabla esta visible y sin agrupacion.
         // La firma incluye la vista para re-enganchar al volver de tarjetas a tabla (elemento recreado).
         if (_jwt is not null && _vista == "tabla")
@@ -2218,6 +2308,7 @@
                 try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
                 try { _gruposS = ParseGruposS(await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey)); } catch { }
                 try { CargarAggS(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyS)); } catch { }
+                try { _copropiedadNombreS = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarAsync();
             }
             else { Nav.NavigateTo("/login?returnUrl=%2Fseguros", true); return; }
@@ -2281,6 +2372,25 @@
     // K-09: el mismo toast avisa de exito y de error; en verde un error se lee como confirmacion.
     private bool _inlineMsgEsError;
     private readonly List<Guid> _segRecienCreados = new();
+
+    // Expander de la fila de alta: lleva lo escrito al modal "Nueva poliza" y cierra la fila. La fila se
+    // cierra (no solo se oculta) porque su auto-guardado en blur crearia la poliza en segundo plano mientras
+    // el usuario sigue escribiendo en el modal (duplicado). Lo que falte se valida al guardar en el modal.
+    private async Task AbrirModalDesdeAltaAsync()
+    {
+        var num = _npNumero; var aseg = _npAseguradora; var corr = _npCorredor;
+        var val = _npValor; var ini = _npInicio; var fin = _npFin;
+        _altaAbierta = false; _inlineMsg = null;
+        _npNumero = ""; _npAseguradora = ""; _npCorredor = ""; _npValor = ""; _npInicio = ""; _npFin = "";
+
+        await AbrirModal(null);
+        if (!string.IsNullOrWhiteSpace(num)) _f.NumeroPoliza = num.Trim();
+        if (!string.IsNullOrWhiteSpace(aseg)) _f.Aseguradora = aseg.Trim();
+        if (!string.IsNullOrWhiteSpace(corr)) _f.Corredor = corr.Trim();
+        if (decimal.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v)) _f.ValorPoliza = v;
+        if (DateTime.TryParse(ini, out var di)) _f.Inicio = di;
+        if (DateTime.TryParse(fin, out var df)) _f.Fin = df;
+    }
 
     private async Task CrearPolizaDesdeAltaAsync(bool abrir = false)
     {
@@ -2380,6 +2490,8 @@
         _f.CorredorPersonaId = p.CorredorPersonaId; _f.CorredorEmpresaId = p.CorredorEmpresaId; _f.Corredor = p.Corredor;
         _f.Inicio = p.FechaInicio?.ToDateTime(TimeOnly.MinValue); _f.Fin = p.FechaFin?.ToDateTime(TimeOnly.MinValue);
         _f.ValorPoliza = p.ValorPoliza; _f.FormaPagoCuotas = p.FormaPagoCuotas; _f.PagoMensual = p.PagoMensual;
+        _f.NitAseguradora = p.NitAseguradora; _f.Tomador = p.Tomador; _f.Asegurado = p.Asegurado;
+        _f.ValorAsegurado = p.ValorAsegurado; _f.Prima = p.Prima; _f.Deducible = p.Deducible;
         _f.Cobertura = p.Cobertura; _f.IncluyeZonasUnidades = p.IncluyeZonasUnidades; _f.ValoresAgregados = p.ValoresAgregados;
         _f.Observaciones = p.Observaciones; _f.ExpedienteId = p.ExpedienteId?.ToString();
         _f.TienePdfOrigen = p.TienePdfOrigen; _f.PdfOrigenKey = null;
@@ -2431,7 +2543,8 @@
                     _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
                     _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
                     _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
-                    _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey));
+                    _f.ValoresAgregados, _f.Observaciones, exp, _f.PdfOrigenKey,
+                    Limpio(_f.NitAseguradora), Limpio(_f.Tomador), Limpio(_f.Asegurado), _f.ValorAsegurado, _f.Prima, Limpio(_f.Deducible)));
             }
             else
             {
@@ -2439,7 +2552,9 @@
                     _f.Aseguradora.Trim(), _f.NumeroPoliza, _f.AseguradoraPersonaId, _f.AseguradoraEmpresaId,
                     _f.Corredor, _f.CorredorPersonaId, _f.CorredorEmpresaId, ini, fin,
                     _f.ValorPoliza, _f.FormaPagoCuotas, _f.PagoMensual, _f.Cobertura, _f.IncluyeZonasUnidades,
-                    _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null, PdfOrigenKey: _f.PdfOrigenKey));
+                    _f.ValoresAgregados, _f.Observaciones, exp, LimpiarExpediente: exp is null, PdfOrigenKey: _f.PdfOrigenKey,
+                    NitAseguradora: Limpio(_f.NitAseguradora) ?? "", Tomador: Limpio(_f.Tomador) ?? "", Asegurado: Limpio(_f.Asegurado) ?? "",
+                    ValorAsegurado: _f.ValorAsegurado, Prima: _f.Prima, Deducible: Limpio(_f.Deducible) ?? ""));
             }
             if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
 
@@ -2491,56 +2606,37 @@
         finally { _eliminandoP = false; }
     }
 
-    // Boton "Cargar PDF y extraer (IA)": SOLO DeepSeek. El texto lo saca pdf.js (local, capa de texto del
-    // PDF; sin OCR de IA) y el Agente Documental (DeepSeek) devuelve los campos. El PDF se manda tambien en
-    // base64 para conservar el "PDF origen" descargable. No usa Gemini/Azure.
+    // "Actualizar desde un PDF" (edicion): la misma transicion que Nueva poliza (Shared/IaIngesta). La IA relee la
+    // poliza y completa el formulario; el PDF se guarda como "PDF origen" descargable. El humano revisa y guarda.
+    private IaLectura? _ocrDoc;
+    private string _ocrDocNombre = "";
+    private bool OcrDocLeyendo => _ocrDoc?.Estado is IaEstado.Leyendo or IaEstado.Cola;
     private async Task OnOcrFile(InputFileChangeEventArgs e)
     {
-        _ocrBusy = true; _ocrMsg = null;
+        var file = e.File;
+        if (file is null) return;
+        _ocrMsg = null;
+        _ocrDoc = new IaLectura(); _ocrDocNombre = file.Name;
+        byte[] bytes;
         try
         {
-            var file = e.File;
-            byte[] bytes;
-            await using (var s = file.OpenReadStream(15 * 1024 * 1024))
-            {
-                using var msb = new MemoryStream();
-                await s.CopyToAsync(msb);
-                bytes = msb.ToArray();
-            }
-            var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
-            if (!mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                _ocrMsg = "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.";
-                return;
-            }
-            var b64 = Convert.ToBase64String(bytes);
-            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, mime);
-            HttpResponseMessage resp;
-            if (!string.IsNullOrWhiteSpace(texto))
-            {
-                resp = await Auth().PostAsJsonAsync("/api/ocr/extraer-agente",
-                    new { Perfil = "poliza", Texto = texto, PdfBase64 = b64, Mime = mime, FileName = file.Name });
-            }
-            else
-            {
-                // Escaneado (sin texto): DeepSeek VISION sobre las paginas rasterizadas.
-                _ocrMsg = "PDF escaneado: leyendo imagenes con IA..."; StateHasChanged();
-                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is null || ras.Paginas.Length == 0) { _ocrMsg = "No se pudo leer el PDF."; return; }
-                resp = await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente",
-                    new { Perfil = "poliza", Imagenes = ras.Paginas, PdfBase64 = b64, Mime = mime, FileName = file.Name });
-            }
-            if (!resp.IsSuccessStatusCode) { _ocrMsg = "No se pudo leer el documento (" + (int)resp.StatusCode + ")."; return; }
-            var ir = await resp.Content.ReadFromJsonAsync<OcrResp>();
-            if (ir?.Campos is null) { _ocrMsg = "La IA no devolvio datos. Completa los campos manualmente."; return; }
-            var aplicados = AplicarCamposPoliza(ir.Campos, _f);
-            if (!string.IsNullOrEmpty(ir.PdfOrigenKey)) { _f.PdfOrigenKey = ir.PdfOrigenKey; _f.TienePdfOrigen = true; }
-            _ocrMsg = aplicados > 0
-                ? $"Documento leido con el Agente Documental (DeepSeek): {aplicados} campo(s) prellenado(s). Revisa y confirma."
-                : "El Agente Documental leyo el documento pero no encontro datos de poliza (aseguradora, numero, vigencia o valor). Verifica que sea una poliza de seguro; si lo es, completa los campos manualmente.";
+            await using var s = file.OpenReadStream(15 * 1024 * 1024);
+            using var msb = new MemoryStream();
+            await s.CopyToAsync(msb);
+            bytes = msb.ToArray();
         }
-        catch (Exception ex) { _ocrMsg = "Error: " + ex.Message; }
-        finally { _ocrBusy = false; }
+        catch (Exception ex) { _ocrDoc.Fallo("No se pudo leer el archivo: " + ex.Message); return; }
+        var mime = string.IsNullOrEmpty(file.ContentType) ? "application/pdf" : file.ContentType;
+        var res = await IaIngestaLector.LeerAsync(_ocrDoc, bytes, mime, file.Name, "poliza", Js, Auth, AuthLong,
+            campos => AplicarCamposPoliza(campos, _f), EtiquetaCampoPoliza,
+            "El Agente Documental (DeepSeek) solo lee texto: sube un PDF con texto, no una imagen.", guardarPdfOrigen: true);
+        if (res is not null)
+        {
+            if (!string.IsNullOrEmpty(res.PdfOrigenKey)) { _f.PdfOrigenKey = res.PdfOrigenKey; _f.TienePdfOrigen = true; }
+            _ocrDudosas = res.Dudosas.Count > 0 ? res.Dudosas.ToHashSet() : null;
+            _resaltarS = res;
+        }
+        StateHasChanged();
     }
 
     private async Task DescargarPdfOrigen()
@@ -2559,103 +2655,91 @@
     }
     private sealed record PdfOrigenResp(string NombreArchivo, string TipoMime, string ContenidoBase64);
 
-    // Mapea los campos del perfil "poliza" (extraccion IA) al formulario. best-effort; el humano confirma.
-    // Devuelve cuantos campos se prellenaron realmente (0 = la IA no encontro datos de poliza).
-    private int AplicarCamposPoliza(List<OcrCampo> campos, Form f)
+    // Mapea los campos del perfil "poliza" (ya normalizados en el servidor: NIT sin puntos, montos y fechas ISO,
+    // si/no = true/false) al formulario f. Devuelve las CLAVES aplicadas (las que se resaltan y cuentan en el resumen).
+    // "Valor de poliza" (campo historico) se llena con la prima solo si esta vacio.
+    private List<string> AplicarCamposPoliza(IReadOnlyList<IaCampo> campos, Form f)
     {
-        var n = 0;
+        var ok = new List<string>();
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
         string? Val(string nombre) => campos.FirstOrDefault(c => string.Equals(c.Nombre, nombre, StringComparison.OrdinalIgnoreCase))?.Valor;
-        var aseg = Val("aseguradora"); if (!string.IsNullOrWhiteSpace(aseg)) { f.Aseguradora = aseg!; n++; }
-        var corr = Val("corredor"); if (!string.IsNullOrWhiteSpace(corr)) { f.Corredor = corr; n++; }
-        var num = Val("numero_poliza"); if (!string.IsNullOrWhiteSpace(num)) { f.NumeroPoliza = num; n++; }
-        var valor = Val("valor_poliza");
-        if (!string.IsNullOrWhiteSpace(valor) && decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var vv)) { f.ValorPoliza = vv; n++; }
-        var fi = Val("fecha_inicio"); if (!string.IsNullOrWhiteSpace(fi) && DateTime.TryParse(fi, out var fdi)) { f.Inicio = fdi; n++; }
-        var ff = Val("fecha_fin"); if (!string.IsNullOrWhiteSpace(ff) && DateTime.TryParse(ff, out var fdf)) { f.Fin = fdf; n++; }
-        return n;
+        bool Txt(string k, Action<string> set) { var v = Val(k); if (string.IsNullOrWhiteSpace(v)) return false; set(v.Trim()); ok.Add(k); return true; }
+        bool Dec(string k, Action<decimal> set) { var v = Val(k); if (!decimal.TryParse(v, System.Globalization.NumberStyles.Number, ci, out var d)) return false; set(d); ok.Add(k); return true; }
+        bool Fec(string k, Action<DateTime> set) { var v = Val(k); if (!DateTime.TryParseExact(v, "yyyy-MM-dd", ci, System.Globalization.DateTimeStyles.None, out var d)) return false; set(d); ok.Add(k); return true; }
+        bool SiNo(string k, Action<bool> set) { var v = Val(k); if (v is not ("true" or "false")) return false; set(v == "true"); ok.Add(k); return true; }
+
+        Txt("aseguradora", v => f.Aseguradora = v);
+        Txt("nit_aseguradora", v => f.NitAseguradora = v);
+        Txt("corredor", v => f.Corredor = v);
+        Txt("numero_poliza", v => f.NumeroPoliza = v);
+        Txt("tomador", v => f.Tomador = v);
+        Txt("asegurado", v => f.Asegurado = v);
+        Dec("valor_asegurado", v => f.ValorAsegurado = v);
+        if (Dec("prima", v => f.Prima = v) && f.ValorPoliza is null) { f.ValorPoliza = f.Prima; ok.Add("valor_poliza"); }
+        Dec("valor_poliza", v => f.ValorPoliza = v);   // perfil anterior (compatibilidad)
+        Txt("deducible", v => f.Deducible = v);
+        Dec("forma_pago_cuotas", v => f.FormaPagoCuotas = (int)v);
+        SiNo("pago_mensual", v => f.PagoMensual = v);
+        SiNo("incluye_zonas_unidades", v => f.IncluyeZonasUnidades = v);
+        Fec("fecha_inicio", v => f.Inicio = v);
+        Fec("fecha_fin", v => f.Fin = v);
+        // El ramo (tipo de seguro) resume la cobertura si esta vacia.
+        if (string.IsNullOrWhiteSpace(f.Cobertura)) Txt("ramo", v => f.Cobertura = v);
+        return ok;
     }
 
-    // Fase 2 B1 (SOLO DeepSeek): el arnes pasa el TEXTO del PDF (pdf.js, local) al Agente Documental, que
-    // devuelve los campos y prellenan el formulario de ESTE draft. No usa Gemini/Azure. El humano revisa.
+    // Lectura de UN borrador con el Agente Documental (Shared/IaIngesta: mismo proceso y transicion que Contratos).
     private async Task ExtraerYLlenarDraftAsync(PolizaDraft d)
     {
-        if (d.Bytes.Length == 0 || !d.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase)) return;
-        try
+        var res = await IaIngestaLector.LeerAsync(d.Ia, d.Bytes, d.Mime, d.FileName, "poliza", Js, Auth, AuthLong,
+            campos => AplicarCamposPoliza(campos, d.F), EtiquetaCampoPoliza,
+            "La IA solo lee PDF con texto. Este archivo queda adjunto: llena los campos a mano.");
+        if (res is not null)
         {
-            d.IaEstado = "Leyendo con IA...";
-            var b64 = Convert.ToBase64String(d.Bytes);
-            var texto = await Js.InvokeAsync<string?>("propiaPdfThumb.extraerTexto", b64, d.Mime);
-            var notaPag = "";
-            string[]? imgs = null;   // null = ruta texto; no-null = ruta vision (escaneado)
-            if (string.IsNullOrWhiteSpace(texto))
-            {
-                // PDF escaneado (sin texto): rasterizar para DeepSeek VISION (deepseek-v4-flash).
-                d.IaEstado = "Escaneado: leyendo imagenes con IA...";
-                StateHasChanged();
-                var ras = await Js.InvokeAsync<RasterResult>("propiaPdfThumb.rasterizarPaginas", b64, 12);
-                if (ras is null || ras.Paginas.Length == 0) { d.IaEstado = "No se pudo leer el PDF"; return; }
-                if (ras.Total > ras.Paginas.Length) { notaPag = $" · leidas {ras.Paginas.Length}/{ras.Total} pag"; }
-                imgs = ras.Paginas;
-            }
-            // 1 reintento automatico si la IA no devuelve datos (la vision a veces falla la 1a pasada).
-            OcrResp? r = null;
-            for (var intento = 1; intento <= 2; intento++)
-            {
-                var resp = imgs is not null
-                    ? await AuthLong().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Imagenes = imgs })
-                    : await Auth().PostAsJsonAsync("/api/ocr/extraer-agente", new { Perfil = "poliza", Texto = texto });
-                if (!resp.IsSuccessStatusCode) { d.IaEstado = imgs is not null ? "IA vision no disponible" : "IA no disponible"; return; }
-                r = await resp.Content.ReadFromJsonAsync<OcrResp>();
-                if (r?.Campos is { Count: > 0 }) break;
-                if (intento == 1) { d.IaEstado = "Sin datos, reintentando..."; StateHasChanged(); }
-            }
-            if (r?.Campos is null || r.Campos.Count == 0) { d.IaEstado = "La IA no encontro datos" + notaPag; d.IaDudosos = null; return; }
-            var aplicados = AplicarCamposPoliza(r.Campos, d.F);
-            var bajas = r.Campos.Where(c => c.Confianza is double cf && cf < 0.6 && !string.IsNullOrWhiteSpace(c.Valor)).ToList();
-            var dudosos = bajas.Select(c => EtiquetaCampoPoliza(c.Nombre)).Where(s => s is not null).Select(s => s!).Distinct().ToList();
-            d.IaDudosos = dudosos.Count > 0 ? dudosos : null;
-            var claves = bajas.Select(c => c.Nombre).ToHashSet();
-            d.IaClavesDudosas = claves.Count > 0 ? claves : null;
-            var tok = r.InputTokens + r.OutputTokens;
-            _iaTokens += tok;
-            d.IaEstado = aplicados > 0
-                ? $"IA: {aplicados} campo(s)" + (dudosos.Count > 0 ? $" · revisa {dudosos.Count}" : "") + (tok > 0 ? $" · {FmtTok(tok)}" : "") + notaPag
-                : "La IA no encontro datos de poliza" + notaPag;
+            d.IaClavesDudosas = res.Dudosas.Count > 0 ? res.Dudosas.ToHashSet() : null;
+            _iaTokens += res.Tokens;
+            if (ReferenceEquals(d, ActiveDraft)) _resaltarS = res;
         }
-        catch (Exception ex) { d.IaEstado = "Error IA: " + ex.Message; }
+        // Solo el documento que se esta viendo re-renderiza el modal; los demas ya actualizaron su tarjeta (IaRail/IaFicha).
+        if (ReferenceEquals(d, ActiveDraft) || res is null) StateHasChanged();
     }
 
-    // Devuelve la clase "ia-dudoso" (input en rojo) si el campo del draft activo se leyo con baja confianza.
-    private string ClsDudoso(string clave) => (ActiveDraft?.IaClavesDudosas?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+    // Los campos que lleno la IA se iluminan EN SECUENCIA despues del render que los muestra (OnAfterRenderAsync).
+    private IaResultado? _resaltarS;
+    private ElementReference _modalSegRef;
+    private bool _modalSegWired;
 
-    // Reintento de UN draft: vuelve a leerlo con IA.
+    // Devuelve la clase "ia-dudoso" si el campo se leyo con baja confianza (borrador activo, o "Actualizar desde un PDF").
+    private string ClsDudoso(string clave)
+        => ((_editId is null ? ActiveDraft?.IaClavesDudosas : _ocrDudosas)?.Contains(clave) ?? false) ? "ia-dudoso" : "";
+    private HashSet<string>? _ocrDudosas;
+
+    // Reintento de UN draft: vuelve a leerlo con IA ("Volver a leer" / "Leer con IA" del panel).
     private async Task ReleerActivoAsync()
     {
         var d = ActiveDraft;
         if (d is null) return;
         await ExtraerYLlenarDraftAsync(d);
-        StateHasChanged();
     }
 
+    // Etiqueta de cada clave del perfil "poliza" (chips de la transicion y del resumen).
     private static string? EtiquetaCampoPoliza(string clave) => clave switch
     {
         "aseguradora" => "Aseguradora", "corredor" => "Corredor", "numero_poliza" => "N poliza",
-        "ramo" => "Ramo", "valor_poliza" => "Valor", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin", _ => null
+        "ramo" => "Ramo", "valor_poliza" => "Valor", "fecha_inicio" => "Inicio", "fecha_fin" => "Fin",
+        "nit_aseguradora" => "NIT aseguradora", "tomador" => "Tomador", "asegurado" => "Asegurado",
+        "valor_asegurado" => "Valor asegurado", "prima" => "Prima", "deducible" => "Deducible",
+        "forma_pago_cuotas" => "Cuotas", "pago_mensual" => "Pago mensual", "incluye_zonas_unidades" => "Zonas y unidades",
+        _ => null
     };
 
-    // Lee con IA TODOS los drafts no leidos. Sirve de "leer manual" (IA automatica apagada) y de reintento.
+    // Lee con IA TODOS los drafts no leidos ("Leer todos con IA": IA automatica apagada o reintento). Cola + uno por uno.
     private async Task LeerTodosAsync()
     {
-        foreach (var d in _drafts)
-        {
-            if (d.Estado == DraftEstado.Listo) continue;
-            await ExtraerYLlenarDraftAsync(d);
-            StateHasChanged();
-        }
+        var cola = _drafts.Where(d => d.Estado != DraftEstado.Listo).ToList();
+        foreach (var d in cola) d.Ia.EnCola();
+        foreach (var d in cola) await ExtraerYLlenarDraftAsync(d);
     }
-    private sealed record OcrCampo(string Nombre, string? Valor, double? Confianza);
-    private sealed record OcrResp(bool Ok, string? Proveedor, string? Modelo, decimal? ValorSugerido, string? FechaSugerida, List<OcrCampo>? Campos, string? TextoCompleto, string? PdfOrigenKey = null, int InputTokens = 0, int OutputTokens = 0);
-    private sealed record RasterResult(string[] Paginas, int Total);
     private int _iaTokens;   // tokens acumulados de IA en este modal (transparencia de costo)
     private static string FmtTok(int t) => t >= 1000 ? (t / 1000.0).ToString("0.#") + "k tok" : t + " tok";
 

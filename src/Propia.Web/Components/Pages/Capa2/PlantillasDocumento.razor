@@ -1,0 +1,1096 @@
+@page "/configuracion/plantillas"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Globalization
+@using Propia.Application.Plantillas
+@using Propia.Web.Components.Shared.Modals
+@using Propia.Web.Components.Shared.Plantillas
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject IModalService Modals
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Plantillas de documentos - PROPIA</PageTitle>
+
+@* Configuracion > Plantillas de documentos: catalogo central de plantillas que usa todo el sistema (respuestas de
+   PQRSD, paz y salvo, convocatorias, circulares, actas, certificados). Copia de la replica
+   (replica/configuracion-plantillas.html + js/mod-plantillas-doc.js): bandeja CANONICA de Unidades
+   (DistribucionPanel: cabecera .dst-pagehead, barra Filtros/Buscar/Ordenar/Agrupar/Columnas, <table class="tbl">,
+   alta en linea, clic derecho, seleccion, FAB y pie) con dos vistas: Galeria (por categoria) y Tabla. *@
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+    return;
+}
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+}
+else
+{
+<div class="dst-pagehead">
+    <div>
+        <h1 class="dst-pagetitle">Plantillas de documentos</h1>
+        <p class="dst-pagesub">Las plantillas que usa todo el sistema: respuestas de PQRSD, paz y salvo, convocatorias, circulares, actas y certificados. Créalas una vez aquí y aparecen en cada módulo.</p>
+    </div>
+    <div class="dst-head-actions">
+        <button class="propia-btn-ghost" type="button" @onclick="AdministrarMembretesAsync"><i class="fi fi-rr-border-top"></i> Encabezados y pies</button>
+        <button class="propia-btn-brand" type="button" @onclick="() => AbrirEditorAsync(null)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva plantilla
+        </button>
+    </div>
+</div>
+
+<div class="pld-bandeja">
+    <div class="dst-filtros">
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
+        <div class="dst-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="dst-search-inp" placeholder="Buscar plantilla..." @bind="_q" @bind:event="oninput" />
+        </div>
+        <div class="dst-filtros-spacer"></div>
+        <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="StateHasChanged" />
+        <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+        <div class="dst-menu-wrap">
+            <button type="button" class="dst-fbtn @(_showColMenu ? "on" : "")" @onclick="() => _showColMenu = !_showColMenu" title="Columnas: orden, visibilidad y campos">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showColMenu)
+            {
+                <div class="dst-menu-bd" @onclick="() => _showColMenu = false"></div>
+                <div class="dst-menu dst-colmenu">
+                    <div class="dst-col-search">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
+                    </div>
+                    <div class="dst-col-list">
+                        @for (int ci = 0; ci < _cols.Count; ci++)
+                        {
+                            var c = _cols[ci];
+                            var idx = ci;
+                            var label = LabelCol(c.Key);
+                            if (!string.IsNullOrWhiteSpace(_colQ) && !label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            <div class="dst-col-it">
+                                <button class="dst-col-mv" disabled="@(idx <= 1)" @onclick="() => MoverCol(c.Key, -1)">▲</button>
+                                <button class="dst-col-mv" disabled="@(idx == 0 || idx == _cols.Count - 1)" @onclick="() => MoverCol(c.Key, 1)">▼</button>
+                                <span class="dst-col-name">@label</span>
+                                @if (idx == 0) { <span class="dst-col-fija">fija</span> }
+                                else
+                                {
+                                    <button class="dst-col-eye @(c.Visible ? "on" : "")" title="@(c.Visible ? "Ocultar" : "Mostrar")" @onclick="() => ToggleVisibleCol(c.Key)"><i class="fi @(c.Visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="dst-col-massacts">
+                        <button type="button" class="dst-col-mass" @onclick="OcultarTodasCol"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                        <button type="button" class="dst-col-mass" @onclick="MostrarTodasCol"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                        <button type="button" class="dst-col-reset" @onclick="RestablecerCol">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (_vista == "tabla")
+        {
+            <TablaExportar Vista="VistaExport" />
+        }
+        <TablaVistaToggle Opciones="@VistasOpc" Valor="@_vista" OnCambiar="SetVista" />
+    </div>
+
+    @if (_sel.Count > 0 && _vista == "tabla")
+    {
+        <div class="dst-selbar">
+            <span class="dst-selbar-n">@_sel.Count seleccionada@(_sel.Count == 1 ? "" : "s")</span>
+            <button type="button" class="dst-selbar-del" @onclick="() => _confirmDelSel = true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                Eliminar
+            </button>
+            <button type="button" class="dst-selbar-x" @onclick="() => _sel.Clear()">Deseleccionar</button>
+        </div>
+    }
+    @if (_confirmDelSel)
+    {
+        <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _confirmDelSel = false; }">
+            <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+                <div class="dst-cfg-head"><strong>Eliminar @_sel.Count plantilla@(_sel.Count == 1 ? "" : "s")</strong></div>
+                <div class="dst-cfg-sub">Las plantillas seleccionadas dejarán de estar disponibles en los módulos. Los documentos ya generados no cambian.</div>
+                <div class="dst-cfg-actions">
+                    <button type="button" class="dst-fbtn" @onclick="() => _confirmDelSel = false" disabled="@_delBusy">Cancelar</button>
+                    <button type="button" class="dst-selbar-del" @onclick="EliminarSeleccionadasAsync" disabled="@_delBusy">Si, eliminar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_plantillas is null)
+    {
+        <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+    }
+    else if (_vista == "galeria")
+    {
+        @* Galeria: una seccion por categoria (el "tipo" de plantilla), en el orden del catalogo. Sin botones de
+           "nueva" por seccion: se crea solo con el boton de la cabecera. Con busqueda/filtro activos solo se ven
+           las categorias con resultados. *@
+        var filas = Ordenadas().ToList();
+        var hayFiltro = _q.Trim().Length > 0 || (_fd?.Hay ?? false);
+        <div class="pld-gal">
+            @foreach (var c in PlantillasCatalogo.Categorias)
+            {
+                var ps = filas.Where(p => p.Categoria == c.Clave).ToList();
+                if (ps.Count == 0 && hayFiltro) { continue; }
+                <section class="pld-sec">
+                    <div class="pld-sec-h">
+                        <span class="pld-sec-ic" style="background:@c.Color;color:@PaletaChips.TextoSobre(c.Color)"><i class="fi @c.Icono"></i></span>
+                        <span class="pld-sec-tx">
+                            <span class="pld-sec-nm">@c.Nombre <span class="pld-n">@ps.Count</span></span>
+                            <span class="pld-sec-usada">Se ofrece en: @c.UsadaEn</span>
+                        </span>
+                    </div>
+                    <div class="pk-cfg-plt-grid pld-grid">
+                        @foreach (var p in ps)
+                        {
+                            <div class="pk-cfg-plt-card pld-card" title="@p.Nombre" @onclick="() => AbrirEditorAsync(p)">
+                                <div class="pk-cfg-plt-thumb" aria-hidden="true"><div class="pk-cfg-plt-page pld-doc">@((MarkupString)PlantillaDoc.Componer(p.CuerpoHtml, p.Categoria, p.Encabezado, p.Pie, _copropiedadNombre, _mb, crudo: true))</div></div>
+                                <div class="pk-cfg-plt-nm">@p.Nombre</div>
+                                <div class="pld-card-cat"><i class="fi @c.Icono"></i> @PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml) datos &middot; @FechaCorta(p.Modificada)</div>
+                                <button type="button" class="pld-card-prev" title="Vista previa" @onclick:stopPropagation="true" @onclick="() => VistaPreviaAsync(p)"><i class="fi fi-rr-eye"></i></button>
+                            </div>
+                        }
+                        @if (ps.Count == 0) { <div class="pk-cfg-sec-hint">Aún no hay plantillas de @c.Nombre.</div> }
+                    </div>
+                </section>
+            }
+            @if (hayFiltro && filas.Count == 0)
+            {
+                <div class="dst-empty"><strong>Ninguna plantilla coincide con el filtro.</strong><span>Ajusta la búsqueda o limpia los filtros.</span></div>
+            }
+        </div>
+    }
+    else if (_plantillas.Count > 0 && Filtradas().Count == 0)
+    {
+        <div class="dst-empty">
+            <strong>Ninguna plantilla coincide con el filtro.</strong>
+            <span>Ajusta la búsqueda o limpia los filtros.</span>
+        </div>
+    }
+    else
+    {
+        var cols = ColsVis;
+        var niveles = Niveles;
+        <div class="dst-table">
+            <div class="tblwrap">
+            <div class="dst-scroll tblscroll">
+            <table class="tbl">
+                <colgroup>
+                    <col style="width:38px" /><col style="width:34px" />
+                    @foreach (var c in cols) { <col style="width:@AnchoCol(c.Key)" /> }
+                    <col style="width:76px" />
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th class="tbl-sel"><label class="tbl-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasSeleccionadas" @onchange="@(e => ToggleSelAll((bool)(e.Value ?? false)))" /></label></th>
+                        <th class="tbl-exp"></th>
+                        @foreach (var c in cols)
+                        {
+                            var clave = c.Key;
+                            var lbl = c.Label;
+                            <th class="tbl-th--menu" data-clave="@clave" title="Clic: ordenar | arrastra: mover columna"
+                                @onmousedown="e => IniciarReorder(e, clave)" @onclick="() => OrdenarPorClic(clave)">
+                                <span class="tbl-th-lbl">@lbl</span>
+                                @SortInd(clave)
+                                @ChevCol(clave, lbl)
+                                <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(clave, 0)" @ondblclick:stopPropagation="true"></span>
+                            </th>
+                        }
+                        <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => AbrirCampo(null)"><i class="fi fi-rr-plus"></i></button></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (niveles.Count > 0)
+                    {
+                        <TablaGruposRenderTr T="PlantillaDocumentoDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" Colspan="@ColSpanTotal" />
+                    }
+                    else
+                    {
+                        @foreach (var p in Ordenadas()) { @FilaTpl(p) }
+                    }
+                    @if (_altaAbierta)
+                    {
+                        <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                            <td class="tbl-sel"></td>
+                            <td class="tbl-exp">
+                                <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearDesdeAltaAsync(true)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
+                            </td>
+                            @foreach (var c in cols)
+                            {
+                                switch (c.Key)
+                                {
+                                    case "nombre":
+                                        <td class="nf-cell"><input class="nf-in" placeholder="NOMBRE" @bind="_nuNombre" @bind:event="oninput" /></td>
+                                        break;
+                                    case "categoria":
+                                        <td class="nf-cell"><select class="nf-in" @bind="_nuCategoria">
+                                            <option value="">- elegir -</option>
+                                            @foreach (var cat in PlantillasCatalogo.Categorias) { <option value="@cat.Clave">@cat.Nombre</option> }
+                                        </select></td>
+                                        break;
+                                    default:
+                                        @if (EsCampoPropio(c.Key)) { <td class="nf-mut" title="Se llena en la fila una vez creada">-</td> }
+                                        else { <td class="nf-mut" title="Se define en la ficha">En la ficha</td> }
+                                        break;
+                                }
+                            }
+                            <td class="tbl-addcol"></td>
+                        </tr>
+                        <tr class="newrow dst-nf-hint">
+                            <td class="tbl-sel"></td>
+                            <td class="tbl-exp"></td>
+                            <td class="dst-nf-hint-cell" colspan="@(ColSpanTotal - 2)">
+                                <span class="dst-nf-hint-txt">
+                                    <kbd class="dst-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                    <span class="dst-nf-hint-sep">&middot;</span>
+                                    <kbd class="dst-kbd">Esc</kbd> para cancelar
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr class="newrow" id="dst-cta-row">
+                            <td class="tbl-sel"></td>
+                            <td class="tbl-exp"></td>
+                            <td colspan="@(ColSpanTotal - 2)">
+                                <button type="button" class="row-add--sm" @onclick="() => _altaAbierta = true">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                    Agregar plantilla
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregar" title="Agregar plantilla">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Agregar plantilla
+            </button>
+            </div>
+            @if (niveles.Count == 0)
+            {
+                <div class="tbl-foot">@Filtradas().Count registros &middot; mostrando @Filtradas().Count</div>
+            }
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
+</div>
+}
+
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+@* El ModalHost vive en cada pagina (ver nota en MainLayout): editor, vista previa y confirmaciones. *@
+<ModalHost />
+
+@* Campos propios (columna "+"): el modal compartido de crear/editar campo, sobre /api/plantillas/campos. *@
+@if (_campoAbierto)
+{
+    <CrearCampoModal Prefijo="plantillas"
+                     RutaCatalogo="/api/plantillas/campos"
+                     TituloSingular="plantilla"
+                     Ejemplo="Ej. Responsable, Revisada por el consejo"
+                     NotaPie="El campo se agrega como una columna al final de la tabla de plantillas y se llena en la misma fila. Es exclusivo de esta copropiedad y funciona en filtros, agrupar, ordenar y en la descarga."
+                     Jwt="@_jwt"
+                     Editar="_campoEditar"
+                     TiposAvanzados="false"
+                     OfreceFuncion="false"
+                     Guardado="RecargarCamposAsync"
+                     Cerrado="() => { _campoAbierto = false; _campoEditar = null; }" />
+}
+@if (_campoEliminar is not null)
+{
+    <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _campoEliminar = null; }">
+        <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head"><strong>Eliminar el campo "@_campoEliminar.Label"</strong></div>
+            <div class="dst-cfg-sub">Se borra la columna y lo que tenga escrito en todas las plantillas. Esta acción no se puede deshacer.</div>
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fbtn" @onclick="() => _campoEliminar = null" disabled="@_delBusy">Cancelar</button>
+                <button type="button" class="dst-selbar-del" @onclick="EliminarCampoAsync" disabled="@_delBusy">Si, eliminar</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* Propuesta .pld-* (replica/css/replica.css, seccion PROPUESTAS DE DISENO) */
+    .pld-bandeja { margin-top: 4px; }
+    .pld-n { font-size: 10.5px; font-weight: 800; min-width: 18px; padding: 1px 7px; border-radius: 99px; background: var(--propia-bg-card-soft); color: var(--propia-text-muted); border: 1px solid var(--propia-border-card); vertical-align: 1px; }
+    /* Galeria: una seccion por categoria (tipo de plantilla) */
+    .pld-gal { display: flex; flex-direction: column; gap: 22px; padding: 6px 0 24px; }
+    .pld-sec-h { display: flex; align-items: center; gap: 11px; margin-bottom: 10px; }
+    .pld-sec-ic { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; }
+    .pld-sec-ic i { font-size: 16px; line-height: 1; }
+    .pld-sec-tx { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .pld-sec-nm { font-size: 14px; font-weight: 800; color: var(--propia-text-h1); }
+    .pld-sec-usada { font-size: 12px; color: var(--propia-text-muted); }
+    .pld-card { position: relative; cursor: pointer; }
+    .pld-card-cat { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--propia-text-muted); margin-top: 2px; }
+    .pld-card-cat i { font-size: 12px; line-height: 1; color: var(--propia-brand); }
+    .pld-card-prev { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); color: var(--propia-text-secondary); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .14s; }
+    .pld-card:hover .pld-card-prev { opacity: 1; }
+    .pld-card-prev:hover { color: var(--propia-brand); border-color: var(--propia-brand); }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _copropiedadNombre;
+    private List<PlantillaDocumentoDto>? _plantillas;
+    private string? _toast;
+    private bool _toastErr;
+    private static readonly CultureInfo Es = new("es-CO");
+
+    // ===== Vista (Galeria | Tabla), recordada por navegador en propia_view_plantillas =====
+    private const string VistaKey = "propia_view_plantillas", GruposKey = "propia_plantillas_grupos", ColsKey = "propia_plantillas_cols";
+    private string _vista = "galeria";
+    private static readonly TablaVistaToggle.Opcion[] VistasOpc = { new("galeria", "Galería", "tarjetas"), TablaVistaToggle.Tabla("tabla") };
+    private async Task SetVista(string v)
+    {
+        _vista = v == "tabla" ? "tabla" : "galeria";
+        await GuardarLocalAsync(VistaKey, _vista);
+    }
+
+    // ===== Columnas: clave, etiqueta, ancho por defecto. NOMBRE es la fija (primera, no se oculta). =====
+    private static readonly (string Key, string Label, string Ancho)[] ColsDef =
+    {
+        ("nombre", "NOMBRE", "300px"), ("categoria", "CATEGORÍA", "180px"), ("usadaEn", "SE OFRECE EN", "300px"),
+        ("encabezado", "ENCABEZADO", "220px"), ("pie", "PIE DE PÁGINA", "200px"),
+        ("datos", "DATOS QUE USA", "140px"), ("modificada", "MODIFICADA", "150px"),
+    };
+    private sealed class ColPref { public string Key { get; set; } = ""; public bool Visible { get; set; } = true; public int? W { get; set; } }
+    private List<ColPref> _cols = ColsDef.Select(c => new ColPref { Key = c.Key }).ToList();
+    private static string LabelFija(string k) => ColsDef.FirstOrDefault(c => c.Key == k).Label ?? k;
+    private string LabelCol(string k) => CampoDe(k) is { } d ? d.Label.ToUpperInvariant() : LabelFija(k);
+
+    // ===== Campos propios (columna "+"): catalogo /api/plantillas/campos + valores planos. Clave de columna "cd:{id}". =====
+    private List<CampoDinDef> _defs = new();
+    private Dictionary<(Guid Plantilla, Guid Def), string> _vals = new();
+    private bool _campoAbierto;
+    private CampoDinDef? _campoEditar, _campoEliminar;
+    private static bool EsCampoPropio(string k) => k.StartsWith("cd:", StringComparison.Ordinal);
+    private CampoDinDef? CampoDe(string k) => EsCampoPropio(k) && Guid.TryParse(k.AsSpan(3), out var g) ? _defs.FirstOrDefault(d => d.Id == g) : null;
+    private string? ValorPropio(PlantillaDocumentoDto p, CampoDinDef d) => _vals.TryGetValue((p.Id, d.Id), out var v) ? v : null;
+    private static bool EsNumerico(CampoDinDef d) => d.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+    private static decimal? Num(string? v) => decimal.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : null;
+    // Texto visible de un valor propio (celda de solo lectura, titulo de grupo y descarga).
+    private static string TextoPropio(CampoDinDef d, string? v) => d.Tipo switch
+    {
+        _ when string.IsNullOrWhiteSpace(v) => "",
+        TipoCampoTablero.Booleano => v == "true" ? "Si" : "No",
+        TipoCampoTablero.Moneda when Num(v) is { } n => "$" + n.ToString("N0", Es),
+        TipoCampoTablero.Porcentaje when Num(v) is { } n => n.ToString("0.##", Es) + "%",
+        _ => v!
+    };
+    private void AbrirCampo(CampoDinDef? d) { _campoEditar = d; _campoAbierto = true; }
+    private async Task CargarCamposAsync()
+    {
+        try { _defs = await Auth().GetFromJsonAsync<List<CampoDinDef>>("/api/plantillas/campos") ?? new(); } catch { _defs = new(); }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<PlantillaCampoValorFlatDto>>("/api/plantillas/campos-valores") ?? new();
+            _vals = flat.Where(v => v.Valor is not null).GroupBy(v => (v.PlantillaId, v.DefinicionId)).ToDictionary(g => g.Key, g => g.First().Valor!);
+        }
+        catch { _vals = new(); }
+        SincronizarCols();
+    }
+    // Columnas propias: las nuevas al final (visibles); las borradas salen de la lista, de los grupos y del orden.
+    private void SincronizarCols()
+    {
+        _cols.RemoveAll(c => EsCampoPropio(c.Key) && CampoDe(c.Key) is null);
+        _grupos.RemoveAll(k => EsCampoPropio(k) && CampoDe(k) is null);
+        _sorts.RemoveAll(s => EsCampoPropio(s.Key) && CampoDe(s.Key) is null);
+        foreach (var d in _defs.OrderBy(d => d.Orden))
+            if (_cols.All(c => c.Key != "cd:" + d.Id)) _cols.Add(new ColPref { Key = "cd:" + d.Id });
+    }
+    private async Task RecargarCamposAsync()
+    {
+        _campoAbierto = false; _campoEditar = null;
+        await CargarCamposAsync();
+        await GuardarColsAsync();
+        StateHasChanged();
+    }
+    private async Task EliminarCampoAsync()
+    {
+        if (_campoEliminar is not { } d) return;
+        _delBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/plantillas/campos/{d.Id}");
+            if (!r.IsSuccessStatusCode) Mensaje(await ErrorDeAsync(r, "No se pudo eliminar el campo."), true);
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+        _delBusy = false; _campoEliminar = null;
+        await RecargarCamposAsync();
+    }
+    private async Task DuplicarCampoAsync(CampoDinDef d)
+    {
+        var r = await Auth().PostAsJsonAsync("/api/plantillas/campos",
+            new Propia.Application.MiCopropiedad.CrearCampoDefinicionRequest(d.Label + " (copia)", d.Tipo, d.Opciones, d.Descripcion));
+        if (r.IsSuccessStatusCode) { await RecargarCamposAsync(); Mensaje("Campo duplicado.", false); }
+        else Mensaje(await ErrorDeAsync(r, "No se pudo duplicar el campo."), true);
+    }
+    private async Task GuardarValorAsync(PlantillaDocumentoDto p, CampoDinDef d, string? v)
+    {
+        v = string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+        if (v == ValorPropio(p, d)) return;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/plantillas/campos-valores/{p.Id}/{d.Id}", new Propia.Application.MiCopropiedad.SetCampoValorRequest(v));
+            if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo guardar."), true); return; }
+            if (v is null) _vals.Remove((p.Id, d.Id)); else _vals[(p.Id, d.Id)] = v;
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+    }
+    private List<(string Key, string Label)> ColsVis => _cols.Where(c => c.Visible).Select(c => (c.Key, LabelCol(c.Key))).ToList();
+    private int ColSpanTotal => ColsVis.Count + 3;
+    private string AnchoCol(string k) => _cols.FirstOrDefault(c => c.Key == k)?.W is { } w ? $"{w}px" : ColsDef.FirstOrDefault(c => c.Key == k).Ancho ?? "160px";
+
+    private bool _showColMenu;
+    private string _colQ = "";
+    private async Task MoverCol(string k, int dir)
+    {
+        var i = _cols.FindIndex(c => c.Key == k); var j = i + dir;
+        if (i <= 0 || j <= 0 || j >= _cols.Count) return;   // la 1a columna (NOMBRE) queda fija
+        (_cols[i], _cols[j]) = (_cols[j], _cols[i]);
+        await GuardarColsAsync();
+    }
+    private async Task ToggleVisibleCol(string k)
+    {
+        var c = _cols.FirstOrDefault(x => x.Key == k);
+        if (c is null || _cols.IndexOf(c) == 0) return;
+        c.Visible = !c.Visible;
+        await GuardarColsAsync();
+    }
+    private async Task OcultarTodasCol() { for (var i = 0; i < _cols.Count; i++) _cols[i].Visible = i == 0; await GuardarColsAsync(); }
+    private async Task MostrarTodasCol() { foreach (var c in _cols) c.Visible = true; await GuardarColsAsync(); }
+    private async Task RestablecerCol() { _cols = ColsDef.Select(c => new ColPref { Key = c.Key }).ToList(); SincronizarCols(); await GuardarColsAsync(); }
+    private Task GuardarColsAsync() => GuardarLocalAsync(ColsKey, System.Text.Json.JsonSerializer.Serialize(_cols));
+
+    // ---- Mover columna por ARRASTRE (propiaTablaColReorder) y ancho por arrastre (propiaTablaResize) ----
+    private DotNetObjectReference<PlantillasDocumento>? _self;
+    private async Task IniciarReorder(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var from = _cols.FindIndex(c => c.Key == src); var to = _cols.FindIndex(c => c.Key == dest);
+        if (from <= 0 || to <= 0) return;   // NOMBRE queda primera
+        var c = _cols[from]; _cols.RemoveAt(from); _cols.Insert(to, c);
+        StateHasChanged();
+        await GuardarColsAsync();
+    }
+    private async Task IniciarResize(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        var c = _cols.FirstOrDefault(x => x.Key == clave); if (c is null) return;
+        c.W = width <= 0 ? null : Math.Max(70, width);
+        StateHasChanged();
+        await GuardarColsAsync();
+    }
+
+    // ===== Buscar + Filtros =====
+    private string _q = "";
+    private FiltroDinamico? _fd;
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new List<FiltroDinamico.CampoDef>
+    {
+        new() { Key = "nombre", Label = "NOMBRE", Kind = "texto" },
+        new() { Key = "categoria", Label = "CATEGORÍA", Kind = "sel", Opciones = PlantillasCatalogo.Categorias.Select(c => (c.Clave, c.Nombre)).ToList() },
+        new() { Key = "usadaEn", Label = "SE OFRECE EN", Kind = "texto" },
+        new() { Key = "encabezado", Label = "ENCABEZADO", Kind = "sel", Opciones = OpcionesMb(TipoMembrete.Encabezado) },
+        new() { Key = "pie", Label = "PIE DE PÁGINA", Kind = "sel", Opciones = OpcionesMb(TipoMembrete.Pie) },
+        new() { Key = "datos", Label = "DATOS QUE USA", Kind = "num" },
+        new() { Key = "modificada", Label = "MODIFICADA", Kind = "fecha" },
+    }.Concat(_defs.Select(d => new FiltroDinamico.CampoDef
+    {
+        Key = "cd:" + d.Id, Label = d.Label.ToUpperInvariant(),
+        Kind = EsNumerico(d) ? "num" : d.Tipo == TipoCampoTablero.Fecha ? "fecha"
+             : d.Tipo is TipoCampoTablero.Seleccion or TipoCampoTablero.Booleano ? "sel" : "texto",
+        Opciones = d.Tipo == TipoCampoTablero.Booleano ? new List<(string, string)> { ("true", "Si"), ("false", "No") }
+                 : d.Tipo == TipoCampoTablero.Seleccion ? d.OpcionesArray().Select(o => (o, o)).ToList() : new List<(string, string)>()
+    })).ToList();
+    private string? ValorCampo(PlantillaDocumentoDto p, string campo) => campo switch
+    {
+        _ when CampoDe(campo) is { } d => ValorPropio(p, d),
+        "nombre" => p.Nombre,
+        "categoria" => p.Categoria,
+        "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+        "encabezado" => p.Encabezado,
+        "pie" => p.Pie,
+        "datos" => PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml).ToString(CultureInfo.InvariantCulture),
+        "modificada" => p.Modificada.ToLocalTime().ToString("yyyy-MM-dd"),
+        _ => ""
+    };
+    // Busca por nombre y categoria (no por "Se ofrece en": su texto repite palabras como "paz y salvo").
+    private List<PlantillaDocumentoDto> Filtradas()
+    {
+        var q = _q.Trim();
+        return (_plantillas ?? new()).Where(p =>
+            (q.Length == 0 || p.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase)
+                           || PlantillasCatalogo.Categoria(p.Categoria).Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
+            && (_fd?.Pasa(campo => ValorCampo(p, campo)) ?? true)).ToList();
+    }
+
+    // ===== Ordenar (menu compartido + clic en el encabezado). Sin orden = el del catalogo (Orden, Nombre). =====
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private List<TablaOrdenarMenu.Col> ColsOrdenables() => ColsVis.Select(c => new TablaOrdenarMenu.Col(c.Key, c.Label)).ToList();
+    private void OrdenarPorClic(string k)
+    {
+        var dir = _sorts.Count == 1 && _sorts[0].Key == k ? -_sorts[0].Dir : 1;
+        _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = dir } };
+    }
+    // Campo propio: numeros como numero (vacio al principio), el resto por su texto visible.
+    private IComparable ValorOrden(PlantillaDocumentoDto p, string k) => k switch
+    {
+        _ when CampoDe(k) is { } d => EsNumerico(d) ? (IComparable)(Num(ValorPropio(p, d)) ?? decimal.MinValue) : TextoPropio(d, ValorPropio(p, d)),
+        "nombre" => p.Nombre,
+        "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
+        "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+        "encabezado" => TextoMb(p.Encabezado, TipoMembrete.Encabezado),
+        "pie" => TextoMb(p.Pie, TipoMembrete.Pie),
+        "datos" => PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml),
+        "modificada" => p.Modificada,
+        _ => ""
+    };
+    private IEnumerable<PlantillaDocumentoDto> Ordenadas()
+    {
+        var src = Filtradas();
+        IEnumerable<PlantillaDocumentoDto> res = src;
+        if (_sorts.Count > 0)
+        {
+            IOrderedEnumerable<PlantillaDocumentoDto>? o = null;
+            foreach (var s in _sorts)
+            {
+                Func<PlantillaDocumentoDto, IComparable> sel = p => ValorOrden(p, s.Key);
+                o = o is null ? (s.Dir >= 0 ? src.OrderBy(sel) : src.OrderByDescending(sel))
+                              : (s.Dir >= 0 ? o.ThenBy(sel) : o.ThenByDescending(sel));
+            }
+            res = o!;
+        }
+        // Las recien creadas quedan al final (resaltadas) hasta el proximo refresco: OrderBy ESTABLE.
+        return _recien.Count == 0 ? res : res.OrderBy(p => _recien.Contains(p.Id) ? 1 : 0);
+    }
+    private RenderFragment SortInd(string k)
+    {
+        var s = _sorts.FirstOrDefault(x => x.Key == k);
+        return s is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(s.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
+    }
+
+    // ===== Agrupar (multi-nivel; por Categoria da la misma organizacion que la galeria) =====
+    private List<string> _grupos = new();
+    private List<TablaAgruparMenu.Col> ColsAgrupables() => ColsVis.Select(c => new TablaAgruparMenu.Col(c.Key, c.Label)).ToList();
+    private List<string> Niveles => _grupos.Where(k => ColsVis.Any(c => c.Key == k)).ToList();
+    private async Task OnGruposChanged() { await GuardarLocalAsync(GruposKey, System.Text.Json.JsonSerializer.Serialize(_grupos)); StateHasChanged(); }
+    private IReadOnlyList<NodoGrupo<PlantillaDocumentoDto>> ArbolGrupos(List<string> niveles)
+        => TablaAgrupador.Agrupar(Ordenadas(), niveles, ValorGrupoDe, "(vacio)");
+    private IEnumerable<ValorGrupo> ValorGrupoDe(PlantillaDocumentoDto p, string k)
+    {
+        if (k == "categoria")
+        {
+            var c = PlantillasCatalogo.Categoria(p.Categoria);
+            var orden = PlantillasCatalogo.Categorias.ToList().IndexOf(c);
+            yield return new ValorGrupo(c.Clave, c.Nombre, Color: c.Color, Orden: orden);
+            yield break;
+        }
+        if (k is "encabezado" or "pie")
+        {
+            var t = k == "encabezado" ? TipoMembrete.Encabezado : TipoMembrete.Pie;
+            var sel = k == "encabezado" ? p.Encabezado : p.Pie;
+            yield return new ValorGrupo(sel, TextoMb(sel, t), Color: PlantillaDoc.ColorSel(sel));
+            yield break;
+        }
+        if (k == "modificada")
+        {
+            var d = DateOnly.FromDateTime(p.Modificada.ToLocalTime().Date);
+            yield return new ValorGrupo(d.ToString("yyyy-MM-dd"), FechaCorta(p.Modificada), Orden: -d.DayNumber);
+            yield break;
+        }
+        if (CampoDe(k) is { } cd)
+        {
+            var t = TextoPropio(cd, ValorPropio(p, cd));
+            var n = EsNumerico(cd) ? Num(ValorPropio(p, cd)) : null;
+            // Sin valor: no devuelve nada y el motor lo manda al grupo "(vacio)" al final (como los demas modulos).
+            if (t.Length > 0) yield return new ValorGrupo(t, t, Orden: n is { } x ? (int)Math.Clamp(x, int.MinValue, int.MaxValue) : 0);
+            yield break;
+        }
+        var v = k == "datos" ? PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml).ToString() : ValorCampo(p, k);
+        yield return string.IsNullOrWhiteSpace(v) ? new ValorGrupo("", "(vacio)") : new ValorGrupo(v!, v!);
+    }
+
+    // ===== Descargar la vista tabla tal como se ve (TablaExportar) =====
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVis;
+        string? FormatoPropio(CampoDinDef d) => d.Tipo switch
+        {
+            TipoCampoTablero.Moneda => "\"$\" #,##0", TipoCampoTablero.Porcentaje => "0.##\"%\"", _ => "General"
+        };
+        var columnas = cols.Select(c => CampoDe(c.Key) is { } d && EsNumerico(d)
+            ? new ExportColumna(c.Label, true, FormatoPropio(d))
+            : new ExportColumna(c.Label, c.Key == "datos", c.Key == "datos" ? "0" : null)).ToList();
+        object? Celda(PlantillaDocumentoDto p, string k) => k switch
+        {
+            _ when CampoDe(k) is { } d => EsNumerico(d) && Num(ValorPropio(p, d)) is { } n ? (object)n
+                                         : TextoPropio(d, ValorPropio(p, d)) is { Length: > 0 } t ? t : null,
+            "nombre" => p.Nombre,
+            "categoria" => PlantillasCatalogo.Categoria(p.Categoria).Nombre,
+            "usadaEn" => PlantillasCatalogo.Categoria(p.Categoria).UsadaEn,
+            "encabezado" => TextoMb(p.Encabezado, TipoMembrete.Encabezado),
+            "pie" => TextoMb(p.Pie, TipoMembrete.Pie),
+            "datos" => (decimal)PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml),
+            "modificada" => FechaCorta(p.Modificada),
+            _ => null
+        };
+        ExportFila Fila(PlantillaDocumentoDto p, IReadOnlyList<string>? ruta) => new(cols.Select(c => Celda(p, c.Key)).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        var niveles = Niveles;
+        if (niveles.Count == 0) filas.AddRange(Ordenadas().Select(p => Fila(p, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<PlantillaDocumentoDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(p => Fila(p, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(ArbolGrupos(niveles), new());
+        }
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LabelCol(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(LabelCol)));
+        criterios.Add($"{Filtradas().Count} plantillas");
+        return new ExportVista("Plantillas de documentos", _copropiedadNombre, columnas, filas, criterios, niveles.Select(LabelCol).ToList());
+    }
+
+    // ===== Seleccion multiple + borrado masivo =====
+    private readonly HashSet<Guid> _sel = new();
+    private bool _confirmDelSel, _delBusy;
+    private bool TodasSeleccionadas => Filtradas().Count > 0 && Filtradas().All(p => _sel.Contains(p.Id));
+    private void ToggleSelAll(bool on) { _sel.Clear(); if (on) foreach (var p in Filtradas()) _sel.Add(p.Id); }
+    private void ToggleSel(Guid id, bool on) { if (on) _sel.Add(id); else _sel.Remove(id); }
+    private async Task EliminarSeleccionadasAsync()
+    {
+        _delBusy = true;
+        var fallidas = 0;
+        foreach (var id in _sel.ToList())
+        {
+            try { var r = await Auth().DeleteAsync($"/api/plantillas/{id}"); if (!r.IsSuccessStatusCode) fallidas++; }
+            catch { fallidas++; }
+        }
+        _delBusy = false; _confirmDelSel = false; _sel.Clear();
+        await CargarAsync();
+        if (fallidas > 0) Mensaje(fallidas == 1 ? "No se pudo eliminar 1 plantilla." : $"No se pudieron eliminar {fallidas} plantillas.", true);
+    }
+
+    // ===== Fila de la tabla (NOMBRE y CATEGORIA editables en linea; el resto de solo lectura) =====
+    private RenderFragment<PlantillaDocumentoDto> FilaTpl => p => @<tr class="dst-row--tr @(_sel.Contains(p.Id) ? "dst-row-sel" : "") @(_recien.Contains(p.Id) ? "tbl-row-new" : "")" @oncontextmenu="e => AbrirCtx(e, p)" @oncontextmenu:preventDefault="true">
+        <td class="tbl-sel"><label class="tbl-chk"><input type="checkbox" checked="@_sel.Contains(p.Id)" @onchange="@(e => ToggleSel(p.Id, (bool)(e.Value ?? false)))" @onclick:stopPropagation="true" /></label></td>
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir la plantilla en el editor" @onclick="() => AbrirEditorAsync(p)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var c in ColsVis) { @Celda(p, c.Key) }
+        <td class="tbl-addcol"></td>
+    </tr>;
+
+    private RenderFragment Celda(PlantillaDocumentoDto p, string k) => k switch
+    {
+        "nombre" => @<td><input class="tbl-cell" value="@p.Nombre" placeholder="-" @onchange="e => EditarNombreAsync(p, e.Value?.ToString())" /></td>,
+        "categoria" => @<td><select class="tbl-cell tbl-cell-lista" style="@EstiloCat(p.Categoria)" @onchange="e => EditarCategoriaAsync(p, e.Value?.ToString())">
+                            @foreach (var c in PlantillasCatalogo.Categorias) { <option value="@c.Clave" selected="@(c.Clave == p.Categoria)">@c.Nombre</option> }
+                        </select></td>,
+        "usadaEn" => @<td class="tbl-ro">@PlantillasCatalogo.Categoria(p.Categoria).UsadaEn</td>,
+        "encabezado" => CeldaMb(p, TipoMembrete.Encabezado),
+        "pie" => CeldaMb(p, TipoMembrete.Pie),
+        "datos" => @<td class="tbl-ro">@PlantillasCatalogo.DatosQueUsa(p.CuerpoHtml)</td>,
+        "modificada" => @<td class="tbl-ro">@FechaCorta(p.Modificada)</td>,
+        _ => CampoDe(k) is { } d ? CeldaPropia(p, d) : CeldaVacia
+    };
+    private static RenderFragment CeldaVacia => @<td></td>;
+    // ENCABEZADO / PIE DE PAGINA: select en linea (Predeterminado / Sin ... / cada uno del tipo).
+    private RenderFragment CeldaMb(PlantillaDocumentoDto p, TipoMembrete t)
+    {
+        var sel = t == TipoMembrete.Encabezado ? p.Encabezado : p.Pie;
+        return @<td><select class="tbl-cell tbl-cell-lista" style="@PlantillaDoc.EstiloSel(sel)" @onchange="e => EditarMbAsync(p, t, e.Value?.ToString())">
+            @foreach (var (v, l) in OpcionesMb(t)) { <option value="@v" selected="@(v == sel)">@l</option> }
+        </select></td>;
+    }
+    // Celda editable de un campo propio segun su tipo; guarda al cambiar (PUT campos-valores).
+    private RenderFragment CeldaPropia(PlantillaDocumentoDto p, CampoDinDef d)
+    {
+        var v = ValorPropio(p, d);
+        switch (d.Tipo)
+        {
+            case TipoCampoTablero.Seleccion:
+                return @<td><select class="tbl-cell tbl-cell-lista" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())">
+                    <option value="" selected="@string.IsNullOrEmpty(v)">-</option>
+                    @foreach (var o in d.OpcionesArray()) { <option value="@o" selected="@(o == v)">@o</option> }
+                </select></td>;
+            case TipoCampoTablero.Booleano:
+                return @<td><label class="tbl-chk"><input type="checkbox" checked="@(v == "true")" @onchange="@(e => GuardarValorAsync(p, d, (bool)(e.Value ?? false) ? "true" : "false"))" /></label></td>;
+            case TipoCampoTablero.Fecha:
+                return @<td><input type="date" class="tbl-cell" value="@v" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+            case TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje:
+                return @<td><input type="number" class="tbl-cell" style="text-align:right" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+            default:
+                return @<td><input class="tbl-cell" value="@v" placeholder="-" @onchange="e => GuardarValorAsync(p, d, e.Value?.ToString())" /></td>;
+        }
+    }
+    // Select tipo chip con el color de la categoria (mismo formato que SelectListaStyle de Unidades).
+    private static string EstiloCat(string clave)
+    {
+        var color = PlantillasCatalogo.Categoria(clave).Color;
+        return $"background:{color}; border-color:{color}; color:{PaletaChips.TextoSobre(color)};";
+    }
+    // "08 nov 2026" / "30 sept 2026" (como RP.fmtFechaCorta).
+    private static string FechaCorta(DateTimeOffset d) => d.ToLocalTime().ToString("dd MMM yyyy", Es).Replace(".", "");
+
+    private async Task EditarNombreAsync(PlantillaDocumentoDto p, string? v)
+    {
+        v = (v ?? "").Trim();
+        if (v.Length == 0) { Mensaje("El nombre no puede quedar vacío.", true); await CargarAsync(); return; }
+        if (v == p.Nombre) return;
+        await ActualizarAsync(p, new GuardarPlantillaDocumentoRequest(v, null, null));
+    }
+    private async Task EditarMbAsync(PlantillaDocumentoDto p, TipoMembrete t, string? v)
+    {
+        v = string.IsNullOrWhiteSpace(v) ? MembreteEleccion.Predeterminado : v;
+        if (v == (t == TipoMembrete.Encabezado ? p.Encabezado : p.Pie)) return;
+        await ActualizarAsync(p, t == TipoMembrete.Encabezado ? new GuardarPlantillaDocumentoRequest(null, null, null, Encabezado: v) : new GuardarPlantillaDocumentoRequest(null, null, null, Pie: v));
+        await CargarMembretesAsync();   // cambian los "Lo usan N plantillas"
+    }
+    private async Task EditarCategoriaAsync(PlantillaDocumentoDto p, string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v) || v == p.Categoria) return;
+        await ActualizarAsync(p, new GuardarPlantillaDocumentoRequest(null, v, null));
+    }
+    private async Task ActualizarAsync(PlantillaDocumentoDto p, GuardarPlantillaDocumentoRequest req)
+    {
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/plantillas/{p.Id}", req);
+            if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo guardar."), true); await CargarAsync(); return; }
+            var dto = await r.Content.ReadFromJsonAsync<PlantillaDocumentoDto>();
+            if (dto is not null && _plantillas is not null) { var i = _plantillas.FindIndex(x => x.Id == p.Id); if (i >= 0) _plantillas[i] = dto; }
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+    }
+
+    // ===== Alta en linea ("Agregar plantilla": nombre + categoria; Enter guarda, Esc cancela, Tab/clic fuera guarda) =====
+    private bool _altaAbierta, _creando, _scrollBottomPending;
+    private string _nuNombre = "", _nuCategoria = "";
+    private readonly HashSet<Guid> _recien = new();
+    private void CerrarAlta() { _altaAbierta = false; _nuNombre = ""; _nuCategoria = ""; }
+    private void FabAgregar() { _altaAbierta = true; _scrollBottomPending = true; }
+    private async Task OnAltaKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAlta();
+        else if (e.Key == "Enter") await CrearDesdeAltaAsync(false);
+    }
+    [JSInvokable]
+    public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _creando) return;
+        if (string.IsNullOrWhiteSpace(_nuNombre)) { CerrarAlta(); StateHasChanged(); return; }
+        await CrearDesdeAltaAsync(false);
+        StateHasChanged();
+    }
+    private async Task CrearDesdeAltaAsync(bool abrir)
+    {
+        if (_creando) return;
+        var nombre = _nuNombre.Trim();
+        if (nombre.Length == 0) { Mensaje("Escribe el nombre de la plantilla.", true); return; }
+        _creando = true;
+        try
+        {
+            var cat = string.IsNullOrWhiteSpace(_nuCategoria) ? PlantillasCatalogo.Pqrsd : _nuCategoria;
+            var r = await Auth().PostAsJsonAsync("/api/plantillas", new GuardarPlantillaDocumentoRequest(nombre, cat, ""));
+            if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo crear la plantilla."), true); return; }
+            var dto = await r.Content.ReadFromJsonAsync<PlantillaDocumentoDto>();
+            CerrarAlta();
+            if (dto is not null) { _recien.Add(dto.Id); _plantillas?.Add(dto); }
+            if (abrir && dto is not null) await AbrirEditorAsync(dto);
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+        finally { _creando = false; }
+    }
+
+    // ===== Clic derecho: acciones de la bandeja + Vista previa y Duplicar plantilla =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtx(MouseEventArgs e, PlantillaDocumentoDto p)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        // El menu invoca un Func<Task> (no EventCallback): la pagina no se repinta sola tras la accion.
+        _ctxItems = new()
+        {
+            new("Insertar registro arriba", "fi-rr-arrow-small-up", OnClick: () => { Mensaje("Accion aun no disponible en esta version.", false); StateHasChanged(); return Task.CompletedTask; }),
+            new("Insertar registro abajo", "fi-rr-arrow-small-down", OnClick: () => { Mensaje("Accion aun no disponible en esta version.", false); StateHasChanged(); return Task.CompletedTask; }),
+            new("Abrir en el editor", "fi-rr-expand", OnClick: async () => { await AbrirEditorAsync(p); StateHasChanged(); }),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: async () => { await CopiarEnlaceAsync(p); StateHasChanged(); }),
+            new(Sep: true),
+            new("Eliminar registro", "fi-rr-trash", Danger: true, OnClick: () => { _sel.Clear(); _sel.Add(p.Id); _confirmDelSel = true; StateHasChanged(); return Task.CompletedTask; }),
+            new(Sep: true),
+            new("Vista previa", "fi-rr-eye", OnClick: async () => { await VistaPreviaAsync(p); StateHasChanged(); }),
+            new("Duplicar plantilla", "fi-rr-copy", OnClick: async () => { await DuplicarAsync(p); StateHasChanged(); }),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlaceAsync(PlantillaDocumentoDto p)
+    {
+        var url = Nav.Uri.Split('#')[0] + "#" + p.Id;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", url); Mensaje("Enlace del registro copiado.", false); }
+        catch { Mensaje("No se pudo copiar el enlace.", true); }
+    }
+    private async Task DuplicarAsync(PlantillaDocumentoDto p)
+    {
+        // Mismo Orden que la original: el desempate por nombre deja "X (copia)" justo despues de "X".
+        var orden = p.Orden;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/plantillas", new GuardarPlantillaDocumentoRequest(p.Nombre + " (copia)", p.Categoria, p.CuerpoHtml, orden, p.Encabezado, p.Pie));
+            if (!r.IsSuccessStatusCode) { Mensaje(await ErrorDeAsync(r, "No se pudo duplicar la plantilla."), true); return; }
+            await CargarAsync();
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+    }
+
+    // ===== Menu de columna (flecha del encabezado) =====
+    private TablaColMenu? _colMenu;
+    private RenderFragment ChevCol(string clave, string label) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, EsCampoPropio(clave)), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
+            case TablaColMenu.Accion.OrdenarDesc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key)) await _fd.AgregarReglaCampo(col.Key);
+                else Mensaje("Filtrar por este campo aun no esta disponible; usa el boton Filtros.", false);
+                break;
+            case TablaColMenu.Accion.Agrupar: _grupos = new() { col.Key }; await OnGruposChanged(); break;
+            case TablaColMenu.Accion.Ocultar:
+                if (_cols.FindIndex(c => c.Key == col.Key) == 0) Mensaje("Esta columna es fija y no se puede ocultar.", false);
+                else await ToggleVisibleCol(col.Key);
+                break;
+            case TablaColMenu.Accion.Editar when CampoDe(col.Key) is { } de: AbrirCampo(de); break;
+            case TablaColMenu.Accion.Duplicar when CampoDe(col.Key) is { } dd: await DuplicarCampoAsync(dd); break;
+            case TablaColMenu.Accion.Eliminar when CampoDe(col.Key) is { } dx: _campoEliminar = dx; break;
+            case TablaColMenu.Accion.InsertarIzq or TablaColMenu.Accion.InsertarDer: AbrirCampo(null); break;
+            case TablaColMenu.Accion.Duplicar: Mensaje("Solo se pueden duplicar campos propios.", false); break;
+            default: Mensaje("Esta opción solo aplica a los campos propios (los creados con +).", false); break;
+        }
+        StateHasChanged();
+    }
+
+    // ===== Editor (modal 1056px) y vista previa =====
+    private async Task AbrirEditorAsync(PlantillaDocumentoDto? p)
+    {
+        await Modals.OpenAsync<EditorPlantillaDocumentoModal, bool>(
+            new ModalParameters()
+                .Set("Jwt", _jwt)
+                .Set("Plantilla", p)
+                .Set("Membretes", _mb)
+                .Set("CopropiedadNombre", _copropiedadNombre),
+            new ModalOptions { Width = "1056px" });
+        await CargarAsync();
+        await CargarMembretesAsync();
+        StateHasChanged();
+    }
+    private async Task AdministrarMembretesAsync()
+    {
+        await Modals.OpenAsync<GestionarMembretesModal, bool>(
+            new ModalParameters().Set("Jwt", _jwt).Set("CopropiedadNombre", _copropiedadNombre),
+            new ModalOptions { Width = "1056px" });
+        // Al eliminar uno fijado, sus plantillas pasan a Predeterminado: se recargan ambas listas.
+        await CargarMembretesAsync();
+        await CargarAsync();
+        StateHasChanged();
+    }
+    private Task VistaPreviaAsync(PlantillaDocumentoDto p)
+        => Modals.OpenAsync<VistaPreviaPlantillaModal, bool>(
+            new ModalParameters()
+                .Set("Nombre", p.Nombre)
+                .Set("Categoria", p.Categoria)
+                .Set("CuerpoHtml", p.CuerpoHtml)
+                .Set("Encabezado", p.Encabezado)
+                .Set("Pie", p.Pie)
+                .Set("Membretes", _mb)
+                .Set("CopropiedadNombre", _copropiedadNombre),
+            new ModalOptions { Width = "820px" });
+
+    // ===== Encabezados y pies de pagina (membretes) =====
+    private MembretesDto? _mb;
+    private async Task CargarMembretesAsync()
+    {
+        try { _mb = await Auth().GetFromJsonAsync<MembretesDto>("/api/plantillas/membretes"); } catch { }
+    }
+    // Opciones de las columnas ENCABEZADO / PIE (se rearman al crear, renombrar o borrar membretes).
+    private List<(string, string)> OpcionesMb(TipoMembrete t)
+        => new List<(string, string)> { (MembreteEleccion.Predeterminado, "Predeterminado"), (MembreteEleccion.Ninguno, PlantillaDoc.NingunoTipo(t)) }
+            .Concat((_mb?.Items ?? Array.Empty<MembreteDto>()).Where(m => m.Tipo == t).Select(m => (m.Id.ToString(), m.Nombre))).ToList();
+    private string TextoMb(string? sel, TipoMembrete t)
+        => sel == MembreteEleccion.Ninguno ? PlantillaDoc.NingunoTipo(t)
+         : string.IsNullOrEmpty(sel) || sel == MembreteEleccion.Predeterminado ? "Predeterminado"
+         : PlantillaDoc.De(_mb, sel, t)?.Nombre ?? "Predeterminado";
+
+    // ===== Datos =====
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+    private async Task CargarAsync(bool reintento = false)
+    {
+        try
+        {
+            _plantillas = await Auth().GetFromJsonAsync<List<PlantillaDocumentoDto>>("/api/plantillas") ?? new();
+            _recien.RemoveWhere(id => _plantillas.All(p => p.Id != id));
+            _sel.RemoveWhere(id => _plantillas.All(p => p.Id != id));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { _jwt = nuevo; await CargarAsync(reintento: true); return; }
+            _plantillas ??= new();
+        }
+        catch (Exception ex) { _plantillas ??= new(); Mensaje(ex.Message, true); }
+    }
+    private static async Task<string> ErrorDeAsync(HttpResponseMessage resp, string porDefecto)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción.";
+        try
+        {
+            var txt = await resp.Content.ReadAsStringAsync();
+            if (System.Text.Json.JsonDocument.Parse(txt).RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return porDefecto;
+    }
+    private void Mensaje(string m, bool err) { _toast = m; _toastErr = err; }
+
+    // ===== Ciclo de vida: sesion, preferencias, ganchos JS de la tabla =====
+    private string? _wiredSig;
+    private bool _ctaVisible = true;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;   // sin lotes: se pinta toda la lista
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _jwt is null)
+        {
+            try
+            {
+                var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+                _authChecked = true;
+                if (!string.IsNullOrWhiteSpace(stored))
+                {
+                    _jwt = stored;
+                    await CargarPreferenciasAsync();
+                    await CargarAsync();
+                    await CargarMembretesAsync();
+                    await CargarCamposAsync();
+                    await AbrirDesdeEnlaceAsync();
+                }
+                StateHasChanged();
+            }
+            catch { }
+            return;
+        }
+
+        if (_jwt is not null && _vista == "tabla" && _plantillas is not null)
+        {
+            var sig = $"{_altaAbierta}|{Filtradas().Count}|{Niveles.Count}|{ColsVis.Count}";
+            if (sig != _wiredSig)
+            {
+                _wiredSig = sig;
+                _self ??= DotNetObjectReference.Create(this);
+                try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
+            }
+        }
+        else if (_wiredSig is not null)
+        {
+            _wiredSig = null;
+            try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
+        }
+
+        if (_scrollBottomPending)
+        {
+            _scrollBottomPending = false;
+            try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".dst-scroll.tblscroll"); } catch { }
+        }
+    }
+
+    // "Copiar enlace del registro" lleva #<id>: al abrir ese enlace se abre la plantilla en el editor.
+    private async Task AbrirDesdeEnlaceAsync()
+    {
+        var frag = new Uri(Nav.Uri).Fragment.TrimStart('#');
+        if (Guid.TryParse(frag, out var id) && _plantillas?.FirstOrDefault(p => p.Id == id) is { } p)
+            await AbrirEditorAsync(p);
+    }
+
+    private async Task GuardarLocalAsync(string k, string v) { try { await Js.InvokeVoidAsync("localStorage.setItem", k, v); } catch { } }
+    private async Task CargarPreferenciasAsync()
+    {
+        try
+        {
+            _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre");
+            var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
+            if (v is "tabla" or "galeria") _vista = v;
+            var g = await Js.InvokeAsync<string?>("localStorage.getItem", GruposKey);
+            if (!string.IsNullOrWhiteSpace(g)) _grupos = System.Text.Json.JsonSerializer.Deserialize<List<string>>(g) ?? new();
+            var c = await Js.InvokeAsync<string?>("localStorage.getItem", ColsKey);
+            if (!string.IsNullOrWhiteSpace(c) && System.Text.Json.JsonSerializer.Deserialize<List<ColPref>>(c) is { Count: > 0 } guard)
+            {
+                // Conserva orden/visibilidad/ancho guardados; columnas nuevas al final; NOMBRE siempre 1a y visible.
+                // Las "cd:" (campos propios) se conservan aqui; SincronizarCols quita las borradas al cargar el catalogo.
+                var conocidas = guard.Where(x => ColsDef.Any(d => d.Key == x.Key) || EsCampoPropio(x.Key)).GroupBy(x => x.Key).Select(x => x.First()).ToList();
+                conocidas.AddRange(ColsDef.Where(d => conocidas.All(x => x.Key != d.Key)).Select(d => new ColPref { Key = d.Key }));
+                var fija = conocidas.First(x => x.Key == "nombre"); fija.Visible = true;
+                conocidas.Remove(fija); conocidas.Insert(0, fija);
+                _cols = conocidas;
+            }
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        try { _ = Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { }
+        _self?.Dispose();
+    }
+}

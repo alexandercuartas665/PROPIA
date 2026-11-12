@@ -1,27 +1,28 @@
 # CLAUDE.md - PROPIA
 
 > Este archivo lo lee Claude en CADA turno. Todo lo que diga aqui debe ser cierto HOY. Si algo cambia
-> (puertos, rutas, estado), se actualiza aqui primero. Ultima revision: 2026-09-12 (VIGIA, sesion auditora).
+> (puertos, rutas, estado), se actualiza aqui primero. Ultima revision: 2026-11-11 (sesion dev principal).
 
 ## Que es PROPIA
 
 SaaS multi-tenant de gestion integral de copropiedades (propiedad horizontal en Colombia, Ley 675 de 2001),
 operado por **A&D GROUP S.A.S**. Cliente y autor: **Alex Alvis**. Prod real: `https://app.propia-ad.com`
-(las URLs `*.up.railway.app` estan muertas). Version en el pie de la app: `v0.0.9x`.
+(las URLs `*.up.railway.app` estan muertas). Version en el pie de la app: `v0.0.2xx`.
 
 ## Estado real del desarrollo (no "setup inicial")
 
 Hay **~25 modulos construidos y en uso** en dev y prod: Super Admin (consola A&D dentro de Propia.Web),
 Onboarding, Mi Copropiedad (unidades con codigo inteligente `TORRE-NUMERO`, gestor de campos estilo
 Airtable con entidades vinculadas, carga por Excel), Directorio, Usuarios/Roles/RBAC, Tareas (multi-tablero),
-PQRSD (71 endpoints), Mantenimiento/Equipos/Zonas, Contratos y Seguros, Porteria, Reservas, Comunicaciones,
-Documentos, Reportes, Presupuesto/Cartera, Notificaciones (email/WhatsApp/in-app), IA (agente + MCP tools),
-jobs en segundo plano, modo oscuro por tokens, RLS en 230 tablas.
+PQRSD, Mantenimiento/Equipos/Zonas, Contratos y Seguros, Servicios publicos (recibos leidos con IA),
+Porteria, Reservas, Asambleas, Comunicaciones, Documentos, Plantillas de documentos, Reportes,
+Presupuesto/Cartera, Notificaciones (email/WhatsApp/in-app), IA (agentes + MCP tools), jobs en segundo plano,
+modo oscuro por tokens, RLS en todas las tablas con `tenant_id`.
 
-**Fase actual: estabilizacion y reparacion**, no construccion. Desde 2026-09-10 el trabajo se reparte en
-4 sesiones dev por modulo (ATLAS=Tareas, FARO=PQRSD, YUNQUE=Mantenimiento, SELLO=Contratos) + 1 auditora
-(VIGIA) + la sesion dev principal (main). Reglas y fichas en
-`D:\Obsidian\Propia\06. TRABAJO EN EQUIPO\` (leer "Protocolo de trabajo en paralelo.md" antes de tocar codigo).
+**Forma de trabajo (desde 2026-11-11):** UNA sesion de desarrollo sobre `main` + la sesion de deploy, que
+trabaja en `feat/railway-deploy` (sigue a main y sube la version). No hay ramas ni worktrees de equipo: el
+esquema de sesiones en paralelo (ATLAS/FARO/YUNQUE/SELLO/VIGIA) termino y sus ramas se borraron (respaldo en
+`D:\DesarrolloIA\Propia-respaldo-ramas-2026-11-11\`). Commit y push directo a `main` solo cuando Alex lo pide.
 Regla 7.0: **reparar lo existente antes que construir; funciones nuevas solo discutidas con Alex.**
 
 ## Fuente de verdad funcional - vault Obsidian
@@ -34,10 +35,14 @@ D:\Obsidian\Propia\
 - `01. REQUERIMIENTO\Capa 3. Copropiedad Convalidacion\` - convalidacion spec vs implementacion.
 - `02. INVENTARIO MODULOS\INVENTARIO GENERAL.md` - indice de los 25 modulos + dependencias.
 - `03. NOTAS DE DESARROLLO\` - homogeneidad UI (vista tabla), notas para desarrollador, estructura BD.
-- `06. TRABAJO EN EQUIPO\` - protocolo del equipo, fichas por agente, tablero, solicitudes a dev principal.
+- `06. TRABAJO EN EQUIPO\` - historico del esquema de sesiones en paralelo (ya no vigente).
 
 La skill `consultar-obsidian-propia` (en `.claude/skills/`) se usa ante cualquier duda funcional. La ruta
 antigua `C:\Users\acuartas\...` NO existe en esta maquina.
+
+Disenos: la replica (maqueta) vive en `D:\DesarrolloIA\Maqueta\replica` (`PROPUESTAS.md` + `js/mod-*.js` +
+`css/replica.css`). Cuando se pide "milimetrico", comparar app y replica LADO A LADO (claro/oscuro,
+escritorio/tablet/celular).
 
 ## Stack real
 
@@ -48,9 +53,10 @@ antigua `C:\Users\acuartas\...` NO existe en esta maquina.
   via `PropiaDbContextFactory`); runtime `propia_app` / `PropiaAppDev2026!` (respeta RLS).
 - ORM: EF Core 9 + Npgsql. Auth: Identity + JWT propio (`/connect/login`, `/connect/switch-tenant`).
 - Jobs: **`BackgroundJobScheduler` propio (IHostedService, estilo Hangfire-lite)**, no Hangfire. Flag
-  `Jobs:Enabled` (env `Jobs__Enabled=false` para instancias secundarias).
-- Excel: ClosedXML. PDF: Chromium. Storage dev: `LocalBlobStorage` en `wwwroot/uploads`.
-- IA: Anthropic SDK. WhatsApp: Meta Cloud API. Pagos: Wompi. Hosting: Railway.
+  `Jobs:Enabled` (env `Jobs__Enabled=false` para el Web y cualquier instancia que no deba correr jobs).
+- Excel: ClosedXML. PDF: Chromium (PuppeteerSharp). Storage dev: `LocalBlobStorage` en `wwwroot/uploads`; prod R2.
+- IA: proveedores configurables en Super Admin (DeepSeek, Gemini, Claude). WhatsApp: Meta Cloud API.
+  Pagos: Wompi. Hosting: Railway.
 
 ## Arquitectura (Clean/Onion)
 
@@ -66,36 +72,53 @@ Mapa rapido por modulo (donde vive cada cosa):
 | Tareas | `TareasController` | `Tareas/TareasService.*.cs` | `TableroEntities.cs` | `Shared/Tareas/TableroTareas.razor` |
 | PQRSD | `PqrsdController`, `PublicPqrsdController` | `Pqrsd/PqrsdService.*.cs` | `PqrsdEntities.cs` | `Pages/Capa2/PqrsKanban.razor`, `Modals/*Pqrsd*.razor` |
 | Mantenimiento | `MantenimientoController`, `ProgramacionesController` | `Mantenimiento/MantenimientoService.cs` | `MantenimientoEntities.cs`, `Equipo/ZonaFichaEntities.cs` | `Pages/Capa2/Mantenimiento.razor` |
-| Contratos / Seguros | `MiCopropiedadController` (contratos), `SegurosController` | `GobiernoYServicios.cs`, `Seguros/SegurosService.cs` | `ContratoServicio.cs`, `Poliza.cs` | `Pages/Capa2/Servicios.razor`, `Seguros.razor` |
+| Contratos / Seguros | `MiCopropiedadController` (contratos), `SegurosController` | `GobiernoYServicios.cs`, `Seguros/SegurosService.cs` | `ContratoServicio.cs`, `Poliza.cs` | `Pages/Capa2/Servicios.razor` (solo `/contratos`), `Seguros.razor` |
+| Servicios publicos (`/servicios`) | `ServiciosPublicosController` | `ServiciosPublicos/ServiciosPublicosService.cs`, `ReglasServicioPublico.cs` | `ServicioPublico.cs` | `Pages/Capa2/ServiciosPublicosPagina.*` + `Capa2/Spx/` |
+| Lectura de documentos con IA | `OcrController` (`/api/ocr/extraer-agente`, perfiles contrato/poliza/recibo_servicio) | Agente Documental | - | `Shared/IaIngesta/*` |
+| Agentes IA (semillas) | `AdminAiAgentTemplatesController`, `IaController` | `AiAgentTemplateService`, `AgentesSistemaService` | `AiAgentTemplate.cs`, `InfraestructuraIaEntities.cs` | `Capa0/Admin/PlantillasAgentesIa.razor`, `Capa2/IaAgentes.razor` |
 | Jobs | `MonitoriaController` (disparo manual) | `Infrastructure/Jobs/*Job.cs` | - | - |
+| API Super Admin (tokens + semillas) | `AdminApiTokensController`, `AdminSemillasController` (`GET /api/admin/semillas` = indice) | `SuperAdmin/ApiTokensService.cs`, `SemillasAdminService.cs` | `SuperAdminApiToken.cs` | `Capa0/Admin/TokensApi.razor` |
 
 Patron transversal de campos dinamicos: `<X>CampoDefinicion` (catalogo por tenant) + `<X>CampoValor` (EAV)
 + `<X>CampoConfig` (alias/oculto/orden de campos fijos). Existe para Unidad, Persona, Vehiculo, Mascota,
-Tercero, Equipo, Zona, Tarea, Pqrsd, Poliza, Contrato. **Reusarlo, no reinventarlo.**
+Tercero, Equipo, Zona, Tarea, Pqrsd, Poliza, Contrato, Plantilla, Servicio publico. **Reusarlo, no reinventarlo.**
+
+Agentes IA: **el Super Admin manda**. Las plantillas (Super Admin > Plantillas de Agentes IA) tienen version;
+"Actualizar copropiedades" lleva prompt, tools, proveedor y modelo a los agentes de las copropiedades
+(respeta los que la copropiedad edito, salvo forzar). Los agentes del sistema se buscan por CLAVE
+(`PlantillaAgente.ClaveDocumental` / `ClaveAuxiliar`, nunca por nombre) y se crean al usarlos si faltan.
+No hay scripts SQL de prompts.
+
+API de Super Admin desde scripts: token `pak_...` creado en Super Admin > Tokens de API (`Authorization: Bearer pak_...`,
+esquema `SuperAdminApiToken`, solo en la politica SuperAdmin). Con token NO se gestionan tokens, MFA ni el equipo A&D
+(`[SoloSesionInteractiva]`). La CSP no permite `eval`: desde C# usar funciones `window.propiaUI.*`.
 
 ## Multi-tenancy (regla critica)
 
 - Toda tabla operativa lleva `tenant_id`, `HasQueryFilter` sobre `TenantEntity`, y **RLS con FORCE +
   policy** en la migracion. `RlsCoverageTests` falla si una tabla con `tenant_id` no tiene RLS.
 - Middleware fija `app.tenant_id` por request. **Cualquier codigo que corra fuera de un request (jobs,
-  seeds, tools MCP) debe iterar tenants con `SetTenant` + `CloseConnectionAsync`**; sin eso, con
-  `propia_app` la policy devuelve 0 filas en silencio (error real encontrado en `PqrsdMantenimientoService`).
+  seeds, tools MCP, procesos del Super Admin sobre varias copropiedades) debe iterar tenants con `SetTenant`
+  + `CloseConnectionAsync`**; sin eso, con `propia_app` la policy devuelve 0 filas en silencio.
+- Backfills en migraciones sobre tablas con FORCE: `NO FORCE ROW LEVEL SECURITY` solo durante el UPDATE.
 - `personas` es global: al asignar/vincular una persona, validar que pertenece al tenant actual.
 - Nunca SQL raw sin filtro de tenant; nunca `IgnoreQueryFilters()` sin fijar tenant.
 
 ## Convenciones de codigo
 
-- Solo ASCII en codigo y comentarios. Espanol en UI, ingles en identificadores. `PascalCase` clases,
-  `snake_case` tablas, IDs `Guid`, DTOs con sufijo `Dto`/`Request`/`Response`.
+- Solo ASCII en codigo y comentarios. Espanol en UI (con tildes), ingles en identificadores. `PascalCase`
+  clases, `snake_case` tablas, IDs `Guid`, DTOs con sufijo `Dto`/`Request`/`Response`.
 - **Colores SOLO por tokens** `var(--propia-*)` de `propia-tokens.css`; prohibido hex y `white` en `.razor`;
-  al cambiar tokens subir `?v=N` en `App.razor`. Regla: `grep -rE "#[0-9A-Fa-f]{6}" Components --include=*.razor`
+  al cambiar CSS/JS subir `?v=N` en `App.razor`. Regla: `grep -rE "#[0-9A-Fa-f]{6}" Components --include=*.razor`
   no debe crecer.
-- `PUT` es MERGE: nunca pisar campos que el cliente no envio.
+- `PUT` es MERGE: nunca pisar campos que el cliente no envio (para borrar un opcional, nombrarlo explicito).
 - RBAC: escrituras gateadas con `[RequierePermiso(ModuloCodigo.X, AccionPermiso.Y)]`; GET abiertos al
   tenant; Admin hace bypass. No usar `[RequiereRol("...")]` literal en modulos nuevos.
-- Vista tabla: seguir la skill `homogenizar-vista-tabla` al pie de la letra (Tareas es la referencia).
+- Vista tabla: seguir la skill `homogenizar-vista-tabla` al pie de la letra (referencia: Unidades / Plantillas).
 - Blazor: `@bind` es `onchange`; en alta usar `@bind:event="oninput"`. `InputFile`: bufferizar a bytes al
   seleccionar. `<input type=date>` con `@bind` sobre string falla: usar `value` + `@oninput`.
+- EF: hijos con `Id` ya asignado (BaseEntity) se agregan por su `DbSet`, no solo por la navegacion (si no,
+  EF los toma como existentes: UPDATE de 0 filas).
 
 ## DEFINICION DE LISTO (obligatoria; "listo" sin esto no es listo)
 
@@ -103,45 +126,48 @@ Una tarea esta terminada solo cuando se cumplen TODAS:
 
 1. **Compila y prueba**: `dotnet build` sin warnings nuevos; `dotnet test` con el baseline conocido (ver
    Testing). Un test nuevo o modificado cubre el cambio cuando toca API/servicio.
-2. **Verificado en runtime con datos reales, no por lectura del codigo**: se ejecuto el flujo completo en
-   Chrome (MCP) contra la instancia local, con clic real, y se comprobo el RESULTADO (fila en BD, respuesta
-   del API, archivo descargado y abierto). Para exportes/plantillas: abrir el archivo generado y **contar
-   columnas/filas contra la configuracion de la copropiedad** (ej. campos activos en `unidades-config`
-   vs columnas emitidas); no basta con que descargue.
+2. **Verificado en runtime con datos reales, no por lectura del codigo**: se ejecuto el flujo completo contra
+   la instancia local, con clic real, y se comprobo el RESULTADO (fila en BD, respuesta del API, archivo
+   descargado y abierto). Para exportes/plantillas: abrir el archivo generado y **contar columnas/filas contra
+   la configuracion de la copropiedad**; no basta con que descargue.
 3. **Evidencia en la entrega**: que se probo, con que datos, que se midio y que valor dio. Si algo no se
    pudo probar, se dice "NO probado" en vez de "listo".
-4. **Sin regresion en lo vecino**: si se toco un servicio compartido (plantilla, config de campos, jobs),
-   se prueba al menos un caso de cada consumidor.
-5. **Datos de prueba borrados**, migracion aplicada solo con OK de Alex, y entrega registrada en Obsidian
-   (ficha del agente: "Registro de trabajo" + "Avance") cuando se trabaja en el equipo.
+4. **Sin regresion en lo vecino**: si se toco un servicio compartido (plantilla, config de campos, jobs,
+   IaIngesta, OcrController), se prueba al menos un caso de cada consumidor.
+5. **Datos de prueba borrados**, migracion aplicada solo con OK de Alex, nota del modulo en Obsidian al dia
+   y `deploy/HANDOFF_DEPLOY.md` actualizado si hay migracion o config nueva.
 
 Antes de codificar una tarea no trivial: responder un plan de 5 lineas (que, archivos, migracion si/no,
 archivos compartidos, como se va a verificar) y esperar OK. Si la tarea es ambigua, preguntar, no asumir.
 
 ## Testing
 
-- Unitarios en `Propia.Application.Tests`/`Domain.Tests`; integracion con Testcontainers (PostgreSQL real,
-  ~4 min la suite) en `Propia.Integration.Tests`. Aislamiento de tenant obligatorio por entidad nueva.
-- **Baseline 2026-09-10: 224 verdes / 8 rojos preexistentes** (4 `BillingFlowTests`, 1 `RlsCoverageTests`
-  con 8 tablas sin RLS, 1 `SuperAdminFlowTests`, 2 `UsuariosAccesosFlowTests`). Son deuda, NO excusa:
-  cualquier rojo nuevo es una regresion del cambio en curso. Comparar con `git stash` si hay duda y
-  declarar en la entrega cuales rojos son previos. Meta: bajar ese numero, no normalizarlo.
+- Unitarios en `Propia.Application.Tests` (`Domain.Tests` no tiene pruebas); integracion con Testcontainers
+  (PostgreSQL real, ~4 min la suite) en `Propia.Integration.Tests`. Aislamiento de tenant obligatorio por
+  entidad nueva.
+- **Baseline 2026-11-11: unitarias 102/102; integracion 446 verdes / 5 rojos preexistentes** (4
+  `BillingFlowTests`, 1 `SuperAdminFlowTests`). Son deuda, NO excusa: cualquier rojo nuevo es una regresion
+  del cambio en curso. Meta: bajar ese numero, no normalizarlo.
+- Con API/Web corriendo, `dotnet test` puede fallar por DLL bloqueadas (MSB3027): parar los propios procesos
+  o usar `--artifacts-path` a una carpeta temporal.
 
 ## Entorno local (lo que rompe si no se sabe)
 
 - Dos procesos: **API en `https://localhost:7113`** (forzar con
   `ASPNETCORE_URLS="https://localhost:7113;http://localhost:5153" dotnet run --no-launch-profile`, con
   `ASPNETCORE_ENVIRONMENT=Development`; el launch profile apunta a 7205 y el Web se cuelga en el spinner
-  si la API no esta en 7113) y **Web en `http://localhost:5105`**.
+  si la API no esta en 7113) y **Web en `http://localhost:5105`** (con `Jobs__Enabled=false`).
 - El navegador entra SIEMPRE por `http://localhost:5105` (el https dev lo bloquea Kaspersky con un interstitial).
+  Sin credenciales: `/dev/login` -> "Entrar como admin demo" (copropiedad demo). La consola Super Admin NO se
+  abre con ese usuario.
 - Uploads: junction `src/Propia.Api/wwwroot/uploads -> src/Propia.Web/wwwroot/uploads`; si desaparece, 404
   en PDFs/adjuntos. Recrear con `New-Item -ItemType Junction`.
-- Antes de recompilar, parar SOLO los propios procesos (por PID/puerto). Con el equipo activo, **prohibido
-  `taskkill /IM Propia.*.exe`**: tumba las instancias de los otros agentes (7213-7613 / 5205-5605).
+- Antes de recompilar, parar SOLO los propios procesos (por PID/puerto); **nunca `taskkill /IM Propia.*.exe`**.
+  Reiniciar el Web corta el circuito Blazor de las pestanas abiertas (el overlay recarga solo cuando vuelve).
 - `dotnet-ef` no esta en PATH: `"$USERPROFILE/.dotnet/tools/dotnet-ef.exe"`.
-- Chrome MCP: usar el navegador **ASUS**; `javascript_tool` devuelve `{}` en async (codigo sincrono); para
-  inputs Blazor, setter nativo + `new Event('input',{bubbles:true})`. El navegador integrado si espera promesas.
-- Instancias secundarias arrancan con `Jobs__Enabled=false`; solo la API principal corre jobs.
+- Verificacion en navegador: Chrome MCP con el navegador **ASUS** (`javascript_tool` devuelve `{}` en async;
+  para inputs Blazor, setter nativo + `new Event('input',{bubbles:true})`), o el navegador integrado. Lo que
+  usa pdf.js / requestAnimationFrame se cuelga en pestanas ocultas o de fondo: traer la pestana al frente.
 
 ## Comandos
 
@@ -159,5 +185,6 @@ dotnet format
 - [ ] DEFINICION DE LISTO cumplida (runtime + evidencia + datos borrados).
 - [ ] No expone datos entre tenants; tabla nueva con RLS + filtro + test.
 - [ ] Sin hex/`white` nuevos en `.razor`; ASCII en codigo.
-- [ ] Si toca un modulo del inventario, actualizar su nota Obsidian; si es entrega del equipo, ficha + tablero.
+- [ ] Si toca un modulo del inventario, actualizar su nota Obsidian.
 - [ ] `deploy/HANDOFF_DEPLOY.md` actualizado si hay migracion o config nueva.
+- [ ] `git add` con lista explicita de archivos (nunca `-A` sobre `src`); commit/push a `main` solo con OK de Alex.

@@ -31,6 +31,10 @@ public class ContratoServicio : TenantEntity
     public string? TelefonoContratista { get; set; }
     public string? CorreoContratista { get; set; }
     public string? DireccionContratista { get; set; }
+    /// <summary>Representante legal del contratista (lo trae el contrato; lo llena el Agente Documental).</summary>
+    public string? RepresentanteLegal { get; set; }
+    /// <summary>Ciudad donde se celebra / ejecuta el contrato.</summary>
+    public string? Ciudad { get; set; }
 
     public DateOnly FechaInicio { get; set; }
     public DateOnly? FechaFin { get; set; }
@@ -94,6 +98,11 @@ public class ContratoServicio : TenantEntity
     /// <summary>Servicio al que pertenece (un servicio agrupa uno o mas contratos). Opcional.</summary>
     public Guid? ServicioId { get; set; }
     public Servicio? Servicio { get; set; }
+
+    /// <summary>Servicio publico (2.17) al que pertenece el contrato. Reemplaza en la UI al catalogo viejo de
+    /// servicios (ServicioId queda en la base sin mostrarse). Opcional.</summary>
+    public Guid? CuentaServicioPublicoId { get; set; }
+    public CuentaServicioPublico? CuentaServicioPublico { get; set; }
 
     /// <summary>FK logico a Expediente (modulo 2.15): un contrato puede pertenecer a un expediente.</summary>
     public Guid? ExpedienteId { get; set; }

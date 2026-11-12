@@ -14,10 +14,10 @@ namespace Propia.Infrastructure.SuperAdmin;
 /// usa para RELLENAR y COMPLETAR campos de texto del sistema (condiciones de uso de una zona,
 /// descripciones, observaciones, etc.). No tiene tools MCP (completado simple de un turno).
 ///
-/// IDEMPOTENTE: (1) crea la plantilla global (para copropiedades nuevas via onboarding); (2) crea el
-/// agente en cada tenant existente que aun no lo tenga. Ademas el servicio AsistenteCamposService lo
-/// crea al vuelo la primera vez que se le invoca, por lo que en prod aparece con el primer uso.
-/// La definicion canonica (nombre, rol, prompt) vive en AuxiliarAdministrativoAgente.
+/// SEMILLA (corre en todos los ambientes, idempotente): solo crea la plantilla global si no existe, con su
+/// clave (PlantillaAgente.ClaveAuxiliar); no pisa su prompt ni toca los agentes de las copropiedades.
+/// El agente se crea en cada copropiedad al primer uso (AgentesSistemaService) o con "Actualizar
+/// copropiedades". La definicion de FABRICA (nombre, rol, prompt) vive en AuxiliarAdministrativoAgente.
 /// </summary>
 public static class AuxiliarAdministrativoSeeder
 {
@@ -25,7 +25,6 @@ public static class AuxiliarAdministrativoSeeder
     {
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
-        var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<PropiaDbContext>>();
 
         var provider = await db.AiProviderConfigs.AsNoTracking()
@@ -34,20 +33,22 @@ public static class AuxiliarAdministrativoSeeder
             .FirstOrDefaultAsync() ?? AiProvider.Claude;
 
         await EnsureTemplateAsync(db, provider, logger);
-        await EnsureAgentsPerTenantAsync(db, tenant, provider, logger);
     }
 
     private static async Task EnsureTemplateAsync(PropiaDbContext db, AiProvider provider, ILogger logger)
     {
-        var existente = await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Name == AuxiliarAdministrativoAgente.Nombre);
+        // Super Admin manda: si la plantilla ya existe NO se pisa su prompt (las mejoras se hacen en el Super
+        // Admin y se propagan con "Actualizar copropiedades"); solo se le asegura la clave del agente del sistema.
+        var existente = await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Clave == PlantillaAgente.ClaveAuxiliar)
+            ?? await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Name == AuxiliarAdministrativoAgente.Nombre && t.PlatformKey == null);
         if (existente is not null)
         {
-            if (existente.SystemPrompt != AuxiliarAdministrativoAgente.SystemPrompt)
+            if (existente.Clave is null)
             {
-                existente.SystemPrompt = AuxiliarAdministrativoAgente.SystemPrompt;
+                existente.Clave = PlantillaAgente.ClaveAuxiliar;
                 existente.UpdatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync();
-                logger.LogWarning("[SEED] AuxiliarAdministrativoSeeder: prompt de la plantilla actualizado.");
+                logger.LogWarning("[SEED] AuxiliarAdministrativoSeeder: clave asignada a la plantilla existente.");
             }
             return;
         }
@@ -61,6 +62,7 @@ public static class AuxiliarAdministrativoSeeder
             Provider = provider,
             Model = null,
             SystemPrompt = AuxiliarAdministrativoAgente.SystemPrompt,
+            Clave = PlantillaAgente.ClaveAuxiliar,
             IsActive = true,
             IncludeInOnboarding = true,
             SortOrder = 60,
@@ -70,54 +72,4 @@ public static class AuxiliarAdministrativoSeeder
         logger.LogWarning("[SEED] AuxiliarAdministrativoSeeder: plantilla global creada (provider {Provider}).", provider);
     }
 
-    private static async Task EnsureAgentsPerTenantAsync(PropiaDbContext db, ITenantContext tenant, AiProvider provider, ILogger logger)
-    {
-        var tenantIds = await db.Tenants.AsNoTracking().Select(t => t.Id).ToListAsync();
-        var creados = 0;
-        foreach (var tid in tenantIds)
-        {
-            try
-            {
-                tenant.SetTenant(tid);
-                await db.Database.CloseConnectionAsync(); // el interceptor aplica app.tenant_id al reabrir
-
-                var existente = await db.AiAgents.FirstOrDefaultAsync(
-                    a => a.Name == AuxiliarAdministrativoAgente.Nombre || a.Role == AuxiliarAdministrativoAgente.RoleTag);
-                if (existente is not null)
-                {
-                    if (existente.SystemPrompt != AuxiliarAdministrativoAgente.SystemPrompt)
-                    {
-                        existente.SystemPrompt = AuxiliarAdministrativoAgente.SystemPrompt;
-                        existente.UpdatedAt = DateTimeOffset.UtcNow;
-                        await db.SaveChangesAsync();
-                    }
-                    continue;
-                }
-
-                db.AiAgents.Add(new AiAgent
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tid,
-                    Name = AuxiliarAdministrativoAgente.Nombre,
-                    Role = AuxiliarAdministrativoAgente.RoleTag,
-                    Provider = provider,
-                    Model = null,
-                    SystemPrompt = AuxiliarAdministrativoAgente.SystemPrompt,
-                    IsActive = true,
-                    SortOrder = 60,
-                    CreatedAt = DateTimeOffset.UtcNow
-                });
-                await db.SaveChangesAsync();
-                creados++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[SEED] AuxiliarAdministrativoSeeder: no se pudo crear el agente en tenant {TenantId}", tid);
-                db.ChangeTracker.Clear();
-            }
-        }
-        tenant.Clear();
-        if (creados > 0)
-            logger.LogWarning("[SEED] AuxiliarAdministrativoSeeder: agente creado en {N} copropiedad(es).", creados);
-    }
 }

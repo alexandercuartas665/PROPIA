@@ -16,15 +16,15 @@ namespace Propia.Infrastructure.Asambleas;
 /// Modulo 2.8 Asambleas y Organos de Gobierno - spec v1.0 MVP.
 /// Ciclo: Borrador -> Citada -> EnCurso -> (Cerrada | QuorumFallido).
 /// </summary>
-public class AsambleaService : IAsambleaService
+public partial class AsambleaService : IAsambleaService
 {
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
 
-    public AsambleaService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http)
+    public AsambleaService(PropiaDbContext db, ITenantContext tenantContext, IHttpContextAccessor http, IVideoSalaProvider? video = null)
     {
-        _db = db; _tenantContext = tenantContext; _http = http;
+        _db = db; _tenantContext = tenantContext; _http = http; _video = video;
     }
 
     private Guid GetUsuarioActualId()
@@ -94,6 +94,8 @@ public class AsambleaService : IAsambleaService
 
     public async Task<SesionDetalleDto?> GetSesionAsync(Guid id, CancellationToken ct)
     {
+        // Salidas de la sala virtual cuya gracia vencio sin que se confirmaran (p. ej. el API se reinicio en la gracia).
+        await ConfirmarSalidasPendientesAsync(id, ct);
         var s = await _db.Sesiones.AsNoTracking()
             .Include(x => x.Puntos)
             .Include(x => x.Participantes)
@@ -104,13 +106,9 @@ public class AsambleaService : IAsambleaService
         if (s is null) return null;
 
         // Quorum actual = suma de coeficientes de participantes Presente=true
-        var coefRepresentado = s.Participantes.Where(p => p.Presente).Sum(p => p.Coeficiente);
-        var coefTotal = s.Participantes.Sum(p => p.Coeficiente);
-        var pctRepresentado = coefTotal > 0 ? Math.Round(coefRepresentado / coefTotal * 100m, 2) : 0m;
-        var alcanzado = !s.QuorumRequeridoPct.HasValue || pctRepresentado >= s.QuorumRequeridoPct.Value;
-        var quorum = new QuorumDto(coefRepresentado, coefTotal, pctRepresentado,
-            s.QuorumRequeridoPct, alcanzado,
-            s.Participantes.Count(p => p.Presente), s.Participantes.Count);
+        var cfgSesion = await _db.AsambleaConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        var quorum = CalcularQuorum(s, s.Participantes.Select(p => (p.Coeficiente, p.Presente)).ToList(),
+            cfgSesion?.CriterioMayoria ?? CriterioMayoria.MasDe);
 
         // Resolver nombres de personas y unidades
         var personaIds = s.Participantes.Select(p => p.PersonaId)
@@ -152,18 +150,12 @@ public class AsambleaService : IAsambleaService
             VotacionDto? votDto = null;
             if (votacionesPorPunto.TryGetValue(p.Id, out var v))
             {
-                var votosDto = (p.ModalidadVoto == ModalidadVoto.Secreto && v.Estado == EstadoVotacion.Abierta)
-                    ? new List<VotoDto>()
-                    : v.Votos.Select(x => new VotoDto(
-                        x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
-                        x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
+                var votosDto = MapearVotos(v.Votos);
                 votDto = new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
                     v.QuorumAlAbrirPct, v.CoeficienteTotalSala,
-                    v.ResultadoOpcion, v.ResultadoPct, v.ResultadoFinal, votosDto);
+                    v.ResultadoOpcion, v.ResultadoPct, v.ResultadoFinal, votosDto, Desglose(v, OpcionesDe(p)));
             }
-            var opciones = string.IsNullOrEmpty(p.OpcionesVoto)
-                ? OpcionesVotoBase.Default
-                : JsonSerializer.Deserialize<string[]>(p.OpcionesVoto) ?? OpcionesVotoBase.Default;
+            var opciones = OpcionesDe(p);
             return new SesionPuntoDto(p.Id, p.Numero, p.Titulo, p.Descripcion, p.RequiereVotacion,
                 p.TipoMayoria, p.MayoriaPct, p.ModalidadVoto, opciones, p.PresupuestoId,
                 p.NarrativaSecretario, p.Estado, votDto);
@@ -171,18 +163,33 @@ public class AsambleaService : IAsambleaService
 
         var documentosDto = s.Documentos.OrderBy(d => d.CreatedAt).Select(d =>
             new SesionDocumentoDto(d.Id, d.PuntoId, d.Nombre, d.Descripcion, d.UrlStorage,
-                d.TipoArchivo, d.TamanioBytes, d.Visibilidad, d.CreatedAt)).ToList();
+                d.TipoArchivo, d.TamanioBytes, d.Visibilidad, d.CreatedAt, d.Tipo)).ToList();
 
-        ActaDto? actaDto = s.Acta is null ? null : new ActaDto(
-            s.Acta.Id, s.Acta.Estado, s.Acta.ContenidoGenerado, s.Acta.NarrativaSecretario,
-            s.Acta.DocumentoUrl, s.Acta.HashDocumento, s.Acta.FirmadoPorUsuarioId,
-            s.Acta.TipoFirma, s.Acta.TimestampFirma, s.Acta.PublicadaEn);
+        ActaDto? actaDto = null;
+        if (s.Acta is { } a)
+        {
+            // Ley 675 art. 47: el acta se pone a disposicion dentro de los 20 dias habiles siguientes a la reunion.
+            DateOnly? plazo = s.HoraCierre is { } hc
+                ? await SumarDiasHabilesAsync(DateOnly.FromDateTime(hc.ToOffset(TimeSpan.FromHours(-5)).DateTime), 20, ct) : null;
+            actaDto = new ActaDto(a.Id, a.Estado, a.ContenidoGenerado, a.NarrativaSecretario, a.DocumentoUrl, a.HashDocumento,
+                a.FirmadoPorUsuarioId, a.TipoFirma, a.TimestampFirma, a.PublicadaEn,
+                a.Numero, a.BorradorHtml, a.EstadoRedaccion, a.ErrorRedaccion, a.RedactadaPorIa, a.Editada,
+                a.FirmaPresidenteEn is { } fp ? new FirmaActaDto(fp, a.FirmaPresidenteMetodo ?? MetodoFirmaActa.Cuenta) : null,
+                a.FirmaSecretarioEn is { } fs ? new FirmaActaDto(fs, a.FirmaSecretarioMetodo ?? MetodoFirmaActa.Cuenta) : null,
+                plazo, a.ComunicadoId);
+        }
 
         return new SesionDetalleDto(s.Id, s.Tipo, s.Modalidad, s.Estado, s.Titulo, s.FechaSesion,
             s.LugarFisico, s.EnlaceVideo, s.PlazoCitacionDias, s.FechaCitacionEnviada,
             s.SegundaConvocatoria, s.SesionPadreId, s.QuorumRequeridoPct,
             s.HoraApertura, s.HoraCierre, s.QuorumAlcanzado,
-            quorum, puntosDto, participantesDto, poderesDto, documentosDto, actaDto);
+            quorum, puntosDto, participantesDto, poderesDto, documentosDto, actaDto,
+            s.SalaPropia,
+            s.InstaladaEn is { } inst ? new InstalacionDto(inst, s.QuorumInstalacionPct ?? 0m, s.PresidentePersonaId,
+                s.PresidenteNombre ?? "", s.SecretarioPersonaId, s.SecretarioNombre ?? "") : null,
+            s.JustificacionQuorum, s.MotivoCancelacion, s.PuntoActualId,
+            await _db.Sesiones.AsNoTracking().Where(x => x.SesionPadreId == s.Id).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct),
+            cfgSesion?.LimitePoderesPorPersona, s.TranscripcionActiva, s.GrabacionEgressId is null ? null : s.GrabacionIniciadaEn);
     }
 
     // ===================== Creacion y configuracion =====================
@@ -207,9 +214,10 @@ public class AsambleaService : IAsambleaService
             Tipo = req.Tipo,
             Modalidad = req.Modalidad,
             Titulo = req.Titulo.Trim(),
-            FechaSesion = req.FechaSesion,
+            FechaSesion = req.FechaSesion.ToUniversalTime(),   // Npgsql: timestamptz solo admite offset 0
             LugarFisico = req.LugarFisico,
-            EnlaceVideo = req.EnlaceVideo,
+            EnlaceVideo = req.SalaPropia && req.Modalidad != ModalidadSesion.Presencial ? null : req.EnlaceVideo,
+            SalaPropia = req.SalaPropia && req.Modalidad != ModalidadSesion.Presencial,
             PlazoCitacionDias = cfg.PlazoCitacionDias,
             QuorumRequeridoPct = quorumReq,
             Estado = EstadoSesion.Borrador,
@@ -230,7 +238,7 @@ public class AsambleaService : IAsambleaService
                 MayoriaPct = p.MayoriaPct,
                 ModalidadVoto = p.ModalidadVoto,
                 PresupuestoId = p.PresupuestoId,
-                OpcionesVoto = JsonSerializer.Serialize(OpcionesVotoBase.Default)
+                OpcionesVoto = SerializarOpciones(p.OpcionesVoto)
             });
         }
 
@@ -242,14 +250,23 @@ public class AsambleaService : IAsambleaService
     {
         var p = await _db.SesionPuntos.Include(x => x.Sesion).FirstOrDefaultAsync(x => x.Id == puntoId, ct);
         if (p is null) return false;
-        if (p.Sesion!.Estado == EstadoSesion.Cerrada && p.Sesion.Acta?.Estado == EstadoActa.Firmada)
+        var acta = await _db.Actas.AsNoTracking().FirstOrDefaultAsync(a => a.SesionId == p.SesionId, ct);
+        if (acta?.Estado == EstadoActa.Firmada)
             throw new InvalidOperationException("No se puede editar un punto despues de firmar el acta.");
+        if (string.IsNullOrWhiteSpace(req.Titulo)) throw new InvalidOperationException("Titulo del punto obligatorio.");
+        var opciones = SerializarOpciones(req.OpcionesVoto);
+        var cambiaOrden = p.Titulo != req.Titulo.Trim() || p.Descripcion != req.Descripcion || p.RequiereVotacion != req.RequiereVotacion
+            || p.TipoMayoria != req.TipoMayoria || p.MayoriaPct != req.MayoriaPct || p.ModalidadVoto != req.ModalidadVoto
+            || (req.OpcionesVoto is not null && opciones != p.OpcionesVoto);
+        if (cambiaOrden && p.Sesion!.Estado != EstadoSesion.Borrador)
+            throw new InvalidOperationException("El orden del dia solo se edita en Borrador: la citacion ya salio con este orden.");
         p.Titulo = req.Titulo.Trim();
         p.Descripcion = req.Descripcion;
         p.RequiereVotacion = req.RequiereVotacion;
         p.TipoMayoria = req.TipoMayoria;
         p.MayoriaPct = req.MayoriaPct;
         p.ModalidadVoto = req.ModalidadVoto;
+        if (req.OpcionesVoto is not null) p.OpcionesVoto = opciones;
         p.NarrativaSecretario = req.NarrativaSecretario;
         p.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -270,12 +287,13 @@ public class AsambleaService : IAsambleaService
             TipoArchivo = req.TipoArchivo,
             TamanioBytes = req.TamanioBytes,
             Visibilidad = req.Visibilidad,
+            Tipo = req.Tipo,
             SubidoPorUsuarioId = GetUsuarioActualId()
         };
         _db.SesionDocumentos.Add(d);
         await _db.SaveChangesAsync(ct);
         return new SesionDocumentoDto(d.Id, d.PuntoId, d.Nombre, d.Descripcion, d.UrlStorage,
-            d.TipoArchivo, d.TamanioBytes, d.Visibilidad, d.CreatedAt);
+            d.TipoArchivo, d.TamanioBytes, d.Visibilidad, d.CreatedAt, d.Tipo);
     }
 
     public async Task<bool> EliminarDocumentoAsync(Guid documentoId, CancellationToken ct)
@@ -284,7 +302,21 @@ public class AsambleaService : IAsambleaService
         if (d is null) return false;
         if (d.Sesion!.Estado == EstadoSesion.Cerrada)
             throw new InvalidOperationException("No se puede eliminar documentos de una sesion cerrada (RN-20).");
+        if (d.Tipo is TipoDocumentoSesion.Convocatoria or TipoDocumentoSesion.Acta or TipoDocumentoSesion.Grabacion)
+            throw new InvalidOperationException("Los documentos que genera el sistema (convocatoria, acta, grabacion) no se eliminan.");
         _db.SesionDocumentos.Remove(d);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> EliminarSesionAsync(Guid sesionId, CancellationToken ct)
+    {
+        var s = await _db.Sesiones.FirstOrDefaultAsync(x => x.Id == sesionId, ct);
+        if (s is null) return false;
+        if (s.Estado != EstadoSesion.Borrador && s.Estado != EstadoSesion.Cancelada)
+            throw new InvalidOperationException("Solo se pueden eliminar sesiones en Borrador o Canceladas.");
+        // Los hijos (puntos, participantes, poderes, documentos) caen por la FK en cascada.
+        _db.Sesiones.Remove(s);
         await _db.SaveChangesAsync(ct);
         return true;
     }
@@ -299,6 +331,18 @@ public class AsambleaService : IAsambleaService
             throw new InvalidOperationException("Solo se puede citar una sesion en estado Borrador.");
         if (s.Puntos.Count == 0)
             throw new InvalidOperationException("La sesion debe tener al menos un punto del orden del dia.");
+        var dias = (int)Math.Floor((s.FechaSesion - DateTimeOffset.UtcNow).TotalDays);
+        if (s.FechaSesion < DateTimeOffset.UtcNow)
+            throw new InvalidOperationException("La fecha de la sesion ya paso: cambiala antes de citar.");
+        // Plazo de citacion (Ley 675 art. 39). La segunda convocatoria tiene su propia fecha legal (art. 41).
+        var plazo = await _db.AsambleaConfigs.AsNoTracking().Select(c => (int?)c.PlazoCitacionDias).FirstOrDefaultAsync(ct) ?? s.PlazoCitacionDias;
+        if (!s.SegundaConvocatoria && dias < plazo)
+        {
+            if (s.Tipo == TipoSesion.AsambleaOrdinaria)
+                throw new InvalidOperationException($"La asamblea ordinaria se convoca con al menos {plazo} dias de anticipacion (Ley 675 art. 39): faltan {Math.Max(0, dias)}. Cambia la fecha.");
+            if (!req.ConfirmarFueraDePlazo)
+                throw new InvalidOperationException($"FUERA_DE_PLAZO: faltan {Math.Max(0, dias)} dias para la sesion y el plazo de citacion es de {plazo}.");
+        }
 
         // Cargar participantes: en MVP, agregamos una fila por unidad activa del tenant.
         // Como la relacion propietario-unidad no esta materializada en una FK directa
@@ -317,6 +361,15 @@ public class AsambleaService : IAsambleaService
         if (personaId is null)
             throw new InvalidOperationException("No se pudo resolver la persona del administrador para registrar la citacion.");
 
+        // Ley 675: vota el propietario. Cada unidad se cita a nombre de su propietario activo (el primero
+        // registrado); si la unidad no tiene propietario en el Directorio, queda la administracion como referencia.
+        var propietarios = (await _db.UnidadPersonas.AsNoTracking()
+                .Where(x => x.Activo && x.Rol == RolUnidadPersona.Propietario && x.PersonaId != null)
+                .Select(x => new { x.UnidadId, PersonaId = x.PersonaId!.Value, x.CreatedAt })
+                .ToListAsync(ct))
+            .GroupBy(x => x.UnidadId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.CreatedAt).First().PersonaId);
+
         var existentes = await _db.SesionParticipantes.AsNoTracking()
             .Where(p => p.SesionId == sesionId)
             .Select(p => p.UnidadPrivadaId)
@@ -328,7 +381,7 @@ public class AsambleaService : IAsambleaService
             _db.SesionParticipantes.Add(new SesionParticipante
             {
                 SesionId = sesionId,
-                PersonaId = personaId.Value,  // MVP placeholder hasta materializar 2.4-2.3
+                PersonaId = propietarios.TryGetValue(u.Id, out var prop) ? prop : personaId.Value,
                 UnidadPrivadaId = u.Id,
                 Coeficiente = u.CoeficientePropiedad,
                 Calidad = CalidadParticipante.Propietario
@@ -348,8 +401,21 @@ public class AsambleaService : IAsambleaService
     {
         var s = await _db.Sesiones.FirstOrDefaultAsync(x => x.Id == sesionId, ct)
             ?? throw new InvalidOperationException("Sesion no encontrada.");
-        if (s.Estado == EstadoSesion.Cerrada || s.Estado == EstadoSesion.Cancelada)
-            throw new InvalidOperationException("Sesion no admite mas poderes.");
+        if (s.Estado is EstadoSesion.Cerrada or EstadoSesion.Cancelada or EstadoSesion.QuorumFallido)
+            throw new InvalidOperationException("La sesion ya termino: no admite mas poderes.");
+        if (!await _db.UnidadesPrivadas.AnyAsync(u => u.Id == req.OtorganteUnidadId, ct))
+            throw new InvalidOperationException("Elige la unidad que otorga el poder.");
+        if (await _db.SesionPoderes.AnyAsync(x => x.SesionId == sesionId && x.OtorganteUnidadId == req.OtorganteUnidadId
+                && (x.Estado == EstadoPoder.Pendiente || x.Estado == EstadoPoder.Aprobado), ct))
+            throw new InvalidOperationException("Esta unidad ya tiene un poder registrado en la sesion.");
+        // personas es global: el apoderado debe tener vinculo con ESTA copropiedad (directorio o unidad).
+        if (!await _db.DirectorioVinculos.AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == req.ApoderadoPersonaId, ct)
+            && !await _db.UnidadPersonas.AnyAsync(up => up.PersonaId == req.ApoderadoPersonaId, ct))
+            throw new InvalidOperationException("El apoderado no pertenece al directorio de la copropiedad.");
+        if (await _db.UnidadPersonas.AnyAsync(up => up.UnidadId == req.OtorganteUnidadId && up.PersonaId == req.ApoderadoPersonaId
+                && up.Activo && up.Rol == RolUnidadPersona.Propietario, ct))
+            throw new InvalidOperationException("El apoderado no puede ser el mismo propietario de la unidad.");
+        if (req.TipoPoder == TipoPoder.Digital) await ValidarLimitePoderesAsync(sesionId, req.ApoderadoPersonaId, ct);
 
         var hashSrc = $"{sesionId}|{req.OtorganteUnidadId}|{req.ApoderadoPersonaId}|{DateTimeOffset.UtcNow:O}";
         using var sha = SHA256.Create();
@@ -385,12 +451,29 @@ public class AsambleaService : IAsambleaService
         if (p is null) return false;
         if (p.Estado != EstadoPoder.Pendiente)
             throw new InvalidOperationException("El poder ya fue decidido.");
+        if (req.Aprobar) await ValidarLimitePoderesAsync(p.SesionId, p.ApoderadoPersonaId, ct);
         p.Estado = req.Aprobar ? EstadoPoder.Aprobado : EstadoPoder.Rechazado;
         p.AprobadoPorUsuarioId = GetUsuarioActualId();
         if (!req.Aprobar && !string.IsNullOrWhiteSpace(req.Motivo)) p.NotaRechazo = req.Motivo;
+        if (await _db.Sesiones.AnyAsync(x => x.Id == p.SesionId && x.Estado == EstadoSesion.EnCurso, ct))
+        {
+            var unidad = await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == p.OtorganteUnidadId).Select(u => u.Numero).FirstOrDefaultAsync(ct);
+            var apoderado = await _db.Personas.AsNoTracking().Where(x => x.Id == p.ApoderadoPersonaId).Select(x => (x.Nombres + " " + x.Apellidos).Trim()).FirstOrDefaultAsync(ct);
+            Evento(p.SesionId, null, $"Poder de la unidad {unidad} a {apoderado}: {(req.Aprobar ? "aprobado" : "rechazado")}.");
+        }
         p.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    /// <summary>Limite de poderes por persona (Configuracion de asambleas): cuantas unidades puede representar un apoderado.</summary>
+    private async Task ValidarLimitePoderesAsync(Guid sesionId, Guid apoderadoId, CancellationToken ct)
+    {
+        var lim = await _db.AsambleaConfigs.AsNoTracking().Select(c => c.LimitePoderesPorPersona).FirstOrDefaultAsync(ct);
+        if (lim is not int l || l <= 0) return;
+        var n = await _db.SesionPoderes.CountAsync(x => x.SesionId == sesionId && x.ApoderadoPersonaId == apoderadoId && x.Estado == EstadoPoder.Aprobado, ct);
+        if (n >= l)
+            throw new InvalidOperationException($"El apoderado ya representa {n} unidad(es): el limite por persona es {l} (Configuracion de asambleas).");
     }
 
     // ===================== Sala =====================
@@ -403,12 +486,19 @@ public class AsambleaService : IAsambleaService
             throw new InvalidOperationException("Solo se puede abrir sala en sesion Citada.");
         s.Estado = EstadoSesion.EnCurso;
         s.HoraApertura = DateTimeOffset.UtcNow;
+        Evento(s.Id, null, "Se abre la sala.");
         s.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
     }
 
-    public async Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+    public Task<bool> CheckInParticipanteAsync(Guid sesionId, CheckInParticipanteRequest req, CancellationToken ct)
+        => CheckInParticipanteCoreAsync(sesionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien registra su propia asistencia (flujo self-service). Null = flujo admin,
+    // que conserva la persona del participante en el quorum log.
+    private async Task<bool> CheckInParticipanteCoreAsync(Guid sesionId, CheckInParticipanteRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var p = await _db.SesionParticipantes
             .FirstOrDefaultAsync(x => x.SesionId == sesionId && x.UnidadPrivadaId == req.UnidadPrivadaId, ct);
@@ -443,7 +533,7 @@ public class AsambleaService : IAsambleaService
         {
             SesionId = sesionId,
             Evento = req.Presente ? EventoQuorum.Ingreso : EventoQuorum.Salida,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = p.UnidadPrivadaId,
             Coeficiente = p.Coeficiente,
             QuorumAcumuladoPct = pct
@@ -465,8 +555,16 @@ public class AsambleaService : IAsambleaService
             ?? throw new InvalidOperationException("Punto no pertenece a esta sesion.");
         if (!p.RequiereVotacion)
             throw new InvalidOperationException("Este punto no requiere votacion formal.");
-        var existente = await _db.Votaciones.AnyAsync(v => v.PuntoId == req.PuntoId && v.Estado == EstadoVotacion.Abierta, ct);
-        if (existente) throw new InvalidOperationException("Ya hay una votacion abierta para este punto.");
+        if (s.InstaladaEn is null)
+            throw new InvalidOperationException("Instala la asamblea (presidente y secretario) antes de abrir votaciones.");
+        if (p.Estado is EstadoPunto.Cerrado or EstadoPunto.NoTratado)
+            throw new InvalidOperationException("Este punto ya se voto.");
+        var abierta = await _db.Votaciones.Where(v => v.SesionId == sesionId && v.Estado == EstadoVotacion.Abierta)
+            .Select(v => (int?)v.Punto!.Numero).FirstOrDefaultAsync(ct);
+        if (abierta is int nAbierta)
+            throw new InvalidOperationException($"Ya hay una votacion abierta (punto {nAbierta}): una votacion a la vez.");
+        if (!(await QuorumActualAsync(s, ct)).Alcanzado)
+            throw new InvalidOperationException("No hay quorum en este momento: no se pueden abrir votaciones.");
 
         var coefTotal = await _db.SesionParticipantes.AsNoTracking()
             .Where(x => x.SesionId == sesionId && x.Presente).SumAsync(x => x.Coeficiente, ct);
@@ -484,14 +582,24 @@ public class AsambleaService : IAsambleaService
             CoeficienteTotalSala = coefTotal
         };
         _db.Votaciones.Add(v);
+        s.PuntoActualId = p.Id;
         p.Estado = EstadoPunto.EnVotacion;
+        Evento(sesionId, p.Id, $"Se abre la votación del punto {p.Numero} ("
+            + (OpcionesDe(p).Contains(OpcionesVotoBase.Si) ? $"mayoría {p.TipoMayoria.ToString().ToLowerInvariant()} de más del {p.MayoriaPct:0.##} %" : "elección")
+            + $", voto {(p.ModalidadVoto == ModalidadVoto.Secreto ? "secreto" : "público")}).");
         p.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, null, null, null, new List<VotoDto>());
     }
 
-    public async Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+    public Task<bool> EmitirVotoAsync(Guid votacionId, EmitirVotoRequest req, CancellationToken ct)
+        => EmitirVotoCoreAsync(votacionId, req, personaActuanteId: null, ct);
+
+    // personaActuanteId: quien emite el voto (propietario o apoderado, flujo self-service). Null = flujo
+    // admin, que conserva la persona del participante en el voto.
+    private async Task<bool> EmitirVotoCoreAsync(Guid votacionId, EmitirVotoRequest req,
+        Guid? personaActuanteId, CancellationToken ct)
     {
         var v = await _db.Votaciones.Include(x => x.Punto).FirstOrDefaultAsync(x => x.Id == votacionId, ct);
         if (v is null) return false;
@@ -519,7 +627,7 @@ public class AsambleaService : IAsambleaService
         _db.Votos.Add(new Voto
         {
             VotacionId = votacionId,
-            PersonaId = p.PersonaId,
+            PersonaId = personaActuanteId ?? p.PersonaId,
             UnidadPrivadaId = req.UnidadPrivadaId,
             CoeficienteAportado = p.Coeficiente,
             Opcion = req.Opcion,
@@ -545,50 +653,114 @@ public class AsambleaService : IAsambleaService
             var grupos = v.Votos.GroupBy(x => x.Opcion)
                 .Select(g => new { Opcion = g.Key, Coef = g.Sum(x => x.CoeficienteAportado) })
                 .OrderByDescending(x => x.Coef).ToList();
-            var totalCoefVotado = grupos.Sum(g => g.Coef);
             var ganadora = grupos.First();
             v.ResultadoOpcion = ganadora.Opcion;
-            v.ResultadoPct = v.CoeficienteTotalSala > 0
-                ? Math.Round(ganadora.Coef / v.CoeficienteTotalSala * 100m, 2) : 0m;
 
-            // Determinar Aprobado/Rechazado: si la opcion "Si" supera la mayoria configurada
+            // Base del porcentaje, calculada AL CERRAR (no al abrir: con el voto self-service la gente
+            // llega despues de abrir la votacion). Ley 675: mayoria simple (art. 45) = coeficientes
+            // representados en la reunion -> presentes al cierre + quien voto y luego se retiro (su voto
+            // cuenta y no puede pasar del 100 %); mayoria calificada (art. 46) = total de coeficientes de
+            // la copropiedad (todas las unidades citadas a la sesion).
+            var participantes = await _db.SesionParticipantes.AsNoTracking()
+                .Where(x => x.SesionId == v.SesionId)
+                .Select(x => new { x.UnidadPrivadaId, x.Coeficiente, x.Presente })
+                .ToListAsync(ct);
+            var votaron = v.Votos.Select(x => x.UnidadPrivadaId).ToHashSet();
+            var baseCoef = v.Punto!.TipoMayoria == TipoMayoria.Calificada
+                ? participantes.Sum(x => x.Coeficiente)
+                : participantes.Where(x => x.Presente || votaron.Contains(x.UnidadPrivadaId)).Sum(x => x.Coeficiente);
+
+            v.ResultadoPct = baseCoef > 0 ? Math.Round(ganadora.Coef / baseCoef * 100m, 2) : 0m;
+
+            // Aprobado/Rechazado: el % del "Si" contra la mayoria del punto, con el criterio de la
+            // copropiedad (MasDe = mayoria absoluta, un empate no aprueba; AlMenos = basta alcanzarla).
+            // Sin fila de config = default de la entidad (MasDe).
+            var criterio = await _db.AsambleaConfigs.AsNoTracking()
+                .Select(c => (CriterioMayoria?)c.CriterioMayoria)
+                .FirstOrDefaultAsync(ct) ?? CriterioMayoria.MasDe;
+            var opcionesPunto = OpcionesDe(v.Punto);
+            if (!opcionesPunto.Contains(OpcionesVotoBase.Si))
+            {
+                // Eleccion (planchas o candidatos): gana la opcion con mas coeficiente; empate = sin resultado.
+                var empate = grupos.Count > 1 && grupos[1].Coef == ganadora.Coef;
+                v.ResultadoFinal = empate ? ResultadoVotacion.SinResultado : ResultadoVotacion.Elegido;
+                if (empate) v.ResultadoOpcion = null;
+                goto Fin;
+            }
             var siCoef = grupos.FirstOrDefault(g => g.Opcion == OpcionesVotoBase.Si)?.Coef ?? 0m;
-            var siPct = v.CoeficienteTotalSala > 0 ? siCoef / v.CoeficienteTotalSala * 100m : 0m;
-            v.ResultadoFinal = siPct >= v.Punto!.MayoriaPct ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
+            var siPct = baseCoef > 0 ? siCoef / baseCoef * 100m : 0m;
+            var aprobado = criterio == CriterioMayoria.AlMenos
+                ? siPct >= v.Punto.MayoriaPct
+                : siPct > v.Punto.MayoriaPct;
+            v.ResultadoFinal = aprobado ? ResultadoVotacion.Aprobado : ResultadoVotacion.Rechazado;
         }
         else
         {
             v.ResultadoFinal = ResultadoVotacion.SinResultado;
         }
+    Fin:
 
         v.Punto!.Estado = EstadoPunto.Cerrado;
+        Evento(v.SesionId, v.PuntoId, $"Se cierra la votación del punto {v.Punto.Numero}: {ResultadoEvento(v)} con {v.Votos.Count} votos.");
         v.Punto.UpdatedAt = DateTimeOffset.UtcNow;
         v.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        var votosDto = v.Votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId,
-            x.CoeficienteAportado, x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
         return new VotacionDto(v.Id, v.PuntoId, v.Estado, v.HoraApertura, v.HoraCierre,
             v.QuorumAlAbrirPct, v.CoeficienteTotalSala, v.ResultadoOpcion, v.ResultadoPct,
-            v.ResultadoFinal, votosDto);
+            v.ResultadoFinal, MapearVotos(v.Votos), Desglose(v, OpcionesDe(v.Punto!)));
     }
+
+    // Voto secreto: nunca sale la opcion de una unidad, ni con la votacion abierta ni cerrada (antes se
+    // revelaba al cerrar a cualquier usuario del tenant). Se conserva quien voto (participacion) y el
+    // coeficiente para el conteo; el resultado agregado vive en ResultadoOpcion/ResultadoPct.
+    private static List<VotoDto> MapearVotos(IEnumerable<Voto> votos)
+        => votos.Select(x => new VotoDto(x.Id, x.PersonaId, x.UnidadPrivadaId, x.CoeficienteAportado,
+            x.EsSecreto ? "" : x.Opcion, x.EsSecreto, x.CreatedAt)).ToList();
 
     // ===================== Cierre =====================
 
     public async Task<bool> CerrarSesionAsync(Guid sesionId, CerrarSesionRequest req, CancellationToken ct)
     {
-        var s = await _db.Sesiones.FirstOrDefaultAsync(x => x.Id == sesionId, ct);
+        var s = await _db.Sesiones.Include(x => x.Puntos).FirstOrDefaultAsync(x => x.Id == sesionId, ct);
         if (s is null) return false;
         if (s.Estado != EstadoSesion.EnCurso)
             throw new InvalidOperationException("Solo se puede cerrar una sesion EnCurso.");
-        s.Estado = req.QuorumAlcanzado ? EstadoSesion.Cerrada : EstadoSesion.QuorumFallido;
+        var abierta = await _db.Votaciones.Where(v => v.SesionId == sesionId && v.Estado == EstadoVotacion.Abierta)
+            .Select(v => (int?)v.Punto!.Numero).FirstOrDefaultAsync(ct);
+        if (abierta is int nAbierta)
+            throw new InvalidOperationException($"Hay una votacion abierta (punto {nAbierta}). Cierrala antes de cerrar la sesion.");
+
+        // El quorum de la sesion es el de la INSTALACION (no una casilla manual). Corregirlo exige justificacion,
+        // que queda en el acta.
+        var calculado = s.InstaladaEn is not null;
+        var final = calculado;
+        if (req.QuorumAlcanzado is bool q && q != calculado)
+        {
+            if (string.IsNullOrWhiteSpace(req.Justificacion))
+                throw new InvalidOperationException("Para corregir el quorum calculado escribe la justificacion (queda en el acta).");
+            final = q;
+            s.JustificacionQuorum = Recortar(req.Justificacion.Trim(), 1000);
+        }
+
+        foreach (var p in s.Puntos)
+        {
+            if (p.Estado == EstadoPunto.Pendiente || (p.Estado == EstadoPunto.EnDiscusion && p.RequiereVotacion))
+            { p.Estado = EstadoPunto.NoTratado; p.UpdatedAt = DateTimeOffset.UtcNow; }
+            else if (p.Estado == EstadoPunto.EnDiscusion) { p.Estado = EstadoPunto.Cerrado; p.UpdatedAt = DateTimeOffset.UtcNow; }
+        }
+        s.PuntoActualId = null;
+        s.TranscripcionActiva = false;
+        await DetenerGrabacionAlCerrarAsync(s, ct);
+        Evento(s.Id, null, final ? "Se levanta la sesión." : "Se levanta la sesión sin quórum.");
+        s.Estado = final ? EstadoSesion.Cerrada : EstadoSesion.QuorumFallido;
         s.HoraCierre = DateTimeOffset.UtcNow;
-        s.QuorumAlcanzado = req.QuorumAlcanzado;
+        s.QuorumAlcanzado = final;
         s.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        // Si quorum alcanzado, generar borrador del acta automaticamente
-        if (req.QuorumAlcanzado) await GenerarActaAsync(sesionId, ct);
+        // Con quorum se genera el borrador del acta
+        if (final) await GenerarActaAsync(sesionId, ct);
         return true;
     }
 
@@ -624,6 +796,15 @@ public class AsambleaService : IAsambleaService
             HoraApertura = s.HoraApertura,
             HoraCierre = s.HoraCierre,
             QuorumAlcanzado = s.QuorumAlcanzado,
+            SegundaConvocatoria = s.SegundaConvocatoria,
+            Instalacion = s.InstaladaEn is null ? null : new
+            {
+                Hora = s.InstaladaEn,
+                QuorumPct = s.QuorumInstalacionPct,
+                Presidente = s.PresidenteNombre,
+                Secretario = s.SecretarioNombre
+            },
+            JustificacionQuorum = s.JustificacionQuorum,
             ParticipantesPresentes = s.Participantes.Count(p => p.Presente),
             ParticipantesCitados = s.Participantes.Count,
             CoeficienteRepresentado = s.Participantes.Where(p => p.Presente).Sum(p => p.Coeficiente),
@@ -633,6 +814,7 @@ public class AsambleaService : IAsambleaService
                 p.Titulo,
                 p.Descripcion,
                 p.RequiereVotacion,
+                Estado = p.Estado.ToString(),
                 Votacion = votaciones.FirstOrDefault(v => v.PuntoId == p.Id) is { } v
                     ? new
                     {
@@ -656,41 +838,6 @@ public class AsambleaService : IAsambleaService
         return new ActaDto(acta.Id, acta.Estado, acta.ContenidoGenerado, null, null, null, null, null, null, null);
     }
 
-    public async Task<bool> FirmarActaAsync(Guid actaId, FirmarActaRequest req, CancellationToken ct)
-    {
-        var a = await _db.Actas.FirstOrDefaultAsync(x => x.Id == actaId, ct);
-        if (a is null) return false;
-        if (a.Estado == EstadoActa.Firmada) throw new InvalidOperationException("Acta ya firmada (RN-10 inmutable).");
-
-        a.NarrativaSecretario = req.NarrativaSecretario;
-        a.TipoFirma = req.TipoFirma;
-        a.TimestampFirma = DateTimeOffset.UtcNow;
-        a.FirmadoPorUsuarioId = GetUsuarioActualId();
-        a.FirmanteIp = _http.HttpContext?.Connection.RemoteIpAddress?.ToString();
-
-        // Hash SHA-256 del contenido + narrativa
-        var src = $"{a.ContenidoGenerado}|{a.NarrativaSecretario}|{a.TimestampFirma:O}|{a.FirmadoPorUsuarioId}";
-        using var sha = SHA256.Create();
-        a.HashDocumento = Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(src)));
-
-        a.Estado = EstadoActa.Firmada;
-        a.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
-    public async Task<bool> PublicarActaAsync(Guid actaId, PublicarActaRequest req, CancellationToken ct)
-    {
-        var a = await _db.Actas.FirstOrDefaultAsync(x => x.Id == actaId, ct);
-        if (a is null) return false;
-        if (a.Estado != EstadoActa.Firmada)
-            throw new InvalidOperationException("Solo se puede publicar un acta firmada.");
-        a.PublicadaEn = DateTimeOffset.UtcNow;
-        a.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
-
     // ===================== Configuracion =====================
 
     public async Task<AsambleaConfigDto> GetConfigAsync(CancellationToken ct)
@@ -698,17 +845,31 @@ public class AsambleaService : IAsambleaService
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.AsNoTracking().FirstAsync(ct);
         return new AsambleaConfigDto(c.PlazoCitacionDias, c.LimitePoderesPorPersona,
-            c.GraciaReconexionSeg, c.NotifRecordatorioDias);
+            c.GraciaReconexionSeg, c.NotifRecordatorioDias, c.CriterioMayoria);
     }
 
-    public async Task<bool> ActualizarConfigAsync(AsambleaConfigDto req, CancellationToken ct)
+    // MERGE: solo lo que viene en el request (null = no tocar). Rangos sanos para que un valor absurdo no
+    // rompa la citacion o los recordatorios.
+    public async Task<bool> ActualizarConfigAsync(ActualizarAsambleaConfigRequest req, CancellationToken ct)
     {
+        if (req.PlazoCitacionDias is < 0 or > 60)
+            throw new InvalidOperationException("El plazo de citacion debe estar entre 0 y 60 dias.");
+        if (req.LimitePoderesPorPersona is < 0 or > 50)
+            throw new InvalidOperationException("El limite de poderes por persona debe estar entre 0 (sin limite) y 50.");
+        if (req.GraciaReconexionSeg is < 0 or > 3600)
+            throw new InvalidOperationException("La gracia de reconexion debe estar entre 0 y 3600 segundos.");
+        if (req.NotifRecordatorioDias is < 0 or > 30)
+            throw new InvalidOperationException("El recordatorio debe estar entre 0 y 30 dias antes.");
+        if (req.CriterioMayoria is { } cm && !Enum.IsDefined(cm))
+            throw new InvalidOperationException("Criterio de mayoria invalido.");
+
         await AsegurarConfigAsync(ct);
         var c = await _db.AsambleaConfigs.FirstAsync(ct);
-        c.PlazoCitacionDias = req.PlazoCitacionDias;
-        c.LimitePoderesPorPersona = req.LimitePoderesPorPersona;
-        c.GraciaReconexionSeg = req.GraciaReconexionSeg;
-        c.NotifRecordatorioDias = req.NotifRecordatorioDias;
+        if (req.PlazoCitacionDias is int plazo) c.PlazoCitacionDias = plazo;
+        if (req.LimitePoderesPorPersona is int lim) c.LimitePoderesPorPersona = lim == 0 ? null : lim;
+        if (req.GraciaReconexionSeg is int gracia) c.GraciaReconexionSeg = gracia;
+        if (req.NotifRecordatorioDias is int rec) c.NotifRecordatorioDias = rec;
+        if (req.CriterioMayoria is { } criterio) c.CriterioMayoria = criterio;
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;

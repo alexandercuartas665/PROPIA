@@ -66,6 +66,7 @@ public class AdminController : ControllerBase
     /// para que el cliente lo muestre como QR. NO marca como configurado hasta VerifyEnrollMfa.
     /// </summary>
     [HttpPost("mfa/enroll")]
+    [Propia.Api.Authorization.SoloSesionInteractiva]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> EnrollMfa(CancellationToken ct)
     {
@@ -77,6 +78,7 @@ public class AdminController : ControllerBase
 
     /// <summary>Verifica el codigo TOTP del primer escaneo y marca MfaConfigurado = true.</summary>
     [HttpPost("mfa/verify-enroll")]
+    [Propia.Api.Authorization.SoloSesionInteractiva]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> VerifyEnrollMfa([FromBody] VerifyMfaEnrollRequest req, CancellationToken ct)
     {
@@ -200,6 +202,7 @@ public class AdminController : ControllerBase
         => Ok(await _svc.ListEquipoAsync(ct));
 
     [HttpPost("equipo")]
+    [Propia.Api.Authorization.SoloSesionInteractiva]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> CrearMiembro([FromBody] CrearSuperAdminUsuarioRequest req, CancellationToken ct)
     {
@@ -216,6 +219,7 @@ public class AdminController : ControllerBase
     }
 
     [HttpPut("equipo/{usuarioId:guid}/desactivar")]
+    [Propia.Api.Authorization.SoloSesionInteractiva]
     [Authorize(Policy = SuperAdminPolicy)]
     public async Task<IActionResult> DesactivarMiembro(Guid usuarioId, CancellationToken ct)
     {

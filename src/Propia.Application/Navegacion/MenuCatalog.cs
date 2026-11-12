@@ -41,6 +41,9 @@ public static class MenuCatalog
         // Hub que reune en pestañas todos los modulos de configuracion de la PH. Los accesos sueltos
         // de abajo (Unidades, Residentes, ...) siguen existiendo: conviven con el hub.
         new MenuItemDef("mi-config-hub", "tabMiPH", "Configuracion Copropiedad", "/configuracion-copropiedad", "fi-rr-settings", 1),
+        // Catalogo central de plantillas de documentos. Donde exista la seccion "Configuracion" del Super Admin,
+        // la migracion AddPlantillasDocumento lo ubica ahi, despues de "Copropiedad" (override en menu_overrides).
+        new MenuItemDef("cfg-plantillas", "tabMiPH", "Plantillas de documentos", "/configuracion/plantillas", "fi-rr-document", 1),
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 2),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 3),
         new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes-hub", "fi-rr-users", 4),

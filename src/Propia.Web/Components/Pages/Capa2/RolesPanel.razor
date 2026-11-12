@@ -160,6 +160,9 @@ else
             <div class="rol-tb-spacer"></div>
             <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="OnSortsChanged" />
             <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+            @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Roles no tiene
+               menu Columnas ni vista Tarjetas: va al final de la barra. *@
+            <TablaExportar Vista="VistaExport" />
         </div>
         <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaRol" />
         @* "Editar campo" de CUALQUIER columna de sistema de roles: UN solo modal canonico focalizado.
@@ -378,7 +381,7 @@ else
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
-            <div class="tbl-foot"><strong>@_roles.Count(r => r.Tipo != TipoRol.Sistema)</strong>&nbsp;roles</div>
+            <div class="tbl-foot"><strong>@RolesVista().Count()</strong>&nbsp;roles</div>
         </div>
     }
 
@@ -571,6 +574,63 @@ else
         return o;
     }
 
+    // ===== Descarga de la vista tabla (TablaExportar): columnas en su orden, TODAS las filas filtradas y
+    // ordenadas (RolesVista, no solo lo pintado) y, si esta agrupada, las cabeceras de grupo. =====
+    private string? _copropiedadNombre;
+    private ExportVista VistaExport()
+    {
+        var cols = ColsRoles.ToList();
+        var columnas = cols.Select(c => new ExportColumna(c.Label, EsNumericaRol(c.Clave), EsNumericaRol(c.Clave) ? "General" : null)).ToList();
+        object? Celda(RolDto r, string k)
+        {
+            if (EsNumericaRol(k)) return ValorNumRol(r, k);
+            var s = TextoCeldaRol(r, k);
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+        ExportFila Fila(RolDto r, IReadOnlyList<string>? ruta) => new(cols.Select(c => Celda(r, c.Clave)).ToList(), Ruta: ruta);
+
+        var lista = RolesVista().ToList();
+        var filas = new List<ExportFila>();
+        var gf = _grupos.FirstOrDefault();
+        if (gf is null) filas.AddRange(lista.Select(r => Fila(r, null)));
+        else
+        {
+            // Mismo corte que la tabla: un solo nivel y una cabecera cada vez que cambia el valor del grupo en la
+            // secuencia (los roles base van primero, asi que un mismo valor puede aparecer en dos tramos).
+            for (var i = 0; i < lista.Count;)
+            {
+                var gv = GrupoValor(lista[i], gf);
+                var j = i;
+                while (j < lista.Count && GrupoValor(lista[j], gf) == gv) j++;
+                filas.Add(ExportFila.DeGrupo(gv, 0, j - i));
+                var ruta = new[] { gv };
+                for (var x = i; x < j; x++) filas.Add(Fila(lista[x], ruta));
+                i = j;
+            }
+        }
+
+        string LblClave(string k) => cols.FirstOrDefault(c => c.Clave == k)?.Label ?? k;
+        string LblGrupo(string k) => ColsAgrupables().FirstOrDefault(c => c.Key == k)?.Label ?? k;
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_busca)) criterios.Add($"Búsqueda: \"{_busca.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{LblClave(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (gf is not null) criterios.Add("Agrupado por: " + LblGrupo(gf));
+        criterios.Add($"{lista.Count} roles");
+
+        return new ExportVista("Roles y Permisos", _copropiedadNombre, columnas, filas, criterios,
+            gf is null ? new List<string>() : new List<string> { LblGrupo(gf) });
+    }
+    // Texto de una celda tal como se ve: Rol = nombre + su descripcion (segunda linea de la celda); Categoria =
+    // etiqueta; Base = el texto del badge (Sistema / Extendido [. inactivo] / Personalizado).
+    private static string TextoCeldaRol(RolDto r, string k) => k switch
+    {
+        "nombre" => string.IsNullOrWhiteSpace(r.Descripcion) ? (r.Nombre ?? "") : $"{r.Nombre} - {r.Descripcion}",
+        "categoria" => LabelCategoria(r.Categoria),
+        "base" => r.Tipo == TipoRol.Base ? "Sistema" : r.Tipo == TipoRol.Extendido ? "Extendido" + (r.Activo ? "" : " . inactivo") : "Personalizado",
+        _ => ValorCrudo(r, k),
+    };
+
     // ===== Menu de columna (ChevCol -> TablaColMenu): ordenar/filtrar + "Editar campo" (categoria) =====
     private double _colMenuX, _colMenuY;
     private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
@@ -600,6 +660,10 @@ else
                 // TODA columna de sistema abre el modal focalizado: Categoria es lista editable; el resto
                 // (nombre, base, usuarios) solo alias/descripcion/visibilidad.
                 _editSisClave = col.Key; _editSisLabel = col.Label;
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                // Roles no tiene visibilidad de columnas (sus columnas son fijas): avisar en vez de no hacer nada.
+                _msg = "En Roles las columnas son fijas y no se pueden ocultar."; _msgClass = "alert-info";
                 break;
             default:
                 break;
@@ -739,6 +803,7 @@ else
             [ModuloCodigo.Comunicaciones] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar },
             [ModuloCodigo.Documentos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Eliminar, AccionPermiso.Exportar },
             [ModuloCodigo.Reportes] = new[] { AccionPermiso.Ver, AccionPermiso.Exportar },
+            [ModuloCodigo.Plantillas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
         };
 
     private static bool AccionAplica(string modulo, AccionPermiso accion)
@@ -790,6 +855,7 @@ else
             {
                 _jwt = stored;
                 try { CargarAggRol(await Js.InvokeAsync<string?>("localStorage.getItem", AggKeyRol)); } catch { }
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
                 await CargarRolesAsync();
                 StateHasChanged();
             }
@@ -852,7 +918,7 @@ else
     {
         _camposConfig.TryGetValue(k, out var c);
         return new GuardarUnidadCampoConfigRequest(k, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato,
-            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "rol");
+            Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "rol", Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
     { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
@@ -1098,6 +1164,7 @@ else
         "COMUNICACIONES" => "Comunicaciones",
         "DOCUMENTOS" => "Documentos",
         "REPORTES" => "Reportes",
+        "PLANTILLAS" => "Plantillas de documentos",
         _ => codigo
     };
 }

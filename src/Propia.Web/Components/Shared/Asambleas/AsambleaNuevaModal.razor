@@ -1,0 +1,295 @@
+@* AsambleaNuevaModal - asistente "Convocar nueva sesion" en MODAL (replica RP.asambleaNuevaModal, PROPUESTAS.md 7.1 bis).
+   Mismo ModuloWizard de 4 pasos (Tipo y modalidad - Identificacion - Orden del dia - Revisar) dentro del frame estandar
+   (1056 x 86vh); la X del asistente cierra el modal. En la asamblea ordinaria la fecha debe respetar el plazo de citacion
+   de Configuracion (Ley 675 art. 39); la fecha sugerida ya lo respeta. "Usar orden del dia sugerido (Ley 675)" carga el
+   orden tipico de la ordinaria. Devuelve el Id de la sesion creada (queda en Borrador) o null si se cancela. *@
+@inherits ModalBase<Guid?>
+@using Propia.Application.Asambleas
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+
+<div class="asm-wz">
+    @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    <ModuloWizard Titulo="Convocar nueva sesion"
+                  Descripcion="Ley 675/2001 - completa la informacion paso a paso. La sesion queda en estado Borrador."
+                  FinishLabel="Crear sesion (Borrador)"
+                  OnFinish="CrearAsync"
+                  OnCancel="CancelarAsync">
+
+        <WizardStep Titulo="Tipo y modalidad"
+                    Descripcion="Define el caracter de la sesion. Esto afecta el quorum minimo y los tipos de mayoria validos por punto."
+                    CanAdvance="@(() => true)">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label small">Tipo de sesión *</label>
+                    <select class="form-select form-select-sm" @bind="_tipo">
+                        @foreach (var t in Enum.GetValues<TipoSesion>()) { <option value="@t">@TipoTitulo(t)</option> }
+                    </select>
+                    <small class="text-muted d-block mt-1">@TipoAyuda(_tipo)</small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small">Modalidad *</label>
+                    <select class="form-select form-select-sm" @bind="_modalidad">
+                        @foreach (var m in Enum.GetValues<ModalidadSesion>()) { <option value="@m">@m</option> }
+                    </select>
+                    <small class="text-muted d-block mt-1">@ModalidadAyuda(_modalidad)</small>
+                </div>
+            </div>
+        </WizardStep>
+
+        <WizardStep Titulo="Identificacion"
+                    Descripcion="Nombra la sesion y agenda fecha/hora. Si es Presencial/Mixta indica el lugar; si es Virtual/Mixta indica el enlace."
+                    CanAdvance="@IdentificacionValida"
+                    MensajeError="@($"Falta titulo, la fecha esta en el pasado o, en asamblea ordinaria, no deja los {_plazoCitacion} dias del plazo de citacion.")">
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <label class="form-label small">Título *</label>
+                    <input class="form-control form-control-sm" @bind="_titulo" @bind:event="oninput" placeholder="Ej: Asamblea Ordinaria 2026 - Aprobación presupuesto" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small">Fecha y hora *</label>
+                    <input type="datetime-local" class="form-control form-control-sm" @bind="_fecha" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small">Lugar físico (Presencial/Mixta)</label>
+                    <input class="form-control form-control-sm" @bind="_lugar" @bind:event="oninput" placeholder="Salón comunal" />
+                </div>
+                @if (_modalidad != ModalidadSesion.Presencial)
+                {
+                    <div class="col-md-12">
+                        <label class="form-label small">Videollamada (Virtual/Mixta)</label>
+                        <div class="asm-wz-sala">
+                            <label class="asm-wz-op @(_salaPropia ? "on" : "")">
+                                <input type="radio" name="asm-wz-sala" checked="@_salaPropia" @onchange="() => _salaPropia = true" />
+                                <span><b>Sala virtual de PROPIA</b> (recomendado)<small>Dentro del sistema: al entrar quedan presentes, votan sin salir de la llamada y la grabación queda con el acta.</small></span>
+                            </label>
+                            <label class="asm-wz-op @(!_salaPropia ? "on" : "")">
+                                <input type="radio" name="asm-wz-sala" checked="@(!_salaPropia)" @onchange="() => _salaPropia = false" />
+                                <span><b>Enlace externo</b><small>Meet, Zoom o Teams. La asistencia y los votos se registran a mano.</small></span>
+                            </label>
+                        </div>
+                        @if (!_salaPropia)
+                        {
+                            <input class="form-control form-control-sm mt-2" @bind="_enlace" @bind:event="oninput" placeholder="https://meet.google.com/..." />
+                        }
+                    </div>
+                }
+            </div>
+        </WizardStep>
+
+        <WizardStep Titulo="Orden del dia"
+                    Descripcion="Minimo un punto. Marca los puntos que requieren votacion e indica tipo de mayoria."
+                    CanAdvance="@(() => _puntos.Count > 0 && _puntos.All(p => !string.IsNullOrWhiteSpace(p.Titulo)))"
+                    MensajeError="Cada punto debe tener un titulo.">
+            @foreach (var p in _puntos)
+            {
+                var punto = p;
+                <div class="card mb-2"><div class="card-body py-2">
+                    <div class="row g-2">
+                        <div class="col-md-1"><label class="form-label small">#</label>
+                            <input type="number" class="form-control form-control-sm" @bind="punto.Numero" min="1" /></div>
+                        <div class="col-md-9"><label class="form-label small">Título *</label>
+                            <input class="form-control form-control-sm" @bind="punto.Titulo" @bind:event="oninput" /></div>
+                        <div class="col-md-2"><label class="form-label small">Tipo mayoria</label>
+                            <select class="form-select form-select-sm" @bind="punto.TipoMayoria" @bind:after="() => SyncMayoriaPct(punto)">
+                                @foreach (var tm in Enum.GetValues<TipoMayoria>()) { <option value="@tm">@tm</option> }
+                            </select></div>
+                        <div class="col-md-12"><label class="form-label small">Descripción (opcional)</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="punto.Descripcion" @bind:event="oninput"></textarea></div>
+                        @if (punto.RequiereVotacion)
+                        {
+                            <div class="col-md-12"><label class="form-label small">Opciones para elecciones (planchas o candidatos, separadas por coma; vacío = Sí / No / Abstención)</label>
+                                <input class="form-control form-control-sm" @bind="punto.Opciones" @bind:event="oninput" placeholder="Plancha 1, Plancha 2, Voto en blanco" /></div>
+                        }
+                        <div class="col-md-4">
+                            <div class="form-check"><input class="form-check-input" type="checkbox" @bind="punto.RequiereVotacion" id="asm-rv-@punto.Uid">
+                                <label class="form-check-label small" for="asm-rv-@punto.Uid">Requiere votación</label></div>
+                        </div>
+                        <div class="col-md-4"><label class="form-label small">% Mayoria</label>
+                            <input type="number" class="form-control form-control-sm" @bind="punto.MayoriaPct" min="50" max="100" step="1" /></div>
+                        <div class="col-md-3"><label class="form-label small">Modalidad voto</label>
+                            <select class="form-select form-select-sm" @bind="punto.ModalidadVoto">
+                                @foreach (var mv in Enum.GetValues<ModalidadVoto>()) { <option value="@mv">@mv</option> }
+                            </select></div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            @if (_puntos.Count > 1) { <button class="btn btn-sm btn-outline-danger" @onclick="() => _puntos.Remove(punto)">&times;</button> }
+                        </div>
+                    </div>
+                </div></div>
+            }
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-dark" @onclick="AgregarPunto">+ Agregar punto</button>
+                @if (_tipo == TipoSesion.AsambleaOrdinaria)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="UsarSugerido">Usar orden del día sugerido (Ley 675)</button>
+                }
+            </div>
+        </WizardStep>
+
+        <WizardStep Titulo="Revisar"
+                    Descripcion="Revisa antes de crear el borrador. Despues podras adjuntar convocatoria, enviar invitaciones y administrar el quorum.">
+            <div class="row g-3">
+                <div class="col-md-6"><div class="card border-0 bg-light"><div class="card-body py-2 small"><div class="text-muted">Tipo</div><strong>@TipoTitulo(_tipo)</strong></div></div></div>
+                <div class="col-md-6"><div class="card border-0 bg-light"><div class="card-body py-2 small"><div class="text-muted">Modalidad</div><strong>@_modalidad</strong></div></div></div>
+                <div class="col-md-12"><div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted">Título</div><strong>@_titulo</strong>
+                    <div class="text-muted mt-2">Fecha</div><strong>@_fecha.ToString("yyyy-MM-dd HH:mm")</strong>
+                    @if (!string.IsNullOrWhiteSpace(_lugar)) { <div class="text-muted mt-2">Lugar</div><strong>@_lugar</strong> }
+                    @if (_modalidad != ModalidadSesion.Presencial && _salaPropia) { <div class="text-muted mt-2">Videollamada</div><strong>Sala virtual de PROPIA</strong> }
+                    else if (_modalidad != ModalidadSesion.Presencial && !string.IsNullOrWhiteSpace(_enlace)) { <div class="text-muted mt-2">Enlace</div><strong>@_enlace</strong> }
+                </div></div></div>
+                <div class="col-md-12"><div class="card border-0 bg-light"><div class="card-body py-2 small">
+                    <div class="text-muted mb-1">Orden del dia (@_puntos.Count puntos)</div>
+                    <ol class="mb-0 ps-3">
+                        @foreach (var p in _puntos.OrderBy(x => x.Numero))
+                        {
+                            <li><strong>@p.Titulo</strong>@if (p.RequiereVotacion && p.ListaOpciones().Count > 0) { <span class="badge bg-warning text-dark ms-2">Elección: @string.Join(" / ", p.ListaOpciones())</span> } else if (p.RequiereVotacion) { <span class="badge bg-warning text-dark ms-2">Vota @p.TipoMayoria @p.MayoriaPct.ToString("0.##")%</span> }</li>
+                        }
+                    </ol>
+                </div></div></div>
+            </div>
+        </WizardStep>
+    </ModuloWizard>
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+
+    private bool _busy;
+    private string? _msg; private string _msgClass = "alert-info";
+    private int _plazoCitacion;
+
+    private TipoSesion _tipo = TipoSesion.AsambleaOrdinaria;
+    private ModalidadSesion _modalidad = ModalidadSesion.Virtual;
+    private string? _titulo;
+    private DateTime _fecha = DateTime.Today.AddDays(7).AddHours(19);
+    private string? _lugar;
+    private string? _enlace;
+    private bool _salaPropia = true;
+
+    private List<PuntoForm> _puntos = new()
+    {
+        new PuntoForm { Numero = 1, Titulo = "Verificacion de quorum", RequiereVotacion = false },
+        new PuntoForm { Numero = 2, Titulo = "Aprobacion del presupuesto anual", RequiereVotacion = true }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _plazoCitacion = (await Auth().GetFromJsonAsync<AsambleaConfigDto>("/api/asambleas/config"))?.PlazoCitacionDias ?? 0; }
+        catch { _plazoCitacion = 0; }
+        // Fecha sugerida: respeta el plazo de citacion (+2 dias de margen) a las 7:00 p. m.
+        _fecha = DateTime.Today.AddDays(_plazoCitacion + 2).AddHours(19);
+    }
+
+    // Dias completos entre ahora y la fecha (como A.diasHasta de la replica).
+    private int DiasHasta(DateTime f) => (int)Math.Floor((f - DateTime.Now).TotalDays);
+    private bool IdentificacionValida() =>
+        !string.IsNullOrWhiteSpace(_titulo)
+        && _fecha > DateTime.Now.AddMinutes(-1)
+        && (_tipo != TipoSesion.AsambleaOrdinaria || DiasHasta(_fecha) >= _plazoCitacion);
+
+    private void AgregarPunto() => _puntos.Add(new PuntoForm { Numero = _puntos.Count + 1, Titulo = "", RequiereVotacion = true, MayoriaPct = 50m });
+
+    // Orden del dia tipico de la asamblea ordinaria (simulacion E2E de la replica), con instalacion y dignatarios.
+    private void UsarSugerido()
+    {
+        var anio = _fecha.Year;
+        (string Titulo, bool Vota, string Opciones)[] tipicos =
+        {
+            ("Verificacion del quorum", false, ""),
+            ("Eleccion de presidente y secretario de la asamblea", false, ""),
+            ("Lectura y aprobacion del orden del dia", true, ""),
+            ("Informe de gestion del administrador y del consejo", false, ""),
+            ($"Dictamen del revisor fiscal y aprobacion de estados financieros {anio - 1}", true, ""),
+            ($"Aprobacion del presupuesto {anio} y cuotas de administracion", true, ""),
+            ("Eleccion del consejo de administracion y del revisor fiscal", true, "Plancha 1, Plancha 2, Voto en blanco"),
+            ("Proposiciones y varios", false, ""),
+        };
+        _puntos = tipicos.Select((x, i) => new PuntoForm { Numero = i + 1, Titulo = x.Titulo, RequiereVotacion = x.Vota, Opciones = x.Opciones }).ToList();
+    }
+
+    private static void SyncMayoriaPct(PuntoForm p)
+    {
+        if (p.TipoMayoria == TipoMayoria.Calificada && p.MayoriaPct < 70m) p.MayoriaPct = 70m;
+    }
+
+    private async Task CrearAsync()
+    {
+        if (_busy) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var fecha = new DateTimeOffset(_fecha, TimeZoneInfo.Local.GetUtcOffset(_fecha)).ToUniversalTime();
+            var req = new CrearSesionRequest(
+                _tipo, _modalidad, _titulo!.Trim(), fecha,
+                string.IsNullOrWhiteSpace(_lugar) ? null : _lugar.Trim(),
+                _modalidad == ModalidadSesion.Presencial || _salaPropia || string.IsNullOrWhiteSpace(_enlace) ? null : _enlace.Trim(),
+                _puntos.OrderBy(p => p.Numero).Select(p => new CrearPuntoRequest(
+                    p.Numero, p.Titulo.Trim(), p.Descripcion, p.RequiereVotacion, p.TipoMayoria, p.MayoriaPct, p.ModalidadVoto, null,
+                    p.RequiereVotacion ? p.ListaOpciones() : null)).ToList(),
+                SalaPropia: _modalidad != ModalidadSesion.Presencial && _salaPropia);
+            var resp = await Auth().PostAsJsonAsync("/api/asambleas", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var txt = await resp.Content.ReadAsStringAsync();
+                try { _msg = System.Text.Json.JsonDocument.Parse(txt).RootElement.GetProperty("error").GetString(); }
+                catch { _msg = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para crear sesiones." : txt; }
+                _msgClass = "alert-danger";
+                return;
+            }
+            var dto = await resp.Content.ReadFromJsonAsync<SesionDetalleDto>();
+            Close(dto?.Id);
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private Task CancelarAsync() { Close(null); return Task.CompletedTask; }
+
+    private static string TipoTitulo(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Asamblea Ordinaria (Art. 39 Ley 675)",
+        TipoSesion.AsambleaExtraordinaria => "Asamblea Extraordinaria",
+        TipoSesion.Consejo => "Sesion del Consejo de Administracion",
+        TipoSesion.Comite => "Sesion del Comite de Convivencia",
+        _ => t.ToString()
+    };
+    private static string TipoAyuda(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Convocada por el administrador en los 3 primeros meses del ano (Art. 39 Ley 675).",
+        TipoSesion.AsambleaExtraordinaria => "Convocada por administrador, consejo o un grupo de propietarios que represente >= 20%.",
+        TipoSesion.Consejo => "Organo permanente; convocatoria minima por estatutos.",
+        TipoSesion.Comite => "Comite de convivencia - conciliacion previa a sanciones.",
+        _ => string.Empty
+    };
+    private static string ModalidadAyuda(ModalidadSesion m) => m switch
+    {
+        ModalidadSesion.Presencial => "Asistencia fisica en lugar definido.",
+        ModalidadSesion.Virtual => "100% en linea (Decreto 1074 art. 2.2.4.4.2.1).",
+        ModalidadSesion.Mixta => "Combina asistencia presencial y remota.",
+        _ => string.Empty
+    };
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt!);
+        return http;
+    }
+
+    private sealed class PuntoForm
+    {
+        public string Uid { get; } = Guid.NewGuid().ToString("N")[..8];
+        public int Numero { get; set; }
+        public string Titulo { get; set; } = "";
+        public string? Descripcion { get; set; }
+        public bool RequiereVotacion { get; set; } = true;
+        public TipoMayoria TipoMayoria { get; set; } = TipoMayoria.Simple;
+        public decimal MayoriaPct { get; set; } = 50m;
+        public ModalidadVoto ModalidadVoto { get; set; } = ModalidadVoto.Publico;
+        /// <summary>Opciones propias (planchas o candidatos) separadas por coma; vacio = Si / No / Abstencion.</summary>
+        public string Opciones { get; set; } = "";
+        public List<string> ListaOpciones() => Opciones.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+}

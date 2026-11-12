@@ -16,7 +16,7 @@
 
     @* Capa de sesion: hidrata sessionStorage desde localStorage para que el JWT sobreviva al cierre
        del navegador / la pestaña. Debe correr ANTES del auth-guard. *@
-    <script src="js/propia-auth.js?v=3"></script>
+    <script src="js/propia-auth.js?v=4"></script>
 
     @* Marca de plataforma (white-label): aplica el logo/icono configurado en el Super Admin
        a login + sidebar + favicon. Si no hay marca configurada, deja el asset PropIA por defecto. *@
@@ -47,7 +47,10 @@
                 // Diseno seguro por defecto: si me olvido de marcar una ruta, queda protegida.
                 var path = (window.location.pathname || '/').toLowerCase();
                 var publicExact = ['/', '/login', '/registro', '/error', '/signin-google', '/admin/login', '/dev/login'];
-                var publicPrefix = ['/onboarding/', '/invitacion/', '/c/', '/restaurar', '/olvidaste', '/admin/login/'];
+                // /publico/ = voto self-service de Asambleas; /pqr/ y /pqr-seguimiento/ = radicar y seguir PQRSD
+                // sin cuenta. Sus APIs son anonimas y validan token/tenant. Misma lista en propia-auth.js.
+                var publicPrefix = ['/onboarding/', '/invitacion/', '/c/', '/restaurar', '/olvidaste', '/admin/login/',
+                    '/publico/', '/pqr/', '/pqr-seguimiento/'];
                 var isPublic = publicExact.indexOf(path) !== -1
                     || publicPrefix.some(function (p) { return path.indexOf(p) === 0; });
 
@@ -120,27 +123,31 @@
     <link rel="stylesheet" href="assets/css/styles.css?v=2" />
     @* Design tokens del prototipo PROPIA: paleta + tipografia + radios + sombras.
        Se carga DESPUES de NexLink para poder overridear con variables CSS. *@
-    <link rel="stylesheet" href="css/propia-tokens.css?v=10" />
+    <link rel="stylesheet" href="css/propia-tokens.css?v=12" />
     @* CSS por modulo extraido de los <style> inline (auditoria R-02: fuera del render tree). *@
     <link rel="stylesheet" href="css/modules/tabla-grupos.css?v=3" />
     <link rel="stylesheet" href="css/modules/tareas.css?v=58" />
     <link rel="stylesheet" href="css/modules/vistas.css?v=6" />
-    <link rel="stylesheet" href="css/modules/pqrs.css?v=25" />
-    <link rel="stylesheet" href="css/modules/servicios.css?v=30" />
+    <link rel="stylesheet" href="css/modules/pqrs.css?v=26" />
+    <link rel="stylesheet" href="css/modules/servicios.css?v=32" />
+    <link rel="stylesheet" href="css/modules/ia-ingesta.css?v=1" />
     <link rel="stylesheet" href="css/modules/directorio.css?v=13" />
     <link rel="stylesheet" href="css/modules/mi-copropiedad.css?v=6" />
-    <link rel="stylesheet" href="css/modules/usuarios.css?v=29" />
+    <link rel="stylesheet" href="css/modules/usuarios.css?v=30" />
     <link rel="stylesheet" href="css/modules/roles.css?v=16" />
     <link rel="stylesheet" href="css/modules/porteria.css?v=4" />
     <link rel="stylesheet" href="css/modules/unidades-modal.css?v=5" />
     <link rel="stylesheet" href="css/modules/modales.css?v=2" />
     <link rel="stylesheet" href="css/modules/tabla-base.css?v=10" />
+    <link rel="stylesheet" href="css/modules/bandeja-canonica.css?v=3" />
     <link rel="stylesheet" href="css/modules/tabla-unidades.css?v=11" />
     <link rel="stylesheet" href="css/modules/config-campos.css?v=10" />
     <link rel="stylesheet" href="css/modules/config-hub.css?v=1" />
     <link rel="stylesheet" href="css/modules/pqrsd-modal.css?v=16" />
-    <link rel="stylesheet" href="css/modules/mantenimiento.css?v=7" />
-    <link rel="stylesheet" href="css/modules/folders.css?v=4" />
+    <link rel="stylesheet" href="css/modules/mantenimiento.css?v=9" />
+    <link rel="stylesheet" href="css/modules/folders.css?v=7" />
+    <link rel="stylesheet" href="css/modules/plantillas.css?v=1" />
+    <link rel="stylesheet" href="css/modules/asambleas.css?v=3" />
     @* V-06: el proyecto NO usa CSS aislado (0 archivos .razor.css), asi que el bundle
        Propia.Web.styles.css no se genera y daba 404 en cada carga. Se retira el link.
        Si se adopta CSS aislado (.razor.css) en el futuro, volver a agregar el <link>. *@
@@ -175,10 +182,12 @@
     <script src="assets/libs/node-waves/waves.min.js"></script>
 
     @* Logica de UI PROPIA (theme switch + sidebar toggle + rail tabs + tooltips del rail) *@
-    <script src="js/propia-ui.js?v=26"></script>
+    <script src="js/propia-ui.js?v=30"></script>
+    <script src="js/propia-sala.js?v=2"></script>
 
     @* Miniaturas de PDF (carga multiple de contratos/polizas); pdf.js se carga perezoso desde asset local. *@
-    <script src="js/propia-pdfthumb.js?v=4"></script>
+    <script src="js/propia-pdfthumb.js?v=6"></script>
+    <script src="js/propia-iai.js?v=2"></script>
 
     @* SignalR para Conversaciones realtime. CDN para evitar agregar NuGet. *@
     <script src="https://unpkg.com/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
@@ -193,26 +202,80 @@
     <script src="_framework/blazor.web.js" autostart="false"></script>
     <script>
         (function () {
+            // ---- Modo diagnostico (temporal): activar con ?diag=1 en la URL una vez; persiste en
+            // localStorage (apagar con ?diag=0). Solo imprime en consola; no cambia el comportamiento.
+            // Sirve para cazar el caso "UI pensando pero server 200": muestra el transporte del
+            // circuito (WebSocket vs LongPolling), su traza, y CUALQUIER error JS no capturado que
+            // pueda abortar el pintado de la respuesta. ----
+            var diag = false;
+            try {
+                var qs = new URLSearchParams(window.location.search);
+                if (qs.get('diag') === '1') { localStorage.setItem('propia_diag', '1'); }
+                else if (qs.get('diag') === '0') { localStorage.removeItem('propia_diag'); }
+                diag = localStorage.getItem('propia_diag') === '1';
+            } catch (e) { }
+
+            var circuitOpts = { reconnectionOptions: { maxRetries: 30, retryIntervalMilliseconds: 3000 } };
+
+            if (diag) {
+                console.log('%c[PROPIA-DIAG] modo diagnostico ACTIVO', 'color:blueviolet;font-weight:bold');
+                // Errores JS no capturados: un throw aqui puede dejar a Blazor sin aplicar el diff del DOM.
+                window.addEventListener('error', function (ev) {
+                    console.error('[PROPIA-DIAG] window.error:', ev.message, 'en', ev.filename + ':' + ev.lineno, ev.error);
+                });
+                window.addEventListener('unhandledrejection', function (ev) {
+                    console.error('[PROPIA-DIAG] promesa rechazada:', ev.reason);
+                });
+                // Traza del SignalR del circuito: imprime el transporte elegido y cada corte/reintento.
+                if (window.signalR) {
+                    circuitOpts.configureSignalR = function (builder) {
+                        try { builder.configureLogging(signalR.LogLevel.Trace); } catch (e) { }
+                    };
+                }
+            }
+
             // Reconexion tolerante: ~30 intentos cada 3s (~90s) antes de rendirse. Con el circuito
             // retenido en el servidor, al volver de una pestana quieta se reengancha sin recargar.
-            Blazor.start({
-                circuit: {
-                    reconnectionOptions: { maxRetries: 30, retryIntervalMilliseconds: 3000 }
-                }
-            });
-            // Si el overlay llega a failed/rejected (ya no reintenta), recarga sola tras 4s para no
-            // dejar al usuario con el boton "Recargar pagina" (que igual se conserva como respaldo).
+            Blazor.start({ circuit: circuitOpts });
+            // Recarga AUTOMATICA (el boton "Recargar pagina" queda solo de respaldo). Casos:
+            //  - failed/rejected (el servidor se reinicio o hubo deploy: el circuito ya no existe) -> recargar
+            //    apenas el servidor responda;
+            //  - reconectando mas de 15s -> el circuito no vuelve solo; recargar cuando haya servidor.
+            // Mientras el overlay esta visible se sondea /health cada 2s (un deploy tarda: un solo intento
+            // fallido dejaba al usuario con el boton). Recargar SOLO si el servidor responde: con el servidor
+            // caido un reload deja la pagina de error del navegador, que ya no se recupera sola.
             var m = document.getElementById('components-reconnect-modal');
             if (m && window.MutationObserver) {
+                var caido = function () { return m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected'); };
+                var visibleOverlay = function () { return caido() || m.classList.contains('components-reconnect-show'); };
+                var desde = 0;   // cuando aparecio el overlay (0 = oculto)
+                var recargando = false, sondeo = null;
+                var recargarSiHayServidor = function () {
+                    if (recargando || !visibleOverlay()) return;
+                    recargando = true;
+                    // /health (GET liviano); la pagina Blazor responde 404 a HEAD.
+                    fetch('/health', { cache: 'no-store' })
+                        .then(function (r) { if (r.ok && visibleOverlay()) location.reload(); else recargando = false; })
+                        .catch(function () { recargando = false; });
+                };
+                var revisar = function () {
+                    if (!visibleOverlay()) { if (sondeo) { clearInterval(sondeo); sondeo = null; } return; }
+                    if (caido() || (desde && Date.now() - desde > 15000)) recargarSiHayServidor();
+                };
                 new MutationObserver(function () {
-                    if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
-                        setTimeout(function () {
-                            if (m.classList.contains('components-reconnect-failed') || m.classList.contains('components-reconnect-rejected')) {
-                                location.reload();
-                            }
-                        }, 4000);
-                    }
+                    desde = visibleOverlay() ? (desde || Date.now()) : 0;
+                    if (visibleOverlay() && !sondeo) sondeo = setInterval(revisar, 2000);
+                    if (caido()) revisar();
                 }).observe(m, { attributes: true, attributeFilter: ['class'] });
+
+                // Pestana en segundo plano / equipo suspendido: el navegador congela los timers. Al volver a la
+                // pestana con el overlay abierto: si ya se rindio, recargar YA (si hay servidor); si no,
+                // reintentar la reconexion y dejar que el sondeo decida.
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState !== 'visible' || !visibleOverlay()) return;
+                    if (caido()) { recargarSiHayServidor(); return; }
+                    try { if (window.Blazor && Blazor.reconnect) Blazor.reconnect(); } catch (e) { }
+                });
             }
         })();
     </script>

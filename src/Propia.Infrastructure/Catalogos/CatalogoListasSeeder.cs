@@ -22,6 +22,28 @@ public static class CatalogoListasSeeder
     /// <summary>Una opcion semilla de una lista (clave estable + label de fabrica + orden + metadata opcional).</summary>
     public sealed record SemillaOpcion(string Clave, string Label, int Orden, string? Meta = null, string? Color = null);
 
+    /// <summary>
+    /// Etiqueta legible de los valores de enum cuyo nombre no sirve como texto (palabras pegadas o sin tilde).
+    /// Las listas sembradas desde el enum usan <see cref="Etiqueta"/>; la clave sigue siendo "e:&lt;Enum&gt;".
+    /// La migracion CorregirEtiquetasListasEnum corrige las copias ya sembradas con el nombre crudo.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> EtiquetasEnum = new Dictionary<string, string>
+    {
+        ["EnEjecucion"] = "En ejecución",
+        ["EnRevision"] = "En revisión",
+        ["Unica"] = "Única",
+        ["Climatizacion"] = "Climatización",
+        ["Recreacion"] = "Recreación",
+        ["Circulacion"] = "Circulación",
+        ["EnMantenimiento"] = "En mantenimiento",
+        ["NoBinario"] = "No binario",
+        ["NoIdentificado"] = "No identificado",
+    };
+
+    /// <summary>Texto de un valor de enum para la semilla: el legible si lo hay, si no su nombre.</summary>
+    public static string Etiqueta<TEnum>(TEnum valor) where TEnum : struct, Enum
+        => EtiquetasEnum.TryGetValue(valor.ToString(), out var l) ? l : valor.ToString();
+
     /// <summary>Registro de las listas del catalogo con sus semillas de fabrica (fuente de la paridad).</summary>
     public static IReadOnlyList<(string Lista, IReadOnlyList<SemillaOpcion> Opciones)> Registro()
     {
@@ -102,7 +124,7 @@ public static class CatalogoListasSeeder
         // Equipos (enum): categoria/estado/tipo. Labels = los que muestra el panel (estado abrevia).
         reg.Add(("equipo.categoria",
             Enum.GetValues<CategoriaEquipo>()
-                .Select((c, i) => new SemillaOpcion("e:" + c, c.ToString(), i))
+                .Select((c, i) => new SemillaOpcion("e:" + c, Etiqueta(c), i))
                 .ToList()));
         reg.Add(("equipo.estado", new List<SemillaOpcion>
         {
@@ -119,17 +141,17 @@ public static class CatalogoListasSeeder
         // Zonas (enum): categoria/estado. Labels = enum (ToString, como el panel).
         reg.Add(("zona.categoria",
             Enum.GetValues<CategoriaZonaComun>()
-                .Select((c, i) => new SemillaOpcion("e:" + c, c.ToString(), i))
+                .Select((c, i) => new SemillaOpcion("e:" + c, Etiqueta(c), i))
                 .ToList()));
         reg.Add(("zona.estado",
             Enum.GetValues<EstadoZonaComunMantenimiento>()
-                .Select((s, i) => new SemillaOpcion("e:" + s, s.ToString(), i))
+                .Select((s, i) => new SemillaOpcion("e:" + s, Etiqueta(s), i))
                 .ToList()));
 
         // Personas/Directorio: sexo (enum GeneroPersona). tipo de ID y tipo residente se enganchan aparte.
         reg.Add(("persona.sexo",
             Enum.GetValues<GeneroPersona>()
-                .Select((g, i) => new SemillaOpcion("e:" + g, g.ToString(), i))
+                .Select((g, i) => new SemillaOpcion("e:" + g, Etiqueta(g), i))
                 .ToList()));
 
         // Directorio (2.4): Etiqueta. Lista "libre": la clave ES la etiqueta (label). Semilla = las 8
@@ -218,7 +240,7 @@ public static class CatalogoListasSeeder
         // renombra el label; el valor estable es "e:<Enum>". Meta guarda la semantica (informativa). =====
         reg.Add(("mantenimiento.periodicidad",
             Enum.GetValues<Propia.Domain.Enums.PeriodicidadProgramacion>()
-                .Select((p, i) => new SemillaOpcion("e:" + p, p.ToString(), i,
+                .Select((p, i) => new SemillaOpcion("e:" + p, Etiqueta(p), i,
                     System.Text.Json.JsonSerializer.Serialize(new { semantica = p.ToString() })))
                 .ToList()));
         reg.Add(("mantenimiento.prioridad",
@@ -229,7 +251,7 @@ public static class CatalogoListasSeeder
                 .Select((t, i) => new SemillaOpcion("e:" + t, t.ToString(), i)).ToList()));
         reg.Add(("mantenimiento.intervestado",
             Enum.GetValues<Propia.Domain.Enums.EstadoIntervencion>()
-                .Select((s, i) => new SemillaOpcion("e:" + s, s.ToString(), i,
+                .Select((s, i) => new SemillaOpcion("e:" + s, Etiqueta(s), i,
                     System.Text.Json.JsonSerializer.Serialize(new
                     {
                         semantica = s.ToString(),

@@ -60,11 +60,16 @@ builder.Host.UseSerilog((ctx, lc) =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o =>
     {
-        if (builder.Environment.IsDevelopment()) o.DetailedErrors = true;
+        // DetailedErrors: en dev siempre; en prod se puede ENCENDER temporalmente con la env var
+        // Blazor__DetailedErrors=true para que una excepcion de render/handler del servidor llegue al
+        // navegador (consola) en vez de tragarse en silencio. Apagar la env var para revertir.
+        if (builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Blazor:DetailedErrors"))
+            o.DetailedErrors = true;
         // Retener el circuito desconectado varios minutos: si el usuario deja la pestana quieta
         // o hay un microcorte de red, al volver se reengancha al MISMO circuito (conserva estado)
         // en vez de fallar y mostrar "Recargar pagina".
-        o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+        // 15 min (antes 5): una pestana dejada quieta un rato vuelve al MISMO circuito sin recargar.
+        o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(15);
         o.DisconnectedCircuitMaxRetained = 200;
     })
     .AddHubOptions(o =>
@@ -80,6 +85,11 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddScoped<Propia.Web.Components.Shared.Modals.IModalService,
                           Propia.Web.Components.Shared.Modals.ModalService>();
+
+// Diagnostico (temporal) del circuito Blazor: loguea open/up/down/closed para cazar el caso
+// "UI pensando pero server 200". Barato; se puede dejar o subir su categoria de log a Warning.
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,
+                          Propia.Web.Diagnostics.DiagnosticCircuitHandler>();
 
 // HttpClient hacia la propia API. Ahora vive en el MISMO proceso; en dev apunta a
 // la propia app (loopback), en prod a PropiaApi:BaseUrl (su propio origen interno).
@@ -179,7 +189,10 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
 // Autenticacion JWT (para la API). No interfiere con Blazor: las peticiones de pagina
 // no llevan Bearer, quedan anonimas y las paginas validan sesion client-side (SessionHelper).
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
+    .AddJwtBearer()
+    // Token de API de la Consola A&D (Bearer pak_...): solo lo usa la politica SuperAdmin.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, Propia.Api.Authorization.SuperAdminApiTokenHandler>(
+        Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme, null);
 
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
     .Configure<IOptions<JwtSettings>>((bearer, jwtOpts) =>
@@ -205,6 +218,8 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         {
             OnMessageReceived = ctx =>
             {
+                // Un token de API (pak_...) no es un JWT: lo resuelve el esquema SuperAdminApiToken.
+                if (Propia.Api.Authorization.SuperAdminApiTokenHandler.TraeToken(ctx.Request)) { ctx.NoResult(); return Task.CompletedTask; }
                 var accessToken = ctx.Request.Query["access_token"];
                 var path = ctx.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
@@ -216,8 +231,10 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 
 builder.Services.AddAuthorization(options =>
 {
+    // Acepta el JWT de la consola o un token de API de Super Admin (Bearer pak_...).
     options.AddPolicy(AdminController.SuperAdminPolicy, policy =>
-        policy.RequireAuthenticatedUser()
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme)
+              .RequireAuthenticatedUser()
               .RequireClaim("is_super_admin", "true"));
 });
 
@@ -277,12 +294,15 @@ await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configurati
 try { await Propia.Infrastructure.Catalogos.CatalogoListasSeeder.EnsureAsync(app.Services); }
 catch (Exception ex) { app.Logger.LogWarning(ex, "CatalogoListasSeeder fallo (no bloquea el arranque)."); }
 
+// Plantillas de los agentes del sistema (Agente Documental, Auxiliar Administrativo). Corre SIEMPRE:
+// solo crea la plantilla si falta; no pisa lo que el Super Admin edito.
+try { await AgenteDocumentalSeeder.EnsureAsync(app.Services); await AuxiliarAdministrativoSeeder.EnsureAsync(app.Services); await AgenteActaAsambleaSeeder.EnsureAsync(app.Services); }
+catch (Exception ex) { app.Logger.LogWarning(ex, "Semillas de agentes del sistema fallaron (no bloquea el arranque)."); }
+
 if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
     await DemoSeeder.EnsureDemoDataAsync(app.Services);
-    await AgenteDocumentalSeeder.EnsureAsync(app.Services);
-    await AuxiliarAdministrativoSeeder.EnsureAsync(app.Services);
     app.UseWebAssemblyDebugging();
     app.MapOpenApi();
     app.UseHttpsRedirection();  // dev usa cert self-signed

@@ -14,7 +14,8 @@
 <p class="text-muted mb-4">
     Agentes pre-configurados que se despliegan automaticamente a cada copropiedad nueva al
     activar el wizard 2.1. El cliente llega con su asistente listo para usar. Marca
-    "Incluir en onboarding" para las que deben copiarse a tenants nuevos.
+    "Incluir en onboarding" para las que deben copiarse a tenants nuevos. Cuando mejores una
+    plantilla (sube de versión), usa "Actualizar copropiedades" para llevarla a las existentes.
 </p>
 
 @if (_jwt is null || _cargando)
@@ -46,6 +47,7 @@ else
                         <th>Nombre</th>
                         <th>Proveedor / Modelo</th>
                         <th>Tools</th>
+                        <th>Versión</th>
                         <th>Estado</th>
                         <th>Onboarding</th>
                         <th></th>
@@ -61,9 +63,14 @@ else
                                 {
                                     <span class="badge ms-1" style="background:var(--propia-brand)" title="Agente que la plataforma ejecuta directamente (@t.PlatformKey). Nunca se despliega a tenants.">Plataforma</span>
                                 }
+                                @if (t.Clave is not null)
+                                {
+                                    <span class="badge bg-info text-dark ms-1" title="Agente que usa el sistema (@t.Clave): si una copropiedad no lo tiene, se le crea al usarlo.">Sistema</span>
+                                }
                             </td>
                             <td>@t.Provider <small class="text-muted">@(t.Model ?? "default")</small></td>
                             <td>@t.Tools.Count</td>
+                            <td>v@(t.Version)</td>
                             <td>
                                 @if (t.IsActive) { <span class="badge bg-success">Activa</span> }
                                 else { <span class="badge bg-secondary">Inactiva</span> }
@@ -77,6 +84,7 @@ else
                                 <button class="btn btn-sm btn-outline-dark" @onclick="() => Editar(t)">Editar</button>
                                 @if (t.PlatformKey is null)
                                 {
+                                    <button class="btn btn-sm btn-outline-primary ms-1" @onclick="() => AbrirPropagacion(t)">Actualizar copropiedades</button>
                                     <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => Borrar(t)">Borrar</button>
                                 }
                             </td>
@@ -86,6 +94,75 @@ else
             </table>
         </div>
     }
+}
+
+@if (_propTpl is not null)
+{
+    <div class="modal d-block" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Actualizar copropiedades &middot; @_propTpl.Name v@(_propTpl.Version)</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarPropagacion" disabled="@_propBusy"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Lleva la versión actual de la plantilla (prompt, tools, proveedor y modelo de IA) a los agentes de las copropiedades
+                        vigentes. Las que editaron su prompt se respetan, salvo que marques "forzar". Cada cambio queda
+                        en el historial del agente: la copropiedad puede volver a su versión anterior.
+                    </p>
+                    @if (_prop is null)
+                    {
+                        <div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div> Revisando copropiedades...</div>
+                    }
+                    else
+                    {
+                        <div class="row g-2 mb-3 text-center">
+                            <div class="col"><div class="border rounded p-2"><div class="h4 mb-0">@_prop.AlDia</div><small class="text-muted">Al día</small></div></div>
+                            <div class="col"><div class="border rounded p-2"><div class="h4 mb-0">@_prop.Desactualizadas</div><small class="text-muted">Se actualizan</small></div></div>
+                            <div class="col"><div class="border rounded p-2"><div class="h4 mb-0">@_prop.Editadas</div><small class="text-muted">Editadas por la copropiedad</small></div></div>
+                            <div class="col"><div class="border rounded p-2"><div class="h4 mb-0">@_prop.Faltantes</div><small class="text-muted">No lo tienen</small></div></div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="propCrear" @bind="_propCrear" disabled="@_propBusy" />
+                            <label class="form-check-label" for="propCrear">Crear el agente en las @_prop.Faltantes copropiedades que no lo tienen</label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="propForzar" @bind="_propForzar" disabled="@_propBusy" />
+                            <label class="form-check-label" for="propForzar">Forzar también en las @_prop.Editadas editadas (su versión queda en el historial)</label>
+                        </div>
+                        <div style="max-height:260px;overflow:auto;" class="border rounded">
+                            <table class="table table-sm mb-0">
+                                <thead><tr><th>Copropiedad</th><th>Agente</th><th>Versión</th><th>Estado</th></tr></thead>
+                                <tbody>
+                                    @foreach (var f in _prop.Filas.OrderBy(f => f.Estado == EstadoPropagacion.AlDia).ThenBy(f => f.Copropiedad))
+                                    {
+                                        <tr>
+                                            <td>@f.Copropiedad</td>
+                                            <td>@(f.Agente ?? "-")</td>
+                                            <td>@(f.VersionAplicada is { } v ? "v" + v : "-")</td>
+                                            <td>@EstadoTexto(f.Estado)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    @if (_propResultado is { } r)
+                    {
+                        <div class="alert @(r.Errores > 0 ? "alert-warning" : "alert-success") mt-3 py-2 small">@ResultadoTexto(r)</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_propError)) { <div class="alert alert-danger mt-3 py-2 small">@_propError</div> }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarPropagacion" disabled="@_propBusy">Cerrar</button>
+                    <button type="button" class="btn btn-dark" @onclick="PropagarAsync" disabled="@(_propBusy || _prop is null || NadaQueHacer)">
+                        @(_propBusy ? "Actualizando..." : "Actualizar ahora")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @if (_mostrandoImportar)
@@ -331,6 +408,56 @@ else
     private Form? _form;
     private HashSet<string> _toolsSeleccionadas = new();
 
+    // ----- "Actualizar copropiedades" (propagar la version actual de una plantilla) -----
+    private AiAgentTemplateDto? _propTpl;
+    private PropagacionPreviewDto? _prop;
+    private PropagacionResultadoDto? _propResultado;
+    private bool _propBusy, _propCrear = true, _propForzar;
+    private string? _propError;
+    private bool NadaQueHacer => _prop is { } p && p.Desactualizadas == 0 && (!_propCrear || p.Faltantes == 0) && (!_propForzar || p.Editadas == 0);
+    private static string EstadoTexto(EstadoPropagacion e) => e switch
+    {
+        EstadoPropagacion.AlDia => "Al día",
+        EstadoPropagacion.Desactualizado => "Se actualiza",
+        EstadoPropagacion.Editado => "Editado por la copropiedad",
+        _ => "No lo tiene"
+    };
+    private static string ResultadoTexto(PropagacionResultadoDto r)
+        => "Listo: " + r.Actualizadas + " actualizadas, " + r.Creadas + " creadas, " + r.Respetadas + " respetadas, "
+           + r.AlDia + " ya estaban al día" + (r.Errores > 0 ? ", " + r.Errores + " con error (ver log)" : "") + ".";
+    private async Task AbrirPropagacion(AiAgentTemplateDto t)
+    {
+        _propTpl = t; _prop = null; _propResultado = null; _propError = null; _propCrear = true; _propForzar = false;
+        StateHasChanged();
+        await CargarPropagacionAsync();
+    }
+    private async Task CargarPropagacionAsync()
+    {
+        if (_propTpl is null) return;
+        try
+        {
+            var resp = await Auth().GetAsync("/admin/ai-agent-templates/" + _propTpl.Id + "/propagacion");
+            if (resp.IsSuccessStatusCode) _prop = await resp.Content.ReadFromJsonAsync<PropagacionPreviewDto>();
+            else _propError = "No se pudo revisar: " + await resp.Content.ReadAsStringAsync();
+        }
+        catch (Exception ex) { _propError = ex.Message; }
+        StateHasChanged();
+    }
+    private async Task PropagarAsync()
+    {
+        if (_propTpl is null) return;
+        _propBusy = true; _propError = null; _propResultado = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/admin/ai-agent-templates/" + _propTpl.Id + "/propagar", new PropagarPlantillaRequest(_propForzar, _propCrear));
+            if (resp.IsSuccessStatusCode) { _propResultado = await resp.Content.ReadFromJsonAsync<PropagacionResultadoDto>(); await CargarPropagacionAsync(); }
+            else _propError = "No se pudo actualizar: " + await resp.Content.ReadAsStringAsync();
+        }
+        catch (Exception ex) { _propError = ex.Message; }
+        finally { _propBusy = false; StateHasChanged(); }
+    }
+    private void CerrarPropagacion() { if (!_propBusy) { _propTpl = null; _prop = null; } }
+
     private bool _mostrandoImportar;
     private List<ImportableAgentDto>? _importSources;
     private Guid? _importandoId;
@@ -378,7 +505,7 @@ else
 
     private async Task ScrollChatAsync()
     {
-        try { await Js.InvokeVoidAsync("eval", "var b=document.getElementById('tplTestBody'); if(b) b.scrollTop=b.scrollHeight;"); } catch { }
+        try { await Js.InvokeVoidAsync("propiaUI.scrollBottom", "#tplTestBody"); } catch { }
     }
 
     private class Form
