@@ -542,6 +542,32 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        // Plantillas de WhatsApp (HSM) de la copropiedad (tenant-scoped, RLS). Importadas de YCloud.
+        // Portado de ECOREX con nombre propio (no confundir con AiAgentTemplate ni con las plantillas de unidades).
+        modelBuilder.Entity<PlantillaWhatsApp>(b =>
+        {
+            b.ToTable("plantillas_whatsapp");
+            b.Property(x => x.Name).IsRequired().HasMaxLength(512);
+            b.Property(x => x.Language).IsRequired().HasMaxLength(12);
+            b.Property(x => x.Categoria).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.Encabezado).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.EncabezadoTexto).HasMaxLength(300);
+            b.Property(x => x.EncabezadoMediaUrl).HasMaxLength(1024);
+            b.Property(x => x.Cuerpo).IsRequired().HasColumnType("text");
+            b.Property(x => x.PieTexto).HasMaxLength(300);
+            b.Property(x => x.VariablesJson).HasColumnType("jsonb");
+            b.Property(x => x.BotonesJson).HasColumnType("jsonb");
+            b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.WabaId).HasMaxLength(100);
+            b.Property(x => x.Estado).HasConversion<string>().HasMaxLength(20);
+            b.Property(x => x.ProviderTemplateId).HasMaxLength(255);
+            b.Property(x => x.MotivoRechazo).HasColumnType("text");
+            b.HasOne(x => x.WhatsAppLine).WithMany().HasForeignKey(x => x.WhatsAppLineId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TenantId, x.Name, x.Language }).IsUnique();
+            b.HasIndex(x => new { x.TenantId, x.Activa });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         // Plantillas globales de agente (Super Admin). SIN tenant_id ni RLS.
         modelBuilder.Entity<AiAgentTemplate>(b =>
         {

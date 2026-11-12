@@ -272,6 +272,13 @@ public interface IYCloudApiClient
     Task<YCloudSendResult> SendLocationAsync(YCloudCredentials credentials, string toPhone, double latitude, double longitude, string? name, string? address, CancellationToken ct = default);
     /// <summary>Reacciona a un mensaje (type=reaction). messageId es el wamid del entrante; emoji vacio quita la reaccion.</summary>
     Task<YCloudSendResult> SendReactionAsync(YCloudCredentials credentials, string toPhone, string messageId, string emoji, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lista las plantillas HSM (templates) de la cuenta YCloud de estas credenciales, para IMPORTARLAS. Resuelve
+    /// la WABA internamente desde los phoneNumbers de la cuenta (PROPIA no la guarda en la linea). Pagina el listado
+    /// completo y devuelve cada plantilla con su contenido (cuerpo, header, pie, variables de ejemplo y botones).
+    /// </summary>
+    Task<YCloudTemplateListResult> ListTemplatesAsync(YCloudCredentials credentials, CancellationToken ct = default);
 }
 
 /// <summary>Cliente HTTP de inferencia para los proveedores de IA (Claude, Gemini, OpenAI, DeepSeek).</summary>

@@ -139,6 +139,85 @@ internal sealed class YCloudApiClient : IYCloudApiClient
         return SendMessageAsync(credentials, payload, ct);
     }
 
+    public async Task<YCloudTemplateListResult> ListTemplatesAsync(YCloudCredentials credentials, CancellationToken ct = default)
+    {
+        // PROPIA no guarda la WABA en la linea: la resolvemos desde los phoneNumbers de la cuenta (como CheckAsync).
+        var (wabaId, wabaErr) = await ResolveWabaAsync(credentials, ct);
+        if (wabaErr is not null)
+            return new YCloudTemplateListResult(false, Array.Empty<YCloudTemplateItem>(), wabaErr);
+        if (string.IsNullOrWhiteSpace(wabaId))
+            return new YCloudTemplateListResult(false, Array.Empty<YCloudTemplateItem>(),
+                "No se detecto la WABA de la cuenta YCloud (revisa que la API key cubra un numero registrado).");
+
+        // Paginacion offset/limit de YCloud (items + length por pagina). Tope defensivo para no ciclar.
+        const int pageSize = 100;
+        const int maxPages = 50;
+        var list = new List<YCloudTemplateItem>();
+        var offset = 0;
+        for (var page = 0; page < maxPages; page++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"{ApiBase}/whatsapp/templates?wabaId={Uri.EscapeDataString(wabaId!)}&limit={pageSize}&offset={offset}");
+            req.Headers.Add("X-API-Key", credentials.ApiKey);
+            int pageCount;
+            try
+            {
+                using var res = await _http.SendAsync(req, ct);
+                var body = await res.Content.ReadAsStringAsync(ct);
+                if (!res.IsSuccessStatusCode)
+                    return new YCloudTemplateListResult(false, list, ExtractError(body) ?? $"HTTP {(int)res.StatusCode}");
+                using var doc = JsonDocument.Parse(body);
+                pageCount = 0;
+                if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                {
+                    pageCount = items.GetArrayLength();
+                    foreach (var it in items.EnumerateArray())
+                    {
+                        var parsed = YCloudTemplateParser.ParseItem(it);
+                        if (parsed is not null) list.Add(parsed);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return new YCloudTemplateListResult(false, list, ex.Message);
+            }
+            if (pageCount < pageSize) break;
+            offset += pageSize;
+        }
+        return new YCloudTemplateListResult(true, list, null);
+    }
+
+    // Resuelve la WABA de la cuenta desde el endpoint de phoneNumbers (casando el numero remitente si se puede).
+    private async Task<(string? WabaId, string? Error)> ResolveWabaAsync(YCloudCredentials credentials, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{ApiBase}/whatsapp/phoneNumbers?limit=50");
+        req.Headers.Add("X-API-Key", credentials.ApiKey);
+        try
+        {
+            using var res = await _http.SendAsync(req, ct);
+            var body = await res.Content.ReadAsStringAsync(ct);
+            if (!res.IsSuccessStatusCode)
+                return (null, ExtractError(body) ?? $"HTTP {(int)res.StatusCode}");
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+                return (null, null);
+            var wantDigits = Digits(credentials.FromNumber);
+            string? waba = StrOf(items[0], "wabaId") ?? StrOf(items[0], "whatsappBusinessAccountId");
+            foreach (var it in items.EnumerateArray())
+            {
+                var p = StrOf(it, "phoneNumber") ?? StrOf(it, "displayPhoneNumber");
+                if (p is not null && Digits(p) == wantDigits)
+                {
+                    waba = StrOf(it, "wabaId") ?? StrOf(it, "whatsappBusinessAccountId") ?? waba;
+                    break;
+                }
+            }
+            return (waba, null);
+        }
+        catch (Exception ex) { return (null, ex.Message); }
+    }
+
     private async Task<YCloudSendResult> SendMessageAsync(YCloudCredentials credentials, object payload, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/whatsapp/messages");

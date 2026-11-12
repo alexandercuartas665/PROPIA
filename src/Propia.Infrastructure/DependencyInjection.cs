@@ -142,6 +142,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentEnrutamientoService, InfraestructuraIa.AgentEnrutamientoService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
+        services.AddScoped<Application.InfraestructuraIa.IPlantillasWhatsAppService, InfraestructuraIa.PlantillasWhatsAppService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
         services.AddMemoryCache();
