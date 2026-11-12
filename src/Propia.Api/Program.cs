@@ -165,7 +165,10 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(policy =>
 // Sin esto: en tests el JwtBearer lee la SigningKey en construccion del host,
 // mientras TokenService la lee perezosamente despues de aplicada la config del test.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
+    .AddJwtBearer()
+    // Token de API de la Consola A&D (Bearer pak_...): solo lo usa la politica SuperAdmin.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, Propia.Api.Authorization.SuperAdminApiTokenHandler>(
+        Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme, null);
 
 var isDevelopmentEnv = builder.Environment.IsDevelopment();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
@@ -197,6 +200,8 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         {
             OnMessageReceived = ctx =>
             {
+                // Un token de API (pak_...) no es un JWT: lo resuelve el esquema SuperAdminApiToken.
+                if (Propia.Api.Authorization.SuperAdminApiTokenHandler.TraeToken(ctx.Request)) { ctx.NoResult(); return Task.CompletedTask; }
                 var accessToken = ctx.Request.Query["access_token"];
                 var path = ctx.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
@@ -211,8 +216,10 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 builder.Services.AddAuthorization(options =>
 {
     // Policy "SuperAdmin": requiere claim is_super_admin=true emitido por SuperAdminAuthService.
+    // Acepta el JWT de la consola o un token de API de Super Admin (Bearer pak_...).
     options.AddPolicy(AdminController.SuperAdminPolicy, policy =>
-        policy.RequireAuthenticatedUser()
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, Propia.Api.Authorization.SuperAdminApiTokenHandler.Scheme)
+              .RequireAuthenticatedUser()
               .RequireClaim("is_super_admin", "true"));
 });
 

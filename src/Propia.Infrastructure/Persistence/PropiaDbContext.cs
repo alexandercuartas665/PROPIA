@@ -44,6 +44,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<Empresa> Empresas => Set<Empresa>();
     public DbSet<SuperAdminUsuario> SuperAdminUsuarios => Set<SuperAdminUsuario>();
     public DbSet<SuperAdminLog> SuperAdminLogs => Set<SuperAdminLog>();
+    public DbSet<SuperAdminApiToken> SuperAdminApiTokens => Set<SuperAdminApiToken>();
     // Catalogo global de listas (editable desde la consola A&D). Tabla GLOBAL, sin tenant/RLS.
     public DbSet<CatalogoOpcion> CatalogoOpciones => Set<CatalogoOpcion>();
     // Ola 4: copia POR TENANT de las listas del sistema (materializada desde el catalogo global).

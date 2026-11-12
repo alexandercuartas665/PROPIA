@@ -16533,6 +16533,78 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("sistema_logs", (string)null);
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.SuperAdminApiToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("ExpiraAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expira_at");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("nombre");
+
+                    b.Property<string>("Prefijo")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("prefijo");
+
+                    b.Property<DateTimeOffset?>("RevocadoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revocado_at");
+
+                    b.Property<Guid>("SuperAdminUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("super_admin_usuario_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UltimoUsoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ultimo_uso_at");
+
+                    b.Property<string>("UltimoUsoIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ultimo_uso_ip");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SuperAdminUsuarioId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("super_admin_api_tokens", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.SuperAdminLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -23650,6 +23722,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Sesion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SuperAdminApiToken", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SuperAdminUsuario", "SuperAdminUsuario")
+                        .WithMany()
+                        .HasForeignKey("SuperAdminUsuarioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SuperAdminUsuario");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Suscripcion", b =>

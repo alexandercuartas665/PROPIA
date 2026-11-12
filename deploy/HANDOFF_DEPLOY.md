@@ -1,5 +1,20 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **API DE SUPER ADMIN CON TOKENS + API DE TODAS LAS SEMILLAS (2026-11-12): 1 MIGRACION (tabla nueva global) + API y Web.**
+> - **MIGRACION `20261112110203_AddSuperAdminApiTokens`** (va DESPUES de `CorregirEtiquetasListasEnum`): tabla global
+>   `super_admin_api_tokens` (sin tenant_id, sin RLS; FK a `super_admin_usuarios`, indice unico por `token_hash`) + GRANT a
+>   propia_app. Solo guarda el sha256 del token.
+> - **Tokens**: Super Admin > Plataforma > "Tokens de API" crea tokens `pak_...` (se muestran UNA vez; vencen en 30/90/365
+>   dias o nunca; se revocan). Con `Authorization: Bearer pak_...` se llama TODA la API de Super Admin (politica SuperAdmin),
+>   con el poder del Super Admin que lo creo, EXCEPTO: gestionar tokens, MFA y alta/baja del equipo A&D (exigen sesion).
+>   No abre endpoints de copropiedad. Escrituras con token -> `super_admin_logs` (`API_TOKEN_USO`).
+> - **Semillas**: `GET /api/admin/semillas` = indice de todo lo que siembra el Super Admin con sus rutas. Nuevos CRUD en
+>   `/api/admin/semillas/{roles|comunicados|etiquetas-directorio|etiquetas-documentos|reportes}` (PUT MERGE; reportes
+>   solo editar/activar; "Administrador" no se renombra ni desactiva; rol en uso no se elimina).
+> - Auth: nuevo esquema `SuperAdminApiToken` en los dos hosts (Api y Web); el JwtBearer ignora los `pak_`. Sin config/env nueva.
+> - **Verificar en PROD tras aplicar**: entrar a Super Admin > Tokens de API, crear uno de 30 dias, probar
+>   `curl -H "Authorization: Bearer pak_..." https://app.propia-ad.com/api/admin/semillas` (200) y revocarlo (401).
+
 > **ETIQUETAS LEGIBLES EN LISTAS DE ENUM + FIN DE `eval` BLOQUEADO POR LA CSP (2026-11-12): 1 MIGRACION (solo datos) +
 > Infrastructure y Web cambian.**
 > - **MIGRACION `20261112100618_CorregirEtiquetasListasEnum`** (va DESPUES de `AddMembretesDocumento`; sin cambio de
