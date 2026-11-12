@@ -318,6 +318,15 @@ public class IaController : ControllerBase
         return r is null ? NotFound() : Ok(r);
     }
 
+    // ---------- Plantilla de A&D del agente (version, editado, volver a la version de A&D) ----------
+    [HttpGet("agentes/{id:guid}/plantilla")]
+    public async Task<IActionResult> PlantillaDelAgente(Guid id, [FromServices] IAiAgentTemplateService plantillas, CancellationToken ct)
+        => await plantillas.InfoPlantillaDeAgenteAsync(id, ct) is { } i ? Ok(i) : NoContent();
+
+    [HttpPost("agentes/{id:guid}/plantilla/aplicar")]
+    public async Task<IActionResult> AplicarPlantilla(Guid id, [FromServices] IAiAgentTemplateService plantillas, CancellationToken ct)
+        => await plantillas.AplicarPlantillaAAgenteAsync(id, ct) is { } i ? Ok(i) : NotFound();
+
     // ---------- Lineas WhatsApp atendidas por el agente ----------
     [HttpGet("agentes/{id:guid}/lineas")]
     public async Task<IActionResult> LineasAtendidas(Guid id, CancellationToken ct)

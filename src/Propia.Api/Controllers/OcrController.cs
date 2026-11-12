@@ -29,10 +29,12 @@ public class OcrController : ControllerBase
     private readonly IAiDocumentExtractor _aiExtractor;
     private readonly Propia.Infrastructure.Storage.IBlobStorage _blob;
     private readonly PropiaDbContext _db;
+    private readonly Application.InfraestructuraIa.IAgentesSistema _agentesSistema;
 
     public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor,
-        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db)
+        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db, Application.InfraestructuraIa.IAgentesSistema agentesSistema)
     {
+        _agentesSistema = agentesSistema;
         _ocr = ocr;
         _ai = ai;
         _aiExtractor = aiExtractor;
@@ -104,11 +106,8 @@ public class OcrController : ControllerBase
         var campos = PerfilCampos(req.Perfil);
         if (campos.Count == 0) return BadRequest(new { error = "perfil_desconocido" });
 
-        // El agente documental del tenant (RLS: solo el del JWT). Su proveedor configurado = DeepSeek.
-        var agentId = await _db.AiAgents.AsNoTracking()
-            .Where(a => a.Name == AgenteDocumentalSeeder.AgenteNombre && a.IsActive)
-            .Select(a => (Guid?)a.Id)
-            .FirstOrDefaultAsync(ct);
+        // El Agente Documental de la copropiedad (por la clave de su plantilla; si no lo tiene, se crea al usarlo).
+        var agentId = await AgenteDocumentalAsync(ct);
         if (agentId is null) return BadRequest(new { error = "agente_documental_no_disponible" });
 
         // Nombre de la copropiedad: el contratista / la aseguradora NUNCA es ella (la IA a veces la toma como tal).
@@ -198,6 +197,10 @@ public class OcrController : ControllerBase
             campos = valores.Select(v => new { Nombre = v.Nombre, Valor = v.Valor, Confianza = v.Conf })
         });
     }
+
+    // Agente Documental ACTIVO de la copropiedad (null si esta apagado o no hay plantilla).
+    private async Task<Guid?> AgenteDocumentalAsync(CancellationToken ct)
+        => await _agentesSistema.AsegurarAsync(Application.InfraestructuraIa.PlantillaAgente.ClaveDocumental, ct) is { Activo: true } a ? a.Id : null;
 
     // Texto "pobre" = pocas palabras por pagina: casi seguro un escaneado con una capa de texto residual
     // (sellos, numeros de pagina). Por debajo de esto se lee con vision.
@@ -537,10 +540,7 @@ public class OcrController : ControllerBase
             return Ok(new { ok = true, proveedorOcr, ocrTexto = "", analisis = "El OCR no extrajo texto del documento. Sube una imagen mas nitida o un PDF con texto." });
 
         // 2. Ubicar el Agente Documental de la copropiedad activa (RLS: solo el del tenant del JWT).
-        var agentId = await _db.AiAgents.AsNoTracking()
-            .Where(a => a.Name == AgenteDocumentalSeeder.AgenteNombre && a.IsActive)
-            .Select(a => (Guid?)a.Id)
-            .FirstOrDefaultAsync(ct);
+        var agentId = await AgenteDocumentalAsync(ct);
         if (agentId is null) return BadRequest(new { error = "agente_documental_no_disponible" });
 
         // 3. Token del usuario: el agente lo presenta a las tools MCP y hereda tenant (RLS) + permisos.
@@ -589,10 +589,7 @@ public class OcrController : ControllerBase
         if (req?.Conversacion is null || req.Conversacion.Count == 0)
             return BadRequest(new { error = "conversacion_requerida" });
 
-        var agentId = await _db.AiAgents.AsNoTracking()
-            .Where(a => a.Name == AgenteDocumentalSeeder.AgenteNombre && a.IsActive)
-            .Select(a => (Guid?)a.Id)
-            .FirstOrDefaultAsync(ct);
+        var agentId = await AgenteDocumentalAsync(ct);
         if (agentId is null) return BadRequest(new { error = "agente_documental_no_disponible" });
 
         var bearer = Request.Headers.Authorization.ToString();

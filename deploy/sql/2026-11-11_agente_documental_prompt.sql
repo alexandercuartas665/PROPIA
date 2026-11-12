@@ -1,3 +1,6 @@
+-- RETIRADO (Web 0.0.280): ya no se usa. El prompt de los agentes del sistema se edita en Super Admin >
+-- Plantillas de Agentes IA y se propaga con "Actualizar copropiedades" (respeta las copropiedades que lo editaron).
+-- Se conserva solo como referencia historica; NO volver a ejecutarlo (pisaria los prompts editados).
 -- Agente Documental: re-aplica el prompt base (AgenteDocumentalSeeder.SystemPrompt) en PROD.
 -- En Development lo hace el seeder al iniciar; en Production el seeder NO corre, por eso este script.
 -- Opcional para la EXTRACCION (su prompt va en el codigo de /api/ocr/extraer-agente); aplica al CHAT del agente.

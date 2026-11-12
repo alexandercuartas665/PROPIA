@@ -20,49 +20,21 @@ public class AsistenteCamposService : IAsistenteCamposService
     private readonly ITenantContext _tenant;
     private readonly IAiInferenceService _inference;
     private readonly ILogger<AsistenteCamposService> _logger;
+    private readonly IAgentesSistema _agentes;
 
-    public AsistenteCamposService(PropiaDbContext db, ITenantContext tenant, IAiInferenceService inference, ILogger<AsistenteCamposService> logger)
+    public AsistenteCamposService(PropiaDbContext db, ITenantContext tenant, IAiInferenceService inference, ILogger<AsistenteCamposService> logger, IAgentesSistema agentes)
     {
+        _agentes = agentes;
         _db = db;
         _tenant = tenant;
         _inference = inference;
         _logger = logger;
     }
 
+    // El Auxiliar Administrativo de la copropiedad por la clave de su plantilla; si no lo tiene, se crea al
+    // usarlo desde la plantilla del Super Admin. Como antes, se usa aunque la copropiedad lo haya apagado.
     public async Task<Guid?> EnsureAgenteAsync(CancellationToken ct = default)
-    {
-        if (_tenant.CurrentTenantId is not Guid tid) return null;
-
-        var existente = await _db.AiAgents
-            .Where(a => a.Name == AuxiliarAdministrativoAgente.Nombre || a.Role == AuxiliarAdministrativoAgente.RoleTag)
-            .Select(a => new { a.Id })
-            .FirstOrDefaultAsync(ct);
-        if (existente is not null) return existente.Id;
-
-        // Provider del LLM habilitado (global, sin RLS); si no hay, Claude por defecto.
-        var provider = await _db.AiProviderConfigs.AsNoTracking()
-            .Where(c => c.IsEnabled)
-            .Select(c => (AiProvider?)c.Provider)
-            .FirstOrDefaultAsync(ct) ?? AiProvider.Claude;
-
-        var agent = new AiAgent
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tid,
-            Name = AuxiliarAdministrativoAgente.Nombre,
-            Role = AuxiliarAdministrativoAgente.RoleTag,
-            Provider = provider,
-            Model = null,
-            SystemPrompt = AuxiliarAdministrativoAgente.SystemPrompt,
-            IsActive = true,
-            SortOrder = 60,
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-        _db.AiAgents.Add(agent);
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("[IA] Auxiliar Administrativo creado al vuelo para tenant {TenantId}", tid);
-        return agent.Id;
-    }
+        => (await _agentes.AsegurarAsync(PlantillaAgente.ClaveAuxiliar, ct))?.Id;
 
     public async Task<AsistenteCampoResult> CompletarAsync(AsistenteCampoRequest req, CancellationToken ct = default)
     {

@@ -416,6 +416,9 @@ public partial class PropiaDbContext
             b.Property(x => x.SystemPrompt).HasColumnType("text");
             b.Property(x => x.PromptHistoryJson).HasColumnType("text");
             b.Property(x => x.ReactionEmojis).HasColumnType("text");
+            b.Property(x => x.TemplatePromptHash).HasMaxLength(64);
+            b.HasOne(x => x.Template).WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TemplateId);
             b.HasIndex(x => new { x.TenantId, x.IsActive });
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
@@ -536,6 +539,9 @@ public partial class PropiaDbContext
             b.Property(x => x.Provider).HasConversion<string>().HasMaxLength(20);
             b.Property(x => x.Model).HasMaxLength(100);
             b.Property(x => x.SystemPrompt).HasColumnType("text");
+            b.Property(x => x.Version).HasDefaultValue(1);
+            b.Property(x => x.Clave).HasMaxLength(60);
+            b.HasIndex(x => x.Clave).IsUnique().HasFilter("clave IS NOT NULL");
             b.HasIndex(x => new { x.IsActive, x.IncludeInOnboarding });
         });
 

@@ -1,5 +1,28 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **AGENTES SEMILLA CON ACTUALIZACION DESDE EL SUPER ADMIN (2026-11-11, Web 0.0.280): 1 MIGRACION (aditiva + backfill) +
+> API y Web cambian.**
+> - **MIGRACION `20261111234845_AddAgentesPlantillaVersion`** (va DESPUES de `AddServiciosPublicosRecibosIA`):
+>   `ai_agent_templates` + `version` (default 1) + `clave` (unica, parcial); `ai_agents` + `template_id` (FK SetNull),
+>   `template_version`, `template_prompt_hash`. Backfill: clave `agente-documental` / `auxiliar-administrativo` a las
+>   plantillas con esos nombres, y ENLACE de cada agente de copropiedad con su plantilla por nombre (con los placeholders
+>   reemplazados) + huella del prompt que la plantilla le habria puesto (si el prompt actual difiere, cuenta como EDITADO por
+>   la copropiedad y la actualizacion lo respeta). Suspende el FORCE de `ai_agents` solo durante el UPDATE. En dev: 80
+>   Auxiliar (80 intactos), 80 Documental (78 intactos, 2 editados), 3 Asistente; 20 agentes propios quedan sin plantilla.
+> - Las semillas `AgenteDocumentalSeeder` y `AuxiliarAdministrativoSeeder` ahora corren en TODOS los ambientes pero SOLO
+>   crean la plantilla si falta (no pisan prompts ni tocan agentes). **Se retira** `deploy/sql/2026-11-11_agente_documental_prompt.sql`:
+>   las mejoras de prompt se hacen en Super Admin > Plantillas de Agentes IA y se llevan con "Actualizar copropiedades".
+> - "Actualizar copropiedades" lleva prompt, tools, PROVEEDOR y MODELO de la plantilla (la version sube si cambia cualquiera).
+> - La lectura con IA (Contratos, Seguros, Servicios publicos) y el Auxiliar Administrativo buscan su agente por la CLAVE de la
+>   plantilla (no por nombre) y, si la copropiedad no lo tiene, lo CREAN al usarlo desde la plantilla.
+> - **ANTES de usar en PROD**: en Super Admin > Plantillas de Agentes IA, revisar que "Agente Documental" y "Auxiliar
+>   Administrativo" tengan el **proveedor con llave valida** (los agentes que se creen al usarlo toman el proveedor de la
+>   plantilla; en dev la plantilla decia Gemini y la copropiedad demo usaba DeepSeek).
+> - **Verificar en PROD tras aplicar**: `select name, clave, version from ai_agent_templates;` (las 2 claves asignadas);
+>   `select count(*) filter (where template_id is not null), count(*) from ai_agents;`; abrir Plantillas de Agentes IA >
+>   "Actualizar copropiedades" en el Agente Documental y revisar la vista previa (sin aplicar si no hace falta).
+>   Sin config/env nueva.
+
 > **SERVICIOS PUBLICOS (/servicios) CON RECIBOS LEIDOS POR IA + RECARGA AUTOMATICA AL RECONECTAR (2026-11-11): 1 MIGRACION
 > (aditiva + backfill) + API y Web cambian.**
 > - **MIGRACION `20261111202708_AddServiciosPublicosRecibosIA`** (va DESPUES de `AddCamposAgenteDocumental`):

@@ -136,6 +136,26 @@ public sealed class AdminAiAgentTemplatesController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    /// <summary>Vista previa de "Actualizar copropiedades": estado del agente en cada copropiedad vigente.</summary>
+    [HttpGet("{id:guid}/propagacion")]
+    public async Task<IActionResult> PreviewPropagacion(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.PreviewPropagacionAsync(id, ct) is { } p ? Ok(p) : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>Lleva la version actual de la plantilla a las copropiedades (respeta las editadas salvo que se fuerce).</summary>
+    [HttpPost("{id:guid}/propagar")]
+    public async Task<IActionResult> Propagar(Guid id, [FromBody] PropagarPlantillaRequest req, CancellationToken ct)
+    {
+        try
+        {
+            var (actorId, email) = Actor();
+            return await _svc.PropagarAsync(id, req, actorId, email, Ip(), ct) is { } r ? Ok(r) : NotFound();
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     /// <summary>Lista todos los agentes existentes (de todos los tenants) que pueden importarse como plantilla.</summary>
     [HttpGet("import-sources")]
     public async Task<IActionResult> ImportSources(CancellationToken ct)

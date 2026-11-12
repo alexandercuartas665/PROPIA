@@ -372,9 +372,9 @@ public sealed class AiAgentService : IAiAgentService
 
     // ===== Helpers de versionado =====
     private const int MaxPromptVersions = 5;
-    private sealed record StoredPromptVersion(DateTimeOffset SavedAt, string BasePrompt, List<AgentPromptSnapshotDto> Prompts);
+    internal sealed record StoredPromptVersion(DateTimeOffset SavedAt, string BasePrompt, List<AgentPromptSnapshotDto> Prompts);
 
-    private static string PushPromptVersion(string? existingJson, StoredPromptVersion version)
+    internal static string PushPromptVersion(string? existingJson, StoredPromptVersion version)
     {
         var list = DeserializeVersions(existingJson);
         if (list.Count > 0 && SameContent(list[0], version) && existingJson is not null) return existingJson;
