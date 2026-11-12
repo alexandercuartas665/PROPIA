@@ -68,7 +68,8 @@ public record SesionPoderDto(
 public record SesionDocumentoDto(
     Guid Id, Guid? PuntoId, string Nombre, string? Descripcion,
     string UrlStorage, string? TipoArchivo, long TamanioBytes,
-    VisibilidadDocumento Visibilidad, DateTimeOffset CreatedAt);
+    VisibilidadDocumento Visibilidad, DateTimeOffset CreatedAt,
+    TipoDocumentoSesion Tipo = TipoDocumentoSesion.Otro);
 
 public record QuorumDto(
     decimal CoeficienteRepresentado,
@@ -77,7 +78,11 @@ public record QuorumDto(
     decimal? PctRequerido,
     bool Alcanzado,
     int ParticipantesPresentes,
-    int ParticipantesTotales);
+    int ParticipantesTotales,
+    /// <summary>Segunda convocatoria (Ley 675 art. 41): sesiona con un numero plural (2+ unidades presentes).</summary>
+    bool SegundaConvocatoria = false,
+    /// <summary>MasDe = se requiere MAS del PctRequerido; AlMenos = basta alcanzarlo.</summary>
+    CriterioMayoria Criterio = CriterioMayoria.MasDe);
 
 public record VotacionDto(
     Guid Id,
@@ -90,7 +95,11 @@ public record VotacionDto(
     string? ResultadoOpcion,
     decimal? ResultadoPct,
     ResultadoVotacion? ResultadoFinal,
-    IReadOnlyList<VotoDto> Votos);
+    IReadOnlyList<VotoDto> Votos,
+    /// <summary>Al cerrar: votos y % por opcion sobre la base de la votacion (tambien en voto secreto, agregado).</summary>
+    IReadOnlyList<DesgloseOpcionDto>? Desglose = null);
+
+public record DesgloseOpcionDto(string Opcion, int Votos, decimal Coeficiente, decimal Pct);
 
 public record VotoDto(
     Guid Id, Guid PersonaId, Guid UnidadPrivadaId,
@@ -118,7 +127,37 @@ public record SesionDetalleDto(
     IReadOnlyList<SesionParticipanteDto> Participantes,
     IReadOnlyList<SesionPoderDto> Poderes,
     IReadOnlyList<SesionDocumentoDto> Documentos,
-    ActaDto? Acta);
+    ActaDto? Acta,
+    bool SalaPropia = false,
+    InstalacionDto? Instalacion = null,
+    string? JustificacionQuorum = null,
+    string? MotivoCancelacion = null,
+    Guid? PuntoActualId = null,
+    /// <summary>Sesion de segunda convocatoria creada desde esta (si existe).</summary>
+    Guid? SesionHijaId = null,
+    /// <summary>Limite de poderes por persona de Configuracion (null = sin limite).</summary>
+    int? LimitePoderesPorPersona = null,
+    bool TranscripcionActiva = false,
+    /// <summary>Grabacion de la sala en curso (desde cuando).</summary>
+    DateTimeOffset? GrabandoDesde = null);
+
+// ----- Sala virtual (ola 5) -----
+/// <summary>Acceso a la sala de video: URL del servidor, token firmado para esta persona y su rol.</summary>
+public record SalaAccesoDto(string Url, string Token, string Sala, string Identidad, string Nombre, bool Moderador);
+/// <summary>Estado de la sala para la ficha: si el proveedor esta configurado.</summary>
+public record SalaConfigDto(bool Configurada, bool GrabacionConfigurada, string Proveedor);
+
+// ----- Transcripcion (ola 4) -----
+public record TranscripcionLineaDto(Guid Id, DateTimeOffset Hora, TipoLineaTranscripcion Tipo, Guid? PuntoId, int? PuntoNumero,
+    Guid? PersonaId, string? AutorNombre, string? UnidadNumero, string Texto, decimal? Confianza);
+/// <summary>Linea de voz desde el navegador ("Mi voz a texto") o el proveedor de voz a texto. Sin persona = el usuario actual.</summary>
+public record AgregarTranscripcionRequest(string Texto, decimal? Confianza = null, Guid? PersonaId = null, Guid? UnidadPrivadaId = null,
+    string? AutorNombre = null, string? Origen = null);
+public record ActivarTranscripcionRequest(bool Activa);
+
+/// <summary>Instalacion de la asamblea (Ley 675 art. 47): presidente y secretario + quorum al instalar.</summary>
+public record InstalacionDto(DateTimeOffset Hora, decimal QuorumPct, Guid? PresidentePersonaId, string PresidenteNombre,
+    Guid? SecretarioPersonaId, string SecretarioNombre);
 
 public record ActaDto(
     Guid Id,
@@ -130,7 +169,29 @@ public record ActaDto(
     Guid? FirmadoPorUsuarioId,
     TipoFirmaActa? TipoFirma,
     DateTimeOffset? TimestampFirma,
-    DateTimeOffset? PublicadaEn);
+    DateTimeOffset? PublicadaEn,
+    string? Numero = null,
+    string? BorradorHtml = null,
+    EstadoRedaccionActa EstadoRedaccion = EstadoRedaccionActa.Ninguna,
+    string? ErrorRedaccion = null,
+    bool RedactadaPorIa = false,
+    bool Editada = false,
+    FirmaActaDto? FirmaPresidente = null,
+    FirmaActaDto? FirmaSecretario = null,
+    /// <summary>Fecha limite para poner el acta a disposicion: 20 dias habiles desde el cierre (Ley 675 art. 47).</summary>
+    DateOnly? PlazoPublicacion = null,
+    Guid? ComunicadoId = null);
+
+public record FirmaActaDto(DateTimeOffset En, MetodoFirmaActa Metodo);
+
+// ----- Acta (ola 3) -----
+public record GuardarBorradorActaRequest(string Html);
+public record SolicitarCodigoFirmaRequest(RolFirmaActa Rol);
+/// <summary>CodigoDev solo en Development (alli no se envia correo); en produccion siempre null.</summary>
+public record CodigoFirmaDto(string CorreoEnmascarado, DateTimeOffset Expira, string? CodigoDev);
+/// <summary>Codigo null = firma desde la cuenta (la persona del usuario es la designada para el rol).</summary>
+public record FirmarActaRolRequest(RolFirmaActa Rol, string? Codigo);
+public record PublicacionActaDto(string DocumentoUrl, Guid? ComunicadoId, string? Aviso);
 
 // ===================== Requests =====================
 
@@ -141,7 +202,8 @@ public record CrearSesionRequest(
     DateTimeOffset FechaSesion,
     string? LugarFisico,
     string? EnlaceVideo,
-    IReadOnlyList<CrearPuntoRequest> Puntos);
+    IReadOnlyList<CrearPuntoRequest> Puntos,
+    bool SalaPropia = false);
 
 public record CrearPuntoRequest(
     int Numero,
@@ -151,7 +213,9 @@ public record CrearPuntoRequest(
     TipoMayoria TipoMayoria,
     decimal MayoriaPct,
     ModalidadVoto ModalidadVoto,
-    Guid? PresupuestoId);
+    Guid? PresupuestoId,
+    /// <summary>Opciones propias (planchas o candidatos). Null/vacio = Si / No / Abstencion.</summary>
+    IReadOnlyList<string>? OpcionesVoto = null);
 
 public record ActualizarPuntoRequest(
     string Titulo,
@@ -160,14 +224,37 @@ public record ActualizarPuntoRequest(
     TipoMayoria TipoMayoria,
     decimal MayoriaPct,
     ModalidadVoto ModalidadVoto,
-    string? NarrativaSecretario);
+    string? NarrativaSecretario,
+    IReadOnlyList<string>? OpcionesVoto = null);
 
-public record EnviarCitacionRequest(string? MensajeAdicional);
+/// <summary>PUT MERGE de la sesion (null = no tocar). Titulo/fecha/lugar/modalidad solo en Borrador; la sala
+/// (propia o enlace) tambien en Citada.</summary>
+public record ActualizarSesionRequest(
+    string? Titulo = null,
+    DateTimeOffset? FechaSesion = null,
+    string? LugarFisico = null,
+    string? EnlaceVideo = null,
+    bool? SalaPropia = null,
+    ModalidadSesion? Modalidad = null);
+
+/// <summary>Instalar la asamblea: presidente = unidad presente; secretario = unidad presente o null (la administracion).</summary>
+public record InstalarSesionRequest(Guid PresidenteUnidadId, Guid? SecretarioUnidadId);
+
+public record CancelarSesionRequest(string Motivo);
+
+public record VotoBloqueItem(Guid UnidadPrivadaId, string Opcion);
+public record VotarBloqueRequest(IReadOnlyList<VotoBloqueItem> Votos);
+public record VotarBloqueResultado(int Registrados, IReadOnlyList<string> Errores);
+
+/// <summary>ConfirmarFueraDePlazo: en extraordinaria/consejo/comite se puede citar dentro del plazo con confirmacion
+/// explicita (la ordinaria nunca: Ley 675 art. 39).</summary>
+public record EnviarCitacionRequest(string? MensajeAdicional, bool ConfirmarFueraDePlazo = false);
 
 public record AgregarDocumentoRequest(
     Guid? PuntoId, string Nombre, string? Descripcion,
     string UrlStorage, string? TipoArchivo, long TamanioBytes,
-    VisibilidadDocumento Visibilidad);
+    VisibilidadDocumento Visibilidad,
+    TipoDocumentoSesion Tipo = TipoDocumentoSesion.Otro);
 
 public record OtorgarPoderRequest(
     Guid OtorganteUnidadId,
@@ -185,11 +272,11 @@ public record EmitirVotoRequest(Guid UnidadPrivadaId, string Opcion);
 
 public record CerrarVotacionRequest;
 
-public record CerrarSesionRequest(bool QuorumAlcanzado);
+/// <summary>El quorum al cerrar lo calcula el sistema (instalada = hubo quorum). QuorumAlcanzado solo para CORREGIRLO,
+/// y entonces la Justificacion es obligatoria (queda en el acta).</summary>
+public record CerrarSesionRequest(bool? QuorumAlcanzado = null, string? Justificacion = null);
 
-public record FirmarActaRequest(string? NarrativaSecretario, TipoFirmaActa TipoFirma);
 
-public record PublicarActaRequest;
 
 // ===================== Configuracion =====================
 
@@ -229,7 +316,12 @@ public record SesionResidenteDto(
     IReadOnlyList<SesionPuntoResidenteDto> Puntos,
     IReadOnlyList<MiUnidadSesionDto> MisUnidades,
     string CopropiedadNombre,
-    string? LogoUrl);
+    string? LogoUrl,
+    bool TranscripcionActiva = false,
+    /// <summary>Ultimas lineas de voz (subtitulos) mientras la transcripcion esta activa.</summary>
+    IReadOnlyList<TranscripcionLineaDto>? Subtitulos = null,
+    /// <summary>La sesion usa la sala virtual de PROPIA.</summary>
+    bool SalaPropia = false);
 
 /// <summary>Punto del orden del dia con su votacion mas reciente (resultado solo si ya cerro).</summary>
 public record SesionPuntoResidenteDto(

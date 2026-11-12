@@ -33,6 +33,30 @@ public class Sesion : TenantEntity
     public DateTimeOffset? HoraCierre { get; set; }
     public bool? QuorumAlcanzado { get; set; }
 
+    /// <summary>Videollamada dentro de PROPIA (true) o enlace externo (Meet/Zoom, false). Solo Virtual/Mixta.</summary>
+    public bool SalaPropia { get; set; }
+
+    // Instalacion (Ley 675 art. 47): con quorum, la asamblea designa presidente y secretario, que firman el acta.
+    // Sin instalacion no se abren votaciones y la sesion cierra como Quorum fallido.
+    public Guid? PresidentePersonaId { get; set; }
+    public string? PresidenteNombre { get; set; }
+    /// <summary>Null + nombre = la administracion actua como secretaria.</summary>
+    public Guid? SecretarioPersonaId { get; set; }
+    public string? SecretarioNombre { get; set; }
+    public DateTimeOffset? InstaladaEn { get; set; }
+    /// <summary>Quorum (% de coeficientes) al instalar: es el quorum de la sesion al cerrar.</summary>
+    public decimal? QuorumInstalacionPct { get; set; }
+    /// <summary>Si al cerrar se corrigio el quorum calculado, la justificacion (va al acta).</summary>
+    public string? JustificacionQuorum { get; set; }
+    public string? MotivoCancelacion { get; set; }
+    /// <summary>Punto en curso (la transcripcion y los eventos se asocian a el).</summary>
+    public Guid? PuntoActualId { get; set; }
+    /// <summary>El moderador activo la transcripcion (voz a texto) de la sesion.</summary>
+    public bool TranscripcionActiva { get; set; }
+    /// <summary>Grabacion de la sala virtual en curso (id del egress del proveedor de video).</summary>
+    public string? GrabacionEgressId { get; set; }
+    public DateTimeOffset? GrabacionIniciadaEn { get; set; }
+
     public Guid CreadoPorUsuarioId { get; set; }
 
     public ICollection<SesionPunto> Puntos { get; set; } = new List<SesionPunto>();
@@ -40,6 +64,26 @@ public class Sesion : TenantEntity
     public ICollection<SesionParticipante> Participantes { get; set; } = new List<SesionParticipante>();
     public ICollection<SesionPoder> Poderes { get; set; } = new List<SesionPoder>();
     public Acta? Acta { get; set; }
+}
+
+/// <summary>Linea de la bitacora de la sesion (ola 4): voz a texto de un participante o evento del sistema (abrir sala,
+/// instalacion, votaciones, poderes, cierre). Asociada al punto en curso. Alimenta el acta por IA y los subtitulos.</summary>
+public class SesionTranscripcionLinea : TenantEntity
+{
+    public Guid SesionId { get; set; }
+    public Sesion? Sesion { get; set; }
+    public Guid? PuntoId { get; set; }
+    public SesionPunto? Punto { get; set; }
+    public DateTimeOffset Hora { get; set; } = DateTimeOffset.UtcNow;
+    public TipoLineaTranscripcion Tipo { get; set; } = TipoLineaTranscripcion.Voz;
+    public Guid? PersonaId { get; set; }
+    public Guid? UnidadPrivadaId { get; set; }
+    public string? AutorNombre { get; set; }
+    public string Texto { get; set; } = string.Empty;
+    /// <summary>Confianza del reconocimiento (0..1) cuando el motor la entrega.</summary>
+    public decimal? Confianza { get; set; }
+    /// <summary>Quien transcribio: "navegador" (Web Speech) o el proveedor de voz a texto.</summary>
+    public string? Origen { get; set; }
 }
 
 /// <summary>Punto del orden del dia. Spec 2.8 v1.0 tabla sesion_puntos.</summary>
@@ -85,6 +129,7 @@ public class SesionDocumento : TenantEntity
     public string UrlStorage { get; set; } = string.Empty;
     public string? TipoArchivo { get; set; }
     public long TamanioBytes { get; set; }
+    public TipoDocumentoSesion Tipo { get; set; } = TipoDocumentoSesion.Otro;
 
     public VisibilidadDocumento Visibilidad { get; set; } = VisibilidadDocumento.PostAsamblea;
     public Guid SubidoPorUsuarioId { get; set; }
@@ -109,6 +154,8 @@ public class SesionParticipante : TenantEntity
     public bool Presente { get; set; }
     public DateTimeOffset? HoraIngreso { get; set; }
     public DateTimeOffset? HoraSalida { get; set; }
+    /// <summary>Salio de la sala virtual: la ausencia se confirma en este momento (gracia de reconexion). Null = nada pendiente.</summary>
+    public DateTimeOffset? SalidaPendienteEn { get; set; }
 }
 
 /// <summary>Poder de representacion. Spec 2.8 v1.0 tabla sesion_poderes + Art. 44 Ley 675.</summary>
@@ -215,6 +262,31 @@ public class Acta : TenantEntity
     public string? FirmanteIp { get; set; }
 
     public DateTimeOffset? PublicadaEn { get; set; }
+
+    // ----- Acta legible (ola 3): numero, borrador HTML redactado por la IA, doble firma, publicacion -----
+    /// <summary>Acta No. AAAA-NNN (consecutivo anual por copropiedad, anio de la sesion en hora de Colombia).</summary>
+    public string? Numero { get; set; }
+    /// <summary>Documento del acta (HTML saneado). Base generada con los datos del sistema; la IA lo redacta encima.</summary>
+    public string? BorradorHtml { get; set; }
+    public EstadoRedaccionActa EstadoRedaccion { get; set; } = EstadoRedaccionActa.Ninguna;
+    public string? ErrorRedaccion { get; set; }
+    public DateTimeOffset? RedactadaEn { get; set; }
+    public bool RedactadaPorIa { get; set; }
+    /// <summary>La administracion edito el texto a mano (la IA ya no lo reescribe sin "Regenerar").</summary>
+    public bool Editada { get; set; }
+
+    // Firmas (Ley 675 art. 47: presidente y secretario). Con las dos el acta queda inmutable (RN-10).
+    public DateTimeOffset? FirmaPresidenteEn { get; set; }
+    public Guid? FirmaPresidenteUsuarioId { get; set; }
+    public MetodoFirmaActa? FirmaPresidenteMetodo { get; set; }
+    public string? FirmaPresidenteIp { get; set; }
+    public DateTimeOffset? FirmaSecretarioEn { get; set; }
+    public Guid? FirmaSecretarioUsuarioId { get; set; }
+    public MetodoFirmaActa? FirmaSecretarioMetodo { get; set; }
+    public string? FirmaSecretarioIp { get; set; }
+
+    /// <summary>Comunicado (Borrador) que se deja listo al publicar, para avisar a los propietarios.</summary>
+    public Guid? ComunicadoId { get; set; }
 }
 
 /// <summary>Eleccion de Consejo registrada en una asamblea (dispara actualizacion en 2.3 y 2.4).</summary>

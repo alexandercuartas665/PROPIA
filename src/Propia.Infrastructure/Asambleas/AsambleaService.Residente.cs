@@ -40,12 +40,7 @@ public partial class AsambleaService
             .ToListAsync(ct);
 
         // Quorum agregado (mismo calculo que la ficha del admin); no expone quien esta presente.
-        var coefRepresentado = participantes.Where(p => p.Presente).Sum(p => p.Coeficiente);
-        var coefTotal = participantes.Sum(p => p.Coeficiente);
-        var pctRepresentado = coefTotal > 0 ? Math.Round(coefRepresentado / coefTotal * 100m, 2) : 0m;
-        var quorum = new QuorumDto(coefRepresentado, coefTotal, pctRepresentado, s.QuorumRequeridoPct,
-            !s.QuorumRequeridoPct.HasValue || pctRepresentado >= s.QuorumRequeridoPct.Value,
-            participantes.Count(p => p.Presente), participantes.Count);
+        var quorum = CalcularQuorum(s, participantes.Select(p => (p.Coeficiente, p.Presente)).ToList(), await CriterioAsync(ct));
 
         var habilitadas = await UnidadesHabilitadasAsync(sesionId, personaId, ct);
         var mias = participantes.Where(p => habilitadas.ContainsKey(p.UnidadPrivadaId)).ToList();
@@ -102,9 +97,20 @@ public partial class AsambleaService
             .Select(t => new { t.Nombre, t.LogoUrl })
             .FirstOrDefaultAsync(ct);
 
+        // Subtitulos: ultimas lineas de voz mientras la transcripcion esta activa (no expone eventos internos).
+        IReadOnlyList<TranscripcionLineaDto>? subtitulos = null;
+        if (s.TranscripcionActiva && s.Estado == EstadoSesion.EnCurso)
+        {
+            var ult = await _db.SesionTranscripcionLineas.AsNoTracking()
+                .Where(x => x.SesionId == sesionId && x.Tipo == TipoLineaTranscripcion.Voz)
+                .OrderByDescending(x => x.Hora).Take(3).ToListAsync(ct);
+            ult.Reverse();
+            subtitulos = await MapearLineasAsync(sesionId, ult, ct);
+        }
         return new SesionResidenteDto(s.Id, s.Titulo, s.Tipo, s.Modalidad, s.Estado, s.FechaSesion,
             s.LugarFisico, s.EnlaceVideo, nombre, quorum, puntos, misUnidades,
-            copropiedad?.Nombre ?? "", copropiedad?.LogoUrl);
+            copropiedad?.Nombre ?? "", copropiedad?.LogoUrl, s.TranscripcionActiva, subtitulos,
+            s.SalaPropia && s.Modalidad != ModalidadSesion.Presencial);
     }
 
     public async Task<bool> MiCheckInAsync(Guid sesionId, Guid personaId, Guid unidadId, bool presente, CancellationToken ct)

@@ -834,6 +834,38 @@ window.propiaUI.guardarSesionEIr = function (token, tenantId, coproNombre, url, 
 // Ancho del viewport (la CSP no permite eval desde la interop). Lo usa el explorador de folders para que en
 // tablet/celular el chat arranque cerrado.
 window.propiaUI.anchoVentana = function () { return window.innerWidth; };
+// Asambleas (acta): HTML de un elemento editable (contenteditable). La CSP no permite eval desde C#.
+window.propiaUI.htmlDe = function (sel) { var el = document.querySelector(sel); return el ? el.innerHTML : null; };
+// Asambleas (ola 4): "Mi voz a texto" con el reconocimiento de voz del navegador (Web Speech API, Chrome/Edge).
+// Las frases finales van a .NET (DictadoFinal), el texto parcial a DictadoParcial; los errores a DictadoError.
+// Chrome corta el reconocimiento tras un silencio: mientras siga encendido se reinicia solo.
+window.propiaUI.dictado = (function () {
+    var rec = null, ref = null, encendido = false;
+    function Clase() { return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+    return {
+        soportado: function () { return !!Clase(); },
+        start: function (dotnet, lang) {
+            var R = Clase();
+            if (!R) return 'no-soportado';
+            ref = dotnet; encendido = true;
+            rec = new R(); rec.lang = lang || 'es-CO'; rec.continuous = true; rec.interimResults = true;
+            rec.onresult = function (e) {
+                var parcial = '';
+                for (var i = e.resultIndex; i < e.results.length; i++) {
+                    var r = e.results[i];
+                    if (r.isFinal) { var c = r[0].confidence; ref.invokeMethodAsync('DictadoFinal', r[0].transcript, c > 0 ? c : null); }
+                    else parcial += r[0].transcript;
+                }
+                ref.invokeMethodAsync('DictadoParcial', parcial);
+            };
+            rec.onerror = function (e) { if (e.error === 'no-speech' || e.error === 'aborted') return; encendido = false; ref.invokeMethodAsync('DictadoError', e.error || 'error'); };
+            rec.onend = function () { if (encendido && rec) { try { rec.start(); } catch (x) { } } };
+            try { rec.start(); } catch (x) { encendido = false; return 'error'; }
+            return 'ok';
+        },
+        stop: function () { encendido = false; if (rec) { try { rec.stop(); } catch (x) { } rec = null; } }
+    };
+})();
 
 window.propiaUI.modalFocus = function (selector) {
     try {

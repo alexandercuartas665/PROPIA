@@ -251,6 +251,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<SesionParticipante> SesionParticipantes => Set<SesionParticipante>();
     public DbSet<SesionPoder> SesionPoderes => Set<SesionPoder>();
     public DbSet<SesionQuorumLog> SesionQuorumLog => Set<SesionQuorumLog>();
+    public DbSet<SesionTranscripcionLinea> SesionTranscripcionLineas => Set<SesionTranscripcionLinea>();
     public DbSet<Votacion> Votaciones => Set<Votacion>();
     public DbSet<Voto> Votos => Set<Voto>();
     public DbSet<Acta> Actas => Set<Acta>();

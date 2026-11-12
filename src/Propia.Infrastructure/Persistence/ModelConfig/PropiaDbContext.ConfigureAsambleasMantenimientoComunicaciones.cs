@@ -34,6 +34,12 @@ public partial class PropiaDbContext
             b.Property(x => x.LugarFisico).HasMaxLength(500);
             b.Property(x => x.EnlaceVideo).HasMaxLength(500);
             b.Property(x => x.QuorumRequeridoPct).HasPrecision(5, 2);
+            b.Property(x => x.QuorumInstalacionPct).HasPrecision(5, 2);
+            b.Property(x => x.PresidenteNombre).HasMaxLength(200);
+            b.Property(x => x.SecretarioNombre).HasMaxLength(200);
+            b.Property(x => x.JustificacionQuorum).HasMaxLength(1000);
+            b.Property(x => x.MotivoCancelacion).HasMaxLength(1000);
+            b.Property(x => x.GrabacionEgressId).HasMaxLength(100);
             b.HasOne(x => x.SesionPadre).WithMany().HasForeignKey(x => x.SesionPadreId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => new { x.TenantId, x.Estado });
@@ -95,6 +101,20 @@ public partial class PropiaDbContext
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
+        modelBuilder.Entity<SesionTranscripcionLinea>(b =>
+        {
+            b.ToTable("sesion_transcripcion_lineas");
+            b.Property(x => x.AutorNombre).HasMaxLength(200);
+            b.Property(x => x.Texto).IsRequired().HasMaxLength(4000);
+            b.Property(x => x.Confianza).HasPrecision(5, 4);
+            b.Property(x => x.Origen).HasMaxLength(30);
+            b.HasOne(x => x.Sesion).WithMany().HasForeignKey(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(x => x.Punto).WithMany().HasForeignKey(x => x.PuntoId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => new { x.SesionId, x.Hora });
+            b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
+        });
+
         modelBuilder.Entity<SesionQuorumLog>(b =>
         {
             b.ToTable("sesion_quorum_log");
@@ -138,6 +158,12 @@ public partial class PropiaDbContext
             b.Property(x => x.DocumentoUrl).HasMaxLength(500);
             b.Property(x => x.HashDocumento).HasMaxLength(255);
             b.Property(x => x.FirmanteIp).HasMaxLength(50);
+            b.Property(x => x.Numero).HasMaxLength(20);
+            b.Property(x => x.BorradorHtml).HasColumnType("text");
+            b.Property(x => x.ErrorRedaccion).HasMaxLength(1000);
+            b.Property(x => x.FirmaPresidenteIp).HasMaxLength(50);
+            b.Property(x => x.FirmaSecretarioIp).HasMaxLength(50);
+            b.HasIndex(x => new { x.TenantId, x.Numero }).IsUnique().HasFilter("numero IS NOT NULL");
             b.HasOne(x => x.Sesion).WithOne(s => s.Acta).HasForeignKey<Acta>(x => x.SesionId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(x => x.TenantId);
             b.HasIndex(x => x.SesionId).IsUnique();

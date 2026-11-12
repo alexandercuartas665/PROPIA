@@ -278,6 +278,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BorradorHtml")
+                        .HasColumnType("text")
+                        .HasColumnName("borrador_html");
+
+                    b.Property<Guid?>("ComunicadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comunicado_id");
+
                     b.Property<string>("ContenidoGenerado")
                         .IsRequired()
                         .HasColumnType("text")
@@ -296,9 +304,56 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("documento_url");
 
+                    b.Property<bool>("Editada")
+                        .HasColumnType("boolean")
+                        .HasColumnName("editada");
+
+                    b.Property<string>("ErrorRedaccion")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error_redaccion");
+
                     b.Property<int>("Estado")
                         .HasColumnType("integer")
                         .HasColumnName("estado");
+
+                    b.Property<int>("EstadoRedaccion")
+                        .HasColumnType("integer")
+                        .HasColumnName("estado_redaccion");
+
+                    b.Property<DateTimeOffset?>("FirmaPresidenteEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("firma_presidente_en");
+
+                    b.Property<string>("FirmaPresidenteIp")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("firma_presidente_ip");
+
+                    b.Property<int?>("FirmaPresidenteMetodo")
+                        .HasColumnType("integer")
+                        .HasColumnName("firma_presidente_metodo");
+
+                    b.Property<Guid?>("FirmaPresidenteUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("firma_presidente_usuario_id");
+
+                    b.Property<DateTimeOffset?>("FirmaSecretarioEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("firma_secretario_en");
+
+                    b.Property<string>("FirmaSecretarioIp")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("firma_secretario_ip");
+
+                    b.Property<int?>("FirmaSecretarioMetodo")
+                        .HasColumnType("integer")
+                        .HasColumnName("firma_secretario_metodo");
+
+                    b.Property<Guid?>("FirmaSecretarioUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("firma_secretario_usuario_id");
 
                     b.Property<Guid?>("FirmadoPorUsuarioId")
                         .HasColumnType("uuid")
@@ -318,9 +373,22 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("narrativa_secretario");
 
+                    b.Property<string>("Numero")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("numero");
+
                     b.Property<DateTimeOffset?>("PublicadaEn")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("publicada_en");
+
+                    b.Property<DateTimeOffset?>("RedactadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("redactada_en");
+
+                    b.Property<bool>("RedactadaPorIa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("redactada_por_ia");
 
                     b.Property<Guid>("SesionId")
                         .HasColumnType("uuid")
@@ -352,6 +420,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Numero")
+                        .IsUnique()
+                        .HasFilter("numero IS NOT NULL");
 
                     b.ToTable("actas", (string)null);
                 });
@@ -15907,6 +15979,15 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_sesion");
 
+                    b.Property<string>("GrabacionEgressId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("grabacion_egress_id");
+
+                    b.Property<DateTimeOffset?>("GrabacionIniciadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("grabacion_iniciada_en");
+
                     b.Property<DateTimeOffset?>("HoraApertura")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("hora_apertura");
@@ -15914,6 +15995,15 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("HoraCierre")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("hora_cierre");
+
+                    b.Property<DateTimeOffset?>("InstaladaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("instalada_en");
+
+                    b.Property<string>("JustificacionQuorum")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("justificacion_quorum");
 
                     b.Property<string>("LugarFisico")
                         .HasMaxLength(500)
@@ -15924,18 +16014,54 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("modalidad");
 
+                    b.Property<string>("MotivoCancelacion")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("motivo_cancelacion");
+
                     b.Property<int>("PlazoCitacionDias")
                         .HasColumnType("integer")
                         .HasColumnName("plazo_citacion_dias");
+
+                    b.Property<string>("PresidenteNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("presidente_nombre");
+
+                    b.Property<Guid?>("PresidentePersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("presidente_persona_id");
+
+                    b.Property<Guid?>("PuntoActualId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("punto_actual_id");
 
                     b.Property<bool?>("QuorumAlcanzado")
                         .HasColumnType("boolean")
                         .HasColumnName("quorum_alcanzado");
 
+                    b.Property<decimal?>("QuorumInstalacionPct")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("quorum_instalacion_pct");
+
                     b.Property<decimal?>("QuorumRequeridoPct")
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)")
                         .HasColumnName("quorum_requerido_pct");
+
+                    b.Property<bool>("SalaPropia")
+                        .HasColumnType("boolean")
+                        .HasColumnName("sala_propia");
+
+                    b.Property<string>("SecretarioNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("secretario_nombre");
+
+                    b.Property<Guid?>("SecretarioPersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("secretario_persona_id");
 
                     b.Property<bool>("SegundaConvocatoria")
                         .HasColumnType("boolean")
@@ -15958,6 +16084,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
                         .HasColumnName("titulo");
+
+                    b.Property<bool>("TranscripcionActiva")
+                        .HasColumnType("boolean")
+                        .HasColumnName("transcripcion_activa");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -16025,6 +16155,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
 
                     b.Property<string>("TipoArchivo")
                         .HasMaxLength(50)
@@ -16099,6 +16233,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Presente")
                         .HasColumnType("boolean")
                         .HasColumnName("presente");
+
+                    b.Property<DateTimeOffset?>("SalidaPendienteEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("salida_pendiente_en");
 
                     b.Property<Guid>("SesionId")
                         .HasColumnType("uuid")
@@ -16373,6 +16511,89 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("SesionId", "CreatedAt");
 
                     b.ToTable("sesion_quorum_log", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SesionTranscripcionLinea", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AutorNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("autor_nombre");
+
+                    b.Property<decimal?>("Confianza")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("confianza");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset>("Hora")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("hora");
+
+                    b.Property<string>("Origen")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("origen");
+
+                    b.Property<Guid?>("PersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("persona_id");
+
+                    b.Property<Guid?>("PuntoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("punto_id");
+
+                    b.Property<Guid>("SesionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sesion_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("texto");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
+
+                    b.Property<Guid?>("UnidadPrivadaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unidad_privada_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PuntoId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("SesionId", "Hora");
+
+                    b.ToTable("sesion_transcripcion_lineas", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.SistemaIncidente", b =>
@@ -23720,6 +23941,24 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SesionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Sesion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SesionTranscripcionLinea", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SesionPunto", "Punto")
+                        .WithMany()
+                        .HasForeignKey("PuntoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Propia.Domain.Entities.Sesion", "Sesion")
+                        .WithMany()
+                        .HasForeignKey("SesionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Punto");
 
                     b.Navigation("Sesion");
                 });
