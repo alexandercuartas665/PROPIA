@@ -32,6 +32,7 @@ public class IaController : ControllerBase
     private readonly IAsistenteCamposService _asistente;
     private readonly IAgentReactivacionService _reactivacion;
     private readonly IAgentEnrutamientoService _enrutamiento;
+    private readonly IPlantillasWhatsAppService _plantillas;
 
     public IaController(
         IWhatsAppLineService lines,
@@ -48,7 +49,8 @@ public class IaController : ControllerBase
         IAutomationService automations,
         IAsistenteCamposService asistente,
         IAgentReactivacionService reactivacion,
-        IAgentEnrutamientoService enrutamiento)
+        IAgentEnrutamientoService enrutamiento,
+        IPlantillasWhatsAppService plantillas)
     {
         _lines = lines;
         _connector = connector;
@@ -65,6 +67,7 @@ public class IaController : ControllerBase
         _asistente = asistente;
         _reactivacion = reactivacion;
         _enrutamiento = enrutamiento;
+        _plantillas = plantillas;
     }
 
     // ---------- Automatizaciones (Infraestructura IA) ----------
@@ -262,6 +265,37 @@ public class IaController : ControllerBase
     [HttpPost("lineas/{id:guid}/probar-envio")]
     public async Task<IActionResult> ProbarEnvio(Guid id, [FromBody] ProbarEnvioRequest req, CancellationToken ct)
         => Ok(await _connector.SendTestAsync(id, req.Phone, req.Text, ct));
+
+    // ---------- Plantillas de WhatsApp (HSM) - importadas de YCloud ----------
+    [HttpGet("plantillas")]
+    public async Task<IActionResult> ListarPlantillas([FromQuery] bool incluirArchivadas = false, CancellationToken ct = default)
+        => Ok(await _plantillas.ListarAsync(incluirArchivadas, ct));
+
+    [HttpGet("plantillas/{id:guid}")]
+    public async Task<IActionResult> ObtenerPlantilla(Guid id, CancellationToken ct)
+    {
+        var r = await _plantillas.ObtenerAsync(id, ct);
+        return r is null ? NotFound() : Ok(r);
+    }
+
+    /// <summary>Importa (UPSERT) al tenant las plantillas HSM que ya existen en la cuenta YCloud de la linea.</summary>
+    [HttpPost("plantillas/importar")]
+    public async Task<IActionResult> ImportarPlantillas([FromBody] ImportarPlantillaRequest req, CancellationToken ct)
+    {
+        var r = await _plantillas.ImportarDeYCloudAsync(req.WhatsAppLineId, ct);
+        return r.Ok ? Ok(r) : BadRequest(new { error = r.Error });
+    }
+
+    [HttpPost("plantillas/{id:guid}/archivar")]
+    public async Task<IActionResult> ArchivarPlantilla(Guid id, [FromBody] ArchivarPlantillaRequest req, CancellationToken ct)
+        => await _plantillas.ArchivarAsync(id, req.Activa, ct) ? NoContent() : NotFound();
+
+    [HttpPost("plantillas/{id:guid}/probar")]
+    public async Task<IActionResult> ProbarPlantilla(Guid id, [FromBody] ProbarPlantillaRequest req, CancellationToken ct)
+    {
+        var r = await _plantillas.ProbarEnvioAsync(id, req.Telefono, req.Valores, ct);
+        return r.Ok ? Ok(r) : BadRequest(new { error = r.Error });
+    }
 
     // ---------- Agentes de IA ----------
     [HttpGet("agentes")]
@@ -511,6 +545,9 @@ public class IaController : ControllerBase
     // ---------- Request bodies locales ----------
     public sealed record AsignarLineaRequest(Guid? UsuarioTenantId);
     public sealed record ProbarEnvioRequest(string Phone, string Text);
+    public sealed record ImportarPlantillaRequest(Guid WhatsAppLineId);
+    public sealed record ArchivarPlantillaRequest(bool Activa);
+    public sealed record ProbarPlantillaRequest(string Telefono, List<string>? Valores);
     public sealed record SetActiveRequest(bool Active);
     public sealed record ProbarAgenteRequest(List<AiChatTurn> Turns, string? SystemPromptOverride, string? ContactPhone = null, Guid? ConversationId = null);
     public sealed record DescribirMediaRequest(string Mime, string Base64, string Instruction);

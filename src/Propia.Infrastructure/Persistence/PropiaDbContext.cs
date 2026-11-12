@@ -362,6 +362,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<AiAgentTemplate> AiAgentTemplates => Set<AiAgentTemplate>();
     public DbSet<AiAgentTemplateMcpTool> AiAgentTemplateMcpTools => Set<AiAgentTemplateMcpTool>();
     public DbSet<NumeroEnListaNegra> NumerosEnListaNegra => Set<NumeroEnListaNegra>();
+    public DbSet<PlantillaWhatsApp> PlantillasWhatsApp => Set<PlantillaWhatsApp>();
     public DbSet<CuentaBancaria> CuentasBancarias => Set<CuentaBancaria>();
     public DbSet<VentanaDisponibilidad> VentanasDisponibilidad => Set<VentanaDisponibilidad>();
     public DbSet<EquipoFoto> EquipoFotos => Set<EquipoFoto>();

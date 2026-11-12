@@ -1,0 +1,521 @@
+@page "/ia/plantillas"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.InfraestructuraIa
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<PageTitle>Plantillas de WhatsApp - PROPIA</PageTitle>
+
+@* Plantillas de WhatsApp (HSM). Portado de ECOREX con nombre propio. El flujo principal es IMPORTAR
+   las plantillas que ya existen en la cuenta YCloud de la linea, para consultarlas y probarlas. *@
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div>
+    return;
+}
+
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+<div class="pw-wrap">
+    <div class="pw-head">
+        <div>
+            <h1 class="pw-h1">Plantillas de <span style="color:var(--propia-brand)">WhatsApp</span></h1>
+            <p class="pw-sub">Trae las plantillas aprobadas (HSM) de tu cuenta de YCloud para consultarlas y probarlas.</p>
+        </div>
+        <button class="pw-btn-primary" @onclick="AbrirImportar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
+            Importar de YCloud
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="pw-err">@_loadError <button class="pw-btn-sm" style="margin-left:8px" @onclick="CargarAsync">Reintentar</button></div>
+    }
+    @if (!string.IsNullOrEmpty(_info))
+    {
+        <div class="pw-ok">@_info</div>
+    }
+
+    <div class="pw-tabs">
+        <button class="pw-tab @(_verArchivadas ? "" : "on")" @onclick="() => CambiarVista(false)">Activas</button>
+        <button class="pw-tab @(_verArchivadas ? "on" : "")" @onclick="() => CambiarVista(true)">Archivadas</button>
+    </div>
+
+    @if (_plantillas is null)
+    {
+        <div class="pw-empty"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+    }
+    else if (_plantillas.Count == 0)
+    {
+        <div class="pw-empty">
+            <div class="pw-empty-ic">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6D4FE3" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M8 4v16"></path></svg>
+            </div>
+            @(_verArchivadas ? "No hay plantillas archivadas." : "Aun no hay plantillas. Usa \"Importar de YCloud\" para traerlas de tu cuenta.")
+        </div>
+    }
+    else
+    {
+        <div class="pw-tablecard">
+            <table class="pw-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Idioma</th>
+                        <th>Categoria</th>
+                        <th>Estado</th>
+                        <th>Encabezado</th>
+                        <th>Botones</th>
+                        <th>Linea</th>
+                        <th style="text-align:right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _plantillas)
+                    {
+                        var plant = p;
+                        <tr>
+                            <td><div class="pw-td-nom">@plant.Name</div></td>
+                            <td class="pw-td-mut">@plant.Language</td>
+                            <td class="pw-td-mut">@CategoriaLabel(plant.Categoria)</td>
+                            <td><span class="pw-badge" style="@EstadoStyle(plant.Estado)">@EstadoLabel(plant.Estado)</span></td>
+                            <td class="pw-td-mut">@EncabezadoLabel(plant.Encabezado)</td>
+                            <td class="pw-td-mut">@(plant.Botones.Count == 0 ? "-" : plant.Botones.Count.ToString())</td>
+                            <td class="pw-td-mut">@(plant.LineaNombre ?? "-")</td>
+                            <td>
+                                <div class="pw-row-actions">
+                                    <button class="pw-btn-sm" @onclick="() => AbrirVer(plant)">Ver</button>
+                                    @if (plant.Activa)
+                                    {
+                                        <button class="pw-btn-sm dark" @onclick="() => AbrirProbar(plant)">Probar</button>
+                                        <button class="pw-btn-sm" @onclick="() => ArchivarAsync(plant.Id, false)" disabled="@_busy">Archivar</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="pw-btn-sm" @onclick="() => ArchivarAsync(plant.Id, true)" disabled="@_busy">Restaurar</button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@* ---- Modal importar ---- *@
+@if (_showImportar)
+{
+    <div class="pw-ov" @onclick="() => _showImportar = false">
+        <div class="pw-modal" @onclick:stopPropagation="true">
+            <h5>Importar plantillas de YCloud</h5>
+            @if (!string.IsNullOrEmpty(_importError)) { <div class="pw-err">@_importError</div> }
+            @if (_lineasYCloud is null)
+            {
+                <p class="pw-sub">Cargando lineas...</p>
+            }
+            else if (_lineasYCloud.Count == 0)
+            {
+                <p class="pw-sub">No hay lineas de YCloud configuradas. Crea una linea con proveedor YCloud en "Lineas WhatsApp" primero.</p>
+            }
+            else
+            {
+                <div class="pw-fld">
+                    <label>Linea de YCloud</label>
+                    <select class="pw-input" @bind="_importLineId">
+                        <option value="@Guid.Empty">Elige una linea...</option>
+                        @foreach (var l in _lineasYCloud)
+                        {
+                            <option value="@l.Id">@l.InstanceName</option>
+                        }
+                    </select>
+                </div>
+                <p class="pw-sub" style="margin:-2px 0 6px;font-size:12px">Se traen las plantillas aprobadas de la cuenta y se crean o actualizan aqui (no se borra nada).</p>
+            }
+            @if (_importReporte is not null)
+            {
+                <div class="pw-ok" style="margin-top:6px">
+                    Importadas: <b>@_importReporte.Importadas</b> &middot; Actualizadas: <b>@_importReporte.Actualizadas</b> &middot;
+                    Sin cambios: <b>@_importReporte.SinCambios</b> &middot; Omitidas: <b>@_importReporte.Omitidas</b>
+                </div>
+            }
+            <div class="pw-modal-foot">
+                <button class="pw-btn-ghost" @onclick="() => _showImportar = false">Cerrar</button>
+                <button class="pw-btn-primary" @onclick="ImportarAsync" disabled="@(_busy || _lineasYCloud is null || _lineasYCloud.Count == 0 || _importLineId == Guid.Empty)">Importar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ---- Modal ver detalle ---- *@
+@if (_showVer && _ver is not null)
+{
+    <div class="pw-ov" @onclick="() => _showVer = false">
+        <div class="pw-modal pw-modal-lg" @onclick:stopPropagation="true">
+            <h5>@_ver.Name <span class="pw-badge" style="@EstadoStyle(_ver.Estado)">@EstadoLabel(_ver.Estado)</span></h5>
+            <div class="pw-det-meta">
+                <span>Idioma: <b>@_ver.Language</b></span>
+                <span>Categoria: <b>@CategoriaLabel(_ver.Categoria)</b></span>
+                @if (!string.IsNullOrWhiteSpace(_ver.LineaNombre)) { <span>Linea: <b>@_ver.LineaNombre</b></span> }
+            </div>
+            @if (_ver.Encabezado is not null && _ver.Encabezado != PlantillaWaEncabezado.None)
+            {
+                <div class="pw-det-blk">
+                    <div class="pw-det-lbl">Encabezado (@EncabezadoLabel(_ver.Encabezado))</div>
+                    <div class="pw-det-txt">@(string.IsNullOrWhiteSpace(_ver.EncabezadoTexto) ? (_ver.EncabezadoMediaUrl ?? "(media)") : _ver.EncabezadoTexto)</div>
+                </div>
+            }
+            <div class="pw-det-blk">
+                <div class="pw-det-lbl">Cuerpo</div>
+                <div class="pw-det-txt" style="white-space:pre-wrap">@_ver.Cuerpo</div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_ver.PieTexto))
+            {
+                <div class="pw-det-blk">
+                    <div class="pw-det-lbl">Pie</div>
+                    <div class="pw-det-txt">@_ver.PieTexto</div>
+                </div>
+            }
+            @if (_ver.Variables.Count > 0)
+            {
+                <div class="pw-det-blk">
+                    <div class="pw-det-lbl">Variables (ejemplos)</div>
+                    <div class="pw-chips">
+                        @foreach (var v in _ver.Variables)
+                        {
+                            <span class="pw-chip">&#123;&#123;@v.Token&#125;&#125; = @v.Example</span>
+                        }
+                    </div>
+                </div>
+            }
+            @if (_ver.Botones.Count > 0)
+            {
+                <div class="pw-det-blk">
+                    <div class="pw-det-lbl">Botones</div>
+                    <div class="pw-chips">
+                        @foreach (var b in _ver.Botones)
+                        {
+                            <span class="pw-chip">@b.Type@(string.IsNullOrWhiteSpace(b.Text) ? "" : (": " + b.Text))</span>
+                        }
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_ver.MotivoRechazo))
+            {
+                <div class="pw-err" style="margin-top:8px">Motivo de rechazo: @_ver.MotivoRechazo</div>
+            }
+            <div class="pw-modal-foot">
+                <button class="pw-btn-ghost" @onclick="() => _showVer = false">Cerrar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ---- Modal probar envio ---- *@
+@if (_showProbar && _probar is not null)
+{
+    <div class="pw-ov" @onclick="() => _showProbar = false">
+        <div class="pw-modal" @onclick:stopPropagation="true">
+            <h5>Probar "@_probar.Name"</h5>
+            @if (!string.IsNullOrEmpty(_probarMsg)) { <div class="@(_probarOk ? "pw-ok" : "pw-err")">@_probarMsg</div> }
+            <div class="pw-fld">
+                <label>Numero destino (con codigo de pais, sin +)</label>
+                <input class="pw-input" @bind="_probarPhone" @bind:event="oninput" placeholder="573000000000" />
+            </div>
+            @if (_probarValores.Count > 0)
+            {
+                <div class="pw-fld">
+                    <label>Valores de las variables</label>
+                    @for (var i = 0; i < _probarValores.Count; i++)
+                    {
+                        var idx = i;
+                        <div class="pw-var-row">
+                            <span class="pw-var-tag">&#123;&#123;@(idx + 1)&#125;&#125;</span>
+                            <input class="pw-input" @bind="_probarValores[idx]" @bind:event="oninput" />
+                        </div>
+                    }
+                </div>
+            }
+            <p class="pw-sub" style="margin:-2px 0 4px;font-size:12px">En lineas YCloud/Cloud la plantilla debe estar aprobada; en Evolution se envia como texto.</p>
+            <div class="pw-modal-foot">
+                <button class="pw-btn-ghost" @onclick="() => _showProbar = false">Cerrar</button>
+                <button class="pw-btn-primary" @onclick="ProbarEnvioAsync" disabled="@_busy">Enviar</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* Canon margen lateral (= Unidades): full-width, sin max-width propio. */
+    .pw-wrap { width:100%; max-width:none; margin:0; padding:6px 0 60px; box-sizing:border-box; font-family:'Lexend',-apple-system,sans-serif; animation:fadeUp .2s ease; }
+    .pw-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:18px; flex-wrap:wrap; }
+    .pw-h1 { font-size:27px; font-weight:800; letter-spacing:-.6px; color:var(--propia-text-h1); margin:0; }
+    .pw-sub { font-size:14px; color:var(--propia-text-muted); margin:4px 0 0; }
+    .pw-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:10px 16px; border-radius:10px; background:var(--propia-brand); color: var(--propia-text-inverse); font-size:13px; font-weight:700; border:none; cursor:pointer; box-shadow:0 6px 16px rgba(109,79,227,.3); }
+    .pw-btn-primary:hover { background:var(--propia-brand-hover); }
+    .pw-btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+    .pw-err { display:flex; align-items:center; background:var(--propia-danger-soft); border:1px solid #F5C8CB; color:#A12B30; border-radius:12px; padding:11px 14px; font-size:12.5px; margin-bottom:12px; }
+    .pw-ok { background:var(--propia-ok-soft); border:1px solid #BFE8CF; color:#15703F; border-radius:12px; padding:11px 14px; font-size:12.5px; margin-bottom:12px; }
+    .pw-tabs { display:flex; gap:6px; margin-bottom:14px; }
+    .pw-tab { font-size:12.5px; font-weight:700; padding:8px 16px; border-radius:9px; border:1px solid var(--propia-border-card); background:var(--propia-bg-card); color:var(--propia-text-secondary); cursor:pointer; }
+    .pw-tab.on { background:var(--propia-brand); color:var(--propia-text-inverse); border-color:var(--propia-brand); }
+    .pw-empty { background:var(--propia-bg-card); border:1px dashed var(--propia-border-input); border-radius:14px; padding:44px 24px; text-align:center; color:var(--propia-text-muted); font-size:13px; }
+    .pw-empty-ic { width:54px; height:54px; border-radius:14px; background:var(--propia-brand-soft); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
+    .pw-tablecard { background:var(--propia-bg-card); border:1px solid var(--propia-border-card); border-radius:14px; box-shadow:0 1px 2px rgba(45,62,80,.05); overflow-x:auto; }
+    .pw-table { width:100%; border-collapse:collapse; font-size:13px; min-width:820px; }
+    .pw-table thead th { text-align:left; font-size:10.5px; letter-spacing:.4px; font-weight:700; color:var(--propia-text-faint); padding:12px 16px; background:var(--propia-bg-app); border-bottom:1px solid var(--propia-border-divider); text-transform:uppercase; }
+    .pw-table tbody td { padding:12px 16px; border-bottom:1px solid var(--propia-border-divider); color:var(--propia-text-body); vertical-align:middle; }
+    .pw-table tbody tr:last-child td { border-bottom:none; }
+    .pw-table tbody tr:hover { background:var(--propia-bg-hover); }
+    .pw-td-nom { font-size:13.5px; font-weight:700; color:var(--propia-text-h1); }
+    .pw-td-mut { color:var(--propia-text-muted); }
+    .pw-badge { font-size:10px; font-weight:800; padding:4px 10px; border-radius:20px; display:inline-flex; align-items:center; gap:5px; text-transform:uppercase; letter-spacing:.3px; }
+    .pw-row-actions { display:flex; gap:7px; justify-content:flex-end; flex-wrap:wrap; }
+    .pw-btn-sm { font-size:11.5px; font-weight:700; padding:7px 12px; border-radius:9px; border:1px solid var(--propia-border-card); background:var(--propia-bg-card); color:var(--propia-text-secondary); cursor:pointer; transition:all .13s ease; }
+    .pw-btn-sm:hover { border-color:var(--propia-brand); color:var(--propia-brand); background:var(--propia-brand-soft); }
+    .pw-btn-sm:disabled { opacity:.5; cursor:not-allowed; }
+    .pw-btn-sm.dark { background:var(--propia-brand); color:var(--propia-text-inverse); border-color:var(--propia-brand); box-shadow:0 3px 9px rgba(109,79,227,.25); }
+    .pw-btn-sm.dark:hover { background:var(--propia-brand-hover); color:var(--propia-text-inverse); }
+    .pw-ov { position:fixed; inset:0; z-index:81; background:rgba(27,42,58,.6); display:flex; align-items:center; justify-content:center; padding:24px; }
+    .pw-modal { width:min(460px,96vw); background:var(--propia-bg-card); border-radius:16px; box-shadow:0 30px 70px rgba(27,42,58,.45); padding:22px 24px; }
+    .pw-modal-lg { width:min(620px,96vw); max-height:86vh; overflow-y:auto; }
+    .pw-modal h5 { font-size:17px; font-weight:800; color:var(--propia-text-h1); margin:0 0 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .pw-fld { margin-bottom:12px; }
+    .pw-fld label { font-size:11px; font-weight:700; color:var(--propia-text-muted); display:block; margin-bottom:5px; }
+    .pw-input { width:100%; border:1px solid var(--propia-border-card); border-radius:9px; padding:9px 12px; font-size:13px; color:var(--propia-text-body); outline:none; box-sizing:border-box; font-family:inherit; background:var(--propia-bg-card); }
+    .pw-input:focus { border-color:var(--propia-brand); }
+    .pw-var-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+    .pw-var-tag { font-size:11px; font-weight:800; color:var(--propia-brand); background:var(--propia-brand-soft); padding:4px 8px; border-radius:6px; flex-shrink:0; }
+    .pw-modal-foot { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+    .pw-btn-ghost { font-size:12.5px; font-weight:700; padding:9px 14px; border-radius:9px; border:1px solid var(--propia-border-card); background:var(--propia-bg-card); color:var(--propia-text-secondary); cursor:pointer; }
+    .pw-btn-ghost:hover { border-color:var(--propia-text-faint); }
+    .pw-det-meta { display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--propia-text-muted); margin-bottom:12px; }
+    .pw-det-blk { margin-bottom:12px; }
+    .pw-det-lbl { font-size:11px; font-weight:800; letter-spacing:.3px; color:var(--propia-text-faint); text-transform:uppercase; margin-bottom:5px; }
+    .pw-det-txt { font-size:13.5px; color:var(--propia-text-body); line-height:1.5; }
+    .pw-chips { display:flex; gap:7px; flex-wrap:wrap; }
+    .pw-chip { font-size:11.5px; font-weight:600; color:var(--propia-text-secondary); background:var(--propia-bg-app); border:1px solid var(--propia-border-divider); padding:4px 10px; border-radius:7px; }
+    @@media (max-width:760px) { .pw-head { gap:12px; } }
+</style>
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private bool _busy;
+    private string? _loadError;
+    private string? _info;
+    private bool _verArchivadas;
+
+    private List<PlantillaWhatsAppDto>? _plantillas;
+
+    // Importar
+    private bool _showImportar;
+    private List<WhatsAppLineDto>? _lineasYCloud;
+    private Guid _importLineId = Guid.Empty;
+    private string? _importError;
+    private ImportarPlantillasReporte? _importReporte;
+
+    // Ver detalle
+    private bool _showVer;
+    private PlantillaWhatsAppDto? _ver;
+
+    // Probar
+    private bool _showProbar;
+    private PlantillaWhatsAppDto? _probar;
+    private string _probarPhone = "";
+    private List<string> _probarValores = new();
+    private string? _probarMsg;
+    private bool _probarOk;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                await CargarAsync();
+                StateHasChanged();
+            }
+        }
+        catch { /* prerender */ }
+    }
+
+    private async Task CambiarVista(bool archivadas)
+    {
+        _verArchivadas = archivadas;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var http = Auth();
+            var url = $"/api/ia/plantillas?incluirArchivadas={(_verArchivadas ? "true" : "false")}";
+            var resp = await http.GetAsync(url);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevoJwt = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (string.IsNullOrEmpty(nuevoJwt)) return;
+                _jwt = nuevoJwt;
+                http = Auth();
+                resp = await http.GetAsync(url);
+            }
+            resp.EnsureSuccessStatusCode();
+            var todas = await resp.Content.ReadFromJsonAsync<List<PlantillaWhatsAppDto>>() ?? new();
+            // La vista "Activas" solo muestra activas; "Archivadas" solo las inactivas (el API trae todas cuando incluirArchivadas).
+            _plantillas = _verArchivadas ? todas.Where(t => !t.Activa).ToList() : todas;
+            _loadError = null;
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+
+    private async Task AbrirImportar()
+    {
+        _showImportar = true;
+        _importError = null;
+        _importReporte = null;
+        _importLineId = Guid.Empty;
+        _lineasYCloud = null;
+        try
+        {
+            var lineas = await Auth().GetFromJsonAsync<List<WhatsAppLineDto>>("/api/ia/lineas") ?? new();
+            _lineasYCloud = lineas.Where(l => l.Provider == WhatsAppProvider.YCloud).ToList();
+        }
+        catch (Exception ex) { _importError = ex.Message; _lineasYCloud = new(); }
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (_importLineId == Guid.Empty) return;
+        _busy = true; _importError = null; _importReporte = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync("/api/ia/plantillas/importar", new { WhatsAppLineId = _importLineId });
+            if (!resp.IsSuccessStatusCode)
+            {
+                _importError = await ErrorMsg(resp);
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<ImportarPlantillasResultado>();
+            _importReporte = r?.Reporte;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _importError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void AbrirVer(PlantillaWhatsAppDto p)
+    {
+        _ver = p; _showVer = true;
+    }
+
+    private void AbrirProbar(PlantillaWhatsAppDto p)
+    {
+        _probar = p;
+        _probarPhone = "";
+        _probarMsg = null;
+        _probarValores = p.Variables.Select(v => v.Example ?? "").ToList();
+        _showProbar = true;
+    }
+
+    private async Task ProbarEnvioAsync()
+    {
+        if (_probar is null) return;
+        _busy = true; _probarMsg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/plantillas/{_probar.Id}/probar",
+                new { Telefono = _probarPhone, Valores = _probarValores });
+            if (resp.IsSuccessStatusCode)
+            {
+                _probarOk = true;
+                _probarMsg = "Mensaje de prueba enviado.";
+            }
+            else
+            {
+                _probarOk = false;
+                _probarMsg = await ErrorMsg(resp);
+            }
+        }
+        catch (Exception ex) { _probarOk = false; _probarMsg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ArchivarAsync(Guid id, bool activa)
+    {
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/ia/plantillas/{id}/archivar", new { Activa = activa });
+            if (resp.IsSuccessStatusCode) { await CargarAsync(); }
+            else { _loadError = await ErrorMsg(resp); }
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private static async Task<string> ErrorMsg(HttpResponseMessage resp)
+    {
+        try { var e = await resp.Content.ReadFromJsonAsync<ApiError>(); return e?.Error ?? $"HTTP {(int)resp.StatusCode}"; }
+        catch { return $"HTTP {(int)resp.StatusCode}"; }
+    }
+
+    private static string CategoriaLabel(PlantillaWaCategoria c) => c switch
+    {
+        PlantillaWaCategoria.Marketing => "Marketing",
+        PlantillaWaCategoria.Authentication => "Autenticacion",
+        _ => "Utilidad"
+    };
+
+    private static string EncabezadoLabel(PlantillaWaEncabezado? e) => e switch
+    {
+        PlantillaWaEncabezado.Text => "Texto",
+        PlantillaWaEncabezado.Image => "Imagen",
+        PlantillaWaEncabezado.Document => "Documento",
+        PlantillaWaEncabezado.Video => "Video",
+        _ => "-"
+    };
+
+    private static string EstadoLabel(PlantillaWaEstado s) => s switch
+    {
+        PlantillaWaEstado.Approved => "Aprobada",
+        PlantillaWaEstado.Submitted => "En revision",
+        PlantillaWaEstado.Rejected => "Rechazada",
+        PlantillaWaEstado.Paused => "Pausada",
+        PlantillaWaEstado.Disabled => "Deshabilitada",
+        _ => "Borrador"
+    };
+
+    private static string EstadoStyle(PlantillaWaEstado s) => s switch
+    {
+        PlantillaWaEstado.Approved => "color:#15703F;background:#E6F6EE",
+        PlantillaWaEstado.Submitted => "color:#1D4ED8;background:#E0EAFF",
+        PlantillaWaEstado.Rejected => "color:#A12B30;background:#FDE7E7",
+        PlantillaWaEstado.Paused => "color:#7A5B12;background:#FBF0D3",
+        PlantillaWaEstado.Disabled => "color:#516F90;background:#EEF3F8",
+        _ => "color:#7C98B6;background:#F5F8FA"
+    };
+
+    private sealed record ApiError(string Error);
+}

@@ -11107,6 +11107,138 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("planes");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.PlantillaWhatsApp", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activa")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activa");
+
+                    b.Property<string>("BotonesJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("botones_json");
+
+                    b.Property<string>("Categoria")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("categoria");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Cuerpo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("cuerpo");
+
+                    b.Property<string>("Encabezado")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("encabezado");
+
+                    b.Property<string>("EncabezadoMediaUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("encabezado_media_url");
+
+                    b.Property<string>("EncabezadoTexto")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("encabezado_texto");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("language");
+
+                    b.Property<string>("MotivoRechazo")
+                        .HasColumnType("text")
+                        .HasColumnName("motivo_rechazo");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PieTexto")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("pie_texto");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ProviderTemplateId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("provider_template_id");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("VariablesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("variables_json");
+
+                    b.Property<string>("WabaId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("waba_id");
+
+                    b.Property<Guid>("WhatsAppLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("whats_app_line_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WhatsAppLineId");
+
+                    b.HasIndex("TenantId", "Activa");
+
+                    b.HasIndex("TenantId", "Name", "Language")
+                        .IsUnique();
+
+                    b.ToTable("plantillas_whatsapp", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.PlatformBranding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -22483,6 +22615,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Empresa");
 
                     b.Navigation("Persona");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.PlantillaWhatsApp", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.WhatsAppLine", "WhatsAppLine")
+                        .WithMany()
+                        .HasForeignKey("WhatsAppLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WhatsAppLine");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.PolizaDocumento", b =>

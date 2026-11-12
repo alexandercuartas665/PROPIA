@@ -52,6 +52,30 @@ public sealed record YCloudCredentials(string ApiKey, string FromNumber);
 public sealed record YCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
 public sealed record YCloudSendResult(bool Ok, string? ExternalId, string? Error);
 
+/// <summary>Una plantilla HSM tal como la devuelve YCloud (formato Meta) al listar, con su contenido para poder
+/// IMPORTARLA. Las variables del cuerpo son POSICIONALES ({{1}}, {{2}}...); <paramref name="VariableExamples"/>
+/// son sus ejemplos en orden. <paramref name="HeaderFormat"/> es "TEXT"|"IMAGE"|"VIDEO"|"DOCUMENT" o null.</summary>
+public sealed record YCloudTemplateItem(
+    string Name,
+    string? Language,
+    string Status,
+    string? Id,
+    string? RejectedReason,
+    string? Category,
+    string? HeaderFormat,
+    string? HeaderText,
+    string? BodyText,
+    string? FooterText,
+    IReadOnlyList<string>? VariableExamples,
+    IReadOnlyList<YCloudTemplateButton>? Buttons);
+
+/// <summary>Un boton de una plantilla HSM tal como lo trae Meta/YCloud (para importarlo y mostrarlo).
+/// <paramref name="Type"/> en MAYUSCULAS: URL | QUICK_REPLY | PHONE_NUMBER | COPY_CODE | ...
+/// <paramref name="HasUrlVariable"/> = boton URL con sufijo variable {{1}} (dinamico por envio).</summary>
+public sealed record YCloudTemplateButton(string Type, string? Text, string? Url, string? PhoneNumber, bool HasUrlVariable);
+
+public sealed record YCloudTemplateListResult(bool Ok, IReadOnlyList<YCloudTemplateItem> Items, string? Error);
+
 // ---------- Agentes de IA ----------
 
 public sealed record AiAgentDto(
