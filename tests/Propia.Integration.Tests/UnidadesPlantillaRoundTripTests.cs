@@ -606,7 +606,7 @@ public class UnidadesPlantillaRoundTripTests
         var blob = new NoopBlobStorage();
         var dir = new Propia.Infrastructure.Directorio.DirectorioService(db, tenantCtx, blob);
         var mi = new MiCopropiedadService(db, tenantCtx, blob, new StubSeedUsuarioRolService(), dir);
-        var porteria = new Propia.Infrastructure.Porteria.PorteriaService(db, tenantCtx, http, new FakeNotificacionDispatcher());
+        var porteria = new Propia.Infrastructure.Porteria.PorteriaService(db, tenantCtx, http, new FakeNotificacionDispatcher(), new Propia.Infrastructure.Tareas.TareasService(db, tenantCtx, http, new FakeNotificacionDispatcher()), new Propia.Infrastructure.Mantenimiento.MantenimientoService(db, tenantCtx, http, new FakeNotificacionDispatcher(), new Propia.Infrastructure.Tareas.TareasService(db, tenantCtx, http, new FakeNotificacionDispatcher())));
         var svc = new UnidadesCargaImportService(db, tenantCtx, http, mi, porteria, dir);
         return await svc.ImportarAsync(ms, CancellationToken.None);
     }

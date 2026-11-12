@@ -1,5 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PORTERIA: HUECOS DE OPERACION + UX GUARDA DE EDAD + MANUAL (2026-11-12): 1 MIGRACION (solo columnas) + API y Web + 1 AJUSTE DE MENU.**
+> - **MIGRACION `20261112201435_PorteriaHuecosOperacion`** (va DESPUES de `AsambleaOla5Sala`): `correspondencias.entregado_doc`
+>   (varchar 60), `correspondencias.recordatorios` (int, default 0), `correspondencias.ultimo_recordatorio_at`,
+>   `novedades_turno.intervencion_id` (uuid). Tablas existentes (RLS ya aplica). Sin datos tocados.
+> - **MENU (prod)**: "Porteria y accesos" (`op-porteria`) viene OCULTO en `menu_overrides` (hidden = true). Activarlo en
+>   **Super Admin > Menu** (o `update menu_overrides set hidden=false where node_key='op-porteria'`). En dev ya esta activo.
+> - Endpoints nuevos: `POST api/porteria/correspondencia/{id}/notificar` (recordatorio al residente),
+>   `POST api/porteria/turnos/{turnoId}/alerta-seguridad`. `PUT .../entregar` ahora EXIGE quien retira (+ documento opcional).
+> - Avisos: paquete registrado/recordatorio/devuelto -> al residente de la unidad (app + canal de Configuracion de Porteria:
+>   WhatsApp/correo/ninguno); novedad -> administracion siempre, residente si es sobre una unidad, vigilancia (guardas de
+>   turnos activos + usuarios con cargo portero/vigilancia/seguridad) con prioridad Critica si es de seguridad. Con
+>   "Generar tarea" (opcion RN-14 de la copropiedad): dano/mantenimiento sobre equipo o zona -> intervencion correctiva en
+>   Mantenimiento (origen Porteria); lo demas -> tarea en Tareas (origen "Porteria", tablero General).
+> - UI: pestanas grandes con icono, Vehiculos y Paquetes con modales, boton "Alerta de seguridad" y "Manual"
+>   (`/ayuda/porteria.html`, estatico). `porteria.css?v=5`.
+
 > **ASAMBLEAS OLA 5: SALA VIRTUAL CON LIVEKIT (2026-11-12): 1 MIGRACION (solo columnas) + CONFIG NUEVA (env) + API y Web.**
 > - **MIGRACION `20261112172720_AsambleaOla5Sala`** (va DESPUES de `AsambleaOla4Transcripcion`): `sesiones.grabacion_egress_id`
 >   (varchar 100), `sesiones.grabacion_iniciada_en`, `sesion_participantes.salida_pendiente_en` (timestamptz, nullable). Sin

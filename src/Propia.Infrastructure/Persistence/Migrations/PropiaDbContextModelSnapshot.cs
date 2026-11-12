@@ -3948,6 +3948,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("entregado_at");
 
+                    b.Property<string>("EntregadoDoc")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("entregado_doc");
+
                     b.Property<int>("Estado")
                         .HasColumnType("integer")
                         .HasColumnName("estado");
@@ -3972,6 +3977,12 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("recibido_at");
 
+                    b.Property<int>("Recordatorios")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("recordatorios");
+
                     b.Property<string>("Remitente")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
@@ -3988,6 +3999,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TurnoId")
                         .HasColumnType("uuid")
                         .HasColumnName("turno_id");
+
+                    b.Property<DateTimeOffset?>("UltimoRecordatorioAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ultimo_recordatorio_at");
 
                     b.Property<Guid>("UnidadPrivadaId")
                         .HasColumnType("uuid")
@@ -9751,6 +9766,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("GuardaPersonaId")
                         .HasColumnType("uuid")
                         .HasColumnName("guarda_persona_id");
+
+                    b.Property<Guid?>("IntervencionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("intervencion_id");
 
                     b.Property<Guid?>("TareaId")
                         .HasColumnType("uuid")

@@ -62,9 +62,13 @@ public interface IPorteriaService
     Task<CorrespondenciaDto> RegistrarCorrespondenciaAsync(Guid turnoId, RegistrarCorrespondenciaRequest req, CancellationToken ct);
     Task<bool> EntregarCorrespondenciaAsync(Guid id, EntregarCorrespondenciaRequest req, CancellationToken ct);
     Task<bool> DevolverCorrespondenciaAsync(Guid id, DevolverCorrespondenciaRequest req, CancellationToken ct);
+    /// <summary>Reenvia el aviso al residente (recordatorio) de un paquete pendiente. Devuelve el paquete actualizado.</summary>
+    Task<CorrespondenciaDto?> RenotificarCorrespondenciaAsync(Guid id, CancellationToken ct);
 
     // ----- Novedades -----
     Task<NovedadDto> CrearNovedadAsync(Guid turnoId, CrearNovedadRequest req, CancellationToken ct);
+    /// <summary>Alerta de seguridad: novedad Seguridad + aviso inmediato (critico) a administracion y vigilancia.</summary>
+    Task<NovedadDto> AlertaSeguridadAsync(Guid turnoId, AlertaSeguridadRequest req, CancellationToken ct);
     Task<IReadOnlyList<NovedadDto>> ListarNovedadesAsync(Guid? turnoId, DateOnly? fecha, CancellationToken ct);
 
     // ----- Panel monitoreo admin -----

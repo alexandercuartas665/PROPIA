@@ -55,7 +55,9 @@ public enum OrigenIntervencion
     Manual = 1,
     Automatico = 2,
     Pqrsd = 3,
-    WhatsAppIa = 4
+    WhatsAppIa = 4,
+    /// <summary>Novedad de porteria (dano o mantenimiento reportado por el guarda).</summary>
+    Porteria = 5
 }
 
 /// <summary>Estado de la intervencion. Spec 2.11 seccion 7. Completada/Cancelada terminales.</summary>

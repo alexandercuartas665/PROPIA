@@ -217,7 +217,10 @@ public record CorrespondenciaDto(
     DateTimeOffset? DevueltoAt,
     string? MotivoDevolucion,
     Guid GuardaRecibePersonaId,
-    Guid? GuardaEntregaPersonaId);
+    Guid? GuardaEntregaPersonaId,
+    string? EntregadoDoc = null,
+    int Recordatorios = 0,
+    DateTimeOffset? UltimoRecordatorioAt = null);
 
 public record RegistrarCorrespondenciaRequest(
     Guid UnidadPrivadaId,
@@ -225,7 +228,8 @@ public record RegistrarCorrespondenciaRequest(
     string? Remitente,
     string? Descripcion);
 
-public record EntregarCorrespondenciaRequest(string? EntregadoA);
+/// <summary>Entrega con constancia: quien retira (obligatorio) y su documento (opcional).</summary>
+public record EntregarCorrespondenciaRequest(string? EntregadoA, string? EntregadoDoc = null);
 public record DevolverCorrespondenciaRequest(string MotivoDevolucion);
 
 // ===========================================================================
@@ -243,7 +247,15 @@ public record NovedadDto(
     string? DestinoNombre,
     bool GeneraTarea,
     Guid? TareaId,
-    DateTimeOffset CreadoAt);
+    DateTimeOffset CreadoAt,
+    Guid? IntervencionId = null,
+    /// <summary>A quien se aviso al registrarla (solo en la respuesta del alta): "administracion", "vigilancia", "el residente de la Unidad 101".</summary>
+    IReadOnlyList<string>? Avisados = null,
+    /// <summary>Que se genero: "Mantenimiento MT-0001" o "Tareas #12" (solo en la respuesta del alta).</summary>
+    string? TareaGenerada = null);
+
+/// <summary>Alerta de seguridad (panico): novedad tipo Seguridad con aviso inmediato a administracion y vigilancia.</summary>
+public record AlertaSeguridadRequest(string Descripcion, DestinoNovedad? DestinoTipo = null, Guid? DestinoId = null, bool GeneraTarea = false);
 
 public record CrearNovedadRequest(
     string Descripcion,

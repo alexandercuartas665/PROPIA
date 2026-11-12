@@ -133,6 +133,8 @@ public partial class PropiaDbContext
             b.Property(x => x.Remitente).HasMaxLength(200);
             b.Property(x => x.Descripcion).HasColumnType("text");
             b.Property(x => x.EntregadoA).HasMaxLength(200);
+            b.Property(x => x.EntregadoDoc).HasMaxLength(60);
+            b.Property(x => x.Recordatorios).HasDefaultValue(0);
             b.Property(x => x.MotivoDevolucion).HasColumnType("text");
             b.Property(x => x.Tipo).HasConversion<int>();
             b.Property(x => x.Estado).HasConversion<int>();

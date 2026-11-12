@@ -20,18 +20,80 @@ public class PorteriaService : IPorteriaService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
+    private readonly Propia.Application.Tareas.ITareasService _tareas;
+    private readonly Propia.Application.Mantenimiento.IMantenimientoService _mantenimiento;
 
     public PorteriaService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
-        Propia.Application.Notificaciones.INotificacionDispatcher noti)
+        Propia.Application.Notificaciones.INotificacionDispatcher noti,
+        Propia.Application.Tareas.ITareasService tareas,
+        Propia.Application.Mantenimiento.IMantenimientoService mantenimiento)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _noti = noti;
+        _tareas = tareas;
+        _mantenimiento = mantenimiento;
     }
+
+    // ===========================================================================
+    // Destinatarios (PROPUESTAS 9.2): administracion siempre; el residente si afecta una unidad;
+    // vigilancia (inmediato) si es de seguridad.
+    // ===========================================================================
+
+    /// <summary>Personas vinculadas activas a la unidad (propietario, arrendatario, residente...).</summary>
+    private async Task<List<Guid>> PersonasDeUnidadAsync(Guid unidadId, CancellationToken ct)
+        => await _db.UnidadPersonas.AsNoTracking()
+            .Where(x => x.UnidadId == unidadId && x.Activo && x.PersonaId != null)
+            .Select(x => x.PersonaId!.Value).Distinct().Take(10).ToListAsync(ct);
+
+    /// <summary>Aviso al residente: en el app siempre y, ademas, por el canal configurado para paquetes (WhatsApp/correo).</summary>
+    private async Task<int> NotificarResidentesUnidadAsync(Guid unidadId, Guid? entidadOrigen, string asunto, string cuerpo,
+        Domain.Enums.PrioridadNotificacion prioridad, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return 0;
+        var personas = await PersonasDeUnidadAsync(unidadId, ct);
+        if (personas.Count == 0) return 0;
+        var cfg = await GetOrCreateConfigAsync(ct);
+        var canales = new List<Domain.Enums.CanalNotificacion> { Domain.Enums.CanalNotificacion.InApp };
+        if (cfg.CanalNotificacionPaquetes == CanalNotificacionPaquete.Whatsapp) canales.Add(Domain.Enums.CanalNotificacion.WhatsApp);
+        else if (cfg.CanalNotificacionPaquetes == CanalNotificacionPaquete.Email) canales.Add(Domain.Enums.CanalNotificacion.Email);
+        await _noti.EnviarLoteAsync(personas.SelectMany(pid => canales.Select(canal =>
+            new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+                Canal: canal, Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: pid,
+                Asunto: asunto, Prioridad: prioridad, ModuloOrigenCodigo: "2.12", EntidadOrigenId: entidadOrigen))), ct);
+        return personas.Count;
+    }
+
+    /// <summary>Vigilancia: el guarda de cada turno activo y los usuarios con cargo de porteria/vigilancia/seguridad.</summary>
+    private async Task NotificarVigilanciaAsync(Guid? entidadOrigen, string asunto, string cuerpo, CancellationToken ct)
+    {
+        var tenantId = _tenantContext.CurrentTenantId;
+        if (tenantId is null) return;
+        var guardas = await _db.TurnosPorteria.AsNoTracking().Where(t => t.Estado == EstadoTurnoPorteria.Activo)
+            .Select(t => t.GuardaPersonaId).ToListAsync(ct);
+        var conCargo = await _db.UsuarioTenantCargos.AsNoTracking()
+            .Where(c => c.Cargo.ToLower().Contains("porter") || c.Cargo.ToLower().Contains("vigil")
+                || c.Cargo.ToLower().Contains("guarda") || c.Cargo.ToLower().Contains("seguridad"))
+            .Join(_db.UsuariosTenant.AsNoTracking().Where(u => u.Estado == Domain.Enums.EstadoUsuarioTenant.Activo),
+                c => c.UsuarioTenantId, u => u.Id, (c, u) => u.PersonaId)
+            .ToListAsync(ct);
+        var personas = guardas.Concat(conCargo).Distinct().Take(30).ToList();
+        if (personas.Count == 0) return;
+        await _noti.EnviarLoteAsync(personas.Select(pid => new Propia.Application.Notificaciones.EnviarNotificacionRequest(
+            Canal: Domain.Enums.CanalNotificacion.InApp, Cuerpo: cuerpo, TenantId: tenantId, PersonaDestinatariaId: pid,
+            Asunto: asunto, Prioridad: Domain.Enums.PrioridadNotificacion.Critica, ModuloOrigenCodigo: "2.12", EntidadOrigenId: entidadOrigen)), ct);
+    }
+
+    private static CorrespondenciaDto MapCorrespondencia(Correspondencia c, string unidad, PorteriaConfiguracion cfg, DateTimeOffset ahora)
+        => new(c.Id, c.TurnoId, c.UnidadPrivadaId, unidad,
+            c.Tipo, c.Remitente, c.Descripcion, c.Estado, CalcularSemaforo(c, ahora, cfg),
+            c.RecibidoAt, c.NotificadoAt, c.EntregadoAt, c.EntregadoA, c.DevueltoAt, c.MotivoDevolucion,
+            c.GuardaRecibePersonaId, c.GuardaEntregaPersonaId, c.EntregadoDoc, c.Recordatorios, c.UltimoRecordatorioAt);
 
     private async Task NotificarAdminsAsync(
         string codigoModulo, Guid? entidadOrigen, string asunto, string cuerpo,
@@ -751,10 +813,7 @@ public class PorteriaService : IPorteriaService
         foreach (var c in list)
         {
             var unidad = await _db.UnidadesPrivadas.AsNoTracking().Where(up => up.Id == c.UnidadPrivadaId).Select(up => up.Numero).FirstOrDefaultAsync(ct) ?? "";
-            result.Add(new CorrespondenciaDto(c.Id, c.TurnoId, c.UnidadPrivadaId, unidad,
-                c.Tipo, c.Remitente, c.Descripcion, c.Estado, CalcularSemaforo(c, ahora, cfg),
-                c.RecibidoAt, c.NotificadoAt, c.EntregadoAt, c.EntregadoA, c.DevueltoAt, c.MotivoDevolucion,
-                c.GuardaRecibePersonaId, c.GuardaEntregaPersonaId));
+            result.Add(MapCorrespondencia(c, unidad, cfg, ahora));
         }
         return result;
     }
@@ -801,11 +860,44 @@ public class PorteriaService : IPorteriaService
             $"Correspondencia recibida - Unidad {unidad}",
             $"Llego correspondencia para la unidad {unidad}. Tipo: {c.Tipo}. Remitente: {c.Remitente ?? "-"}.",
             Domain.Enums.PrioridadNotificacion.Normal, ct);
+        // El residente de la unidad es quien tiene que saberlo (antes solo se avisaba a la administracion).
+        await NotificarResidentesUnidadAsync(c.UnidadPrivadaId, c.Id,
+            $"Tienes {TipoCorrespondenciaTexto(c.Tipo)} en portería",
+            $"Llegó {TipoCorrespondenciaTexto(c.Tipo)} para la unidad {unidad}{(string.IsNullOrWhiteSpace(c.Remitente) ? "" : $" de {c.Remitente}")}. Puedes recogerlo en portería.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
 
-        return new CorrespondenciaDto(c.Id, c.TurnoId, c.UnidadPrivadaId, unidad,
-            c.Tipo, c.Remitente, c.Descripcion, c.Estado, CalcularSemaforo(c, DateTimeOffset.UtcNow, cfg),
-            c.RecibidoAt, c.NotificadoAt, c.EntregadoAt, c.EntregadoA, c.DevueltoAt, c.MotivoDevolucion,
-            c.GuardaRecibePersonaId, c.GuardaEntregaPersonaId);
+        return MapCorrespondencia(c, unidad, cfg, DateTimeOffset.UtcNow);
+    }
+
+    private static string TipoCorrespondenciaTexto(TipoCorrespondencia t) => t switch
+    {
+        TipoCorrespondencia.Paquete => "un paquete",
+        TipoCorrespondencia.Encomienda => "una encomienda",
+        TipoCorrespondencia.Carta => "una carta",
+        TipoCorrespondencia.Documento => "un documento",
+        _ => "correspondencia"
+    };
+
+    public async Task<CorrespondenciaDto?> RenotificarCorrespondenciaAsync(Guid id, CancellationToken ct)
+    {
+        var c = await _db.Correspondencias.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return null;
+        if (c.Estado is not (EstadoCorrespondencia.Recibido or EstadoCorrespondencia.Notificado))
+            throw new InvalidOperationException("El paquete ya fue entregado o devuelto.");
+        var unidad = await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == c.UnidadPrivadaId).Select(u => u.Numero).FirstOrDefaultAsync(ct) ?? "";
+        var ahora = DateTimeOffset.UtcNow;
+        c.Estado = EstadoCorrespondencia.Notificado;
+        c.NotificadoAt = ahora;
+        c.Recordatorios += 1;
+        c.UltimoRecordatorioAt = ahora;
+        c.UpdatedAt = ahora;
+        await _db.SaveChangesAsync(ct);
+        var horas = (int)(ahora - c.RecibidoAt).TotalHours;
+        await NotificarResidentesUnidadAsync(c.UnidadPrivadaId, c.Id,
+            $"Recordatorio: {TipoCorrespondenciaTexto(c.Tipo)} en portería",
+            $"Recuerda que tienes {TipoCorrespondenciaTexto(c.Tipo)} en portería para la unidad {unidad}{(horas >= 1 ? $" desde hace {horas} h" : "")}. Puedes recogerlo cuando quieras.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
+        return MapCorrespondencia(c, unidad, await GetOrCreateConfigAsync(ct), ahora);
     }
 
     public async Task<bool> EntregarCorrespondenciaAsync(Guid id, EntregarCorrespondenciaRequest req, CancellationToken ct)
@@ -815,9 +907,13 @@ public class PorteriaService : IPorteriaService
         if (c.Estado == EstadoCorrespondencia.Entregado) return true;
         if (c.Estado == EstadoCorrespondencia.Devuelto)
             throw new InvalidOperationException("Correspondencia ya devuelta - no puede entregarse.");
+        // Constancia de la entrega: quien retira es obligatorio; el documento es opcional.
+        if (string.IsNullOrWhiteSpace(req.EntregadoA))
+            throw new InvalidOperationException("Indica quién retira el paquete.");
         c.Estado = EstadoCorrespondencia.Entregado;
         c.EntregadoAt = DateTimeOffset.UtcNow;
-        c.EntregadoA = req.EntregadoA?.Trim();
+        c.EntregadoA = Recortar(req.EntregadoA.Trim(), 200);
+        c.EntregadoDoc = string.IsNullOrWhiteSpace(req.EntregadoDoc) ? null : Recortar(req.EntregadoDoc.Trim(), 60);
         c.GuardaEntregaPersonaId = GetPersonaActualId();
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -837,12 +933,22 @@ public class PorteriaService : IPorteriaService
         c.MotivoDevolucion = req.MotivoDevolucion.Trim();
         c.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+        var unidad = await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == c.UnidadPrivadaId).Select(u => u.Numero).FirstOrDefaultAsync(ct) ?? "";
+        await NotificarResidentesUnidadAsync(c.UnidadPrivadaId, c.Id,
+            $"Se devolvió {TipoCorrespondenciaTexto(c.Tipo)} de tu unidad",
+            $"Portería devolvió {TipoCorrespondenciaTexto(c.Tipo)} de la unidad {unidad}{(string.IsNullOrWhiteSpace(c.Remitente) ? "" : $" ({c.Remitente})")}. Motivo: {c.MotivoDevolucion}.",
+            Domain.Enums.PrioridadNotificacion.Normal, ct);
         return true;
     }
+
+    private static string Recortar(string t, int max) => t.Length <= max ? t : t[..max];
 
     // ===========================================================================
     // Novedades
     // ===========================================================================
+
+    public Task<NovedadDto> AlertaSeguridadAsync(Guid turnoId, AlertaSeguridadRequest req, CancellationToken ct)
+        => CrearNovedadAsync(turnoId, new CrearNovedadRequest(req.Descripcion, req.GeneraTarea, TipoNovedadPorteria.Seguridad, req.DestinoTipo, req.DestinoId), ct);
 
     public async Task<NovedadDto> CrearNovedadAsync(Guid turnoId, CrearNovedadRequest req, CancellationToken ct)
     {
@@ -864,18 +970,83 @@ public class PorteriaService : IPorteriaService
             GeneraTarea = req.GeneraTarea && cfg.GeneraTareaDesdeNovedad,
             TareaId = null  // RN-14 - integracion 2.10 diferida
         };
+        var nombre = await ResolverDestinoNovedadAsync(n.DestinoTipo, n.DestinoId, ct);
+        if (n.DestinoTipo is not null && nombre is null)
+            throw new InvalidOperationException("El destino de la novedad no existe en esta copropiedad.");
         _db.NovedadesTurno.Add(n);
         await _db.SaveChangesAsync(ct);
 
-        await NotificarAdminsAsync("2.12", n.Id,
-            $"Novedad de porteria ({n.Tipo})",
-            $"El guarda reporto una novedad ({n.Tipo}): {n.Descripcion}",
-            n.GeneraTarea || n.Tipo is TipoNovedadPorteria.Dano or TipoNovedadPorteria.Seguridad ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
-            ct);
+        // Tarea (RN-14): dano/mantenimiento sobre un equipo o zona -> intervencion correctiva en Mantenimiento
+        // (que a su vez crea su tarea); cualquier otra novedad con tarea -> tarea de seguimiento en Tareas.
+        string? tareaGenerada = null;
+        if (n.GeneraTarea)
+        {
+            var titulo = $"{TipoNovedadTexto(n.Tipo)}{(nombre is null ? "" : $" - {nombre}")}";
+            var detalle = $"Reportado en portería: {n.Descripcion}";
+            if (n.Tipo is TipoNovedadPorteria.Dano or TipoNovedadPorteria.Mantenimiento
+                && n.DestinoTipo is DestinoNovedad.Equipo or DestinoNovedad.ZonaComun && n.DestinoId is Guid activo)
+            {
+                var iv = await _mantenimiento.CrearIntervencionAsync(new Propia.Application.Mantenimiento.CrearIntervencionRequest(
+                    TipoIntervencionMantenimiento.Correctivo,
+                    n.DestinoTipo == DestinoNovedad.Equipo ? TipoActivoMantenimiento.Equipo : TipoActivoMantenimiento.ZonaComun,
+                    // Mantenimiento antepone el activo al titulo de su tarea: aqui va solo el tipo y el resumen.
+                    activo, null, OrigenIntervencion.Porteria, n.Id, Recortar($"{TipoNovedadTexto(n.Tipo)}: {n.Descripcion}", 120), detalle,
+                    n.Tipo == TipoNovedadPorteria.Dano ? PrioridadIntervencion.Alta : PrioridadIntervencion.Normal,
+                    null, null, null, false), ct);
+                n.IntervencionId = iv.Id;
+                n.TareaId = await _db.Tareas.AsNoTracking()
+                    .Where(t => t.ModuloOrigenCodigo == OrigenModulo.Mantenimiento && t.ModuloOrigenEntidadId == iv.Id)
+                    .Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+                tareaGenerada = $"Mantenimiento {iv.Codigo}";
+            }
+            else
+            {
+                var t = await _tareas.CrearTareaAsync(new Propia.Application.Tareas.CrearTareaRequest(
+                    Recortar($"[Portería] {titulo}", 180), detalle,
+                    n.Tipo is TipoNovedadPorteria.Seguridad or TipoNovedadPorteria.Dano ? PrioridadTarea.Alta : PrioridadTarea.Normal,
+                    null, null, null, null, null, null,
+                    ModuloOrigenCodigo: OrigenModulo.Porteria, ModuloOrigenEntidadId: n.Id), ct);
+                n.TareaId = t.Id;
+                tareaGenerada = $"Tareas {t.NumeroTarea}";
+            }
+            n.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
 
-        var nombre = await ResolverDestinoNovedadAsync(n.DestinoTipo, n.DestinoId, ct);
-        return new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, nombre, n.GeneraTarea, n.TareaId, n.CreatedAt);
+        var esSeguridad = n.Tipo == TipoNovedadPorteria.Seguridad;
+        var avisados = new List<string> { "administración" };
+        await NotificarAdminsAsync("2.12", n.Id,
+            esSeguridad ? "ALERTA DE SEGURIDAD en portería" : $"Novedad de portería ({TipoNovedadTexto(n.Tipo)})",
+            $"El guarda reportó {(esSeguridad ? "una alerta de seguridad" : $"una novedad ({TipoNovedadTexto(n.Tipo)})")}{(nombre is null ? "" : $" en {nombre}")}: {n.Descripcion}"
+                + (tareaGenerada is null ? "" : $" Se generó: {tareaGenerada}."),
+            esSeguridad ? Domain.Enums.PrioridadNotificacion.Critica
+                : n.GeneraTarea || n.Tipo == TipoNovedadPorteria.Dano ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
+            ct);
+        if (esSeguridad)
+        {
+            await NotificarVigilanciaAsync(n.Id, "ALERTA DE SEGURIDAD en portería",
+                $"Alerta de seguridad reportada por portería{(nombre is null ? "" : $" en {nombre}")}: {n.Descripcion}", ct);
+            avisados.Add("vigilancia");
+        }
+        if (n.DestinoTipo == DestinoNovedad.UnidadPrivada && n.DestinoId is Guid unidadId
+            && await NotificarResidentesUnidadAsync(unidadId, n.Id,
+                esSeguridad ? "Alerta de seguridad en tu unidad" : $"Novedad de portería sobre tu unidad",
+                $"Portería registró {(esSeguridad ? "una alerta de seguridad" : $"una novedad ({TipoNovedadTexto(n.Tipo)})")} sobre la unidad {nombre}: {n.Descripcion}",
+                esSeguridad ? Domain.Enums.PrioridadNotificacion.Critica : Domain.Enums.PrioridadNotificacion.Normal, ct) > 0)
+            avisados.Add($"el residente de la Unidad {nombre}");
+
+        return new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, nombre,
+            n.GeneraTarea, n.TareaId, n.CreatedAt, n.IntervencionId, avisados, tareaGenerada);
     }
+
+    private static string TipoNovedadTexto(TipoNovedadPorteria t) => t switch
+    {
+        TipoNovedadPorteria.Dano => "Daño",
+        TipoNovedadPorteria.Reclamo => "Reclamo",
+        TipoNovedadPorteria.Seguridad => "Seguridad",
+        TipoNovedadPorteria.Mantenimiento => "Mantenimiento",
+        _ => "General"
+    };
 
     private async Task<string?> ResolverDestinoNovedadAsync(DestinoNovedad? tipo, Guid? id, CancellationToken ct)
     {
@@ -916,7 +1087,7 @@ public class PorteriaService : IPorteriaService
             _ => null
         };
 
-        return rows.Select(n => new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, NombreDe(n), n.GeneraTarea, n.TareaId, n.CreatedAt)).ToList();
+        return rows.Select(n => new NovedadDto(n.Id, n.TurnoId, n.GuardaPersonaId, n.Tipo, n.Descripcion, n.DestinoTipo, n.DestinoId, NombreDe(n), n.GeneraTarea, n.TareaId, n.CreatedAt, n.IntervencionId)).ToList();
     }
 
     // ===========================================================================

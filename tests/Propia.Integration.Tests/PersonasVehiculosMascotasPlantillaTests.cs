@@ -44,8 +44,12 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-100", ["COEFICIENTE"] = "1.00" });
             LlenarFila(veh, 5, "CP Veh RoundTrip", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-100", ["PLACA"] = "XYZ987", ["TIPO DE VEHICULO"] = "Camioneta",
-                ["MARCA"] = "Toyota", ["MODELO"] = "2020", ["COLOR"] = "Rojo",
+                ["UNIDAD PRIVADA"] = "T1-100",
+                ["PLACA"] = "XYZ987",
+                ["TIPO DE VEHICULO"] = "Camioneta",
+                ["MARCA"] = "Toyota",
+                ["MODELO"] = "2020",
+                ["COLOR"] = "Rojo",
             });
             var res = await ImportarAsync(tenantId, wb);
             Assert.Empty(res.Errores);
@@ -79,8 +83,13 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-101", ["COEFICIENTE"] = "1.00" });
             LlenarFila(per, 5, "CP Per RoundTrip", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-101", ["TIPO RESIDENTE"] = "Propietario", ["TIPO ID"] = "CC",
-                ["NOMBRE"] = "Ana Ruiz", ["IDENTIFICACION"] = doc, ["SEXO"] = "F", ["FECHA NACIMIENTO"] = "1990-05-20",
+                ["UNIDAD PRIVADA"] = "T1-101",
+                ["TIPO RESIDENTE"] = "Propietario",
+                ["TIPO ID"] = "CC",
+                ["NOMBRE"] = "Ana Ruiz",
+                ["IDENTIFICACION"] = doc,
+                ["SEXO"] = "F",
+                ["FECHA NACIMIENTO"] = "1990-05-20",
             });
             var res = await ImportarAsync(tenantId, wb);
             Assert.Empty(res.Errores);
@@ -105,8 +114,12 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-102", ["COEFICIENTE"] = "1.00" });
             LlenarFila(wb1.Worksheet("PERSONAS"), 5, "CP Per Merge", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-102", ["TIPO RESIDENTE"] = "Propietario", ["TIPO ID"] = "CC",
-                ["NOMBRE"] = "Beto Diaz", ["IDENTIFICACION"] = doc, ["SEXO"] = "M",
+                ["UNIDAD PRIVADA"] = "T1-102",
+                ["TIPO RESIDENTE"] = "Propietario",
+                ["TIPO ID"] = "CC",
+                ["NOMBRE"] = "Beto Diaz",
+                ["IDENTIFICACION"] = doc,
+                ["SEXO"] = "M",
             });
             Assert.Empty((await ImportarAsync(tenantId, wb1)).Errores);
             Assert.Equal(GeneroPersona.Masculino, (await GetPersonaAsync(doc)).Genero);
@@ -119,8 +132,11 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-102", ["COEFICIENTE"] = "1.00" });
             LlenarFila(wb2.Worksheet("PERSONAS"), 5, "CP Per Merge", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-102", ["TIPO RESIDENTE"] = "Propietario", ["TIPO ID"] = "CC",
-                ["NOMBRE"] = "Beto Diaz", ["IDENTIFICACION"] = doc,   // SEXO ausente
+                ["UNIDAD PRIVADA"] = "T1-102",
+                ["TIPO RESIDENTE"] = "Propietario",
+                ["TIPO ID"] = "CC",
+                ["NOMBRE"] = "Beto Diaz",
+                ["IDENTIFICACION"] = doc,   // SEXO ausente
             });
             Assert.Empty((await ImportarAsync(tenantId, wb2, reemplazar: true)).Errores);
             Assert.Equal(GeneroPersona.Masculino, (await GetPersonaAsync(doc)).Genero);   // intacto
@@ -149,7 +165,9 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-103", ["COEFICIENTE"] = "1.00" });
             LlenarFila(veh, 5, "CP Veh Alias", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-103", ["PLACA"] = "AAA111", ["TIPO DE VEHICULO"] = "Automovil",
+                ["UNIDAD PRIVADA"] = "T1-103",
+                ["PLACA"] = "AAA111",
+                ["TIPO DE VEHICULO"] = "Automovil",
                 ["TONO"] = "Verde",
             });
             Assert.Empty((await ImportarAsync(tenantId, wb)).Errores);
@@ -174,7 +192,9 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-104", ["COEFICIENTE"] = "1.00" });
             LlenarFila(veh, 5, "CP Veh Colision", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-104", ["PLACA"] = "BBB222", ["TIPO DE VEHICULO"] = "Automovil",
+                ["UNIDAD PRIVADA"] = "T1-104",
+                ["PLACA"] = "BBB222",
+                ["TIPO DE VEHICULO"] = "Automovil",
                 ["MARCA"] = "Renault",   // debe ir a MARCA (canonico), no a COLOR (alias en colision)
             });
             Assert.Empty((await ImportarAsync(tenantId, wb)).Errores);
@@ -199,7 +219,10 @@ public class PersonasVehiculosMascotasPlantillaTests
                 new(StringComparer.OrdinalIgnoreCase) { ["UNIDAD PRIVADA"] = "T1-105", ["COEFICIENTE"] = "1.00" });
             LlenarFila(mas, 5, "CP Mas RoundTrip", new(StringComparer.OrdinalIgnoreCase)
             {
-                ["UNIDAD PRIVADA"] = "T1-105", ["NOMBRE"] = "Firulais", ["TIPO MASCOTA"] = "Gato", ["RAZA"] = "Criollo",
+                ["UNIDAD PRIVADA"] = "T1-105",
+                ["NOMBRE"] = "Firulais",
+                ["TIPO MASCOTA"] = "Gato",
+                ["RAZA"] = "Criollo",
             });
             Assert.Empty((await ImportarAsync(tenantId, wb)).Errores);
 
@@ -303,7 +326,7 @@ public class PersonasVehiculosMascotasPlantillaTests
         var blob = new NoopBlobStorage();
         var dir = new Propia.Infrastructure.Directorio.DirectorioService(db, ctx, blob);
         var mi = new MiCopropiedadService(db, ctx, blob, new StubSeedUsuarioRolService(), dir);
-        var porteria = new Propia.Infrastructure.Porteria.PorteriaService(db, ctx, http, new FakeNotificacionDispatcher());
+        var porteria = new Propia.Infrastructure.Porteria.PorteriaService(db, ctx, http, new FakeNotificacionDispatcher(), new Propia.Infrastructure.Tareas.TareasService(db, ctx, http, new FakeNotificacionDispatcher()), new Propia.Infrastructure.Mantenimiento.MantenimientoService(db, ctx, http, new FakeNotificacionDispatcher(), new Propia.Infrastructure.Tareas.TareasService(db, ctx, http, new FakeNotificacionDispatcher())));
         var svc = new UnidadesCargaImportService(db, ctx, http, mi, porteria, dir);
         return await svc.ImportarAsync(ms, CancellationToken.None, forzarTenantActual: false, reemplazarDependientes: reemplazar);
     }

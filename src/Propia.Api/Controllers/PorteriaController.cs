@@ -172,7 +172,24 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Editar)]
+    [HttpPost("correspondencia/{id:guid}/notificar")]
+    public async Task<IActionResult> RenotificarCorrespondencia(Guid id, CancellationToken ct)
+    {
+        try { return await _svc.RenotificarCorrespondenciaAsync(id, ct) is { } c ? Ok(c) : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ----- Novedades -----
+
+    /// <summary>Alerta de seguridad (boton rojo de la cabecera): avisa de inmediato a administracion y vigilancia.</summary>
+    [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
+    [HttpPost("turnos/{turnoId:guid}/alerta-seguridad")]
+    public async Task<IActionResult> AlertaSeguridad(Guid turnoId, [FromBody] AlertaSeguridadRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _svc.AlertaSeguridadAsync(turnoId, req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     [RequierePermiso(ModuloCodigo.Porteria, AccionPermiso.Crear)]
     [HttpPost("turnos/{turnoId:guid}/novedades")]
