@@ -54,6 +54,26 @@ public class CatalogoListasParityTests
     }
 
     [Fact]
+    public void Las_listas_de_enum_no_siembran_el_nombre_crudo_del_enum()
+    {
+        // "EnEjecucion", "NoBinario"... se veian tal cual en pantalla: la semilla usa la etiqueta legible.
+        var crudas = CatalogoListasSeeder.Registro()
+            .SelectMany(l => l.Opciones.Select(o => (l.Lista, o.Clave, o.Label)))
+            .Where(x => x.Clave.StartsWith("e:", StringComparison.Ordinal) && x.Label != "WhatsApp"   // marca, no enum crudo
+                        && (CatalogoListasSeeder.EtiquetasEnum.ContainsKey(x.Label)
+                            || System.Text.RegularExpressions.Regex.IsMatch(x.Label, "^[A-Z][a-z]+[A-Z][a-z]+")))
+            .Select(x => $"{x.Lista} {x.Clave}={x.Label}")
+            .ToList();
+        Assert.Empty(crudas);
+
+        var estados = Lista("mantenimiento.intervestado");
+        Assert.Equal("En ejecución", estados.Single(o => o.Clave == "e:EnEjecucion").Label);
+        Assert.Equal("En revisión", estados.Single(o => o.Clave == "e:EnRevision").Label);
+        // La semantica (lo que lee el flujo) sigue siendo el nombre del enum.
+        Assert.Contains("\"semantica\":\"EnEjecucion\"", estados.Single(o => o.Clave == "e:EnEjecucion").Meta);
+    }
+
+    [Fact]
     public void No_hay_listas_duplicadas_en_el_registro()
     {
         var listas = CatalogoListasSeeder.Registro().Select(x => x.Lista).ToList();

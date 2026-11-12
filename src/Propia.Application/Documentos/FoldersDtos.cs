@@ -19,12 +19,14 @@ public record FolderNodoDto(
     Guid Id, Guid? ParentId, string Nombre, string? Codigo, string? Descripcion, int Orden,
     int Documentos, int Archivados, int Subfolders,
     IReadOnlyList<FolderCampoDto> Campos,
-    IReadOnlyList<FolderNodoDto> Hijos);
+    IReadOnlyList<FolderNodoDto> Hijos,
+    string? Radicado = null);
 
 /// <summary>Tarjeta de la vista Folders (folders raiz con totales recursivos).</summary>
 public record FolderTarjetaDto(
     Guid Id, string Nombre, string? Codigo, string? Descripcion,
-    int Subfolders, int Total, int Cargados, int PendientesObligatorios, DateTimeOffset? UltimaCarga);
+    int Subfolders, int Total, int Cargados, int PendientesObligatorios, DateTimeOffset? UltimaCarga,
+    string? Radicado = null);
 
 public record FolderRutaDto(Guid Id, string Nombre);
 
@@ -45,7 +47,11 @@ public record FolderDetalleDto(
     IReadOnlyList<FolderCampoDto> CamposPropios,
     IReadOnlyList<FolderCampoDto> CamposHeredados,
     IReadOnlyList<FolderDocumentoDto> Documentos,
-    IReadOnlyList<FolderDocumentoDto> Archivados);
+    IReadOnlyList<FolderDocumentoDto> Archivados,
+    string? Radicado = null);
+
+/// <summary>Radicado que se asignara al proximo folder (vista previa del modal "Nuevo folder").</summary>
+public record RadicadoSiguienteDto(string Radicado);
 
 public record FolderVersionDto(
     Guid Id, int Numero, string ArchivoNombre, string ArchivoMime, long ArchivoTamano,

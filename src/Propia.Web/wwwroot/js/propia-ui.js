@@ -814,6 +814,27 @@ window.propiaUI.altaAutoSaveOff = function () {
 
 // Accesibilidad de modales (Folders v2): foco inicial en el primer campo del dialogo y trap de foco con
 // Tab / Shift+Tab dentro del contenedor. Esc lo maneja Blazor (@onkeydown). Idempotente por elemento.
+// ---- Reemplazos de los antiguos Js.InvokeVoidAsync("eval", ...): la CSP (Program.cs) no incluye 'unsafe-eval',
+// asi que eval desde la interop fallaba en silencio. Cada uso tiene aqui su funcion con nombre. ----
+// Sube el scroll de un contenedor (por selector) al inicio.
+window.propiaUI.scrollTopSel = function (selector) {
+    try { var el = document.querySelector(selector); if (el) el.scrollTop = 0; } catch (e) { }
+};
+// Selecciona el texto del input/textarea con el foco (clic en un enlace para copiarlo).
+window.propiaUI.seleccionarActivo = function () {
+    try { var el = document.activeElement; if (el && el.select) el.select(); } catch (e) { }
+};
+// Guarda la sesion (JWT + copropiedad) y navega con recarga, en UNA llamada: las escrituras y la navegacion
+// van juntas del lado del navegador para que forceLoad no corte el circuito antes de guardar (Onboarding).
+window.propiaUI.guardarSesionEIr = function (token, tenantId, coproNombre, url, demoraMs) {
+    try { if (window.propiaAuth && window.propiaAuth.save) window.propiaAuth.save(token, tenantId, coproNombre); } catch (e) { }
+    setTimeout(function () { window.location.href = url; }, demoraMs || 0);
+};
+
+// Ancho del viewport (la CSP no permite eval desde la interop). Lo usa el explorador de folders para que en
+// tablet/celular el chat arranque cerrado.
+window.propiaUI.anchoVentana = function () { return window.innerWidth; };
+
 window.propiaUI.modalFocus = function (selector) {
     try {
         var root = document.querySelector(selector); if (!root) return;

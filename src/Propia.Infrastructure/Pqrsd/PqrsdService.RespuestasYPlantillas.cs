@@ -242,8 +242,9 @@ public partial class PqrsdService
             v.CreatedAt)).ToList();
     }
 
-    // Compone el HTML del documento oficial (membrete + cuerpo) para vista previa o generacion de PDF.
-    // Usa la identidad del Tenant + su config de membrete; el cuerpoHtml es el texto de la respuesta.
+    // Compone el HTML del documento oficial (encabezado + cuerpo + pie) para vista previa o generacion de PDF.
+    // Encabezado y pie = los PREDETERMINADOS de la copropiedad (Configuracion > Plantillas de documentos >
+    // Encabezados y pies); el cuerpoHtml es el texto de la respuesta.
     public async Task<string?> ComponerDocumentoRespuestaAsync(Guid expedienteId, string cuerpoHtml, CancellationToken ct)
     {
         var exp = await _db.PqrsdExpedientes.AsNoTracking()
@@ -272,7 +273,12 @@ public partial class PqrsdService
             // Referencia del expediente (tipo) como linea del destinatario; el badge dice "Respuesta PQRSD".
             DestinatarioLinea: string.IsNullOrWhiteSpace(tipoNombre) ? null : $"Ref. {tipoNombre} - {exp.NumeroRadicado}");
 
-        return _membrete.Construir(tenant, contenido);
+        var (_, gestorNombre) = ActorActual();
+        // Mismo contexto (db + tenant) que este servicio: sin inyectarlo, para no cambiar su constructor.
+        var membretes = new Plantillas.MembretesService(_db, _tenantContext);
+        var (enc, pie) = await membretes.ParaDocumentoAsync(null,
+            new Dictionary<string, string> { ["administrador.nombre"] = gestorNombre ?? "", ["gestor.nombre"] = gestorNombre ?? "" }, ct);
+        return _membrete.Construir(tenant, contenido, enc, pie);
     }
 
     // ===================== Plantillas de respuesta (combinacion de correspondencia) =====================
@@ -319,6 +325,8 @@ public partial class PqrsdService
             ["copropiedad.nit"] = tenant?.Nit ?? "",
             ["copropiedad.direccion"] = tenant?.Direccion ?? "",
             ["copropiedad.ciudad"] = tenant?.Ciudad ?? "",
+            ["copropiedad.telefono"] = tenant?.TelefonoContacto ?? "",
+            ["copropiedad.correo"] = tenant?.EmailContacto ?? "",
             ["radicado.numero"] = exp.NumeroRadicado,
             ["radicado.tipo"] = exp.TipoConfig?.Nombre ?? exp.Tipo.ToString(),
             ["radicado.categoria"] = exp.Categoria?.Nombre ?? "",
@@ -343,6 +351,7 @@ public partial class PqrsdService
         return System.Text.RegularExpressions.Regex.Replace(plantilla.CuerpoHtml, @"\{([a-zA-Z_]+\.[a-zA-Z_]+)\}", m =>
         {
             var key = m.Groups[1].Value;
+            if (key.Equals("copropiedad.logo", StringComparison.OrdinalIgnoreCase) && tenant is not null) return Documents.MembreteTokens.LogoHtml(tenant);
             return map.TryGetValue(key, out var val) ? System.Net.WebUtility.HtmlEncode(val) : m.Value;
         });
     }

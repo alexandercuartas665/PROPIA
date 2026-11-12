@@ -18,10 +18,12 @@ public record MembreteDocContenido(
     string? FirmanteCargo = null);
 
 /// <summary>
-/// Compone el HTML completo (standalone, con estilos inline y @page A4) de un documento
-/// oficial con el membrete de la copropiedad. Ese mismo HTML es el que luego se renderiza a PDF.
+/// Compone el HTML completo (standalone, con estilos inline y @page A4) de un documento oficial: la hoja, los
+/// datos del documento (tipo, radicado, fecha), destinatario, cuerpo, firma y numeracion. El encabezado y el pie
+/// de pagina vienen de la biblioteca de membretes de la copropiedad (IMembretesService.ParaDocumentoAsync), ya
+/// resueltos; null = sin encabezado / sin pie. Ese mismo HTML es el que luego se renderiza a PDF.
 /// </summary>
 public interface IMembreteDocumentBuilder
 {
-    string Construir(Tenant tenant, MembreteDocContenido contenido);
+    string Construir(Tenant tenant, MembreteDocContenido contenido, string? encabezadoHtml, string? pieHtml);
 }

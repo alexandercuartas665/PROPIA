@@ -24,10 +24,12 @@ public partial class PropiaDbContext
             b.ToTable("folders");
             b.Property(x => x.Nombre).IsRequired().HasMaxLength(200);
             b.Property(x => x.Codigo).HasMaxLength(40);
+            b.Property(x => x.Radicado).HasMaxLength(20);
             b.Property(x => x.Descripcion).HasMaxLength(1000);
             b.HasOne(x => x.Parent).WithMany(p => p.Hijos).HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(x => new { x.TenantId, x.ParentId, x.Orden });
             b.HasIndex(x => new { x.TenantId, x.Codigo });
+            b.HasIndex(x => new { x.TenantId, x.Radicado }).IsUnique().HasFilter("radicado IS NOT NULL");
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 

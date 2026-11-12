@@ -18,8 +18,13 @@ namespace Propia.Api.Controllers;
 public sealed class PlantillasController : ControllerBase
 {
     private readonly IPlantillasDocumentoService _svc;
+    private readonly IMembretesService _membretes;
 
-    public PlantillasController(IPlantillasDocumentoService svc) => _svc = svc;
+    public PlantillasController(IPlantillasDocumentoService svc, IMembretesService membretes)
+    {
+        _svc = svc;
+        _membretes = membretes;
+    }
 
     [HttpGet]
     public async Task<IActionResult> Listar([FromQuery] string? categoria, CancellationToken ct)
@@ -31,6 +36,34 @@ public sealed class PlantillasController : ControllerBase
     /// <summary>Datos insertables de la categoria: los suyos + los comunes.</summary>
     [HttpGet("tokens")]
     public IActionResult Tokens([FromQuery] string? categoria) => Ok(PlantillasCatalogo.TokensDe(categoria));
+
+    // ---- Encabezados y pies de pagina (membretes). La copropiedad nace con "Institucional". ----
+    [HttpGet("membretes")]
+    public async Task<IActionResult> ListarMembretes(CancellationToken ct) => Ok(await _membretes.ListarAsync(ct));
+
+    [RequierePermiso(ModuloCodigo.Plantillas, AccionPermiso.Crear)]
+    [HttpPost("membretes")]
+    public async Task<IActionResult> CrearMembrete([FromBody] GuardarMembreteRequest req, CancellationToken ct)
+    {
+        try { return Ok(await _membretes.CrearAsync(req, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Plantillas, AccionPermiso.Editar)]
+    [HttpPut("membretes/{id:guid}")]
+    public async Task<IActionResult> ActualizarMembrete(Guid id, [FromBody] GuardarMembreteRequest req, CancellationToken ct)
+    {
+        try { return await _membretes.ActualizarAsync(id, req, ct) is { } dto ? Ok(dto) : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [RequierePermiso(ModuloCodigo.Plantillas, AccionPermiso.Eliminar)]
+    [HttpDelete("membretes/{id:guid}")]
+    public async Task<IActionResult> EliminarMembrete(Guid id, CancellationToken ct)
+    {
+        try { return await _membretes.EliminarAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
 
     // ---- Campos propios (columna "+" de la vista tabla). Rutas literales: van antes que {id:guid}. ----
     [HttpGet("campos")]

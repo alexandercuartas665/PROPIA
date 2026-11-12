@@ -234,6 +234,7 @@ public static class DependencyInjection
 
         // Configuracion > Plantillas de documentos (catalogo central; PQRSD lee su categoria)
         services.AddScoped<Application.Plantillas.IPlantillasDocumentoService, Plantillas.PlantillasDocumentoService>();
+        services.AddScoped<Application.Plantillas.IMembretesService, Plantillas.MembretesService>();
 
         // Documentos con membrete (header/footer configurable) - HTML compuesto reutilizable
         services.AddSingleton<Application.Documents.IMembreteDocumentBuilder, Documents.MembreteDocumentBuilder>();

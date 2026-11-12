@@ -26,7 +26,31 @@ public sealed class PlantillasDocumentoService : IPlantillasDocumentoService
     }
 
     private static PlantillaDocumentoDto ToDto(PlantillaDocumento p)
-        => new(p.Id, p.Nombre, p.Categoria, p.CuerpoHtml, p.UpdatedAt ?? p.CreatedAt, p.Orden);
+        => new(p.Id, p.Nombre, p.Categoria, p.CuerpoHtml, p.UpdatedAt ?? p.CreatedAt, p.Orden,
+            Eleccion(p.EncabezadoModo, p.EncabezadoId), Eleccion(p.PieModo, p.PieId));
+
+    private static string Eleccion(ModoMembrete modo, Guid? id) => modo switch
+    {
+        ModoMembrete.Ninguno => MembreteEleccion.Ninguno,
+        ModoMembrete.Fijo when id is { } g => g.ToString(),
+        _ => MembreteEleccion.Predeterminado
+    };
+
+    // "pred" | "ninguno" | Id de un membrete del tipo (de esta copropiedad). Otro valor = error.
+    private async Task<(ModoMembrete Modo, Guid? Id)> LeerEleccionAsync(string valor, TipoMembrete tipo, CancellationToken ct)
+    {
+        var v = valor.Trim();
+        if (v.Length == 0 || v.Equals(MembreteEleccion.Predeterminado, StringComparison.OrdinalIgnoreCase)) return (ModoMembrete.Predeterminado, null);
+        if (v.Equals(MembreteEleccion.Ninguno, StringComparison.OrdinalIgnoreCase)) return (ModoMembrete.Ninguno, null);
+        if (Guid.TryParse(v, out var id) && await _db.MembretesDocumento.AnyAsync(m => m.Id == id && m.Tipo == tipo, ct)) return (ModoMembrete.Fijo, id);
+        throw new InvalidOperationException(tipo == TipoMembrete.Encabezado ? "El encabezado no existe." : "El pie de página no existe.");
+    }
+
+    private async Task AplicarMembretesAsync(PlantillaDocumento p, GuardarPlantillaDocumentoRequest req, CancellationToken ct)
+    {
+        if (req.Encabezado is not null) (p.EncabezadoModo, p.EncabezadoId) = await LeerEleccionAsync(req.Encabezado, TipoMembrete.Encabezado, ct);
+        if (req.Pie is not null) (p.PieModo, p.PieId) = await LeerEleccionAsync(req.Pie, TipoMembrete.Pie, ct);
+    }
 
     public async Task<IReadOnlyList<PlantillaDocumentoDto>> ListarAsync(string? categoria, CancellationToken ct)
     {
@@ -60,6 +84,7 @@ public sealed class PlantillasDocumentoService : IPlantillasDocumentoService
             CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "",  // S-19
             Orden = orden
         };
+        await AplicarMembretesAsync(p, req, ct);
         _db.PlantillasDocumento.Add(p);
         await _db.SaveChangesAsync(ct);
         return ToDto(p);
@@ -78,6 +103,7 @@ public sealed class PlantillasDocumentoService : IPlantillasDocumentoService
         }
         if (req.Categoria is not null) p.Categoria = NormalizarCategoria(req.Categoria) ?? p.Categoria;
         if (req.CuerpoHtml is not null) p.CuerpoHtml = Common.HtmlSanitization.Clean(req.CuerpoHtml) ?? "";  // S-19
+        await AplicarMembretesAsync(p, req, ct);
         await _db.SaveChangesAsync(ct);
         return ToDto(p);
     }

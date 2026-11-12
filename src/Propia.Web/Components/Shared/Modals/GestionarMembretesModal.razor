@@ -1,0 +1,264 @@
+@* Encabezados y pies de pagina (membretes) de la copropiedad (Configuracion > Plantillas de documentos). Mismo frame
+   del gestor de plantillas (.gpl, 1056px). Izquierda: la biblioteca en 2 grupos (Encabezados / Pies de pagina) con
+   "+ Nuevo" por grupo, la pildora "Predeterminado" y cuantas plantillas lo usan. Derecha: nombre, chip del tipo,
+   "Insertar dato:", editor TinyMCE (400px), "Usar como ... predeterminado" y pie Eliminar / Vista previa / Guardar.
+   Cambiar de item con cambios sin guardar pide "Descartar cambios". Replica de membretes() en
+   replica/js/mod-plantillas-doc.js. Devuelve true si guardo o elimino algo. *@
+@inherits ModalBase<bool>
+@using Propia.Application.Plantillas
+@using Propia.Domain.Enums
+@using Propia.Web.Components.Shared.Plantillas
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<div class="gpl pld-gestor pld-mb">
+    <div class="gpl-head">
+        <div class="gpl-eyebrow">ENCABEZADOS Y PIES DE PÁGINA</div>
+        <button type="button" class="gpl-x" @onclick="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="gpl-body">
+        <div class="gpl-list pld-datos pld-mb-list">
+            <div class="pld-datos-sub">Crea los que necesites (institucional, Navidad, asambleas...). Cada plantilla elige cuál usar; las que dicen "Predeterminado" toman el marcado aquí.</div>
+            <div class="pld-datos-list">
+                @foreach (var t in Tipos)
+                {
+                    var tt = t;
+                    <div class="pld-mb-grp"><span><i class="fi @PlantillaDoc.IconoTipo(t)"></i> @PlantillaDoc.PluralTipo(t)</span>
+                        <button type="button" class="pld-mb-new" @onclick="() => NuevoAsync(tt)"><i class="fi fi-rr-plus"></i> Nuevo</button></div>
+                    @foreach (var m in (_mb?.Items ?? Array.Empty<MembreteDto>()).Where(x => x.Tipo == t))
+                    {
+                        var mm = m;
+                        <button type="button" class="pld-mb-item @(m.Id == _selId ? "sel" : "")" @onclick="() => SeleccionarAsync(mm)">
+                            <span class="pld-mb-it-nm">@m.Nombre @if (m.Predeterminado) { <span class="pld-mb-pred">Predeterminado</span> }</span>
+                            <span class="pld-mb-it-meta">@(m.Usos == 1 ? "Lo usa 1 plantilla" : m.Usos > 0 ? $"Lo usan {m.Usos} plantillas" : "Ninguna plantilla lo usa")</span>
+                        </button>
+                    }
+                    @if (_selId is null && _tipo == t)
+                    {
+                        <div class="pld-mb-item sel pld-mb-item--draft"><span class="pld-mb-it-nm">@(string.IsNullOrWhiteSpace(_nombre) ? "Nuevo " + PlantillaDoc.NombreTipo(t).ToLowerInvariant() : _nombre.Trim())</span><span class="pld-mb-it-meta">Sin guardar</span></div>
+                    }
+                }
+            </div>
+        </div>
+        <div class="gpl-edit">
+            <div class="pld-edit-top">
+                <input class="gpl-nombre" placeholder="Nombre (ej.: Navidad)" @bind="_nombre" @bind:event="oninput" />
+                <span class="pld-mb-tipo"><i class="fi @PlantillaDoc.IconoTipo(_tipo)"></i> @PlantillaDoc.NombreTipo(_tipo)</span>
+            </div>
+            <div class="pld-mb-toks"><span>Insertar dato:</span>
+                @foreach (var k in PlantillasCatalogo.TokensMembrete)
+                {
+                    var tok = "{" + k + "}";
+                    <button type="button" class="pld-mb-tok" title="@DescDe(tok)" @onclick="() => InsertarAsync(tok)">@tok</button>
+                }
+            </div>
+            <textarea id="pld-mb-ed"></textarea>
+            @{ var esPred = Actual?.Predeterminado == true; }
+            <label class="pld-mb-predchk">
+                <input type="checkbox" checked="@(_pred || esPred)" disabled="@esPred" @onchange="e => _pred = (bool)(e.Value ?? false)" />
+                <span><b>Usar como @PlantillaDoc.NombreTipo(_tipo).ToLowerInvariant() predeterminado</b>
+                    <small>@(esPred ? "Es el predeterminado. Para cambiarlo, marca otro." : "Todas las plantillas en \"Predeterminado\" pasan a usar este. Útil por temporada: actívalo en diciembre y vuelve al institucional en enero.")</small></span>
+            </label>
+            <div>@if (!string.IsNullOrEmpty(_msg)) { <div class="gpl-msg @(_err ? "err" : "ok")">@_msg</div> }</div>
+            <div class="gpl-foot">
+                <span>@if (Actual is not null) { <button type="button" class="pld-btn-del" @onclick="EliminarAsync"><i class="fi fi-rr-trash"></i> Eliminar</button> }</span>
+                <span class="pld-foot-acts">
+                    <button type="button" class="pld-btn-ghost" @onclick="VistaPreviaAsync"><i class="fi fi-rr-eye"></i> Vista previa</button>
+                    <button type="button" class="gpl-btn-brand" @onclick="GuardarAsync" disabled="@_busy">Guardar</button>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Membrete con el que abre (el elegido en el editor de plantilla); null = el encabezado predeterminado.</summary>
+    [Parameter] public Guid? SelId { get; set; }
+    [Parameter] public string? CopropiedadNombre { get; set; }
+
+    private const string EdSel = "#pld-mb-ed";
+    private static readonly TipoMembrete[] Tipos = { TipoMembrete.Encabezado, TipoMembrete.Pie };
+
+    private MembretesDto? _mb;
+    private TipoMembrete _tipo = TipoMembrete.Encabezado;
+    private Guid? _selId;
+    private string _nombre = "";
+    private bool _pred, _err, _busy, _cambio;
+    private string? _msg;
+    private string _base = "";          // html cargado en el editor (para saber si hay cambios sin guardar)
+    private string? _initHtml;          // pendiente de cargar en TinyMCE tras el render
+
+    private MembreteDto? Actual => _selId is { } id ? _mb?.Items.FirstOrDefault(m => m.Id == id) : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RecargarAsync();
+        var ini = SelId is { } s ? _mb?.Items.FirstOrDefault(m => m.Id == s) : null;
+        Cargar(ini ?? PlantillaDoc.Predeterminado(_mb, TipoMembrete.Encabezado), TipoMembrete.Encabezado);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_initHtml is { } html)
+        {
+            _initHtml = null;
+            try
+            {
+                await Js.InvokeAsync<bool>("propiaTiny.init", EdSel, html, 400);
+                _base = await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel) ?? html;
+            }
+            catch { }
+        }
+    }
+
+    private void Cargar(MembreteDto? m, TipoMembrete tipo)
+    {
+        _selId = m?.Id; _tipo = m?.Tipo ?? tipo;
+        _nombre = m?.Nombre ?? "";
+        _pred = m is null && PlantillaDoc.Predeterminado(_mb, _tipo) is null;
+        _msg = null; _err = false;
+        _base = m?.Html ?? PlantillaDoc.HtmlNuevo(_tipo);
+        _initHtml = _base;
+    }
+
+    private async Task RecargarAsync()
+    {
+        try { _mb = await Auth().GetFromJsonAsync<MembretesDto>("/api/plantillas/membretes"); }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+    }
+
+    private static string DescDe(string token) => PlantillasCatalogo.TokensComunes.FirstOrDefault(t => t.Token == token)?.Descripcion ?? token;
+
+    private async Task<string> HtmlAsync()
+    {
+        try { return await Js.InvokeAsync<string>("propiaTiny.getContent", EdSel) ?? ""; } catch { return ""; }
+    }
+
+    private async Task<bool> SucioAsync()
+    {
+        var m = Actual;
+        return await HtmlAsync() != _base || _nombre != (m?.Nombre ?? "") || (m is null && _nombre.Trim() != "");
+    }
+
+    // Cambiar de item: si hay cambios sin guardar, pide "Descartar cambios".
+    private async Task CambiarAAsync(Action cargar)
+    {
+        if (await SucioAsync())
+        {
+            var ok = await Modals.ConfirmAsync($"Tienes cambios sin guardar en este {PlantillaDoc.NombreTipo(_tipo).ToLowerInvariant()}.",
+                titulo: "Descartar cambios", confirmar: "Descartar");
+            if (!ok) return;
+        }
+        cargar();
+        StateHasChanged();
+    }
+
+    private Task SeleccionarAsync(MembreteDto m) => m.Id == _selId ? Task.CompletedTask : CambiarAAsync(() => Cargar(m, m.Tipo));
+    private Task NuevoAsync(TipoMembrete t) => CambiarAAsync(() => Cargar(null, t));
+
+    private async Task InsertarAsync(string token)
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.insert", EdSel, token); } catch { }
+    }
+
+    private async Task VistaPreviaAsync()
+    {
+        // El que se edita reemplaza al de su tipo (sin guardar); el otro tipo se ve con el predeterminado.
+        var html = await HtmlAsync();
+        var prov = new MembreteDto(Guid.Empty, _tipo, _nombre, html, false, 0, DateTimeOffset.Now);
+        var mb = _mb is null ? null : _mb with { Items = _mb.Items.Where(m => m.Tipo != _tipo || m.Predeterminado).Append(prov).ToList() };
+        var vacio = Guid.Empty.ToString();
+        await Modals.OpenAsync<VistaPreviaPlantillaModal, bool>(
+            new ModalParameters()
+                .Set("Nombre", string.IsNullOrWhiteSpace(_nombre) ? PlantillaDoc.NombreTipo(_tipo) : _nombre.Trim())
+                .Set("Categoria", "comunicaciones")
+                .Set("CuerpoHtml", PlantillaDoc.MuestraMembrete)
+                .Set("Encabezado", _tipo == TipoMembrete.Encabezado ? vacio : MembreteEleccion.Predeterminado)
+                .Set("Pie", _tipo == TipoMembrete.Pie ? vacio : MembreteEleccion.Predeterminado)
+                .Set("Membretes", mb)
+                .Set("Hint", $"Un documento de ejemplo con este {PlantillaDoc.NombreTipo(_tipo).ToLowerInvariant()}.")
+                .Set("HintIcono", PlantillaDoc.IconoTipo(_tipo))
+                .Set("CopropiedadNombre", CopropiedadNombre),
+            new ModalOptions { Width = "820px" });
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre)) { _err = true; _msg = "Ponle un nombre (ej.: Navidad)."; return; }
+        _busy = true; _msg = null; _err = false;
+        try
+        {
+            var html = await HtmlAsync();
+            var hacerPred = _pred && Actual?.Predeterminado != true;
+            var req = new GuardarMembreteRequest(_tipo, _nombre.Trim(), html, hacerPred ? true : null);
+            var resp = _selId is { } id
+                ? await Auth().PutAsJsonAsync($"/api/plantillas/membretes/{id}", req)
+                : await Auth().PostAsJsonAsync("/api/plantillas/membretes", req);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+                if (!string.IsNullOrEmpty(nuevo)) Jwt = nuevo;
+                _err = true; _msg = "La sesión se renovó. Vuelve a guardar."; return;
+            }
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = await ErrorDeAsync(resp, "No se pudo guardar."); return; }
+            var dto = await resp.Content.ReadFromJsonAsync<MembreteDto>();
+            _cambio = true;
+            await RecargarAsync();
+            var m = dto is null ? null : _mb?.Items.FirstOrDefault(x => x.Id == dto.Id);
+            Cargar(m, _tipo);
+            _msg = PlantillaDoc.NombreTipo(_tipo) + " guardado." + (m?.Predeterminado == true ? " Es el predeterminado." : "");
+            _err = false;
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (Actual is not { } m) return;
+        if (m.Predeterminado) { _err = true; _msg = "Es el predeterminado: marca otro como predeterminado antes de eliminarlo."; return; }
+        var ok = await Modals.ConfirmAsync(
+            m.Usos > 0 ? $"{m.Usos} plantilla{(m.Usos == 1 ? " lo usa y pasará" : "s lo usan y pasarán")} al predeterminado. Los documentos ya generados no cambian."
+                       : "Ninguna plantilla lo usa. Los documentos ya generados no cambian.",
+            titulo: $"Eliminar \"{m.Nombre}\"", confirmar: "Sí, eliminar");
+        if (!ok) return;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/plantillas/membretes/{m.Id}");
+            if (!resp.IsSuccessStatusCode) { _err = true; _msg = await ErrorDeAsync(resp, "No se pudo eliminar."); StateHasChanged(); return; }
+            _cambio = true;
+            await RecargarAsync();
+            Cargar(PlantillaDoc.Predeterminado(_mb, m.Tipo), m.Tipo);
+            StateHasChanged();
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; StateHasChanged(); }
+    }
+
+    private static async Task<string> ErrorDeAsync(HttpResponseMessage resp, string porDefecto)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción.";
+        try
+        {
+            var txt = await resp.Content.ReadAsStringAsync();
+            if (System.Text.Json.JsonDocument.Parse(txt).RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } msg) return msg;
+        }
+        catch { }
+        return porDefecto;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private async Task Cerrar()
+    {
+        try { await Js.InvokeVoidAsync("propiaTiny.destroy", EdSel); } catch { }
+        Close(_cambio);
+    }
+}

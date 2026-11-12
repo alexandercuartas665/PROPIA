@@ -17,7 +17,7 @@ namespace Propia.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.22")
+                .HasAnnotation("ProductVersion", "9.0.23")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "citext");
@@ -6791,6 +6791,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("parent_id");
 
+                    b.Property<string>("Radicado")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("radicado");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
@@ -6808,6 +6813,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasIndex("ParentId");
 
                     b.HasIndex("TenantId", "Codigo");
+
+                    b.HasIndex("TenantId", "Radicado")
+                        .IsUnique()
+                        .HasFilter("radicado IS NOT NULL");
 
                     b.HasIndex("TenantId", "ParentId", "Orden");
 
@@ -8755,6 +8764,62 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("mascota_campos_valores");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.MembreteDocumento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Html")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("html");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("nombre");
+
+                    b.Property<bool>("Predeterminado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("predeterminado");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Tipo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_membretes_documento_predeterminado")
+                        .HasFilter("predeterminado");
+
+                    b.ToTable("membretes_documento", (string)null);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.MenuOverride", b =>
@@ -11332,6 +11397,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("cuerpo_html");
 
+                    b.Property<Guid?>("EncabezadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("encabezado_id");
+
+                    b.Property<int>("EncabezadoModo")
+                        .HasColumnType("integer")
+                        .HasColumnName("encabezado_modo");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -11341,6 +11414,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<int>("Orden")
                         .HasColumnType("integer")
                         .HasColumnName("orden");
+
+                    b.Property<Guid?>("PieId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pie_id");
+
+                    b.Property<int>("PieModo")
+                        .HasColumnType("integer")
+                        .HasColumnName("pie_modo");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")

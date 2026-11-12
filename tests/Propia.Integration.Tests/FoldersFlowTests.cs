@@ -310,6 +310,40 @@ public class FoldersFlowTests : IAsyncLifetime
         await CleanTenantAsync(tB);
     }
 
+    [Fact]
+    public async Task Radicado_consecutivo_anual_por_copropiedad()
+    {
+        var tA = await SeedTenantAsync("[FOLDER] rad A");
+        var tB = await SeedTenantAsync("[FOLDER] rad B");
+        var (svcA, _, scopeA) = Build(tA);
+        var (svcB, _, scopeB) = Build(tB);
+        using var _a = scopeA;
+        using var _b = scopeB;
+        var anio = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-5)).Year;
+
+        // La estructura base (4 raices + 8 subfolders) toma RAD-AAAA-0001..0012 en orden de creacion.
+        var arbol = await svcA.ArbolAsync(CancellationToken.None);
+        Assert.Equal($"RAD-{anio}-0001", arbol[0].Radicado);
+        Assert.Equal($"RAD-{anio}-0012", arbol.SelectMany(r => r.Hijos).Select(h => h.Radicado).Max());
+
+        // La vista previa coincide con lo que se asigna; raiz y subfolder consumen el mismo consecutivo.
+        var prev = await svcA.RadicadoSiguienteAsync(CancellationToken.None);
+        var raiz = await svcA.CrearFolderAsync(new CrearFolderRequest("[F] Raiz rad"), CancellationToken.None);
+        Assert.Equal(prev.Radicado, raiz.Radicado);
+        Assert.Equal($"RAD-{anio}-0013", raiz.Radicado);
+        var sub = await svcA.CrearFolderAsync(new CrearFolderRequest("[F] Sub rad", raiz.Id), CancellationToken.None);
+        Assert.Equal($"RAD-{anio}-0014", sub.Radicado);
+        Assert.Equal(raiz.Radicado, (await svcA.TarjetasAsync(CancellationToken.None)).Single(t => t.Id == raiz.Id).Radicado);
+        Assert.Equal(sub.Radicado, (await svcA.GetFolderAsync(sub.Id, CancellationToken.None))!.Radicado);
+
+        // Otra copropiedad lleva su propio consecutivo.
+        var fB = await svcB.CrearFolderAsync(new CrearFolderRequest("[F] B rad"), CancellationToken.None);
+        Assert.Equal($"RAD-{anio}-0001", fB.Radicado);
+
+        await CleanTenantAsync(tA);
+        await CleanTenantAsync(tB);
+    }
+
     // =======================================================================
     // Helpers
     // =======================================================================
