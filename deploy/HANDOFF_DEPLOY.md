@@ -1,5 +1,83 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **ASAMBLEAS OLA 5: SALA VIRTUAL CON LIVEKIT (2026-11-12): 1 MIGRACION (solo columnas) + CONFIG NUEVA (env) + API y Web.**
+> - **MIGRACION `20261112172720_AsambleaOla5Sala`** (va DESPUES de `AsambleaOla4Transcripcion`): `sesiones.grabacion_egress_id`
+>   (varchar 100), `sesiones.grabacion_iniciada_en`, `sesion_participantes.salida_pendiente_en` (timestamptz, nullable). Sin
+>   tablas nuevas (RLS ya existente) y sin datos tocados.
+> - **VARIABLES NUEVAS en Railway (API y Web)** - las carga Alex con su cuenta de LiveKit (Cloud o propio):
+>   `LiveKit__Url` (wss://<proyecto>.livekit.cloud), `LiveKit__ApiKey`, `LiveKit__ApiSecret`. Sin ellas la ficha muestra
+>   "La sala virtual no está configurada" y todo lo demas funciona igual.
+> - **Webhook en LiveKit** (Settings > Webhooks): URL `https://app.propia-ad.com/api/livekit/webhook` (o el host del API), firmado
+>   con la misma API key. Sin webhook la videollamada funciona pero la asistencia NO se marca sola.
+> - **Grabacion (opcional)**: `LiveKit__Grabacion__Bucket`, `__AccessKey`, `__Secret`, `__Endpoint` (R2:
+>   https://<account>.r2.cloudflarestorage.com), `__Region` (auto), `__PublicUrl` (dominio publico del bucket para descargar).
+>   Usar un token R2 propio con permiso solo de escritura en ese bucket (LiveKit lo recibe para subir el MP4). Sin estas
+>   variables el boton Grabar queda deshabilitado. La grabacion real (egress) NO se probo: solo con tests.
+> - Funcionamiento: la administracion entra como moderadora desde la ficha (pestana Sala virtual); el copropietario o apoderado
+>   entra desde su enlace de la asamblea. Al entrar quedan PRESENTES todas sus unidades habilitadas; al salir, la salida se
+>   confirma tras la gracia de reconexion (Configuracion de asambleas, 60 s por defecto). Manos, palabra, chat y "silenciar a
+>   todos" van por el canal de datos de LiveKit (el chat no se guarda). Cliente `livekit-client@2.5.7` desde jsdelivr (CSP ya
+>   lo permite). `propia-sala.js?v=2`, `asambleas.css?v=3`.
+> - Gotcha local: el webhook a `http://host.docker.internal:5153` falla porque el API redirige a https con certificado de
+>   localhost; para probar en local se levanta una instancia del API solo en http (otro puerto) para el webhook.
+
+> **ASAMBLEAS OLA 4: TRANSCRIPCION DE LA SESION (2026-11-12): 1 MIGRACION (TABLA NUEVA con RLS) + API y Web.**
+> - **MIGRACION `20261112162627_AsambleaOla4Transcripcion`** (va DESPUES de `AsambleaOla3Acta`): tabla nueva
+>   `sesion_transcripcion_lineas` (sesion, punto, hora, tipo Voz/Sistema, persona, unidad, autor, texto, confianza, origen) con
+>   tenant_id, **RLS ENABLE + FORCE + policy tenant_isolation + GRANT a propia_app** (en la misma migracion) e indice
+>   (sesion_id, hora); `sesiones.transcripcion_activa` (bool, default false). Sin datos tocados.
+> - Bitacora: eventos del sistema automaticos (sala, instalacion, puntos, votaciones con resultado, poderes, cierre) + voz a
+>   texto con "Mi voz a texto" (Web Speech API del NAVEGADOR, Chrome/Edge; el servidor solo recibe texto). Proveedor de pago
+>   preparado detras de `ITranscripcionProvider` (hoy `NavegadorTranscripcionProvider`). Endpoints: `GET/POST
+>   api/asambleas/{id}/transcripcion`, `PUT {id}/transcripcion/activa`.
+> - Subtitulos en la pagina publica del residente (refresco cada 4 s con transcripcion activa). El acta (ola 3) usa la
+>   transcripcion: resumen por punto en el borrador base y texto completo para la IA. `propia-ui.js?v=30`.
+> - El microfono requiere HTTPS (o localhost) y permiso del navegador: en prod (https://app.propia-ad.com) aplica.
+> - **Verificar en PROD tras aplicar**: `select relforcerowsecurity from pg_class where relname='sesion_transcripcion_lineas';` (t).
+
+> **ASAMBLEAS OLA 3: ACTA REDACTADA POR IA + DOBLE FIRMA + PUBLICACION (2026-11-12): 1 MIGRACION (aditiva) + API y Web.**
+> - **MIGRACION `20261112151947_AsambleaOla3Acta`** (va DESPUES de `AsambleaOla2Ley675`): solo columnas en `actas` (numero,
+>   borrador_html, estado/error/fecha de redaccion, redactada_por_ia, editada, firma presidente y secretario: fecha, usuario,
+>   metodo, ip; comunicado_id) + indice UNICO parcial `(tenant_id, numero) WHERE numero IS NOT NULL`. Sin datos tocados.
+> - **Agente IA nuevo "Redactor de actas"** (clave `redactor-actas`): lo siembra `AgenteActaAsambleaSeeder` al arrancar (Api y
+>   Web), con el primer proveedor habilitado; cada copropiedad recibe su agente al primer uso. **Verificar en PROD que el
+>   proveedor/API key de IA este vigente** (en dev la key estaba "cifrada con version anterior" y la redaccion cayo al
+>   borrador base, que es el comportamiento previsto).
+> - Al cerrar con quorum: acta No. AAAA-NNN + borrador base con los datos del sistema + redaccion por IA en segundo plano.
+>   Editar/Regenerar solo sin firmas. Firmas: presidente y secretario desde su cuenta o con codigo de 6 digitos al correo
+>   (SMTP global). Con las dos -> inmutable con hash SHA-256. **En Development el codigo NO se envia por correo: vuelve en la
+>   respuesta** (como /dev/login); en Production siempre se envia.
+> - Publicar: PDF con membrete (plantilla "Acta de asamblea", categoria Asambleas, se crea sola si falta) en Documentos +
+>   comunicado en BORRADOR en Comunicaciones (no se envia solo). Plazo legal mostrado: 20 dias habiles (art. 47).
+> - Se retiraron la firma unica vieja (`FirmarActaAsync` con narrativa) y su DTO. `propia-ui.js?v=29` (`propiaUI.htmlDe`).
+> - **Verificar en PROD tras aplicar**: el agente "Redactor de actas" aparece en Super Admin > Plantillas de Agentes IA.
+
+> **ASAMBLEAS: BANDEJA CANONICA + FICHA Y ASISTENTE EN MODAL (ola 1) Y REGLAS DE LA LEY 675 (ola 2) (2026-11-12): 1 MIGRACION
+> (aditiva) + API y Web cambian.**
+> - **MIGRACION `20261112131928_AsambleaOla2Ley675`** (va DESPUES de `AddSuperAdminApiTokens`): solo columnas nuevas, sin
+>   tablas ni datos tocados. `sesiones`: `sala_propia` (bool, default false), `presidente_persona_id`, `presidente_nombre`,
+>   `secretario_persona_id`, `secretario_nombre`, `instalada_en`, `quorum_instalacion_pct`, `justificacion_quorum`,
+>   `motivo_cancelacion`, `punto_actual_id` (todas nullable). `sesion_documentos`: `tipo` (int, default 0 = Otro). Las tablas
+>   ya tienen RLS: no hay policy nueva.
+> - **Comportamiento nuevo (Ley 675)**: sin INSTALACION (presidente + secretario, con quorum) no se abren votaciones; el
+>   quorum es "MAS de la mitad" (o el criterio de Configuracion) y en segunda convocatoria basta un numero plural (2+
+>   unidades); al cerrar, el quorum es el de la instalacion (corregirlo exige justificacion) y los puntos sin tratar quedan
+>   "No tratado"; no se cierra con una votacion abierta; una votacion a la vez. **Sesiones que esten EN CURSO al desplegar
+>   no tienen instalacion: hay que instalarlas antes de abrir votaciones** (o cerrarlas con correccion justificada).
+> - Al CITAR se valida el plazo de citacion (ordinaria bloquea; extraordinaria/consejo/comite pide confirmacion -> 409) y se
+>   genera la **Convocatoria en PDF** (membrete predeterminado + Chromium + storage) como documento de la sesion. Si el PDF
+>   falla, la citacion queda hecha y responde con aviso. Los participantes se citan a nombre del PROPIETARIO activo de la
+>   unidad (antes: el admin como placeholder).
+> - Endpoints nuevos en `api/asambleas`: `PUT {id}` (MERGE), `DELETE {id}` (solo Borrador/Cancelada), `POST {id}/puntos`,
+>   `DELETE puntos/{id}`, `PUT {id}/cancelar`, `POST {id}/segunda-convocatoria` (3er dia habil 8 p. m. con festivos),
+>   `PUT {id}/instalar`, `PUT puntos/{id}/iniciar|tratado`, `POST votaciones/{id}/votar-bloque`, `POST {id}/documentos/archivo`.
+>   Poderes: un poder por unidad, apoderado del directorio de la copropiedad, limite por persona de Configuracion.
+> - **Web**: `/asambleas` = bandeja canonica de solo lectura; la ficha y "Nueva sesion" son modales (`/asambleas/{id}` y
+>   `/asambleas/nueva` quedan como enlaces). Paginas `AsambleaFicha`/`AsambleaNueva` borradas. CSS nuevo
+>   `css/modules/asambleas.css?v=1`, `bandeja-canonica.css?v=3`. Manual estatico en `/ayuda/asambleas.html` (+ imagenes).
+> - Sin config/env nueva. **Verificar en PROD tras aplicar**: abrir /asambleas, crear una sesion de prueba en Borrador,
+>   citarla (ver la Convocatoria en Documentos) y eliminarla/cancelarla.
+
 > **API DE SUPER ADMIN CON TOKENS + API DE TODAS LAS SEMILLAS (2026-11-12): 1 MIGRACION (tabla nueva global) + API y Web.**
 > - **MIGRACION `20261112110203_AddSuperAdminApiTokens`** (va DESPUES de `CorregirEtiquetasListasEnum`): tabla global
 >   `super_admin_api_tokens` (sin tenant_id, sin RLS; FK a `super_admin_usuarios`, indice unico por `token_hash`) + GRANT a

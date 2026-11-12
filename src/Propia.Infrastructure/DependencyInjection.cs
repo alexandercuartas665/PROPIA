@@ -255,6 +255,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Asambleas.IAsambleaService, Asambleas.AsambleaService>();
         services.AddSingleton<Application.Asambleas.IAsambleaTokenService, Asambleas.AsambleaTokenService>();
         services.AddScoped<Application.Asambleas.IAsambleaEnlacesService, Asambleas.AsambleaEnlacesService>();
+        services.AddScoped<Application.Asambleas.IAsambleaConvocatoriaService, Asambleas.AsambleaConvocatoriaService>();
+        services.AddScoped<Application.Asambleas.IAsambleaActaService, Asambleas.AsambleaActaService>();
+        services.AddSingleton<Application.Asambleas.ITranscripcionProvider, Asambleas.NavegadorTranscripcionProvider>();
+        services.AddSingleton<Application.Asambleas.IVideoSalaProvider, Asambleas.LiveKitVideoSalaProvider>();
 
         // Modulo 2.11 Mantenimiento y Activos
         services.AddScoped<Application.Mantenimiento.IMantenimientoService, Mantenimiento.MantenimientoService>();

@@ -217,6 +217,7 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         await SeedVinculoAsync(tenantId, unidades[0], residente, RolUnidadPersona.Residente, true);
         await SeedVinculoAsync(tenantId, unidades[2], otroDueno, RolUnidadPersona.Propietario, true);
         await SeedVinculoAsync(tenantId, unidades[2], exDueno, RolUnidadPersona.Propietario, false);
+        await SeedDirectorioAsync(tenantId, apoderado);
 
         var (_, _, svc) = Build(tenantId, new CorreoFalso());
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
@@ -363,6 +364,20 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         await ctx.SaveChangesAsync();
     }
 
+    // El apoderado es una persona del directorio de la copropiedad (personas es global: OtorgarPoder valida el vinculo).
+    private async Task SeedDirectorioAsync(Guid tenantId, Guid personaId)
+    {
+        await using var ctx = OwnerDb();
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Persona,
+            EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow)
+        });
+        await ctx.SaveChangesAsync();
+    }
+
     private async Task CleanTenant(Guid tenantId)
     {
         await using var ctx = OwnerDb();
@@ -378,6 +393,7 @@ public class AsambleaEnlacesFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesiones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asamblea_config WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_personas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM directorio_vinculos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {_adminUserId}");
         foreach (var id in _personas.Append(_adminPersonaId))

@@ -60,6 +60,21 @@ public class PublicAsambleaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    /// <summary>Acceso a la sala virtual (ola 5): token de video para el copropietario o apoderado del enlace.</summary>
+    [HttpPost("{tenantId:guid}/sesion/{token}/sala")]
+    public async Task<IActionResult> Sala(Guid tenantId, string token, CancellationToken ct)
+    {
+        var (enlace, error) = await AbrirAsync(tenantId, token, ct);
+        if (enlace is null) return error!;
+        try
+        {
+            return await _svc.AccesoSalaResidenteAsync(enlace.SesionId, enlace.PersonaId, ct) is { } a
+                ? Ok(a) : NotFound(new { error = "Asamblea no disponible." });
+        }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // Valida el token (autentico, vigente, del mismo tenant que la URL) y fija el tenant del request.
     private async Task<(AsambleaEnlaceToken? enlace, IActionResult? error)> AbrirAsync(Guid tenantId, string token, CancellationToken ct)
     {

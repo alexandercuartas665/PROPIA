@@ -1,0 +1,1729 @@
+@* AsambleaFichaModal - ficha de una sesion de asamblea en MODAL (replica RP.asambleaFichaModal, PROPUESTAS.md 7.1 bis y 8).
+   Frame estandar de ficha (1056 x 86vh, is-fixedh + .asm-modal): cabecera con navegacion < n/total > entre las sesiones
+   de la bandeja, icono con el color del estado, titulo + badge, linea "tipo - modalidad - fecha - lugar", ultimo envio
+   de enlaces y las acciones del ciclo (Votar con mi cuenta - Enviar enlaces - Cancelar - Citar / Abrir sala / Cerrar
+   sesion - Segunda convocatoria - X); franja de quorum; pestanas Orden del dia | Participantes | Sala virtual
+   (Virtual/Mixta) | Documentos | Acta. Ley 675 (ola 2): instalacion con presidente y secretario, punto en curso, orden
+   del dia editable en Borrador, poderes con limite, votos de la sala en bloque, elecciones por planchas, cierre con el
+   quorum de la instalacion. Los dialogos internos son .modal de Bootstrap por encima. Devuelve true si hubo cambios.
+   Las pestanas van en el segundo bloque de codigo. *@
+@inherits ModalBase<bool>
+@using Propia.Application.Asambleas
+@using Propia.Application.Directorio
+@using Propia.Domain.Enums
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+@if (_s is null)
+{
+    <div class="asm-head">
+        <div class="asm-head-tt"><div class="asm-head-h"><span class="asm-head-titulo">Asamblea</span></div></div>
+        <div class="asm-head-acts"><button type="button" class="asm-x" title="Cerrar" @onclick="Cerrar">@IconoX</button></div>
+    </div>
+    <div class="asm-body">
+        @if (_msg is not null) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+        else { <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-primary);"></div></div> }
+    </div>
+    return;
+}
+
+@* ---------------------------------------------------------------- cabecera *@
+<div class="asm-head">
+    @if (Lista is { Count: > 1 } && Idx >= 0)
+    {
+        <div class="asm-nav">
+            <button type="button" class="asm-nav-btn" title="Sesión anterior" disabled="@(Idx <= 0)" @onclick="() => IrAAsync(-1)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <span class="asm-nav-pos">@(Idx + 1) / @Lista.Count</span>
+            <button type="button" class="asm-nav-btn" title="Sesión siguiente" disabled="@(Idx >= Lista.Count - 1)" @onclick="() => IrAAsync(1)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+        </div>
+    }
+    <div class="asm-head-ic" style="background:@EstadoColor(_s.Estado);"><i class="fi fi-rr-podium-star"></i></div>
+    <div class="asm-head-tt">
+        <div class="asm-head-h">
+            <span class="asm-head-titulo">@_s.Titulo</span>
+            @BadgeEstado(_s.Estado)
+            @if (_s.SegundaConvocatoria) { <span class="badge bg-warning text-dark">2da convocatoria</span> }
+        </div>
+        <div class="asm-head-s">
+            @TipoTexto(_s.Tipo) &middot; @_s.Modalidad &middot; @Local(_s.FechaSesion).ToString("yyyy-MM-dd HH:mm")
+            @if (!string.IsNullOrEmpty(_s.LugarFisico)) { <text> &middot; @_s.LugarFisico</text> }
+            @if (!string.IsNullOrEmpty(_s.EnlaceVideo) && !_s.SalaPropia) { <text> &middot; <a href="@_s.EnlaceVideo" target="_blank" rel="noopener">Enlace video</a></text> }
+        </div>
+        @if (_s.Estado == EstadoSesion.Cancelada && !string.IsNullOrEmpty(_s.MotivoCancelacion))
+        {
+            <div class="asm-head-envio">Cancelada: @_s.MotivoCancelacion</div>
+        }
+        @if (_envio is not null && (_s.Estado == EstadoSesion.Citada || _s.Estado == EstadoSesion.EnCurso))
+        {
+            <div class="asm-head-envio" title="@string.Join(" | ", _envio.Errores)">
+                Último envío de enlaces (@_envio.Inicio.LocalDateTime.ToString("HH:mm")):
+                @(_envio.EnCurso ? "en curso, " : "")@_envio.Enviados de @_envio.Total enviados@(_envio.Fallidos > 0 ? $", {_envio.Fallidos} fallidos" : "")
+                <button class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick="CargarEstadoEnvioAsync">actualizar</button>
+            </div>
+        }
+    </div>
+    <div class="asm-head-acts">
+        @if (_miRuta is not null) { <a class="btn btn-sm btn-outline-primary" href="@_miRuta" target="_blank" rel="noopener">Votar con mi cuenta</a> }
+        @if (_s.Estado == EstadoSesion.Citada || _s.Estado == EstadoSesion.EnCurso)
+        {
+            <button class="btn btn-sm btn-outline-primary" @onclick="() => _dlg = Dlg.Enlaces" disabled="@_busy">Enviar enlaces de voto</button>
+        }
+        @if (_s.Estado == EstadoSesion.Borrador || _s.Estado == EstadoSesion.Citada)
+        {
+            <button class="btn btn-sm btn-outline-danger" @onclick="() => { _motivo = string.Empty; _dlg = Dlg.Cancelar; }" disabled="@_busy">Cancelar sesión</button>
+        }
+        @if (_s.Estado == EstadoSesion.Borrador)
+        {
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="() => CitarAsync(false)" disabled="@_busy">Citar (envia citacion)</button>
+        }
+        @if (_s.Estado == EstadoSesion.Citada)
+        {
+            <button class="btn btn-sm btn-success" @onclick="PedirAbrirSala" disabled="@_busy">Abrir sala</button>
+        }
+        @if (_s.Estado == EstadoSesion.EnCurso)
+        {
+            <button class="btn btn-sm btn-danger" @onclick="PedirCerrar" disabled="@_busy">Cerrar sesión</button>
+        }
+        @if (_s.Estado == EstadoSesion.QuorumFallido && !_s.SegundaConvocatoria)
+        {
+            if (_s.SesionHijaId is Guid hija)
+            {
+                <button class="btn btn-sm btn-outline-primary" @onclick="() => IrASesionAsync(hija)">Ver segunda convocatoria</button>
+            }
+            else
+            {
+                <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="SegundaConvocatoriaAsync" disabled="@_busy">Convocar segunda convocatoria</button>
+            }
+        }
+        @if (_s.SegundaConvocatoria && _s.SesionPadreId is Guid padre)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => IrASesionAsync(padre)">Ver primera convocatoria</button>
+        }
+        <button type="button" class="asm-x" title="Cerrar" @onclick="Cerrar">@IconoX</button>
+    </div>
+</div>
+
+@* ---------------------------------------------------------------- franja de quorum *@
+@if (_s.Estado is EstadoSesion.EnCurso or EstadoSesion.Cerrada or EstadoSesion.QuorumFallido)
+{
+    var q = _s.QuorumActual;
+    <div class="asm-quorum">
+        <div class="asm-quorum-row">
+            <span class="asm-quorum-lbl">Quórum</span>
+            <span><strong>@q.PctRepresentado.ToString("0.00")%</strong> representado @QuorumRequeridoTexto(q)</span>
+            <span class="asm-quorum-n">@q.ParticipantesPresentes / @q.ParticipantesTotales unidades</span>
+            @if (q.Alcanzado) { <span class="badge bg-success">Alcanzado</span> } else { <span class="badge bg-warning text-dark">Insuficiente</span> }
+        </div>
+        <div class="progress" style="height: 6px;"><div class="progress-bar @(q.Alcanzado ? "bg-success" : "bg-warning")" style="width: @(Math.Min(100, (double)q.PctRepresentado).ToString(System.Globalization.CultureInfo.InvariantCulture))%;"></div></div>
+    </div>
+}
+
+@* ---------------------------------------------------------------- pestanas *@
+<div class="asm-tabs" role="tablist">
+    <button type="button" role="tab" class="asm-tab @(_tab == "orden" ? "on" : "")" @onclick='() => _tab = "orden"'>Orden del día (@_s.Puntos.Count)</button>
+    <button type="button" role="tab" class="asm-tab @(_tab == "participantes" ? "on" : "")" @onclick='() => _tab = "participantes"'>Participantes (@_s.Participantes.Count)</button>
+    @if (_s.Modalidad != ModalidadSesion.Presencial)
+    {
+        <button type="button" role="tab" class="asm-tab @(_tab == "sala" ? "on" : "")" @onclick='() => _tab = "sala"'>Sala virtual @if (_s.Estado == EstadoSesion.EnCurso && _s.SalaPropia) { <span class="asm-live">EN VIVO</span> }</button>
+    }
+    <button type="button" role="tab" class="asm-tab @(_tab == "documentos" ? "on" : "")" @onclick='() => _tab = "documentos"'>Documentos (@_s.Documentos.Count)</button>
+    <button type="button" role="tab" class="asm-tab @(_tab == "acta" ? "on" : "")" @onclick='() => _tab = "acta"'>Acta @if (_s.Acta is not null) { @BadgeActa(_s.Acta.Estado) }</button>
+</div>
+
+<div class="asm-body">
+    @if (_msg is not null) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+    @switch (_tab)
+    {
+        case "participantes":
+            @Participantes()
+            break;
+        case "sala":
+            @Sala()
+            break;
+        case "documentos":
+            @Documentos()
+            break;
+        case "acta":
+            @Acta()
+            break;
+        default:
+            @Orden()
+            break;
+    }
+</div>
+
+@* ---------------------------------------------------------------- dialogos *@
+@if (_dlg == Dlg.Cerrar)
+{
+    var va = VotacionAbierta();
+    var pend = _s.Puntos.Where(p => p.Estado == EstadoPunto.Pendiente || (p.Estado == EstadoPunto.EnDiscusion && p.RequiereVotacion && p.Votacion is null)).ToList();
+    var inst = _s.Instalacion;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Cerrar sesión</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body">
+                @if (va is not null) { <div class="alert alert-danger py-2 small">Hay una votación abierta (punto @va.Numero). Ciérrala antes de cerrar la sesión.</div> }
+                @if (inst is not null)
+                {
+                    <p class="small mb-2">Quórum de instalación: <b>@inst.QuorumPct.ToString("0.00")%</b> (@Local(inst.Hora).ToString("HH:mm")). La sesión se cierra como <b>Cerrada</b> y se genera el borrador del acta.</p>
+                }
+                else
+                {
+                    <p class="small mb-2">La asamblea <b>no se instaló</b> (no hubo quórum o no se designaron presidente y secretario): se cierra como <b>Quórum fallido</b> y podrás convocar la segunda convocatoria.</p>
+                }
+                @if (pend.Count > 0) { <p class="small mb-2">Puntos sin tratar que quedarán como <b>No tratado</b>: @string.Join(", ", pend.Select(p => p.Numero)).</p> }
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="asm-cq" @bind="_corregir">
+                    <label class="form-check-label small" for="asm-cq">Corregir el quórum (queda justificado en el acta)</label>
+                </div>
+                @if (_corregir)
+                {
+                    <div class="ms-4 mt-1">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="asm-cqv" id="asm-cq1" checked="@_cierreQuorum" @onchange="() => _cierreQuorum = true">
+                            <label class="form-check-label small" for="asm-cq1">Hubo quórum</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="asm-cqv" id="asm-cq0" checked="@(!_cierreQuorum)" @onchange="() => _cierreQuorum = false">
+                            <label class="form-check-label small" for="asm-cq0">No hubo quórum</label>
+                        </div>
+                        <textarea class="form-control form-control-sm mt-1" rows="2" placeholder="Justificación (obligatoria)" @bind="_justificacion" @bind:event="oninput"></textarea>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Cancelar</button>
+                <button class="btn btn-sm btn-danger" @onclick="CerrarSesionAsync" disabled="@(_busy || va is not null)">Cerrar sesión</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.Enlaces)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Enviar enlaces de voto</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body small">
+                <p>Cada propietario de las unidades citadas, y cada apoderado con poder aprobado, recibirá un correo con su enlace personal para registrar asistencia y votar sin crear cuenta.</p>
+                <p class="mb-0 text-muted">Residentes, familiares y arrendatarios no reciben enlace. Si vuelves a enviar, el enlace anterior sigue funcionando.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Cancelar</button>
+                <button class="btn btn-sm btn-primary" @onclick="EnviarEnlacesAsync" disabled="@_busy">Enviar correos</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.Cancelar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Cancelar sesión</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body">
+                <p class="small">La sesión queda <b>Cancelada</b>@(_s.Estado == EstadoSesion.Citada ? " (avisa a los citados por tus canales: el sistema no envía el aviso)" : ""). No se puede reabrir.</p>
+                <label class="form-label small">Motivo *</label>
+                <textarea class="form-control form-control-sm" rows="3" @bind="_motivo" @bind:event="oninput"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Volver</button>
+                <button class="btn btn-sm btn-danger" @onclick="CancelarSesionAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_motivo))">Cancelar sesión</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.ConfirmarCitar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Citar dentro del plazo</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body small"><p class="mb-0">@_confirmTexto ¿Citar de todas formas?</p></div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Volver</button>
+                <button class="btn btn-sm btn-primary" @onclick="() => CitarAsync(true)" disabled="@_busy">Citar</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.ConfirmarSala)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Abrir sala</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body small"><p class="mb-0">La sesión está programada para el @Local(_s.FechaSesion).ToString("yyyy-MM-dd 'a las' HH:mm"). ¿Abrir la sala desde ya?</p></div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Volver</button>
+                <button class="btn btn-sm btn-success" @onclick="AbrirSalaAsync" disabled="@_busy">Abrir sala</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.Firmar && _s.Instalacion is { } instF)
+{
+    var nombreF = _firmaRol == RolFirmaActa.Presidente ? instF.PresidenteNombre : instF.SecretarioNombre;
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Firmar como @(_firmaRol == RolFirmaActa.Presidente ? "presidente" : "secretario")</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body small">
+                <p>Firma <b>@nombreF</b>. Con las dos firmas (presidente y secretario) el acta queda <b>inmutable</b> con su hash SHA-256 (RN-10).</p>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button class="btn btn-sm btn-success" @onclick="() => FirmarRolAsync(null)" disabled="@_busy">Firmar con mi cuenta</button>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="PedirCodigoAsync" disabled="@_busy">@(_codigo is null ? "Enviar código a su correo" : "Enviar otro código")</button>
+                </div>
+                <div class="text-muted mb-2">"Firmar con mi cuenta" solo sirve si entraste con la cuenta de quien firma. Si no, envíale el código a su correo y escríbelo aquí.</div>
+                @if (_codigo is not null)
+                {
+                    <div class="alert alert-info py-2 mb-2">Código enviado a <b>@_codigo.CorreoEnmascarado</b> (vence a las @Local(_codigo.Expira).ToString("HH:mm")).@if (_codigo.CodigoDev is { } dev) { <div class="mt-1">Solo en desarrollo (no se envía correo): <b>@dev</b></div> }</div>
+                    <div class="d-flex gap-2">
+                        <input class="form-control form-control-sm" style="max-width:160px" inputmode="numeric" maxlength="6" placeholder="Código de 6 dígitos" @bind="_codigoTxt" @bind:event="oninput" />
+                        <button class="btn btn-sm btn-success" @onclick="() => FirmarRolAsync(_codigoTxt)" disabled="@(_busy || (_codigoTxt?.Trim().Length ?? 0) != 6)">Firmar con el código</button>
+                    </div>
+                }
+                @if (_firmaError is not null) { <div class="alert alert-danger py-2 mt-2 mb-0">@_firmaError</div> }
+            </div>
+            <div class="modal-footer"><button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Cerrar</button></div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.Votar)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Emitir voto: @OpcionTexto(_opcionVotar ?? "")</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body">
+                <p class="small">Selecciona la unidad que emite el voto.</p>
+                <select class="form-select form-select-sm" @bind="_unidadVotarId">
+                    <option value="">Selecciona unidad...</option>
+                    @foreach (var p in _s.Participantes.Where(p => p.Presente))
+                    {
+                        <option value="@p.UnidadPrivadaId">@p.UnidadNumero - @p.Nombre (coef @p.Coeficiente.ToString("0.00000"))</option>
+                    }
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Cancelar</button>
+                <button class="btn btn-sm btn-primary" @onclick="ConfirmarVotoAsync" disabled="@(_busy || string.IsNullOrEmpty(_unidadVotarId))">Confirmar voto</button>
+            </div>
+        </div></div>
+    </div>
+}
+@if (_dlg == Dlg.Bloque && PuntoDeVotacion(_bloqueVotacionId) is { } pb)
+{
+    var ya = pb.Votacion!.Votos.Select(v => v.UnidadPrivadaId).ToHashSet();
+    var faltan = _s.Participantes.Where(p => p.Presente && !ya.Contains(p.UnidadPrivadaId)).ToList();
+    var marcados = faltan.Count(f => _bloque.ContainsKey(f.UnidadPrivadaId));
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Registrar votos de la sala · Punto @pb.Numero</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body">
+                <p class="small mb-2">Asamblea presencial o mixta: registra el voto de cada unidad presente en la sala. Las que votaron por su enlace ya no aparecen (@pb.Votacion.Votos.Count).</p>
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    @foreach (var op in pb.OpcionesVoto)
+                    {
+                        var o = op;
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => { foreach (var f in faltan) _bloque[f.UnidadPrivadaId] = o; }">Todos: @OpcionTexto(o)</button>
+                    }
+                    <button class="btn btn-sm btn-link" @onclick="() => _bloque.Clear()">Limpiar</button>
+                </div>
+                <table class="table table-sm small mb-0">
+                    <thead class="text-muted"><tr><th>Unidad</th><th>Persona</th><th class="text-end">Coef.</th>@foreach (var op in pb.OpcionesVoto) { <th class="text-center">@OpcionTexto(op)</th> }</tr></thead>
+                    <tbody>
+                        @foreach (var f in faltan)
+                        {
+                            var uid = f.UnidadPrivadaId;
+                            <tr>
+                                <td><strong class="u-cod">@f.UnidadNumero</strong></td>
+                                <td>@f.Nombre</td>
+                                <td class="text-end">@f.Coeficiente.ToString("0.00000")</td>
+                                @foreach (var op in pb.OpcionesVoto)
+                                {
+                                    var o = op;
+                                    <td class="text-center"><input type="radio" class="form-check-input" name="bq-@uid" checked="@(_bloque.TryGetValue(uid, out var sel) && sel == o)" @onchange="() => _bloque[uid] = o" /></td>
+                                }
+                            </tr>
+                        }
+                        @if (faltan.Count == 0) { <tr><td colspan="@(3 + pb.OpcionesVoto.Count)" class="text-muted text-center py-3">Todas las unidades presentes ya votaron.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <span class="small text-muted me-auto">@marcados de @faltan.Count con voto marcado</span>
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Cancelar</button>
+                <button class="btn btn-sm btn-primary" @onclick="() => RegistrarBloqueAsync(faltan.Select(f => f.UnidadPrivadaId).ToHashSet())" disabled="@(_busy || marcados == 0)">Registrar @marcados votos</button>
+            </div>
+        </div></div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public Guid SesionId { get; set; }
+    /// <summary>Ids de las sesiones de la vista de la bandeja (orden y filtros) para la navegacion < n/total >.</summary>
+    [Parameter] public List<Guid>? Lista { get; set; }
+    /// <summary>Pestana inicial (orden | participantes | sala | documentos | acta).</summary>
+    [Parameter] public string? Tab { get; set; }
+
+    private enum Dlg { Ninguno, Cerrar, Enlaces, Firmar, Votar, Cancelar, ConfirmarCitar, ConfirmarSala, Bloque }
+
+    private Guid _id;
+    private SesionDetalleDto? _s;
+    private string _tab = "orden";
+    private bool _busy, _hubo;
+    private string? _msg; private string _msgClass = "alert-info";
+    private Dlg _dlg;
+    private string? _miRuta;
+    private EstadoEnvioEnlacesDto? _envio;
+    private AsambleaConfigDto? _cfg;
+    private Guid _votacionId;
+    private string? _opcionVotar;
+    private string? _unidadVotarId;
+    private string _motivo = string.Empty;
+    private string? _confirmTexto;
+    private bool _corregir, _cierreQuorum = true;
+    private string? _justificacion;
+    private Guid _bloqueVotacionId;
+    private readonly Dictionary<Guid, string> _bloque = new();
+
+    private static readonly TimeSpan Colombia = TimeSpan.FromHours(-5);
+    private static DateTime Local(DateTimeOffset f) => f.ToOffset(Colombia).DateTime;
+    private int Idx => Lista?.IndexOf(_id) ?? -1;
+    private static readonly MarkupString IconoX = new("<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg>");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _id = SesionId;
+        _tab = Tab is "participantes" or "sala" or "documentos" or "acta" ? Tab : "orden";
+        try { _cfg = await Auth().GetFromJsonAsync<AsambleaConfigDto>("/api/asambleas/config"); } catch { }
+        try { _salaCfg = await Auth().GetFromJsonAsync<SalaConfigDto>("/api/asambleas/sala/config"); } catch { }
+        await CargarAsync();
+    }
+
+    private void Cerrar() => Close(_hubo);
+
+    private async Task IrAAsync(int delta)
+    {
+        if (Lista is null) return;
+        var i = Idx + delta;
+        if (i < 0 || i >= Lista.Count) return;
+        await IrASesionAsync(Lista[i]);
+    }
+    private async Task IrASesionAsync(Guid id)
+    {
+        if (_salaConectada) await SalirSalaAsync();
+        _id = id;
+        _msg = null; _dlg = Dlg.Ninguno; _partQ = ""; _partPagina = 1; _edit = null; _poderForm = null;
+        await CargarAsync();
+    }
+
+    // ===================== Carga (401 -> refresco de sesion una vez, como las paginas) =====================
+    private async Task CargarAsync(bool reintento = false)
+    {
+        try
+        {
+            _s = await Auth().GetFromJsonAsync<SesionDetalleDto>($"/api/asambleas/{_id}");
+            if (_s is not null && _s.Modalidad == ModalidadSesion.Presencial && _tab == "sala") _tab = "orden";
+            if (_s?.Instalacion is null && _s?.Estado == EstadoSesion.EnCurso && _instPres is null) _instSec = "admin";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (!string.IsNullOrEmpty(nuevo)) { Jwt = nuevo; await CargarAsync(reintento: true); }
+            return;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _s = null; _msg = "La sesión no existe o fue eliminada."; _msgClass = "alert-warning";
+            return;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; return; }
+        await CargarTranscripcionAsync();
+        await CargarMiEnlaceAsync();
+        await CargarEstadoEnvioAsync();
+    }
+
+    private async Task CargarEstadoEnvioAsync()
+    {
+        _envio = null;
+        if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/asambleas/{_id}/enviar-enlaces/estado");
+            if (resp.StatusCode == System.Net.HttpStatusCode.OK) _envio = await resp.Content.ReadFromJsonAsync<EstadoEnvioEnlacesDto>();
+        }
+        catch { }
+    }
+
+    private async Task CargarMiEnlaceAsync()
+    {
+        _miRuta = null;
+        if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
+        try
+        {
+            var resp = await Auth().GetAsync($"/api/asambleas/{_id}/mi-enlace");
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnlaceResidenteDto>() is { } e) _miRuta = e.Ruta;
+        }
+        catch { }
+    }
+
+    // ===================== Acciones del ciclo =====================
+    private async Task<bool> EjecutarAsync(Func<HttpClient, Task<HttpResponseMessage>> llamada, string? exito = null)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await llamada(Auth());
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para esta acción." : await LeerErrorAsync(resp);
+                _msgClass = "alert-danger";
+                return false;
+            }
+            _hubo = true;
+            if (exito is not null) { _msg = exito; _msgClass = "alert-success"; }
+            await CargarAsync();
+            return true;
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; return false; }
+        finally { _busy = false; }
+    }
+
+    // Citar: valida plazo (ordinaria bloquea; las demas piden confirmacion -> 409) y genera la Convocatoria.
+    private async Task CitarAsync(bool confirmar)
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/{_id}/citar", new EnviarCitacionRequest(null, confirmar));
+            if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                _confirmTexto = await LeerErrorAsync(resp);
+                _dlg = Dlg.ConfirmarCitar;
+                return;
+            }
+            _dlg = Dlg.Ninguno;
+            if (!resp.IsSuccessStatusCode)
+            {
+                _msg = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para esta acción." : await LeerErrorAsync(resp);
+                _msgClass = "alert-danger";
+                return;
+            }
+            _hubo = true;
+            string? aviso = null;
+            try { aviso = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement.GetProperty("aviso").GetString(); } catch { }
+            _msg = aviso ?? "Sesión citada: se registraron los participantes y la Convocatoria quedó en Documentos.";
+            _msgClass = aviso is null ? "alert-success" : "alert-warning";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private void PedirAbrirSala()
+    {
+        if (_s!.FechaSesion > DateTimeOffset.UtcNow.AddMinutes(30)) _dlg = Dlg.ConfirmarSala;
+        else _ = AbrirSalaAsync();
+    }
+    private async Task AbrirSalaAsync()
+    {
+        _dlg = Dlg.Ninguno;
+        if (await EjecutarAsync(h => h.PutAsync($"/api/asambleas/{_id}/abrir-sala", null)) && _s!.SalaPropia) _tab = "sala";
+    }
+
+    private async Task CancelarSesionAsync()
+    {
+        if (await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/cancelar", new CancelarSesionRequest(_motivo.Trim())), "Sesión cancelada."))
+            _dlg = Dlg.Ninguno;
+    }
+
+    private async Task SegundaConvocatoriaAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/segunda-convocatoria", null);
+            if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
+            var id = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+            _hubo = true;
+            await IrASesionAsync(id);
+            _msg = "Segunda convocatoria creada en Borrador para el tercer día hábil a las 8:00 p. m. (Ley 675 art. 41). Revisa el orden del día y cítala.";
+            _msgClass = "alert-success";
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private Task CheckInAsync(Guid unidadId, bool presente) => EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/check-in", new CheckInParticipanteRequest(unidadId, presente)));
+    private Task AbrirVotacionAsync(Guid puntoId) => EjecutarAsync(h => h.PostAsJsonAsync($"/api/asambleas/{_id}/votaciones", new AbrirVotacionRequest(puntoId)));
+    private Task CerrarVotacionAsync(Guid votacionId) => EjecutarAsync(h => h.PutAsync($"/api/asambleas/votaciones/{votacionId}/cerrar", null));
+    private Task IniciarPuntoAsync(Guid puntoId) => EjecutarAsync(h => h.PutAsync($"/api/asambleas/puntos/{puntoId}/iniciar", null));
+    private Task MarcarTratadoAsync(Guid puntoId) => EjecutarAsync(h => h.PutAsync($"/api/asambleas/puntos/{puntoId}/tratado", null));
+
+    private void MostrarVotar(Guid votacionId, string opcion) { _votacionId = votacionId; _opcionVotar = opcion; _unidadVotarId = null; _dlg = Dlg.Votar; }
+    private async Task ConfirmarVotoAsync()
+    {
+        if (!Guid.TryParse(_unidadVotarId, out var uid)) return;
+        if (await EjecutarAsync(h => h.PostAsJsonAsync($"/api/asambleas/votaciones/{_votacionId}/votar", new EmitirVotoRequest(uid, _opcionVotar!)))) _dlg = Dlg.Ninguno;
+    }
+
+    private void MostrarBloque(Guid votacionId) { _bloqueVotacionId = votacionId; _bloque.Clear(); _dlg = Dlg.Bloque; }
+    private SesionPuntoDto? PuntoDeVotacion(Guid votacionId) => _s?.Puntos.FirstOrDefault(p => p.Votacion?.Id == votacionId);
+    private async Task RegistrarBloqueAsync(HashSet<Guid> faltan)
+    {
+        var votos = _bloque.Where(kv => faltan.Contains(kv.Key)).Select(kv => new VotoBloqueItem(kv.Key, kv.Value)).ToList();
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/votaciones/{_bloqueVotacionId}/votar-bloque", new VotarBloqueRequest(votos));
+            if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<VotarBloqueResultado>();
+            _hubo = true; _dlg = Dlg.Ninguno;
+            _msg = $"Se registraron {r?.Registrados ?? 0} votos de la sala." + (r is { Errores.Count: > 0 } ? $" {r.Errores.Count} no se registraron: {string.Join("; ", r.Errores.Take(5))}" : "");
+            _msgClass = r is { Errores.Count: > 0 } ? "alert-warning" : "alert-success";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    private void PedirCerrar() { _corregir = false; _cierreQuorum = _s?.Instalacion is null; _justificacion = null; _dlg = Dlg.Cerrar; }
+    private SesionPuntoDto? VotacionAbierta() => _s?.Puntos.FirstOrDefault(p => p.Votacion?.Estado == EstadoVotacion.Abierta);
+    private async Task CerrarSesionAsync()
+    {
+        var calculado = _s!.Instalacion is not null;
+        var req = _corregir && _cierreQuorum != calculado ? new CerrarSesionRequest(_cierreQuorum, _justificacion) : new CerrarSesionRequest();
+        if (await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/cerrar", req)))
+        {
+            _dlg = Dlg.Ninguno;
+            _msg = _s?.Estado == EstadoSesion.Cerrada ? "Sesión cerrada. Se generó el borrador del acta." : "Sesión cerrada sin quórum: puedes convocar la segunda convocatoria.";
+            _msgClass = "alert-success";
+            if (_s?.Acta is not null) _tab = "acta";
+        }
+    }
+
+    // ===================== Acta (ola 3) =====================
+    private RolFirmaActa _firmaRol;
+    private CodigoFirmaDto? _codigo;
+    private string? _codigoTxt, _firmaError;
+    private bool _actaEdit;
+    // El papel del acta es contenteditable: al guardar/cancelar/cambiar el texto se RECREA (clave nueva) para que no queden
+    // nodos escritos a mano que Blazor no conoce (se duplicaban al volver a pintar).
+    private int _actaRev;
+    private string ClavePapel(ActaDto a) => $"{_actaRev}|{a.BorradorHtml?.GetHashCode()}";
+    private System.Threading.Timer? _poll;
+
+    private void AbrirFirma(RolFirmaActa rol) { _firmaRol = rol; _codigo = null; _codigoTxt = null; _firmaError = null; _dlg = Dlg.Firmar; }
+    private async Task PedirCodigoAsync()
+    {
+        _busy = true; _firmaError = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/codigo-firma", new SolicitarCodigoFirmaRequest(_firmaRol));
+            if (resp.IsSuccessStatusCode) _codigo = await resp.Content.ReadFromJsonAsync<CodigoFirmaDto>();
+            else _firmaError = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para esta acción." : await LeerErrorAsync(resp);
+        }
+        catch (Exception ex) { _firmaError = ex.Message; }
+        finally { _busy = false; }
+    }
+    private async Task FirmarRolAsync(string? codigo)
+    {
+        _busy = true; _firmaError = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/firmar", new FirmarActaRolRequest(_firmaRol, codigo?.Trim()));
+            if (!resp.IsSuccessStatusCode) { _firmaError = await LeerErrorAsync(resp); return; }
+            _hubo = true; _dlg = Dlg.Ninguno;
+            await CargarAsync();
+            _msg = _s?.Acta?.Estado == EstadoActa.Firmada ? "Acta firmada por el presidente y el secretario: quedó inmutable." : "Firma registrada.";
+            _msgClass = "alert-success";
+        }
+        catch (Exception ex) { _firmaError = ex.Message; }
+        finally { _busy = false; }
+    }
+    private Task RedactarActaAsync() => EjecutarAsync(h => h.PostAsync($"/api/asambleas/{_id}/acta", null), "La IA está redactando el acta.");
+    private Task RegenerarActaAsync() => EjecutarAsync(h => h.PostAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/regenerar", null), "La IA está redactando el acta de nuevo.");
+    private async Task GuardarActaAsync()
+    {
+        string? html;
+        try { html = await Js.InvokeAsync<string?>("propiaUI.htmlDe", "#asm-acta-doc"); }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; return; }
+        if (await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/borrador", new GuardarBorradorActaRequest(html ?? "")), "Cambios del acta guardados."))
+        { _actaEdit = false; _actaRev++; }
+    }
+    private async Task PublicarActaAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PutAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/publicar", null);
+            if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
+            var r = await resp.Content.ReadFromJsonAsync<PublicacionActaDto>();
+            _hubo = true;
+            await CargarAsync();
+            _msg = r?.Aviso ?? "Acta publicada: el PDF quedó en Documentos y el comunicado para los propietarios quedó en Borrador en Comunicaciones (revísalo y envíalo).";
+            _msgClass = r?.Aviso is null ? "alert-success" : "alert-warning";
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _busy = false; }
+    }
+
+    // Mientras la IA redacta, la ficha se refresca sola cada 3 s (no mientras se edita).
+    protected override void OnAfterRender(bool firstRender)
+    {
+        var redactando = _s?.Acta?.EstadoRedaccion == EstadoRedaccionActa.Redactando && !_actaEdit;
+        if (redactando && _poll is null)
+            _poll = new System.Threading.Timer(_ => InvokeAsync(async () =>
+            {
+                if (_busy || _actaEdit) return;
+                await CargarAsync();
+                if (_s?.Acta?.EstadoRedaccion != EstadoRedaccionActa.Redactando) { _poll?.Dispose(); _poll = null; }
+                StateHasChanged();
+            }), null, 3000, 3000);
+        else if (!redactando && _poll is not null) { _poll.Dispose(); _poll = null; }
+    }
+    public void Dispose()
+    {
+        _poll?.Dispose(); _txPoll?.Dispose(); _salaPoll?.Dispose();
+        if (_salaConectada) { try { _ = Js.InvokeVoidAsync("propiaSala.salir"); } catch { } }
+        if (_dictando) { try { _ = Js.InvokeVoidAsync("propiaUI.dictado.stop"); } catch { } }
+        _dictRef?.Dispose();
+    }
+
+    // ===================== Transcripcion (ola 4) =====================
+    private List<TranscripcionLineaDto> _tx = new();
+    private bool _dictando;
+    private string? _parcial, _dictadoError;
+    private DotNetObjectReference<AsambleaFichaModal>? _dictRef;
+    private System.Threading.Timer? _txPoll;
+
+    private async Task CargarTranscripcionAsync()
+    {
+        if (_s is null || _s.Estado is not (EstadoSesion.EnCurso or EstadoSesion.Cerrada or EstadoSesion.QuorumFallido)) { _tx = new(); return; }
+        try { _tx = await Auth().GetFromJsonAsync<List<TranscripcionLineaDto>>($"/api/asambleas/{_id}/transcripcion") ?? new(); }
+        catch { }
+        // Mientras la transcripcion esta activa, la bitacora se refresca sola (lineas de otros y del proveedor).
+        if (_s.Estado == EstadoSesion.EnCurso && _s.TranscripcionActiva)
+            _txPoll ??= new System.Threading.Timer(_ => InvokeAsync(async () =>
+            {
+                if (_busy) return;
+                try { _tx = await Auth().GetFromJsonAsync<List<TranscripcionLineaDto>>($"/api/asambleas/{_id}/transcripcion") ?? _tx; } catch { }
+                StateHasChanged();
+            }), null, 4000, 4000);
+        else { _txPoll?.Dispose(); _txPoll = null; }
+    }
+
+    private async Task ToggleTranscripcionAsync()
+    {
+        var activa = !_s!.TranscripcionActiva;
+        if (!activa && _dictando) await DetenerDictadoAsync();
+        await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/transcripcion/activa", new ActivarTranscripcionRequest(activa)));
+    }
+
+    private async Task ToggleDictadoAsync()
+    {
+        _dictadoError = null;
+        if (_dictando) { await DetenerDictadoAsync(); return; }
+        var r = await Js.InvokeAsync<string>("propiaUI.dictado.start", JsRef(), "es-CO");
+        if (r == "ok") _dictando = true;
+        else _dictadoError = r == "no-soportado" ? "Este navegador no reconoce voz: usa Chrome o Edge." : "No se pudo iniciar el micrófono.";
+    }
+    private async Task DetenerDictadoAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaUI.dictado.stop"); } catch { }
+        _dictando = false; _parcial = null;
+    }
+
+    [JSInvokable]
+    public async Task DictadoFinal(string texto, double? confianza)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || _s is null) return;
+        _parcial = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{_id}/transcripcion",
+                new AgregarTranscripcionRequest(texto.Trim(), confianza is double c ? (decimal)Math.Round(c, 4) : null));
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<TranscripcionLineaDto>() is { } l) _tx.Add(l);
+            else if (!resp.IsSuccessStatusCode) { _dictadoError = await LeerErrorAsync(resp); await DetenerDictadoAsync(); }
+        }
+        catch (Exception ex) { _dictadoError = ex.Message; }
+        StateHasChanged();
+    }
+    [JSInvokable]
+    public void DictadoParcial(string texto) { _parcial = texto; StateHasChanged(); }
+    [JSInvokable]
+    public void DictadoError(string error)
+    {
+        _dictando = false; _parcial = null;
+        _dictadoError = error switch
+        {
+            "not-allowed" or "service-not-allowed" => "El navegador no dio permiso para usar el micrófono.",
+            "audio-capture" => "No se encontró un micrófono.",
+            "network" => "El reconocimiento de voz del navegador necesita conexión a internet.",
+            _ => "El reconocimiento de voz se detuvo (" + error + ")."
+        };
+        StateHasChanged();
+    }
+
+    private RenderFragment Transcripcion() => @<div class="card mb-3"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+            <h6 class="mb-0 d-flex align-items-center gap-2">Transcripción @if (_s!.TranscripcionActiva) { <span class="asm-live">TRANSCRIBIENDO</span> }</h6>
+            @if (_s.Estado == EstadoSesion.EnCurso)
+            {
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm @(_s.TranscripcionActiva ? "btn-outline-dark" : "btn-primary")" @onclick="ToggleTranscripcionAsync" disabled="@_busy">@(_s.TranscripcionActiva ? "Pausar transcripción" : "Transcribir")</button>
+                    <button class="btn btn-sm @(_dictando ? "btn-danger" : "btn-outline-primary")" @onclick="ToggleDictadoAsync" disabled="@(!_s.TranscripcionActiva)" title="Reconocimiento de voz del navegador (Chrome o Edge)"><i class="fi fi-rr-microphone me-1"></i>@(_dictando ? "Detener mi voz" : "Mi voz a texto")</button>
+                </div>
+            }
+        </div>
+        <div class="asm-tx-info">Esta sesión se transcribe para elaborar el acta (Ley 1581 de 2012). "Mi voz a texto" usa el reconocimiento de voz de tu navegador; cada frase queda con tu nombre y el punto en curso.</div>
+        @if (_dictando) { <div class="asm-tx-interim">@(string.IsNullOrEmpty(_parcial) ? "Escuchando..." : _parcial + "...")</div> }
+        @if (_dictadoError is not null) { <div class="alert alert-warning py-2 small mb-2">@_dictadoError</div> }
+        <div class="asm-tx-full">@TxLista()</div>
+    </div></div>;
+
+    private RenderFragment TxLista() => __b =>
+    {
+        if (_tx.Count == 0) { __b.AddMarkupContent(0, "<div class=\"asm-tx-info\">Sin transcripción.</div>"); return; }
+        var seq = 1;
+        foreach (var l in _tx)
+        {
+            __b.OpenElement(seq++, "div");
+            __b.AddAttribute(seq++, "class", "asm-tx-l" + (l.Tipo == TipoLineaTranscripcion.Sistema ? " is-sis" : ""));
+            __b.OpenElement(seq++, "span"); __b.AddAttribute(seq++, "class", "asm-tx-h"); __b.AddContent(seq++, Local(l.Hora).ToString("HH:mm")); __b.CloseElement();
+            __b.OpenElement(seq++, "span");
+            if (l.Tipo == TipoLineaTranscripcion.Sistema) __b.AddContent(seq++, l.Texto);
+            else
+            {
+                __b.OpenElement(seq++, "b"); __b.AddContent(seq++, (l.AutorNombre ?? "Participante") + (l.UnidadNumero is null ? "" : $" ({l.UnidadNumero})") + ":"); __b.CloseElement();
+                __b.AddContent(seq++, " " + l.Texto + " ");
+                if (l.PuntoNumero is int pn) { __b.OpenElement(seq++, "span"); __b.AddAttribute(seq++, "class", "asm-tx-p"); __b.AddContent(seq++, "P" + pn); __b.CloseElement(); }
+            }
+            __b.CloseElement();
+            __b.CloseElement();
+        }
+    };
+
+    private async Task EnviarEnlacesAsync()
+    {
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{_id}/enviar-enlaces", new EnviarEnlacesRequest(null, Nav.BaseUri));
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnvioEnlacesDto>() is { } r)
+            {
+                var sin = r.SinCorreo.Count == 0 ? "" :
+                    $" {r.SinCorreo.Count} sin correo registrado: {string.Join(", ", r.SinCorreo.Take(10))}{(r.SinCorreo.Count > 10 ? "..." : "")}.";
+                _msg = r.Destinatarios == 0 ? "La sesión no tiene propietarios ni apoderados habilitados para recibir enlace."
+                    : r.ConCorreo == 0
+                    ? $"No se envió ningún correo: ninguno de los {r.Destinatarios} propietarios o apoderados tiene correo.{sin}"
+                    : $"Enviando {(r.ConCorreo == 1 ? "1 correo" : $"{r.ConCorreo} correos")} con el enlace de voto (salen en segundo plano).{sin}";
+                _msgClass = r.ConCorreo == 0 ? "alert-warning" : "alert-success";
+            }
+            else { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; }
+            await CargarEstadoEnvioAsync();
+        }
+        finally { _busy = false; _dlg = Dlg.Ninguno; }
+    }
+
+    // ===================== Textos y badges =====================
+    private static string TipoTexto(TipoSesion t) => t switch
+    {
+        TipoSesion.AsambleaOrdinaria => "Asamblea ordinaria",
+        TipoSesion.AsambleaExtraordinaria => "Asamblea extraordinaria",
+        TipoSesion.Consejo => "Consejo de administración",
+        TipoSesion.Comite => "Comité",
+        _ => t.ToString()
+    };
+    private static string QuorumRequeridoTexto(QuorumDto q) =>
+        q.SegundaConvocatoria ? "(segunda convocatoria: basta un número plural)"
+        : q.PctRequerido is decimal r ? $"(se requiere {(q.Criterio == CriterioMayoria.AlMenos ? "al menos el" : "más del")} {r:0.00}%)" : "";
+    private static string EstadoColor(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Citada => "var(--propia-info)",
+        EstadoSesion.EnCurso => "var(--propia-brand)",
+        EstadoSesion.Cerrada => "var(--propia-success)",
+        EstadoSesion.QuorumFallido => "var(--propia-warning)",
+        EstadoSesion.Cancelada => "var(--propia-text-muted)",
+        _ => "var(--propia-text-faint)"
+    };
+    private static RenderFragment BadgeEstado(EstadoSesion e) => e switch
+    {
+        EstadoSesion.Borrador => @<span class="badge bg-light text-dark border">Borrador</span>,
+        EstadoSesion.Citada => @<span class="badge bg-info text-dark">Citada</span>,
+        EstadoSesion.EnCurso => @<span class="badge bg-primary">En curso</span>,
+        EstadoSesion.Cerrada => @<span class="badge bg-success">Cerrada</span>,
+        EstadoSesion.QuorumFallido => @<span class="badge bg-warning text-dark">Quórum fallido</span>,
+        EstadoSesion.Cancelada => @<span class="badge bg-secondary">Cancelada</span>,
+        _ => __b => { }
+    };
+    private static RenderFragment BadgePunto(EstadoPunto e) => e switch
+    {
+        EstadoPunto.Pendiente => @<span class="badge bg-light text-dark border">Pendiente</span>,
+        EstadoPunto.EnDiscusion => @<span class="badge bg-info text-dark">En discusión</span>,
+        EstadoPunto.EnVotacion => @<span class="badge bg-primary">En votación</span>,
+        EstadoPunto.Cerrado => @<span class="badge bg-success">Cerrado</span>,
+        EstadoPunto.NoTratado => @<span class="badge bg-secondary">No tratado</span>,
+        _ => __b => { }
+    };
+    private static RenderFragment BadgeActa(EstadoActa e) => e switch
+    {
+        EstadoActa.Borrador => @<span class="badge bg-warning text-dark">Borrador</span>,
+        EstadoActa.Firmada => @<span class="badge bg-success">Firmada</span>,
+        _ => __b => { }
+    };
+    private static string ResultadoTexto(ResultadoVotacion r) => r switch
+    {
+        ResultadoVotacion.Aprobado => "Aprobado",
+        ResultadoVotacion.Rechazado => "No aprobado",
+        ResultadoVotacion.Elegido => "Elegido",
+        _ => "Sin resultado"
+    };
+    private static string OpcionTexto(string op) => op switch { "Si" => "Sí", "Abstencion" => "Abstención", _ => op };
+    private static bool EsEleccion(SesionPuntoDto p) => !p.OpcionesVoto.Contains("Si");
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt!);
+        return http;
+    }
+    private static async Task<string> LeerErrorAsync(HttpResponseMessage r)
+    {
+        var txt = await r.Content.ReadAsStringAsync();
+        try { var d = System.Text.Json.JsonDocument.Parse(txt); if (d.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? "Error."; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)r.StatusCode}." : txt;
+    }
+}
+
+@code {
+    // ===================== Pestana Orden del dia =====================
+    // Instalacion (EnCurso): con quorum se designan presidente y secretario (Ley 675 art. 47). Sin instalacion no hay votaciones.
+    private string? _instPres;
+    private string _instSec = "admin";
+    private Task InstalarAsync()
+    {
+        if (!Guid.TryParse(_instPres, out var pres)) return Task.CompletedTask;
+        Guid? sec = Guid.TryParse(_instSec, out var s) ? s : null;
+        return EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/instalar", new InstalarSesionRequest(pres, sec)), "Asamblea instalada.");
+    }
+
+    private RenderFragment Instalacion()
+    {
+        if (_s!.Estado != EstadoSesion.EnCurso) return __b => { };
+        if (_s.Instalacion is { } i)
+            return @<div class="asm-inst asm-inst--ok"><i class="fi fi-rr-check-circle"></i><div>Asamblea instalada a las @Local(i.Hora).ToString("HH:mm") con el @i.QuorumPct.ToString("0.00")% de los coeficientes. Presidente: <b>@i.PresidenteNombre</b> &middot; Secretario: <b>@i.SecretarioNombre</b></div></div>;
+        var q = _s.QuorumActual;
+        var pres = _s.Participantes.Where(p => p.Presente).ToList();
+        return @<div class="asm-inst">
+            <div class="asm-inst-t">Instalación de la asamblea</div>
+            <div class="asm-inst-s">Verificado el quórum, la asamblea designa presidente y secretario, que firman el acta (Ley 675 art. 47). Sin instalación no se abren votaciones.</div>
+            @if (!q.Alcanzado)
+            {
+                <div class="alert alert-warning py-2 small mb-0 mt-2">Aún no hay quórum: @q.ParticipantesPresentes de @q.ParticipantesTotales unidades presentes.</div>
+            }
+            else
+            {
+                <div class="row g-2 mt-1">
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Presidente de la asamblea</label>
+                        <select class="form-select form-select-sm" @bind="_instPres">
+                            <option value="">Elige un asistente...</option>
+                            @foreach (var p in pres) { <option value="@p.UnidadPrivadaId">@p.UnidadNumero - @p.Nombre</option> }
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Secretario de la asamblea</label>
+                        <select class="form-select form-select-sm" @bind="_instSec">
+                            <option value="admin">Administración</option>
+                            @foreach (var p in pres) { <option value="@p.UnidadPrivadaId">@p.UnidadNumero - @p.Nombre</option> }
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end"><button class="btn btn-sm btn-success w-100" @onclick="InstalarAsync" disabled="@(_busy || string.IsNullOrEmpty(_instPres))">Instalar</button></div>
+                </div>
+            }
+        </div>;
+    }
+
+    // Edicion del orden del dia (solo Borrador): titulo, descripcion, votacion, mayoria y opciones propias (planchas).
+    private sealed class PuntoEdit
+    {
+        public Guid? Id { get; set; }
+        public string Titulo { get; set; } = "";
+        public string? Descripcion { get; set; }
+        public string Opciones { get; set; } = "";
+        public bool RequiereVotacion { get; set; } = true;
+        public TipoMayoria TipoMayoria { get; set; } = TipoMayoria.Simple;
+        public decimal MayoriaPct { get; set; } = 50m;
+        public ModalidadVoto ModalidadVoto { get; set; } = ModalidadVoto.Publico;
+        public string? Narrativa { get; set; }
+    }
+    private PuntoEdit? _edit;
+    private void EditarPunto(SesionPuntoDto p) => _edit = new PuntoEdit
+    {
+        Id = p.Id, Titulo = p.Titulo, Descripcion = p.Descripcion, RequiereVotacion = p.RequiereVotacion,
+        TipoMayoria = p.TipoMayoria, MayoriaPct = p.MayoriaPct, ModalidadVoto = p.ModalidadVoto, Narrativa = p.NarrativaSecretario,
+        Opciones = EsEleccion(p) ? string.Join(", ", p.OpcionesVoto) : ""
+    };
+    private List<string> OpcionesEdit() => (_edit?.Opciones ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    private async Task GuardarPuntoAsync()
+    {
+        if (_edit is null) return;
+        if (string.IsNullOrWhiteSpace(_edit.Titulo)) { _msg = "El punto necesita un título."; _msgClass = "alert-danger"; return; }
+        if (_edit.TipoMayoria == TipoMayoria.Calificada && _edit.MayoriaPct < 70m) _edit.MayoriaPct = 70m;
+        var e = _edit;
+        var ok = e.Id is Guid id
+            ? await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/puntos/{id}", new ActualizarPuntoRequest(e.Titulo.Trim(), e.Descripcion,
+                e.RequiereVotacion, e.TipoMayoria, e.MayoriaPct, e.ModalidadVoto, e.Narrativa, OpcionesEdit())))
+            : await EjecutarAsync(h => h.PostAsJsonAsync($"/api/asambleas/{_id}/puntos", new CrearPuntoRequest(0, e.Titulo.Trim(), e.Descripcion,
+                e.RequiereVotacion, e.TipoMayoria, e.MayoriaPct, e.ModalidadVoto, null, OpcionesEdit())));
+        if (ok) _edit = null;
+    }
+    private Task QuitarPuntoAsync(Guid puntoId) => EjecutarAsync(h => h.DeleteAsync($"/api/asambleas/puntos/{puntoId}"));
+
+    private RenderFragment PuntoEditor() => @<div class="asm-pedit">
+        <div class="row g-2">
+            <div class="col-md-8"><label class="form-label small mb-1">Título *</label><input class="form-control form-control-sm" @bind="_edit!.Titulo" @bind:event="oninput" /></div>
+            <div class="col-md-4"><label class="form-label small mb-1">Modalidad voto</label>
+                <select class="form-select form-select-sm" @bind="_edit!.ModalidadVoto">
+                    <option value="@ModalidadVoto.Publico">Publico</option><option value="@ModalidadVoto.Secreto">Secreto</option>
+                </select></div>
+            <div class="col-md-12"><label class="form-label small mb-1">Descripción</label><input class="form-control form-control-sm" @bind="_edit!.Descripcion" @bind:event="oninput" /></div>
+            <div class="col-md-12"><label class="form-label small mb-1">Opciones de voto para elecciones (planchas o candidatos, separadas por coma; vacío = Sí / No / Abstención)</label>
+                <input class="form-control form-control-sm" @bind="_edit!.Opciones" @bind:event="oninput" placeholder="Plancha 1, Plancha 2, Voto en blanco" /></div>
+            <div class="col-md-4"><div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="asm-pe-rv" @bind="_edit!.RequiereVotacion" /><label class="form-check-label small" for="asm-pe-rv">Requiere votación</label></div></div>
+            <div class="col-md-4"><select class="form-select form-select-sm" @bind="_edit!.TipoMayoria">
+                <option value="@TipoMayoria.Simple">Mayoría simple</option><option value="@TipoMayoria.Calificada">Mayoría calificada (70%)</option>
+            </select></div>
+            <div class="col-md-4"><div class="input-group input-group-sm"><span class="input-group-text">Más del</span><input type="number" min="50" max="100" class="form-control" @bind="_edit!.MayoriaPct" /><span class="input-group-text">%</span></div></div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-2">
+            <button class="btn btn-sm btn-outline-dark" @onclick="() => _edit = null">Cancelar</button>
+            <button class="btn btn-sm btn-primary" @onclick="GuardarPuntoAsync" disabled="@_busy">@(_edit!.Id is null ? "Agregar punto" : "Guardar punto")</button>
+        </div>
+    </div>;
+
+    private RenderFragment NotaPlazo()
+    {
+        if (_s!.Estado != EstadoSesion.Borrador) return __b => { };
+        var plazo = _cfg?.PlazoCitacionDias ?? _s.PlazoCitacionDias;
+        var dias = (int)Math.Floor((_s.FechaSesion - DateTimeOffset.UtcNow).TotalDays);
+        var fuera = !_s.SegundaConvocatoria && dias < plazo;
+        var bloquea = fuera && _s.Tipo == TipoSesion.AsambleaOrdinaria;
+        return @<div class="asm-nota">Puedes editar el orden del día hasta citar: la citación sale con este orden.@if (fuera) {<text> <b>Ojo:</b> faltan @Math.Max(0, dias) días para la sesión y el plazo de citación es de @plazo@(bloquea ? " (la asamblea ordinaria no se puede citar así: cambia la fecha)." : ".")</text>}</div>;
+    }
+
+    private RenderFragment Orden() => @<div>
+        @if (_s!.Modalidad == ModalidadSesion.Presencial && _s.Estado == EstadoSesion.EnCurso) { @Transcripcion() }
+        @Instalacion()
+        @NotaPlazo()
+        <div class="card"><div class="card-body">
+            @foreach (var p in _s!.Puntos)
+            {
+                var pid = p.Id;
+                if (_edit?.Id == pid) { @PuntoEditor() continue; }
+                var actual = _s.PuntoActualId == pid && _s.Estado == EstadoSesion.EnCurso;
+                <div class="border-bottom py-2 @(actual ? "asm-punto-actual" : "")">
+                    <div class="d-flex justify-content-between mb-1 gap-2">
+                        <strong>@p.Numero. @p.Titulo @if (actual) { <span class="asm-live">EN CURSO</span> }</strong>
+                        <span class="small d-flex gap-1 align-items-center">
+                            @BadgePunto(p.Estado)
+                            @if (_s.Estado == EstadoSesion.Borrador)
+                            {
+                                <button class="btn btn-link btn-sm p-0 ms-2" @onclick="() => EditarPunto(p)">Editar</button>
+                                <button class="btn btn-link btn-sm p-0 ms-2 text-danger" @onclick="() => QuitarPuntoAsync(pid)" disabled="@(_busy || _s.Puntos.Count <= 1)">Quitar</button>
+                            }
+                        </span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(p.Descripcion)) { <p class="small text-muted mb-1">@p.Descripcion</p> }
+                    <div class="small text-muted mb-1">
+                        @if (p.RequiereVotacion)
+                        {
+                            if (EsEleccion(p)) { <span class="badge bg-light text-dark border me-1">Elección: @string.Join(" / ", p.OpcionesVoto)</span> }
+                            else { <span class="badge bg-light text-dark border me-1">@p.TipoMayoria @p.MayoriaPct.ToString("0.##")%</span> }
+                            <span class="badge bg-light text-dark border me-1">@p.ModalidadVoto</span>
+                        }
+                        else { <em>No requiere votación formal</em> }
+                    </div>
+                    @if (p.Votacion is { } v) { @VotacionCard(p, v) }
+                    @if (_s.Estado == EstadoSesion.EnCurso && _s.Instalacion is not null)
+                    {
+                        <div class="d-flex gap-2 mt-1">
+                            @if (p.Estado == EstadoPunto.Pendiente) { <button class="btn btn-sm btn-outline-secondary" @onclick="() => IniciarPuntoAsync(pid)" disabled="@_busy">Iniciar punto</button> }
+                            @if (p.Estado == EstadoPunto.EnDiscusion && !p.RequiereVotacion) { <button class="btn btn-sm btn-outline-success" @onclick="() => MarcarTratadoAsync(pid)" disabled="@_busy">Marcar tratado</button> }
+                            @if (p.RequiereVotacion && p.Votacion is null && p.Estado is EstadoPunto.Pendiente or EstadoPunto.EnDiscusion) { <button class="btn btn-sm btn-outline-primary" @onclick="() => AbrirVotacionAsync(pid)" disabled="@_busy">Abrir votación</button> }
+                        </div>
+                    }
+                </div>
+            }
+            @if (_edit is { Id: null }) { @PuntoEditor() }
+            else if (_s.Estado == EstadoSesion.Borrador) { <button class="btn btn-sm btn-outline-dark mt-2" @onclick="() => _edit = new PuntoEdit()">+ Agregar punto</button> }
+        </div></div>
+    </div>;
+
+    private RenderFragment VotacionCard(SesionPuntoDto p, VotacionDto v) => @<div class="card bg-light mb-1"><div class="card-body py-2 small">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+            <span>
+                <strong>Votación @(v.Estado == EstadoVotacion.Abierta ? "abierta" : "cerrada")</strong>
+                @if (v.ResultadoFinal is { } rf)
+                {
+                    <span class="badge @(rf is ResultadoVotacion.Aprobado or ResultadoVotacion.Elegido ? "bg-success" : rf == ResultadoVotacion.SinResultado ? "bg-secondary" : "bg-danger") ms-1">@ResultadoTexto(rf)</span>
+                    @if (!string.IsNullOrEmpty(v.ResultadoOpcion)) { <span class="ms-1">@OpcionTexto(v.ResultadoOpcion) (@v.ResultadoPct?.ToString("0.00")%)</span> }
+                }
+            </span>
+            @if (v.Estado == EstadoVotacion.Abierta)
+            {
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => CerrarVotacionAsync(v.Id)" disabled="@_busy">Cerrar votación</button>
+            }
+        </div>
+        <div class="mt-1 text-muted">@v.Votos.Count votos de @_s!.Participantes.Count(x => x.Presente) presentes &middot; abierta @Local(v.HoraApertura).ToString("HH:mm")</div>
+        @if (v.Desglose is { Count: > 0 } dg)
+        {
+            <div class="asm-desg">@foreach (var x in dg) { <span>@OpcionTexto(x.Opcion) <b>@x.Pct.ToString("0.00")%</b> (@x.Votos)</span> }</div>
+        }
+        @if (v.Estado == EstadoVotacion.Abierta)
+        {
+            <div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
+                @foreach (var op in p.OpcionesVoto)
+                {
+                    var opcion = op;
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => MostrarVotar(v.Id, opcion)">@OpcionTexto(opcion)</button>
+                }
+                <button class="btn btn-sm btn-primary ms-auto" @onclick="() => MostrarBloque(v.Id)">Registrar votos de la sala</button>
+            </div>
+        }
+    </div></div>;
+
+    // ===================== Pestana Participantes (+ poderes) =====================
+    private string _partQ = "";
+    private int _partPagina = 1, _partPorPagina = 25;
+    private List<SesionParticipanteDto> PartFiltrados()
+    {
+        var q = _partQ.Trim();
+        return q.Length == 0 ? _s!.Participantes.ToList()
+            : _s!.Participantes.Where(p => (p.UnidadNumero + " " + p.Nombre).Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+    private int PartPaginaActual(int n) => Math.Clamp(_partPagina, 1, Math.Max(1, (int)Math.Ceiling(n / (double)_partPorPagina)));
+
+    // Poderes: registrar (unidad + apoderado del directorio + tipo) y aprobar/rechazar, con el limite por persona.
+    private sealed class PoderForm
+    {
+        public string Unidad { get; set; } = "";
+        public PersonaCandidatoDto? Apoderado { get; set; }
+        public TipoPoder Tipo { get; set; } = TipoPoder.Pdf;
+    }
+    private PoderForm? _poderForm;
+    private List<(Guid Id, string Numero, string Nombre)>? _unidades;
+    private async Task NuevoPoderAsync()
+    {
+        _poderForm = new PoderForm();
+        if (_s!.Participantes.Count > 0)
+            _unidades = _s.Participantes.Select(p => (p.UnidadPrivadaId, p.UnidadNumero, p.Nombre)).ToList();
+        else if (_unidades is null)
+        {
+            try
+            {
+                var l = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+                _unidades = l.OrderBy(u => u.Numero).Select(u => (u.Id, u.Numero, u.PropietarioNombre ?? "")).ToList();
+            }
+            catch { _unidades = new(); }
+        }
+    }
+    private async Task RegistrarPoderAsync()
+    {
+        var f = _poderForm!;
+        if (!Guid.TryParse(f.Unidad, out var unidad)) { _msg = "Elige la unidad que otorga el poder."; _msgClass = "alert-danger"; return; }
+        if (f.Apoderado is null) { _msg = "Elige el apoderado."; _msgClass = "alert-danger"; return; }
+        if (await EjecutarAsync(h => h.PostAsJsonAsync($"/api/asambleas/{_id}/poderes", new OtorgarPoderRequest(unidad, f.Apoderado.PersonaId, f.Tipo, null)), "Poder registrado."))
+            _poderForm = null;
+    }
+    private Task DecidirPoderAsync(Guid poderId, bool aprobar)
+        => EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/poderes/{poderId}/decidir", new DecidirPoderRequest(aprobar, null)));
+
+    private RenderFragment Participantes()
+    {
+        var suma = _s!.Participantes.Sum(p => p.Coeficiente);   // los coeficientes ya estan en porcentaje
+        var lst = PartFiltrados();
+        var pg = PartPaginaActual(lst.Count);
+        var vivo = _s.Estado is not (EstadoSesion.Cerrada or EstadoSesion.QuorumFallido or EstadoSesion.Cancelada);
+        var lim = _s.LimitePoderesPorPersona;
+        return @<div>
+            @if (_s.Participantes.Count > 0 && Math.Abs(suma - 100m) > 0.01m)
+            {
+                <div class="alert alert-warning py-2 small">Los coeficientes de las unidades suman <b>@suma.ToString("0.00")%</b> (deben sumar 100%). El quórum y las votaciones se calculan sobre esa suma: corrige los coeficientes en Unidades Privadas.</div>
+            }
+            <div class="row g-3">
+                <div class="col-lg-7"><div class="card"><div class="card-body">
+                    @if (_s.Participantes.Count == 0)
+                    {
+                        <p class="text-muted small mb-0">Aun no se ha citado la sesión: al citar se registran todas las unidades a nombre de su propietario.</p>
+                    }
+                    else
+                    {
+                        <div class="asm-part-tool"><input class="form-control form-control-sm" placeholder="Buscar unidad o persona..." @bind="_partQ" @bind:event="oninput" @bind:after="() => _partPagina = 1" /></div>
+                        <div class="asf-part-scroll">
+                            <table class="table table-sm mb-0 small">
+                                <thead class="text-muted"><tr><th>Unidad</th><th>Persona</th><th class="text-end">Coef.</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in lst.Skip((pg - 1) * _partPorPagina).Take(_partPorPagina))
+                                    {
+                                        var uid = p.UnidadPrivadaId;
+                                        var presente = p.Presente;
+                                        var pd = _s.Poderes.FirstOrDefault(x => x.OtorganteUnidadId == uid && x.Estado == EstadoPoder.Aprobado);
+                                        <tr>
+                                            <td><strong class="u-cod">@p.UnidadNumero</strong></td>
+                                            <td>@p.Nombre@if (pd is not null) { <div class="text-muted">por poder: @pd.ApoderadoNombre</div> }</td>
+                                            <td class="text-end">@p.Coeficiente.ToString("0.00000")</td>
+                                            <td>
+                                                @if (_s.Estado == EstadoSesion.EnCurso)
+                                                {
+                                                    <button class="btn btn-sm @(presente ? "btn-success" : "btn-outline-secondary")" @onclick="() => CheckInAsync(uid, !presente)" disabled="@_busy">@(presente ? "Presente" : "Ausente")</button>
+                                                }
+                                                else if (presente) { <span class="badge bg-success">Presente</span> }
+                                            </td>
+                                        </tr>
+                                    }
+                                    @if (lst.Count == 0) { <tr><td colspan="4" class="text-muted text-center py-3">Ninguna unidad coincide con la búsqueda.</td></tr> }
+                                </tbody>
+                            </table>
+                        </div>
+                        <TablaPager Total="lst.Count" Pagina="pg" PorPagina="_partPorPagina" Entidad="unidades"
+                                    PaginaChanged="n => _partPagina = n"
+                                    PorPaginaChanged="n => { _partPorPagina = n; _partPagina = 1; }" />
+                    }
+                </div></div></div>
+                <div class="col-lg-5"><div class="card"><div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">Poderes (@_s.Poderes.Count)</h6>
+                        <span class="small text-muted">@(lim is > 0 ? $"Límite: {lim} por persona" : "Sin límite por persona")</span>
+                    </div>
+                    @if (_s.Poderes.Count == 0) { <p class="text-muted small">No hay poderes registrados.</p> }
+                    else
+                    {
+                        <ul class="list-unstyled small mb-2">
+                            @foreach (var p in _s.Poderes)
+                            {
+                                var pid = p.Id;
+                                <li class="mb-1 d-flex align-items-center gap-1 flex-wrap">
+                                    <span class="badge me-1" style="background:@PoderColor(p.Estado); color: var(--propia-text-inverse);">@p.Estado</span>
+                                    <strong class="u-cod">@p.OtorganteUnidadNumero</strong> &rarr; @p.ApoderadoNombre <span class="text-muted">(@(p.TipoPoder == TipoPoder.Digital ? "Digital" : "Escrito"))</span>
+                                    @if (vivo && p.Estado == EstadoPoder.Pendiente)
+                                    {
+                                        <span class="ms-auto">
+                                            <button class="btn btn-sm btn-outline-success py-0" @onclick="() => DecidirPoderAsync(pid, true)" disabled="@_busy">Aprobar</button>
+                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DecidirPoderAsync(pid, false)" disabled="@_busy">Rechazar</button>
+                                        </span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (vivo)
+                    {
+                        if (_poderForm is not null)
+                        {
+                            <div class="asm-pedit">
+                                <div class="row g-2">
+                                    <div class="col-12"><label class="form-label small mb-1">Unidad que otorga el poder</label>
+                                        <select class="form-select form-select-sm" @bind="_poderForm.Unidad">
+                                            <option value="">Elige la unidad...</option>
+                                            @foreach (var u in _unidades ?? new()) { <option value="@u.Id">@u.Numero@(string.IsNullOrWhiteSpace(u.Nombre) ? "" : " - " + u.Nombre)</option> }
+                                        </select></div>
+                                    <div class="col-8"><label class="form-label small mb-1">Apoderado</label>
+                                        <SelectorPersona Flotante="true" Jwt="@Jwt" Placeholder="Buscar en el directorio..." Seleccionada="_poderForm.Apoderado" SeleccionadaChanged="c => _poderForm.Apoderado = c" /></div>
+                                    <div class="col-4"><label class="form-label small mb-1">Tipo</label>
+                                        <select class="form-select form-select-sm" @bind="_poderForm.Tipo">
+                                            <option value="@TipoPoder.Pdf">Escrito</option>
+                                            <option value="@TipoPoder.Digital">Digital</option>
+                                        </select></div>
+                                </div>
+                                <div class="small text-muted mt-1">El poder escrito queda Pendiente hasta aprobarlo; el digital queda aprobado al registrarlo.</div>
+                                <div class="d-flex justify-content-end gap-2 mt-2">
+                                    <button class="btn btn-sm btn-outline-dark" @onclick="() => _poderForm = null">Cancelar</button>
+                                    <button class="btn btn-sm btn-primary" @onclick="RegistrarPoderAsync" disabled="@_busy">Registrar poder</button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-dark" @onclick="NuevoPoderAsync">+ Registrar poder</button>
+                        }
+                    }
+                    else { <div class="small text-muted mt-2">La sesión terminó: los poderes ya no cambian.</div> }
+                </div></div></div>
+            </div>
+        </div>;
+    }
+    private static string PoderColor(EstadoPoder e) => e switch
+    {
+        EstadoPoder.Aprobado => "var(--propia-success)",
+        EstadoPoder.Rechazado => "var(--propia-danger)",
+        _ => "var(--propia-text-faint)"
+    };
+
+    // ===================== Pestana Sala virtual (Virtual/Mixta) =====================
+    private Task UsarSalaPropiaAsync() => EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}", new ActualizarSesionRequest(SalaPropia: true)), "La sesión usará la sala virtual de PROPIA.");
+
+    private RenderFragment Sala()
+    {
+        if (!_s!.SalaPropia)
+        {
+            var puede = _s.Estado is EstadoSesion.Borrador or EstadoSesion.Citada;
+            return @<div class="asm-sala-aviso">
+                <i class="fi fi-rr-share-square"></i>
+                <div class="asm-sala-aviso-t">Esta sesión usa un enlace externo</div>
+                <div class="asm-sala-aviso-s"><span>La videollamada ocurre fuera de PROPIA</span>@if (!string.IsNullOrEmpty(_s.EnlaceVideo)) { <span> (<a href="@_s.EnlaceVideo" target="_blank" rel="noopener">@_s.EnlaceVideo</a>)</span> }<span>: la asistencia y los votos se registran a mano.</span></div>
+                @if (puede) { <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="UsarSalaPropiaAsync" disabled="@_busy">Usar la sala virtual de PROPIA</button> }
+                @if (_s.Estado == EstadoSesion.EnCurso) { <div class="text-start mt-3">@Transcripcion()</div> }
+            </div>;
+        }
+        var gracia = (_cfg?.GraciaReconexionSeg ?? 0) + " s";
+        if (_s.Estado is EstadoSesion.Borrador or EstadoSesion.Citada)
+            return @<div class="asm-sala-aviso">
+                <i class="fi fi-rr-video-camera-alt"></i>
+                <div class="asm-sala-aviso-t">La sala virtual se abre con la sesión</div>
+                <div class="asm-sala-aviso-s">Al pulsar <b>Abrir sala</b> se habilita la videollamada. Los propietarios y apoderados entran desde su enlace personal o con su cuenta: <b>al entrar quedan presentes</b> y al salir se registra la salida tras @gracia de gracia de reconexión.</div>
+            </div>;
+        if (_s.Estado != EstadoSesion.EnCurso)
+        {
+            var grabada = _s.Documentos.Any(d => d.Tipo == TipoDocumentoSesion.Grabacion);
+            return @<div class="asm-sala-aviso">
+                <i class="fi fi-rr-video-slash"></i>
+                <div class="asm-sala-aviso-t">La sala virtual se cerró con la sesión</div>
+                <div class="asm-sala-aviso-s">@(grabada ? "La grabación quedó en Documentos como soporte del acta." : "Esta sesión no se grabó.")</div>
+            </div>;
+        }
+        if (_salaCfg is { Configurada: false })
+            return @<div>
+                <div class="asm-sala-aviso">
+                    <i class="fi fi-rr-video-camera-alt"></i>
+                    <div class="asm-sala-aviso-t">La sala virtual no está configurada</div>
+                    <div class="asm-sala-aviso-s">A&amp;D debe activar el servidor de video (LiveKit). Mientras tanto registra la asistencia en Participantes y los votos en el Orden del día.</div>
+                </div>
+                @Transcripcion()
+            </div>;
+        return @<div class="asm-sala">
+            @Escenario()
+            @Lateral()
+        </div>;
+    }
+
+    // ===================== Sala virtual en vivo (ola 5: LiveKit) =====================
+    private sealed record SalaPart(string Id, string Nombre, bool Yo, bool Mod, bool Mic, bool Cam, bool Pantalla, bool Habla, bool Mano);
+    private sealed record SalaMsg(string Autor, string Texto, DateTime Hora, bool Yo);
+    private static readonly System.Text.Json.JsonSerializerOptions JsonWeb = new(System.Text.Json.JsonSerializerDefaults.Web);
+    private SalaConfigDto? _salaCfg;
+    private bool _salaConectada, _salaConectando, _conMic = true, _conCam, _mic, _cam, _compartir;
+    private string? _salaAviso, _salaEstado, _palabra, _ultPartsJson;
+    private string _salaPanel = "gestion", _chatTxt = "";
+    private List<SalaPart> _salaParts = new();
+    private readonly List<SalaMsg> _chat = new();
+    private System.Threading.Timer? _salaPoll;
+    private string GridId => "asm-grid-" + _id.ToString("N");
+    private DotNetObjectReference<AsambleaFichaModal> JsRef() => _dictRef ??= DotNetObjectReference.Create(this);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // El mosaico vive en un contenedor que Blazor recrea al volver a la pestana: se re-ubica (no-op si es el mismo).
+        if (_salaConectada && _tab == "sala") { try { await Js.InvokeAsync<bool>("propiaSala.montar", GridId); } catch { } }
+    }
+
+    private async Task EntrarSalaAsync()
+    {
+        _salaAviso = null; _salaConectando = true;
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/sala/acceso", null);
+            if (!resp.IsSuccessStatusCode) { _salaAviso = await LeerErrorAsync(resp); return; }
+            var a = (await resp.Content.ReadFromJsonAsync<SalaAccesoDto>())!;
+            StateHasChanged();
+            var r = await Js.InvokeAsync<string>("propiaSala.conectar", JsRef(), GridId, a.Url, a.Token, _conMic, _conCam);
+            if (r.StartsWith("error:")) { _salaAviso = "No se pudo entrar a la sala: " + r[6..]; return; }
+            _salaConectada = true; _salaEstado = "conectado"; _mic = _conMic && r != "ok:sin-microfono"; _cam = _conCam && r != "ok:sin-camara";
+            if (r == "ok:sin-microfono") _salaAviso = "El navegador no dio permiso para el micrófono: entraste sin audio.";
+            else if (r == "ok:sin-camara") _salaAviso = "El navegador no dio permiso para la cámara: entraste sin video.";
+            // Mientras se esta en la sala, la ficha se refresca sola (asistencia por webhook, votos, grabacion).
+            _salaPoll ??= new System.Threading.Timer(_ => InvokeAsync(async () =>
+            {
+                if (_busy || !_salaConectada) return;
+                await CargarAsync();
+                if (_s is not null && _s.Estado != EstadoSesion.EnCurso) await SalirSalaAsync();
+                StateHasChanged();
+            }), null, 5000, 5000);
+        }
+        catch (Exception ex) { _salaAviso = ex.Message; }
+        finally { _salaConectando = false; }
+    }
+
+    private async Task SalirSalaAsync()
+    {
+        _salaPoll?.Dispose(); _salaPoll = null;
+        try { await Js.InvokeVoidAsync("propiaSala.salir"); } catch { }
+        _salaConectada = false; _mic = _cam = _compartir = false; _salaParts = new(); _palabra = null; _ultPartsJson = null;
+    }
+
+    private async Task MicAsync() { _mic = await Js.InvokeAsync<bool>("propiaSala.microfono", !_mic); }
+    private async Task CamAsync()
+    {
+        var quiero = !_cam;
+        _cam = await Js.InvokeAsync<bool>("propiaSala.camara", quiero);
+        if (quiero && !_cam) _salaAviso = "No se pudo encender la cámara (permiso del navegador).";
+    }
+    private async Task PantallaAsync() { _compartir = await Js.InvokeAsync<bool>("propiaSala.pantalla", !_compartir); }
+    private async Task GrabarAsync()
+    {
+        var activa = _s!.GrabandoDesde is null;
+        await EjecutarAsync(h => h.PutAsync($"/api/asambleas/{_id}/sala/grabacion?activa={(activa ? "true" : "false")}", null),
+            activa ? "Grabación iniciada: el video queda en Documentos al terminar." : "Grabación detenida: el video llegará a Documentos en unos minutos.");
+    }
+    private async Task DarPalabraAsync(string? identidad) => await Js.InvokeVoidAsync("propiaSala.darPalabra", identidad);
+    private async Task SilenciarTodosAsync() { await Js.InvokeVoidAsync("propiaSala.silenciarTodos"); _salaAviso = "Se pidió silenciar todos los micrófonos."; }
+    private async Task EnviarChatAsync()
+    {
+        var t = _chatTxt.Trim();
+        if (t.Length == 0) return;
+        if (await Js.InvokeAsync<bool>("propiaSala.chat", t)) { _chat.Add(new SalaMsg("Tú", t, Local(DateTimeOffset.UtcNow), true)); _chatTxt = ""; }
+    }
+    private async Task ChatKeyAsync(KeyboardEventArgs e) { if (e.Key == "Enter") await EnviarChatAsync(); }
+
+    [JSInvokable]
+    public void SalaParticipantes(string json)
+    {
+        if (json == _ultPartsJson) return;
+        _ultPartsJson = json;
+        _salaParts = System.Text.Json.JsonSerializer.Deserialize<List<SalaPart>>(json, JsonWeb) ?? new();
+        if (_salaParts.FirstOrDefault(x => x.Yo) is { } yo) { _mic = yo.Mic; _cam = yo.Cam; _compartir = yo.Pantalla; }
+        StateHasChanged();
+    }
+    [JSInvokable]
+    public void SalaChat(string autor, string texto, bool yo) { _chat.Add(new SalaMsg(autor, texto, Local(DateTimeOffset.UtcNow), yo)); StateHasChanged(); }
+    [JSInvokable]
+    public void SalaPalabra(string identidad) { _palabra = string.IsNullOrEmpty(identidad) ? null : identidad; StateHasChanged(); }
+    [JSInvokable]
+    public void SalaAviso(string texto) { _salaAviso = texto; StateHasChanged(); }
+    [JSInvokable]
+    public void SalaMicrofono(bool on) { _mic = on; StateHasChanged(); }
+    [JSInvokable]
+    public void SalaEstado(string estado)
+    {
+        _salaEstado = estado;
+        if (estado.StartsWith("desconectado"))
+        {
+            _salaPoll?.Dispose(); _salaPoll = null;
+            _salaConectada = false; _salaParts = new(); _palabra = null; _ultPartsJson = null;
+            if (estado != "desconectado:1") _salaAviso = "Saliste de la sala.";
+        }
+        StateHasChanged();
+    }
+
+    private static string Iniciales(string n) => string.Concat(n.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => char.ToUpperInvariant(x[0])));
+
+    private RenderFragment Ctrl(string label, string icono, bool on, Func<Task> accion, string extra = "", bool deshabilitado = false, string? titulo = null)
+        => @<button type="button" class="asm-ctrl @(on ? "on" : "") @extra" title="@(titulo ?? label)" @onclick="accion" disabled="@deshabilitado"><i class="fi fi-rr-@icono"></i><span>@label</span></button>;
+
+    private RenderFragment Escenario()
+    {
+        var grabando = _s!.GrabandoDesde is not null;
+        var enSala = _salaParts.Count;
+        return @<div class="asm-stage">
+            <div class="asm-stage-top">
+                @if (_salaConectada) { <span class="asm-live">EN VIVO</span><span>@enSala en la sala</span> }
+                else { <span>La sala está abierta</span> }
+                @if (grabando) { <span class="asm-rec"><i class="fi fi-rr-record-vinyl"></i> Grabando desde las @Local(_s.GrabandoDesde!.Value).ToString("HH:mm")</span> }
+                @if (_s.TranscripcionActiva) { <span class="asm-txon"><i class="fi fi-rr-subtitles"></i> Transcribiendo para el acta</span> }
+                @if (_dictando) { <span class="asm-txon"><i class="fi fi-rr-microphone-alt"></i> Tu voz se transcribe</span> }
+                @if (_compartir) { <span class="asm-share-on"><i class="fi fi-rr-screen"></i> Estás compartiendo tu pantalla</span> }
+                @if (_salaEstado == "reconectando") { <span class="asm-rec">Reconectando...</span> }
+            </div>
+            @if (grabando || _s.TranscripcionActiva)
+            {
+                <div class="asm-aviso-datos">Esta sesión se @(grabando && _s.TranscripcionActiva ? "graba y se transcribe" : grabando ? "graba" : "transcribe") para elaborar el acta (Ley 1581 de 2012).</div>
+            }
+            @if (_salaAviso is not null) { <div class="asm-stage-aviso">@_salaAviso <button type="button" class="asm-stage-aviso-x" @onclick="() => _salaAviso = null" aria-label="Cerrar aviso">&times;</button></div> }
+            @if (!_salaConectada)
+            {
+                <div class="asm-prejoin">
+                    <div class="asm-tile-av"><i class="fi fi-rr-video-camera-alt"></i></div>
+                    <div class="asm-prejoin-t">Entra como moderador</div>
+                    <div class="asm-prejoin-s">Los propietarios y apoderados entran con su enlace de la asamblea: al entrar quedan presentes y, si salen, la salida se registra tras @(_cfg?.GraciaReconexionSeg ?? 60) s de gracia de reconexión.</div>
+                    <div class="asm-prejoin-op">
+                        <label><input type="checkbox" @bind="_conMic" /> Micrófono</label>
+                        <label><input type="checkbox" @bind="_conCam" /> Cámara</label>
+                    </div>
+                    <button type="button" class="btn btn-primary" @onclick="EntrarSalaAsync" disabled="@_salaConectando">@(_salaConectando ? "Conectando..." : "Entrar a la sala")</button>
+                </div>
+            }
+            <div class="asm-grid @(_salaConectada ? "" : "d-none")" id="@GridId"></div>
+            @if (_salaConectada)
+            {
+                <div class="asm-ctrls">
+                    @Ctrl(_mic ? "Silenciar" : "Activar micrófono", _mic ? "microphone" : "microphone-slash", _mic, MicAsync)
+                    @Ctrl(_cam ? "Apagar cámara" : "Encender cámara", _cam ? "video-camera-alt" : "video-slash", _cam, CamAsync)
+                    @Ctrl(_compartir ? "Dejar de compartir" : "Compartir pantalla", "screen", _compartir, PantallaAsync)
+                    @Ctrl(grabando ? "Detener grabación" : "Grabar", grabando ? "stop-circle" : "record-vinyl", grabando, GrabarAsync, grabando ? "is-rec" : "",
+                        _busy || _salaCfg?.GrabacionConfigurada != true, _salaCfg?.GrabacionConfigurada == true ? null : "La grabación no está configurada (almacenamiento de LiveKit)")
+                    @Ctrl(_s.TranscripcionActiva ? "Pausar transcripción" : "Transcribir", "subtitles", _s.TranscripcionActiva, ToggleTranscripcionAsync, "", _busy)
+                    @Ctrl(_dictando ? "Dejar de dictar" : "Mi voz a texto", "microphone-alt", _dictando, ToggleDictadoAsync, "", !_s.TranscripcionActiva)
+                    <button type="button" class="asm-ctrl asm-ctrl--salir" title="Salir de la sala" @onclick="SalirSalaAsync"><i class="fi fi-rr-phone-slash"></i><span>Salir</span></button>
+                </div>
+            }
+        </div>;
+    }
+
+    private RenderFragment Lateral()
+    {
+        var nVoz = _tx.Count(l => l.Tipo == TipoLineaTranscripcion.Voz);
+        return @<aside class="asm-side">
+            <div class="asm-side-tabs">
+                <button type="button" class="asm-side-tab @(_salaPanel == "gestion" ? "on" : "")" @onclick='() => _salaPanel = "gestion"'>Moderación</button>
+                <button type="button" class="asm-side-tab @(_salaPanel == "tx" ? "on" : "")" @onclick='() => _salaPanel = "tx"'>Transcripción (@nVoz)</button>
+                <button type="button" class="asm-side-tab @(_salaPanel == "chat" ? "on" : "")" @onclick='() => _salaPanel = "chat"'>Chat (@_chat.Count)</button>
+            </div>
+            @if (_salaPanel == "tx")
+            {
+                var pa = _s!.Puntos.FirstOrDefault(p => p.Id == _s.PuntoActualId);
+                <div class="asm-side-body">
+                    <div class="asm-tx-info">@(_s.TranscripcionActiva ? (pa is null ? "Inicia un punto del orden del día para asociar lo que se dice." : $"Asociando al punto {pa.Numero}: {pa.Titulo}") : "La transcripción está en pausa. Actívala con Transcribir: con ella la IA redacta el acta al cerrar.")</div>
+                    @if (_dictando) { <div class="asm-tx-interim">@(string.IsNullOrEmpty(_parcial) ? "Escuchando..." : _parcial + "...")</div> }
+                    @if (_dictadoError is not null) { <div class="alert alert-warning py-2 small mb-2">@_dictadoError</div> }
+                    @TxLista()
+                </div>
+            }
+            else if (_salaPanel == "chat")
+            {
+                <div class="asm-side-body">
+                    @if (_chat.Count == 0) { <div class="asm-side-vacio mt-2">Sin mensajes. El chat no se guarda: es solo de la llamada.</div> }
+                    @foreach (var c in _chat)
+                    {
+                        <div class="asm-chat-msg"><div class="asm-chat-hd"><b>@c.Autor</b><span>@c.Hora.ToString("HH:mm")</span></div><div>@c.Texto</div></div>
+                    }
+                </div>
+                <div class="asm-chat-new">
+                    <input class="form-control form-control-sm" placeholder="Escribe a la sala..." @bind="_chatTxt" @bind:event="oninput" @onkeydown="ChatKeyAsync" disabled="@(!_salaConectada)" maxlength="1000" />
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="EnviarChatAsync" disabled="@(!_salaConectada)">Enviar</button>
+                </div>
+            }
+            else
+            {
+                var manos = _salaParts.Where(x => x.Mano && !x.Yo).ToList();
+                var habla = _palabra is null ? null : _salaParts.FirstOrDefault(x => x.Id == _palabra);
+                var va = VotacionAbierta();
+                var otros = _salaParts.Where(x => !x.Yo).OrderBy(x => x.Nombre).ToList();
+                <div class="asm-side-body">
+                    <div class="asm-side-sec d-flex justify-content-between align-items-center">
+                        <span>PALABRA (@manos.Count)</span>
+                        @if (_salaConectada && otros.Count > 0) { <button type="button" class="btn btn-sm btn-link p-0" @onclick="SilenciarTodosAsync">Silenciar a todos</button> }
+                    </div>
+                    @if (habla is not null)
+                    {
+                        <div class="asm-side-row is-habla"><span class="asm-side-av">@Iniciales(habla.Nombre)</span><div class="asm-side-nm">@habla.Nombre<small>tiene la palabra</small></div><button type="button" class="btn btn-sm btn-outline-dark" @onclick="() => DarPalabraAsync(null)">Terminar</button></div>
+                    }
+                    @if (manos.Count == 0) { <div class="asm-side-vacio">@(_salaConectada ? "Nadie ha pedido la palabra." : "Entra a la sala para moderar los turnos.")</div> }
+                    @foreach (var m in manos)
+                    {
+                        var ident = m.Id;
+                        <div class="asm-side-row"><span class="asm-side-av"><i class="fi fi-rr-hand"></i></span><div class="asm-side-nm">@m.Nombre</div><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => DarPalabraAsync(ident)">Dar la palabra</button></div>
+                    }
+                    <div class="asm-side-sec">VOTACIÓN</div>
+                    @if (va?.Votacion is { } v)
+                    {
+                        <div class="asm-vot">
+                            <div class="asm-vot-t">@va.Numero. @va.Titulo</div>
+                            <div class="asm-vot-s">@v.Votos.Count de @_s!.Participantes.Count(x => x.Presente) presentes han votado@(va.ModalidadVoto == ModalidadVoto.Secreto ? " · voto secreto" : "")</div>
+                            @if (va.ModalidadVoto != ModalidadVoto.Secreto && v.Votos.Count > 0)
+                            {
+                                var tot = v.Votos.Sum(x => x.CoeficienteAportado);
+                                @foreach (var op in va.OpcionesVoto)
+                                {
+                                    var pct = tot > 0 ? v.Votos.Where(x => x.Opcion == op).Sum(x => x.CoeficienteAportado) / tot * 100m : 0m;
+                                    <div class="asm-vot-op"><span>@OpcionTexto(op)</span><div class="asm-vot-bar"><div style="width:@pct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%"></div></div><b>@pct.ToString("0.00")%</b></div>
+                                }
+                            }
+                            <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-2" @onclick="() => CerrarVotacionAsync(v.Id)" disabled="@_busy">Cerrar votación</button>
+                        </div>
+                    }
+                    else
+                    {
+                        var pend = _s!.Puntos.Where(p => p.RequiereVotacion && p.Votacion is null && p.Estado is EstadoPunto.Pendiente or EstadoPunto.EnDiscusion).Take(3).ToList();
+                        <div class="asm-side-vacio">@(pend.Count > 0 ? "Ningún punto en votación." : "No quedan puntos por votar.")</div>
+                        @foreach (var p in pend)
+                        {
+                            var pid = p.Id;
+                            <div class="asm-side-row"><div class="asm-side-nm">@p.Numero. @p.Titulo</div><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirVotacionAsync(pid)" disabled="@(_busy || _s.Instalacion is null)">Abrir</button></div>
+                        }
+                    }
+                    <div class="asm-side-sec">EN LA SALA (@otros.Count)</div>
+                    @if (otros.Count == 0) { <div class="asm-side-vacio">@(_salaConectada ? "Aún no entra nadie más." : "—")</div> }
+                    @foreach (var o in otros.Take(40))
+                    {
+                        <div class="asm-side-row"><span class="asm-side-av">@Iniciales(o.Nombre)</span><div class="asm-side-nm">@o.Nombre<small>@(o.Mod ? "Moderador" : "Copropietario")@(o.Mic ? "" : " · silenciado")</small></div></div>
+                    }
+                    @if (otros.Count > 40) { <div class="asm-side-vacio">y @(otros.Count - 40) más (ver Participantes)</div> }
+                </div>
+            }
+        </aside>;
+    }
+
+    // ===================== Pestana Documentos =====================
+    private TipoDocumentoSesion _docTipo = TipoDocumentoSesion.Informe;
+    private bool _subiendo;
+    private async Task SubirDocumentoAsync(InputFileChangeEventArgs e)
+    {
+        var f = e.File;
+        if (f.Size > 10_000_000) { _msg = "Máximo 10 MB por documento."; _msgClass = "alert-danger"; return; }
+        _subiendo = true; _msg = null;
+        try
+        {
+            // Bufferizar antes de cualquier await de red (InputFile se puede desmontar al re-renderizar).
+            using var ms = new MemoryStream();
+            await f.OpenReadStream(10_000_000).CopyToAsync(ms);
+            using var form = new MultipartFormDataContent();
+            var file = new ByteArrayContent(ms.ToArray());
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType);
+            form.Add(file, "file", f.Name);
+            form.Add(new StringContent(((int)_docTipo).ToString()), "tipo");
+            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/documentos/archivo", form);
+            if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
+            _hubo = true;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
+        finally { _subiendo = false; }
+    }
+    private Task EliminarDocumentoAsync(Guid docId) => EjecutarAsync(h => h.DeleteAsync($"/api/asambleas/documentos/{docId}"));
+    private static bool Generado(TipoDocumentoSesion t) => t is TipoDocumentoSesion.Convocatoria or TipoDocumentoSesion.Acta or TipoDocumentoSesion.Grabacion;
+    private static string TipoDocTexto(TipoDocumentoSesion t) => t switch
+    {
+        TipoDocumentoSesion.Convocatoria => "Convocatoria",
+        TipoDocumentoSesion.Informe => "Informe",
+        TipoDocumentoSesion.Poder => "Poder",
+        TipoDocumentoSesion.Grabacion => "Grabación",
+        TipoDocumentoSesion.Acta => "Acta",
+        _ => "Soporte"
+    };
+
+    private RenderFragment Documentos() => @<div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap">
+            <h6 class="mb-0">Documentos de la sesión</h6>
+            @if (_s!.Estado != EstadoSesion.Cerrada)
+            {
+                <div class="d-flex gap-2 align-items-center">
+                    <select class="form-select form-select-sm" style="width:auto" @bind="_docTipo">
+                        <option value="@TipoDocumentoSesion.Informe">Informe</option>
+                        <option value="@TipoDocumentoSesion.Poder">Poder escaneado</option>
+                        <option value="@TipoDocumentoSesion.Otro">Soporte</option>
+                    </select>
+                    <label class="btn btn-sm btn-outline-dark mb-0 @(_subiendo ? "disabled" : "")"><i class="fi fi-rr-upload me-1"></i>@(_subiendo ? "Subiendo..." : "Subir documento")<InputFile OnChange="SubirDocumentoAsync" hidden disabled="@_subiendo" /></label>
+                </div>
+            }
+        </div>
+        @if (_s.Documentos.Count == 0)
+        {
+            <div class="asm-empty"><i class="fi fi-rr-folder-open"></i><div class="asm-empty-t">Sin documentos.</div><div class="asm-empty-s">Al citar se genera la convocatoria; sube informes, cotizaciones o poderes escaneados.</div></div>
+        }
+        else
+        {
+            <table class="table table-sm small mb-0">
+                <thead class="text-muted"><tr><th>Documento</th><th>Tipo</th><th>Fecha</th><th class="text-end">Tamaño</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var d in _s.Documentos)
+                    {
+                        var did = d.Id;
+                        <tr>
+                            <td><i class="fi fi-rr-document me-1"></i>@d.Nombre @if (Generado(d.Tipo)) { <span class="badge bg-light text-dark border">Generado</span> }</td>
+                            <td>@TipoDocTexto(d.Tipo)</td>
+                            <td>@Local(d.CreatedAt).ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-end">@(d.TamanioBytes > 0 ? Math.Max(1, d.TamanioBytes / 1024).ToString("#,##0") + " KB" : "")</td>
+                            <td class="text-end">
+                                <a class="btn btn-link btn-sm p-0" href="@d.UrlStorage" target="_blank" rel="noopener">Ver</a>
+                                @if (!Generado(d.Tipo) && _s.Estado != EstadoSesion.Cerrada) { <button class="btn btn-link btn-sm p-0 ms-2 text-danger" @onclick="() => EliminarDocumentoAsync(did)" disabled="@_busy">Eliminar</button> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div></div>;
+
+    // ===================== Pestana Acta (borrador por IA + doble firma + publicacion) =====================
+    private RenderFragment Acta()
+    {
+        var a = _s!.Acta;
+        if (a is null)
+        {
+            return @<div class="asm-empty"><i class="fi fi-rr-document"></i><div class="asm-empty-t">Aún no hay acta</div>
+                <div class="asm-empty-s">@(_s.Estado == EstadoSesion.QuorumFallido ? "La sesión se cerró sin quórum: no se genera acta. Convoca la segunda convocatoria." : "Al cerrar la sesión con quórum, la IA redacta el borrador del acta con los datos de la sesión.")</div></div>;
+        }
+        var firmaP = a.FirmaPresidente; var firmaS = a.FirmaSecretario;
+        var algunaFirma = firmaP is not null || firmaS is not null;
+        var borrador = a.Estado == EstadoActa.Borrador;
+        var redactando = a.EstadoRedaccion == EstadoRedaccionActa.Redactando;
+        if (string.IsNullOrEmpty(a.BorradorHtml))
+        {
+            // Acta anterior a la ola 3 (solo datos en JSON).
+            return @<div>
+                <div class="asm-acta-bar">
+                    <div class="asm-acta-ia"><i class="fi fi-rr-document"></i><div><b>Acta</b> &middot; @BadgeActa(a.Estado)<div class="small text-muted">Esta acta solo tiene los datos de la sesión (se generó antes del acta legible).</div></div></div>
+                    @if (borrador) { <div class="asm-acta-acts"><button class="btn btn-sm btn-primary" @onclick="RedactarActaAsync" disabled="@_busy">Redactar acta con IA</button></div> }
+                </div>
+                <details class="small" open><summary class="text-muted">Datos de la sesión (JSON)</summary><pre class="bg-light p-2 mt-2 small" style="max-height: 300px; overflow:auto;">@a.ContenidoGenerado</pre></details>
+            </div>;
+        }
+        return @<div>
+            <div class="asm-acta-bar">
+                <div class="asm-acta-ia"><i class="fi fi-rr-magic-wand"></i><div><b>Acta No. @a.Numero</b> &middot; @BadgeActa(a.Estado)
+                    <div class="small text-muted">
+                        @if (redactando) { <span class="spinner-border spinner-border-sm me-1" style="color: var(--propia-primary);"></span>@("La IA está redactando el acta con los datos de la sesión...") }
+                        else if (a.EstadoRedaccion == EstadoRedaccionActa.Error && borrador) { <span>No se pudo redactar con la IA (@a.ErrorRedaccion). Queda el borrador con los datos de la sesión.</span> }
+                        else { <span>@(a.RedactadaPorIa ? "Borrador redactado por la IA" : "Borrador con los datos de la sesión")@(a.Editada ? " y editado a mano" : "")@(borrador ? ". Revísalo antes de firmar." : ".")</span> }
+                    </div></div></div>
+                <div class="asm-acta-acts">
+                    @if (borrador && algunaFirma) { <span class="small text-muted align-self-center">Ya tiene una firma: el texto no se puede cambiar.</span> }
+                    @if (borrador && !algunaFirma)
+                    {
+                        if (_actaEdit)
+                        {
+                            <button class="btn btn-sm btn-primary" @onclick="GuardarActaAsync" disabled="@_busy">Guardar cambios</button>
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => { _actaEdit = false; _actaRev++; }">Cancelar</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-dark" @onclick="() => _actaEdit = true" disabled="@(_busy || redactando)">Editar</button>
+                            <button class="btn btn-sm btn-outline-dark" @onclick="RegenerarActaAsync" disabled="@(_busy || redactando)">Regenerar con IA</button>
+                        }
+                    }
+                    @if (borrador && !_actaEdit && _s.Instalacion is not null)
+                    {
+                        <button class="btn btn-sm btn-success" @onclick="() => AbrirFirma(RolFirmaActa.Presidente)" disabled="@(_busy || firmaP is not null || redactando)">@(firmaP is not null ? "✓ Presidente" : "Firmar como presidente")</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => AbrirFirma(RolFirmaActa.Secretario)" disabled="@(_busy || firmaS is not null || redactando)">@(firmaS is not null ? "✓ Secretario" : "Firmar como secretario")</button>
+                    }
+                    @if (a.Estado == EstadoActa.Firmada && a.PublicadaEn is null)
+                    {
+                        <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="PublicarActaAsync" disabled="@_busy">Publicar</button>
+                    }
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_s.JustificacionQuorum)) { <div class="alert alert-warning py-2 small">Quórum corregido al cerrar: @_s.JustificacionQuorum</div> }
+            @if (a.Estado == EstadoActa.Firmada)
+            {
+                <div class="small text-muted mb-2">
+                    Firmada @a.TimestampFirma?.ToOffset(Colombia).ToString("yyyy-MM-dd HH:mm") por presidente y secretario &middot; Hash: <code class="small">@(a.HashDocumento is null ? "" : a.HashDocumento[..Math.Min(16, a.HashDocumento.Length)])</code>...
+                    @if (a.PublicadaEn.HasValue)
+                    {
+                        <text> &middot; <span class="badge bg-success">Publicada @Local(a.PublicadaEn.Value).ToString("yyyy-MM-dd")</span></text>
+                        @if (a.ComunicadoId is not null) { <text> &middot; <a href="/comunicaciones" target="_blank" rel="noopener">Comunicado en borrador</a></text> }
+                        @if (!string.IsNullOrEmpty(a.DocumentoUrl)) { <text> &middot; <a href="@a.DocumentoUrl" target="_blank" rel="noopener">PDF</a></text> }
+                    }
+                    else if (a.PlazoPublicacion is { } pz) { <text> &middot; publicar antes del @pz.ToString("d 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-CO")) (20 días hábiles, Ley 675 art. 47)</text> }
+                </div>
+            }
+            <div @key="ClavePapel(a)" id="asm-acta-doc" class="asm-acta-paper @(_actaEdit ? "is-edit" : "")" contenteditable="@(_actaEdit ? "true" : "false")">@((MarkupString)a.BorradorHtml)</div>
+            <details class="small mt-3"><summary class="text-muted">Transcripción de la sesión (@_tx.Count líneas)</summary><div class="asm-tx-full">@TxLista()</div></details>
+            <details class="small mt-2"><summary class="text-muted">Datos de la sesión (JSON, anexo)</summary><pre class="bg-light p-2 mt-2 small" style="max-height: 300px; overflow:auto;">@a.ContenidoGenerado</pre></details>
+        </div>;
+    }
+}

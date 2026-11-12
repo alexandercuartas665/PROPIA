@@ -5,6 +5,7 @@
 @layout Propia.Web.Components.Layout.PublicLayout
 @implements IDisposable
 @inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
 
 @* Asambleas Ola 1: el copropietario (o su apoderado) registra asistencia y vota desde el enlace que le
    envia la administracion, sin login. Toda la logica y el gate de propiedad viven en el API publico
@@ -75,6 +76,65 @@ else if (_dto is not null)
             }
         </div>
     </div>
+
+    @if (_dto.SalaPropia && _dto.Estado == EstadoSesion.EnCurso)
+    {
+        @* Sala virtual de PROPIA (ola 5): video con LiveKit. Al entrar quedan presentes sus unidades (webhook). *@
+        <div class="asm-sala-res">
+            <div class="asm-stage">
+                <div class="asm-stage-top">
+                    @if (_salaConectada) { <span class="asm-live">EN VIVO</span><span>@_enSala en la sala</span> }
+                    else { <span>Sala virtual de la asamblea</span> }
+                    @if (_dto.TranscripcionActiva) { <span class="asm-txon"><i class="fi fi-rr-subtitles"></i> Transcribiendo para el acta</span> }
+                    @if (_salaEstado == "reconectando") { <span class="asm-rec">Reconectando...</span> }
+                </div>
+                @if (_salaAviso is not null) { <div class="asm-stage-aviso">@_salaAviso <button type="button" class="asm-stage-aviso-x" @onclick="() => _salaAviso = null" aria-label="Cerrar aviso">&times;</button></div> }
+                @if (_tengoPalabra) { <div class="asm-stage-aviso">@(_mic ? "Tienes la palabra." : "Tienes la palabra: activa tu micrófono para hablar.")</div> }
+                @if (!_salaConectada)
+                {
+                    <div class="asm-prejoin">
+                        <div class="asm-tile-av"><i class="fi fi-rr-video-camera-alt"></i></div>
+                        <div class="asm-prejoin-t">Entra a la sala</div>
+                        <div class="asm-prejoin-s">Al entrar quedas presente con tus unidades habilitadas. Si sales, tu salida se registra después de un momento por si te reconectas.</div>
+                        <div class="asm-prejoin-op">
+                            <label><input type="checkbox" @bind="_conMic" /> Micrófono</label>
+                            <label><input type="checkbox" @bind="_conCam" /> Cámara</label>
+                        </div>
+                        <button type="button" class="btn btn-primary" @onclick="EntrarSalaAsync" disabled="@_salaConectando">@(_salaConectando ? "Conectando..." : "Entrar a la sala")</button>
+                    </div>
+                }
+                <div class="asm-grid asm-grid--sm @(_salaConectada ? "" : "d-none")" id="@GridId"></div>
+                @if (_salaConectada)
+                {
+                    <div class="asm-ctrls">
+                        <button type="button" class="asm-ctrl @(_mic ? "on" : "")" title="@(_mic ? "Silenciar" : "Activar micrófono")" @onclick="MicAsync"><i class="fi fi-rr-@(_mic ? "microphone" : "microphone-slash")"></i><span>@(_mic ? "Silenciar" : "Micrófono")</span></button>
+                        <button type="button" class="asm-ctrl @(_cam ? "on" : "")" title="@(_cam ? "Apagar cámara" : "Encender cámara")" @onclick="CamAsync"><i class="fi fi-rr-@(_cam ? "video-camera-alt" : "video-slash")"></i><span>@(_cam ? "Apagar cámara" : "Cámara")</span></button>
+                        <button type="button" class="asm-ctrl @(_mano ? "on" : "")" title="@(_mano ? "Bajar la mano" : "Pedir la palabra")" @onclick="ManoAsync"><i class="fi fi-rr-hand"></i><span>@(_mano ? "Bajar la mano" : "Pedir la palabra")</span></button>
+                        <button type="button" class="asm-ctrl asm-ctrl--salir" title="Salir de la sala" @onclick="SalirSalaAsync"><i class="fi fi-rr-phone-slash"></i><span>Salir</span></button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_dto.TranscripcionActiva)
+    {
+        @* Subtitulos de la transcripcion en vivo (ola 4). Aviso de tratamiento de datos (Ley 1581 de 2012). *@
+        <div class="asmp-card">
+            <div class="asmp-row">
+                <div class="asmp-eyebrow mb-0">TRANSCRIPCIÓN EN VIVO</div>
+                <span class="asmp-small">Esta sesión se transcribe para elaborar el acta (Ley 1581 de 2012).</span>
+            </div>
+            @if (_dto.Subtitulos is { Count: > 0 } subs)
+            {
+                @foreach (var l in subs)
+                {
+                    <div class="asmp-subt"><b>@l.AutorNombre@(l.UnidadNumero is null ? "" : $" ({l.UnidadNumero})"):</b> @l.Texto</div>
+                }
+            }
+            else { <div class="asmp-small">Aún no hay intervenciones transcritas.</div> }
+        </div>
+    }
 
     <div class="asmp-card">
         <div class="asmp-eyebrow">MI ASISTENCIA</div>
@@ -221,6 +281,7 @@ else if (_dto is not null)
     .asmp-estado { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: var(--propia-radius-pill); background: var(--propia-bg-hover); color: var(--propia-text-secondary); }
     .asmp-estado-3 { background: var(--propia-success-bg); color: var(--propia-success); }
     .asmp-estado-2 { background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .asmp-subt { font-size: 14px; line-height: 1.45; padding: 6px 10px; margin-top: 6px; border-radius: 8px; background: var(--propia-bg-card-soft); color: var(--propia-text-body); }
     .asmp-card { background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: var(--propia-radius-card); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--propia-shadow-card); }
     .asmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .asmp-quorum-pct { font-size: 20px; font-weight: 800; color: var(--propia-text-h1); }
@@ -310,18 +371,22 @@ else if (_dto is not null)
     // Refresco periodico mientras la sesion sigue viva (Citada / EnCurso). No interrumpe una accion en curso.
     private async Task SondearAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        // Cada 10 s; con la transcripcion activa cada 4 s para que los subtitulos sigan la conversacion.
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        var ticks = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
                 if (_ocupado || _dto is null) continue;
                 if (_dto.Estado is not (EstadoSesion.Citada or EstadoSesion.EnCurso)) break;
+                if (!_dto.TranscripcionActiva && !_salaConectada && ++ticks % 3 != 0) continue;
                 var resp = await Http().GetAsync(BaseUrl, ct);
                 if (!resp.IsSuccessStatusCode) continue;
                 var nuevo = await resp.Content.ReadFromJsonAsync<SesionResidenteDto>(cancellationToken: ct);
                 if (nuevo is null || _ocupado) continue;
                 _dto = nuevo;
+                if (_salaConectada && nuevo.Estado != EstadoSesion.EnCurso) await InvokeAsync(SalirSalaAsync);
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -448,9 +513,74 @@ else if (_dto is not null)
         _ => op
     };
 
+    // ===================== Sala virtual (ola 5) =====================
+    private sealed record SalaPart(string Id, string Nombre, bool Yo, bool Mano);
+    private static readonly System.Text.Json.JsonSerializerOptions JsonWeb = new(System.Text.Json.JsonSerializerDefaults.Web);
+    private bool _salaConectada, _salaConectando, _conMic = true, _conCam, _mic, _cam, _mano, _tengoPalabra;
+    private string? _salaAviso, _salaEstado, _miIdentidad;
+    private int _enSala;
+    private DotNetObjectReference<VotarAsambleaPublico>? _ref;
+    private string GridId => "asmp-grid-" + Token.GetHashCode().ToString("x");
+
+    private async Task EntrarSalaAsync()
+    {
+        _salaAviso = null; _salaConectando = true;
+        try
+        {
+            var resp = await Http().PostAsync(BaseUrl + "/sala", null);
+            if (!resp.IsSuccessStatusCode) { _salaAviso = await LeerErrorAsync(resp) ?? "No se pudo entrar a la sala."; return; }
+            var a = (await resp.Content.ReadFromJsonAsync<SalaAccesoDto>())!;
+            _miIdentidad = a.Identidad;
+            _ref ??= DotNetObjectReference.Create(this);
+            var res = await Js.InvokeAsync<string>("propiaSala.conectar", _ref, GridId, a.Url, a.Token, _conMic, _conCam);
+            if (res.StartsWith("error:")) { _salaAviso = "No se pudo entrar a la sala: " + res[6..]; return; }
+            _salaConectada = true; _salaEstado = "conectado";
+            _mic = _conMic && res != "ok:sin-microfono"; _cam = _conCam && res != "ok:sin-camara";
+            if (res == "ok:sin-microfono") _salaAviso = "Tu navegador no dio permiso para el micrófono: entraste sin audio.";
+            else if (res == "ok:sin-camara") _salaAviso = "Tu navegador no dio permiso para la cámara: entraste sin video.";
+        }
+        catch (Exception ex) { _salaAviso = ex.Message; }
+        finally { _salaConectando = false; }
+    }
+    private async Task SalirSalaAsync()
+    {
+        try { await Js.InvokeVoidAsync("propiaSala.salir"); } catch { }
+        _salaConectada = false; _mic = _cam = _mano = _tengoPalabra = false; _enSala = 0;
+    }
+    private async Task MicAsync() { _mic = await Js.InvokeAsync<bool>("propiaSala.microfono", !_mic); if (_mic) _tengoPalabra = false; }
+    private async Task CamAsync()
+    {
+        var quiero = !_cam;
+        _cam = await Js.InvokeAsync<bool>("propiaSala.camara", quiero);
+        if (quiero && !_cam) _salaAviso = "No se pudo encender la cámara (permiso del navegador).";
+    }
+    private async Task ManoAsync() { _mano = !_mano; await Js.InvokeVoidAsync("propiaSala.mano", _mano); }
+
+    [JSInvokable]
+    public void SalaParticipantes(string json)
+    {
+        var l = System.Text.Json.JsonSerializer.Deserialize<List<SalaPart>>(json, JsonWeb) ?? new();
+        _enSala = l.Count;
+        if (l.FirstOrDefault(x => x.Yo) is { } yo) _mano = yo.Mano;
+        StateHasChanged();
+    }
+    [JSInvokable] public void SalaChat(string autor, string texto, bool yo) { }
+    [JSInvokable] public void SalaPalabra(string identidad) { _tengoPalabra = identidad == _miIdentidad && !string.IsNullOrEmpty(identidad); StateHasChanged(); }
+    [JSInvokable] public void SalaAviso(string texto) { _salaAviso = texto; StateHasChanged(); }
+    [JSInvokable] public void SalaMicrofono(bool on) { _mic = on; StateHasChanged(); }
+    [JSInvokable]
+    public void SalaEstado(string estado)
+    {
+        _salaEstado = estado;
+        if (estado.StartsWith("desconectado")) { _salaConectada = false; _enSala = 0; _mano = _tengoPalabra = false; }
+        StateHasChanged();
+    }
+
     public void Dispose()
     {
         _cts?.Cancel();
         _cts?.Dispose();
+        if (_salaConectada) { try { _ = Js.InvokeVoidAsync("propiaSala.salir"); } catch { } }
+        _ref?.Dispose();
     }
 }

@@ -206,7 +206,7 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await svc.EmitirVotoAsync(c.VotacionId, new EmitirVotoRequest(c.UnidadDueno, OpcionesVotoBase.Si), CancellationToken.None);
 
         var voto = await db.Votos.AsNoTracking().SingleAsync(v => v.VotacionId == c.VotacionId);
-        Assert.Equal(_adminPersonaId, voto.PersonaId);
+        Assert.Equal(c.Dueno, voto.PersonaId);   // la unidad se cita a nombre de su propietario
 
         await CleanTenant(c.TenantId);
     }
@@ -433,6 +433,7 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await SeedVinculoAsync(tenantId, unidades[0], residente, RolUnidadPersona.Residente, true);
         await SeedVinculoAsync(tenantId, unidades[1], otroDueno, RolUnidadPersona.Propietario, true);
         await SeedVinculoAsync(tenantId, unidades[1], exDueno, RolUnidadPersona.Propietario, false);
+        await SeedDirectorioAsync(tenantId, apoderado);
 
         var (svc, _, _) = Build(tenantId);
         var s = await svc.CrearSesionAsync(new CrearSesionRequest(
@@ -442,10 +443,22 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
             CancellationToken.None);
         await svc.EnviarCitacionAsync(s.Id, new EnviarCitacionRequest(null), CancellationToken.None);
         await svc.AbrirSalaAsync(s.Id, CancellationToken.None);
-        var d = await svc.GetSesionAsync(s.Id, CancellationToken.None);
-        var v = await svc.AbrirVotacionAsync(s.Id, new AbrirVotacionRequest(d!.Puntos[0].Id), CancellationToken.None);
+        // La votacion se abre con la sala vacia a proposito (los residentes entran despues por su enlace): se siembra
+        // directo como "ya instalada y abierta", sin pasar por la instalacion con quorum (cubierta en AsambleaFlowTests).
+        Guid votacionId;
+        await using (var o = OwnerDb())
+        {
+            var ses = await o.Sesiones.IgnoreQueryFilters().SingleAsync(x => x.Id == s.Id);
+            ses.InstaladaEn = DateTimeOffset.UtcNow; ses.QuorumInstalacionPct = 100m; ses.PresidenteNombre = "P"; ses.SecretarioNombre = "S";
+            var punto = await o.SesionPuntos.IgnoreQueryFilters().SingleAsync(x => x.SesionId == s.Id);
+            punto.Estado = EstadoPunto.EnVotacion;
+            var vot = new Votacion { TenantId = tenantId, SesionId = s.Id, PuntoId = punto.Id, Estado = EstadoVotacion.Abierta, HoraApertura = DateTimeOffset.UtcNow };
+            o.Votaciones.Add(vot);
+            await o.SaveChangesAsync();
+            votacionId = vot.Id;
+        }
 
-        return new Escenario(tenantId, s.Id, v.Id, unidades[0], unidades[1], unidades[2],
+        return new Escenario(tenantId, s.Id, votacionId, unidades[0], unidades[1], unidades[2],
             dueno, otroDueno, exDueno, residente, apoderado);
     }
 
@@ -561,6 +574,20 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await ctx.SaveChangesAsync();
     }
 
+    // El apoderado es una persona del directorio de la copropiedad (personas es global: OtorgarPoder valida el vinculo).
+    private async Task SeedDirectorioAsync(Guid tenantId, Guid personaId)
+    {
+        await using var ctx = OwnerDb();
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Persona,
+            EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow)
+        });
+        await ctx.SaveChangesAsync();
+    }
+
     private async Task CleanTenant(Guid tenantId)
     {
         await using var ctx = OwnerDb();
@@ -576,6 +603,7 @@ public class AsambleaResidenteFlowTests : IAsyncLifetime
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM sesiones WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asamblea_config WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidad_personas WHERE tenant_id = {tenantId}");
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM directorio_vinculos WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM unidades_privadas WHERE tenant_id = {tenantId}");
         await ctx.Database.ExecuteSqlAsync($"DELETE FROM asp_net_users WHERE id = {_adminUserId}");
         foreach (var id in _personas.Append(_adminPersonaId))
