@@ -134,6 +134,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAsistenteCamposService, InfraestructuraIa.AsistenteCamposService>();
         services.AddScoped<Application.Cierre.IMotivosCierreService, Cierre.MotivosCierreService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentTemplateService, InfraestructuraIa.AiAgentTemplateService>();
+        services.AddScoped<Application.InfraestructuraIa.IAgentesSistema, InfraestructuraIa.AgentesSistemaService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentRunLogService, InfraestructuraIa.AgentRunLogService>();
         services.AddScoped<Application.InfraestructuraIa.IAutomationService, InfraestructuraIa.AutomationService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();

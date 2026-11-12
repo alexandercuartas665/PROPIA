@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Propia.Application.Common;
+using Propia.Application.InfraestructuraIa;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -13,10 +14,11 @@ namespace Propia.Infrastructure.SuperAdmin;
 /// poderes) extraidos por OCR y, via las tools MCP del modulo de Servicios, propone el registro
 /// (registrar consumo de un recibo, crear servicio/poliza, etc.) para que el usuario confirme.
 ///
-/// IDEMPOTENTE: (1) crea la plantilla global si no existe (para que las copropiedades NUEVAS la
-/// reciban en el onboarding); (2) crea el agente en cada tenant existente que aun no lo tenga
-/// (para que las copropiedades YA activas tambien lo tengan). El provider del agente se toma del
-/// proveedor LLM habilitado en SuperAdmin; si no hay, queda en Claude por defecto.
+/// SEMILLA (corre en todos los ambientes, idempotente): solo crea la plantilla global del Super Admin si
+/// no existe, con su clave de agente del sistema (PlantillaAgente.ClaveDocumental). NO pisa el prompt de
+/// una plantilla existente ni toca los agentes de las copropiedades: el Super Admin manda (edita la
+/// plantilla y la propaga con "Actualizar copropiedades"), y a una copropiedad que no tenga el agente se
+/// le crea al usarlo (AgentesSistemaService). El provider se toma del proveedor LLM habilitado.
 /// </summary>
 public static class AgenteDocumentalSeeder
 {
@@ -100,7 +102,6 @@ Nunca persistas sin confirmacion. Se conciso y usa solo ASCII.
     {
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
-        var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<PropiaDbContext>>();
 
         // Provider del LLM habilitado (global, sin RLS); si no hay, Claude por defecto.
@@ -110,22 +111,23 @@ Nunca persistas sin confirmacion. Se conciso y usa solo ASCII.
             .FirstOrDefaultAsync() ?? AiProvider.Claude;
 
         await EnsureTemplateAsync(db, provider, logger);
-        await EnsureAgentsPerTenantAsync(db, tenant, provider, logger);
     }
 
     /// <summary>Plantilla global (BaseEntity, sin RLS) para que las copropiedades nuevas la reciban.</summary>
     private static async Task EnsureTemplateAsync(PropiaDbContext db, AiProvider provider, ILogger logger)
     {
-        var existente = await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Name == AgenteNombre);
+        // Super Admin manda: si la plantilla ya existe NO se pisa su prompt (las mejoras se hacen en el Super
+        // Admin y se propagan con "Actualizar copropiedades"); solo se le asegura la clave del agente del sistema.
+        var existente = await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Clave == PlantillaAgente.ClaveDocumental)
+            ?? await db.AiAgentTemplates.FirstOrDefaultAsync(t => t.Name == AgenteNombre && t.PlatformKey == null);
         if (existente is not null)
         {
-            // Upsert del prompt: si cambio la definicion canonica, re-aplicarla.
-            if (existente.SystemPrompt != SystemPrompt)
+            if (existente.Clave is null)
             {
-                existente.SystemPrompt = SystemPrompt;
+                existente.Clave = PlantillaAgente.ClaveDocumental;
                 existente.UpdatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync();
-                logger.LogWarning("[SEED] AgenteDocumentalSeeder: prompt de la plantilla '{Name}' actualizado.", AgenteNombre);
+                logger.LogWarning("[SEED] AgenteDocumentalSeeder: clave asignada a la plantilla existente.");
             }
             return;
         }
@@ -139,6 +141,7 @@ Nunca persistas sin confirmacion. Se conciso y usa solo ASCII.
             Provider = provider,
             Model = null,
             SystemPrompt = SystemPrompt,
+            Clave = PlantillaAgente.ClaveDocumental,
             IsActive = true,
             IncludeInOnboarding = true,
             SortOrder = 50,
@@ -156,72 +159,4 @@ Nunca persistas sin confirmacion. Se conciso y usa solo ASCII.
         logger.LogWarning("[SEED] AgenteDocumentalSeeder: plantilla global '{Name}' creada (provider {Provider}).", AgenteNombre, provider);
     }
 
-    /// <summary>
-    /// Crea el agente en cada tenant que aun no lo tenga. Itera Tenants (global) y por cada uno fija
-    /// el contexto + reabre la conexion para que el TenantConnectionInterceptor aplique app.tenant_id
-    /// (RLS deja insertar en ai_agents / ai_agent_mcp_tools).
-    /// </summary>
-    private static async Task EnsureAgentsPerTenantAsync(PropiaDbContext db, ITenantContext tenant, AiProvider provider, ILogger logger)
-    {
-        var tenantIds = await db.Tenants.AsNoTracking().Select(t => t.Id).ToListAsync();
-        var creados = 0;
-        foreach (var tid in tenantIds)
-        {
-            try
-            {
-                tenant.SetTenant(tid);
-                await db.Database.CloseConnectionAsync(); // el interceptor aplica app.tenant_id al reabrir
-
-                var existente = await db.AiAgents.FirstOrDefaultAsync(a => a.Name == AgenteNombre);
-                if (existente is not null)
-                {
-                    // Upsert del prompt: re-aplicar la definicion canonica si cambio.
-                    if (existente.SystemPrompt != SystemPrompt)
-                    {
-                        existente.SystemPrompt = SystemPrompt;
-                        existente.UpdatedAt = DateTimeOffset.UtcNow;
-                        await db.SaveChangesAsync();
-                    }
-                    continue;
-                }
-
-                var agent = new AiAgent
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tid,
-                    Name = AgenteNombre,
-                    Role = "Documental",
-                    Provider = provider,
-                    Model = null,
-                    SystemPrompt = SystemPrompt,
-                    IsActive = true,
-                    SortOrder = 50,
-                    CreatedAt = DateTimeOffset.UtcNow
-                };
-                db.AiAgents.Add(agent);
-                foreach (var t in Tools)
-                {
-                    db.AiAgentMcpTools.Add(new AiAgentMcpTool
-                    {
-                        Id = Guid.NewGuid(),
-                        TenantId = tid,
-                        AgentId = agent.Id,
-                        ConnectionCode = ConnectionCode,
-                        ToolName = t,
-                        CreatedAt = DateTimeOffset.UtcNow
-                    });
-                }
-                await db.SaveChangesAsync();
-                creados++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[SEED] AgenteDocumentalSeeder: no se pudo crear el agente en tenant {TenantId}", tid);
-                db.ChangeTracker.Clear();
-            }
-        }
-        tenant.Clear();
-        if (creados > 0)
-            logger.LogWarning("[SEED] AgenteDocumentalSeeder: agente '{Name}' creado en {N} copropiedad(es).", AgenteNombre, creados);
-    }
 }

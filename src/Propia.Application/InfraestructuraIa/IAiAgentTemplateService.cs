@@ -15,7 +15,27 @@ public sealed record AiAgentTemplateDto(
     bool IncludeInOnboarding,
     int SortOrder,
     List<AiAgentTemplateToolDto> Tools,
-    string? PlatformKey = null);
+    string? PlatformKey = null,
+    int Version = 1,
+    string? Clave = null);
+
+/// <summary>Estado del agente de UNA copropiedad frente a la version actual de la plantilla.</summary>
+public enum EstadoPropagacion { AlDia, Desactualizado, Editado, Falta }
+
+public sealed record PropagacionFilaDto(Guid TenantId, string Copropiedad, EstadoPropagacion Estado, string? Agente, int? VersionAplicada);
+
+/// <summary>Vista previa de "Actualizar copropiedades": cuantas quedan al dia, cuales se actualizan, cuales
+/// se respetan (editadas por la copropiedad) y a cuales les falta el agente.</summary>
+public sealed record PropagacionPreviewDto(
+    Guid TemplateId, string Plantilla, int Version,
+    int AlDia, int Desactualizadas, int Editadas, int Faltantes,
+    List<PropagacionFilaDto> Filas);
+
+public sealed record PropagarPlantillaRequest(bool ForzarEditadas, bool CrearFaltantes);
+
+/// <summary>Plantilla de A&amp;D de un agente de la copropiedad (pantalla /ia/agentes).</summary>
+public sealed record AgentePlantillaInfoDto(Guid TemplateId, string Plantilla, int VersionActual, int? VersionAplicada, bool Editado, bool AlDia);
+public sealed record PropagacionResultadoDto(int Actualizadas, int Creadas, int Respetadas, int AlDia, int Errores);
 
 public sealed record AiAgentTemplateToolDto(string ConnectionCode, string ToolName);
 
@@ -55,6 +75,19 @@ public interface IAiAgentTemplateService
     Task<AiAgentTemplateDto?> GetAsync(Guid id, CancellationToken ct = default);
     Task<AiAgentTemplateDto> SaveAsync(Guid? id, SaveAiAgentTemplateRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Vista previa de "Actualizar copropiedades" (recorre todas las copropiedades vigentes).</summary>
+    Task<PropagacionPreviewDto?> PreviewPropagacionAsync(Guid templateId, CancellationToken ct = default);
+
+    /// <summary>Lleva la version actual de la plantilla (prompt, tools, proveedor y modelo) a las copropiedades: actualiza las desactualizadas,
+    /// respeta las editadas (salvo ForzarEditadas) y crea el agente donde falte (si CrearFaltantes).</summary>
+    Task<PropagacionResultadoDto?> PropagarAsync(Guid templateId, PropagarPlantillaRequest req, Guid actorId, string actorEmail, string? ip, CancellationToken ct = default);
+
+    /// <summary>Plantilla del agente de la copropiedad activa (null si el agente no salio de una plantilla).</summary>
+    Task<AgentePlantillaInfoDto?> InfoPlantillaDeAgenteAsync(Guid agentId, CancellationToken ct = default);
+
+    /// <summary>"Volver a la version de A&amp;D": aplica la version actual de su plantilla a ESTE agente (queda en su historial).</summary>
+    Task<AgentePlantillaInfoDto?> AplicarPlantillaAAgenteAsync(Guid agentId, CancellationToken ct = default);
 
     /// <summary>Lista agentes activos de TODOS los tenants (bypass RLS). Para el modal "importar de tenant".</summary>
     Task<List<ImportableAgentDto>> ListImportSourcesAsync(CancellationToken ct = default);

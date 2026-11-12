@@ -704,6 +704,19 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("system_prompt");
 
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("TemplatePromptHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("template_prompt_hash");
+
+                    b.Property<int?>("TemplateVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("template_version");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
@@ -717,6 +730,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_by");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TemplateId");
 
                     b.HasIndex("TenantId", "IsActive");
 
@@ -1168,6 +1183,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Clave")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("clave");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -1232,7 +1252,17 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
 
+                    b.Property<int>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Clave")
+                        .IsUnique()
+                        .HasFilter("clave IS NOT NULL");
 
                     b.HasIndex("IsActive", "IncludeInOnboarding");
 
@@ -21702,6 +21732,16 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("AcuerdoPadre");
 
                     b.Navigation("UnidadPrivada");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.AiAgent", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.AiAgentTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.AiAgentCacheField", b =>

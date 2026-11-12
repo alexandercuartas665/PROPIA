@@ -176,6 +176,19 @@ public class AiAgent : TenantEntity
     /// </summary>
     public string? PromptHistoryJson { get; set; }
 
+    /// <summary>Plantilla del Super Admin de la que salio este agente (null = creado por la copropiedad).</summary>
+    public Guid? TemplateId { get; set; }
+    public AiAgentTemplate? Template { get; set; }
+
+    /// <summary>Version de la plantilla aplicada la ultima vez (al crearlo o al actualizar desde A&D).</summary>
+    public int? TemplateVersion { get; set; }
+
+    /// <summary>
+    /// SHA-256 del prompt que puso la plantilla (ya con los placeholders reemplazados). Si el prompt actual
+    /// no coincide, la copropiedad lo EDITO: "Actualizar copropiedades" lo respeta salvo que se fuerce.
+    /// </summary>
+    public string? TemplatePromptHash { get; set; }
+
     /// <summary>
     /// Reacciones automaticas (emoji) a los mensajes del contacto, SIN pasar por el LLM (cero tokens).
     /// El dispatcher pone un emoji al azar a algunos entrantes. Portado de CUBOT.travels.

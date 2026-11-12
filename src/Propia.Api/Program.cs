@@ -293,13 +293,16 @@ await SuperAdminSeeder.EnsureBootstrapFounderAsync(app.Services, app.Configurati
 try { await Propia.Infrastructure.Catalogos.CatalogoListasSeeder.EnsureAsync(app.Services); }
 catch (Exception ex) { app.Logger.LogWarning(ex, "CatalogoListasSeeder fallo (no bloquea el arranque)."); }
 
+// Plantillas de los agentes del sistema (Agente Documental, Auxiliar Administrativo). Corre SIEMPRE:
+// solo crea la plantilla si falta; no pisa lo que el Super Admin edito.
+try { await AgenteDocumentalSeeder.EnsureAsync(app.Services); await AuxiliarAdministrativoSeeder.EnsureAsync(app.Services); }
+catch (Exception ex) { app.Logger.LogWarning(ex, "Semillas de agentes del sistema fallaron (no bloquea el arranque)."); }
+
 // Seed dev del founder SuperAdmin (solo en Development)
 if (app.Environment.IsDevelopment())
 {
     await SuperAdminSeeder.EnsureDevFounderAsync(app.Services);
     await DemoSeeder.EnsureDemoDataAsync(app.Services);
-    await AgenteDocumentalSeeder.EnsureAsync(app.Services);
-    await AuxiliarAdministrativoSeeder.EnsureAsync(app.Services);
     app.MapOpenApi();
     app.UseHttpsRedirection();  // Local dev usa cert self-signed en puerto HTTPS
 
