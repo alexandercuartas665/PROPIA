@@ -37,9 +37,14 @@ public class ServiciosPublicosRecibosFlowTests
         var c = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía", "EPM", "9001234-5", null, null, 25), default);
         Assert.Equal("kWh", c.UnidadMedida);   // unidad por defecto del tipo
 
+        // Mismo contrato y mismo TIPO: no. Mismo contrato y otro tipo (factura combinada): si.
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Otro", "Vanti", "9001.234 5", null, null, 25), default));
-        var otra = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas", "Vanti", "777", null, null, 25), default);
+            svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Otro", "EPM", "9001.234 5", null, null, 25), default));
+        var gasMismoContrato = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas EPM", "EPM", "9001.234 5", null, null, 25), default);
+        // ...y no se puede volver de energia si el contrato ya tiene uno de energia.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.ActualizarCuentaAsync(gasMismoContrato.Id, new ActualizarCuentaServicioRequest(Tipo: TipoServicioPublico.EnergiaElectrica), default));
+        var otra = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía 2", "EPM", "777", null, null, 25), default);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.ActualizarCuentaAsync(otra.Id, new ActualizarCuentaServicioRequest(NumeroCuenta: "90012345"), default));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -144,8 +149,8 @@ public class ServiciosPublicosRecibosFlowTests
         var cA = await a.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas A", "Vanti", "7788123", null, null, 25), default);
         // La MISMA referencia en otra copropiedad es valida (unica por tenant) y el recibo de A no es de B.
         var cB = await b.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas B", "Vanti", "7788123", null, null, 25), default);
-        Assert.Equal(cB.Id, (await b.EvaluarReciboAsync(Recibo("7788123", 500_000m), default)).CuentaId);
-        Assert.Equal(cA.Id, (await a.EvaluarReciboAsync(Recibo("7788123", 500_000m), default)).CuentaId);
+        Assert.Equal(cB.Id, (await b.EvaluarReciboAsync(Recibo("7788123", 500_000m) with { TipoServicio = "gas" }, default)).CuentaId);
+        Assert.Equal(cA.Id, (await a.EvaluarReciboAsync(Recibo("7788123", 500_000m) with { TipoServicio = "gas" }, default)).CuentaId);
 
         Assert.Null(await b.GetCuentaAsync(cA.Id, default));
         Assert.Null(await b.ActualizarCuentaAsync(cA.Id, new ActualizarCuentaServicioRequest(Alias: "Hackeada"), default));
@@ -191,8 +196,85 @@ public class ServiciosPublicosRecibosFlowTests
         await CleanupTenantAsync(tB);
     }
 
+    [Fact]
+    public async Task Eliminar_un_recibo_borra_el_mes_su_desglose_y_su_documento_si_nadie_mas_lo_usa()
+    {
+        var t = await SeedTenantAsync("[SPX] eliminar recibo");
+        var blob = new NoopBlobStorage();
+        var svc = Build(t, blob);
+        var energia = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía", "EPM", "5550001", null, "kWh", 25), default);
+        var gas = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas", "Vanti", "5550002", null, "m3", 25), default);
+
+        // Dos meses de energia (cada uno con su documento) y un recibo de gas que COMPARTE el documento de octubre.
+        var oct = await svc.ConfirmarReciboAsync(Recibo("5550001", 100_000m, 120m, 10) with { CuentaId = energia.Id, ArchivoKey = "tenants/x/oct.pdf" }, default);
+        var sep = await svc.ConfirmarReciboAsync(Recibo("5550001", 90_000m, 110m, 9) with { CuentaId = energia.Id, ArchivoKey = "tenants/x/sep.pdf" }, default);
+        await svc.ConfirmarReciboAsync(Recibo("5550002", 40_000m, 20m, 10) with { CuentaId = gas.Id, ArchivoKey = "tenants/x/oct.pdf" }, default);
+
+        // Septiembre: se va el mes, su desglose y su documento; el servicio y octubre quedan.
+        Assert.True(await svc.EliminarRegistroAsync(sep.Id, default));
+        Assert.Equal(new[] { "tenants/x/sep.pdf" }, blob.Borrados);
+        await using (var ctx = OwnerDb())
+        {
+            Assert.False(await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().AnyAsync(x => x.Id == sep.Id));
+            Assert.False(await ctx.RegistrosConsumoConceptos.IgnoreQueryFilters().AnyAsync(x => x.RegistroConsumoId == sep.Id));
+            Assert.True(await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().AnyAsync(x => x.Id == oct.Id));
+            Assert.True(await ctx.CuentasServicioPublico.IgnoreQueryFilters().AnyAsync(x => x.Id == energia.Id));
+        }
+
+        // Octubre: su documento lo usa tambien el gas => NO se borra del storage.
+        Assert.True(await svc.EliminarRegistroAsync(oct.Id, default));
+        Assert.Equal(new[] { "tenants/x/sep.pdf" }, blob.Borrados);
+
+        // Otra copropiedad no puede borrar un recibo ajeno.
+        var tB = await SeedTenantAsync("[SPX] eliminar recibo B");
+        var gasOct = (await Build(t).GetCuentaAsync(gas.Id, default))!.Registros.Single();
+        Assert.False(await Build(tB).EliminarRegistroAsync(gasOct.Id, default));
+
+        await CleanupTenantAsync(t);
+        await CleanupTenantAsync(tB);
+    }
+
+    [Fact]
+    public async Task Recibo_de_otro_tipo_se_avisa_y_el_consumo_sale_de_las_lecturas()
+    {
+        var t = await SeedTenantAsync("[SPX] coherencia");
+        var svc = Build(t);
+        var energia = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energia", "EMCALI", "133611", null, "kWh", 25), default);
+
+        // Recibo de ASEO con el mismo contrato (EMCALI): el contrato es nuestro pero no hay servicio de aseo -> se ofrece crearlo.
+        var aseo = Recibo("133611", 63_186m, 0.19m, 10) with { TipoServicio = "aseo", UnidadMedida = "M3", LecturaAnterior = null, LecturaActual = null, ArchivoKey = "tenants/x/emcali.pdf" };
+        var ev = await svc.EvaluarReciboAsync(aseo, default);
+        Assert.Null(ev.CuentaId);
+        Assert.Equal(TipoServicioPublico.Aseo, ev.FaltaServicioTipo);
+        Assert.False(ev.CuentaInactiva);
+
+        // "Crear servicio de aseo": nace con el mismo contrato y el recibo pasa a ser de ese servicio, sin avisos de tipo.
+        ev = await svc.AgregarServicioDesdeReciboAsync(aseo, default);
+        Assert.NotNull(ev.CuentaId);
+        Assert.NotEqual(energia.Id, ev.CuentaId);
+        Assert.DoesNotContain(ev.Motivos, m => m.Contains("parece de"));
+        var regAseo = await svc.ConfirmarReciboAsync(aseo with { CuentaId = ev.CuentaId }, default);
+        Assert.Equal(0.19m, regAseo.Consumo);
+
+        // Otra parte de la MISMA factura (energia) va a la cuenta de energia y comparte el documento.
+        var parteEnergia = Recibo("133611", 120_000m, 150m, 10) with { TipoServicio = "energia", ArchivoKey = "tenants/x/emcali.pdf" };
+        var evE = await svc.EvaluarReciboAsync(parteEnergia, default);
+        Assert.Equal(energia.Id, evE.CuentaId);
+        await svc.ConfirmarReciboAsync(parteEnergia with { CuentaId = energia.Id }, default);
+        await using (var ctx = OwnerDb())
+            Assert.Equal(2, await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().CountAsync(x => x.TenantId == t && x.ArchivoKey == "tenants/x/emcali.pdf"));
+
+        // Recibo de energia sin consumo pero con lecturas: se registra la diferencia.
+        var sinConsumo = Recibo("133611", 210_000m, null, 9) with { TipoServicio = "energia", LecturaAnterior = 45_210m, LecturaActual = 45_398m };
+        Assert.DoesNotContain((await svc.EvaluarReciboAsync(sinConsumo, default)).Motivos, m => m.Contains("parece de"));
+        var reg = await svc.ConfirmarReciboAsync(sinConsumo with { CuentaId = energia.Id }, default);
+        Assert.Equal(188m, reg.Consumo);
+
+        await CleanupTenantAsync(t);
+    }
+
     // ---------- helpers ----------
-    private IServiciosPublicosService Build(Guid tenantId)
+    private IServiciosPublicosService Build(Guid tenantId, NoopBlobStorage? blob = null)
     {
         var tenantCtx = new TenantContext();
         tenantCtx.SetTenant(tenantId);
@@ -200,7 +282,7 @@ public class ServiciosPublicosRecibosFlowTests
             .UseNpgsql(_fx.AppConnectionString)
             .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
             .Options;
-        return new ServiciosPublicosService(new PropiaDbContext(options, tenantCtx), tenantCtx, new NoopBlobStorage());
+        return new ServiciosPublicosService(new PropiaDbContext(options, tenantCtx), tenantCtx, blob ?? new NoopBlobStorage());
     }
     private IMiCopropiedadService BuildMiCopropiedad(Guid tenantId)
     {
@@ -243,7 +325,8 @@ public class ServiciosPublicosRecibosFlowTests
     private sealed class NoopBlobStorage : IBlobStorage
     {
         public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct) => Task.FromResult($"/mem/{key}");
-        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public List<string> Borrados { get; } = new();
+        public Task DeleteAsync(string key, CancellationToken ct) { Borrados.Add(key); return Task.CompletedTask; }
         public string GetPublicUrl(string key) => $"/mem/{key}";
         public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
         public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);

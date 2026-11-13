@@ -61,6 +61,15 @@ else
             </div>
         </div>
 
+        <div class="sp-card spx-crear-ia">
+            <div class="spx-carga-ic"><i class="fi fi-rr-sparkles"></i></div>
+            <div class="spx-crear-ia-txt">
+                <div class="spx-carga-t">Crear servicios con IA</div>
+                <div class="spx-carga-s">Sube las facturas (una o varias, también las que cobran varios servicios con un mismo contrato). La IA arma cada servicio con su tipo, prestador, referencia y unidad, y registra ese mes con su documento y desglose.</div>
+            </div>
+            <button type="button" class="srv-btn-primary sm" @onclick="CrearConIaAsync"><i class="fi fi-rr-upload"></i> Subir facturas</button>
+        </div>
+
         <div class="spx-bandeja">
             <div class="dst-filtros">
                 <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
@@ -270,9 +279,20 @@ else
             </div>
         </div>
 
+        @if (_modoCrear)
+        {
+            <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-sparkles"></i> Modo "Crear servicios con IA": las facturas que subas ahora crean su servicio y registran el mes.
+                <button type="button" class="spx-link" @onclick="() => _modoCrear = false">Cancelar</button></div>
+        }
         @if (_cola.Count > 0)
         {
-            <div class="spx-cola-h">Recibos por revisar</div>
+            var nCrear = PorCrear.Count();
+            <div class="spx-cola-h spx-cola-h--acts"><span>Recibos por revisar</span>
+                @if (nCrear > 1)
+                {
+                    <button type="button" class="srv-btn-primary sm" disabled="@_creandoTodos" @onclick="CrearYRegistrarTodosAsync"><i class="fi fi-rr-sparkles"></i> @("Crear y registrar todos (" + nCrear + ")")</button>
+                }
+            </div>
             <div class="spx-cola">
                 @foreach (var q in _cola)
                 {
@@ -308,6 +328,21 @@ else
     }
     @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
 </div>
+
+@* ===== Confirmar: eliminar UN recibo (un mes) del historial, sin tocar el servicio ===== *@
+@if (_recEliminar is { } re)
+{
+    <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _recEliminar = null; }">
+        <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head"><strong>@("Eliminar el recibo de " + re.R.PeriodoLabel)</strong></div>
+            <div class="dst-cfg-sub">@("Se borra el registro de " + re.Cuenta.Alias + " de ese mes (consumo, valor y desglose)" + (string.IsNullOrEmpty(re.R.ArchivoKey) ? "" : " y su documento") + ". El servicio y sus otros meses no cambian. Puedes volver a cargar el recibo después.")</div>
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fbtn" @onclick="() => _recEliminar = null" disabled="@_delBusy">Cancelar</button>
+                <button type="button" class="dst-selbar-del" @onclick="EliminarReciboAsync" disabled="@_delBusy">Sí, eliminar</button>
+            </div>
+        </div>
+    </div>
+}
 
 @* ===== Modal: registrar a mano (la IA no pudo leer un recibo) ===== *@
 @if (_manualAbierto && SelCuenta is not null)
@@ -497,27 +532,76 @@ else
         var anim = !q.AnimVista; q.AnimVista = true;
         var cls = v.CuentaId is null ? " spx-q--ajeno" : (v.Rango is RangoRecibo.Alto or RangoRecibo.Bajo) ? " spx-q--alerta" : "";
         var cuenta = v.CuentaId is { } cid ? _cuentas.FirstOrDefault(x => x.Id == cid) : null;
+        if (v.CuentaId is null && v.FaltaServicioTipo is { } ft)
+        {
+            // Factura combinada: el contrato es de la copropiedad pero aun no tiene servicio de este tipo.
+            var tf = TiposServicioPublico.De(ft);
+            var hermanos = string.Join(", ", _cuentas.Where(x => ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == v.ReferenciaNormalizada).Select(x => x.Alias));
+            return @<div class="sp-card spx-q spx-q--alerta @(anim ? "iai-anim" : "")" @key="q.Id">
+                <div class="spx-q-head"><i class="fi @tf.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge warn">@("Falta el servicio de " + ReglasServicioPublico.NombreCorto(ft))</span></div>
+                <div class="spx-val spx-val--ok"><i class="fi fi-rr-info"></i><div>El contrato <b>@(d.Referencia ?? "-")</b> es de la copropiedad@(hermanos.Length > 0 ? " (" + hermanos + ")" : ""), pero todavía no tiene un servicio de <b>@ReglasServicioPublico.NombreCorto(ft)</b>. Créalo para registrar este recibo aparte, con su propio histórico.</div></div>
+                <div class="spx-q-body"><div class="spx-datos">
+                    <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
+                    <div class="spx-dato"><span>Valor</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
+                    @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } cf && cf != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(cf) + " " + (d.UnidadMedida ?? ""))</b></div> }
+                </div></div>
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
+                    @if (q.ModoCrear)
+                    {
+                        <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => CrearYRegistrarAsync(q)"><i class="fi fi-rr-check"></i> @("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft) + " y registrar")</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">@("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft))</button>
+                    }</div>
+            </div>;
+        }
+        if (v.CuentaId is null && q.ModoCrear)
+        {
+            var tn = TiposServicioPublico.De(q.TipoDetectado ?? TipoServicioPublico.EnergiaElectrica);
+            var sinRef = string.IsNullOrWhiteSpace(d.Referencia);
+            return @<div class="sp-card spx-q spx-q--nuevo @(anim ? "iai-anim" : "")" @key="q.Id">
+                <div class="spx-q-head"><i class="fi @tn.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge spx-q-nuevo-b">Servicio nuevo</span></div>
+                @if (sinRef)
+                {
+                    <div class="spx-val spx-val--no"><i class="fi fi-rr-cross-circle"></i><div>La IA no encontró la referencia del contrato en este recibo: sin ella no se puede crear el servicio. Créalo a mano en Configuración.</div></div>
+                }
+                else
+                {
+                    <div class="spx-val spx-val--ok"><i class="fi fi-rr-sparkles"></i><div>Se creará el servicio de <b>@tn.Nombre</b>@(string.IsNullOrWhiteSpace(d.Prestador) ? "" : " de " + d.Prestador) con la referencia <b>@d.Referencia</b> y se registrará el recibo de <b>@(v.PeriodoLabel ?? "-")</b>.</div></div>
+                }
+                <div class="spx-q-body"><div class="spx-datos">
+                    <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
+                    <div class="spx-dato"><span>Fecha límite de pago</span><b>@ReglasServicioPublico.FechaCorta(d.FechaLimitePago)</b></div>
+                    @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } cn && cn != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(cn) + " " + (d.UnidadMedida ?? tn.Unidad ?? ""))</b></div> }
+                    <div class="spx-dato"><span>Valor a pagar</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
+                </div><div><div class="spx-sec spx-sec--sm">Desglose del recibo</div><SpxDesglose Conceptos="@(d.Conceptos ?? Array.Empty<ConceptoReciboDto>())" Total="@(d.ValorTotal ?? d.ValorPeriodo)" /></div></div>
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
+                    <button type="button" class="srv-btn-primary sm" disabled="@(q.Ocupado || sinRef)" @onclick="() => CrearYRegistrarAsync(q)"><i class="fi fi-rr-check"></i> Crear servicio y registrar</button></div>
+            </div>;
+        }
         if (v.CuentaId is null)
             return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
-                <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><span class="srv-badge danger">No es de la copropiedad</span></div>
+                <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge danger">No es de la copropiedad</span></div>
                 <div class="spx-val spx-val--no"><i class="fi fi-rr-cross-circle"></i><div>La referencia <b>@(d.Referencia ?? "-")</b> (@(d.Prestador ?? "-"), titular @(d.Titular ?? "-")) no corresponde a ningún servicio configurado de la copropiedad. No se registra.</div></div>
                 <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">Es nuestro: agregarlo como servicio</button>
                     <button type="button" class="srv-btn-primary sm" @onclick="() => Descartar(q)">Descartar</button></div>
             </div>;
         return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
-            <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><SpxBadgeRango Rango="v.Rango" /></div>
+            <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<SpxBadgeRango Rango="v.Rango" /></div>
             <div class="spx-val spx-val--ok"><i class="fi fi-rr-check-circle"></i><div>Servicio de la copropiedad: <b>@v.CuentaAlias</b> · referencia @d.Referencia coincide.</div></div>
             @if (v.Duplicado) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> @("Ya hay un recibo de " + v.PeriodoLabel + " para este servicio: al confirmar se reemplaza.")</div> }
             @foreach (var m in v.Motivos) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div> }
+            @if (q.SinDocumento) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> El recibo se leyó, pero el documento no se pudo guardar: si confirmas, el registro queda sin el archivo.</div> }
             @if (!v.CuadraDesglose) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> El desglose no cuadra con el total del recibo: revísalo antes de confirmar.</div> }
             <div class="spx-q-body"><div class="spx-datos">
                 <div class="spx-dato"><span>Prestador</span><b>@(d.Prestador ?? cuenta?.Prestador ?? "-")</b></div>
                 <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
                 <div class="spx-dato"><span>Fecha límite de pago</span><b>@ReglasServicioPublico.FechaCorta(d.FechaLimitePago)</b></div>
-                @if (d.Consumo is { } con && con != 0)
+                @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } con && con != 0)
                 {
                     <div class="spx-dato"><span>Lecturas</span><b>@(ReglasServicioPublico.Num(d.LecturaAnterior) + " → " + ReglasServicioPublico.Num(d.LecturaActual))</b></div>
-                    <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Num(con) + " " + (v.Unidad ?? ""))</b></div>
+                    <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(con) + " " + (d.UnidadMedida ?? v.Unidad ?? ""))</b></div>
                 }
                 <div class="spx-dato"><span>Valor a pagar</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
                 <div class="spx-dato"><span>Topes</span><b>@(ReglasServicioPublico.Plata(v.ValorMin) + " – " + ReglasServicioPublico.Plata(v.ValorMax))</b></div>
@@ -566,14 +650,32 @@ else
                 </div></div>
             @if (rs.Count > 0)
             {
-                <div class="sp-card spx-hist-card"><div class="spx-hist-scroll"><table class="spx-hist"><thead><tr><th>Periodo</th><th class="r">Consumo</th><th class="r">Valor</th><th>Rango</th><th>Origen</th><th></th></tr></thead><tbody>
+                <div class="sp-card spx-hist-card"><div class="spx-hist-scroll"><table class="spx-hist"><thead><tr><th>Periodo</th><th class="r">Consumo</th><th class="r">Valor</th><th>Rango</th><th>Origen</th><th>Documento</th><th></th></tr></thead><tbody>
                     @foreach (var r in rs)
                     {
                         var rr = r;
-                        <tr><td>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Num(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
+                        var abierto = _recExp.Contains(rr.Id);
+                        <tr class="@(abierto ? "spx-hist-on" : "")"><td><button type="button" class="spx-hist-exp @(abierto ? "on" : "")" title="@(abierto ? "Ocultar el desglose" : "Ver el desglose")" aria-expanded="@(abierto ? "true" : "false")" @onclick="() => AlternarDesglose(rr.Id)"><i class="fi fi-rr-angle-small-right"></i></button>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Cant(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
                             <td><SpxBadgeRango Rango="r.Rango" /></td>
                             <td>@if (r.Origen == OrigenRegistroConsumo.IA) { <span class="spx-ia"><i class="fi fi-rr-sparkles"></i> IA</span> } else { <span class="spx-muted">@(r.Estado == EstadoRegistroConsumo.Estimado ? "Estimado" : "Manual")</span> }</td>
-                            <td class="r"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button></td></tr>
+                            <td>@if (!string.IsNullOrEmpty(r.ArchivoUrl))
+                                {
+                                    <a class="spx-doc" href="@r.ArchivoUrl" target="_blank" rel="noopener" title="@(r.ArchivoNombre ?? "Ver documento")"><i class="fi fi-rr-file-pdf"></i> Ver</a>
+                                }
+                                else if (r.Origen == OrigenRegistroConsumo.IA)
+                                {
+                                    <span class="spx-doc spx-doc--falta" title="La IA leyó el recibo pero el documento no quedó guardado."><i class="fi fi-rr-triangle-warning"></i> Sin guardar</span>
+                                }
+                                else { <span class="spx-muted">-</span> }</td>
+                            <td class="r spx-hist-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button>
+                                <button type="button" class="spx-hist-del" title="Eliminar este recibo" aria-label="@("Eliminar el recibo de " + r.PeriodoLabel)" @onclick="() => PedirEliminarRecibo(c, rr)"><i class="fi fi-rr-trash"></i></button></td></tr>
+                        @if (abierto)
+                        {
+                            <tr class="spx-hist-sub"><td colspan="7"><div class="spx-hist-desg">
+                                @if (r.LecturaAnterior is { } la && r.LecturaActual is { } lc) { <div class="spx-muted">@("Lecturas " + ReglasServicioPublico.Num(la) + " → " + ReglasServicioPublico.Num(lc))</div> }
+                                <SpxDesglose Conceptos="@(r.Conceptos is { Count: > 0 } k ? k : new[] { new ConceptoReciboDto("Valor del servicio", r.Valor) })" Total="r.Valor" />
+                            </div></td></tr>
+                        }
                     }
                     </tbody></table></div>
                     <div class="sp-recl-bar"><button class="sp-recl-btn" @onclick="AbrirReclamacion"><i class="fi fi-rr-comment-alt"></i> @("Reclamaciones (" + (det?.Reclamaciones.Count ?? 0) + ")")</button></div></div>

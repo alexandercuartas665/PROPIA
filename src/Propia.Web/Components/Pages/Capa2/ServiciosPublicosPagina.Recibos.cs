@@ -27,6 +27,12 @@ public sealed class ReciboEnCola
     /// <summary>La tarjeta de revision ya mostro su entrada animada (re-renders no la repiten).</summary>
     public bool AnimVista { get; set; }
     public bool Ocupado { get; set; }
+    /// <summary>La IA leyo el recibo pero el documento no quedo guardado en el storage (se avisa antes de confirmar).</summary>
+    public bool SinDocumento { get; set; }
+    /// <summary>Factura combinada: servicio de esta tarjeta ("Aseo · 2 de 3"); null en un recibo de un solo servicio.</summary>
+    public string? Parte { get; set; }
+    /// <summary>Subido desde "Crear servicios con IA" (Configuracion): si el servicio no existe, un solo clic lo crea y registra el mes.</summary>
+    public bool ModoCrear { get; set; }
 }
 
 /// <summary>Pestana Recibos y consumo (replica: renderRecibos()).</summary>
@@ -103,6 +109,8 @@ public partial class ServiciosPublicosPagina
             }
             catch { Mensaje($"No se pudo leer {f.Name} (máximo 20 MB).", true); }
         }
+        // "Crear servicios con IA" (Configuracion): esta tanda crea los servicios que falten.
+        if (_modoCrear) { foreach (var n in nuevos) n.ModoCrear = true; _modoCrear = false; }
         Encolar(nuevos);
     }
 
@@ -177,7 +185,64 @@ public partial class ServiciosPublicosPagina
         if (leidos.Count == 0) { q.Ia.Fallo("La IA no encontró los datos de un recibo en este archivo."); return; }
         if (q.Eval is null) { q.Ia.Fallo("No se pudo validar el recibo contra tus servicios. Intenta de nuevo."); return; }
         q.Req = q.Req! with { ArchivoKey = res.PdfOrigenKey };
+        q.SinDocumento = string.IsNullOrEmpty(res.PdfOrigenKey);
+
+        // Factura combinada (EMCALI: energia, acueducto y aseo con un contrato): una tarjeta por servicio, todas con el
+        // mismo documento; cada una se valida contra el servicio de SU tipo y se confirma por separado.
+        var partes = PartesFacturaCombinada(leidos, q.Req);
+        if (partes.Count >= 2)
+        {
+            var pos = _cola.IndexOf(q);
+            for (var i = 0; i < partes.Count; i++)
+            {
+                var item = i == 0 ? q : new ReciboEnCola { FileName = q.FileName, Bytes = q.Bytes, Mime = q.Mime, Ext = q.Ext };
+                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.ModoCrear = q.ModoCrear; item.Ia.YaLeido(); _cola.Insert(pos + i, item); }
+                item.Req = partes[i];
+                item.Parte = $"{TiposServicioPublico.De(ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio) ?? TipoServicioPublico.EnergiaElectrica).Nombre} · {i + 1} de {partes.Count}";
+                item.TipoDetectado = ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio);
+                item.Eval = await EvaluarAsync(partes[i]);
+                if (item.Eval is null) item.Ia.Fallo("No se pudo validar este servicio de la factura. Intenta de nuevo.");
+            }
+            StateHasChanged();
+            return;
+        }
         if (q.Eval.CuentaId is { } cid && _cuentas.FirstOrDefault(c => c.Id == cid) is { } c) q.TipoDetectado = c.Tipo;
+    }
+
+    /// <summary>
+    /// Servicios de una factura combinada (clave "servicios" del perfil, ya normalizada en el servidor): cada uno hereda
+    /// del recibo completo la referencia, el prestador, las fechas y el documento, y trae SU tipo, consumo, lecturas,
+    /// valor y desglose. Menos de 2 -> lista vacia (recibo de un solo servicio).
+    /// </summary>
+    private static List<ReciboLeidoRequest> PartesFacturaCombinada(IReadOnlyList<IaCampo> campos, ReciboLeidoRequest baseRecibo)
+    {
+        var outp = new List<ReciboLeidoRequest>();
+        if (campos.FirstOrDefault(c => c.Nombre == "servicios")?.Valor is not { Length: > 0 } json) return outp;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            foreach (var x in doc.RootElement.EnumerateArray())
+            {
+                string? S(string k) => x.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String ? e.GetString() : null;
+                decimal? D(string k) => x.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetDecimal() : null;
+                var tipo = S("tipo"); var valor = D("valor");
+                if (string.IsNullOrWhiteSpace(tipo) || valor is null) continue;
+                List<ConceptoReciboDto>? conceptos = null;
+                if (x.TryGetProperty("conceptos", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    conceptos = ce.EnumerateArray()
+                        .Select(k => new ConceptoReciboDto(k.TryGetProperty("concepto", out var n) ? n.GetString() ?? "" : "", k.TryGetProperty("valor", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDecimal() : 0))
+                        .Where(k => k.Concepto.Length > 0).ToList();
+                outp.Add(baseRecibo with
+                {
+                    TipoServicio = tipo, Consumo = D("consumo"), UnidadMedida = S("unidad"),
+                    LecturaAnterior = D("lectura_anterior"), LecturaActual = D("lectura_actual"),
+                    ValorPeriodo = valor, SaldoAnterior = null, ValorTotal = valor,
+                    Conceptos = conceptos is { Count: > 0 } ? conceptos : new List<ConceptoReciboDto> { new("Valor del servicio", valor.Value) }
+                });
+            }
+        }
+        catch { outp.Clear(); }
+        return outp.Count >= 2 ? outp : new List<ReciboLeidoRequest>();
     }
 
     private async Task<EvaluacionReciboDto?> EvaluarAsync(ReciboLeidoRequest req)
@@ -221,7 +286,7 @@ public partial class ServiciosPublicosPagina
         "direccion_suministro" => "Dirección", "tipo_servicio" => "Servicio", "periodo_desde" or "periodo_hasta" => "Periodo",
         "fecha_expedicion" => "Expedición", "fecha_limite_pago" => "Fecha límite", "lectura_anterior" or "lectura_actual" => "Lecturas",
         "consumo" => "Consumo", "valor_periodo" => "Valor del periodo", "saldo_anterior" => "Saldo anterior",
-        "valor_total" => "Total a pagar", "conceptos" => "Desglose", _ => null
+        "valor_total" => "Total a pagar", "conceptos" => "Desglose", "servicios" => "Servicios de la factura", _ => null
     };
 
     private void Descartar(ReciboEnCola q) { _cola.Remove(q); StateHasChanged(); }
@@ -232,6 +297,59 @@ public partial class ServiciosPublicosPagina
     {
         foreach (var q in _cola.Where(x => x.Req is not null && x.Ia.Estado == IaEstado.Listo).ToList())
             if (await EvaluarAsync(q.Req!) is { } ev) q.Eval = ev;
+    }
+
+    // ===== "Crear servicios con IA" (ola D): desde Configuracion se suben facturas y cada servicio nuevo se crea y
+    // registra ese mes en un solo paso (tipo, prestador, referencia y unidad salen del recibo). =====
+    private bool _modoCrear;
+
+    private async Task CrearConIaAsync()
+    {
+        _modoCrear = true;
+        await IrRecibosAsync(null);
+        _elegirArchivo = true;
+        StateHasChanged();
+    }
+
+    /// <summary>Tarjetas de "Crear servicios con IA" cuyo servicio aun no existe (ajeno o falta ese tipo en el contrato).</summary>
+    private IEnumerable<ReciboEnCola> PorCrear => _cola.Where(q => q.ModoCrear && q.Ia.Estado == IaEstado.Listo && q.Req is not null
+        && q.Eval is { CuentaId: null } && !q.Ocupado);
+
+    private async Task CrearYRegistrarAsync(ReciboEnCola q)
+    {
+        if (q.Req is null) return;
+        if (string.IsNullOrWhiteSpace(q.Req.Referencia)) { Mensaje("El recibo no trae la referencia del contrato: no se puede crear el servicio.", true); return; }
+        q.Ocupado = true;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/servicios-publicos/recibos/agregar-servicio", q.Req);
+            if (!r.IsSuccessStatusCode) { Mensaje(await SpxFormato.ErrorDeAsync(r, "No se pudo crear el servicio."), true); return; }
+            q.Eval = await r.Content.ReadFromJsonAsync<EvaluacionReciboDto>() ?? q.Eval;
+            await CargarAsync();
+            if (q.Eval?.CuentaId is null) { Mensaje("El servicio se creó, pero el recibo no quedó asociado: revísalo.", true); return; }
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); return; }
+        finally { q.Ocupado = false; }
+        await ConfirmarAsync(q);   // registra el mes con su documento y desglose, y quita la tarjeta
+    }
+
+    private bool _creandoTodos;
+    private async Task CrearYRegistrarTodosAsync()
+    {
+        if (_creandoTodos) return;
+        _creandoTodos = true;
+        try
+        {
+            // Uno a uno: cada alta reevalua la cola (otra parte de la misma factura puede quedar ya con servicio).
+            while (PorCrear.FirstOrDefault() is { } q)
+            {
+                var antes = _cola.Count;
+                await CrearYRegistrarAsync(q);
+                if (_cola.Count == antes && _cola.Contains(q)) break;   // fallo: no insistir en bucle
+                StateHasChanged();
+            }
+        }
+        finally { _creandoTodos = false; }
     }
 
     private async Task ConfirmarAsync(ReciboEnCola q)
@@ -292,8 +410,39 @@ public partial class ServiciosPublicosPagina
     }
 
     // ===== Desglose de un registro del historial =====
-    private Task VerDesgloseAsync(CuentaServicioDto c, RegistroConsumoDto r)
-        => Modals.OpenAsync<DesgloseReciboModal, bool>(new ModalParameters().Set("Cuenta", c).Set("R", r), new ModalOptions { Width = "560px" });
+    private async Task VerDesgloseAsync(CuentaServicioDto c, RegistroConsumoDto r)
+    {
+        // El modal devuelve true cuando el usuario pide "Eliminar este recibo".
+        var eliminar = await Modals.OpenAsync<DesgloseReciboModal, bool>(new ModalParameters().Set("Cuenta", c).Set("R", r), new ModalOptions { Width = "560px" });
+        if (eliminar) PedirEliminarRecibo(c, r);
+    }
+
+    // ===== Desglose en linea en el historial (flecha de cada mes) =====
+    private readonly HashSet<Guid> _recExp = new();
+    private void AlternarDesglose(Guid id) { if (!_recExp.Remove(id)) _recExp.Add(id); }
+
+    // ===== Eliminar UN recibo (un mes) cargado mal, sin tocar el servicio =====
+    private sealed record ReciboAEliminar(CuentaServicioDto Cuenta, RegistroConsumoDto R);
+    private ReciboAEliminar? _recEliminar;
+
+    private void PedirEliminarRecibo(CuentaServicioDto c, RegistroConsumoDto r) { _recEliminar = new(c, r); StateHasChanged(); }
+
+    private async Task EliminarReciboAsync()
+    {
+        if (_recEliminar is not { } re) return;
+        _delBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/servicios-publicos/registros/{re.R.Id}");
+            if (!r.IsSuccessStatusCode) { Mensaje(await SpxFormato.ErrorDeAsync(r, "No se pudo eliminar el recibo."), true); return; }
+            Mensaje($"Recibo de {re.R.PeriodoLabel} eliminado.", false);
+            _recEliminar = null;
+            await CargarAsync();
+            await CargarDetalleAsync(re.Cuenta.Id);
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+        finally { _delBusy = false; }
+    }
 
     // ===== Registrar a mano (cuando la IA no pudo leer un recibo) =====
     private sealed class FormManual

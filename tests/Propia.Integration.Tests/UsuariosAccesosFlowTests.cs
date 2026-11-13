@@ -320,6 +320,63 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         await Assert.ThrowsAnyAsync<Exception>(() => db.SaveChangesAsync());
     }
 
+    // ---------------- Carga de usuarios por plantilla (2026-11-13) ----------------
+
+    [Fact]
+    public async Task Plantilla_de_usuarios_crea_pendientes_sin_invitar_y_reporta_errores_por_fila()
+    {
+        var tenantId = await SeedTenantAsync("Usuarios plantilla");
+        var (usuarios, rolesSvc, tctx, db) = BuildUsuarios(tenantId);
+        var dir = new Propia.Infrastructure.Directorio.DirectorioService(db, tctx, new NoopBlobStorage());
+        var plantillas = new Propia.Infrastructure.MiCopropiedad.PlantillasService(null!, dir, db, tctx, rolesSvc, usuarios);
+
+        // 1) La plantilla trae sus hojas, las 8 columnas y la lista de roles de la copropiedad.
+        var roles = (await rolesSvc.ListarRolesAsync(default)).Where(r => r.Activo).Select(r => r.Nombre).ToList();
+        Assert.True(roles.Count >= 2);
+        using var wb = new ClosedXML.Excel.XLWorkbook(new MemoryStream(await plantillas.GenerarPlantillaUsuariosAsync(default)));
+        Assert.True(wb.TryGetWorksheet("Instrucciones", out _));
+        var ws = wb.Worksheet("Usuarios");
+        Assert.Equal("Rol *", ws.Cell(1, 7).GetString());
+        Assert.Equal("Cargo", ws.Cell(1, 8).GetString());
+        var cat = wb.Worksheet("Catalogos");
+        Assert.Equal(roles, Enumerable.Range(2, roles.Count).Select(r => cat.Cell(r, 3).GetString()).ToList());
+        Assert.Single(ws.RowsUsed());   // solo el encabezado: sin fila de ejemplo que se cargue por error
+
+        // 2) Filas: dos buenas (una con dos roles y rol escrito sin tilde/mayusculas), y cuatro con error.
+        var docA = Random.Shared.Next(100_000_000, 999_999_999).ToString();
+        var docB = Random.Shared.Next(100_000_000, 999_999_999).ToString();
+        void Fila(int r, params string?[] v) { for (int i = 0; i < v.Length; i++) if (v[i] is not null) ws.Cell(r, i + 1).Value = v[i]; }
+        Fila(2, "CC", docA, "Ana", "Plantilla", "ana.plantilla@correo.test", "3001112233", roles[0], "Supervisora");
+        Fila(3, "CC", docB, "Beto", "Plantilla", null, null, roles[0].ToUpperInvariant() + ", " + roles[1], "Portero, Rondero");
+        Fila(4, "CC", docA, "Ana", "Repetida", null, null, roles[0], null);               // documento repetido
+        Fila(5, "CC", "55500011", "Sin", "Rol", null, null, null, null);                   // falta el rol
+        Fila(6, "CC", "55500012", "Rol", "Inexistente", null, null, "Astronauta", null);  // rol que no existe
+        Fila(7, "XX", "55500013", "Tipo", "Malo", null, null, roles[0], null);            // tipo de documento invalido
+        var bytes = new MemoryStream(); wb.SaveAs(bytes);
+
+        var res = await plantillas.ImportarUsuariosAsync(new MemoryStream(bytes.ToArray()), default);
+        Assert.Equal((2, 0, 0, 4), (res.Creados, res.Actualizados, res.SinCambios, res.FilasConError));
+        Assert.Contains(res.Errores, e => e.Fila == 4 && e.Mensaje.Contains("repetido"));
+        Assert.Contains(res.Errores, e => e.Fila == 5 && e.Mensaje.Contains("Falta el rol"));
+        Assert.Contains(res.Errores, e => e.Fila == 6 && e.Mensaje.Contains("Astronauta"));
+        Assert.Contains(res.Errores, e => e.Fila == 7 && e.Mensaje.Contains("tipo de documento"));
+
+        // 3) Quedan PENDIENTES (sin invitacion enviada), con sus roles y cargos; la persona nueva queda en el Directorio.
+        var personaB = await db.Personas.SingleAsync(p => p.Documento == docB);
+        var utB = await db.UsuariosTenant.SingleAsync(u => u.PersonaId == personaB.Id && u.TenantId == tenantId);
+        Assert.Equal(EstadoUsuarioTenant.Pendiente, utB.Estado);
+        Assert.Equal(2, await db.UsuarioTenantRoles.CountAsync(x => x.UsuarioTenantId == utB.Id));
+        Assert.Equal(2, await db.UsuarioTenantCargos.CountAsync(x => x.UsuarioTenantId == utB.Id));
+        Assert.Equal(0, await db.UsuarioInvitaciones.CountAsync(i => i.TenantId == tenantId));
+
+        // 4) Cargar otra vez: los pendientes se actualizan; si uno ya esta ACTIVO no se toca.
+        var personaA = await db.Personas.SingleAsync(p => p.Documento == docA);
+        var utA = await db.UsuariosTenant.SingleAsync(u => u.PersonaId == personaA.Id && u.TenantId == tenantId);
+        utA.Estado = EstadoUsuarioTenant.Activo; await db.SaveChangesAsync();
+        var res2 = await plantillas.ImportarUsuariosAsync(new MemoryStream(bytes.ToArray()), default);
+        Assert.Equal((0, 1, 1, 4), (res2.Creados, res2.Actualizados, res2.SinCambios, res2.FilasConError));
+    }
+
     // ---------------- Helpers ----------------
 
     private (IRolesService svc, PropiaDbContext db, TenantContext tctx, IServiceScope scope)

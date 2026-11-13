@@ -30,10 +30,13 @@ public class OcrController : ControllerBase
     private readonly Propia.Infrastructure.Storage.IBlobStorage _blob;
     private readonly PropiaDbContext _db;
     private readonly Application.InfraestructuraIa.IAgentesSistema _agentesSistema;
+    private readonly ILogger<OcrController> _log;
 
     public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor,
-        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db, Application.InfraestructuraIa.IAgentesSistema agentesSistema)
+        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db, Application.InfraestructuraIa.IAgentesSistema agentesSistema,
+        ILogger<OcrController> log)
     {
+        _log = log;
         _agentesSistema = agentesSistema;
         _ocr = ocr;
         _ai = ai;
@@ -77,7 +80,11 @@ public class OcrController : ControllerBase
                 await _blob.UploadAsync(key, up, file.ContentType ?? "application/octet-stream", ct);
                 pdfOrigenKey = key;
             }
-            catch { /* el guardado del origen no debe romper la extraccion */ }
+            catch (Exception ex)
+            {
+                // El guardado del origen no rompe la extraccion, pero queda en el log (antes se perdia en silencio).
+                _log.LogError(ex, "[OCR] No se pudo guardar el documento origen ({Archivo}, {Bytes} bytes) en el storage.", file.FileName, bytes.Length);
+            }
         }
 
         return Ok(new
@@ -181,7 +188,11 @@ public class OcrController : ControllerBase
                     await _blob.UploadAsync(key, up, mime, ct);
                     pdfOrigenKey = key;
                 }
-                catch { /* el guardado del origen no debe romper la extraccion */ }
+                catch (Exception ex)
+                {
+                    // El guardado del origen no rompe la extraccion, pero queda en el log (antes se perdia en silencio).
+                    _log.LogError(ex, "[OCR] No se pudo guardar el documento origen ({Archivo}, perfil {Perfil}) en el storage.", req.FileName, perfilKey);
+                }
             }
         }
 
@@ -253,7 +264,18 @@ public class OcrController : ControllerBase
             sb.AppendLine("- Separa el valor del PERIODO (los cobros del mes) de los saldos anteriores, la mora o intereses y el TOTAL A PAGAR:");
             sb.AppendLine("  valor_periodo = solo lo facturado en este periodo; saldo_anterior = deuda o saldo de periodos previos; valor_total = total a pagar.");
             sb.AppendLine("- periodo_desde / periodo_hasta: el periodo facturado o de consumo. Si cruza dos meses, devuelve ambas fechas completas.");
-            sb.AppendLine("- consumo: la cantidad consumida (kWh, m3, minutos, GB) como numero, puede tener decimales. Lecturas del medidor si aparecen.");
+            sb.AppendLine("- tipo_servicio: segun lo que COBRA el recibo, no segun la empresa: si cobra barrido, recoleccion o residuos es aseo");
+            sb.AppendLine("  aunque lo expida una empresa de energia o de acueducto (ej. EMCALI cobra energia, acueducto y aseo con el mismo contrato).");
+            sb.AppendLine("- consumo: la cantidad consumida en el periodo en su unidad (kWh, m3, minutos, GB), como numero, puede tener decimales.");
+            sb.AppendLine("  Si hay lecturas del medidor, consumo = lectura_actual - lectura_anterior. NUNCA uses como consumo la tarifa o valor");
+            sb.AppendLine("  unitario, los dias facturados, el estrato, el promedio ni el historico de meses anteriores. En aseo es la produccion de");
+            sb.AppendLine("  residuos del periodo (m3 o toneladas). Si el recibo no trae consumo (cargo fijo, internet), deja la clave vacia.");
+            sb.AppendLine("- unidad_medida: la unidad del consumo tal como aparece (kWh, m3, toneladas, GB, minutos).");
+            sb.AppendLine("- servicios: SOLO si el mismo recibo cobra VARIOS servicios (ej. EMCALI o EPM: energia, acueducto y aseo con un solo");
+            sb.AppendLine("  contrato), devuelve uno por servicio: [{\"tipo_servicio\", \"consumo\", \"unidad_medida\", \"lectura_anterior\", \"lectura_actual\",");
+            sb.AppendLine("  \"valor\", \"conceptos\": [{\"concepto\", \"valor\"}]}]. Acueducto y alcantarillado van JUNTOS como un solo servicio");
+            sb.AppendLine("  \"acueducto\". valor = lo que el recibo cobra por ese servicio en el periodo. Las claves de arriba (tipo_servicio, consumo,");
+            sb.AppendLine("  conceptos...) describen entonces el recibo completo. Si cobra un solo servicio, deja \"servicios\" vacio.");
             sb.AppendLine("- conceptos: el desglose de cobros del periodo como lista [{\"concepto\": texto, \"valor\": numero}], en el orden del recibo,");
             sb.AppendLine("  sin el total ni los subtotales. Devuelvelo como {\"valor\": [ ... ], \"conf\": 0.0-1.0}.");
         }
@@ -291,6 +313,7 @@ public class OcrController : ControllerBase
                 "sino" => Application.Documentos.NormalizadorDocumental.SiNo(raw) is { } b ? (b ? "true" : "false") : null,
                 "decimal" => Application.Documentos.NormalizadorDocumental.Monto(raw)?.ToString("0.####", CultureInfo.InvariantCulture),
                 "lista" => NormalizarLista(raw),
+                "servicios" => NormalizarServicios(raw),
                 _ => raw
             };
             if (!string.IsNullOrWhiteSpace(norm)) outp.Add((nombre, norm, conf));
@@ -387,6 +410,38 @@ public class OcrController : ControllerBase
         catch { return null; }
     }
 
+    /// <summary>Factura combinada: lista de servicios del mismo recibo, cada uno con tipo y valor (obligatorios), consumo,
+    /// unidad, lecturas y su desglose. Montos normalizados como en el resto del perfil. Menos de 2 servicios -> null
+    /// (un recibo de un solo servicio usa las claves normales).</summary>
+    private static string? NormalizarServicios(string raw)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+            string? Txt(System.Text.Json.JsonElement o, string k) => o.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String ? e.GetString()?.Trim() : null;
+            decimal? Num(System.Text.Json.JsonElement o, string k) => o.TryGetProperty(k, out var e) ? Application.Documentos.NormalizadorDocumental.Monto(LeerValor(e)) : null;
+            var outp = new List<object>();
+            foreach (var it in doc.RootElement.EnumerateArray())
+            {
+                if (it.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+                var tipo = Txt(it, "tipo_servicio") ?? Txt(it, "tipo");
+                var valor = Num(it, "valor");
+                if (string.IsNullOrWhiteSpace(tipo) || valor is null) continue;
+                var conceptos = it.TryGetProperty("conceptos", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Array
+                    ? NormalizarLista(ce.GetRawText()) : null;
+                outp.Add(new
+                {
+                    tipo, valor = valor.Value, consumo = Num(it, "consumo"), unidad = Txt(it, "unidad_medida"),
+                    lectura_anterior = Num(it, "lectura_anterior"), lectura_actual = Num(it, "lectura_actual"),
+                    conceptos = conceptos is null ? (System.Text.Json.JsonElement?)null : System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(conceptos)
+                });
+            }
+            return outp.Count < 2 ? null : System.Text.Json.JsonSerializer.Serialize(outp);
+        }
+        catch { return null; }
+    }
+
     /// <summary>Si la suma de los conceptos no cuadra con valor_total ni con valor_periodo (+-1%), baja la confianza
     /// de "conceptos" a 0.4: la tarjeta lo marca dudoso (ambar) para revisarlo.</summary>
     private static void MarcarCuadreConceptos(List<(string Nombre, string? Valor, double? Conf)> valores)
@@ -476,6 +531,7 @@ public class OcrController : ControllerBase
             new CampoObjetivo("saldo_anterior", "Saldo anterior, deuda o mora de periodos previos, solo el numero", "moneda"),
             new CampoObjetivo("valor_total", "TOTAL A PAGAR del recibo, solo el numero", "moneda"),
             new CampoObjetivo("conceptos", "Desglose de cobros del periodo: lista de objetos {concepto, valor}", "lista"),
+            new CampoObjetivo("servicios", "SOLO si el recibo cobra VARIOS servicios con el mismo contrato: lista de objetos {tipo_servicio, consumo, unidad_medida, lectura_anterior, lectura_actual, valor, conceptos}, uno por servicio", "servicios"),
         },
         _ => Array.Empty<CampoObjetivo>()
     };

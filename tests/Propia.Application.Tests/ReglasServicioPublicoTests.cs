@@ -158,4 +158,44 @@ public class ReglasServicioPublicoTests
     [InlineData("Telefonía", TipoServicioPublico.TelefoniaFija)]
     public void Tipo_desde_el_texto_del_recibo(string texto, TipoServicioPublico esperado)
         => Assert.Equal(esperado, ReglasServicioPublico.TipoDesdeTexto(texto));
+
+    // ---------- Consumo efectivo y coherencia del recibo con el servicio (ola B) ----------
+    [Theory]
+    [InlineData(120.5, null, null, 120.5)]       // trae consumo: se respeta
+    [InlineData(null, 1000d, 1180d, 180d)]          // sin consumo: lectura actual - anterior
+    [InlineData(0d, 1000d, 1180d, 180d)]             // consumo 0 pero lecturas validas
+    [InlineData(null, 1180d, 1000d, null)]         // lecturas invertidas: no se inventa
+    [InlineData(0d, null, null, 0d)]               // cargo fijo sin lecturas
+    public void Consumo_efectivo_usa_las_lecturas_si_falta(double? consumo, double? ant, double? act, double? esperado)
+        => Assert.Equal(esperado is null ? null : (decimal)esperado.Value,
+            ReglasServicioPublico.ConsumoEfectivo(consumo is null ? null : (decimal)consumo.Value, ant is null ? null : (decimal)ant.Value, act is null ? null : (decimal)act.Value));
+
+    [Theory]
+    [InlineData("M3", "m3")]
+    [InlineData("m³", "m3")]
+    [InlineData("metros cúbicos", "m3")]
+    [InlineData("Kw/h", "kwh")]
+    [InlineData("kWh", "kwh")]
+    [InlineData("toneladas", null)]
+    public void Unidad_normalizada(string u, string? esperado) => Assert.Equal(esperado, ReglasServicioPublico.UnidadNormalizada(u));
+
+    [Fact]
+    public void Avisa_si_el_recibo_es_de_otro_tipo_de_servicio_o_mide_en_otra_unidad()
+    {
+        // El caso real: el recibo de aseo de EMCALI (contrato 133611) cayo en el servicio de energia con el mismo contrato.
+        var tipo = ReglasServicioPublico.MotivosCoherencia(TipoServicioPublico.EnergiaElectrica, "Energia", "kWh", "aseo", "M3");
+        Assert.Equal("El recibo parece de aseo, pero \"Energia\" es un servicio de energía: revisa que sea el servicio correcto antes de confirmar.", Assert.Single(tipo));
+
+        var unidad = ReglasServicioPublico.MotivosCoherencia(TipoServicioPublico.Acueducto, "Agua", "m3", "acueducto", "kWh");
+        Assert.Contains("mide el consumo en kWh", Assert.Single(unidad));
+
+        Assert.Empty(ReglasServicioPublico.MotivosCoherencia(TipoServicioPublico.EnergiaElectrica, "Energia", "kWh", "Energía eléctrica", "KWH"));
+        Assert.Empty(ReglasServicioPublico.MotivosCoherencia(TipoServicioPublico.Internet, "Internet", null, null, null));
+    }
+
+    [Theory]
+    [InlineData(0.19, "0,19")]
+    [InlineData(1234.5, "1.234,5")]
+    [InlineData(180, "180")]
+    public void Cantidad_con_decimales(double v, string esperado) => Assert.Equal(esperado, ReglasServicioPublico.Cant((decimal)v));
 }

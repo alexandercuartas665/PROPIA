@@ -17,7 +17,21 @@ public interface IPlantillasService
 
     Task<byte[]> GenerarPlantillaDirectorioAsync(CancellationToken ct);
     Task<ImportarPlantillaResultado> ImportarDirectorioAsync(Stream xlsx, CancellationToken ct);
+
+    /// <summary>Usuarios (2.5): una fila por usuario (persona + roles + cargos). Crea la persona en el Directorio si
+    /// no existe y da el alta en estado Pendiente, SIN enviar invitacion (se invita despues desde Usuarios).</summary>
+    Task<byte[]> GenerarPlantillaUsuariosAsync(CancellationToken ct);
+    Task<ImportarUsuariosResultado> ImportarUsuariosAsync(Stream xlsx, CancellationToken ct);
 }
+
+/// <summary>Resultado de la carga de usuarios: creados, pendientes actualizados (roles/cargos), los que ya tenian
+/// acceso activo (no se tocan) y las filas con error (con su motivo).</summary>
+public record ImportarUsuariosResultado(
+    int Creados,
+    int Actualizados,
+    int SinCambios,
+    int FilasConError,
+    IReadOnlyList<ImportarErrorFila> Errores);
 
 /// <summary>Resultado de una carga por plantilla (upsert). Reusa ImportarErrorFila.</summary>
 public record ImportarPlantillaResultado(

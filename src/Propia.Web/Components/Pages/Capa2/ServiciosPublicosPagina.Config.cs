@@ -406,8 +406,8 @@ public partial class ServiciosPublicosPagina
             case "prestador": req = new(Prestador: v); break;
             case "numeroCuenta":
                 var norm = ReglasServicioPublico.NormalizarReferencia(v);
-                var otra = norm is null ? null : _cuentas.FirstOrDefault(x => x.Id != c.Id && ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == norm);
-                if (otra is not null) { Mensaje($"La referencia {v} ya es de \"{otra.Alias}\".", true); await CargarAsync(); return; }
+                var otra = norm is null ? null : _cuentas.FirstOrDefault(x => x.Id != c.Id && x.Tipo == c.Tipo && ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == norm);
+                if (otra is not null) { Mensaje($"La referencia {v} ya es del servicio de {ReglasServicioPublico.NombreCorto(c.Tipo)} \"{otra.Alias}\".", true); await CargarAsync(); return; }
                 req = v.Length == 0 ? new(Limpiar: new[] { "numeroCuenta" }) : new(NumeroCuenta: v); break;
             case "periodicidad":
                 var p = TiposServicioPublico.Periodicidades.FirstOrDefault(x => x.Nombre == v);
@@ -483,9 +483,10 @@ public partial class ServiciosPublicosPagina
         if (alias.Length == 0) { Mensaje("Escribe el nombre del servicio.", true); return; }
         var refTxt = _nu.Referencia.Trim();
         var norm = ReglasServicioPublico.NormalizarReferencia(refTxt);
-        if (norm is not null && _cuentas.Any(x => ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == norm))
-        { Mensaje($"Ya hay un servicio con la referencia {refTxt}.", true); return; }
         var tipo = TiposServicioPublico.Todos.FirstOrDefault(x => x.Clave == _nu.Tipo) ?? TiposServicioPublico.Todos[0];
+        // Un contrato puede cobrar varios servicios (factura combinada): la referencia es unica POR TIPO.
+        if (norm is not null && _cuentas.Any(x => x.Tipo == tipo.Valor && ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == norm))
+        { Mensaje($"Ya hay un servicio de {ReglasServicioPublico.NombreCorto(tipo.Valor)} con la referencia {refTxt}.", true); return; }
         var per = TiposServicioPublico.Periodicidades.FirstOrDefault(x => x.Nombre == _nu.Periodicidad);
         var dia = SpxFormato.NumOrNull(_nu.DiaPago);
         if (dia is { } dd && (dd < 1 || dd > 31)) { Mensaje("El día de pago va de 1 a 31.", true); return; }

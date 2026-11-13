@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Directorio;
 using Propia.Application.MiCopropiedad;
+using Propia.Application.UsuariosAccesos;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Directorio;
@@ -24,10 +25,13 @@ public class PlantillasService : IPlantillasService
     private readonly IDirectorioService _dir;
     private readonly PropiaDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly IRolesService _roles;
+    private readonly IUsuariosService _usuarios;
 
-    public PlantillasService(IMiCopropiedadService mc, IDirectorioService dir, PropiaDbContext db, ITenantContext tenant)
+    public PlantillasService(IMiCopropiedadService mc, IDirectorioService dir, PropiaDbContext db, ITenantContext tenant,
+        IRolesService roles, IUsuariosService usuarios)
     {
-        _mc = mc; _dir = dir; _db = db; _tenant = tenant;
+        _mc = mc; _dir = dir; _db = db; _tenant = tenant; _roles = roles; _usuarios = usuarios;
     }
 
     // Paleta PROPIA (consistente con la plantilla de unidades y la app).
@@ -339,6 +343,132 @@ public class PlantillasService : IPlantillasService
         }
         return new(creados, actualizados, 0, errores.Count, errores);
     }
+
+    // =====================================================================================
+    // USUARIOS (2.5)
+    // =====================================================================================
+    private static readonly string[] UsuariosFijas =
+    {
+        "Tipo documento *", "Documento *", "Nombres *", "Apellidos *", "Email", "Teléfono", "Rol *", "Cargo",
+    };
+    private const int FilasConLista = 1000;
+
+    public async Task<byte[]> GenerarPlantillaUsuariosAsync(CancellationToken ct)
+    {
+        var roles = (await _roles.ListarRolesAsync(ct)).Where(r => r.Activo).Select(r => r.Nombre).ToArray();
+        using var wb = new XLWorkbook();
+        Instrucciones(wb, "PLANTILLA DE USUARIOS - PROPIA", new[]
+        {
+            "Con esta plantilla cargas USUARIOS de la copropiedad: cada fila es una persona con su rol.",
+            "Si la persona no existe en el Directorio se crea; si ya existe (mismo tipo y numero de documento) se usa la que hay.",
+            "Los usuarios quedan en estado PENDIENTE y NO se les envia invitacion: los invitas despues desde Usuarios.",
+            "",
+            "REGLAS:",
+            "- No cambies el ORDEN ni borres las columnas de encabezado; se leen por posicion.",
+            "- Obligatorios: Tipo documento, Documento, Nombres, Apellidos y Rol.",
+            "- 'Tipo documento' y 'Rol' deben ser un valor de la hoja 'Catalogos' (la columna Rol trae la lista de la copropiedad).",
+            "- Varios roles o varios cargos en una misma celda: separalos con coma (el primer rol es el principal).",
+            "- Si la persona ya tiene acceso ACTIVO no se cambia nada; si esta pendiente se actualizan sus roles y cargos.",
+            "- Una persona con el acceso inactivo no se reactiva por plantilla: hazlo desde Usuarios.",
+            "",
+            "EJEMPLO DE FILA:",
+            "CC | 1090111 | Ana | Perez | ana@correo.com | 3001112233 | " + (roles.FirstOrDefault() ?? "Rol") + " | Supervisora",
+        });
+        var ws = wb.AddWorksheet("Usuarios");
+        EscribirEncabezado(ws, UsuariosFijas);
+        AnchosYFreeze(ws, UsuariosFijas.Length);
+        ws.Column(5).Width = 26; ws.Column(7).Width = 26;
+        Catalogos(wb, ("Tipo documento", Enum.GetNames<TipoDocumento>()), ("Rol", roles));
+        // Listas desplegables (sin bloquear: un rol extra separado por coma se valida al cargar).
+        var cat = wb.Worksheet("Catalogos");
+        var dvTipo = ws.Range(2, 1, FilasConLista, 1).CreateDataValidation();
+        dvTipo.List(cat.Range(2, 1, Enum.GetNames<TipoDocumento>().Length + 1, 1), true);
+        dvTipo.ShowErrorMessage = false;
+        if (roles.Length > 0)
+        {
+            var dvRol = ws.Range(2, 7, FilasConLista, 7).CreateDataValidation();
+            dvRol.List(cat.Range(2, 3, roles.Length + 1, 3), true);
+            dvRol.ShowErrorMessage = false;
+        }
+        return Bytes(wb);
+    }
+
+    public async Task<ImportarUsuariosResultado> ImportarUsuariosAsync(Stream xlsx, CancellationToken ct)
+    {
+        var errores = new List<ImportarErrorFila>();
+        int creados = 0, actualizados = 0, sinCambios = 0;
+        using var wb = ExcelEntrada.Abrir(xlsx);   // .xlsx o .xls
+        if (!wb.TryGetWorksheet("Usuarios", out var ws))
+            return new(0, 0, 0, 1, new[] { new ImportarErrorFila("Usuarios", 0, "No se encontró la hoja 'Usuarios'. Descarga la plantilla de nuevo.") });
+
+        var roles = (await _roles.ListarRolesAsync(ct)).Where(r => r.Activo).ToList();
+        var rolPorNombre = new Dictionary<string, RolDto>();
+        foreach (var r in roles) rolPorNombre.TryAdd(ClaveTexto(r.Nombre), r);
+        var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in ws.RowsUsed().Skip(1))
+        {
+            ct.ThrowIfCancellationRequested();
+            string? tipoTxt = Str(row.Cell(1)), doc = Str(row.Cell(2)), nombres = Str(row.Cell(3)), apellidos = Str(row.Cell(4)),
+                email = Str(row.Cell(5)), telefono = Str(row.Cell(6)), rolesTxt = Str(row.Cell(7)), cargosTxt = Str(row.Cell(8));
+            if (tipoTxt is null && doc is null && nombres is null && apellidos is null && email is null && telefono is null && rolesTxt is null && cargosTxt is null)
+                continue;   // fila vacia
+            try
+            {
+                if (doc is null || nombres is null || apellidos is null)
+                    throw new InvalidOperationException("Faltan datos obligatorios: Documento, Nombres y Apellidos.");
+                var tipoDoc = TipoDocumento.CC;
+                if (tipoTxt is not null)
+                    tipoDoc = ParseEnum<TipoDocumento>(tipoTxt) ?? throw new InvalidOperationException($"El tipo de documento '{tipoTxt}' no es válido (ver hoja Catalogos).");
+                if (!vistos.Add($"{tipoDoc}|{doc}")) throw new InvalidOperationException("Documento repetido en la plantilla.");
+
+                if (rolesTxt is null) throw new InvalidOperationException("Falta el rol.");
+                var rolIds = new List<Guid>();
+                foreach (var nombreRol in Partir(rolesTxt))
+                {
+                    if (!rolPorNombre.TryGetValue(ClaveTexto(nombreRol), out var rol))
+                        throw new InvalidOperationException($"El rol '{nombreRol}' no existe en la copropiedad (ver hoja Catalogos).");
+                    if (!rolIds.Contains(rol.Id)) rolIds.Add(rol.Id);
+                }
+                var cargos = cargosTxt is null ? new List<string>() : Partir(cargosTxt).ToList();
+
+                // Persona: la del Directorio si existe (solo se completan correo/telefono vacios); si no, se crea.
+                Guid personaId;
+                var existe = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(tipoDoc, doc), ct);
+                if (existe is not null)
+                {
+                    await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, existe.Id, ct);
+                    var nuevoEmail = string.IsNullOrWhiteSpace(existe.Email) ? email : existe.Email;
+                    var nuevoTel = string.IsNullOrWhiteSpace(existe.Telefono) ? telefono : existe.Telefono;
+                    if (nuevoEmail != existe.Email || nuevoTel != existe.Telefono)
+                        await _dir.ActualizarPersonaAsync(existe.Id, new ActualizarPersonaRequest(
+                            existe.Nombres, existe.Apellidos, nuevoEmail, nuevoTel, existe.FotoUrl, existe.FechaNacimiento, existe.Genero), ct);
+                    personaId = existe.Id;
+                }
+                else
+                {
+                    personaId = (await _dir.CrearPersonaAsync(new CrearPersonaRequest(tipoDoc, doc, nombres, apellidos, email, telefono, null, null), ct)).Id;
+                }
+
+                var estado = await _db.UsuariosTenant.AsNoTracking().Where(u => u.PersonaId == personaId)
+                    .Select(u => (EstadoUsuarioTenant?)u.Estado).FirstOrDefaultAsync(ct);
+                if (estado == EstadoUsuarioTenant.Activo) { sinCambios++; continue; }
+                if (estado == EstadoUsuarioTenant.Inactivo)
+                    throw new InvalidOperationException("La persona tiene el acceso inactivo: reactívalo desde Usuarios.");
+                await _usuarios.CrearUsuarioEnAltaAsync(new CrearUsuarioAltaRequest(personaId, rolIds, cargos), ct);
+                if (estado is null) creados++; else actualizados++;
+            }
+            catch (Exception ex) { errores.Add(new("Usuarios", row.RowNumber(), Msg(ex))); }
+        }
+        return new(creados, actualizados, sinCambios, errores.Count, errores);
+    }
+
+    // "Administración" == "administracion " (sin tildes, minusculas, sin espacios de mas).
+    private static string ClaveTexto(string s) => new string(s.Trim().Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).ToLowerInvariant();
+
+    private static IEnumerable<string> Partir(string s) => s.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
 
     // =====================================================================================
     // HELPERS

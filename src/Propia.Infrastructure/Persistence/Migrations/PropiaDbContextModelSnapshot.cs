@@ -4200,7 +4200,7 @@ namespace Propia.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("TenantId", "ReferenciaNormalizada")
+                    b.HasIndex("TenantId", "ReferenciaNormalizada", "Tipo")
                         .IsUnique()
                         .HasFilter("referencia_normalizada IS NOT NULL");
 

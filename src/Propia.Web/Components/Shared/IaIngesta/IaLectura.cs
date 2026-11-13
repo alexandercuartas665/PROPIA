@@ -37,6 +37,8 @@ public sealed class IaLectura
     private readonly Stopwatch _reloj = new();
 
     public void EnCola() { Estado = IaEstado.Cola; Notificar(); }
+    /// <summary>Lectura ya terminada en otra tarjeta (ej. un servicio mas de una factura combinada): nace lista, sin transicion.</summary>
+    public void YaLeido() { Estado = IaEstado.Listo; Visto = IaEstado.Listo; Pct = 100; Notificar(); }
     public void Pendiente() { Estado = IaEstado.Pendiente; Notificar(); }
     public void Fallo(string msg, string? corto = null) { Estado = IaEstado.Error; Msg = msg; Corto = corto; Notificar(); }
     public void Reiniciar() { Estado = IaEstado.Ninguno; Encontrados.Clear(); Campos = new(); Dudosos = new(); Msg = null; Corto = null; Notificar(); }

@@ -1,5 +1,46 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **USUARIOS - CARGA POR PLANTILLA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Usuarios > "Descargar plantilla" (`GET /api/usuarios/plantilla`: hojas Instrucciones, Usuarios y Catalogos con la lista de
+>   roles activos de la copropiedad) y "Cargar plantilla" (`POST /api/usuarios/importar`, permiso UsuariosAccesos/Crear).
+> - Por fila: busca la persona por tipo+documento en el Directorio (si no existe la crea), da el alta en PENDIENTE con sus roles
+>   y cargos, y NO envia invitacion. Activos no se tocan; inactivos no se reactivan; errores por fila con su motivo.
+
+> **SERVICIOS PUBLICOS - OLA D, CREAR SERVICIOS CON IA (2026-11-13): SIN MIGRACION, SOLO Web.**
+> - Configuracion > bloque "Crear servicios con IA" > "Subir facturas": pasa a Recibos en modo crear. Cada recibo cuyo servicio
+>   no existe sale como "Servicio nuevo" con un solo boton "Crear servicio y registrar" (crea la cuenta con tipo, prestador,
+>   referencia, unidad y dia de pago del recibo, y registra ese mes con documento y desglose). "Crear y registrar todos (N)".
+>   Usa los endpoints existentes `recibos/agregar-servicio` y `recibos/confirmar` (requiere la migracion de la ola C).
+
+> **SERVICIOS PUBLICOS - OLA C, FACTURAS COMBINADAS (2026-11-13): 1 MIGRACION (solo indice) + API y Web.**
+> - **MIGRACION `20261113131102_ServiciosPublicosReferenciaPorTipo`** (va DESPUES de `AddYCloudRutaUniversal`): cambia el
+>   indice unico de `cuentas_servicio_publico` de (tenant_id, referencia_normalizada) a (tenant_id, referencia_normalizada, tipo).
+>   No toca datos ni RLS; las cuentas actuales siguen siendo validas. Aplicada en dev. En prod: solo con OK de Alex.
+> - Un contrato puede tener un servicio POR TIPO (EMCALI: energia, acueducto y aseo con el mismo numero). Una factura que
+>   cobra varios servicios se reparte en una tarjeta por servicio (clave nueva `servicios` del perfil `recibo_servicio`),
+>   cada una se valida contra el servicio de SU tipo y todas comparten el documento. Si el contrato no tiene servicio de ese
+>   tipo, la tarjeta ofrece "Crear servicio de <tipo>".
+> - **Verificar en PROD tras aplicar**: `select indexdef from pg_indexes where indexname like 'IX_cuentas_servicio_publico_tenant_id_referencia_normalizada%';`
+>   debe incluir `tipo`.
+
+> **SERVICIOS PUBLICOS - OLA B (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Al leer un recibo, si es de OTRO tipo que el servicio con el que coincidio la referencia (ej. recibo de aseo de EMCALI en
+>   el servicio de energia con el mismo contrato) o mide en otra unidad, la tarjeta lo avisa antes de confirmar.
+> - Consumo: si la IA no lo trae pero hay lecturas, se registra lectura actual - anterior. Los consumos se muestran con
+>   decimales (0,19 ya no se ve como 0). Instrucciones de lectura del perfil `recibo_servicio` reforzadas (tipo por lo que
+>   COBRA el recibo; consumo nunca es la tarifa ni los dias).
+> - Historial: flecha por mes que despliega el desglose en linea.
+
+> **SERVICIOS PUBLICOS - OLA A (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Historial de recibos (`/servicios` > Recibos y consumos): columna **Documento** (Ver / "Sin guardar") y boton para
+>   **eliminar UN recibo** (un mes) con confirmacion; tambien desde el modal Desglose ("Eliminar este recibo"). Borra el mes,
+>   su desglose (cascada) y su documento del storage si ningun otro registro lo usa.
+> - `OcrController`: si el documento origen NO se puede guardar en el storage, ahora queda en el log como
+>   `[OCR] No se pudo guardar el documento origen ...` (antes se perdia en silencio) y la tarjeta del recibo lo avisa.
+> - **ACCION EN PROD tras el deploy (Alex reporto que en prod el PDF no queda guardado):** cargar un recibo PDF en `/servicios`
+>   y buscar en el log de Railway `[OCR] No se pudo guardar el documento origen`: la excepcion dice por que falla R2
+>   (credenciales, bucket, permisos). Reportar el mensaje exacto.
+
 > **DICTADO POR VOZ + "MEJORAR REDACCION" CON IA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Microfono en las cajas `textarea[data-dictado]` (voz a texto del navegador, `js/propia-dictado.js?v=11` +
 >   `css/propia-dictado.css?v=11`) y boton ✨ que propone una version mejorada del texto (el usuario decide si la usa). En
