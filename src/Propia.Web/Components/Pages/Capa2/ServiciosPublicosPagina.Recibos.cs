@@ -31,6 +31,8 @@ public sealed class ReciboEnCola
     public bool SinDocumento { get; set; }
     /// <summary>Factura combinada: servicio de esta tarjeta ("Aseo · 2 de 3"); null en un recibo de un solo servicio.</summary>
     public string? Parte { get; set; }
+    /// <summary>Subido desde "Crear servicios con IA" (Configuracion): si el servicio no existe, un solo clic lo crea y registra el mes.</summary>
+    public bool ModoCrear { get; set; }
 }
 
 /// <summary>Pestana Recibos y consumo (replica: renderRecibos()).</summary>
@@ -107,6 +109,8 @@ public partial class ServiciosPublicosPagina
             }
             catch { Mensaje($"No se pudo leer {f.Name} (máximo 20 MB).", true); }
         }
+        // "Crear servicios con IA" (Configuracion): esta tanda crea los servicios que falten.
+        if (_modoCrear) { foreach (var n in nuevos) n.ModoCrear = true; _modoCrear = false; }
         Encolar(nuevos);
     }
 
@@ -192,7 +196,7 @@ public partial class ServiciosPublicosPagina
             for (var i = 0; i < partes.Count; i++)
             {
                 var item = i == 0 ? q : new ReciboEnCola { FileName = q.FileName, Bytes = q.Bytes, Mime = q.Mime, Ext = q.Ext };
-                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.Ia.YaLeido(); _cola.Insert(pos + i, item); }
+                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.ModoCrear = q.ModoCrear; item.Ia.YaLeido(); _cola.Insert(pos + i, item); }
                 item.Req = partes[i];
                 item.Parte = $"{TiposServicioPublico.De(ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio) ?? TipoServicioPublico.EnergiaElectrica).Nombre} · {i + 1} de {partes.Count}";
                 item.TipoDetectado = ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio);
@@ -293,6 +297,59 @@ public partial class ServiciosPublicosPagina
     {
         foreach (var q in _cola.Where(x => x.Req is not null && x.Ia.Estado == IaEstado.Listo).ToList())
             if (await EvaluarAsync(q.Req!) is { } ev) q.Eval = ev;
+    }
+
+    // ===== "Crear servicios con IA" (ola D): desde Configuracion se suben facturas y cada servicio nuevo se crea y
+    // registra ese mes en un solo paso (tipo, prestador, referencia y unidad salen del recibo). =====
+    private bool _modoCrear;
+
+    private async Task CrearConIaAsync()
+    {
+        _modoCrear = true;
+        await IrRecibosAsync(null);
+        _elegirArchivo = true;
+        StateHasChanged();
+    }
+
+    /// <summary>Tarjetas de "Crear servicios con IA" cuyo servicio aun no existe (ajeno o falta ese tipo en el contrato).</summary>
+    private IEnumerable<ReciboEnCola> PorCrear => _cola.Where(q => q.ModoCrear && q.Ia.Estado == IaEstado.Listo && q.Req is not null
+        && q.Eval is { CuentaId: null } && !q.Ocupado);
+
+    private async Task CrearYRegistrarAsync(ReciboEnCola q)
+    {
+        if (q.Req is null) return;
+        if (string.IsNullOrWhiteSpace(q.Req.Referencia)) { Mensaje("El recibo no trae la referencia del contrato: no se puede crear el servicio.", true); return; }
+        q.Ocupado = true;
+        try
+        {
+            var r = await Auth().PostAsJsonAsync("/api/servicios-publicos/recibos/agregar-servicio", q.Req);
+            if (!r.IsSuccessStatusCode) { Mensaje(await SpxFormato.ErrorDeAsync(r, "No se pudo crear el servicio."), true); return; }
+            q.Eval = await r.Content.ReadFromJsonAsync<EvaluacionReciboDto>() ?? q.Eval;
+            await CargarAsync();
+            if (q.Eval?.CuentaId is null) { Mensaje("El servicio se creó, pero el recibo no quedó asociado: revísalo.", true); return; }
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); return; }
+        finally { q.Ocupado = false; }
+        await ConfirmarAsync(q);   // registra el mes con su documento y desglose, y quita la tarjeta
+    }
+
+    private bool _creandoTodos;
+    private async Task CrearYRegistrarTodosAsync()
+    {
+        if (_creandoTodos) return;
+        _creandoTodos = true;
+        try
+        {
+            // Uno a uno: cada alta reevalua la cola (otra parte de la misma factura puede quedar ya con servicio).
+            while (PorCrear.FirstOrDefault() is { } q)
+            {
+                var antes = _cola.Count;
+                await CrearYRegistrarAsync(q);
+                if (_cola.Count == antes && _cola.Contains(q)) break;   // fallo: no insistir en bucle
+                StateHasChanged();
+            }
+        }
+        finally { _creandoTodos = false; }
     }
 
     private async Task ConfirmarAsync(ReciboEnCola q)

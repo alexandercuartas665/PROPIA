@@ -1,5 +1,11 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS - OLA D, CREAR SERVICIOS CON IA (2026-11-13): SIN MIGRACION, SOLO Web.**
+> - Configuracion > bloque "Crear servicios con IA" > "Subir facturas": pasa a Recibos en modo crear. Cada recibo cuyo servicio
+>   no existe sale como "Servicio nuevo" con un solo boton "Crear servicio y registrar" (crea la cuenta con tipo, prestador,
+>   referencia, unidad y dia de pago del recibo, y registra ese mes con documento y desglose). "Crear y registrar todos (N)".
+>   Usa los endpoints existentes `recibos/agregar-servicio` y `recibos/confirmar` (requiere la migracion de la ola C).
+
 > **SERVICIOS PUBLICOS - OLA C, FACTURAS COMBINADAS (2026-11-13): 1 MIGRACION (solo indice) + API y Web.**
 > - **MIGRACION `20261113131102_ServiciosPublicosReferenciaPorTipo`** (va DESPUES de `AddYCloudRutaUniversal`): cambia el
 >   indice unico de `cuentas_servicio_publico` de (tenant_id, referencia_normalizada) a (tenant_id, referencia_normalizada, tipo).

@@ -61,6 +61,15 @@ else
             </div>
         </div>
 
+        <div class="sp-card spx-crear-ia">
+            <div class="spx-carga-ic"><i class="fi fi-rr-sparkles"></i></div>
+            <div class="spx-crear-ia-txt">
+                <div class="spx-carga-t">Crear servicios con IA</div>
+                <div class="spx-carga-s">Sube las facturas (una o varias, también las que cobran varios servicios con un mismo contrato). La IA arma cada servicio con su tipo, prestador, referencia y unidad, y registra ese mes con su documento y desglose.</div>
+            </div>
+            <button type="button" class="srv-btn-primary sm" @onclick="CrearConIaAsync"><i class="fi fi-rr-upload"></i> Subir facturas</button>
+        </div>
+
         <div class="spx-bandeja">
             <div class="dst-filtros">
                 <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="StateHasChanged" />
@@ -270,9 +279,20 @@ else
             </div>
         </div>
 
+        @if (_modoCrear)
+        {
+            <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-sparkles"></i> Modo "Crear servicios con IA": las facturas que subas ahora crean su servicio y registran el mes.
+                <button type="button" class="spx-link" @onclick="() => _modoCrear = false">Cancelar</button></div>
+        }
         @if (_cola.Count > 0)
         {
-            <div class="spx-cola-h">Recibos por revisar</div>
+            var nCrear = PorCrear.Count();
+            <div class="spx-cola-h spx-cola-h--acts"><span>Recibos por revisar</span>
+                @if (nCrear > 1)
+                {
+                    <button type="button" class="srv-btn-primary sm" disabled="@_creandoTodos" @onclick="CrearYRegistrarTodosAsync"><i class="fi fi-rr-sparkles"></i> @("Crear y registrar todos (" + nCrear + ")")</button>
+                }
+            </div>
             <div class="spx-cola">
                 @foreach (var q in _cola)
                 {
@@ -526,7 +546,38 @@ else
                     @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } cf && cf != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(cf) + " " + (d.UnidadMedida ?? ""))</b></div> }
                 </div></div>
                 <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
-                    <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">@("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft))</button></div>
+                    @if (q.ModoCrear)
+                    {
+                        <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => CrearYRegistrarAsync(q)"><i class="fi fi-rr-check"></i> @("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft) + " y registrar")</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">@("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft))</button>
+                    }</div>
+            </div>;
+        }
+        if (v.CuentaId is null && q.ModoCrear)
+        {
+            var tn = TiposServicioPublico.De(q.TipoDetectado ?? TipoServicioPublico.EnergiaElectrica);
+            var sinRef = string.IsNullOrWhiteSpace(d.Referencia);
+            return @<div class="sp-card spx-q spx-q--nuevo @(anim ? "iai-anim" : "")" @key="q.Id">
+                <div class="spx-q-head"><i class="fi @tn.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge spx-q-nuevo-b">Servicio nuevo</span></div>
+                @if (sinRef)
+                {
+                    <div class="spx-val spx-val--no"><i class="fi fi-rr-cross-circle"></i><div>La IA no encontró la referencia del contrato en este recibo: sin ella no se puede crear el servicio. Créalo a mano en Configuración.</div></div>
+                }
+                else
+                {
+                    <div class="spx-val spx-val--ok"><i class="fi fi-rr-sparkles"></i><div>Se creará el servicio de <b>@tn.Nombre</b>@(string.IsNullOrWhiteSpace(d.Prestador) ? "" : " de " + d.Prestador) con la referencia <b>@d.Referencia</b> y se registrará el recibo de <b>@(v.PeriodoLabel ?? "-")</b>.</div></div>
+                }
+                <div class="spx-q-body"><div class="spx-datos">
+                    <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
+                    <div class="spx-dato"><span>Fecha límite de pago</span><b>@ReglasServicioPublico.FechaCorta(d.FechaLimitePago)</b></div>
+                    @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } cn && cn != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(cn) + " " + (d.UnidadMedida ?? tn.Unidad ?? ""))</b></div> }
+                    <div class="spx-dato"><span>Valor a pagar</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
+                </div><div><div class="spx-sec spx-sec--sm">Desglose del recibo</div><SpxDesglose Conceptos="@(d.Conceptos ?? Array.Empty<ConceptoReciboDto>())" Total="@(d.ValorTotal ?? d.ValorPeriodo)" /></div></div>
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
+                    <button type="button" class="srv-btn-primary sm" disabled="@(q.Ocupado || sinRef)" @onclick="() => CrearYRegistrarAsync(q)"><i class="fi fi-rr-check"></i> Crear servicio y registrar</button></div>
             </div>;
         }
         if (v.CuentaId is null)
