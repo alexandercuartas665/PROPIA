@@ -14,6 +14,9 @@ public interface IWhatsAppLineService
 
     /// <summary>Asigna (o desasigna con null) la linea a un UsuarioTenant de la copropiedad.</summary>
     Task<WhatsAppLineDto?> AssignAsync(Guid lineId, Guid? usuarioTenantId, CancellationToken ct = default);
+
+    /// <summary>Guarda (cifrado) o quita el secreto del webhook de entrada de una linea YCloud.</summary>
+    Task<WhatsAppLineDto?> SetYCloudWebhookSecretAsync(Guid lineId, string? secreto, CancellationToken ct = default);
 }
 
 /// <summary>

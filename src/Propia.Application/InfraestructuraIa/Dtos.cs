@@ -19,7 +19,14 @@ public sealed record WhatsAppLineDto(
     DateTimeOffset? LastStatusAt,
     WhatsAppProvider Provider = WhatsAppProvider.Evolution,
     string? CloudPhoneNumberId = null,
-    string? YCloudFromNumber = null);
+    string? YCloudFromNumber = null,
+    /// <summary>La linea YCloud tiene guardado el secreto del webhook de entrada.</summary>
+    bool YCloudWebhookConfigurado = false);
+
+/// <summary>Secreto del endpoint de webhook de YCloud (vacio = quitarlo).</summary>
+public sealed record YCloudWebhookSecretoRequest(string? Secreto);
+/// <summary>Ruta del webhook de entrada de la copropiedad (se antepone el dominio publico) y si ya hay secreto.</summary>
+public sealed record YCloudWebhookInfoDto(string Ruta, bool Configurado);
 
 public sealed record CreateWhatsAppLineRequest(
     string InstanceName,
@@ -31,7 +38,8 @@ public sealed record CreateWhatsAppLineRequest(
     string? CloudWebhookVerifyToken = null,
     // YCloud (Provider == YCloud): API key de la cuenta + numero remitente registrado.
     string? YCloudApiKey = null,
-    string? YCloudFromNumber = null);
+    string? YCloudFromNumber = null,
+    string? YCloudWebhookSecret = null);
 
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);

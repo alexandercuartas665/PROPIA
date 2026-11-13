@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **WEBHOOK DE ENTRADA DE YCLOUD (2026-11-12): 1 MIGRACION (solo columna) + API y Web.**
+> - **MIGRACION `20261112234705_AddYCloudWebhookSecret`** (va DESPUES de `PorteriaHuecosOperacion`): columna
+>   `whats_app_lines.y_cloud_webhook_secret_encrypted` (text, nullable). Tabla existente (RLS ya aplica).
+> - Endpoint publico `POST /webhooks/ycloud/{tenantId}`: mensajes entrantes (`whatsapp.inbound_message.received`, entran a la
+>   misma ingesta que Meta/Evolution: conversaciones, lista negra, agentes) y estados de entrega (`whatsapp.message.updated`).
+>   Firma `YCloud-Signature: t=..,s=..` (HMAC-SHA256 de "t.cuerpo" con el secreto del endpoint, ventana 10 min).
+>   **En Production sin secreto configurado responde 401** (`webhook_not_configured`).
+> - Configuracion por copropiedad (no hay variables de entorno): Lineas WhatsApp > boton **Webhook** de la linea YCloud muestra
+>   la URL (`https://app.propia-ad.com/webhooks/ycloud/{tenantId}`); en YCloud > Developers > Webhooks se crea el endpoint con
+>   esa URL y los 2 eventos, y el secreto (signing secret) se pega en PROPIA.
+
 > **PLANTILLAS DE WHATSAPP (2026-11-12, rama feat/plantillas-whatsapp integrada a main): 1 MIGRACION (TABLA NUEVA con RLS) + API y Web.**
 > - **MIGRACION `20261105113252_AddPlantillasWhatsApp`**: tabla `plantillas_whatsapp` (tenant, RLS ENABLE + FORCE + policy
 >   tenant_isolation + GRANT a propia_app, en la misma migracion). OJO: queda INTERCALADA (timestamp anterior a migraciones de

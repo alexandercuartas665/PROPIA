@@ -17,16 +17,18 @@ public class WebhooksController : ControllerBase
     private readonly IWompiWebhookService _wompi;
     private readonly IChatIngestService _chatIngest;
     private readonly IMetaWebhookService _meta;
+    private readonly IYCloudWebhookService _ycloud;
     private readonly IDeliveryStatusService _deliveryStatus;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IDeliveryStatusService deliveryStatus, IConfiguration config, IWebHostEnvironment env, ILogger<WebhooksController> logger)
+    public WebhooksController(IWompiWebhookService wompi, IChatIngestService chatIngest, IMetaWebhookService meta, IYCloudWebhookService ycloud, IDeliveryStatusService deliveryStatus, IConfiguration config, IWebHostEnvironment env, ILogger<WebhooksController> logger)
     {
         _wompi = wompi;
         _chatIngest = chatIngest;
         _meta = meta;
+        _ycloud = ycloud;
         _deliveryStatus = deliveryStatus;
         _config = config;
         _env = env;
@@ -199,6 +201,50 @@ public class WebhooksController : ControllerBase
             }
             var result = await _meta.IngestAsync(tenantId, parsed.PhoneNumberId, parsed.Payload, ct);
             return Ok(new { status = result.ToString().ToLowerInvariant() });
+        }
+    }
+
+    /// <summary>
+    /// Entrantes y estados de entrega de YCloud (lineas YCloud del tenant). La firma YCloud-Signature se valida
+    /// con el secreto del endpoint guardado en la linea; sin secreto configurado se rechaza en Production (en
+    /// Development se acepta para probar). Responde 200 a todo lo valido (YCloud reintenta si no recibe 2xx).
+    /// </summary>
+    [HttpPost("ycloud/{tenantId:guid}")]
+    public async Task<IActionResult> YCloudInbound(Guid tenantId, CancellationToken ct)
+    {
+        using var reader = new StreamReader(Request.Body);
+        var rawJson = await reader.ReadToEndAsync(ct);
+        if (string.IsNullOrWhiteSpace(rawJson)) { return Ok(new { status = "empty" }); }
+
+        var firma = await _ycloud.VerificarFirmaAsync(tenantId, rawJson, Request.Headers["YCloud-Signature"].ToString(), ct);
+        if (firma == FirmaYCloud.Invalida)
+        {
+            _logger.LogWarning("Webhook YCloud rechazado: firma invalida (tenant {Tenant}).", tenantId);
+            return Unauthorized(new { error = "invalid_signature" });
+        }
+        if (firma == FirmaYCloud.SinSecreto && !_env.IsDevelopment())
+        {
+            _logger.LogWarning("Webhook YCloud rechazado: ninguna linea YCloud tiene secreto de webhook (tenant {Tenant}).", tenantId);
+            return Unauthorized(new { error = "webhook_not_configured" });
+        }
+
+        System.Text.Json.JsonDocument doc;
+        try { doc = System.Text.Json.JsonDocument.Parse(rawJson); }
+        catch { return Ok(new { status = "invalid_json" }); }
+        using (doc)
+        {
+            if (YCloudWebhookParser.ParseEntrante(doc.RootElement) is { } entrante)
+            {
+                var result = await _ycloud.IngestAsync(tenantId, entrante.NumeroDestino, entrante.Payload, ct);
+                return Ok(new { status = result.ToString().ToLowerInvariant() });
+            }
+            var estados = YCloudWebhookParser.ParseEstados(doc.RootElement);
+            if (estados.Count > 0)
+            {
+                var n = await _deliveryStatus.AplicarAsync(tenantId, estados, ct);
+                return Ok(new { status = "status_processed", updated = n });
+            }
+            return Ok(new { status = "ignored" });
         }
     }
 

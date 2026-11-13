@@ -28,7 +28,7 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
     {
         return await _db.WhatsAppLines.AsNoTracking()
             .OrderBy(l => l.InstanceName)
-            .Select(l => new WhatsAppLineDto(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber))
+            .Select(l => new WhatsAppLineDto(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber, l.YCloudWebhookSecretEncrypted != null))
             .ToListAsync(ct);
     }
 
@@ -78,6 +78,7 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
             // El numero remitente se guarda solo con digitos (E.164 sin "+"), que es el "from" de YCloud.
             line.YCloudFromNumber = new string(request.YCloudFromNumber.Where(char.IsDigit).ToArray());
             line.YCloudApiKeyEncrypted = _secret.Protect(request.YCloudApiKey.Trim());
+            line.YCloudWebhookSecretEncrypted = string.IsNullOrWhiteSpace(request.YCloudWebhookSecret) ? null : _secret.Protect(request.YCloudWebhookSecret.Trim());
         }
 
         _db.WhatsAppLines.Add(line);
@@ -128,6 +129,18 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
             .FirstOrDefaultAsync(ct);
     }
 
+    public async Task<WhatsAppLineDto?> SetYCloudWebhookSecretAsync(Guid lineId, string? secreto, CancellationToken ct = default)
+    {
+        var line = await _db.WhatsAppLines.FirstOrDefaultAsync(l => l.Id == lineId, ct);
+        if (line is null) return null;
+        if (line.Provider != WhatsAppProvider.YCloud)
+            throw new InvalidOperationException("El webhook de YCloud solo aplica a lineas YCloud.");
+        line.YCloudWebhookSecretEncrypted = string.IsNullOrWhiteSpace(secreto) ? null : _secret.Protect(secreto.Trim());
+        line.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Map(line);
+    }
+
     private static WhatsAppLineDto Map(WhatsAppLine l) =>
-        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber);
+        new(l.Id, l.InstanceName, l.PhoneNumber, l.Status, l.AssignedToUsuarioTenantId, l.LastConnectedAt, l.LastStatusAt, l.Provider, l.CloudPhoneNumberId, l.YCloudFromNumber, l.YCloudWebhookSecretEncrypted != null);
 }

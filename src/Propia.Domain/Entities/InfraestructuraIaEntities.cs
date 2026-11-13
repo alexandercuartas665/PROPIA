@@ -54,6 +54,10 @@ public class WhatsAppLine : TenantEntity
 
     /// <summary>Numero remitente de WhatsApp registrado en YCloud (E.164, el "from" de los envios).</summary>
     public string? YCloudFromNumber { get; set; }
+
+    /// <summary>Secreto del endpoint de webhook creado en YCloud (cifrado). Valida la firma YCloud-Signature
+    /// de /webhooks/ycloud/{tenantId} (mensajes entrantes y estados de entrega).</summary>
+    public string? YCloudWebhookSecretEncrypted { get; set; }
 }
 
 /// <summary>

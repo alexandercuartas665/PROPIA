@@ -128,6 +128,10 @@
                             <button class="lw-btn-sm dark" @onclick="() => ConectarAsync(line)" disabled="@_busy">@(line.Provider == WhatsAppProvider.Evolution ? "Conectar / QR" : "Validar")</button>
                         }
                         <button class="lw-btn-sm @(conn ? "dark" : "")" @onclick="() => AbrirProbar(line.Id)">Probar envio</button>
+                        @if (line.Provider == WhatsAppProvider.YCloud)
+                        {
+                            <button class="lw-btn-sm @(line.YCloudWebhookConfigurado ? "" : "warn")" title="@(line.YCloudWebhookConfigurado ? "Webhook de entrada configurado" : "Configura el webhook para recibir mensajes")" @onclick="() => AbrirWebhookAsync(line)" disabled="@_busy">@(line.YCloudWebhookConfigurado ? "Webhook ✓" : "Webhook")</button>
+                        }
                         <button class="lw-btn-sm" @onclick="() => RefrescarAsync(line.Id)" disabled="@_busy">Actualizar</button>
                         @if (conn)
                         {
@@ -248,6 +252,40 @@
     </div>
 }
 
+@* ---- Modal webhook de entrada (YCloud) ---- *@
+@if (_showWebhook && _webhookLine is not null)
+{
+    <div class="lw-ov" @onclick="() => _showWebhook = false">
+        <div class="lw-modal" style="width:min(560px,96vw)" @onclick:stopPropagation="true">
+            <h5>Webhook de entrada · @_webhookLine.InstanceName</h5>
+            <div class="lw-hint">Sin el webhook la línea solo envía: los mensajes que llegan por YCloud (respuestas de residentes y de los agentes) no entran a PROPIA.</div>
+            @if (!string.IsNullOrEmpty(_webhookMsg)) { <div class="@(_webhookOk ? "lw-ok" : "lw-err")">@_webhookMsg</div> }
+            <div class="lw-fld">
+                <label>1. URL del webhook (cópiala en YCloud)</label>
+                <div style="display:flex;gap:6px">
+                    <input class="lw-input" readonly value="@_webhookUrl" />
+                    <button class="lw-btn-ghost" @onclick="CopiarUrlAsync">@(_copiado ? "Copiada" : "Copiar")</button>
+                </div>
+                @if (_webhookLocal) { <div class="lw-hint" style="margin-top:6px">Estás en un entorno local: YCloud no alcanza esta dirección. Configura el webhook desde la app publicada.</div> }
+            </div>
+            <ol class="lw-pasos">
+                <li>En YCloud entra a <b>Developers &gt; Webhooks</b> y crea un endpoint con esa URL.</li>
+                <li>Activa los eventos <b>whatsapp.inbound_message.received</b> y <b>whatsapp.message.updated</b>.</li>
+                <li>Copia el <b>secreto</b> (signing secret) del endpoint y pégalo aquí.</li>
+            </ol>
+            <div class="lw-fld">
+                <label>2. Secreto del endpoint @(_webhookLine.YCloudWebhookConfigurado ? "(ya hay uno guardado: escribe otro para cambiarlo)" : "")</label>
+                <input class="lw-input" type="password" autocomplete="off" @bind="_webhookSecreto" @bind:event="oninput" placeholder="whsec_..." />
+            </div>
+            <div class="lw-modal-foot">
+                @if (_webhookLine.YCloudWebhookConfigurado) { <button class="lw-btn-ghost" style="margin-right:auto" @onclick="() => GuardarWebhookAsync(true)" disabled="@_busy">Quitar secreto</button> }
+                <button class="lw-btn-ghost" @onclick="() => _showWebhook = false">Cerrar</button>
+                <button class="lw-btn-primary" @onclick="() => GuardarWebhookAsync(false)" disabled="@(_busy || string.IsNullOrWhiteSpace(_webhookSecreto))">Guardar secreto</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ---- Modal eliminar ---- *@
 @if (_showEliminar && _eliminarLine is not null)
 {
@@ -326,6 +364,9 @@
     .lw-input { width:100%; border:1px solid var(--propia-border-card); border-radius:9px; padding:9px 12px; font-size:13px; color:var(--propia-text-body); outline:none; box-sizing:border-box; font-family:inherit; }
     .lw-input:focus { border-color:var(--propia-brand); }
     .lw-modal-foot { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+    .lw-hint { font-size:12px; color:var(--propia-text-muted); line-height:1.45; margin-bottom:12px; }
+    .lw-pasos { font-size:12.5px; color:var(--propia-text-body); padding-left:18px; margin:0 0 12px; line-height:1.55; }
+    .lw-btn-sm.warn { border-color:var(--propia-warning-border, var(--propia-border-card)); background:var(--propia-warning-bg); color:var(--propia-warning); }
     .lw-btn-ghost { font-size:12.5px; font-weight:700; padding:9px 14px; border-radius:9px; border:1px solid var(--propia-border-card); background:var(--propia-bg-card); color:var(--propia-text-secondary); cursor:pointer; }
     .lw-btn-ghost:hover { border-color:var(--propia-text-faint); }
 
@@ -600,6 +641,51 @@
         _busy = true;
         try { await Auth().PostAsync($"/api/ia/lineas/{id}/desconectar", null); await CargarAsync(); }
         catch (Exception ex) { _loadError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ----- Webhook de entrada de YCloud -----
+    private bool _showWebhook, _webhookOk, _webhookLocal, _copiado;
+    private WhatsAppLineDto? _webhookLine;
+    private string _webhookUrl = "", _webhookSecreto = "";
+    private string? _webhookMsg;
+
+    private async Task AbrirWebhookAsync(WhatsAppLineDto line)
+    {
+        _webhookLine = line; _webhookSecreto = ""; _webhookMsg = null; _copiado = false;
+        try
+        {
+            var info = await Auth().GetFromJsonAsync<YCloudWebhookInfoDto>($"/api/ia/lineas/{line.Id}/ycloud-webhook");
+            var baseUri = new Uri(Nav.BaseUri);
+            _webhookLocal = baseUri.IsLoopback;
+            _webhookUrl = baseUri.GetLeftPart(UriPartial.Authority) + (info?.Ruta ?? "");
+        }
+        catch (Exception ex) { _webhookMsg = ex.Message; _webhookOk = false; }
+        _showWebhook = true;
+    }
+
+    private async Task CopiarUrlAsync()
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _webhookUrl); _copiado = true; }
+        catch { _webhookMsg = "No se pudo copiar: selecciona la URL y cópiala a mano."; _webhookOk = false; }
+    }
+
+    private async Task GuardarWebhookAsync(bool quitar)
+    {
+        if (_webhookLine is null) return;
+        _busy = true; _webhookMsg = null;
+        try
+        {
+            var resp = await Auth().PutAsJsonAsync($"/api/ia/lineas/{_webhookLine.Id}/ycloud-webhook",
+                new YCloudWebhookSecretoRequest(quitar ? null : _webhookSecreto.Trim()));
+            if (!resp.IsSuccessStatusCode) { _webhookOk = false; _webhookMsg = await ErrorMsg(resp); return; }
+            _webhookLine = await resp.Content.ReadFromJsonAsync<WhatsAppLineDto>() ?? _webhookLine;
+            _webhookSecreto = "";
+            _webhookOk = true;
+            _webhookMsg = quitar ? "Secreto quitado: la línea deja de recibir mensajes por el webhook." : "Secreto guardado: la línea ya puede recibir mensajes de YCloud.";
+            await CargarAsync();
+        }
+        catch (Exception ex) { _webhookOk = false; _webhookMsg = ex.Message; }
         finally { _busy = false; }
     }
 

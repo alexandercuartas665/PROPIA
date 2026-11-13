@@ -262,6 +262,23 @@ public class IaController : ControllerBase
     public async Task<IActionResult> EliminarLinea(Guid id, CancellationToken ct)
         => await _connector.DeleteLineAsync(id, ct) ? NoContent() : NotFound();
 
+    /// <summary>Ruta del webhook de entrada de YCloud de esta copropiedad (la UI le antepone el dominio).</summary>
+    [HttpGet("lineas/{id:guid}/ycloud-webhook")]
+    public async Task<IActionResult> YCloudWebhookInfo(Guid id, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirst("tenant_id")?.Value, out var tenantId)) return Forbid();
+        var line = (await _lines.ListAsync(ct)).FirstOrDefault(l => l.Id == id);
+        if (line is null) return NotFound();
+        return Ok(new YCloudWebhookInfoDto($"/webhooks/ycloud/{tenantId:D}", line.YCloudWebhookConfigurado));
+    }
+
+    [HttpPut("lineas/{id:guid}/ycloud-webhook")]
+    public async Task<IActionResult> YCloudWebhookSecreto(Guid id, [FromBody] YCloudWebhookSecretoRequest req, CancellationToken ct)
+    {
+        try { return await _lines.SetYCloudWebhookSecretAsync(id, req.Secreto, ct) is { } l ? Ok(l) : NotFound(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("lineas/{id:guid}/probar-envio")]
     public async Task<IActionResult> ProbarEnvio(Guid id, [FromBody] ProbarEnvioRequest req, CancellationToken ct)
         => Ok(await _connector.SendTestAsync(id, req.Phone, req.Text, ct));

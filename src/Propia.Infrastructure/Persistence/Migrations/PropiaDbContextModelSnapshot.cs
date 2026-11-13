@@ -21346,6 +21346,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("y_cloud_from_number");
 
+                    b.Property<string>("YCloudWebhookSecretEncrypted")
+                        .HasColumnType("text")
+                        .HasColumnName("y_cloud_webhook_secret_encrypted");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId", "InstanceName")
