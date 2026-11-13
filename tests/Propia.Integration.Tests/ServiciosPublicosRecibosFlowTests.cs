@@ -191,8 +191,46 @@ public class ServiciosPublicosRecibosFlowTests
         await CleanupTenantAsync(tB);
     }
 
+    [Fact]
+    public async Task Eliminar_un_recibo_borra_el_mes_su_desglose_y_su_documento_si_nadie_mas_lo_usa()
+    {
+        var t = await SeedTenantAsync("[SPX] eliminar recibo");
+        var blob = new NoopBlobStorage();
+        var svc = Build(t, blob);
+        var energia = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía", "EPM", "5550001", null, "kWh", 25), default);
+        var gas = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas", "Vanti", "5550002", null, "m3", 25), default);
+
+        // Dos meses de energia (cada uno con su documento) y un recibo de gas que COMPARTE el documento de octubre.
+        var oct = await svc.ConfirmarReciboAsync(Recibo("5550001", 100_000m, 120m, 10) with { CuentaId = energia.Id, ArchivoKey = "tenants/x/oct.pdf" }, default);
+        var sep = await svc.ConfirmarReciboAsync(Recibo("5550001", 90_000m, 110m, 9) with { CuentaId = energia.Id, ArchivoKey = "tenants/x/sep.pdf" }, default);
+        await svc.ConfirmarReciboAsync(Recibo("5550002", 40_000m, 20m, 10) with { CuentaId = gas.Id, ArchivoKey = "tenants/x/oct.pdf" }, default);
+
+        // Septiembre: se va el mes, su desglose y su documento; el servicio y octubre quedan.
+        Assert.True(await svc.EliminarRegistroAsync(sep.Id, default));
+        Assert.Equal(new[] { "tenants/x/sep.pdf" }, blob.Borrados);
+        await using (var ctx = OwnerDb())
+        {
+            Assert.False(await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().AnyAsync(x => x.Id == sep.Id));
+            Assert.False(await ctx.RegistrosConsumoConceptos.IgnoreQueryFilters().AnyAsync(x => x.RegistroConsumoId == sep.Id));
+            Assert.True(await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().AnyAsync(x => x.Id == oct.Id));
+            Assert.True(await ctx.CuentasServicioPublico.IgnoreQueryFilters().AnyAsync(x => x.Id == energia.Id));
+        }
+
+        // Octubre: su documento lo usa tambien el gas => NO se borra del storage.
+        Assert.True(await svc.EliminarRegistroAsync(oct.Id, default));
+        Assert.Equal(new[] { "tenants/x/sep.pdf" }, blob.Borrados);
+
+        // Otra copropiedad no puede borrar un recibo ajeno.
+        var tB = await SeedTenantAsync("[SPX] eliminar recibo B");
+        var gasOct = (await Build(t).GetCuentaAsync(gas.Id, default))!.Registros.Single();
+        Assert.False(await Build(tB).EliminarRegistroAsync(gasOct.Id, default));
+
+        await CleanupTenantAsync(t);
+        await CleanupTenantAsync(tB);
+    }
+
     // ---------- helpers ----------
-    private IServiciosPublicosService Build(Guid tenantId)
+    private IServiciosPublicosService Build(Guid tenantId, NoopBlobStorage? blob = null)
     {
         var tenantCtx = new TenantContext();
         tenantCtx.SetTenant(tenantId);
@@ -200,7 +238,7 @@ public class ServiciosPublicosRecibosFlowTests
             .UseNpgsql(_fx.AppConnectionString)
             .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
             .Options;
-        return new ServiciosPublicosService(new PropiaDbContext(options, tenantCtx), tenantCtx, new NoopBlobStorage());
+        return new ServiciosPublicosService(new PropiaDbContext(options, tenantCtx), tenantCtx, blob ?? new NoopBlobStorage());
     }
     private IMiCopropiedadService BuildMiCopropiedad(Guid tenantId)
     {
@@ -243,7 +281,8 @@ public class ServiciosPublicosRecibosFlowTests
     private sealed class NoopBlobStorage : IBlobStorage
     {
         public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct) => Task.FromResult($"/mem/{key}");
-        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public List<string> Borrados { get; } = new();
+        public Task DeleteAsync(string key, CancellationToken ct) { Borrados.Add(key); return Task.CompletedTask; }
         public string GetPublicUrl(string key) => $"/mem/{key}";
         public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
         public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);

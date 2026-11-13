@@ -180,8 +180,15 @@ public class ServiciosPublicosService : IServiciosPublicosService
     {
         var r = await _db.RegistrosConsumoServicio.FirstOrDefaultAsync(x => x.Id == registroId, ct);
         if (r is null) return false;
-        _db.RegistrosConsumoServicio.Remove(r);
+        var archivo = r.ArchivoKey;
+        _db.RegistrosConsumoServicio.Remove(r);   // los conceptos del desglose se van en cascada
         await _db.SaveChangesAsync(ct);
+        // El documento leido con IA se borra solo si ningun otro registro lo usa (una factura combinada sirve
+        // de documento a varios servicios). Best-effort: si el storage falla, el registro ya quedo borrado.
+        if (!string.IsNullOrWhiteSpace(archivo) && !await _db.RegistrosConsumoServicio.AnyAsync(x => x.ArchivoKey == archivo, ct))
+        {
+            try { await _blob.DeleteAsync(archivo, ct); } catch { /* huerfano en el storage: no bloquea el borrado */ }
+        }
         return true;
     }
 

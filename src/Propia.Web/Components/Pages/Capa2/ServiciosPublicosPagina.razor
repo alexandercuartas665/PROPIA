@@ -309,6 +309,21 @@ else
     @if (!string.IsNullOrEmpty(_toast)) { <div class="dst-toast @(_toastErr ? "err" : "")" @onclick="() => _toast = null">@_toast</div> }
 </div>
 
+@* ===== Confirmar: eliminar UN recibo (un mes) del historial, sin tocar el servicio ===== *@
+@if (_recEliminar is { } re)
+{
+    <div class="dst-cfg-back" @onclick="() => { if (!_delBusy) _recEliminar = null; }">
+        <div class="dst-cfg" style="width:440px" @onclick:stopPropagation="true">
+            <div class="dst-cfg-head"><strong>@("Eliminar el recibo de " + re.R.PeriodoLabel)</strong></div>
+            <div class="dst-cfg-sub">@("Se borra el registro de " + re.Cuenta.Alias + " de ese mes (consumo, valor y desglose)" + (string.IsNullOrEmpty(re.R.ArchivoKey) ? "" : " y su documento") + ". El servicio y sus otros meses no cambian. Puedes volver a cargar el recibo después.")</div>
+            <div class="dst-cfg-actions">
+                <button type="button" class="dst-fbtn" @onclick="() => _recEliminar = null" disabled="@_delBusy">Cancelar</button>
+                <button type="button" class="dst-selbar-del" @onclick="EliminarReciboAsync" disabled="@_delBusy">Sí, eliminar</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ===== Modal: registrar a mano (la IA no pudo leer un recibo) ===== *@
 @if (_manualAbierto && SelCuenta is not null)
 {
@@ -509,6 +524,7 @@ else
             <div class="spx-val spx-val--ok"><i class="fi fi-rr-check-circle"></i><div>Servicio de la copropiedad: <b>@v.CuentaAlias</b> · referencia @d.Referencia coincide.</div></div>
             @if (v.Duplicado) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> @("Ya hay un recibo de " + v.PeriodoLabel + " para este servicio: al confirmar se reemplaza.")</div> }
             @foreach (var m in v.Motivos) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div> }
+            @if (q.SinDocumento) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> El recibo se leyó, pero el documento no se pudo guardar: si confirmas, el registro queda sin el archivo.</div> }
             @if (!v.CuadraDesglose) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> El desglose no cuadra con el total del recibo: revísalo antes de confirmar.</div> }
             <div class="spx-q-body"><div class="spx-datos">
                 <div class="spx-dato"><span>Prestador</span><b>@(d.Prestador ?? cuenta?.Prestador ?? "-")</b></div>
@@ -566,14 +582,24 @@ else
                 </div></div>
             @if (rs.Count > 0)
             {
-                <div class="sp-card spx-hist-card"><div class="spx-hist-scroll"><table class="spx-hist"><thead><tr><th>Periodo</th><th class="r">Consumo</th><th class="r">Valor</th><th>Rango</th><th>Origen</th><th></th></tr></thead><tbody>
+                <div class="sp-card spx-hist-card"><div class="spx-hist-scroll"><table class="spx-hist"><thead><tr><th>Periodo</th><th class="r">Consumo</th><th class="r">Valor</th><th>Rango</th><th>Origen</th><th>Documento</th><th></th></tr></thead><tbody>
                     @foreach (var r in rs)
                     {
                         var rr = r;
                         <tr><td>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Num(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
                             <td><SpxBadgeRango Rango="r.Rango" /></td>
                             <td>@if (r.Origen == OrigenRegistroConsumo.IA) { <span class="spx-ia"><i class="fi fi-rr-sparkles"></i> IA</span> } else { <span class="spx-muted">@(r.Estado == EstadoRegistroConsumo.Estimado ? "Estimado" : "Manual")</span> }</td>
-                            <td class="r"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button></td></tr>
+                            <td>@if (!string.IsNullOrEmpty(r.ArchivoUrl))
+                                {
+                                    <a class="spx-doc" href="@r.ArchivoUrl" target="_blank" rel="noopener" title="@(r.ArchivoNombre ?? "Ver documento")"><i class="fi fi-rr-file-pdf"></i> Ver</a>
+                                }
+                                else if (r.Origen == OrigenRegistroConsumo.IA)
+                                {
+                                    <span class="spx-doc spx-doc--falta" title="La IA leyó el recibo pero el documento no quedó guardado."><i class="fi fi-rr-triangle-warning"></i> Sin guardar</span>
+                                }
+                                else { <span class="spx-muted">-</span> }</td>
+                            <td class="r spx-hist-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button>
+                                <button type="button" class="spx-hist-del" title="Eliminar este recibo" aria-label="@("Eliminar el recibo de " + r.PeriodoLabel)" @onclick="() => PedirEliminarRecibo(c, rr)"><i class="fi fi-rr-trash"></i></button></td></tr>
                     }
                     </tbody></table></div>
                     <div class="sp-recl-bar"><button class="sp-recl-btn" @onclick="AbrirReclamacion"><i class="fi fi-rr-comment-alt"></i> @("Reclamaciones (" + (det?.Reclamaciones.Count ?? 0) + ")")</button></div></div>

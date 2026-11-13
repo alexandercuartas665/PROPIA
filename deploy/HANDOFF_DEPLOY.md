@@ -1,5 +1,15 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS - OLA A (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Historial de recibos (`/servicios` > Recibos y consumos): columna **Documento** (Ver / "Sin guardar") y boton para
+>   **eliminar UN recibo** (un mes) con confirmacion; tambien desde el modal Desglose ("Eliminar este recibo"). Borra el mes,
+>   su desglose (cascada) y su documento del storage si ningun otro registro lo usa.
+> - `OcrController`: si el documento origen NO se puede guardar en el storage, ahora queda en el log como
+>   `[OCR] No se pudo guardar el documento origen ...` (antes se perdia en silencio) y la tarjeta del recibo lo avisa.
+> - **ACCION EN PROD tras el deploy (Alex reporto que en prod el PDF no queda guardado):** cargar un recibo PDF en `/servicios`
+>   y buscar en el log de Railway `[OCR] No se pudo guardar el documento origen`: la excepcion dice por que falla R2
+>   (credenciales, bucket, permisos). Reportar el mensaje exacto.
+
 > **DICTADO POR VOZ + "MEJORAR REDACCION" CON IA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Microfono en las cajas `textarea[data-dictado]` (voz a texto del navegador, `js/propia-dictado.js?v=11` +
 >   `css/propia-dictado.css?v=11`) y boton ✨ que propone una version mejorada del texto (el usuario decide si la usa). En

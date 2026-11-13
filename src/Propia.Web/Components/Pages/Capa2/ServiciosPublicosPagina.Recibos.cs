@@ -27,6 +27,8 @@ public sealed class ReciboEnCola
     /// <summary>La tarjeta de revision ya mostro su entrada animada (re-renders no la repiten).</summary>
     public bool AnimVista { get; set; }
     public bool Ocupado { get; set; }
+    /// <summary>La IA leyo el recibo pero el documento no quedo guardado en el storage (se avisa antes de confirmar).</summary>
+    public bool SinDocumento { get; set; }
 }
 
 /// <summary>Pestana Recibos y consumo (replica: renderRecibos()).</summary>
@@ -177,6 +179,7 @@ public partial class ServiciosPublicosPagina
         if (leidos.Count == 0) { q.Ia.Fallo("La IA no encontró los datos de un recibo en este archivo."); return; }
         if (q.Eval is null) { q.Ia.Fallo("No se pudo validar el recibo contra tus servicios. Intenta de nuevo."); return; }
         q.Req = q.Req! with { ArchivoKey = res.PdfOrigenKey };
+        q.SinDocumento = string.IsNullOrEmpty(res.PdfOrigenKey);
         if (q.Eval.CuentaId is { } cid && _cuentas.FirstOrDefault(c => c.Id == cid) is { } c) q.TipoDetectado = c.Tipo;
     }
 
@@ -292,8 +295,35 @@ public partial class ServiciosPublicosPagina
     }
 
     // ===== Desglose de un registro del historial =====
-    private Task VerDesgloseAsync(CuentaServicioDto c, RegistroConsumoDto r)
-        => Modals.OpenAsync<DesgloseReciboModal, bool>(new ModalParameters().Set("Cuenta", c).Set("R", r), new ModalOptions { Width = "560px" });
+    private async Task VerDesgloseAsync(CuentaServicioDto c, RegistroConsumoDto r)
+    {
+        // El modal devuelve true cuando el usuario pide "Eliminar este recibo".
+        var eliminar = await Modals.OpenAsync<DesgloseReciboModal, bool>(new ModalParameters().Set("Cuenta", c).Set("R", r), new ModalOptions { Width = "560px" });
+        if (eliminar) PedirEliminarRecibo(c, r);
+    }
+
+    // ===== Eliminar UN recibo (un mes) cargado mal, sin tocar el servicio =====
+    private sealed record ReciboAEliminar(CuentaServicioDto Cuenta, RegistroConsumoDto R);
+    private ReciboAEliminar? _recEliminar;
+
+    private void PedirEliminarRecibo(CuentaServicioDto c, RegistroConsumoDto r) { _recEliminar = new(c, r); StateHasChanged(); }
+
+    private async Task EliminarReciboAsync()
+    {
+        if (_recEliminar is not { } re) return;
+        _delBusy = true;
+        try
+        {
+            var r = await Auth().DeleteAsync($"/api/servicios-publicos/registros/{re.R.Id}");
+            if (!r.IsSuccessStatusCode) { Mensaje(await SpxFormato.ErrorDeAsync(r, "No se pudo eliminar el recibo."), true); return; }
+            Mensaje($"Recibo de {re.R.PeriodoLabel} eliminado.", false);
+            _recEliminar = null;
+            await CargarAsync();
+            await CargarDetalleAsync(re.Cuenta.Id);
+        }
+        catch (Exception ex) { Mensaje(ex.Message, true); }
+        finally { _delBusy = false; }
+    }
 
     // ===== Registrar a mano (cuando la IA no pudo leer un recibo) =====
     private sealed class FormManual

@@ -30,10 +30,13 @@ public class OcrController : ControllerBase
     private readonly Propia.Infrastructure.Storage.IBlobStorage _blob;
     private readonly PropiaDbContext _db;
     private readonly Application.InfraestructuraIa.IAgentesSistema _agentesSistema;
+    private readonly ILogger<OcrController> _log;
 
     public OcrController(IDocumentExtractionService ocr, IAiInferenceService ai, IAiDocumentExtractor aiExtractor,
-        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db, Application.InfraestructuraIa.IAgentesSistema agentesSistema)
+        Propia.Infrastructure.Storage.IBlobStorage blob, PropiaDbContext db, Application.InfraestructuraIa.IAgentesSistema agentesSistema,
+        ILogger<OcrController> log)
     {
+        _log = log;
         _agentesSistema = agentesSistema;
         _ocr = ocr;
         _ai = ai;
@@ -77,7 +80,11 @@ public class OcrController : ControllerBase
                 await _blob.UploadAsync(key, up, file.ContentType ?? "application/octet-stream", ct);
                 pdfOrigenKey = key;
             }
-            catch { /* el guardado del origen no debe romper la extraccion */ }
+            catch (Exception ex)
+            {
+                // El guardado del origen no rompe la extraccion, pero queda en el log (antes se perdia en silencio).
+                _log.LogError(ex, "[OCR] No se pudo guardar el documento origen ({Archivo}, {Bytes} bytes) en el storage.", file.FileName, bytes.Length);
+            }
         }
 
         return Ok(new
@@ -181,7 +188,11 @@ public class OcrController : ControllerBase
                     await _blob.UploadAsync(key, up, mime, ct);
                     pdfOrigenKey = key;
                 }
-                catch { /* el guardado del origen no debe romper la extraccion */ }
+                catch (Exception ex)
+                {
+                    // El guardado del origen no rompe la extraccion, pero queda en el log (antes se perdia en silencio).
+                    _log.LogError(ex, "[OCR] No se pudo guardar el documento origen ({Archivo}, perfil {Perfil}) en el storage.", req.FileName, perfilKey);
+                }
             }
         }
 
