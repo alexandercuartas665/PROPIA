@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
@@ -169,6 +170,58 @@ public sealed class PlantillasWhatsAppService : IPlantillasWhatsAppService
         await _db.SaveChangesAsync(ct);
         return new ImportarPlantillasResultado(true, null,
             new ImportarPlantillasReporte(importadas, actualizadas, sinCambios, omitidas, mensajes));
+    }
+
+    // Ultima sincronizacion por copropiedad (en memoria): al abrir el modulo no se llama a YCloud mas de una vez
+    // cada 2 minutos; el job de fondo sincroniza cada 30 minutos con forzar=true.
+    private static readonly ConcurrentDictionary<Guid, DateTimeOffset> UltimoSync = new();
+
+    public async Task<SincronizarPlantillasResultado> SincronizarAsync(bool forzar = false, CancellationToken ct = default)
+    {
+        if (_tenant.CurrentTenantId is not Guid tenantId)
+            return new SincronizarPlantillasResultado(0, 0, 0, new[] { "No hay copropiedad activa." });
+        var ahora = DateTimeOffset.UtcNow;
+        if (!forzar && UltimoSync.TryGetValue(tenantId, out var ultimo) && ahora - ultimo < TimeSpan.FromMinutes(2))
+            return new SincronizarPlantillasResultado(0, 0, 0, Array.Empty<string>(), Omitida: true);
+        UltimoSync[tenantId] = ahora;
+
+        var lineas = await _db.WhatsAppLines.AsNoTracking()
+            .Where(l => l.Provider == WhatsAppProvider.YCloud && l.YCloudApiKeyEncrypted != null)
+            .Select(l => new { l.Id, l.InstanceName }).ToListAsync(ct);
+        int importadas = 0, actualizadas = 0;
+        var errores = new List<string>();
+        foreach (var l in lineas)
+        {
+            var r = await ImportarDeYCloudAsync(l.Id, ct);
+            if (r.Ok && r.Reporte is { } rep) { importadas += rep.Importadas; actualizadas += rep.Actualizadas; }
+            else errores.Add($"{l.InstanceName}: {r.Error}");
+        }
+        return new SincronizarPlantillasResultado(lineas.Count, importadas, actualizadas, errores);
+    }
+
+    public async Task<IReadOnlyList<UsoPlantillaWhatsAppDto>> UsosAsync(CancellationToken ct = default)
+    {
+        var plantillas = await _db.PlantillasWhatsApp.AsNoTracking().ToListAsync(ct);
+        var usos = new List<UsoPlantillaWhatsAppDto>();
+
+        UsoPlantillaWhatsAppDto Evaluar(string modulo, string uso, string nombre, string idioma)
+        {
+            var n = NormalizeName(nombre);
+            var candidatas = plantillas.Where(p => string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase)).ToList();
+            var p = candidatas.FirstOrDefault(x => string.Equals(x.Language, idioma, StringComparison.OrdinalIgnoreCase)) ?? candidatas.FirstOrDefault();
+            var estado = p is null ? EstadoUsoPlantilla.NoExiste
+                : !p.Activa ? EstadoUsoPlantilla.Archivada
+                : p.Estado != PlantillaWaEstado.Approved ? EstadoUsoPlantilla.NoAprobada
+                : EstadoUsoPlantilla.Ok;
+            return new UsoPlantillaWhatsAppDto(modulo, uso, nombre.Trim(), idioma, p?.Id, estado);
+        }
+
+        // Modulos que envian plantillas de WhatsApp. Al conectar uno nuevo (Porteria, Asambleas...) se agrega aqui.
+        var pqrsd = await _db.PqrsdWhatsAppConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        if (!string.IsNullOrWhiteSpace(pqrsd?.PlantillaNombre))
+            usos.Add(Evaluar("PQRSD", "Aviso de respuesta al solicitante", pqrsd!.PlantillaNombre!, string.IsNullOrWhiteSpace(pqrsd.PlantillaIdioma) ? "es" : pqrsd.PlantillaIdioma));
+
+        return usos;
     }
 
     public async Task<EnvioPruebaResultado> ProbarEnvioAsync(Guid id, string telefono, IReadOnlyList<string>? valores = null, CancellationToken ct = default)

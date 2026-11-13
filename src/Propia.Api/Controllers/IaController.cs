@@ -303,6 +303,16 @@ public class IaController : ControllerBase
         return r.Ok ? Ok(r) : BadRequest(new { error = r.Error });
     }
 
+    /// <summary>Trae las plantillas de todas las lineas YCloud (al abrir el modulo; no repite antes de 2 min salvo forzar).</summary>
+    [HttpPost("plantillas/sincronizar")]
+    public async Task<IActionResult> SincronizarPlantillas([FromQuery] bool forzar = false, CancellationToken ct = default)
+        => Ok(await _plantillas.SincronizarAsync(forzar, ct));
+
+    /// <summary>Donde se usa cada plantilla y si el enlace esta bien (existe, aprobada, activa).</summary>
+    [HttpGet("plantillas/usos")]
+    public async Task<IActionResult> UsosPlantillas(CancellationToken ct)
+        => Ok(await _plantillas.UsosAsync(ct));
+
     [HttpPost("plantillas/{id:guid}/archivar")]
     public async Task<IActionResult> ArchivarPlantilla(Guid id, [FromBody] ArchivarPlantillaRequest req, CancellationToken ct)
         => await _plantillas.ArchivarAsync(id, req.Activa, ct) ? NoContent() : NotFound();

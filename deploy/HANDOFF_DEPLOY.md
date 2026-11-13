@@ -1,5 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **LINEAS WHATSAPP - WEBHOOK EN EL ALTA DE LINEA YCLOUD (2026-11-13): SOLO Web, sin migracion.**
+> - Modal "Nueva linea" con proveedor YCloud: muestra la URL universal del webhook (`https://app.propia-ad.com/webhooks/ycloud`,
+>   boton Copiar), los pasos en YCloud y un campo opcional para el secreto. Con secreto, la linea nace con el webhook configurado;
+>   sin secreto, al crearla se abre solo el panel Webhook de la linea. El modal ahora tiene scroll y botones fijos abajo.
+
+> **PLANTILLAS DE WHATSAPP COMO FUENTE UNICA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web + 1 JOB.**
+> - Las plantillas de las lineas YCloud caen solas al modulo `/ia/plantillas`: al abrirlo (`POST /api/ia/plantillas/sincronizar`,
+>   no repite antes de 2 min) y por el job nuevo **PlantillasWhatsAppSync** cada 30 min (corre donde `Jobs:Enabled=true`, es decir
+>   en la API; itera copropiedades con SetTenant). Boton "Sincronizar ahora".
+> - Columna "Se usa en" y aviso si un modulo apunta a una plantilla que no existe, no esta aprobada o esta archivada
+>   (`GET /api/ia/plantillas/usos`). PQRSD > Configurar > Respuestas > WhatsApp: la plantilla se ELIGE de una lista con las
+>   aprobadas del modulo (antes era texto libre; lo ya configurado sigue funcionando y se marca si no esta aprobado).
+> - **Verificar en PROD**: abrir Plantillas de WhatsApp y ver "Sincronizado ahora (N lineas)..." con las plantillas de YCloud.
+
 > **USUARIOS - CARGA POR PLANTILLA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Usuarios > "Descargar plantilla" (`GET /api/usuarios/plantilla`: hojas Instrucciones, Usuarios y Catalogos con la lista de
 >   roles activos de la copropiedad) y "Cargar plantilla" (`POST /api/usuarios/importar`, permiso UsuariosAccesos/Crear).

@@ -27,13 +27,31 @@
     <div class="pw-head">
         <div>
             <h1 class="pw-h1">Plantillas de <span style="color:var(--propia-brand)">WhatsApp</span></h1>
-            <p class="pw-sub">Trae las plantillas aprobadas (HSM) de tu cuenta de YCloud para consultarlas y probarlas.</p>
+            <p class="pw-sub">Las plantillas de tus líneas de YCloud llegan solas a este módulo (al abrirlo y cada 30 minutos) con su estado en Meta. Aquí eliges, consultas y pruebas las que usa el sistema.</p>
+            @if (!string.IsNullOrEmpty(_syncInfo)) { <div class="pw-sync @(_syncError ? "err" : "")">@_syncInfo</div> }
         </div>
-        <button class="pw-btn-primary" @onclick="AbrirImportar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
-            Importar de YCloud
-        </button>
+        <div class="pw-head-acts">
+            <button class="pw-btn-ghost" @onclick="AbrirImportar" title="Importar de una sola línea">Importar de una línea</button>
+            <button class="pw-btn-primary" @onclick="() => SincronizarAsync(true)" disabled="@_sincronizando">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12A9 9 0 0 1 18.5 5.8M21 4v5h-5M3 20v-5h5"></path></svg>
+                @(_sincronizando ? "Sincronizando..." : "Sincronizar ahora")
+            </button>
+        </div>
     </div>
+
+    @* Enlaces rotos: un modulo apunta a una plantilla que no esta en el modulo, no esta aprobada o esta archivada. *@
+    @if (_usos.Any(u => u.Estado != EstadoUsoPlantilla.Ok))
+    {
+        <div class="pw-usos-warn">
+            <b>Revisa las plantillas que usa el sistema:</b>
+            <ul>
+                @foreach (var u in _usos.Where(x => x.Estado != EstadoUsoPlantilla.Ok))
+                {
+                    <li><b>@u.Modulo</b> (@u.Uso) usa <code>@u.PlantillaNombre</code> (@u.Idioma): @UsoProblema(u.Estado)</li>
+                }
+            </ul>
+        </div>
+    }
 
     @if (!string.IsNullOrEmpty(_loadError))
     {
@@ -75,6 +93,7 @@
                         <th>Encabezado</th>
                         <th>Botones</th>
                         <th>Linea</th>
+                        <th>Se usa en</th>
                         <th style="text-align:right">Acciones</th>
                     </tr>
                 </thead>
@@ -90,6 +109,9 @@
                             <td class="pw-td-mut">@EncabezadoLabel(plant.Encabezado)</td>
                             <td class="pw-td-mut">@(plant.Botones.Count == 0 ? "-" : plant.Botones.Count.ToString())</td>
                             <td class="pw-td-mut">@(plant.LineaNombre ?? "-")</td>
+                            <td>@{ var usosDe = _usos.Where(u => u.PlantillaId == plant.Id).ToList(); }
+                                @if (usosDe.Count == 0) { <span class="pw-td-mut">-</span> }
+                                else { <div class="pw-chips">@foreach (var u in usosDe) { <span class="pw-chip pw-chip--uso" title="@u.Uso">@u.Modulo</span> }</div> }</td>
                             <td>
                                 <div class="pw-row-actions">
                                     <button class="pw-btn-sm" @onclick="() => AbrirVer(plant)">Ver</button>
@@ -304,6 +326,14 @@
     .pw-det-txt { font-size:13.5px; color:var(--propia-text-body); line-height:1.5; }
     .pw-chips { display:flex; gap:7px; flex-wrap:wrap; }
     .pw-chip { font-size:11.5px; font-weight:600; color:var(--propia-text-secondary); background:var(--propia-bg-app); border:1px solid var(--propia-border-divider); padding:4px 10px; border-radius:7px; }
+    .pw-head-acts { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .pw-sync { margin-top:6px; font-size:12px; color:var(--propia-text-muted); }
+    .pw-sync.err { color:var(--propia-danger); }
+    .pw-usos-warn { margin:0 0 14px; padding:10px 14px; border-radius:10px; font-size:12.5px; color:var(--propia-text-body);
+        background:var(--propia-danger-soft); border:1px solid var(--propia-border-card); }
+    .pw-usos-warn ul { margin:6px 0 0; padding-left:18px; }
+    .pw-usos-warn code { font-size:12px; color:var(--propia-text-h1); }
+    .pw-chip--uso { color:var(--propia-brand); background:var(--propia-brand-soft); border-color:var(--propia-brand-border); font-weight:700; }
     @@media (max-width:760px) { .pw-head { gap:12px; } }
 </style>
 
@@ -316,6 +346,10 @@
     private bool _verArchivadas;
 
     private List<PlantillaWhatsAppDto>? _plantillas;
+    private List<UsoPlantillaWhatsAppDto> _usos = new();
+    private bool _sincronizando;
+    private string? _syncInfo;
+    private bool _syncError;
 
     // Importar
     private bool _showImportar;
@@ -348,10 +382,48 @@
                 _jwt = stored;
                 await CargarAsync();
                 StateHasChanged();
+                // Las plantillas caen solas: al abrir se sincronizan (el servidor no repite antes de 2 minutos).
+                await SincronizarAsync(false);
             }
         }
         catch { /* prerender */ }
     }
+
+    private async Task SincronizarAsync(bool forzar)
+    {
+        if (_sincronizando) return;
+        _sincronizando = true; StateHasChanged();
+        try
+        {
+            var resp = await Auth().PostAsync($"/api/ia/plantillas/sincronizar?forzar={(forzar ? "true" : "false")}", null);
+            if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<SincronizarPlantillasResultado>() is { } r)
+            {
+                _syncError = r.Errores.Count > 0;
+                _syncInfo = r.Omitida ? _syncInfo
+                    : r.Lineas == 0 ? "No hay líneas de YCloud con API key: configúralas en Líneas de WhatsApp para traer sus plantillas."
+                    : $"Sincronizado ahora ({r.Lineas} línea{(r.Lineas == 1 ? "" : "s")}): {r.Importadas} nueva{(r.Importadas == 1 ? "" : "s")}, {r.Actualizadas} actualizada{(r.Actualizadas == 1 ? "" : "s")}."
+                      + (r.Errores.Count > 0 ? " Errores: " + string.Join(" · ", r.Errores) : "");
+            }
+        }
+        catch (Exception ex) { _syncError = true; _syncInfo = "No se pudo sincronizar: " + ex.Message; }
+        finally { _sincronizando = false; }
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task CargarUsosAsync()
+    {
+        try { _usos = await Auth().GetFromJsonAsync<List<UsoPlantillaWhatsAppDto>>("/api/ia/plantillas/usos") ?? new(); }
+        catch { _usos = new(); }
+    }
+
+    private static string UsoProblema(EstadoUsoPlantilla e) => e switch
+    {
+        EstadoUsoPlantilla.NoExiste => "no está en este módulo (créala en YCloud o elige otra en la configuración del módulo).",
+        EstadoUsoPlantilla.NoAprobada => "Meta todavía no la aprueba (o la rechazó): los envíos fallarán hasta que esté aprobada.",
+        EstadoUsoPlantilla.Archivada => "está archivada en este módulo: restáurala o elige otra.",
+        _ => ""
+    };
 
     private async Task CambiarVista(bool archivadas)
     {
@@ -379,6 +451,7 @@
             // La vista "Activas" solo muestra activas; "Archivadas" solo las inactivas (el API trae todas cuando incluirArchivadas).
             _plantillas = _verArchivadas ? todas.Where(t => !t.Activa).ToList() : todas;
             _loadError = null;
+            await CargarUsosAsync();
         }
         catch (Exception ex) { _loadError = ex.Message; }
     }

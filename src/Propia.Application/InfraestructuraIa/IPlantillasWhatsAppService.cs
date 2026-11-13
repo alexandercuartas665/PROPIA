@@ -20,6 +20,15 @@ public interface IPlantillasWhatsAppService
     /// </summary>
     Task<ImportarPlantillasResultado> ImportarDeYCloudAsync(Guid whatsAppLineId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Importa las plantillas de TODAS las lineas YCloud (con API key) de la copropiedad activa: asi caen solas al
+    /// modulo con su estado de Meta. Sin <paramref name="forzar"/> no repite si se sincronizo hace menos de 2 minutos.
+    /// </summary>
+    Task<SincronizarPlantillasResultado> SincronizarAsync(bool forzar = false, CancellationToken ct = default);
+
+    /// <summary>Donde se usa cada plantilla (PQRSD, ...) y si el enlace esta bien (existe, aprobada, activa).</summary>
+    Task<IReadOnlyList<UsoPlantillaWhatsAppDto>> UsosAsync(CancellationToken ct = default);
+
     /// <summary>Archiva (soft-delete) o restaura una plantilla. Devuelve false si no existe.</summary>
     Task<bool> ArchivarAsync(Guid id, bool activa, CancellationToken ct = default);
 

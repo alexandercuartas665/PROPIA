@@ -749,11 +749,29 @@
                   {
                     <div class="pk-cfg-sec-hint">Para responder por WhatsApp, Meta exige una <b>plantilla aprobada</b> en tu WhatsApp Business. La plantilla debe tener <b>una variable de cuerpo</b> <code>&#123;&#123;1&#125;&#125;</code> donde ira el <b>link de seguimiento</b> del PQRSD. En lineas conectadas por QR (Evolution) se envia el link como texto.</div>
 
-                    <label class="pk-cfg-formlbl">Nombre de la plantilla aprobada (Meta)</label>
-                    <input class="pk-cfg-name" style="width:100%;" placeholder="ej. respuesta_pqrsd" @bind="_wa.PlantillaNombre" @bind:after="GuardarWhatsAppCfg" />
-                    <div class="pk-cons-grid" style="grid-template-columns:1fr 1fr; margin-top:8px;">
-                        <div><label class="pk-cfg-formlbl">Idioma de la plantilla</label>
-                            <input class="pk-cfg-name" style="width:100%;" placeholder="es / es_CO / en_US" @bind="_wa.PlantillaIdioma" @bind:after="GuardarWhatsAppCfg" /></div>
+                    @* La plantilla se elige del modulo Plantillas de WhatsApp (solo las aprobadas y activas): asi no se
+                       escribe a mano un nombre que no existe. Se guarda nombre + idioma (compatible con lo ya configurado). *@
+                    <label class="pk-cfg-formlbl">Plantilla aprobada (del módulo Plantillas de WhatsApp)</label>
+                    <select class="pk-cfg-name" style="width:100%;" value="@WaPlantillaClave()" @onchange="ElegirPlantillaWhatsApp">
+                        <option value="">Sin plantilla</option>
+                        @foreach (var t in _waPlantillas)
+                        {
+                            <option value="@(t.Name + "|" + t.Language)">@t.Name (@t.Language)@(string.IsNullOrEmpty(t.LineaNombre) ? "" : " · " + t.LineaNombre)</option>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_wa.PlantillaNombre) && !_waPlantillas.Any(t => t.Name == _wa.PlantillaNombre && t.Language == _wa.PlantillaIdioma))
+                        {
+                            <option value="@WaPlantillaClave()">@(_wa.PlantillaNombre + " (" + _wa.PlantillaIdioma + ") - no está aprobada en el módulo")</option>
+                        }
+                    </select>
+                    @if (_waPlantillas.Count == 0)
+                    {
+                        <div class="pk-cfg-sec-hint" style="margin-top:6px;">No hay plantillas aprobadas en el módulo. Créalas en YCloud: llegan solas a <a href="/ia/plantillas">Plantillas de WhatsApp</a>.</div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_wa.PlantillaNombre) && !_waPlantillas.Any(t => t.Name == _wa.PlantillaNombre && t.Language == _wa.PlantillaIdioma))
+                    {
+                        <div class="pk-cfg-sec-hint" style="margin-top:6px;color:var(--propia-danger);">La plantilla configurada (@_wa.PlantillaNombre) no está aprobada en el módulo: los envíos por WhatsApp fallarán. Elige una de la lista.</div>
+                    }
+                    <div class="pk-cons-grid" style="grid-template-columns:1fr; margin-top:8px;">
                         <div><label class="pk-cfg-formlbl">Linea de envio</label>
                             <select class="pk-cfg-name" style="width:100%;" value="@(_wa.LineaId?.ToString() ?? "")" @onchange="CambiarLineaWhatsApp">
                                 <option value="">Primera linea conectada</option>
@@ -2741,6 +2759,19 @@
     private bool _waGuardado;
     private sealed record WaLineaDto(Guid Id, string Nombre, string? Telefono, bool Conectada);
     private List<WaLineaDto> _waLineas = new();
+    // Plantillas aprobadas y activas del modulo Plantillas de WhatsApp (la fuente unica).
+    private List<Propia.Application.InfraestructuraIa.PlantillaWhatsAppDto> _waPlantillas = new();
+
+    private string WaPlantillaClave() => string.IsNullOrWhiteSpace(_wa.PlantillaNombre) ? "" : _wa.PlantillaNombre + "|" + _wa.PlantillaIdioma;
+
+    private async Task ElegirPlantillaWhatsApp(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "";
+        var i = v.LastIndexOf('|');
+        if (v.Length == 0 || i <= 0) { _wa.PlantillaNombre = null; _wa.PlantillaIdioma = "es"; }
+        else { _wa.PlantillaNombre = v[..i]; _wa.PlantillaIdioma = v[(i + 1)..]; }
+        await GuardarWhatsAppCfg();
+    }
 
     private async Task CambiarATabWhatsApp()
     {
@@ -2748,6 +2779,12 @@
         try
         {
             _waLineas = await Auth().GetFromJsonAsync<List<WaLineaDto>>("/api/pqrsd/config/whatsapp/lineas") ?? new();
+            try
+            {
+                var todas = await Auth().GetFromJsonAsync<List<Propia.Application.InfraestructuraIa.PlantillaWhatsAppDto>>("/api/ia/plantillas") ?? new();
+                _waPlantillas = todas.Where(t => t.Activa && t.Estado == PlantillaWaEstado.Approved).OrderBy(t => t.Name).ToList();
+            }
+            catch { _waPlantillas = new(); }
             var c = await Auth().GetFromJsonAsync<PqrsdWhatsAppConfigDto>("/api/pqrsd/config/whatsapp");
             if (c is not null) _wa = new WaModel { PlantillaNombre = c.PlantillaNombre, PlantillaIdioma = string.IsNullOrWhiteSpace(c.PlantillaIdioma) ? "es" : c.PlantillaIdioma, LineaId = c.LineaId };
         }
