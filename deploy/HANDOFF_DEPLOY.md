@@ -1,5 +1,13 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS - OLA B (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Al leer un recibo, si es de OTRO tipo que el servicio con el que coincidio la referencia (ej. recibo de aseo de EMCALI en
+>   el servicio de energia con el mismo contrato) o mide en otra unidad, la tarjeta lo avisa antes de confirmar.
+> - Consumo: si la IA no lo trae pero hay lecturas, se registra lectura actual - anterior. Los consumos se muestran con
+>   decimales (0,19 ya no se ve como 0). Instrucciones de lectura del perfil `recibo_servicio` reforzadas (tipo por lo que
+>   COBRA el recibo; consumo nunca es la tarifa ni los dias).
+> - Historial: flecha por mes que despliega el desglose en linea.
+
 > **SERVICIOS PUBLICOS - OLA A (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Historial de recibos (`/servicios` > Recibos y consumos): columna **Documento** (Ver / "Sin guardar") y boton para
 >   **eliminar UN recibo** (un mes) con confirmacion; tambien desde el modal Desglose ("Eliminar este recibo"). Borra el mes,

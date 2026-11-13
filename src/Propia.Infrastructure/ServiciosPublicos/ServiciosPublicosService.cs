@@ -215,10 +215,14 @@ public class ServiciosPublicosService : IServiciosPublicosService
                 false, RangoRecibo.Nada, Array.Empty<string>(), valor, null, null, req.UnidadMedida, cuadra, inactiva);
 
         var duplicado = periodo is { } p && cuenta.Registros.Any(x => x.Anio == p.Anio && x.Mes == p.Mes);
-        var ev = ReglasServicioPublico.Evaluar(Topes(cuenta) with { Unidad = cuenta.UnidadMedida ?? req.UnidadMedida }, valor, req.Consumo);
+        var consumo = ReglasServicioPublico.ConsumoEfectivo(req.Consumo, req.LecturaAnterior, req.LecturaActual);
+        var ev = ReglasServicioPublico.Evaluar(Topes(cuenta) with { Unidad = cuenta.UnidadMedida ?? req.UnidadMedida }, valor, consumo);
+        // Primero la coherencia (el recibo es de otro tipo de servicio o mide en otra unidad), luego los topes.
+        var motivos = ReglasServicioPublico.MotivosCoherencia(cuenta.Tipo, cuenta.Alias, cuenta.UnidadMedida, req.TipoServicio, req.UnidadMedida)
+            .Concat(ev.Motivos).ToList();
         return new EvaluacionReciboDto(cuenta.Id, cuenta.Alias, req.Referencia, refNorm, periodo?.Anio, periodo?.Mes,
             periodo is { } p1 ? ReglasServicioPublico.PeriodoLabel(p1.Anio, p1.Mes) : null,
-            duplicado, ev.Estado, ev.Motivos, valor, cuenta.ValorMin, cuenta.ValorMax, cuenta.UnidadMedida ?? req.UnidadMedida,
+            duplicado, ev.Estado, motivos, valor, cuenta.ValorMin, cuenta.ValorMax, cuenta.UnidadMedida ?? req.UnidadMedida,
             cuadra, false);
     }
 
@@ -247,7 +251,7 @@ public class ServiciosPublicosService : IServiciosPublicosService
             _db.RegistrosConsumoConceptos.RemoveRange(r.Conceptos);
             r.Conceptos.Clear();
         }
-        r.Consumo = req.Consumo ?? 0;
+        r.Consumo = ReglasServicioPublico.ConsumoEfectivo(req.Consumo, req.LecturaAnterior, req.LecturaActual) ?? 0;
         r.Valor = valor;
         r.Estado = EstadoRegistroConsumo.Confirmado;
         r.FechaLimitePago = req.FechaLimitePago;

@@ -264,7 +264,13 @@ public class OcrController : ControllerBase
             sb.AppendLine("- Separa el valor del PERIODO (los cobros del mes) de los saldos anteriores, la mora o intereses y el TOTAL A PAGAR:");
             sb.AppendLine("  valor_periodo = solo lo facturado en este periodo; saldo_anterior = deuda o saldo de periodos previos; valor_total = total a pagar.");
             sb.AppendLine("- periodo_desde / periodo_hasta: el periodo facturado o de consumo. Si cruza dos meses, devuelve ambas fechas completas.");
-            sb.AppendLine("- consumo: la cantidad consumida (kWh, m3, minutos, GB) como numero, puede tener decimales. Lecturas del medidor si aparecen.");
+            sb.AppendLine("- tipo_servicio: segun lo que COBRA el recibo, no segun la empresa: si cobra barrido, recoleccion o residuos es aseo");
+            sb.AppendLine("  aunque lo expida una empresa de energia o de acueducto (ej. EMCALI cobra energia, acueducto y aseo con el mismo contrato).");
+            sb.AppendLine("- consumo: la cantidad consumida en el periodo en su unidad (kWh, m3, minutos, GB), como numero, puede tener decimales.");
+            sb.AppendLine("  Si hay lecturas del medidor, consumo = lectura_actual - lectura_anterior. NUNCA uses como consumo la tarifa o valor");
+            sb.AppendLine("  unitario, los dias facturados, el estrato, el promedio ni el historico de meses anteriores. En aseo es la produccion de");
+            sb.AppendLine("  residuos del periodo (m3 o toneladas). Si el recibo no trae consumo (cargo fijo, internet), deja la clave vacia.");
+            sb.AppendLine("- unidad_medida: la unidad del consumo tal como aparece (kWh, m3, toneladas, GB, minutos).");
             sb.AppendLine("- conceptos: el desglose de cobros del periodo como lista [{\"concepto\": texto, \"valor\": numero}], en el orden del recibo,");
             sb.AppendLine("  sin el total ni los subtotales. Devuelvelo como {\"valor\": [ ... ], \"conf\": 0.0-1.0}.");
         }

@@ -64,6 +64,62 @@ public static class ReglasServicioPublico
     /// <summary>"5.952" (como num de la replica); null -> "-".</summary>
     public static string Num(decimal? v) => v is { } x ? Math.Round(x, MidpointRounding.AwayFromZero).ToString("#,##0", Es) : "-";
 
+    /// <summary>Consumo con hasta 2 decimales ("0,19", "1.234,5"): un consumo pequeno no debe verse como 0. null -> "-".</summary>
+    public static string Cant(decimal? v) => v is { } x ? Math.Round(x, 2, MidpointRounding.AwayFromZero).ToString("#,##0.##", Es) : "-";
+
+    /// <summary>
+    /// Consumo que se registra: el que trae el recibo; si no trae (o viene en 0) y hay lecturas validas del medidor,
+    /// la diferencia lectura actual - lectura anterior (no se confia en que la IA haga la resta).
+    /// </summary>
+    public static decimal? ConsumoEfectivo(decimal? consumo, decimal? lecturaAnterior, decimal? lecturaActual)
+    {
+        if (consumo is { } c && c > 0) return c;
+        if (lecturaAnterior is { } a && lecturaActual is { } b && b > a) return b - a;
+        return consumo;
+    }
+
+    /// <summary>Unidad comparable: kwh, m3, gb, min. Texto libre del recibo ("M3", "m³", "metros cubicos", "Kw/h"). Desconocida -> null.</summary>
+    public static string? UnidadNormalizada(string? u)
+    {
+        if (string.IsNullOrWhiteSpace(u)) return null;
+        var s = new string(u.Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray())
+            .ToLowerInvariant().Replace("³", "3").Replace(" ", "").Replace("/", "").Replace(".", "");
+        if (s.Contains("kwh") || s.Contains("kilovatio")) return "kwh";
+        if (s.StartsWith("m3") || s.Contains("metroscubicos") || s.Contains("metrocubico") || s == "mt3") return "m3";
+        if (s.Contains("gb") || s.Contains("giga")) return "gb";
+        if (s.StartsWith("min")) return "min";
+        return null;
+    }
+
+    /// <summary>Nombre corto del tipo para los avisos ("aseo", "energía").</summary>
+    public static string NombreCorto(TipoServicioPublico t) => t switch
+    {
+        TipoServicioPublico.EnergiaElectrica => "energía",
+        TipoServicioPublico.Acueducto => "acueducto",
+        TipoServicioPublico.Gas => "gas",
+        TipoServicioPublico.Aseo => "aseo",
+        TipoServicioPublico.Internet => "internet",
+        TipoServicioPublico.TelefoniaFija => "telefonía",
+        _ => t.ToString().ToLowerInvariant()
+    };
+
+    /// <summary>
+    /// Avisos de coherencia entre el recibo leido y el servicio con el que coincidio la referencia. Una misma
+    /// referencia puede cobrar varios servicios (EMCALI: energia, acueducto y aseo con un solo contrato): si el
+    /// recibo es de OTRO tipo (o mide en otra unidad) se avisa antes de confirmar, para no mezclar historicos.
+    /// </summary>
+    public static IReadOnlyList<string> MotivosCoherencia(TipoServicioPublico tipoServicio, string aliasServicio, string? unidadServicio,
+        string? tipoRecibo, string? unidadRecibo)
+    {
+        var m = new List<string>();
+        if (TipoDesdeTexto(tipoRecibo) is { } tr && tr != tipoServicio)
+            m.Add($"El recibo parece de {NombreCorto(tr)}, pero \"{aliasServicio}\" es un servicio de {NombreCorto(tipoServicio)}: revisa que sea el servicio correcto antes de confirmar.");
+        else if (UnidadNormalizada(unidadRecibo) is { } ur && UnidadNormalizada(unidadServicio) is { } us && ur != us)
+            m.Add($"El recibo mide el consumo en {unidadRecibo!.Trim()}, pero \"{aliasServicio}\" usa {unidadServicio!.Trim()}: revisa el consumo antes de confirmar.");
+        return m;
+    }
+
     // Diferencia porcentual con un decimal, como pct() de la replica (JS: 26.1 / 24).
     private static string Pct(decimal a, decimal b)
         => b == 0 ? "0" : (Math.Round(Math.Abs(a - b) / b * 1000m, MidpointRounding.AwayFromZero) / 10m).ToString("0.#", CultureInfo.InvariantCulture);

@@ -302,6 +302,10 @@ public partial class ServiciosPublicosPagina
         if (eliminar) PedirEliminarRecibo(c, r);
     }
 
+    // ===== Desglose en linea en el historial (flecha de cada mes) =====
+    private readonly HashSet<Guid> _recExp = new();
+    private void AlternarDesglose(Guid id) { if (!_recExp.Remove(id)) _recExp.Add(id); }
+
     // ===== Eliminar UN recibo (un mes) cargado mal, sin tocar el servicio =====
     private sealed record ReciboAEliminar(CuentaServicioDto Cuenta, RegistroConsumoDto R);
     private ReciboAEliminar? _recEliminar;

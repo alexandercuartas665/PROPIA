@@ -229,6 +229,28 @@ public class ServiciosPublicosRecibosFlowTests
         await CleanupTenantAsync(tB);
     }
 
+    [Fact]
+    public async Task Recibo_de_otro_tipo_se_avisa_y_el_consumo_sale_de_las_lecturas()
+    {
+        var t = await SeedTenantAsync("[SPX] coherencia");
+        var svc = Build(t);
+        var energia = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energia", "EMCALI", "133611", null, "kWh", 25), default);
+
+        // Recibo de ASEO con el mismo contrato (EMCALI): coincide la referencia pero se avisa que es otro servicio.
+        var aseo = Recibo("133611", 63_186m, 0.19m, 10) with { TipoServicio = "aseo", UnidadMedida = "M3", LecturaAnterior = null, LecturaActual = null };
+        var ev = await svc.EvaluarReciboAsync(aseo, default);
+        Assert.Equal(energia.Id, ev.CuentaId);
+        Assert.Equal("El recibo parece de aseo, pero \"Energia\" es un servicio de energía: revisa que sea el servicio correcto antes de confirmar.", ev.Motivos[0]);
+
+        // Recibo de energia sin consumo pero con lecturas: se registra la diferencia.
+        var sinConsumo = Recibo("133611", 210_000m, null, 9) with { TipoServicio = "energia", LecturaAnterior = 45_210m, LecturaActual = 45_398m };
+        Assert.DoesNotContain((await svc.EvaluarReciboAsync(sinConsumo, default)).Motivos, m => m.Contains("parece de"));
+        var reg = await svc.ConfirmarReciboAsync(sinConsumo with { CuentaId = energia.Id }, default);
+        Assert.Equal(188m, reg.Consumo);
+
+        await CleanupTenantAsync(t);
+    }
+
     // ---------- helpers ----------
     private IServiciosPublicosService Build(Guid tenantId, NoopBlobStorage? blob = null)
     {

@@ -530,10 +530,10 @@ else
                 <div class="spx-dato"><span>Prestador</span><b>@(d.Prestador ?? cuenta?.Prestador ?? "-")</b></div>
                 <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
                 <div class="spx-dato"><span>Fecha límite de pago</span><b>@ReglasServicioPublico.FechaCorta(d.FechaLimitePago)</b></div>
-                @if (d.Consumo is { } con && con != 0)
+                @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } con && con != 0)
                 {
                     <div class="spx-dato"><span>Lecturas</span><b>@(ReglasServicioPublico.Num(d.LecturaAnterior) + " → " + ReglasServicioPublico.Num(d.LecturaActual))</b></div>
-                    <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Num(con) + " " + (v.Unidad ?? ""))</b></div>
+                    <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(con) + " " + (d.UnidadMedida ?? v.Unidad ?? ""))</b></div>
                 }
                 <div class="spx-dato"><span>Valor a pagar</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
                 <div class="spx-dato"><span>Topes</span><b>@(ReglasServicioPublico.Plata(v.ValorMin) + " – " + ReglasServicioPublico.Plata(v.ValorMax))</b></div>
@@ -586,7 +586,8 @@ else
                     @foreach (var r in rs)
                     {
                         var rr = r;
-                        <tr><td>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Num(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
+                        var abierto = _recExp.Contains(rr.Id);
+                        <tr class="@(abierto ? "spx-hist-on" : "")"><td><button type="button" class="spx-hist-exp @(abierto ? "on" : "")" title="@(abierto ? "Ocultar el desglose" : "Ver el desglose")" aria-expanded="@(abierto ? "true" : "false")" @onclick="() => AlternarDesglose(rr.Id)"><i class="fi fi-rr-angle-small-right"></i></button>@r.PeriodoLabel</td><td class="r">@(r.Consumo != 0 ? ReglasServicioPublico.Cant(r.Consumo) + " " + (c.UnidadMedida ?? "") : "-")</td><td class="r">@ReglasServicioPublico.Plata(r.Valor)</td>
                             <td><SpxBadgeRango Rango="r.Rango" /></td>
                             <td>@if (r.Origen == OrigenRegistroConsumo.IA) { <span class="spx-ia"><i class="fi fi-rr-sparkles"></i> IA</span> } else { <span class="spx-muted">@(r.Estado == EstadoRegistroConsumo.Estimado ? "Estimado" : "Manual")</span> }</td>
                             <td>@if (!string.IsNullOrEmpty(r.ArchivoUrl))
@@ -600,6 +601,13 @@ else
                                 else { <span class="spx-muted">-</span> }</td>
                             <td class="r spx-hist-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => VerDesgloseAsync(c, rr)">Desglose</button>
                                 <button type="button" class="spx-hist-del" title="Eliminar este recibo" aria-label="@("Eliminar el recibo de " + r.PeriodoLabel)" @onclick="() => PedirEliminarRecibo(c, rr)"><i class="fi fi-rr-trash"></i></button></td></tr>
+                        @if (abierto)
+                        {
+                            <tr class="spx-hist-sub"><td colspan="7"><div class="spx-hist-desg">
+                                @if (r.LecturaAnterior is { } la && r.LecturaActual is { } lc) { <div class="spx-muted">@("Lecturas " + ReglasServicioPublico.Num(la) + " → " + ReglasServicioPublico.Num(lc))</div> }
+                                <SpxDesglose Conceptos="@(r.Conceptos is { Count: > 0 } k ? k : new[] { new ConceptoReciboDto("Valor del servicio", r.Valor) })" Total="r.Valor" />
+                            </div></td></tr>
+                        }
                     }
                     </tbody></table></div>
                     <div class="sp-recl-bar"><button class="sp-recl-btn" @onclick="AbrirReclamacion"><i class="fi fi-rr-comment-alt"></i> @("Reclamaciones (" + (det?.Reclamaciones.Count ?? 0) + ")")</button></div></div>
