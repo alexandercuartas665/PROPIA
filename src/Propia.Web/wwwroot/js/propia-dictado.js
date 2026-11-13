@@ -38,15 +38,16 @@ window.propiaDictado = (function () {
         document.body.appendChild(panel);
         document.addEventListener('input', function (e) {
             // Si el usuario sigue escribiendo, la invitacion a mejorar se retira (la propuesta abierta se respeta).
+            // (la espera "Mejorando..." no se cierra: el teclado del celular manda un input al tocar el boton).
             if (e.isTrusted && panelIt && e.target === panelIt.ta && panel.classList.contains('pd-oferta')
-                && !panel.classList.contains('is-cargando') && !panel.classList.contains('is-ok')) cerrarPanel();
+                && !panel.classList.contains('is-cargando')) cerrarPanel();
         }, true);
         burbuja = document.createElement('div');
         burbuja.className = 'pd-burbuja';
         burbuja.setAttribute('role', 'status');
         burbuja.setAttribute('aria-live', 'polite');
         document.body.appendChild(burbuja);
-        new MutationObserver(programar).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-dictado', 'data-sin-dictado', 'disabled', 'readonly', 'style', 'class'] });
+        new MutationObserver(programar).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-dictado', 'data-sin-dictado', 'disabled', 'readonly', 'style', 'class'] });
         window.addEventListener('scroll', programar, true);
         window.addEventListener('resize', programar);
         if (window.visualViewport) {   // teclado virtual que abre/cierra y zoom con los dedos
@@ -60,7 +61,16 @@ window.propiaDictado = (function () {
 
     function programar() { if (programado) return; programado = true; setTimeout(function () { programado = false; sincronizar(); }, 50); }
 
+    // La navegacion mejorada de Blazor (ir de una pagina a otra sin recargar) reconstruye el <body> y quita lo que no es
+    // suyo: el halo, el panel, la burbuja y los botones quedaban desconectados (la propuesta llegaba y no se veia).
+    function enDom(el) { if (el && !el.isConnected && document.body) document.body.appendChild(el); }
+    function reponer() {
+        enDom(halo); enDom(panel); enDom(burbuja);
+        items.forEach(function (it) { enDom(it.mej); enDom(it.btn); });
+    }
+
     function sincronizar() {
+        reponer();
         var tas = Array.prototype.slice.call(document.querySelectorAll(SELECTOR));
         // Altas
         tas.forEach(function (ta) {
@@ -216,6 +226,7 @@ window.propiaDictado = (function () {
     }
 
     function abrirPanel(it, clase, html, autocierre) {
+        reponer();
         clearTimeout(panelTimer);
         panel.className = 'pd-panel ' + clase;
         panel.innerHTML = html;
@@ -366,6 +377,7 @@ window.propiaDictado = (function () {
 
     // Halo de un instante alrededor de la caja (el texto cambio).
     function destello(it, mantener) {
+        reponer();
         var r = it.ta.getBoundingClientRect(), cs = getComputedStyle(it.ta);
         halo.style.left = (r.left - 3) + 'px'; halo.style.top = (r.top - 3) + 'px';
         halo.style.width = (r.width + 6) + 'px'; halo.style.height = (r.height + 6) + 'px';
@@ -378,6 +390,7 @@ window.propiaDictado = (function () {
     }
 
     function empezar(it) {
+        reponer();
         activo = it;
         it.btn.classList.add('is-on');
         it.btn.title = 'Detener el dictado';
