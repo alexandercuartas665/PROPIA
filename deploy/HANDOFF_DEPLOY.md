@@ -1,5 +1,10 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **LINEAS WHATSAPP - WEBHOOK EN EL ALTA DE LINEA YCLOUD (2026-11-13): SOLO Web, sin migracion.**
+> - Modal "Nueva linea" con proveedor YCloud: muestra la URL universal del webhook (`https://app.propia-ad.com/webhooks/ycloud`,
+>   boton Copiar), los pasos en YCloud y un campo opcional para el secreto. Con secreto, la linea nace con el webhook configurado;
+>   sin secreto, al crearla se abre solo el panel Webhook de la linea. El modal ahora tiene scroll y botones fijos abajo.
+
 > **PLANTILLAS DE WHATSAPP COMO FUENTE UNICA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web + 1 JOB.**
 > - Las plantillas de las lineas YCloud caen solas al modulo `/ia/plantillas`: al abrirlo (`POST /api/ia/plantillas/sincronizar`,
 >   no repite antes de 2 min) y por el job nuevo **PlantillasWhatsAppSync** cada 30 min (corre donde `Jobs:Enabled=true`, es decir
