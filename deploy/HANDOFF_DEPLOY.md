@@ -1,9 +1,11 @@
 # HAND-OFF DEPLOY - PROPIA
 
 > **DICTADO POR VOZ + "MEJORAR REDACCION" CON IA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
-> - Piloto en el modal "Radicar nueva PQRSD": microfono en las cajas `textarea[data-dictado]` (voz a texto del navegador,
->   `js/propia-dictado.js?v=7` + `css/propia-dictado.css?v=7`) y boton ✨ que propone una version mejorada del texto (el usuario
->   decide si la usa). En celular la propuesta sale como hoja inferior sobre el teclado.
+> - Microfono en las cajas `textarea[data-dictado]` (voz a texto del navegador, `js/propia-dictado.js?v=11` +
+>   `css/propia-dictado.css?v=11`) y boton ✨ que propone una version mejorada del texto (el usuario decide si la usa). En
+>   celular la propuesta sale como hoja inferior sobre el teclado. Activo SOLO en PQRSD (radicar, gestion, comentarios,
+>   formulario publico), Polizas/Seguros y Tareas (descripcion, comentarios, campos adicionales).
+> - Fix c0388aa7: el panel desaparecia al navegar por el menu sin recargar (Blazor quitaba los nodos del body).
 > - Endpoint `POST /api/texto/mejorar` ([Authorize], cualquier usuario de la copropiedad) -> agente del sistema por clave
 >   `corrector-redaccion`. Seeder `CorrectorTextoSeeder` (Api y Web, al arrancar): crea la plantilla global "Corrector de
 >   redaccion" si no existe, con el proveedor IA habilitado de llave mas reciente; el agente se crea en cada copropiedad al

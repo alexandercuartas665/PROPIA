@@ -133,6 +133,9 @@ window.propiaDictado = (function () {
         var x = r.right - 34 - Math.max(scrollbar, 14), y = r.bottom - 34;
         if (!visible(it.ta, x + 14, y + 14)) { it.btn.style.display = 'none'; it.mej.style.display = 'none'; return; }
         it.btn.style.display = 'flex';
+        // Caja baja (comentarios de una linea): el boton de mejorar va a la izquierda del microfono, dentro de la caja;
+        // se le reserva espacio para que no tape el texto.
+        it.ta.classList.toggle('pd-corta', r.height < 80);
         // Anclado por la derecha: al escuchar se estira hacia la izquierda como pildora.
         it.btn.style.right = (window.innerWidth - (x + 28)) + 'px';
         it.btn.style.top = y + 'px';
