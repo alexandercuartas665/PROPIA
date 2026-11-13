@@ -17,8 +17,31 @@ namespace Propia.Api.Controllers;
 public class UsuariosAccesosController : ControllerBase
 {
     private readonly IUsuariosService _svc;
+    private readonly Propia.Application.MiCopropiedad.IPlantillasService _plantillas;
 
-    public UsuariosAccesosController(IUsuariosService svc) => _svc = svc;
+    public UsuariosAccesosController(IUsuariosService svc, Propia.Application.MiCopropiedad.IPlantillasService plantillas)
+    {
+        _svc = svc;
+        _plantillas = plantillas;
+    }
+
+    // -------- Carga masiva por plantilla (usuarios en Pendiente, sin invitacion) --------
+    private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    [HttpGet("plantilla")]
+    public async Task<IActionResult> DescargarPlantilla(CancellationToken ct)
+        => File(await _plantillas.GenerarPlantillaUsuariosAsync(ct), XlsxMime, "plantilla-usuarios-propia.xlsx");
+
+    [RequierePermiso(ModuloCodigo.UsuariosAccesos, AccionPermiso.Crear)]
+    [HttpPost("importar")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> Importar([FromForm] IFormFile? file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "archivo_vacio" });
+        try { await using var s = file.OpenReadStream(); return Ok(await _plantillas.ImportarUsuariosAsync(s, ct)); }
+        catch (Propia.Infrastructure.MiCopropiedad.ExcelEntradaException ex) { return BadRequest(new { error = "archivo_invalido", detalle = ex.Message }); }
+        catch (Exception) { return BadRequest(new { error = "archivo_invalido", detalle = "No se pudo procesar el archivo. Verifica el formato y las columnas." }); }
+    }
 
     // -------- Bandeja --------
     [HttpGet]

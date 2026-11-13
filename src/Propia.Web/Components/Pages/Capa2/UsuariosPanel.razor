@@ -42,6 +42,16 @@
             </div>
         }
         <div class="d-flex gap-2 flex-wrap">
+            @* Carga masiva por plantilla: los usuarios quedan Pendientes, sin enviar invitacion. *@
+            <button class="usr-btn-ghost" type="button" @onclick="DescargarPlantillaUsuariosAsync" disabled="@_impBusy" title="Descargar la plantilla Excel de usuarios">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+                Descargar plantilla
+            </button>
+            <label class="usr-btn-ghost usr-btn-file @(_impBusy ? "is-busy" : "")" title="Cargar la plantilla de usuarios (quedan pendientes, sin invitación)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+                @(_impBusy ? "Cargando..." : "Cargar plantilla")
+                <InputFile OnChange="OnPlantillaUsuariosAsync" accept=".xlsx,.xls" style="display:none" disabled="@_impBusy" />
+            </label>
             <button class="usr-btn-ghost" @onclick='() => Nav.NavigateTo("/roles")'>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 15H4.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 6 8.6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8c0 .7.4 1.3 1 1.5h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1 1.5z"></path></svg>
                 Roles y permisos
@@ -52,6 +62,20 @@
             </button>
         </div>
     </div>
+
+    @if (_impResult is not null)
+    {
+        <div class="usr-impres @(_impResult.FilasConError > 0 ? "has-err" : "")">
+            <button type="button" class="usr-impres-x" aria-label="Cerrar" @onclick="() => _impResult = null">&times;</button>
+            <b>Carga de usuarios:</b> @_impResult.Creados creados, @_impResult.Actualizados pendientes actualizados, @_impResult.SinCambios ya tenían acceso.
+            Quedan en <b>Pendientes</b>, sin invitación: invítalos cuando quieras.
+            @if (_impResult.FilasConError > 0)
+            {
+                <span class="usr-impres-err"> · @_impResult.FilasConError con error</span>
+                <ul class="usr-impres-list">@foreach (var er in _impResult.Errores.Take(20)) { <li>Fila @er.Fila: @er.Mensaje</li> }</ul>
+            }
+        </div>
+    }
 
     @* Las etiquetas se administran dentro del usuario (modal Editar): alli se asignan, se quitan
        y se crean. El catalogo es del tenant, asi que una etiqueta creada queda para todos. *@
@@ -2148,6 +2172,51 @@
     }
 
     // ---------------- Helpers ----------------
+    // ---- Plantilla Excel de usuarios (descargar / cargar: persona + rol, quedan Pendientes sin invitacion) ----
+    private bool _impBusy;
+    private ImportarUsuariosResultado? _impResult;
+
+    private async Task DescargarPlantillaUsuariosAsync()
+    {
+        _impBusy = true;
+        try
+        {
+            var bytes = await Auth().GetByteArrayAsync("/api/usuarios/plantilla");
+            await Js.InvokeVoidAsync("propiaUI.downloadBase64", "plantilla-usuarios-propia.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex) { _msgClass = "alert-danger"; _msg = "No se pudo descargar la plantilla: " + ex.Message; }
+        finally { _impBusy = false; }
+    }
+
+    private async Task OnPlantillaUsuariosAsync(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _impBusy = true; _impResult = null; StateHasChanged();
+        try
+        {
+            // Bufferizar al seleccionar (si el InputFile se desmonta antes de leer, Blazor falla).
+            byte[] bytes;
+            await using (var st = e.File.OpenReadStream(10 * 1024 * 1024))
+            {
+                using var ms = new MemoryStream();
+                await st.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            using var content = new MultipartFormDataContent();
+            content.Add(new ByteArrayContent(bytes), "file", e.File.Name);
+            var resp = await Auth().PostAsync("/api/usuarios/importar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _impResult = await resp.Content.ReadFromJsonAsync<ImportarUsuariosResultado>();
+                await CargarAsync();
+            }
+            else { _msgClass = "alert-danger"; _msg = "No se pudo cargar la plantilla: " + await resp.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { _msgClass = "alert-danger"; _msg = "No se pudo cargar la plantilla: " + ex.Message; }
+        finally { _impBusy = false; StateHasChanged(); }
+    }
+
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");

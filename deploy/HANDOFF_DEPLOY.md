@@ -1,5 +1,11 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **USUARIOS - CARGA POR PLANTILLA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Usuarios > "Descargar plantilla" (`GET /api/usuarios/plantilla`: hojas Instrucciones, Usuarios y Catalogos con la lista de
+>   roles activos de la copropiedad) y "Cargar plantilla" (`POST /api/usuarios/importar`, permiso UsuariosAccesos/Crear).
+> - Por fila: busca la persona por tipo+documento en el Directorio (si no existe la crea), da el alta en PENDIENTE con sus roles
+>   y cargos, y NO envia invitacion. Activos no se tocan; inactivos no se reactivan; errores por fila con su motivo.
+
 > **SERVICIOS PUBLICOS - OLA D, CREAR SERVICIOS CON IA (2026-11-13): SIN MIGRACION, SOLO Web.**
 > - Configuracion > bloque "Crear servicios con IA" > "Subir facturas": pasa a Recibos en modo crear. Cada recibo cuyo servicio
 >   no existe sale como "Servicio nuevo" con un solo boton "Crear servicio y registrar" (crea la cuenta con tipo, prestador,
