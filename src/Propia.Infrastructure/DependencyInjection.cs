@@ -127,6 +127,7 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IChatIngestService, InfraestructuraIa.ChatIngestService>();
         services.AddScoped<Application.InfraestructuraIa.IMetaWebhookService, InfraestructuraIa.MetaWebhookService>();
         services.AddScoped<Application.InfraestructuraIa.IYCloudWebhookService, InfraestructuraIa.YCloudWebhookService>();
+        services.AddScoped<Application.InfraestructuraIa.ICorrectorTextoService, InfraestructuraIa.CorrectorTextoService>();
         services.AddScoped<Application.InfraestructuraIa.IDeliveryStatusService, InfraestructuraIa.DeliveryStatusService>();
         services.AddScoped<Application.InfraestructuraIa.IWhatsAppConnectorService, InfraestructuraIa.WhatsAppConnectorService>();
         services.AddScoped<Application.InfraestructuraIa.IAiAgentService, InfraestructuraIa.AiAgentService>();

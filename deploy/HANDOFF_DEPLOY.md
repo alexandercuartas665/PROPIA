@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **DICTADO POR VOZ + "MEJORAR REDACCION" CON IA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Piloto en el modal "Radicar nueva PQRSD": microfono en las cajas `textarea[data-dictado]` (voz a texto del navegador,
+>   `js/propia-dictado.js?v=7` + `css/propia-dictado.css?v=7`) y boton ✨ que propone una version mejorada del texto (el usuario
+>   decide si la usa). En celular la propuesta sale como hoja inferior sobre el teclado.
+> - Endpoint `POST /api/texto/mejorar` ([Authorize], cualquier usuario de la copropiedad) -> agente del sistema por clave
+>   `corrector-redaccion`. Seeder `CorrectorTextoSeeder` (Api y Web, al arrancar): crea la plantilla global "Corrector de
+>   redaccion" si no existe, con el proveedor IA habilitado de llave mas reciente; el agente se crea en cada copropiedad al
+>   primer uso. **Verificar en PROD**: Super Admin > Plantillas de Agentes IA muestra "Corrector de redaccion" y su proveedor
+>   tiene llave vigente (si no, cambiar el proveedor de la plantilla y "Actualizar copropiedades").
+> - El modal muestra "minimo 10 caracteres - faltan N" y el boton Radicar dice cuanto falta.
+
 > **WEBHOOK YCLOUD - URL UNIVERSAL (2026-11-13): 1 MIGRACION (funcion SQL) + API y Web.**
 > - **MIGRACION `20261113002100_AddYCloudRutaUniversal`** (va DESPUES de `AddYCloudWebhookSecret`): crea la funcion
 >   `resolver_tenants_ycloud(text)` SECURITY DEFINER (solo lectura, devuelve tenant_id de las lineas YCloud con ese numero) con
