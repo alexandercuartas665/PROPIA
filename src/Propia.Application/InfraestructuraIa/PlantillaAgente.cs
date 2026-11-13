@@ -16,6 +16,8 @@ public static class PlantillaAgente
     public const string ClaveAuxiliar = "auxiliar-administrativo";
     /// <summary>Redactor de actas de asamblea (modulo 2.8): redacta el acta con la transcripcion y los datos de la sesion.</summary>
     public const string ClaveActaAsamblea = "redactor-actas";
+    /// <summary>Corrector de redaccion: mejora el texto de las cajas de texto (dictado o escrito) si el usuario lo pide.</summary>
+    public const string ClaveCorrectorTexto = "corrector-redaccion";
 
     /// <summary>{COPROPIEDAD_NOMBRE} y {ORGANIZACION_NOMBRE} (sin organizacion, el de la copropiedad).</summary>
     public static string Render(string? texto, string copropiedadNombre, string? organizacionNombre)
