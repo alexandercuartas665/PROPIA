@@ -49,5 +49,16 @@ public sealed record ImportarPlantillasReporte(
 /// <summary>Resultado de la importacion: Ok + (si fallo) el error, y el reporte cuando Ok.</summary>
 public sealed record ImportarPlantillasResultado(bool Ok, string? Error, ImportarPlantillasReporte? Reporte);
 
+/// <summary>Sincronizacion de las plantillas de TODAS las lineas YCloud de la copropiedad (al abrir el modulo y por
+/// el job cada 30 min). Omitida = se sincronizo hace menos de 2 minutos y no se volvio a llamar a YCloud.</summary>
+public sealed record SincronizarPlantillasResultado(int Lineas, int Importadas, int Actualizadas, IReadOnlyList<string> Errores, bool Omitida = false);
+
+/// <summary>Como quedo enlazada una plantilla que usa un modulo.</summary>
+public enum EstadoUsoPlantilla { Ok = 0, NoExiste = 1, NoAprobada = 2, Archivada = 3 }
+
+/// <summary>Donde se usa una plantilla: el modulo, para que, el nombre que tiene configurado y si esta bien
+/// (existe en el modulo, aprobada por Meta y activa). PlantillaId = la del modulo si existe.</summary>
+public sealed record UsoPlantillaWhatsAppDto(string Modulo, string Uso, string PlantillaNombre, string Idioma, Guid? PlantillaId, EstadoUsoPlantilla Estado);
+
 /// <summary>Resultado de un envio de prueba de una plantilla.</summary>
 public sealed record EnvioPruebaResultado(bool Ok, string? Error);

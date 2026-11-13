@@ -1,5 +1,14 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PLANTILLAS DE WHATSAPP COMO FUENTE UNICA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web + 1 JOB.**
+> - Las plantillas de las lineas YCloud caen solas al modulo `/ia/plantillas`: al abrirlo (`POST /api/ia/plantillas/sincronizar`,
+>   no repite antes de 2 min) y por el job nuevo **PlantillasWhatsAppSync** cada 30 min (corre donde `Jobs:Enabled=true`, es decir
+>   en la API; itera copropiedades con SetTenant). Boton "Sincronizar ahora".
+> - Columna "Se usa en" y aviso si un modulo apunta a una plantilla que no existe, no esta aprobada o esta archivada
+>   (`GET /api/ia/plantillas/usos`). PQRSD > Configurar > Respuestas > WhatsApp: la plantilla se ELIGE de una lista con las
+>   aprobadas del modulo (antes era texto libre; lo ya configurado sigue funcionando y se marca si no esta aprobado).
+> - **Verificar en PROD**: abrir Plantillas de WhatsApp y ver "Sincronizado ahora (N lineas)..." con las plantillas de YCloud.
+
 > **USUARIOS - CARGA POR PLANTILLA (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Usuarios > "Descargar plantilla" (`GET /api/usuarios/plantilla`: hojas Instrucciones, Usuarios y Catalogos con la lista de
 >   roles activos de la copropiedad) y "Cargar plantilla" (`POST /api/usuarios/importar`, permiso UsuariosAccesos/Crear).
