@@ -77,6 +77,9 @@ public sealed class WhatsAppLineService : IWhatsAppLineService
                 throw new InvalidOperationException("Para una linea YCloud indica la API key y el numero remitente.");
             // El numero remitente se guarda solo con digitos (E.164 sin "+"), que es el "from" de YCloud.
             line.YCloudFromNumber = new string(request.YCloudFromNumber.Where(char.IsDigit).ToArray());
+            // La URL universal del webhook enruta por este numero: no puede estar en dos lineas YCloud (ni en dos copropiedades).
+            if ((await YCloudRutas.TenantsConNumeroAsync(_db, line.YCloudFromNumber, ct)).Count > 0)
+                throw new InvalidOperationException("Ese número ya está registrado como línea YCloud (en esta u otra copropiedad).");
             line.YCloudApiKeyEncrypted = _secret.Protect(request.YCloudApiKey.Trim());
             line.YCloudWebhookSecretEncrypted = string.IsNullOrWhiteSpace(request.YCloudWebhookSecret) ? null : _secret.Protect(request.YCloudWebhookSecret.Trim());
         }

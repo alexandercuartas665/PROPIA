@@ -262,14 +262,14 @@ public class IaController : ControllerBase
     public async Task<IActionResult> EliminarLinea(Guid id, CancellationToken ct)
         => await _connector.DeleteLineAsync(id, ct) ? NoContent() : NotFound();
 
-    /// <summary>Ruta del webhook de entrada de YCloud de esta copropiedad (la UI le antepone el dominio).</summary>
+    /// <summary>Ruta del webhook de entrada de YCloud (la UI le antepone el dominio). Es la URL UNIVERSAL: la misma
+    /// para todas las copropiedades y numeros; PROPIA reconoce la copropiedad por el numero de la linea.</summary>
     [HttpGet("lineas/{id:guid}/ycloud-webhook")]
     public async Task<IActionResult> YCloudWebhookInfo(Guid id, CancellationToken ct)
     {
-        if (!Guid.TryParse(User.FindFirst("tenant_id")?.Value, out var tenantId)) return Forbid();
         var line = (await _lines.ListAsync(ct)).FirstOrDefault(l => l.Id == id);
         if (line is null) return NotFound();
-        return Ok(new YCloudWebhookInfoDto($"/webhooks/ycloud/{tenantId:D}", line.YCloudWebhookConfigurado));
+        return Ok(new YCloudWebhookInfoDto("/webhooks/ycloud", line.YCloudWebhookConfigurado));
     }
 
     [HttpPut("lineas/{id:guid}/ycloud-webhook")]

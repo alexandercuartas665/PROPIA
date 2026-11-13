@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **WEBHOOK YCLOUD - URL UNIVERSAL (2026-11-13): 1 MIGRACION (funcion SQL) + API y Web.**
+> - **MIGRACION `20261113002100_AddYCloudRutaUniversal`** (va DESPUES de `AddYCloudWebhookSecret`): crea la funcion
+>   `resolver_tenants_ycloud(text)` SECURITY DEFINER (solo lectura, devuelve tenant_id de las lineas YCloud con ese numero) con
+>   GRANT EXECUTE a propia_app y REVOKE a PUBLIC. Mismo patron que `admin_list_active_agents` (requiere que el owner de la
+>   migracion pase el RLS, como ya ocurre en prod).
+> - **URL para TODAS las copropiedades: `https://app.propia-ad.com/webhooks/ycloud`** (sin tenant). La copropiedad sale del
+>   numero de la linea del evento y la firma se valida con el secreto de esa linea. Sirve para una cuenta YCloud por
+>   copropiedad o una cuenta compartida (un solo endpoint en YCloud). La ruta con tenant `/webhooks/ycloud/{tenantId}` sigue viva.
+> - Un numero YCloud ya no puede registrarse en dos lineas (ni en dos copropiedades).
+> - **Verificar en PROD tras aplicar**: `select has_function_privilege('propia_app','resolver_tenants_ycloud(text)','EXECUTE');` (t).
+
 > **WEBHOOK DE ENTRADA DE YCLOUD (2026-11-12): 1 MIGRACION (solo columna) + API y Web.**
 > - **MIGRACION `20261112234705_AddYCloudWebhookSecret`** (va DESPUES de `PorteriaHuecosOperacion`): columna
 >   `whats_app_lines.y_cloud_webhook_secret_encrypted` (text, nullable). Tabla existente (RLS ya aplica).

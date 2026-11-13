@@ -28,9 +28,24 @@ public sealed class YCloudWebhookService : IYCloudWebhookService
         _db = db; _tenant = tenant; _secret = secret; _ingest = ingest;
     }
 
+    public async Task<(Guid? TenantId, FirmaYCloud Firma)> ResolverPorNumeroAsync(string numeroLinea, string cuerpo, string? header, CancellationToken ct = default)
+    {
+        var candidatos = await YCloudRutas.TenantsConNumeroAsync(_db, numeroLinea, ct);
+        if (candidatos.Count == 0) return (null, FirmaYCloud.NumeroDesconocido);
+        var sinSecreto = new List<Guid>();
+        foreach (var t in candidatos)
+        {
+            var f = await VerificarFirmaAsync(t, cuerpo, header, ct);
+            if (f == FirmaYCloud.Valida) return (t, f);
+            if (f == FirmaYCloud.SinSecreto) sinSecreto.Add(t);
+        }
+        // Sin secreto en ninguna copropiedad candidata: el controller decide (Development lo acepta para probar).
+        return sinSecreto.Count == candidatos.Count && candidatos.Count == 1 ? (candidatos[0], FirmaYCloud.SinSecreto) : (null, FirmaYCloud.Invalida);
+    }
+
     public async Task<FirmaYCloud> VerificarFirmaAsync(Guid tenantId, string cuerpo, string? header, CancellationToken ct = default)
     {
-        _tenant.SetTenant(tenantId);
+        await FijarTenantAsync(tenantId);
         var cifrados = await _db.WhatsAppLines.AsNoTracking()
             .Where(l => l.TenantId == tenantId && l.Provider == WhatsAppProvider.YCloud && l.YCloudWebhookSecretEncrypted != null)
             .Select(l => l.YCloudWebhookSecretEncrypted!)
@@ -54,13 +69,20 @@ public sealed class YCloudWebhookService : IYCloudWebhookService
     {
         var destino = new string((numeroDestino ?? "").Where(char.IsDigit).ToArray());
         if (destino.Length == 0) return ChatIngestResult.InvalidPayload;
-        _tenant.SetTenant(tenantId);
+        await FijarTenantAsync(tenantId);
         var instanceName = await _db.WhatsAppLines.AsNoTracking()
             .Where(l => l.TenantId == tenantId && l.Provider == WhatsAppProvider.YCloud && l.YCloudFromNumber == destino)
             .Select(l => l.InstanceName)
             .FirstOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(instanceName)) return ChatIngestResult.LineNotFound;
         return await _ingest.IngestTrustedAsync(tenantId, payload with { InstanceName = instanceName }, ct);
+    }
+
+    /// <summary>Fija el tenant y cierra la conexion: la siguiente consulta la reabre con app.tenant_id (RLS).</summary>
+    private async Task FijarTenantAsync(Guid tenantId)
+    {
+        _tenant.SetTenant(tenantId);
+        await _db.Database.CloseConnectionAsync();
     }
 
     /// <summary>"t=1654084800,s=abc..." -> (t, s). Tolera espacios y el orden de las partes.</summary>
@@ -87,4 +109,19 @@ public sealed class YCloudWebhookService : IYCloudWebhookService
 
     public static string Firmar(string secreto, string t, string cuerpo)
         => Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secreto), Encoding.UTF8.GetBytes($"{t}.{cuerpo}"))).ToLowerInvariant();
+}
+
+/// <summary>
+/// Enrutamiento de la URL universal: que copropiedades tienen una linea YCloud con un numero. Usa la funcion
+/// SECURITY DEFINER resolver_tenants_ycloud (solo lectura, devuelve tenant_id): el webhook aun no sabe el tenant
+/// y, con RLS forzado, propia_app no puede leer las lineas de todas las copropiedades.
+/// </summary>
+public static class YCloudRutas
+{
+    public static async Task<List<Guid>> TenantsConNumeroAsync(PropiaDbContext db, string numero, CancellationToken ct)
+    {
+        var d = new string((numero ?? "").Where(char.IsDigit).ToArray());
+        if (d.Length == 0) return new List<Guid>();
+        return await db.Database.SqlQuery<Guid>($"SELECT tenant_id AS \"Value\" FROM resolver_tenants_ycloud({d})").ToListAsync(ct);
+    }
 }

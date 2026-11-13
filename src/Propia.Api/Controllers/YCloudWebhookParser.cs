@@ -19,6 +19,17 @@ public static class YCloudWebhookParser
 
     public static string? Tipo(JsonElement root) => Str(root, "type");
 
+    /// <summary>Numero de la LINEA de PROPIA en el evento (solo digitos): el "to" de un entrante o el "from" de un
+    /// estado de un saliente. Lo usa la URL universal para saber a que copropiedad va. Null si el evento no lo trae.</summary>
+    public static string? NumeroLinea(JsonElement root)
+    {
+        string? n = null;
+        if (root.TryGetProperty("whatsappInboundMessage", out var m) && m.ValueKind == JsonValueKind.Object) n = Str(m, "to");
+        else if (root.TryGetProperty("whatsappMessage", out var s) && s.ValueKind == JsonValueKind.Object) n = Str(s, "from");
+        var d = Digitos(n);
+        return d.Length == 0 ? null : d;
+    }
+
     public static ParsedYCloudInbound? ParseEntrante(JsonElement root)
     {
         if (Tipo(root) != EventoEntrante) return null;

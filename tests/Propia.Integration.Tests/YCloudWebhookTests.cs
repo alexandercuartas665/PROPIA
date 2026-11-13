@@ -36,6 +36,7 @@ public class YCloudWebhookTests : IAsyncLifetime
         sc.AddScoped<TenantConnectionInterceptor>();
         sc.AddDbContext<PropiaDbContext>((sp, o) => o.UseNpgsql(_fx.AppConnectionString).AddInterceptors(sp.GetRequiredService<TenantConnectionInterceptor>()));
         sc.AddScoped<IYCloudWebhookService, YCloudWebhookService>();
+        sc.AddScoped<IWhatsAppLineService, WhatsAppLineService>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
     }
@@ -139,6 +140,67 @@ public class YCloudWebhookTests : IAsyncLifetime
         Assert.Equal((tB, "ycloud-b"), (_ingest.Recibidos[^1].Tenant, _ingest.Recibidos[^1].Payload.InstanceName));
 
         await CleanAsync(tA); await CleanAsync(tB);
+    }
+
+    [Fact]
+    public async Task Url_universal_enruta_por_numero_cuenta_compartida_y_propia_y_numero_unico()
+    {
+        // Cuenta YCloud compartida por dos copropiedades (mismo secreto, numeros distintos) + una con cuenta propia.
+        var tA = await SeedTenantAsync("YCloud U-A");
+        var tB = await SeedTenantAsync("YCloud U-B");
+        var tC = await SeedTenantAsync("YCloud U-C");
+        var tD = await SeedTenantAsync("YCloud U-D");
+        await SeedLineaAsync(tA, "u-a", "573201110001", "whsec_cuenta_admin");
+        await SeedLineaAsync(tB, "u-b", "573201110002", "whsec_cuenta_admin");
+        await SeedLineaAsync(tC, "u-c", "573201110003", "whsec_propia_c");
+        await SeedLineaAsync(tD, "u-d", "573201110004", null);
+
+        using var scope = _services.CreateScope();
+        var svc = scope.ServiceProvider.GetRequiredService<IYCloudWebhookService>();
+        var t = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        string Cuerpo(string to) => Entrante.Replace("+57 320 555 0000", to);
+        string Header(string secreto, string cuerpo) => $"t={t},s={YCloudWebhookService.Firmar(secreto, t, cuerpo)}";
+
+        // El numero de la linea sale del evento: "to" de un entrante, "from" de un estado.
+        using (var d = JsonDocument.Parse(Cuerpo("+57 320 111 0002")))
+            Assert.Equal("573201110002", YCloudWebhookParser.NumeroLinea(d.RootElement));
+        using (var d = JsonDocument.Parse("{\"type\":\"whatsapp.message.updated\",\"whatsappMessage\":{\"id\":\"x\",\"from\":\"+573201110003\",\"to\":\"+573001112222\",\"status\":\"read\"}}"))
+            Assert.Equal("573201110003", YCloudWebhookParser.NumeroLinea(d.RootElement));
+        using (var d = JsonDocument.Parse("{\"type\":\"whatsapp.template.reviewed\",\"whatsappTemplate\":{\"name\":\"x\"}}"))
+            Assert.Null(YCloudWebhookParser.NumeroLinea(d.RootElement));
+
+        var cb = Cuerpo("+573201110002");
+        Assert.Equal((tB, FirmaYCloud.Valida), await svc.ResolverPorNumeroAsync("573201110002", cb, Header("whsec_cuenta_admin", cb)));
+        var ca = Cuerpo("+573201110001");
+        Assert.Equal((tA, FirmaYCloud.Valida), await svc.ResolverPorNumeroAsync("573201110001", ca, Header("whsec_cuenta_admin", ca)));
+        var cc = Cuerpo("+573201110003");
+        Assert.Equal((tC, FirmaYCloud.Valida), await svc.ResolverPorNumeroAsync("+57 320 111 0003", cc, Header("whsec_propia_c", cc)));
+        // El secreto de la cuenta compartida no abre la linea de C (otra cuenta).
+        Assert.Equal(((Guid?)null, FirmaYCloud.Invalida), await svc.ResolverPorNumeroAsync("573201110003", cc, Header("whsec_cuenta_admin", cc)));
+        Assert.Equal(((Guid?)null, FirmaYCloud.NumeroDesconocido), await svc.ResolverPorNumeroAsync("573209999999", cc, Header("whsec_propia_c", cc)));
+        Assert.Equal(((Guid?)tD, FirmaYCloud.SinSecreto), await svc.ResolverPorNumeroAsync("573201110004", cc, Header("x", cc)));
+
+        // Ruteado a B: la ingesta va a la linea de B, no a la de A.
+        _ingest.Recibidos.Clear();
+        using (var d = JsonDocument.Parse(cb))
+        {
+            var e = YCloudWebhookParser.ParseEntrante(d.RootElement)!;
+            Assert.Equal(ChatIngestResult.Accepted, await svc.IngestAsync(tB, e.NumeroDestino, e.Payload));
+        }
+        Assert.Equal((tB, "u-b"), (_ingest.Recibidos.Single().Tenant, _ingest.Recibidos.Single().Payload.InstanceName));
+
+        // Un numero no puede quedar en dos lineas YCloud: la URL universal enruta por el.
+        using (var sc2 = _services.CreateScope())
+        {
+            sc2.ServiceProvider.GetRequiredService<ITenantContext>().SetTenant(tC);
+            var lines = sc2.ServiceProvider.GetRequiredService<IWhatsAppLineService>();
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => lines.CreateAsync(new CreateWhatsAppLineRequest(
+                "duplicada", null, WhatsAppProvider.YCloud, YCloudApiKey: "k", YCloudFromNumber: "+57 320 111 0001")));
+            Assert.Contains("ya est", ex.Message);
+            Assert.NotNull(await lines.CreateAsync(new CreateWhatsAppLineRequest("nueva", null, WhatsAppProvider.YCloud, YCloudApiKey: "k", YCloudFromNumber: "573201110099")));
+        }
+
+        foreach (var x in new[] { tA, tB, tC, tD }) await CleanAsync(x);
     }
 
     private async Task<Guid> SeedTenantAsync(string nombre)
