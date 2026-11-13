@@ -29,7 +29,7 @@ namespace Propia.Integration.Tests;
 ///  - Vehiculo: catalogo + reconocimiento automatico en registro.
 /// </summary>
 [Collection(nameof(PostgresCollection))]
-public class PorteriaFlowTests : IAsyncLifetime
+public partial class PorteriaFlowTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fx;
     private IServiceProvider _services = null!;
@@ -52,6 +52,8 @@ public class PorteriaFlowTests : IAsyncLifetime
             opts.UseNpgsql(_fx.AppConnectionString).AddInterceptors(sp.GetRequiredService<TenantConnectionInterceptor>()));
         sc.AddIdentityCore<ApplicationUser>().AddRoles<IdentityRole<Guid>>().AddEntityFrameworkStores<PropiaDbContext>().AddDefaultTokenProviders();
         sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
+        sc.AddScoped<Propia.Application.Tareas.ITareasService, Propia.Infrastructure.Tareas.TareasService>();
+        sc.AddScoped<Propia.Application.Mantenimiento.IMantenimientoService, Propia.Infrastructure.Mantenimiento.MantenimientoService>();
         sc.AddScoped<IPorteriaService, PorteriaService>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;

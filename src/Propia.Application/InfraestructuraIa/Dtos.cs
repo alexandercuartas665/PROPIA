@@ -19,7 +19,14 @@ public sealed record WhatsAppLineDto(
     DateTimeOffset? LastStatusAt,
     WhatsAppProvider Provider = WhatsAppProvider.Evolution,
     string? CloudPhoneNumberId = null,
-    string? YCloudFromNumber = null);
+    string? YCloudFromNumber = null,
+    /// <summary>La linea YCloud tiene guardado el secreto del webhook de entrada.</summary>
+    bool YCloudWebhookConfigurado = false);
+
+/// <summary>Secreto del endpoint de webhook de YCloud (vacio = quitarlo).</summary>
+public sealed record YCloudWebhookSecretoRequest(string? Secreto);
+/// <summary>Ruta del webhook de entrada de la copropiedad (se antepone el dominio publico) y si ya hay secreto.</summary>
+public sealed record YCloudWebhookInfoDto(string Ruta, bool Configurado);
 
 public sealed record CreateWhatsAppLineRequest(
     string InstanceName,
@@ -31,7 +38,8 @@ public sealed record CreateWhatsAppLineRequest(
     string? CloudWebhookVerifyToken = null,
     // YCloud (Provider == YCloud): API key de la cuenta + numero remitente registrado.
     string? YCloudApiKey = null,
-    string? YCloudFromNumber = null);
+    string? YCloudFromNumber = null,
+    string? YCloudWebhookSecret = null);
 
 /// <summary>Resultado de conectar una linea: QR (base64) para escanear o error.</summary>
 public sealed record LineConnectResult(bool Ok, string? QrBase64, string? Error);
@@ -51,6 +59,30 @@ public enum WhatsAppCloudMediaKind { Image, Video, Audio, Document }
 public sealed record YCloudCredentials(string ApiKey, string FromNumber);
 public sealed record YCloudCheckResult(bool Ok, string? PhoneNumber, string? VerifiedName, string? Error);
 public sealed record YCloudSendResult(bool Ok, string? ExternalId, string? Error);
+
+/// <summary>Una plantilla HSM tal como la devuelve YCloud (formato Meta) al listar, con su contenido para poder
+/// IMPORTARLA. Las variables del cuerpo son POSICIONALES ({{1}}, {{2}}...); <paramref name="VariableExamples"/>
+/// son sus ejemplos en orden. <paramref name="HeaderFormat"/> es "TEXT"|"IMAGE"|"VIDEO"|"DOCUMENT" o null.</summary>
+public sealed record YCloudTemplateItem(
+    string Name,
+    string? Language,
+    string Status,
+    string? Id,
+    string? RejectedReason,
+    string? Category,
+    string? HeaderFormat,
+    string? HeaderText,
+    string? BodyText,
+    string? FooterText,
+    IReadOnlyList<string>? VariableExamples,
+    IReadOnlyList<YCloudTemplateButton>? Buttons);
+
+/// <summary>Un boton de una plantilla HSM tal como lo trae Meta/YCloud (para importarlo y mostrarlo).
+/// <paramref name="Type"/> en MAYUSCULAS: URL | QUICK_REPLY | PHONE_NUMBER | COPY_CODE | ...
+/// <paramref name="HasUrlVariable"/> = boton URL con sufijo variable {{1}} (dinamico por envio).</summary>
+public sealed record YCloudTemplateButton(string Type, string? Text, string? Url, string? PhoneNumber, bool HasUrlVariable);
+
+public sealed record YCloudTemplateListResult(bool Ok, IReadOnlyList<YCloudTemplateItem> Items, string? Error);
 
 // ---------- Agentes de IA ----------
 

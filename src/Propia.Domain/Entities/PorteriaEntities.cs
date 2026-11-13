@@ -229,7 +229,12 @@ public class Correspondencia : TenantEntity
     public DateTimeOffset RecibidoAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? NotificadoAt { get; set; }
     public DateTimeOffset? EntregadoAt { get; set; }
+    /// <summary>Quien retiro el paquete (nombre) y su documento (opcional): constancia de la entrega.</summary>
     public string? EntregadoA { get; set; }
+    public string? EntregadoDoc { get; set; }
+    /// <summary>Recordatorios enviados al residente despues del aviso inicial ("Notificar" en la lista).</summary>
+    public int Recordatorios { get; set; }
+    public DateTimeOffset? UltimoRecordatorioAt { get; set; }
     public DateTimeOffset? DevueltoAt { get; set; }
     public string? MotivoDevolucion { get; set; }
 
@@ -263,6 +268,9 @@ public class NovedadTurno : TenantEntity
     /// <summary>FK opcional a Tarea de 2.10 si GeneraTarea=true y se creo.</summary>
     public Guid? TareaId { get; set; }
     public Tarea? Tarea { get; set; }
+
+    /// <summary>Intervencion correctiva de Mantenimiento (2.11) creada por un dano/mantenimiento sobre un equipo o zona.</summary>
+    public Guid? IntervencionId { get; set; }
 }
 
 /// <summary>

@@ -37,19 +37,23 @@
                 </div>
             }
         </div>
-        <button class="po-btn-primary" @onclick="AbrirRegistrar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>
-            Registrar ingreso
-        </button>
+        <div class="po-head-acts">
+            <a class="po-btn-manual" href="/ayuda/porteria.html" target="_blank" rel="noopener" title="Manual de usuario del módulo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Manual</a>
+            <button class="po-btn-alert" title="Alerta de seguridad: avisa de inmediato a administradores y vigilancia" @onclick="AbrirAlertaSeguridad"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Alerta de seguridad</button>
+            <button class="po-btn-primary" @onclick="AbrirRegistrar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>
+                Registrar ingreso
+            </button>
+        </div>
     </div>
 
-    <div class="po-chips">
-        <button class="po-chip @(_view == "operacion" ? "active" : "")" @onclick='() => CambiarVista("operacion")'>Operación</button>
-        <button class="po-chip @(_view == "minuta" ? "active" : "")" @onclick='() => CambiarVista("minuta")'>Minuta</button>
-        <button class="po-chip @(_view == "autorizaciones" ? "active" : "")" @onclick='() => CambiarVista("autorizaciones")'>Autorizaciones previas</button>
-        <button class="po-chip @(_view == "vehiculos" ? "active" : "")" @onclick='() => CambiarVista("vehiculos")'>Vehículos</button>
-        <button class="po-chip @(_view == "paquetes" ? "active" : "")" @onclick='() => CambiarVista("paquetes")'>Paquetes</button>
-        <button class="po-chip @(_view == "config" ? "active" : "")" @onclick='() => CambiarVista("config")'>Configuración</button>
+    @* Pestanas grandes con icono + texto (guarda de edad, telefono de la recepcion): 3x2 en movil, pastillas en escritorio. *@
+    <div class="po-chips po-chips--big">
+        @foreach (var (clave, etiqueta) in Pestanas)
+        {
+            var k = clave;
+            <button class="po-chip po-chip--big @(_view == k ? "active" : "")" @onclick="() => CambiarVista(k)"><span class="po-chip-ic">@ChipIc[k]</span><span class="po-chip-lbl">@etiqueta</span></button>
+        }
     </div>
 
     @if (!string.IsNullOrEmpty(_msg))
@@ -287,200 +291,116 @@
     @* =================== VEHICULOS =================== *@
     @if (_view == "vehiculos")
     {
+        @* Normalizado (replica 9.4): las dos acciones abren modal, como el resto del modulo; la vista solo muestra listas. *@
+        <div class="po-sub-head">
+            <div class="po-section-l" style="margin:0">VEHÍCULOS</div>
+            <div class="po-sub-acts">
+                <button class="po-btn-soft" @onclick="AbrirCrearVehiculo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>Autorizar vehículo</button>
+                <button class="po-btn-primary" disabled="@(_turno is null)" @onclick="AbrirMovVehiculo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>Registrar movimiento</button>
+            </div>
+        </div>
+        @if (_turno is null)
+        {
+            <div class="po-note" style="margin-bottom:14px">Abre un turno (vista Operación) para registrar el movimiento de vehículos.</div>
+        }
         <div class="po-card" style="margin-bottom:16px">
-            <div class="po-card-h">Registro de ingreso / salida de vehículos</div>
-            @if (_turno is null)
+            <div class="po-card-h">Minuta vehicular (turno actual)</div>
+            @if (_turno is not null && _regVehiculos is null)
             {
-                <div class="po-note">Abre un turno (vista Operación) para registrar el movimiento de vehículos.</div>
+                <div class="po-empty" style="padding:22px 0">Cargando...</div>
+            }
+            else if (_turno is null || _regVehiculos!.Count == 0)
+            {
+                <div class="po-empty" style="padding:26px 0">Sin movimientos de vehículos en este turno.</div>
             }
             else
             {
-                <div class="po-form-body">
-                    <div class="po-form-2">
-                        <div>
-                            <label class="po-lbl">Placa *</label>
-                            <input class="po-input" maxlength="10" placeholder="ABC123" @bind="_rvPlaca" @bind:event="oninput" />
-                        </div>
-                        <div>
-                            <label class="po-lbl">Movimiento</label>
-                            <select class="po-input" @bind="_rvEvento">
-                                <option value="@TipoEventoAccesoPorteria.Ingreso">Ingreso</option>
-                                <option value="@TipoEventoAccesoPorteria.Egreso">Salida</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="po-form-2">
-                        <div>
-                            <label class="po-lbl">Conductor</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_rvConductor" @bind:event="oninput" />
-                        </div>
-                        <div>
-                            <label class="po-lbl">Observación</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_rvObs" @bind:event="oninput" />
-                        </div>
-                    </div>
-                    <button class="po-btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_rvPlaca))" @onclick="RegistrarMovimientoVehiculo">Registrar movimiento</button>
-                    <div class="po-note">La placa se coteja con los vehiculos autorizados: si coincide se marca como residente y su unidad; si no, queda como visita.</div>
-                </div>
-
-                <div class="po-card-h" style="margin-top:16px">Minuta vehicular (turno actual)</div>
-                @if (_regVehiculos is null)
-                {
-                    <div class="po-empty" style="padding:22px 0">Cargando...</div>
-                }
-                else if (_regVehiculos.Count == 0)
-                {
-                    <div class="po-empty" style="padding:26px 0">Sin movimientos de vehículos en este turno.</div>
-                }
-                else
-                {
-                    <table class="po-table">
-                        <colgroup>@foreach (var k in ColsVis(_ctMinv)) { <col style="@ColStyleP(_ctMinv, k)" /> }</colgroup>
-                        <thead><tr>@foreach (var k in ColsVis(_ctMinv)) { @ThP(_ctMinv, k) }</tr></thead>
-                        <tbody>
-                            @foreach (var r in _regVehiculos)
-                            {
-                                <tr>
-                                    @foreach (var k in ColsVis(_ctMinv)) { <td>@CellMinv(r, k)</td> }
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
+                <table class="po-table">
+                    <colgroup>@foreach (var k in ColsVis(_ctMinv)) { <col style="@ColStyleP(_ctMinv, k)" /> }</colgroup>
+                    <thead><tr>@foreach (var k in ColsVis(_ctMinv)) { @ThP(_ctMinv, k) }</tr></thead>
+                    <tbody>
+                        @foreach (var rv in _regVehiculos)
+                        {
+                            <tr>
+                                @foreach (var k in ColsVis(_ctMinv)) { <td>@CellMinv(rv, k)</td> }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             }
         </div>
-        <div class="po-grid2">
-            <div class="po-card">
-                <div class="po-card-h">Vehículos autorizados</div>
-                @if (_vehiculos is null)
-                {
-                    <div class="po-empty" style="padding:30px 0">Cargando...</div>
-                }
-                else if (_vehiculos.Count == 0)
-                {
-                    <div class="po-empty" style="padding:34px 0">Sin vehículos autorizados aun.</div>
-                }
-                else
-                {
-                    <table class="po-table">
-                        <colgroup>@foreach (var k in ColsVis(_ctVeh)) { <col style="@ColStyleP(_ctVeh, k)" /> }<col style="width:110px" /></colgroup>
-                        <thead><tr>@foreach (var k in ColsVis(_ctVeh)) { @ThP(_ctVeh, k) }<th></th></tr></thead>
-                        <tbody>
-                            @foreach (var v in _vehiculos)
-                            {
-                                var vid = v.Id;
-                                <tr>
-                                    @foreach (var k in ColsVis(_ctVeh)) { <td>@CellVeh(v, k)</td> }
-                                    <td><button class="po-mini-danger" @onclick="() => DesactivarVehiculo(vid)">Desactivar</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            </div>
-            <div class="po-card po-form-card">
-                <div class="po-card-h">Autorizar vehículo</div>
-                <div class="po-form-body">
-                    <label class="po-lbl">Unidad *</label>
-                    <SelectorUnidadCodigo Unidades="_unidades"
-                                           UnidadId="@(_vUnidad == Guid.Empty ? (Guid?)null : _vUnidad)"
-                                           UnidadIdChanged="@(v => _vUnidad = v ?? Guid.Empty)"
-                                           Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
-                    <label class="po-lbl">Placa *</label>
-                    <input class="po-input" maxlength="10" placeholder="ABC123" @bind="_vPlaca" @bind:event="oninput" />
-                    <div class="po-form-2">
-                        <div>
-                            <label class="po-lbl">Tipo</label>
-                            <select class="po-input" @bind="_vTipo">
-                                @foreach (var t in Enum.GetValues<TipoVehiculo>()) { <option value="@t">@t</option> }
-                            </select>
-                        </div>
-                        <div>
-                            <label class="po-lbl">Parqueadero</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_vParq" @bind:event="oninput" />
-                        </div>
-                    </div>
-                    <div class="po-form-2">
-                        <div>
-                            <label class="po-lbl">Marca</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_vMarca" @bind:event="oninput" />
-                        </div>
-                        <div>
-                            <label class="po-lbl">Modelo</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_vModelo" @bind:event="oninput" />
-                        </div>
-                    </div>
-                    <button class="po-btn-primary" disabled="@(_busy || _vUnidad == Guid.Empty || string.IsNullOrWhiteSpace(_vPlaca))" @onclick="CrearVehiculo">Autorizar vehículo</button>
-                </div>
-            </div>
+        <div class="po-card">
+            <div class="po-card-h">Vehículos autorizados</div>
+            @if (_vehiculos is null)
+            {
+                <div class="po-empty" style="padding:30px 0">Cargando...</div>
+            }
+            else if (_vehiculos.Count == 0)
+            {
+                <div class="po-empty" style="padding:34px 0">Sin vehículos autorizados aun.</div>
+            }
+            else
+            {
+                <table class="po-table">
+                    <colgroup>@foreach (var k in ColsVis(_ctVeh)) { <col style="@ColStyleP(_ctVeh, k)" /> }<col style="width:110px" /></colgroup>
+                    <thead><tr>@foreach (var k in ColsVis(_ctVeh)) { @ThP(_ctVeh, k) }<th></th></tr></thead>
+                    <tbody>
+                        @foreach (var v in _vehiculos)
+                        {
+                            var vid = v.Id;
+                            <tr>
+                                @foreach (var k in ColsVis(_ctVeh)) { <td>@CellVeh(v, k)</td> }
+                                <td><button class="po-mini-danger" @onclick="() => DesactivarVehiculo(vid)">Desactivar</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </div>
     }
 
     @* =================== PAQUETES / CORRESPONDENCIA =================== *@
     @if (_view == "paquetes")
     {
-        <div class="po-grid2">
-            <div class="po-card">
-                <div class="po-card-h">Paquetes pendientes</div>
-                @{
-                    var pend = _correspondencia?.Where(c => c.Estado == EstadoCorrespondencia.Recibido || c.Estado == EstadoCorrespondencia.Notificado).ToList();
-                }
-                @if (_correspondencia is null)
-                {
-                    <div class="po-empty" style="padding:30px 0">Cargando...</div>
-                }
-                else if (pend is null || pend.Count == 0)
-                {
-                    <div class="po-empty" style="padding:34px 0">No hay paquetes pendientes de entrega.</div>
-                }
-                else
-                {
-                    <table class="po-table">
-                        <colgroup>@foreach (var k in ColsVis(_ctPaq)) { <col style="@ColStyleP(_ctPaq, k)" /> }<col style="width:170px" /></colgroup>
-                        <thead><tr>@foreach (var k in ColsVis(_ctPaq)) { @ThP(_ctPaq, k) }<th></th></tr></thead>
-                        <tbody>
-                            @foreach (var p in pend)
-                            {
-                                var pid = p.Id;
-                                <tr>
-                                    @foreach (var k in ColsVis(_ctPaq)) { <td>@CellPaq(p, k)</td> }
-                                    <td>
-                                        <button class="po-mini-ok" @onclick="() => EntregarPaquete(pid)">Entregar</button>
-                                        <button class="po-mini-danger" @onclick="() => DevolverPaquete(pid)">Devolver</button>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            </div>
-            <div class="po-card po-form-card">
-                <div class="po-card-h">Registrar paquete</div>
-                <div class="po-form-body">
-                    <label class="po-lbl">Unidad destinataria *</label>
-                    <SelectorUnidadCodigo Unidades="_unidades"
-                                           UnidadId="@(_paqUnidad == Guid.Empty ? (Guid?)null : _paqUnidad)"
-                                           UnidadIdChanged="@(v => _paqUnidad = v ?? Guid.Empty)"
-                                           Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
-                    <div class="po-form-2">
-                        <div>
-                            <label class="po-lbl">Tipo</label><button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestCorresp = true" style="background:none;border:none;cursor:pointer;padding:0 0 0 6px;font-size:11px;color:inherit;"><i class="fi fi-rr-settings-sliders"></i></button>
-                            <select class="po-input" @bind="_paqTipo">
-                                @foreach (var t in Enum.GetValues<TipoCorrespondencia>().Where(t => RowCorr(t)?.Activo != false)) { <option value="@t">@LblCorr(t)</option> }
-                            </select>
-                        </div>
-                        <div>
-                            <label class="po-lbl">Remitente</label>
-                            <input class="po-input" placeholder="Opcional" @bind="_paqRemitente" @bind:event="oninput" />
-                        </div>
-                    </div>
-                    @if (_turno is null)
-                    {
-                        <div class="po-note">Abre un turno (vista Operación) para registrar paquetes.</div>
-                    }
-                    <button class="po-btn-primary" disabled="@(_busy || _turno is null || _paqUnidad == Guid.Empty)" @onclick="RegistrarPaquete">Registrar paquete</button>
-                </div>
-            </div>
+        @* Normalizado (replica 9.4): "Registrar paquete" abre modal; la vista muestra los pendientes. *@
+        <div class="po-sub-head">
+            <div class="po-section-l" style="margin:0">PAQUETES Y CORRESPONDENCIA</div>
+            <button class="po-btn-primary" disabled="@(_turno is null)" @onclick="AbrirRegPaquete"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"></path></svg>Registrar paquete</button>
+        </div>
+        <div class="po-card">
+            <div class="po-card-h">Paquetes pendientes</div>
+            @{
+                var pend = _correspondencia?.Where(c => c.Estado == EstadoCorrespondencia.Recibido || c.Estado == EstadoCorrespondencia.Notificado).ToList();
+            }
+            @if (_correspondencia is null)
+            {
+                <div class="po-empty" style="padding:30px 0">Cargando...</div>
+            }
+            else if (pend is null || pend.Count == 0)
+            {
+                <div class="po-empty" style="padding:34px 0">No hay paquetes pendientes de entrega.</div>
+            }
+            else
+            {
+                <table class="po-table">
+                    <colgroup>@foreach (var k in ColsVis(_ctPaq)) { <col style="@ColStyleP(_ctPaq, k)" /> }<col style="width:210px" /></colgroup>
+                    <thead><tr>@foreach (var k in ColsVis(_ctPaq)) { @ThP(_ctPaq, k) }<th></th></tr></thead>
+                    <tbody>
+                        @foreach (var p in pend)
+                        {
+                            var pid = p.Id;
+                            <tr>
+                                @foreach (var k in ColsVis(_ctPaq)) { <td>@CellPaq(p, k)</td> }
+                                <td class="po-paq-acts">
+                                    <button class="po-mini" title="@(p.Recordatorios > 0 ? $"Reenviar la notificación al residente ({p.Recordatorios} recordatorio{(p.Recordatorios == 1 ? "" : "s")} enviado{(p.Recordatorios == 1 ? "" : "s")})" : "Reenviar la notificación al residente")" disabled="@_busy" @onclick="() => RenotificarPaquete(pid)">Notificar@(p.Recordatorios > 0 ? $" ({p.Recordatorios})" : "")</button>
+                                    <button class="po-mini-ok" @onclick='() => PedirPaqAccion(pid, "entregar")'>Entregar</button>
+                                    <button class="po-mini-danger" @onclick='() => PedirPaqAccion(pid, "devolver")'>Devolver</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </div>
     }
 
@@ -945,6 +865,170 @@
                     <button class="po-btn-primary" style="flex:1" disabled="@(_busy || _turno is null || string.IsNullOrWhiteSpace(_nvDescripcion))" @onclick="RegistrarNovedad">Registrar</button>
                 </div>
                 @if (_turno is null) { <div class="po-note">Abre un turno (vista Operación) para registrar novedades.</div> }
+            </div>
+        </div>
+    </div>
+}
+
+@* =================== MODAL REGISTRAR MOVIMIENTO DE VEHICULO =================== *@
+@if (_showMovVeh)
+{
+    <div class="po-ov" @onclick="() => _showMovVeh = false">
+        <div class="po-small" @onclick:stopPropagation="true">
+            <div class="po-modal-head">
+                <div class="po-modal-ic">@ChipIc["vehiculos"]</div>
+                <div class="po-modal-tt"><div class="po-modal-t">Registrar movimiento de vehículo</div><div class="po-modal-s">Entrada o salida por placa. Se coteja con los autorizados.</div></div>
+                <button class="po-modal-x" @onclick="() => _showMovVeh = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="po-form-body" style="padding:20px 22px">
+                <div class="po-form-2">
+                    <div>
+                        <label class="po-lbl">Placa *</label>
+                        <input class="po-input po-input-lg" maxlength="10" placeholder="ABC123" @bind="_rvPlaca" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="po-lbl">Movimiento</label>
+                        <select class="po-input po-input-lg" @bind="_rvEvento">
+                            <option value="@TipoEventoAccesoPorteria.Ingreso">Ingreso</option>
+                            <option value="@TipoEventoAccesoPorteria.Egreso">Salida</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="po-form-2">
+                    <div>
+                        <label class="po-lbl">Conductor</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_rvConductor" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="po-lbl">Observación</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_rvObs" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="po-note">La placa se coteja con los vehículos autorizados: si coincide se marca como residente y su unidad; si no, queda como visita.</div>
+                <div class="po-modal-foot">
+                    <button class="po-btn-ghost" style="flex:1" @onclick="() => _showMovVeh = false">Cancelar</button>
+                    <button class="po-btn-primary" style="flex:1" disabled="@(_busy || _turno is null || string.IsNullOrWhiteSpace(_rvPlaca))" @onclick="RegistrarMovimientoVehiculo">Registrar movimiento</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* =================== MODAL AUTORIZAR VEHICULO =================== *@
+@if (_showCrearVeh)
+{
+    <div class="po-ov" @onclick="() => _showCrearVeh = false">
+        <div class="po-small" @onclick:stopPropagation="true">
+            <div class="po-modal-head">
+                <div class="po-modal-ic">@ChipIc["vehiculos"]</div>
+                <div class="po-modal-tt"><div class="po-modal-t">Autorizar vehículo</div><div class="po-modal-s">Deja un vehículo asociado a una unidad.</div></div>
+                <button class="po-modal-x" @onclick="() => _showCrearVeh = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="po-form-body" style="padding:20px 22px">
+                <label class="po-lbl">Unidad *</label>
+                <SelectorUnidadCodigo Unidades="_unidades"
+                                       UnidadId="@(_vUnidad == Guid.Empty ? (Guid?)null : _vUnidad)"
+                                       UnidadIdChanged="@(v => _vUnidad = v ?? Guid.Empty)"
+                                       Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
+                <label class="po-lbl">Placa *</label>
+                <input class="po-input po-input-lg" maxlength="10" placeholder="ABC123" @bind="_vPlaca" @bind:event="oninput" />
+                <div class="po-form-2">
+                    <div>
+                        <label class="po-lbl">Tipo</label>
+                        <select class="po-input" @bind="_vTipo">
+                            @foreach (var t in Enum.GetValues<TipoVehiculo>()) { <option value="@t">@t</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="po-lbl">Parqueadero</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_vParq" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="po-form-2">
+                    <div>
+                        <label class="po-lbl">Marca</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_vMarca" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="po-lbl">Modelo</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_vModelo" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="po-modal-foot">
+                    <button class="po-btn-ghost" style="flex:1" @onclick="() => _showCrearVeh = false">Cancelar</button>
+                    <button class="po-btn-primary" style="flex:1" disabled="@(_busy || _vUnidad == Guid.Empty || string.IsNullOrWhiteSpace(_vPlaca))" @onclick="CrearVehiculo">Autorizar vehículo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* =================== MODAL REGISTRAR PAQUETE =================== *@
+@if (_showRegPaq)
+{
+    <div class="po-ov" @onclick="() => _showRegPaq = false">
+        <div class="po-small" @onclick:stopPropagation="true">
+            <div class="po-modal-head">
+                <div class="po-modal-ic">@ChipIc["paquetes"]</div>
+                <div class="po-modal-tt"><div class="po-modal-t">Registrar paquete</div><div class="po-modal-s">Queda notificado el residente de la unidad.</div></div>
+                <button class="po-modal-x" @onclick="() => _showRegPaq = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="po-form-body" style="padding:20px 22px">
+                <label class="po-lbl">Unidad destinataria *</label>
+                <SelectorUnidadCodigo Unidades="_unidades"
+                                       UnidadId="@(_paqUnidad == Guid.Empty ? (Guid?)null : _paqUnidad)"
+                                       UnidadIdChanged="@(v => _paqUnidad = v ?? Guid.Empty)"
+                                       Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
+                <div class="po-form-2">
+                    <div>
+                        <label class="po-lbl">Tipo</label><button type="button" title="Gestionar opciones de la lista" @onclick="() => _gestCorresp = true" style="background:none;border:none;cursor:pointer;padding:0 0 0 6px;font-size:11px;color:inherit;"><i class="fi fi-rr-settings-sliders"></i></button>
+                        <select class="po-input" @bind="_paqTipo">
+                            @foreach (var t in Enum.GetValues<TipoCorrespondencia>().Where(t => RowCorr(t)?.Activo != false)) { <option value="@t">@LblCorr(t)</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="po-lbl">Remitente</label>
+                        <input class="po-input" placeholder="Opcional" @bind="_paqRemitente" @bind:event="oninput" />
+                    </div>
+                </div>
+                @if (_turno is null) { <div class="po-note">Abre un turno (vista Operación) para registrar paquetes.</div> }
+                <div class="po-modal-foot">
+                    <button class="po-btn-ghost" style="flex:1" @onclick="() => _showRegPaq = false">Cancelar</button>
+                    <button class="po-btn-primary" style="flex:1" disabled="@(_busy || _turno is null || _paqUnidad == Guid.Empty)" @onclick="RegistrarPaquete">Registrar paquete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* =================== MODAL ENTREGAR / DEVOLVER PAQUETE (con detalle) =================== *@
+@if (_paqAccion is not null && _correspondencia?.FirstOrDefault(c => c.Id == _paqAccId) is { } paqSel)
+{
+    var entregar = _paqAccion == "entregar";
+    <div class="po-ov" @onclick="CerrarPaqAccion">
+        <div class="po-small" @onclick:stopPropagation="true">
+            <div class="po-modal-head">
+                <div class="po-modal-tt"><div class="po-modal-t">@(entregar ? "Entregar paquete" : "Devolver paquete")</div><div class="po-modal-s">@(entregar ? "Deja registrado quién recibe la correspondencia." : "Queda en la minuta y se avisa al residente.")</div></div>
+                <button class="po-modal-x" @onclick="CerrarPaqAccion"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="po-form-body" style="padding:20px 22px">
+                <div class="po-note" style="margin-bottom:12px">@LblCorr(paqSel.Tipo) &middot; Unidad @paqSel.UnidadNumero@(string.IsNullOrWhiteSpace(paqSel.Remitente) ? "" : " · " + paqSel.Remitente)</div>
+                @if (entregar)
+                {
+                    <label class="po-lbl">Quién retira *</label>
+                    <input class="po-input" placeholder="Nombre de quien recibe" maxlength="200" @bind="_entNombre" @bind:event="oninput" />
+                    <label class="po-lbl">Documento</label>
+                    <input class="po-input" placeholder="CC (opcional)" maxlength="60" @bind="_entDoc" @bind:event="oninput" />
+                }
+                else
+                {
+                    <label class="po-lbl">Motivo de la devolución *</label>
+                    <textarea class="po-input" rows="3" placeholder="Ej. El residente pidió devolverlo" @bind="_devMotivo" @bind:event="oninput"></textarea>
+                }
+                <div class="po-modal-foot">
+                    <button class="po-btn-ghost" style="flex:1" @onclick="CerrarPaqAccion">Cancelar</button>
+                    <button class="@(entregar ? "po-btn-primary" : "po-btn-danger")" style="flex:1" disabled="@(_busy || (entregar ? string.IsNullOrWhiteSpace(_entNombre) : string.IsNullOrWhiteSpace(_devMotivo)))" @onclick="ConfirmarPaqAccion">@(entregar ? "Confirmar entrega" : "Confirmar devolución")</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1590,10 +1674,10 @@
                 string.IsNullOrWhiteSpace(_vModelo) ? null : _vModelo, null,
                 string.IsNullOrWhiteSpace(_vParq) ? null : _vParq);
             var resp = await Auth().PostAsJsonAsync("/api/porteria/vehiculos", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
-            _vPlaca = _vMarca = _vModelo = _vParq = ""; _vUnidad = Guid.Empty;
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            _vPlaca = _vMarca = _vModelo = _vParq = ""; _vUnidad = Guid.Empty; _showCrearVeh = false;
             _vehiculos = await Auth().GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos") ?? new();
-            Flash("Vehiculo autorizado.", true);
+            Flash("Vehículo autorizado.", true);
         }
         finally { _busy = false; }
     }
@@ -1617,8 +1701,8 @@
                 string.IsNullOrWhiteSpace(_rvConductor) ? null : _rvConductor.Trim(),
                 string.IsNullOrWhiteSpace(_rvObs) ? null : _rvObs.Trim());
             var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/vehiculos", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
-            _rvPlaca = _rvConductor = _rvObs = ""; _rvEvento = TipoEventoAccesoPorteria.Ingreso;
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            _rvPlaca = _rvConductor = _rvObs = ""; _rvEvento = TipoEventoAccesoPorteria.Ingreso; _showMovVeh = false;
             await CargarRegistrosVehiculoAsync();
             _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
             Flash("Movimiento vehicular registrado.", true);
@@ -1642,34 +1726,83 @@
             var req = new RegistrarCorrespondenciaRequest(_paqUnidad, _paqTipo,
                 string.IsNullOrWhiteSpace(_paqRemitente) ? null : _paqRemitente, null);
             var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/correspondencia", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
-            _paqRemitente = ""; _paqUnidad = Guid.Empty;
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            _paqRemitente = ""; _paqUnidad = Guid.Empty; _showRegPaq = false;
             _correspondencia = await Auth().GetFromJsonAsync<List<CorrespondenciaDto>>("/api/porteria/correspondencia") ?? new();
             _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
-            Flash("Paquete registrado.", true);
+            Flash("Paquete registrado: se notificó al residente de la unidad.", true);
         }
         finally { _busy = false; }
     }
 
-    private async Task EntregarPaquete(Guid id)
+    // ----- Paquetes: notificar de nuevo, entregar con constancia y devolver con motivo (replica 9.2) -----
+    private string? _paqAccion;
+    private Guid _paqAccId;
+    private string _entNombre = "", _entDoc = "", _devMotivo = "";
+    private bool _showRegPaq, _showMovVeh, _showCrearVeh;
+
+    private void AbrirRegPaquete() { _paqUnidad = Guid.Empty; _paqRemitente = ""; _msg = null; _showRegPaq = true; }
+    private void AbrirMovVehiculo() { _rvPlaca = _rvConductor = _rvObs = ""; _rvEvento = TipoEventoAccesoPorteria.Ingreso; _msg = null; _showMovVeh = true; }
+    private void AbrirCrearVehiculo() { _vPlaca = _vMarca = _vModelo = _vParq = ""; _vUnidad = Guid.Empty; _msg = null; _showCrearVeh = true; }
+
+    private void PedirPaqAccion(Guid id, string modo)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{id}/entregar", new EntregarCorrespondenciaRequest(null));
-        if (resp.IsSuccessStatusCode)
-        {
-            _correspondencia = await Auth().GetFromJsonAsync<List<CorrespondenciaDto>>("/api/porteria/correspondencia") ?? new();
-            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
-        }
+        _paqAccion = modo; _paqAccId = id; _entNombre = ""; _entDoc = ""; _devMotivo = "Devuelto al transportista"; _msg = null;
+    }
+    private void CerrarPaqAccion() { _paqAccion = null; _paqAccId = Guid.Empty; }
+
+    private async Task RecargarPaquetesAsync()
+    {
+        _correspondencia = await Auth().GetFromJsonAsync<List<CorrespondenciaDto>>("/api/porteria/correspondencia") ?? new();
+        _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
     }
 
-    private async Task DevolverPaquete(Guid id)
+    private async Task RenotificarPaquete(Guid id)
     {
-        var resp = await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{id}/devolver", new DevolverCorrespondenciaRequest("Devuelto al transportista"));
-        if (resp.IsSuccessStatusCode)
+        _busy = true;
+        try
         {
-            _correspondencia = await Auth().GetFromJsonAsync<List<CorrespondenciaDto>>("/api/porteria/correspondencia") ?? new();
-            _panel = await Auth().GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
+            var resp = await Auth().PostAsync($"/api/porteria/correspondencia/{id}/notificar", null);
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            var c = await resp.Content.ReadFromJsonAsync<CorrespondenciaDto>();
+            await RecargarPaquetesAsync();
+            Flash($"Notificación reenviada al residente de la Unidad {c?.UnidadNumero}.", true);
         }
+        finally { _busy = false; }
     }
+
+    private async Task ConfirmarPaqAccion()
+    {
+        var p = _correspondencia?.FirstOrDefault(c => c.Id == _paqAccId);
+        if (p is null || _paqAccion is null) { CerrarPaqAccion(); return; }
+        _busy = true;
+        try
+        {
+            var entregar = _paqAccion == "entregar";
+            var resp = entregar
+                ? await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{p.Id}/entregar", new EntregarCorrespondenciaRequest(_entNombre.Trim(), string.IsNullOrWhiteSpace(_entDoc) ? null : _entDoc.Trim()))
+                : await Auth().PutAsJsonAsync($"/api/porteria/correspondencia/{p.Id}/devolver", new DevolverCorrespondenciaRequest(_devMotivo.Trim()));
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            CerrarPaqAccion();
+            await RecargarPaquetesAsync();
+            Flash(entregar ? $"Paquete entregado a {_entNombre.Trim()}." : $"Paquete devuelto ({_devMotivo.Trim()}).", true);
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Mensaje de error del API ({ error }) en vez del JSON crudo.</summary>
+    private static async Task<string> ErrorDeAsync(HttpResponseMessage resp)
+    {
+        var txt = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(txt);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch (System.Text.Json.JsonException) { }
+        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)resp.StatusCode}." : txt;
+    }
+
 
     // ----- Config -----
     private async Task GuardarConfig()
@@ -1746,6 +1879,16 @@
         _msg = null;
     }
     private void CerrarNovedad() => _showNovedad = false;
+
+    /// <summary>Boton rojo de la cabecera: abre la novedad como Seguridad en la minuta; al guardar avisa de inmediato.</summary>
+    private async Task AbrirAlertaSeguridad()
+    {
+        if (_turno is null) { Flash("Abre un turno (vista Operación) antes de reportar una alerta.", false); return; }
+        await CambiarVista("minuta");
+        AbrirNovedad();
+        _nvTipo = TipoNovedadPorteria.Seguridad;
+        _nvGeneraTarea = true;
+    }
     private void OnNvDestinoTipo(ChangeEventArgs e) { _nvDestinoTipo = e.Value?.ToString() ?? ""; _nvDestinoId = Guid.Empty; }
     private async Task RegistrarNovedad()
     {
@@ -1763,12 +1906,18 @@
             };
             Guid? did = (dt is not null && _nvDestinoId != Guid.Empty) ? _nvDestinoId : null;
             var req = new CrearNovedadRequest(_nvDescripcion.Trim(), _nvGeneraTarea, _nvTipo, dt, did);
-            var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/novedades", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            var resp = _nvTipo == TipoNovedadPorteria.Seguridad
+                ? await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/alerta-seguridad", new AlertaSeguridadRequest(req.Descripcion, dt, did, _nvGeneraTarea))
+                : await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/novedades", req);
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
+            var nv = await resp.Content.ReadFromJsonAsync<NovedadDto>();
             _showNovedad = false;
             var today = DateOnly.FromDateTime(DateTime.Today);
             _novedades = await Auth().GetFromJsonAsync<List<NovedadDto>>($"/api/porteria/novedades?fecha={today:yyyy-MM-dd}") ?? new();
-            Flash("Novedad registrada en la minuta.", true);
+            // Mensaje con a quien se aviso (administracion, vigilancia, el residente) y la tarea generada.
+            var avisos = nv?.Avisados is { Count: > 0 } a ? " Se avisó a " + string.Join(", ", a.Take(a.Count - 1)) + (a.Count > 1 ? " y a " : "") + a[^1] + "." : "";
+            var tarea = nv?.TareaGenerada is { } tg ? $" Se generó la tarea en {tg}." : "";
+            Flash((_nvTipo == TipoNovedadPorteria.Seguridad ? "Alerta de seguridad registrada y enviada." : "Novedad registrada en la minuta.") + avisos + tarea, true);
         }
         finally { _busy = false; }
     }
@@ -1869,6 +2018,22 @@
 
     // ----- Helpers -----
     private void Flash(string m, bool ok) { _msg = m; _msgOk = ok; }
+
+    private static readonly (string Clave, string Etiqueta)[] Pestanas =
+    {
+        ("operacion", "Operación"), ("minuta", "Minuta"), ("autorizaciones", "Autorizaciones"),
+        ("vehiculos", "Vehículos"), ("paquetes", "Paquetes"), ("config", "Configuración")
+    };
+    // Iconos representativos de cada pestana (CHIP_IC de la replica): personas, portapapeles, llave, carro, caja, engranaje.
+    private static readonly Dictionary<string, MarkupString> ChipIc = new()
+    {
+        ["operacion"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"9\" cy=\"8\" r=\"3.2\"/><circle cx=\"17\" cy=\"9\" r=\"2.4\"/><path d=\"M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M15.5 20c0-2.3 1.2-4 3.5-4s3 1.4 3 3\"/></svg>"),
+        ["minuta"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M8 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-2\"/><rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M8 11h8M8 15h5\"/></svg>"),
+        ["autorizaciones"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"7.5\" cy=\"15.5\" r=\"4\"/><path d=\"M10.5 12.5 20 3M16 7l2 2M13.5 9.5l2 2\"/></svg>"),
+        ["vehiculos"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M3 13l2-5h14l2 5M5 13h14v4H5zM7 17v2M17 17v2\"/><circle cx=\"7.5\" cy=\"15\" r=\"1\"/><circle cx=\"16.5\" cy=\"15\" r=\"1\"/></svg>"),
+        ["paquetes"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 8 12 3 3 8l9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8\"/></svg>"),
+        ["config"] = new("<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L16.2 2h-4l-.4 2.5a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-1c.6.5 1.3.9 2 1.2l.4 2.5h4l.4-2.5c.7-.3 1.4-.7 2-1.2l2.3 1 2-3.4-2-1.5c0-.4.1-.8.1-1.2z\"/></svg>")
+    };
 
     private static int Cat(TipoVisitante t) => t switch
     {

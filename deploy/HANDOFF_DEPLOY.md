@@ -1,5 +1,53 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **WEBHOOK YCLOUD - URL UNIVERSAL (2026-11-13): 1 MIGRACION (funcion SQL) + API y Web.**
+> - **MIGRACION `20261113002100_AddYCloudRutaUniversal`** (va DESPUES de `AddYCloudWebhookSecret`): crea la funcion
+>   `resolver_tenants_ycloud(text)` SECURITY DEFINER (solo lectura, devuelve tenant_id de las lineas YCloud con ese numero) con
+>   GRANT EXECUTE a propia_app y REVOKE a PUBLIC. Mismo patron que `admin_list_active_agents` (requiere que el owner de la
+>   migracion pase el RLS, como ya ocurre en prod).
+> - **URL para TODAS las copropiedades: `https://app.propia-ad.com/webhooks/ycloud`** (sin tenant). La copropiedad sale del
+>   numero de la linea del evento y la firma se valida con el secreto de esa linea. Sirve para una cuenta YCloud por
+>   copropiedad o una cuenta compartida (un solo endpoint en YCloud). La ruta con tenant `/webhooks/ycloud/{tenantId}` sigue viva.
+> - Un numero YCloud ya no puede registrarse en dos lineas (ni en dos copropiedades).
+> - **Verificar en PROD tras aplicar**: `select has_function_privilege('propia_app','resolver_tenants_ycloud(text)','EXECUTE');` (t).
+
+> **WEBHOOK DE ENTRADA DE YCLOUD (2026-11-12): 1 MIGRACION (solo columna) + API y Web.**
+> - **MIGRACION `20261112234705_AddYCloudWebhookSecret`** (va DESPUES de `PorteriaHuecosOperacion`): columna
+>   `whats_app_lines.y_cloud_webhook_secret_encrypted` (text, nullable). Tabla existente (RLS ya aplica).
+> - Endpoint publico `POST /webhooks/ycloud/{tenantId}`: mensajes entrantes (`whatsapp.inbound_message.received`, entran a la
+>   misma ingesta que Meta/Evolution: conversaciones, lista negra, agentes) y estados de entrega (`whatsapp.message.updated`).
+>   Firma `YCloud-Signature: t=..,s=..` (HMAC-SHA256 de "t.cuerpo" con el secreto del endpoint, ventana 10 min).
+>   **En Production sin secreto configurado responde 401** (`webhook_not_configured`).
+> - Configuracion por copropiedad (no hay variables de entorno): Lineas WhatsApp > boton **Webhook** de la linea YCloud muestra
+>   la URL (`https://app.propia-ad.com/webhooks/ycloud/{tenantId}`); en YCloud > Developers > Webhooks se crea el endpoint con
+>   esa URL y los 2 eventos, y el secreto (signing secret) se pega en PROPIA.
+
+> **PLANTILLAS DE WHATSAPP (2026-11-12, rama feat/plantillas-whatsapp integrada a main): 1 MIGRACION (TABLA NUEVA con RLS) + API y Web.**
+> - **MIGRACION `20261105113252_AddPlantillasWhatsApp`**: tabla `plantillas_whatsapp` (tenant, RLS ENABLE + FORCE + policy
+>   tenant_isolation + GRANT a propia_app, en la misma migracion). OJO: queda INTERCALADA (timestamp anterior a migraciones de
+>   main ya aplicadas en prod); `dotnet ef database update` la aplica igual porque no esta en `__EFMigrationsHistory`. No regenerar.
+>   Correrla a mano DESPUES del deploy, solo cuando Alex lo pida. En dev ya esta aplicada.
+> - Pagina `/ia/plantillas` (menu Comunicacion y documentos, "Plantillas de WhatsApp", orden 11). Endpoints `api/ia/plantillas*`
+>   (importar desde YCloud por la linea WhatsApp, {id}, {id}/archivar, {id}/probar). Sin config nueva: usa ApiKey + FromNumber de
+>   la linea YCloud y resuelve la WABA por API.
+> - **Verificar en PROD tras aplicar**: `select relforcerowsecurity from pg_class where relname='plantillas_whatsapp';` (t).
+
+> **PORTERIA: HUECOS DE OPERACION + UX GUARDA DE EDAD + MANUAL (2026-11-12): 1 MIGRACION (solo columnas) + API y Web + 1 AJUSTE DE MENU.**
+> - **MIGRACION `20261112201435_PorteriaHuecosOperacion`** (va DESPUES de `AsambleaOla5Sala`): `correspondencias.entregado_doc`
+>   (varchar 60), `correspondencias.recordatorios` (int, default 0), `correspondencias.ultimo_recordatorio_at`,
+>   `novedades_turno.intervencion_id` (uuid). Tablas existentes (RLS ya aplica). Sin datos tocados.
+> - **MENU (prod)**: "Porteria y accesos" (`op-porteria`) viene OCULTO en `menu_overrides` (hidden = true). Activarlo en
+>   **Super Admin > Menu** (o `update menu_overrides set hidden=false where node_key='op-porteria'`). En dev ya esta activo.
+> - Endpoints nuevos: `POST api/porteria/correspondencia/{id}/notificar` (recordatorio al residente),
+>   `POST api/porteria/turnos/{turnoId}/alerta-seguridad`. `PUT .../entregar` ahora EXIGE quien retira (+ documento opcional).
+> - Avisos: paquete registrado/recordatorio/devuelto -> al residente de la unidad (app + canal de Configuracion de Porteria:
+>   WhatsApp/correo/ninguno); novedad -> administracion siempre, residente si es sobre una unidad, vigilancia (guardas de
+>   turnos activos + usuarios con cargo portero/vigilancia/seguridad) con prioridad Critica si es de seguridad. Con
+>   "Generar tarea" (opcion RN-14 de la copropiedad): dano/mantenimiento sobre equipo o zona -> intervencion correctiva en
+>   Mantenimiento (origen Porteria); lo demas -> tarea en Tareas (origen "Porteria", tablero General).
+> - UI: pestanas grandes con icono, Vehiculos y Paquetes con modales, boton "Alerta de seguridad" y "Manual"
+>   (`/ayuda/porteria.html`, estatico). `porteria.css?v=5`.
+
 > **ASAMBLEAS OLA 5: SALA VIRTUAL CON LIVEKIT (2026-11-12): 1 MIGRACION (solo columnas) + CONFIG NUEVA (env) + API y Web.**
 > - **MIGRACION `20261112172720_AsambleaOla5Sala`** (va DESPUES de `AsambleaOla4Transcripcion`): `sesiones.grabacion_egress_id`
 >   (varchar 100), `sesiones.grabacion_iniciada_en`, `sesion_participantes.salida_pendiente_en` (timestamptz, nullable). Sin
