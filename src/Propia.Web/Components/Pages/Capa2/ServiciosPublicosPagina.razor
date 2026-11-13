@@ -512,15 +512,32 @@ else
         var anim = !q.AnimVista; q.AnimVista = true;
         var cls = v.CuentaId is null ? " spx-q--ajeno" : (v.Rango is RangoRecibo.Alto or RangoRecibo.Bajo) ? " spx-q--alerta" : "";
         var cuenta = v.CuentaId is { } cid ? _cuentas.FirstOrDefault(x => x.Id == cid) : null;
+        if (v.CuentaId is null && v.FaltaServicioTipo is { } ft)
+        {
+            // Factura combinada: el contrato es de la copropiedad pero aun no tiene servicio de este tipo.
+            var tf = TiposServicioPublico.De(ft);
+            var hermanos = string.Join(", ", _cuentas.Where(x => ReglasServicioPublico.NormalizarReferencia(x.NumeroCuenta) == v.ReferenciaNormalizada).Select(x => x.Alias));
+            return @<div class="sp-card spx-q spx-q--alerta @(anim ? "iai-anim" : "")" @key="q.Id">
+                <div class="spx-q-head"><i class="fi @tf.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge warn">@("Falta el servicio de " + ReglasServicioPublico.NombreCorto(ft))</span></div>
+                <div class="spx-val spx-val--ok"><i class="fi fi-rr-info"></i><div>El contrato <b>@(d.Referencia ?? "-")</b> es de la copropiedad@(hermanos.Length > 0 ? " (" + hermanos + ")" : ""), pero todavía no tiene un servicio de <b>@ReglasServicioPublico.NombreCorto(ft)</b>. Créalo para registrar este recibo aparte, con su propio histórico.</div></div>
+                <div class="spx-q-body"><div class="spx-datos">
+                    <div class="spx-dato"><span>Periodo</span><b>@(v.PeriodoLabel ?? "-")</b></div>
+                    <div class="spx-dato"><span>Valor</span><b>@ReglasServicioPublico.Plata(d.ValorTotal ?? d.ValorPeriodo)</b></div>
+                    @if (ReglasServicioPublico.ConsumoEfectivo(d.Consumo, d.LecturaAnterior, d.LecturaActual) is { } cf && cf != 0) { <div class="spx-dato"><span>Consumo</span><b>@(ReglasServicioPublico.Cant(cf) + " " + (d.UnidadMedida ?? ""))</b></div> }
+                </div></div>
+                <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" @onclick="() => Descartar(q)">Descartar</button>
+                    <button type="button" class="srv-btn-primary sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">@("Crear servicio de " + ReglasServicioPublico.NombreCorto(ft))</button></div>
+            </div>;
+        }
         if (v.CuentaId is null)
             return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
-                <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><span class="srv-badge danger">No es de la copropiedad</span></div>
+                <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<span class="srv-badge danger">No es de la copropiedad</span></div>
                 <div class="spx-val spx-val--no"><i class="fi fi-rr-cross-circle"></i><div>La referencia <b>@(d.Referencia ?? "-")</b> (@(d.Prestador ?? "-"), titular @(d.Titular ?? "-")) no corresponde a ningún servicio configurado de la copropiedad. No se registra.</div></div>
                 <div class="spx-q-acts"><button type="button" class="srv-btn-ghost sm" disabled="@q.Ocupado" @onclick="() => AgregarComoServicioAsync(q)">Es nuestro: agregarlo como servicio</button>
                     <button type="button" class="srv-btn-primary sm" @onclick="() => Descartar(q)">Descartar</button></div>
             </div>;
         return @<div class="sp-card spx-q@(cls) @(anim ? "iai-anim" : "")" @key="q.Id">
-            <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span><SpxBadgeRango Rango="v.Rango" /></div>
+            <div class="spx-q-head"><i class="fi @t.Icono"></i><span class="spx-q-file">@q.FileName</span>@if (q.Parte is not null) { <span class="srv-badge spx-q-parte">@q.Parte</span> }<SpxBadgeRango Rango="v.Rango" /></div>
             <div class="spx-val spx-val--ok"><i class="fi fi-rr-check-circle"></i><div>Servicio de la copropiedad: <b>@v.CuentaAlias</b> · referencia @d.Referencia coincide.</div></div>
             @if (v.Duplicado) { <div class="spx-motivo spx-motivo--info"><i class="fi fi-rr-info"></i> @("Ya hay un recibo de " + v.PeriodoLabel + " para este servicio: al confirmar se reemplaza.")</div> }
             @foreach (var m in v.Motivos) { <div class="spx-motivo"><i class="fi fi-rr-triangle-warning"></i> @m</div> }

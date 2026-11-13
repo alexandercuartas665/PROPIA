@@ -644,7 +644,7 @@ public partial class PropiaDbContext
             b.Property(x => x.ConsumoMax).HasPrecision(14, 2);
             b.HasIndex(x => x.TenantId);
             // Referencia unica por copropiedad (la IA reconoce el recibo por ella). Parcial: sin referencia no choca.
-            b.HasIndex(x => new { x.TenantId, x.ReferenciaNormalizada }).IsUnique().HasFilter("referencia_normalizada IS NOT NULL");
+            b.HasIndex(x => new { x.TenantId, x.ReferenciaNormalizada, x.Tipo }).IsUnique().HasFilter("referencia_normalizada IS NOT NULL");   // factura combinada: un contrato, un servicio por tipo
             b.HasMany(x => x.Registros).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
             b.HasMany(x => x.Reclamaciones).WithOne(r => r.Cuenta!).HasForeignKey(r => r.CuentaServicioId).OnDelete(DeleteBehavior.Cascade);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);

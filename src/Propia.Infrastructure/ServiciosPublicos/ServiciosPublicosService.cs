@@ -75,8 +75,9 @@ public class ServiciosPublicosService : IServiciosPublicosService
         if (string.IsNullOrWhiteSpace(req.Alias)) throw new InvalidOperationException("El nombre del servicio es obligatorio.");
         ValidarDiaPago(req.DiaPago);
         var refNorm = ReglasServicioPublico.NormalizarReferencia(req.NumeroCuenta);
-        if (refNorm is not null && await _db.CuentasServicioPublico.AnyAsync(x => x.ReferenciaNormalizada == refNorm, ct))
-            throw new InvalidOperationException($"Ya hay un servicio con la referencia {req.NumeroCuenta!.Trim()}.");
+        // Un contrato puede cobrar varios servicios (EMCALI: energia, acueducto y aseo): la referencia es unica POR TIPO.
+        if (refNorm is not null && await _db.CuentasServicioPublico.AnyAsync(x => x.ReferenciaNormalizada == refNorm && x.Tipo == req.Tipo, ct))
+            throw new InvalidOperationException($"Ya hay un servicio de {ReglasServicioPublico.NombreCorto(req.Tipo)} con la referencia {req.NumeroCuenta!.Trim()}.");
         var c = new CuentaServicioPublico
         {
             Tipo = req.Tipo,
@@ -107,6 +108,19 @@ public class ServiciosPublicosService : IServiciosPublicosService
             if (string.IsNullOrWhiteSpace(req.Alias)) throw new InvalidOperationException("El nombre del servicio no puede quedar vacío.");
             c.Alias = req.Alias.Trim();
         }
+        // Referencia unica POR TIPO, validada con el tipo y la referencia FINALES antes de tocar la entidad.
+        if (req.NumeroCuenta is not null || req.Tipo is not null)
+        {
+            var tipoFinal = req.Tipo ?? c.Tipo;
+            var refFinal = limpiar.Contains("numeroCuenta") ? null
+                : req.NumeroCuenta is not null ? ReglasServicioPublico.NormalizarReferencia(req.NumeroCuenta) : c.ReferenciaNormalizada;
+            if (refFinal is not null)
+            {
+                var otra = await _db.CuentasServicioPublico.AsNoTracking()
+                    .Where(x => x.ReferenciaNormalizada == refFinal && x.Tipo == tipoFinal && x.Id != id).Select(x => x.Alias).FirstOrDefaultAsync(ct);
+                if (otra is not null) throw new InvalidOperationException($"La referencia {(req.NumeroCuenta ?? c.NumeroCuenta)?.Trim()} ya es del servicio de {ReglasServicioPublico.NombreCorto(tipoFinal)} \"{otra}\".");
+            }
+        }
         if (req.Tipo is { } t)
         {
             c.Tipo = t;
@@ -116,15 +130,8 @@ public class ServiciosPublicosService : IServiciosPublicosService
         if (limpiar.Contains("numeroCuenta")) { c.NumeroCuenta = null; c.ReferenciaNormalizada = null; }
         else if (req.NumeroCuenta is not null)
         {
-            var refNorm = ReglasServicioPublico.NormalizarReferencia(req.NumeroCuenta);
-            if (refNorm is not null)
-            {
-                var otra = await _db.CuentasServicioPublico.AsNoTracking()
-                    .Where(x => x.ReferenciaNormalizada == refNorm && x.Id != id).Select(x => x.Alias).FirstOrDefaultAsync(ct);
-                if (otra is not null) throw new InvalidOperationException($"La referencia {req.NumeroCuenta.Trim()} ya es de \"{otra}\".");
-            }
             c.NumeroCuenta = Limpio(req.NumeroCuenta);
-            c.ReferenciaNormalizada = refNorm;
+            c.ReferenciaNormalizada = ReglasServicioPublico.NormalizarReferencia(req.NumeroCuenta);
         }
         if (limpiar.Contains("metodoPago")) c.MetodoPago = null; else if (req.MetodoPago is not null) c.MetodoPago = Limpio(req.MetodoPago);
         if (limpiar.Contains("unidadMedida")) c.UnidadMedida = null; else if (req.UnidadMedida is not null) c.UnidadMedida = Limpio(req.UnidadMedida);
@@ -201,18 +208,18 @@ public class ServiciosPublicosService : IServiciosPublicosService
         var valor = ValorDe(req);
         var cuadra = ReglasServicioPublico.CuadraDesglose((req.Conceptos ?? Array.Empty<ConceptoReciboDto>()).Select(x => x.Valor), req.ValorTotal ?? req.ValorPeriodo);
 
-        CuentaServicioPublico? cuenta = null; var inactiva = false;
+        CuentaServicioPublico? cuenta = null; var inactiva = false; TipoServicioPublico? falta = null;
         if (refNorm is not null)
         {
             var candidatas = await _db.CuentasServicioPublico.AsNoTracking().Include(x => x.Registros)
                 .Where(x => x.ReferenciaNormalizada == refNorm).ToListAsync(ct);
-            cuenta = candidatas.FirstOrDefault(x => x.Activa);
-            inactiva = cuenta is null && candidatas.Count > 0;
+            (cuenta, falta) = ElegirCuenta(candidatas, req.TipoServicio);
+            inactiva = cuenta is null && falta is null && candidatas.Count > 0;
         }
         if (cuenta is null)
             return new EvaluacionReciboDto(null, null, req.Referencia, refNorm, periodo?.Anio, periodo?.Mes,
                 periodo is { } p0 ? ReglasServicioPublico.PeriodoLabel(p0.Anio, p0.Mes) : null,
-                false, RangoRecibo.Nada, Array.Empty<string>(), valor, null, null, req.UnidadMedida, cuadra, inactiva);
+                false, RangoRecibo.Nada, Array.Empty<string>(), valor, null, null, req.UnidadMedida, cuadra, inactiva, falta);
 
         var duplicado = periodo is { } p && cuenta.Registros.Any(x => x.Anio == p.Anio && x.Mes == p.Mes);
         var consumo = ReglasServicioPublico.ConsumoEfectivo(req.Consumo, req.LecturaAnterior, req.LecturaActual);
@@ -231,10 +238,13 @@ public class ServiciosPublicosService : IServiciosPublicosService
         // La validacion se repite en el servidor: nunca se registra un recibo que no sea de la copropiedad.
         var refNorm = ReglasServicioPublico.NormalizarReferencia(req.Referencia)
             ?? throw new InvalidOperationException("El recibo no trae la referencia del contrato.");
-        var c = await _db.CuentasServicioPublico.Include(x => x.Registros).ThenInclude(r => r.Conceptos)
-            .FirstOrDefaultAsync(x => x.ReferenciaNormalizada == refNorm && x.Activa, ct)
-            ?? throw new InvalidOperationException("La referencia del recibo no corresponde a ningún servicio configurado de la copropiedad.");
-        if (req.CuentaId is { } cid && cid != c.Id) throw new InvalidOperationException("El recibo no corresponde al servicio indicado.");
+        var candidatas = await _db.CuentasServicioPublico.Include(x => x.Registros).ThenInclude(r => r.Conceptos)
+            .Where(x => x.ReferenciaNormalizada == refNorm).ToListAsync(ct);
+        // Con la cuenta indicada (la que devolvio evaluar) se usa esa, siempre que tenga la referencia del recibo y este activa.
+        var c = req.CuentaId is { } cid
+            ? candidatas.FirstOrDefault(x => x.Id == cid && x.Activa) ?? throw new InvalidOperationException("El recibo no corresponde al servicio indicado.")
+            : ElegirCuenta(candidatas, req.TipoServicio).Cuenta
+              ?? throw new InvalidOperationException("La referencia del recibo no corresponde a ningún servicio configurado de la copropiedad.");
         var periodo = ReglasServicioPublico.Periodo(req.PeriodoDesde, req.PeriodoHasta, req.FechaExpedicion)
             ?? throw new InvalidOperationException("No se pudo determinar el periodo del recibo.");
         var valor = ValorDe(req) ?? throw new InvalidOperationException("El recibo no trae el valor a pagar.");
@@ -273,6 +283,20 @@ public class ServiciosPublicosService : IServiciosPublicosService
         var previo = c.Registros.Where(x => x.Id != r.Id && Orden(x) < Orden(r)).OrderByDescending(Orden).FirstOrDefault();
         await AlertarSiFueraAsync(c, r, previo, ct);
         return ToRegistroDto(c, r, previo);
+    }
+
+    /// <summary>
+    /// Servicio de un recibo entre los de su referencia. Un contrato puede cobrar varios servicios (factura combinada):
+    /// se toma el del TIPO del recibo; si el contrato existe pero no tiene servicio de ese tipo, se devuelve el tipo que
+    /// falta (la pantalla ofrece crearlo). Sin tipo reconocible: el unico activo, o el primero si hay varios.
+    /// </summary>
+    private static (CuentaServicioPublico? Cuenta, TipoServicioPublico? Falta) ElegirCuenta(List<CuentaServicioPublico> candidatas, string? tipoRecibo)
+    {
+        var activas = candidatas.Where(x => x.Activa).OrderBy(x => x.Alias).ToList();
+        if (activas.Count == 0) return (null, null);
+        if (ReglasServicioPublico.TipoDesdeTexto(tipoRecibo) is { } t)
+            return activas.FirstOrDefault(x => x.Tipo == t) is { } mismo ? (mismo, null) : (null, t);
+        return (activas[0], null);
     }
 
     public async Task<EvaluacionReciboDto> AgregarServicioDesdeReciboAsync(ReciboLeidoRequest req, CancellationToken ct)

@@ -29,6 +29,8 @@ public sealed class ReciboEnCola
     public bool Ocupado { get; set; }
     /// <summary>La IA leyo el recibo pero el documento no quedo guardado en el storage (se avisa antes de confirmar).</summary>
     public bool SinDocumento { get; set; }
+    /// <summary>Factura combinada: servicio de esta tarjeta ("Aseo · 2 de 3"); null en un recibo de un solo servicio.</summary>
+    public string? Parte { get; set; }
 }
 
 /// <summary>Pestana Recibos y consumo (replica: renderRecibos()).</summary>
@@ -180,7 +182,63 @@ public partial class ServiciosPublicosPagina
         if (q.Eval is null) { q.Ia.Fallo("No se pudo validar el recibo contra tus servicios. Intenta de nuevo."); return; }
         q.Req = q.Req! with { ArchivoKey = res.PdfOrigenKey };
         q.SinDocumento = string.IsNullOrEmpty(res.PdfOrigenKey);
+
+        // Factura combinada (EMCALI: energia, acueducto y aseo con un contrato): una tarjeta por servicio, todas con el
+        // mismo documento; cada una se valida contra el servicio de SU tipo y se confirma por separado.
+        var partes = PartesFacturaCombinada(leidos, q.Req);
+        if (partes.Count >= 2)
+        {
+            var pos = _cola.IndexOf(q);
+            for (var i = 0; i < partes.Count; i++)
+            {
+                var item = i == 0 ? q : new ReciboEnCola { FileName = q.FileName, Bytes = q.Bytes, Mime = q.Mime, Ext = q.Ext };
+                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.Ia.YaLeido(); _cola.Insert(pos + i, item); }
+                item.Req = partes[i];
+                item.Parte = $"{TiposServicioPublico.De(ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio) ?? TipoServicioPublico.EnergiaElectrica).Nombre} · {i + 1} de {partes.Count}";
+                item.TipoDetectado = ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio);
+                item.Eval = await EvaluarAsync(partes[i]);
+                if (item.Eval is null) item.Ia.Fallo("No se pudo validar este servicio de la factura. Intenta de nuevo.");
+            }
+            StateHasChanged();
+            return;
+        }
         if (q.Eval.CuentaId is { } cid && _cuentas.FirstOrDefault(c => c.Id == cid) is { } c) q.TipoDetectado = c.Tipo;
+    }
+
+    /// <summary>
+    /// Servicios de una factura combinada (clave "servicios" del perfil, ya normalizada en el servidor): cada uno hereda
+    /// del recibo completo la referencia, el prestador, las fechas y el documento, y trae SU tipo, consumo, lecturas,
+    /// valor y desglose. Menos de 2 -> lista vacia (recibo de un solo servicio).
+    /// </summary>
+    private static List<ReciboLeidoRequest> PartesFacturaCombinada(IReadOnlyList<IaCampo> campos, ReciboLeidoRequest baseRecibo)
+    {
+        var outp = new List<ReciboLeidoRequest>();
+        if (campos.FirstOrDefault(c => c.Nombre == "servicios")?.Valor is not { Length: > 0 } json) return outp;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            foreach (var x in doc.RootElement.EnumerateArray())
+            {
+                string? S(string k) => x.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.String ? e.GetString() : null;
+                decimal? D(string k) => x.TryGetProperty(k, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetDecimal() : null;
+                var tipo = S("tipo"); var valor = D("valor");
+                if (string.IsNullOrWhiteSpace(tipo) || valor is null) continue;
+                List<ConceptoReciboDto>? conceptos = null;
+                if (x.TryGetProperty("conceptos", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    conceptos = ce.EnumerateArray()
+                        .Select(k => new ConceptoReciboDto(k.TryGetProperty("concepto", out var n) ? n.GetString() ?? "" : "", k.TryGetProperty("valor", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDecimal() : 0))
+                        .Where(k => k.Concepto.Length > 0).ToList();
+                outp.Add(baseRecibo with
+                {
+                    TipoServicio = tipo, Consumo = D("consumo"), UnidadMedida = S("unidad"),
+                    LecturaAnterior = D("lectura_anterior"), LecturaActual = D("lectura_actual"),
+                    ValorPeriodo = valor, SaldoAnterior = null, ValorTotal = valor,
+                    Conceptos = conceptos is { Count: > 0 } ? conceptos : new List<ConceptoReciboDto> { new("Valor del servicio", valor.Value) }
+                });
+            }
+        }
+        catch { outp.Clear(); }
+        return outp.Count >= 2 ? outp : new List<ReciboLeidoRequest>();
     }
 
     private async Task<EvaluacionReciboDto?> EvaluarAsync(ReciboLeidoRequest req)
@@ -224,7 +282,7 @@ public partial class ServiciosPublicosPagina
         "direccion_suministro" => "Dirección", "tipo_servicio" => "Servicio", "periodo_desde" or "periodo_hasta" => "Periodo",
         "fecha_expedicion" => "Expedición", "fecha_limite_pago" => "Fecha límite", "lectura_anterior" or "lectura_actual" => "Lecturas",
         "consumo" => "Consumo", "valor_periodo" => "Valor del periodo", "saldo_anterior" => "Saldo anterior",
-        "valor_total" => "Total a pagar", "conceptos" => "Desglose", _ => null
+        "valor_total" => "Total a pagar", "conceptos" => "Desglose", "servicios" => "Servicios de la factura", _ => null
     };
 
     private void Descartar(ReciboEnCola q) { _cola.Remove(q); StateHasChanged(); }

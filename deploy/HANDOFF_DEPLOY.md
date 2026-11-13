@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS - OLA C, FACTURAS COMBINADAS (2026-11-13): 1 MIGRACION (solo indice) + API y Web.**
+> - **MIGRACION `20261113131102_ServiciosPublicosReferenciaPorTipo`** (va DESPUES de `AddYCloudRutaUniversal`): cambia el
+>   indice unico de `cuentas_servicio_publico` de (tenant_id, referencia_normalizada) a (tenant_id, referencia_normalizada, tipo).
+>   No toca datos ni RLS; las cuentas actuales siguen siendo validas. Aplicada en dev. En prod: solo con OK de Alex.
+> - Un contrato puede tener un servicio POR TIPO (EMCALI: energia, acueducto y aseo con el mismo numero). Una factura que
+>   cobra varios servicios se reparte en una tarjeta por servicio (clave nueva `servicios` del perfil `recibo_servicio`),
+>   cada una se valida contra el servicio de SU tipo y todas comparten el documento. Si el contrato no tiene servicio de ese
+>   tipo, la tarjeta ofrece "Crear servicio de <tipo>".
+> - **Verificar en PROD tras aplicar**: `select indexdef from pg_indexes where indexname like 'IX_cuentas_servicio_publico_tenant_id_referencia_normalizada%';`
+>   debe incluir `tipo`.
+
 > **SERVICIOS PUBLICOS - OLA B (2026-11-13): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Al leer un recibo, si es de OTRO tipo que el servicio con el que coincidio la referencia (ej. recibo de aseo de EMCALI en
 >   el servicio de energia con el mismo contrato) o mide en otra unidad, la tarjeta lo avisa antes de confirmar.

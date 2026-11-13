@@ -65,7 +65,9 @@ public record EvaluacionReciboDto(
     int? Anio, int? Mes, string? PeriodoLabel,
     bool Duplicado, RangoRecibo Rango, IReadOnlyList<string> Motivos,
     decimal? Valor, decimal? ValorMin, decimal? ValorMax, string? Unidad,
-    bool CuadraDesglose, bool CuentaInactiva);
+    bool CuadraDesglose, bool CuentaInactiva,
+    /// <summary>La referencia es de la copropiedad pero no tiene servicio de este tipo (factura combinada): se ofrece crearlo.</summary>
+    TipoServicioPublico? FaltaServicioTipo = null);
 
 // ----- Reclamaciones -----
 public record ReclamacionServicioDto(

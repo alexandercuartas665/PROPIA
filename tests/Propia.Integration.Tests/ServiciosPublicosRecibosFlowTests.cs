@@ -37,9 +37,14 @@ public class ServiciosPublicosRecibosFlowTests
         var c = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía", "EPM", "9001234-5", null, null, 25), default);
         Assert.Equal("kWh", c.UnidadMedida);   // unidad por defecto del tipo
 
+        // Mismo contrato y mismo TIPO: no. Mismo contrato y otro tipo (factura combinada): si.
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Otro", "Vanti", "9001.234 5", null, null, 25), default));
-        var otra = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas", "Vanti", "777", null, null, 25), default);
+            svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Otro", "EPM", "9001.234 5", null, null, 25), default));
+        var gasMismoContrato = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas EPM", "EPM", "9001.234 5", null, null, 25), default);
+        // ...y no se puede volver de energia si el contrato ya tiene uno de energia.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            svc.ActualizarCuentaAsync(gasMismoContrato.Id, new ActualizarCuentaServicioRequest(Tipo: TipoServicioPublico.EnergiaElectrica), default));
+        var otra = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energía 2", "EPM", "777", null, null, 25), default);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.ActualizarCuentaAsync(otra.Id, new ActualizarCuentaServicioRequest(NumeroCuenta: "90012345"), default));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -144,8 +149,8 @@ public class ServiciosPublicosRecibosFlowTests
         var cA = await a.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas A", "Vanti", "7788123", null, null, 25), default);
         // La MISMA referencia en otra copropiedad es valida (unica por tenant) y el recibo de A no es de B.
         var cB = await b.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.Gas, "Gas B", "Vanti", "7788123", null, null, 25), default);
-        Assert.Equal(cB.Id, (await b.EvaluarReciboAsync(Recibo("7788123", 500_000m), default)).CuentaId);
-        Assert.Equal(cA.Id, (await a.EvaluarReciboAsync(Recibo("7788123", 500_000m), default)).CuentaId);
+        Assert.Equal(cB.Id, (await b.EvaluarReciboAsync(Recibo("7788123", 500_000m) with { TipoServicio = "gas" }, default)).CuentaId);
+        Assert.Equal(cA.Id, (await a.EvaluarReciboAsync(Recibo("7788123", 500_000m) with { TipoServicio = "gas" }, default)).CuentaId);
 
         Assert.Null(await b.GetCuentaAsync(cA.Id, default));
         Assert.Null(await b.ActualizarCuentaAsync(cA.Id, new ActualizarCuentaServicioRequest(Alias: "Hackeada"), default));
@@ -236,11 +241,28 @@ public class ServiciosPublicosRecibosFlowTests
         var svc = Build(t);
         var energia = await svc.CrearCuentaAsync(new CrearCuentaServicioRequest(TipoServicioPublico.EnergiaElectrica, "Energia", "EMCALI", "133611", null, "kWh", 25), default);
 
-        // Recibo de ASEO con el mismo contrato (EMCALI): coincide la referencia pero se avisa que es otro servicio.
-        var aseo = Recibo("133611", 63_186m, 0.19m, 10) with { TipoServicio = "aseo", UnidadMedida = "M3", LecturaAnterior = null, LecturaActual = null };
+        // Recibo de ASEO con el mismo contrato (EMCALI): el contrato es nuestro pero no hay servicio de aseo -> se ofrece crearlo.
+        var aseo = Recibo("133611", 63_186m, 0.19m, 10) with { TipoServicio = "aseo", UnidadMedida = "M3", LecturaAnterior = null, LecturaActual = null, ArchivoKey = "tenants/x/emcali.pdf" };
         var ev = await svc.EvaluarReciboAsync(aseo, default);
-        Assert.Equal(energia.Id, ev.CuentaId);
-        Assert.Equal("El recibo parece de aseo, pero \"Energia\" es un servicio de energía: revisa que sea el servicio correcto antes de confirmar.", ev.Motivos[0]);
+        Assert.Null(ev.CuentaId);
+        Assert.Equal(TipoServicioPublico.Aseo, ev.FaltaServicioTipo);
+        Assert.False(ev.CuentaInactiva);
+
+        // "Crear servicio de aseo": nace con el mismo contrato y el recibo pasa a ser de ese servicio, sin avisos de tipo.
+        ev = await svc.AgregarServicioDesdeReciboAsync(aseo, default);
+        Assert.NotNull(ev.CuentaId);
+        Assert.NotEqual(energia.Id, ev.CuentaId);
+        Assert.DoesNotContain(ev.Motivos, m => m.Contains("parece de"));
+        var regAseo = await svc.ConfirmarReciboAsync(aseo with { CuentaId = ev.CuentaId }, default);
+        Assert.Equal(0.19m, regAseo.Consumo);
+
+        // Otra parte de la MISMA factura (energia) va a la cuenta de energia y comparte el documento.
+        var parteEnergia = Recibo("133611", 120_000m, 150m, 10) with { TipoServicio = "energia", ArchivoKey = "tenants/x/emcali.pdf" };
+        var evE = await svc.EvaluarReciboAsync(parteEnergia, default);
+        Assert.Equal(energia.Id, evE.CuentaId);
+        await svc.ConfirmarReciboAsync(parteEnergia with { CuentaId = energia.Id }, default);
+        await using (var ctx = OwnerDb())
+            Assert.Equal(2, await ctx.RegistrosConsumoServicio.IgnoreQueryFilters().CountAsync(x => x.TenantId == t && x.ArchivoKey == "tenants/x/emcali.pdf"));
 
         // Recibo de energia sin consumo pero con lecturas: se registra la diferencia.
         var sinConsumo = Recibo("133611", 210_000m, null, 9) with { TipoServicio = "energia", LecturaAnterior = 45_210m, LecturaActual = 45_398m };
