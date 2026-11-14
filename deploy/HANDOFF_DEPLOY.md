@@ -1,5 +1,15 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **TERCEROS - OLA C, LINK PUBLICO DE REGISTRO (2026-11-14): SIN MIGRACION. API y Web.**
+> - Terceros tiene el boton **"Compartir link de registro"**: copia `https://app.propia-ad.com/terceros/registro/{tenantId}`.
+>   La pagina publica (sin sesion) deja subir RUT / Camara / certificacion bancaria; el tercero queda CREADO directo.
+> - API nueva anonima `api/publico/terceros/{tenantId}/{config|leer|registrar}` (`PublicTercerosController`): copropiedad
+>   activa, 20 documentos/hora por IP (IMemoryCache, por instancia), honeypot `website`, solo PDF/imagen, SetTenant + RLS.
+>   `leer` reusa el Agente Documental de la copropiedad (`OcrController.ExtraerAgenteParaCopropiedadAsync`, refactor sin
+>   cambio de comportamiento para `/api/ocr/extraer-agente`). Consume tokens de IA de la copropiedad.
+> - Web: ruta `/terceros/registro/` agregada a las rutas publicas (App.razor y `propia-auth.js?v=5`); `directorio.css?v=15`.
+> - Sin config nueva. Verificar en prod: abrir el link en ventana de incognito y subir un RUT de prueba (luego borrarlo).
+
 > **TERCEROS - OLA B, CERTIFICACION BANCARIA (2026-11-14): SIN MIGRACION. API y Web.**
 > - "Crear con IA" en Terceros tambien acepta certificaciones bancarias: el TITULAR es el tercero (empresa por NIT o persona
 >   por documento; se crea si no existe) y el documento queda en sus Documentos con los datos de la cuenta en el nombre

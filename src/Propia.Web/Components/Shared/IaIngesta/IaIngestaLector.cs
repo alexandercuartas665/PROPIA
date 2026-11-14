@@ -33,7 +33,8 @@ public static class IaIngestaLector
         IJSRuntime js, Func<HttpClient> http, Func<HttpClient> httpLargo,
         Func<IReadOnlyList<IaCampo>, IReadOnlyList<string>> aplicar, Func<string, string?> etiqueta,
         string msgNoPdf, bool guardarPdfOrigen = false,
-        bool aceptarImagenes = false, Func<IReadOnlyList<IaCampo>, Task>? validar = null)
+        bool aceptarImagenes = false, Func<IReadOnlyList<IaCampo>, Task>? validar = null,
+        string endpoint = "/api/ocr/extraer-agente")
     {
         var esPdf = mime.Contains("pdf", StringComparison.OrdinalIgnoreCase);
         var esImagen = aceptarImagenes && EsImagenSoportada(mime);
@@ -89,7 +90,7 @@ public static class IaIngestaLector
             Resp? r = null;
             for (var intento = 1; intento <= 2 && r?.Campos is not { Count: > 0 }; intento++)
             {
-                var llamada = (imgs is not null ? httpLargo() : http()).PostAsJsonAsync("/api/ocr/extraer-agente", body);
+                var llamada = (imgs is not null ? httpLargo() : http()).PostAsJsonAsync(endpoint, body);
                 await ia.EsperarAsync(llamada);
                 var resp = await llamada;
                 if (!resp.IsSuccessStatusCode) { ia.Fallo("No se pudo leer el documento " + await DetalleErrorAsync(resp), "Error IA"); return null; }

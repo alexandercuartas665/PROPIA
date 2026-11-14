@@ -49,8 +49,22 @@
                 @(_terIaBusy ? "Procesando..." : "Crear con IA")
                 <InputFile OnChange="OnDocumentosTercerosAsync" multiple accept=".pdf,image/*" style="display:none" disabled="@_terIaBusy" />
             </label>
+            @* Ola C: link publico para que el proveedor se registre solo subiendo sus documentos (queda creado directo). *@
+            <button class="dir-btn-soft" type="button" @onclick="CompartirLinkRegistroAsync" title="Copia el enlace para que tus proveedores se registren solos subiendo sus documentos">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.5"/></svg>
+                Compartir link de registro
+            </button>
         </div>
     </div>
+
+    @if (_linkRegistro is not null)
+    {
+        <div class="dir-impres dir-link-reg">
+            <span><b>Link de registro de proveedores</b> @_linkRegistroMsg</span>
+            <input class="dir-link-inp" readonly value="@_linkRegistro" onclick="this.select()" />
+            <button type="button" class="dir-btn-soft" @onclick="() => _linkRegistro = null">Cerrar</button>
+        </div>
+    }
 
     @if (_terIa.Count > 0)
     {
@@ -2530,6 +2544,37 @@
             it.Ok = true;
         }
         catch (Exception ex) { it.Resultado = ex.Message; it.Ok = false; }
+    }
+
+    // ---- Ola C: link publico de registro de terceros ----
+    private string? _linkRegistro;
+    private string _linkRegistroMsg = "";
+
+    private async Task CompartirLinkRegistroAsync()
+    {
+        var tid = TenantIdDeJwt();
+        if (tid is null) { _linkRegistro = ""; _linkRegistroMsg = "No se pudo identificar la copropiedad; recarga la página."; return; }
+        _linkRegistro = $"{Nav.BaseUri}terceros/registro/{tid}";
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _linkRegistro); _linkRegistroMsg = "copiado al portapapeles. Quien lo abra sube su RUT, Cámara de Comercio o certificación bancaria y queda registrado."; }
+        catch { _linkRegistroMsg = "listo para copiar (selecciónalo y cópialo)."; }
+    }
+
+    /// <summary>tenant_id del JWT (claim), igual que el link publico de PQRSD.</summary>
+    private Guid? TenantIdDeJwt()
+    {
+        if (string.IsNullOrEmpty(_jwt)) return null;
+        var parts = _jwt.Split('.');
+        if (parts.Length < 2) return null;
+        try
+        {
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("tenant_id", out var el) && Guid.TryParse(el.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
     }
 
     private static async Task<string> LeerErrorAsync(HttpResponseMessage resp)

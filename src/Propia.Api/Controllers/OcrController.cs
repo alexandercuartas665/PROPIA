@@ -106,7 +106,13 @@ public class OcrController : ControllerBase
     /// </summary>
     [HttpPost("extraer-agente")]
     [RequestSizeLimit(25 * 1024 * 1024)]
-    public async Task<IActionResult> ExtraerAgente([FromBody] ExtraerAgenteRequest req, CancellationToken ct)
+    public Task<IActionResult> ExtraerAgente([FromBody] ExtraerAgenteRequest req, CancellationToken ct)
+        => ExtraerAgenteParaCopropiedadAsync(req, Guid.TryParse(User.FindFirstValue("tenant_id"), out var t) ? t : null, ct);
+
+    /// <summary>Nucleo de extraer-agente con la copropiedad explicita (sesion o, en el registro publico de terceros,
+    /// la del link). La copropiedad ya debe estar fijada en el ITenantContext del request.</summary>
+    [NonAction]
+    public async Task<IActionResult> ExtraerAgenteParaCopropiedadAsync(ExtraerAgenteRequest req, Guid? tenantId, CancellationToken ct)
     {
         var hayImagenes = req?.Imagenes is { Count: > 0 };
         if (req is null || (string.IsNullOrWhiteSpace(req.Texto) && !hayImagenes)) return BadRequest(new { error = "texto_o_imagenes_requerido" });
@@ -119,7 +125,7 @@ public class OcrController : ControllerBase
 
         // Nombre de la copropiedad: el contratista / la aseguradora NUNCA es ella (la IA a veces la toma como tal).
         string? copropiedad = null;
-        if (Guid.TryParse(User.FindFirstValue("tenant_id"), out var tid))
+        if (tenantId is { } tid)
             copropiedad = await _db.Tenants.AsNoTracking().Where(t => t.Id == tid).Select(t => t.Nombre).FirstOrDefaultAsync(ct);
 
         // Ruta de lectura. Texto (pdf.js) si es suficiente; VISION si no hay texto o si es POBRE (pocas palabras por
@@ -168,8 +174,7 @@ public class OcrController : ControllerBase
         string? pdfOrigenKey = null;
         if (!string.IsNullOrWhiteSpace(req.PdfBase64))
         {
-            var tenantId = User.FindFirstValue("tenant_id");
-            if (!string.IsNullOrEmpty(tenantId))
+            if (tenantId is not null)
             {
                 try
                 {
