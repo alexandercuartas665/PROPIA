@@ -13,7 +13,8 @@ public sealed record TerceroLeidoRequest(
     string? Direccion = null, string? Ciudad = null, string? Email = null, string? Telefono = null,
     string? ActividadEconomica = null, string? RegimenTributario = null,
     string? RepresentanteNombres = null, string? RepresentanteApellidos = null,
-    string? RepresentanteTipoIdentificacion = null, string? RepresentanteIdentificacion = null);
+    string? RepresentanteTipoIdentificacion = null, string? RepresentanteIdentificacion = null,
+    string? Banco = null, string? TipoCuenta = null, string? NumeroCuenta = null);
 
 /// <summary>Que paso con el documento: el tercero (empresa o persona) creado o actualizado y el documento asociado.</summary>
 public sealed record TerceroDesdeDocumentoResultado(

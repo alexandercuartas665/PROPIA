@@ -291,6 +291,10 @@ public class OcrController : ControllerBase
             sb.AppendLine("- representante_legal_*: el representante legal PRINCIPAL que aparece en la Camara de Comercio o en el RUT (no el suplente).");
             sb.AppendLine("- actividad_economica: codigo CIIU principal y su descripcion si aparece (ej. 8121 Limpieza general de edificios).");
             sb.AppendLine("- regimen_tributario: responsable de IVA, no responsable, regimen simple, gran contribuyente, etc., tal como aparezca.");
+            sb.AppendLine("- CERTIFICACION BANCARIA: el TERCERO es el TITULAR de la cuenta. Si el titular es una empresa pon su NIT en nit y su");
+            sb.AppendLine("  nombre en razon_social (tipo_persona juridica); si es una persona, su documento en numero_identificacion y su nombre");
+            sb.AppendLine("  en nombres/apellidos (tipo_persona natural). banco = entidad que certifica; tipo_cuenta = ahorros o corriente;");
+            sb.AppendLine("  numero_cuenta = el numero de la cuenta tal como aparece (solo digitos y guiones). No confundas el NIT del banco con el del titular.");
             if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"La copropiedad que sube el documento es \"{copropiedad}\": NO es el tercero.");
         }
         else if (perfil == "poliza")
@@ -513,6 +517,9 @@ public class OcrController : ControllerBase
             new CampoObjetivo("representante_legal_apellidos", "Apellidos del representante legal principal", "texto"),
             new CampoObjetivo("representante_legal_tipo_identificacion", "Tipo de documento del representante legal (CC, CE, PA)", "texto"),
             new CampoObjetivo("representante_legal_identificacion", "Numero de documento del representante legal, solo digitos", "texto"),
+            new CampoObjetivo("banco", "Certificacion bancaria: banco que certifica la cuenta", "texto"),
+            new CampoObjetivo("tipo_cuenta", "Certificacion bancaria: ahorros o corriente", "texto"),
+            new CampoObjetivo("numero_cuenta", "Certificacion bancaria: numero de la cuenta", "texto"),
         },
         "poliza" => new[]
         {

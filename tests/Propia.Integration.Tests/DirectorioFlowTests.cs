@@ -264,6 +264,14 @@ public class DirectorioFlowTests
             Nombres: "MARIA", Apellidos: "LOPEZ"), "rut-maria.pdf", "application/pdf", 3, Pdf(), default);
         Assert.Equal((EntidadDirectorio.Persona, true, "Maria Lopez"), (r3.Tipo, r3.Creado, r3.Nombre));
 
+        // 3b) Certificacion bancaria del titular (la misma empresa, sin DV): no duplica, guarda la cuenta en el nombre del documento.
+        var cert = new TerceroLeidoRequest("certificacion_bancaria", "juridica", nit, "Aseo Total SAS", Banco: "BANCOLOMBIA", TipoCuenta: "AHORROS",
+            NumeroCuenta: "123-456789-01");
+        var r4 = await ia.CrearDesdeDocumentoAsync(cert, "cert.pdf", "application/pdf", 3, Pdf(), default);
+        Assert.Equal((r1.Id, false), (r4.Id, r4.Creado));
+        Assert.Equal("Certificación bancaria · Bancolombia · Ahorros No. 123-456789-01 - cert.pdf", r4.DocumentoAsociado);
+        Assert.Equal(3, (await dir.ListarAdjuntosAsync(EntidadDirectorio.Empresa, r1.Id, default)).Count);
+
         // 4) Sin NIT ni documento: error claro, no crea nada.
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ia.CrearDesdeDocumentoAsync(new TerceroLeidoRequest("rut", "juridica", RazonSocial: "Sin Nit SAS"), "x.pdf", "application/pdf", 3, Pdf(), default));

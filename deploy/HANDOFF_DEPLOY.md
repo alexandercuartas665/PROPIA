@@ -1,5 +1,10 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **TERCEROS - OLA B, CERTIFICACION BANCARIA (2026-11-14): SIN MIGRACION. API y Web.**
+> - "Crear con IA" en Terceros tambien acepta certificaciones bancarias: el TITULAR es el tercero (empresa por NIT o persona
+>   por documento; se crea si no existe) y el documento queda en sus Documentos con los datos de la cuenta en el nombre
+>   ("Certificacion bancaria · Bancolombia · Corriente No. 045-123456-78 - archivo.pdf"). Decision de Alex: sin tabla nueva.
+
 > **TERCEROS - CREAR CON IA (RUT / CAMARA) + FIX DIGITO DE VERIFICACION DEL NIT (2026-11-14): SIN MIGRACION. API y Web + 1 SQL de datos.**
 > - Directorio (Terceros): el boton "Agregar" de arriba se reemplazo por **"Crear con IA"** (la fila de alta de la tabla sigue).
 >   Se suben varios RUT / Camaras de Comercio: la IA (perfil nuevo `tercero` en `/api/ocr/extraer-agente`) lee cada uno y

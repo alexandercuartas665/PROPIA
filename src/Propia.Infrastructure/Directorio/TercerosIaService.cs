@@ -83,7 +83,10 @@ public sealed class TercerosIaService : ITercerosIaService
             tipo = EntidadDirectorio.Persona; id = p.Id; nombre = p.Nombre; creado = p.Creado;
         }
 
-        var nombreDoc = $"{etiqueta} - {nombreArchivo}";
+        // Certificacion bancaria: los datos de la cuenta quedan en el nombre del documento (decision de Alex: el documento
+        // del tercero es donde vive la certificacion; DirectorioAdjunto no tiene descripcion).
+        var cuenta = DatosCuenta(d);
+        var nombreDoc = cuenta is null ? $"{etiqueta} - {nombreArchivo}" : $"{etiqueta} · {cuenta} - {nombreArchivo}";
         if (nombreDoc.Length > 250) nombreDoc = nombreDoc[..250];
         await _dir.AgregarAdjuntoAsync(tipo, id, nombreDoc, contentType, tamanoBytes, contenido, ct);
         return new TerceroDesdeDocumentoResultado(tipo, id, nombre, creado, nombreDoc, representante);
@@ -113,6 +116,22 @@ public sealed class TercerosIaService : ITercerosIaService
         }
         var p = await _dir.CrearPersonaAsync(new CrearPersonaRequest(tipo, numero, nombres, apellidos, email, telefono, null, null), ct);
         return (p.Id, $"{p.Nombres} {p.Apellidos}".Trim(), true);
+    }
+
+    // "Bancolombia · Ahorros No. 123-456789-01" (lo que traiga la certificacion; null si no trae numero de cuenta).
+    internal static string? DatosCuenta(TerceroLeidoRequest d)
+    {
+        var numero = Limpio(d.NumeroCuenta);
+        if (numero is null) return null;
+        var tipoCuenta = (d.TipoCuenta ?? "").Trim().ToLowerInvariant() switch
+        {
+            var t when t.Contains("ahorro") => "Ahorros",
+            var t when t.Contains("corriente") => "Corriente",
+            var t => t.Length == 0 ? null : Titulo(t)
+        };
+        var partes = new[] { Titulo(d.Banco), tipoCuenta is null ? null : $"{tipoCuenta} No. {numero}" }.Where(x => x is not null).ToList();
+        if (tipoCuenta is null) partes.Add($"No. {numero}");
+        return string.Join(" · ", partes);
     }
 
     private static bool EsPersonaNatural(TerceroLeidoRequest d)
