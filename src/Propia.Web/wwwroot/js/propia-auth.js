@@ -152,6 +152,7 @@
         if (path.indexOf('/publico/') === 0) return true;     // voto self-service de Asambleas (enlace firmado)
         if (path.indexOf('/pqr/') === 0) return true;         // radicar PQRSD sin cuenta
         if (path.indexOf('/pqr-seguimiento/') === 0) return true; // seguimiento PQRSD por enlace
+        if (path.indexOf('/terceros/registro/') === 0) return true; // registro de proveedores por link
         if (path.indexOf('/_dev/') === 0) return true;        // paginas de desarrollo
         return false;
     }

@@ -1,5 +1,31 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **TERCEROS - OLA C, LINK PUBLICO DE REGISTRO (2026-11-14): SIN MIGRACION. API y Web.**
+> - Terceros tiene el boton **"Compartir link de registro"**: copia `https://app.propia-ad.com/terceros/registro/{tenantId}`.
+>   La pagina publica (sin sesion) deja subir RUT / Camara / certificacion bancaria; el tercero queda CREADO directo.
+> - API nueva anonima `api/publico/terceros/{tenantId}/{config|leer|registrar}` (`PublicTercerosController`): copropiedad
+>   activa, 20 documentos/hora por IP (IMemoryCache, por instancia), honeypot `website`, solo PDF/imagen, SetTenant + RLS.
+>   `leer` reusa el Agente Documental de la copropiedad (`OcrController.ExtraerAgenteParaCopropiedadAsync`, refactor sin
+>   cambio de comportamiento para `/api/ocr/extraer-agente`). Consume tokens de IA de la copropiedad.
+> - Web: ruta `/terceros/registro/` agregada a las rutas publicas (App.razor y `propia-auth.js?v=5`); `directorio.css?v=15`.
+> - Sin config nueva. Verificar en prod: abrir el link en ventana de incognito y subir un RUT de prueba (luego borrarlo).
+
+> **TERCEROS - OLA B, CERTIFICACION BANCARIA (2026-11-14): SIN MIGRACION. API y Web.**
+> - "Crear con IA" en Terceros tambien acepta certificaciones bancarias: el TITULAR es el tercero (empresa por NIT o persona
+>   por documento; se crea si no existe) y el documento queda en sus Documentos con los datos de la cuenta en el nombre
+>   ("Certificacion bancaria · Bancolombia · Corriente No. 045-123456-78 - archivo.pdf"). Decision de Alex: sin tabla nueva.
+
+> **TERCEROS - CREAR CON IA (RUT / CAMARA) + FIX DIGITO DE VERIFICACION DEL NIT (2026-11-14): SIN MIGRACION. API y Web + 1 SQL de datos.**
+> - Directorio (Terceros): el boton "Agregar" de arriba se reemplazo por **"Crear con IA"** (la fila de alta de la tabla sigue).
+>   Se suben varios RUT / Camaras de Comercio: la IA (perfil nuevo `tercero` en `/api/ocr/extraer-agente`) lee cada uno y
+>   `POST /api/directorio/terceros/desde-documento` crea o actualiza el tercero (empresa por NIT, persona por documento; al
+>   actualizar solo completa lo vacio), vincula al representante legal y guarda el archivo en sus Documentos ("RUT - ...").
+> - **BUG CORREGIDO:** `CalcularDigitoVerificacionNit` aplicaba los pesos DIAN al reves (Bancolombia 890903938 daba 3, es 8). Con
+>   el DV correcto un NIT real era rechazado ("DV invalido") y sin DV se guardaba uno errado. Ahora usa la formula DIAN.
+> - **SQL DE DATOS (solo con OK de Alex, Alex ya lo aprobo para recalcular):** `deploy/sql/2026-11-14_recalcular_dv_empresas.sql`
+>   recalcula el DV guardado de las empresas que lo tienen (dato derivado del NIT, no se pierde nada). Correr con el owner y
+>   reportar cuantas filas actualizo. En dev actualizo 4.
+
 > **SERVICIOS PUBLICOS - "CREAR SERVICIOS CON IA" EN LA PESTANA CONFIGURACION (2026-11-13): SOLO Web, sin migracion.**
 > - Ajuste pedido por Alex sobre la ola D: el boton "Subir facturas" ya no pasa a Recibos. Las facturas se procesan en la misma
 >   pestana Configuracion: cada servicio se crea en la tabla (resaltado) y su recibo queda como primer mes del historial

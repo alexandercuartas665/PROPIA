@@ -4,6 +4,7 @@
 @using Propia.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
 @using Propia.Web.Components.Shared
+@using Propia.Web.Components.Shared.IaIngesta
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -41,12 +42,46 @@
             }
             @* La lista de etiquetas se gestiona desde el menu de columna "Etiquetas" (chevron) de la
                vista tabla, como las demas listas de catalogo (estado/tipo). Ya no hay boton propio. *@
-            <button class="dir-btn-brand" type="button" @onclick="AbrirCrear">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-                Agregar
+            @* "Crear con IA": se suben RUT / Camara de Comercio (varios a la vez); la IA crea o actualiza cada tercero y le
+               asocia el documento. Reemplaza el boton "Agregar" de arriba (la fila de alta de la tabla sigue). *@
+            <label class="dir-btn-brand dir-ia-btn @(_terIaBusy ? "is-busy" : "")" title="Sube RUT, Cámara de Comercio o certificación bancaria: la IA crea cada tercero y le guarda sus documentos">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2.5l1.9 5.1 5.1 1.9-5.1 1.9L11 16.5l-1.9-5.1-5.1-1.9 5.1-1.9z"/><path d="M18.5 14l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/></svg>
+                @(_terIaBusy ? "Procesando..." : "Crear con IA")
+                <InputFile OnChange="OnDocumentosTercerosAsync" multiple accept=".pdf,image/*" style="display:none" disabled="@_terIaBusy" />
+            </label>
+            @* Ola C: link publico para que el proveedor se registre solo subiendo sus documentos (queda creado directo). *@
+            <button class="dir-btn-soft" type="button" @onclick="CompartirLinkRegistroAsync" title="Copia el enlace para que tus proveedores se registren solos subiendo sus documentos">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.5"/></svg>
+                Compartir link de registro
             </button>
         </div>
     </div>
+
+    @if (_linkRegistro is not null)
+    {
+        <div class="dir-impres dir-link-reg">
+            <span><b>Link de registro de proveedores</b> @_linkRegistroMsg</span>
+            <input class="dir-link-inp" readonly value="@_linkRegistro" onclick="this.select()" />
+            <button type="button" class="dir-btn-soft" @onclick="() => _linkRegistro = null">Cerrar</button>
+        </div>
+    }
+
+    @if (_terIa.Count > 0)
+    {
+        <div class="dir-ia-res">
+            <div class="dir-ia-res-h"><span>Crear terceros con IA</span>
+                @if (!_terIaBusy) { <button type="button" class="dir-btn-soft dir-ia-limpiar" @onclick="() => _terIa.Clear()">Limpiar</button> }</div>
+            @foreach (var it in _terIa)
+            {
+                var est = it.Resultado is not null ? (it.Ok ? "ok" : "err") : it.Ia.Estado == IaEstado.Cola ? "cola" : "trabajando";
+                <div class="dir-ia-row is-@est" @key="it.Id">
+                    <span class="dir-ia-dot"></span>
+                    <span class="dir-ia-file">@it.FileName</span>
+                    <span class="dir-ia-msg">@(it.Resultado ?? (it.Ia.Estado == IaEstado.Cola ? "En cola" : it.Ia.Estado == IaEstado.Leyendo ? $"Leyendo con IA... {it.Ia.Pct}%" : "Creando el tercero..."))</span>
+                </div>
+            }
+        </div>
+    }
 
     @if (_impResult is not null)
     {
@@ -2416,6 +2451,147 @@
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
         return http;
     }
+
+    // ---- "Crear con IA": RUT / Camara de Comercio -> tercero creado o actualizado + documento asociado ----
+    private sealed class TerceroIaItem
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string FileName { get; init; } = "";
+        public byte[] Bytes { get; init; } = Array.Empty<byte>();
+        public string Mime { get; init; } = "application/pdf";
+        public IaLectura Ia { get; } = new();
+        public string? Resultado { get; set; }
+        public bool Ok { get; set; }
+    }
+    private readonly List<TerceroIaItem> _terIa = new();
+    private bool _terIaBusy;
+
+    private HttpClient AuthLong()
+    {
+        var http = HttpFactory.CreateClient("PropiaApiLong");
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt!);
+        return http;
+    }
+
+    private async Task OnDocumentosTercerosAsync(InputFileChangeEventArgs e)
+    {
+        var nuevos = new List<TerceroIaItem>();
+        foreach (var f in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                byte[] bytes;   // bufferizar al seleccionar (el InputFile puede desmontarse)
+                await using (var st = f.OpenReadStream(20 * 1024 * 1024))
+                {
+                    using var ms = new MemoryStream();
+                    await st.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
+                var it = new TerceroIaItem { FileName = f.Name, Bytes = bytes, Mime = string.IsNullOrWhiteSpace(f.ContentType) ? "application/pdf" : f.ContentType };
+                it.Ia.EnCola();
+                nuevos.Add(it);
+            }
+            catch { nuevos.Add(new TerceroIaItem { FileName = f.Name, Resultado = "No se pudo leer el archivo (máximo 20 MB).", Ok = false }); }
+        }
+        if (nuevos.Count == 0) return;
+        _terIa.AddRange(nuevos);
+        StateHasChanged();
+        if (!_terIaBusy) await ProcesarTercerosIaAsync();
+    }
+
+    private async Task ProcesarTercerosIaAsync()
+    {
+        _terIaBusy = true;
+        try
+        {
+            while (_terIa.FirstOrDefault(x => x.Resultado is null && x.Ia.Estado == IaEstado.Cola) is { } it)
+            {
+                await CrearTerceroDesdeDocumentoAsync(it);
+                StateHasChanged();
+            }
+        }
+        finally { _terIaBusy = false; }
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task CrearTerceroDesdeDocumentoAsync(TerceroIaItem it)
+    {
+        List<IaCampo> leidos = new();
+        try
+        {
+            var res = await IaIngestaLector.LeerAsync(it.Ia, it.Bytes, it.Mime, it.FileName, "tercero", Js, Auth, AuthLong,
+                campos => { leidos = campos.ToList(); return campos.Select(c => c.Nombre).Distinct().ToList(); },
+                EtiquetaTercero, "Formato no soportado: sube PDF, JPG o PNG", guardarPdfOrigen: false, aceptarImagenes: true);
+            if (res is null || leidos.Count == 0) { it.Resultado = it.Ia.Msg ?? "La IA no encontró los datos del tercero en este archivo."; it.Ok = false; return; }
+            string? V(string k) => leidos.FirstOrDefault(c => c.Nombre == k)?.Valor is { Length: > 0 } v ? v.Trim() : null;
+            var datos = new TerceroLeidoRequest(V("tipo_documento_fuente"), V("tipo_persona"), V("nit"), V("razon_social"), V("nombre_comercial"),
+                V("tipo_identificacion"), V("numero_identificacion"), V("nombres"), V("apellidos"), V("direccion"), V("ciudad"), V("email"), V("telefono"),
+                V("actividad_economica"), V("regimen_tributario"), V("representante_legal_nombres"), V("representante_legal_apellidos"),
+                V("representante_legal_tipo_identificacion"), V("representante_legal_identificacion"),
+                V("banco"), V("tipo_cuenta"), V("numero_cuenta"));
+            using var content = new MultipartFormDataContent();
+            var archivo = new ByteArrayContent(it.Bytes);
+            archivo.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(it.Mime);
+            content.Add(archivo, "file", it.FileName);
+            content.Add(new StringContent(System.Text.Json.JsonSerializer.Serialize(datos, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))), "datos");
+            var resp = await Auth().PostAsync("/api/directorio/terceros/desde-documento", content);
+            if (!resp.IsSuccessStatusCode) { it.Resultado = "No se pudo crear el tercero: " + await LeerErrorAsync(resp); it.Ok = false; return; }
+            var r = await resp.Content.ReadFromJsonAsync<TerceroDesdeDocumentoResultado>();
+            if (r is null) { it.Resultado = "Respuesta vacía del servidor."; it.Ok = false; return; }
+            it.Resultado = $"{(r.Creado ? "Creado" : "Ya existía")}: {r.Nombre} ({(r.Tipo == EntidadDirectorio.Empresa ? "empresa" : "persona")}) · documento \"{r.DocumentoAsociado}\" guardado"
+                + (string.IsNullOrEmpty(r.RepresentanteLegal) ? "" : $" · representante legal: {r.RepresentanteLegal}");
+            it.Ok = true;
+        }
+        catch (Exception ex) { it.Resultado = ex.Message; it.Ok = false; }
+    }
+
+    // ---- Ola C: link publico de registro de terceros ----
+    private string? _linkRegistro;
+    private string _linkRegistroMsg = "";
+
+    private async Task CompartirLinkRegistroAsync()
+    {
+        var tid = TenantIdDeJwt();
+        if (tid is null) { _linkRegistro = ""; _linkRegistroMsg = "No se pudo identificar la copropiedad; recarga la página."; return; }
+        _linkRegistro = $"{Nav.BaseUri}terceros/registro/{tid}";
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", _linkRegistro); _linkRegistroMsg = "copiado al portapapeles. Quien lo abra sube su RUT, Cámara de Comercio o certificación bancaria y queda registrado."; }
+        catch { _linkRegistroMsg = "listo para copiar (selecciónalo y cópialo)."; }
+    }
+
+    /// <summary>tenant_id del JWT (claim), igual que el link publico de PQRSD.</summary>
+    private Guid? TenantIdDeJwt()
+    {
+        if (string.IsNullOrEmpty(_jwt)) return null;
+        var parts = _jwt.Split('.');
+        if (parts.Length < 2) return null;
+        try
+        {
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("tenant_id", out var el) && Guid.TryParse(el.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
+    }
+
+    private static async Task<string> LeerErrorAsync(HttpResponseMessage resp)
+    {
+        var txt = await resp.Content.ReadAsStringAsync();
+        try { using var doc = System.Text.Json.JsonDocument.Parse(txt); if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? txt; } catch { }
+        return string.IsNullOrWhiteSpace(txt) ? $"HTTP {(int)resp.StatusCode}" : txt;
+    }
+
+    private static string? EtiquetaTercero(string clave) => clave switch
+    {
+        "nit" => "NIT", "razon_social" => "Razón social", "nombre_comercial" => "Nombre comercial",
+        "numero_identificacion" => "Documento", "nombres" or "apellidos" => "Nombre", "direccion" or "ciudad" => "Dirección",
+        "email" => "Correo", "telefono" => "Teléfono", "actividad_economica" => "Actividad", "regimen_tributario" => "Régimen",
+        "representante_legal_nombres" or "representante_legal_identificacion" => "Representante legal",
+        "banco" => "Banco", "tipo_cuenta" or "numero_cuenta" => "Cuenta", _ => null
+    };
 
     // ---- Plantilla Excel de personas (descargar / cargar con upsert por documento) ----
     private async Task DescargarPlantillaAsync()

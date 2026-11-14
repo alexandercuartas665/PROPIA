@@ -21,11 +21,31 @@ public class DirectorioController : ControllerBase
 {
     private readonly IDirectorioService _svc;
     private readonly IPlantillasService _plantillas;
+    private readonly ITercerosIaService _tercerosIa;
 
-    public DirectorioController(IDirectorioService svc, IPlantillasService plantillas)
+    public DirectorioController(IDirectorioService svc, IPlantillasService plantillas, ITercerosIaService tercerosIa)
     {
         _svc = svc;
         _plantillas = plantillas;
+        _tercerosIa = tercerosIa;
+    }
+
+    // ---------- Crear terceros con IA (RUT / Camara de Comercio): datos leidos + el archivo ----------
+    [RequierePermiso(ModuloCodigo.Directorio, AccionPermiso.Crear)]
+    [HttpPost("terceros/desde-documento")]
+    [RequestSizeLimit(25 * 1024 * 1024)]
+    public async Task<IActionResult> TerceroDesdeDocumento([FromForm] IFormFile? file, [FromForm] string? datos, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Falta el archivo." });
+        TerceroLeidoRequest? req;
+        try { req = System.Text.Json.JsonSerializer.Deserialize<TerceroLeidoRequest>(datos ?? "{}", new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)); }
+        catch { return BadRequest(new { error = "Los datos leidos no son validos." }); }
+        try
+        {
+            await using var s = file.OpenReadStream();
+            return Ok(await _tercerosIa.CrearDesdeDocumentoAsync(req ?? new TerceroLeidoRequest(), file.FileName, file.ContentType, file.Length, s, ct));
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";

@@ -206,6 +206,7 @@ public static class DependencyInjection
 
         // Modulo 2.4 Directorio
         services.AddScoped<Application.Directorio.IDirectorioService, Directorio.DirectorioService>();
+        services.AddScoped<Application.Directorio.ITercerosIaService, Directorio.TercerosIaService>();   // crear terceros con IA (RUT / Camara)
 
         // Modulo 2.5 Usuarios, Roles y Accesos
         services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();

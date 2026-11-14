@@ -1,0 +1,219 @@
+@page "/terceros/registro/{TenantId:guid}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Directorio
+@using Propia.Web.Components.Shared.IaIngesta
+@using Microsoft.AspNetCore.Components.Forms
+@layout Propia.Web.Components.Layout.PublicLayout
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+
+<PageTitle>Registro de proveedores - PROPIA</PageTitle>
+
+@* Registro PUBLICO de terceros: el link que comparte la copropiedad (Terceros > Compartir link de registro). El proveedor
+   sube su RUT, Camara de Comercio o certificacion bancaria; la IA los lee y queda registrado con sus documentos. *@
+<div class="rtp-wrap">
+@if (_cargando)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color:var(--propia-brand)"></div></div>
+}
+else if (_cfgError is not null)
+{
+    <div class="rtp-card rtp-center"><h4>Registro no disponible</h4><p class="rtp-muted">@_cfgError</p></div>
+}
+else
+{
+    <div class="rtp-hero">
+        @if (!string.IsNullOrWhiteSpace(_logo)) { <img src="@_logo" alt="@_nombre" class="rtp-logo" /> }
+        else { <div class="rtp-logo rtp-logo-ph">@Iniciales(_nombre)</div> }
+        <h1 class="rtp-title">@_nombre</h1>
+        <p class="rtp-sub">Registro de proveedores y contratistas</p>
+    </div>
+
+    <div class="rtp-card">
+        <p class="rtp-text">Sube tus documentos y quedas registrado como proveedor de la copropiedad. Puedes subir varios a la vez:</p>
+        <ul class="rtp-list">
+            <li><b>RUT</b> (DIAN)</li>
+            <li><b>Certificado de existencia y representación legal</b> (Cámara de Comercio), si eres empresa</li>
+            <li><b>Certificación bancaria</b> de la cuenta donde recibes los pagos</li>
+        </ul>
+        <p class="rtp-muted">En PDF o como foto (JPG o PNG). Los leemos automáticamente; no tienes que llenar ningún formulario.</p>
+
+        @* Honeypot: los bots lo llenan; las personas no lo ven. *@
+        <input type="text" class="rtp-hp" tabindex="-1" autocomplete="off" @bind="_website" aria-hidden="true" />
+
+        <label class="rtp-chk">
+            <input type="checkbox" @bind="_acepta" />
+            Autorizo a la copropiedad el tratamiento de mis datos personales y comerciales para gestionar mi vinculación como proveedor.
+        </label>
+
+        <label class="rtp-btn @(!_acepta || _busy ? "is-off" : "")">
+            @(_busy ? "Procesando tus documentos..." : "Subir documentos")
+            <InputFile OnChange="OnArchivosAsync" multiple accept=".pdf,image/*" style="display:none" disabled="@(!_acepta || _busy)" />
+        </label>
+        @if (!_acepta) { <div class="rtp-hint">Marca la autorización para poder subir los documentos.</div> }
+
+        @if (_items.Count > 0)
+        {
+            <div class="rtp-res">
+                @foreach (var it in _items)
+                {
+                    var est = it.Resultado is not null ? (it.Ok ? "ok" : "err") : it.Ia.Estado == IaEstado.Cola ? "cola" : "trabajando";
+                    <div class="rtp-row is-@est" @key="it.Id">
+                        <span class="rtp-dot"></span>
+                        <span class="rtp-file">@it.FileName</span>
+                        <span class="rtp-msg">@(it.Resultado ?? (it.Ia.Estado == IaEstado.Cola ? "En cola" : it.Ia.Estado == IaEstado.Leyendo ? $"Leyendo... {it.Ia.Pct}%" : "Registrando..."))</span>
+                    </div>
+                }
+            </div>
+            @if (!_busy && _items.Any(x => x.Ok))
+            {
+                <div class="rtp-final">Listo. Tus documentos quedaron registrados en <b>@_nombre</b>. Si te falta alguno, puedes subirlo cuando quieras con este mismo enlace.</div>
+            }
+        }
+    </div>
+}
+</div>
+
+<style>
+    .rtp-wrap { max-width:640px; margin:0 auto; padding:24px 16px 48px; font-family:inherit; }
+    .rtp-hero { text-align:center; margin-bottom:18px; }
+    .rtp-logo { width:72px; height:72px; border-radius:16px; object-fit:cover; margin:0 auto 10px; display:block; }
+    .rtp-logo-ph { display:flex; align-items:center; justify-content:center; background:var(--propia-brand); color:var(--propia-text-inverse); font-weight:800; font-size:24px; }
+    .rtp-title { font-size:22px; font-weight:800; color:var(--propia-text-h1); margin:0; }
+    .rtp-sub { color:var(--propia-text-muted); margin:4px 0 0; }
+    .rtp-card { background:var(--propia-bg-card); border:1px solid var(--propia-border-card); border-radius:16px; padding:20px 22px; box-shadow:0 10px 30px rgba(27,42,58,.08); }
+    .rtp-center { text-align:center; }
+    .rtp-text { color:var(--propia-text-body); margin:0 0 6px; }
+    .rtp-list { margin:0 0 10px; padding-left:20px; color:var(--propia-text-body); font-size:14px; }
+    .rtp-muted { color:var(--propia-text-muted); font-size:13px; }
+    .rtp-hp { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+    .rtp-chk { display:flex; gap:8px; align-items:flex-start; font-size:13px; color:var(--propia-text-body); margin:12px 0; cursor:pointer; }
+    .rtp-chk input { margin-top:3px; }
+    .rtp-btn { display:flex; align-items:center; justify-content:center; width:100%; padding:13px 16px; border-radius:12px; cursor:pointer;
+        background:var(--propia-brand); color:var(--propia-text-inverse); font-weight:800; font-size:15px; margin:0; }
+    .rtp-btn.is-off { opacity:.5; cursor:not-allowed; }
+    .rtp-hint { font-size:12px; color:var(--propia-text-muted); margin-top:6px; text-align:center; }
+    .rtp-res { margin-top:16px; border-top:1px solid var(--propia-border-divider); }
+    .rtp-row { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:13px; border-bottom:1px solid var(--propia-border-divider); }
+    .rtp-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--propia-text-faint); }
+    .rtp-row.is-trabajando .rtp-dot { background:var(--propia-brand); animation:rtp-pulso 1s ease-in-out infinite; }
+    .rtp-row.is-ok .rtp-dot { background:var(--propia-ok); }
+    .rtp-row.is-err .rtp-dot { background:var(--propia-danger); }
+    .rtp-file { font-weight:700; color:var(--propia-text-h1); max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rtp-msg { color:var(--propia-text-body); min-width:0; }
+    .rtp-row.is-err .rtp-msg { color:var(--propia-danger); }
+    .rtp-final { margin-top:14px; padding:10px 14px; border-radius:10px; background:var(--propia-ok-soft); color:var(--propia-text-body); font-size:13px; }
+    @@keyframes rtp-pulso { 50% { opacity:.35; } }
+</style>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+
+    private bool _cargando = true, _acepta, _busy;
+    private string? _cfgError, _logo, _website;
+    private string _nombre = "";
+    private readonly List<Item> _items = new();
+
+    private sealed class Item
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string FileName { get; init; } = "";
+        public byte[] Bytes { get; init; } = Array.Empty<byte>();
+        public string Mime { get; init; } = "application/pdf";
+        public IaLectura Ia { get; } = new();
+        public string? Resultado { get; set; }
+        public bool Ok { get; set; }
+    }
+    private sealed record Cfg(string Nombre, string? LogoUrl);
+
+    private HttpClient Http() => HttpFactory.CreateClient("PropiaApi");
+    private HttpClient HttpLargo() => HttpFactory.CreateClient("PropiaApiLong");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Http().GetAsync($"/api/publico/terceros/{TenantId}/config");
+            if (!r.IsSuccessStatusCode) _cfgError = "Este enlace no corresponde a una copropiedad activa. Pide un enlace nuevo a la administración.";
+            else if (await r.Content.ReadFromJsonAsync<Cfg>() is { } c) { _nombre = c.Nombre; _logo = c.LogoUrl; }
+        }
+        catch { _cfgError = "No se pudo cargar el registro. Intenta de nuevo en unos minutos."; }
+        _cargando = false;
+    }
+
+    private async Task OnArchivosAsync(InputFileChangeEventArgs e)
+    {
+        if (!_acepta) return;
+        foreach (var f in e.GetMultipleFiles(10))
+        {
+            try
+            {
+                byte[] bytes;   // bufferizar al seleccionar
+                await using (var st = f.OpenReadStream(20 * 1024 * 1024))
+                {
+                    using var ms = new MemoryStream();
+                    await st.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
+                var it = new Item { FileName = f.Name, Bytes = bytes, Mime = string.IsNullOrWhiteSpace(f.ContentType) ? "application/pdf" : f.ContentType };
+                it.Ia.EnCola();
+                _items.Add(it);
+            }
+            catch { _items.Add(new Item { FileName = f.Name, Resultado = "No se pudo leer el archivo (máximo 20 MB).", Ok = false }); }
+        }
+        StateHasChanged();
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            while (_items.FirstOrDefault(x => x.Resultado is null && x.Ia.Estado == IaEstado.Cola) is { } it)
+            {
+                await ProcesarAsync(it);
+                StateHasChanged();
+            }
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ProcesarAsync(Item it)
+    {
+        List<IaCampo> leidos = new();
+        try
+        {
+            var res = await IaIngestaLector.LeerAsync(it.Ia, it.Bytes, it.Mime, it.FileName, "tercero", Js, Http, HttpLargo,
+                campos => { leidos = campos.ToList(); return campos.Select(c => c.Nombre).Distinct().ToList(); },
+                _ => null, "Formato no soportado: sube PDF, JPG o PNG", guardarPdfOrigen: false, aceptarImagenes: true,
+                endpoint: $"/api/publico/terceros/{TenantId}/leer");
+            if (res is null || leidos.Count == 0) { it.Resultado = it.Ia.Msg ?? "No pudimos leer los datos de este documento."; it.Ok = false; return; }
+            string? V(string k) => leidos.FirstOrDefault(c => c.Nombre == k)?.Valor is { Length: > 0 } v ? v.Trim() : null;
+            var datos = new TerceroLeidoRequest(V("tipo_documento_fuente"), V("tipo_persona"), V("nit"), V("razon_social"), V("nombre_comercial"),
+                V("tipo_identificacion"), V("numero_identificacion"), V("nombres"), V("apellidos"), V("direccion"), V("ciudad"), V("email"), V("telefono"),
+                V("actividad_economica"), V("regimen_tributario"), V("representante_legal_nombres"), V("representante_legal_apellidos"),
+                V("representante_legal_tipo_identificacion"), V("representante_legal_identificacion"), V("banco"), V("tipo_cuenta"), V("numero_cuenta"));
+            using var content = new MultipartFormDataContent();
+            var archivo = new ByteArrayContent(it.Bytes);
+            archivo.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(it.Mime);
+            content.Add(archivo, "file", it.FileName);
+            content.Add(new StringContent(System.Text.Json.JsonSerializer.Serialize(datos, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))), "datos");
+            content.Add(new StringContent(_website ?? ""), "website");
+            var resp = await Http().PostAsync($"/api/publico/terceros/{TenantId}/registrar", content);
+            if (!resp.IsSuccessStatusCode) { it.Resultado = await ErrorAsync(resp); it.Ok = false; return; }
+            var r = await resp.Content.ReadFromJsonAsync<Registrado>();
+            it.Resultado = r is null ? "Registrado." : $"Registrado: {r.Nombre}";
+            it.Ok = true;
+        }
+        catch (Exception) { it.Resultado = "No se pudo procesar este documento. Intenta de nuevo."; it.Ok = false; }
+    }
+
+    private sealed record Registrado(string Nombre, bool Creado, string Documento);
+
+    private static async Task<string> ErrorAsync(HttpResponseMessage resp)
+    {
+        var txt = await resp.Content.ReadAsStringAsync();
+        try { using var doc = System.Text.Json.JsonDocument.Parse(txt); if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? "No se pudo registrar."; } catch { }
+        return "No se pudo registrar el documento.";
+    }
+
+    private static string Iniciales(string n)
+        => string.Concat(n.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+}
