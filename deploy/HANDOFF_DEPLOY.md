@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **TERCEROS - CREAR CON IA (RUT / CAMARA) + FIX DIGITO DE VERIFICACION DEL NIT (2026-11-14): SIN MIGRACION. API y Web + 1 SQL de datos.**
+> - Directorio (Terceros): el boton "Agregar" de arriba se reemplazo por **"Crear con IA"** (la fila de alta de la tabla sigue).
+>   Se suben varios RUT / Camaras de Comercio: la IA (perfil nuevo `tercero` en `/api/ocr/extraer-agente`) lee cada uno y
+>   `POST /api/directorio/terceros/desde-documento` crea o actualiza el tercero (empresa por NIT, persona por documento; al
+>   actualizar solo completa lo vacio), vincula al representante legal y guarda el archivo en sus Documentos ("RUT - ...").
+> - **BUG CORREGIDO:** `CalcularDigitoVerificacionNit` aplicaba los pesos DIAN al reves (Bancolombia 890903938 daba 3, es 8). Con
+>   el DV correcto un NIT real era rechazado ("DV invalido") y sin DV se guardaba uno errado. Ahora usa la formula DIAN.
+> - **SQL DE DATOS (solo con OK de Alex, Alex ya lo aprobo para recalcular):** `deploy/sql/2026-11-14_recalcular_dv_empresas.sql`
+>   recalcula el DV guardado de las empresas que lo tienen (dato derivado del NIT, no se pierde nada). Correr con el owner y
+>   reportar cuantas filas actualizo. En dev actualizo 4.
+
 > **SERVICIOS PUBLICOS - "CREAR SERVICIOS CON IA" EN LA PESTANA CONFIGURACION (2026-11-13): SOLO Web, sin migracion.**
 > - Ajuste pedido por Alex sobre la ola D: el boton "Subir facturas" ya no pasa a Recibos. Las facturas se procesan en la misma
 >   pestana Configuracion: cada servicio se crea en la tabla (resaltado) y su recibo queda como primer mes del historial

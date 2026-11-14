@@ -16,7 +16,9 @@ public class DirectorioService : IDirectorioService
     private readonly ITenantContext _tenantContext;
     private readonly IBlobStorage _blob;
     private readonly IHttpContextAccessor? _http;
-    private static readonly int[] PesosNit = { 41, 37, 29, 23, 19, 17, 13, 7, 3 };
+    // Pesos DIAN para el digito de verificacion, desde el digito de la DERECHA (3) hacia la izquierda.
+    // Antes estaban al reves (el ultimo digito recibia 41): Bancolombia 890903938 daba 3 en vez de 8.
+    private static readonly int[] PesosNit = { 3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71 };
 
     // http es opcional: la app lo inyecta via DI (para resolver el autor de los comentarios); en pruebas que
     // construyen el servicio a mano queda null y GetUsuarioActualId devuelve Guid.Empty (no usan comentarios).
@@ -666,18 +668,18 @@ public class DirectorioService : IDirectorioService
 
     /// <summary>
     /// Calcula el digito de verificacion DIAN para un NIT colombiano.
-    /// Algoritmo: suma ponderada de digitos por pesos { 41, 37, 29, 23, 19, 17, 13, 7, 3 } modulo 11.
+    /// Algoritmo DIAN: suma ponderada de los digitos (de derecha a izquierda) por pesos { 3, 7, 13, 17, 19, 23, 29, 37, 41, ... } modulo 11.
     /// </summary>
     public string CalcularDigitoVerificacionNit(string nit)
     {
         var n = (nit ?? "").Trim().Replace(".", "").Replace("-", "");
         if (string.IsNullOrEmpty(n) || !n.All(char.IsDigit))
             throw new InvalidOperationException("NIT invalido.");
-        n = n.PadLeft(9, '0');
+        if (n.Length > PesosNit.Length) throw new InvalidOperationException("NIT invalido.");
         var suma = 0;
-        for (int i = 0; i < 9; i++)
+        for (int i = 0; i < n.Length; i++)
         {
-            var digito = n[8 - i] - '0';
+            var digito = n[n.Length - 1 - i] - '0';   // de derecha a izquierda
             suma += digito * PesosNit[i];
         }
         var resto = suma % 11;

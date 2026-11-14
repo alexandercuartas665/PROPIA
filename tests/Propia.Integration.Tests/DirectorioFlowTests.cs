@@ -138,8 +138,11 @@ public class DirectorioFlowTests
         var (svc, _, _) = BuildService(await SeedTenantAsync("CP NIT"));
 
         // Ejemplos calculados con la implementacion actual (pesos 41,37,29,23,19,17,13,7,3 mod 11)
-        Assert.Equal("6", svc.CalcularDigitoVerificacionNit("900123456"));
-        Assert.Equal("9", svc.CalcularDigitoVerificacionNit("800197268"));
+        // NIT reales (DIAN 800197268-4, Bancolombia 890903938-8, Ecopetrol 899999068-1, Davivienda 860034313-7).
+        Assert.Equal("4", svc.CalcularDigitoVerificacionNit("800197268"));
+        Assert.Equal("8", svc.CalcularDigitoVerificacionNit("890903938"));
+        Assert.Equal("1", svc.CalcularDigitoVerificacionNit("899999068"));
+        Assert.Equal("7", svc.CalcularDigitoVerificacionNit("860.034.313"));
 
         // Consistencia: el DV calculado debe pasar la validacion de empresas
         var nit = "901555000";
@@ -217,6 +220,61 @@ public class DirectorioFlowTests
         // Re-asignar la misma etiqueta (variante de acento/mayusculas) falla: dedupe normalizado.
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             svc.AsignarEtiquetaAsync(new AsignarEtiquetaRequest(v.Id, "vip"), CancellationToken.None));
+    }
+
+    // ---------------- Crear terceros con IA (RUT / Camara de Comercio), 2026-11-14 ----------------
+
+    [Fact]
+    public async Task Crear_tercero_desde_documento_crea_completa_sin_pisar_y_asocia_el_documento()
+    {
+        var tenantId = await SeedTenantAsync("Terceros IA");
+        var (dir, db, tctx) = BuildService(tenantId);
+        var ia = new Propia.Infrastructure.Directorio.TercerosIaService(dir, db, tctx);
+        var nit = Random.Shared.Next(800_000_000, 999_999_999).ToString();
+        var cedulaRep = Random.Shared.Next(10_000_000, 99_999_999).ToString();
+        Stream Pdf() => new MemoryStream(new byte[] { 1, 2, 3 });
+
+        // 1) RUT de empresa nueva: se crea, con su representante legal (en mayusculas -> nombre propio) y el RUT en Documentos.
+        var dvOk = dir.CalcularDigitoVerificacionNit(nit);
+        var rut = new TerceroLeidoRequest("rut", "juridica", nit + "-" + dvOk, "ASEO TOTAL S.A.S.", "Aseo Total", Direccion: "Calle 10 # 5-20", Ciudad: "CALI",
+            Email: "contacto@aseototal.test", RegimenTributario: "Responsable de IVA",
+            RepresentanteNombres: "JUAN CARLOS", RepresentanteApellidos: "PEREZ GOMEZ", RepresentanteTipoIdentificacion: "CC", RepresentanteIdentificacion: cedulaRep);
+        var r1 = await ia.CrearDesdeDocumentoAsync(rut, "rut.pdf", "application/pdf", 3, Pdf(), default);
+        Assert.True(r1.Creado);
+        Assert.Equal(EntidadDirectorio.Empresa, r1.Tipo);
+        Assert.Equal("RUT - rut.pdf", r1.DocumentoAsociado);
+        Assert.Equal("Juan Carlos Perez Gomez", r1.RepresentanteLegal);
+        var e1 = (await dir.ObtenerEmpresaAsync(r1.Id, default))!;
+        Assert.Equal((nit, dvOk, "Calle 10 # 5-20, Cali"), (e1.Nit, e1.DigitoVerificacion, e1.Direccion));
+        Assert.NotNull(e1.RepresentanteLegalPersonaId);
+
+        // 2) Camara de Comercio de la MISMA empresa con otro correo: no se duplica ni se pisa lo que ya tenia; completa lo vacio.
+        var camara = new TerceroLeidoRequest("camara_comercio", "juridica", nit, "ASEO TOTAL SAS", Email: "otro@correo.test", Telefono: "6025550000");
+        var r2 = await ia.CrearDesdeDocumentoAsync(camara, "camara.pdf", "application/pdf", 3, Pdf(), default);
+        Assert.False(r2.Creado);
+        Assert.Equal(r1.Id, r2.Id);
+        Assert.Equal("Cámara de Comercio - camara.pdf", r2.DocumentoAsociado);
+        var e2 = (await dir.ObtenerEmpresaAsync(r1.Id, default))!;
+        Assert.Equal(("contacto@aseototal.test", "6025550000"), (e2.Email, e2.Telefono));
+        Assert.Equal(2, (await dir.ListarAdjuntosAsync(EntidadDirectorio.Empresa, r1.Id, default)).Count);
+
+        // 3) RUT de persona natural (el NIT es la cedula).
+        var cc = Random.Shared.Next(10_000_000, 99_999_999).ToString();
+        var r3 = await ia.CrearDesdeDocumentoAsync(new TerceroLeidoRequest("rut", "natural", TipoIdentificacion: "CC", NumeroIdentificacion: cc,
+            Nombres: "MARIA", Apellidos: "LOPEZ"), "rut-maria.pdf", "application/pdf", 3, Pdf(), default);
+        Assert.Equal((EntidadDirectorio.Persona, true, "Maria Lopez"), (r3.Tipo, r3.Creado, r3.Nombre));
+
+        // 4) Sin NIT ni documento: error claro, no crea nada.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ia.CrearDesdeDocumentoAsync(new TerceroLeidoRequest("rut", "juridica", RazonSocial: "Sin Nit SAS"), "x.pdf", "application/pdf", 3, Pdf(), default));
+        Assert.Contains("NIT", ex.Message);
+
+        // 5) NIT con digito de verificacion que no cuadra (IA leyo mal un digito): no crea, avisa para revisar.
+        var otroNit = Random.Shared.Next(800_000_000, 999_999_999).ToString();
+        var dvMalo = ((int.Parse(dir.CalcularDigitoVerificacionNit(otroNit)) + 1) % 10).ToString();
+        var exDv = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ia.CrearDesdeDocumentoAsync(new TerceroLeidoRequest("rut", "juridica", otroNit + "-" + dvMalo, "Mal Leida SAS"), "y.pdf", "application/pdf", 3, Pdf(), default));
+        Assert.Contains("dígito de verificación", exDv.Message);
     }
 
     // ---------------- Helpers ----------------

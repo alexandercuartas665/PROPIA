@@ -279,6 +279,20 @@ public class OcrController : ControllerBase
             sb.AppendLine("- conceptos: el desglose de cobros del periodo como lista [{\"concepto\": texto, \"valor\": numero}], en el orden del recibo,");
             sb.AppendLine("  sin el total ni los subtotales. Devuelvelo como {\"valor\": [ ... ], \"conf\": 0.0-1.0}.");
         }
+        else if (perfil == "tercero")
+        {
+            sb.AppendLine("ES UN DOCUMENTO DE UN TERCERO (proveedor, contratista o persona) de una copropiedad colombiana: RUT de la DIAN,");
+            sb.AppendLine("certificado de existencia y representacion legal de la Camara de Comercio, o certificacion bancaria.");
+            sb.AppendLine("- tipo_documento_fuente: rut | camara_comercio | certificacion_bancaria | otro.");
+            sb.AppendLine("- tipo_persona: juridica (empresa, sociedad, entidad: tiene NIT y razon social) o natural (persona con cedula).");
+            sb.AppendLine("- Empresa: nit (con el digito de verificacion si aparece, ej. 900123456-7), razon_social y nombre_comercial (sigla o");
+            sb.AppendLine("  establecimiento si aparece). Persona natural: tipo_identificacion (CC, CE, PA, TI, NIT), numero_identificacion,");
+            sb.AppendLine("  nombres y apellidos (separados). En el RUT de persona natural el NIT es la cedula: va en numero_identificacion.");
+            sb.AppendLine("- representante_legal_*: el representante legal PRINCIPAL que aparece en la Camara de Comercio o en el RUT (no el suplente).");
+            sb.AppendLine("- actividad_economica: codigo CIIU principal y su descripcion si aparece (ej. 8121 Limpieza general de edificios).");
+            sb.AppendLine("- regimen_tributario: responsable de IVA, no responsable, regimen simple, gran contribuyente, etc., tal como aparezca.");
+            if (!string.IsNullOrWhiteSpace(copropiedad)) sb.AppendLine($"La copropiedad que sube el documento es \"{copropiedad}\": NO es el tercero.");
+        }
         else if (perfil == "poliza")
         {
             sb.AppendLine("PARTES: la ASEGURADORA es la compania de seguros que expide la poliza. El TOMADOR y el ASEGURADO suelen ser");
@@ -331,6 +345,11 @@ public class OcrController : ControllerBase
         {
             foreach (var k in new[] { "contratista", "nit", "fecha_inicio", "fecha_fin" }) if (!Hay(k)) faltan.Add(k);
             if (!Hay("valor_total") && !Hay("valor_mensual")) { faltan.Add("valor_total"); faltan.Add("valor_mensual"); }
+        }
+        else if (perfil == "tercero")
+        {
+            if (!Hay("nit") && !Hay("numero_identificacion")) { faltan.Add("nit"); faltan.Add("numero_identificacion"); }
+            if (!Hay("razon_social") && !Hay("nombres")) { faltan.Add("razon_social"); faltan.Add("nombres"); faltan.Add("apellidos"); }
         }
         else if (perfil == "poliza")
         {
@@ -473,6 +492,28 @@ public class OcrController : ControllerBase
         // Tipos: texto | referencia (tal cual) | nit (sin puntos, DV con guion) | moneda | numero (entero) | decimal |
         // fecha (ISO) | sino (true/false) | lista (JSON [{concepto, valor}]).
         // El servidor normaliza cada tipo despues de leer el JSON (NormalizarCampos).
+        "tercero" => new[]
+        {
+            new CampoObjetivo("tipo_documento_fuente", "Que documento es: rut, camara_comercio, certificacion_bancaria u otro", "texto"),
+            new CampoObjetivo("tipo_persona", "juridica (empresa con NIT) o natural (persona)", "texto"),
+            new CampoObjetivo("nit", "NIT de la empresa con digito de verificacion si aparece (ej. 900123456-7)", "nit"),
+            new CampoObjetivo("razon_social", "Razon social completa de la empresa", "texto"),
+            new CampoObjetivo("nombre_comercial", "Nombre comercial, sigla o establecimiento", "texto"),
+            new CampoObjetivo("tipo_identificacion", "Persona natural: tipo de documento (CC, CE, PA, TI, NIT)", "texto"),
+            new CampoObjetivo("numero_identificacion", "Persona natural: numero de documento, solo digitos", "texto"),
+            new CampoObjetivo("nombres", "Persona natural: nombres", "texto"),
+            new CampoObjetivo("apellidos", "Persona natural: apellidos", "texto"),
+            new CampoObjetivo("direccion", "Direccion principal o de notificacion", "texto"),
+            new CampoObjetivo("ciudad", "Ciudad o municipio de la direccion", "texto"),
+            new CampoObjetivo("email", "Correo electronico de notificacion o contacto", "texto"),
+            new CampoObjetivo("telefono", "Telefono o celular de contacto", "texto"),
+            new CampoObjetivo("actividad_economica", "Actividad economica principal: codigo CIIU y descripcion", "texto"),
+            new CampoObjetivo("regimen_tributario", "Regimen o responsabilidad tributaria", "texto"),
+            new CampoObjetivo("representante_legal_nombres", "Nombres del representante legal principal", "texto"),
+            new CampoObjetivo("representante_legal_apellidos", "Apellidos del representante legal principal", "texto"),
+            new CampoObjetivo("representante_legal_tipo_identificacion", "Tipo de documento del representante legal (CC, CE, PA)", "texto"),
+            new CampoObjetivo("representante_legal_identificacion", "Numero de documento del representante legal, solo digitos", "texto"),
+        },
         "poliza" => new[]
         {
             new CampoObjetivo("aseguradora", "Nombre de la compania aseguradora que expide la poliza (NO el corredor ni la copropiedad)", "texto"),
