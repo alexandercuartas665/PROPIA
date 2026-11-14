@@ -10,7 +10,9 @@
 <PageTitle>Registro de proveedores - PROPIA</PageTitle>
 
 @* Registro PUBLICO de terceros: el link que comparte la copropiedad (Terceros > Compartir link de registro). El proveedor
-   sube su RUT, Camara de Comercio o certificacion bancaria; la IA los lee y queda registrado con sus documentos. *@
+   sube su RUT, Camara de Comercio o certificacion bancaria; la IA los lee con el escaner (IaPanel, como Servicios
+   publicos) y queda registrado con sus documentos. Al terminar: resumen de lo cargado por tercero y contactos
+   (personas de la empresa con telefono/correo y correos de facturacion) con la clave temporal que entrega el registro. *@
 <div class="rtp-wrap">
 @if (_cargando)
 {
@@ -47,7 +49,7 @@ else
         </label>
 
         <label class="rtp-btn @(!_acepta || _busy ? "is-off" : "")">
-            @(_busy ? "Procesando tus documentos..." : "Subir documentos")
+            @(_busy ? "Procesando tus documentos..." : _items.Any(x => x.Ok) ? "Subir más documentos" : "Subir documentos")
             <InputFile OnChange="OnArchivosAsync" multiple accept=".pdf,image/*" style="display:none" disabled="@(!_acepta || _busy)" />
         </label>
         @if (!_acepta) { <div class="rtp-hint">Marca la autorización para poder subir los documentos.</div> }
@@ -57,43 +59,121 @@ else
             <div class="rtp-res">
                 @foreach (var it in _items)
                 {
+                    if (it.Resultado is null && it.Ia.Estado == IaEstado.Leyendo)
+                    {
+                        <div class="rtp-scan" @key="it.Id"><IaPanel Lectura="it.Ia" FileName="@it.FileName" Thumb="@it.Thumb" Ext="@it.Ext" Doc="del documento" PasosTexto="Pasos" /></div>
+                        continue;
+                    }
                     var est = it.Resultado is not null ? (it.Ok ? "ok" : "err") : it.Ia.Estado == IaEstado.Cola ? "cola" : "trabajando";
                     <div class="rtp-row is-@est" @key="it.Id">
                         <span class="rtp-dot"></span>
                         <span class="rtp-file">@it.FileName</span>
-                        <span class="rtp-msg">@(it.Resultado ?? (it.Ia.Estado == IaEstado.Cola ? "En cola" : it.Ia.Estado == IaEstado.Leyendo ? $"Leyendo... {it.Ia.Pct}%" : "Registrando..."))</span>
+                        <span class="rtp-msg">@(it.Resultado ?? (it.Ia.Estado == IaEstado.Cola ? "En cola" : "Registrando..."))</span>
                     </div>
                 }
             </div>
-            @if (!_busy && _items.Any(x => x.Ok))
-            {
-                <div class="rtp-final">Listo. Tus documentos quedaron registrados en <b>@_nombre</b>. Si te falta alguno, puedes subirlo cuando quieras con este mismo enlace.</div>
-            }
         }
     </div>
+
+    @if (!_busy && Grupos.Count > 0)
+    {
+        @foreach (var g in Grupos)
+        {
+            <div class="rtp-card rtp-sum rtp-in" @key="g.Clave">
+                <div class="rtp-sum-head">
+                    <span class="rtp-sum-ic"><i class="fi fi-rr-check"></i></span>
+                    <div class="rtp-sum-tt">
+                        <div class="rtp-sum-name">@g.Nombre</div>
+                        <div class="rtp-sum-sub">@(g.Creado ? "Quedaste registrado como proveedor de " : "Ya estabas registrado: completamos tus datos en ")<b>@_nombre</b>.</div>
+                    </div>
+                </div>
+
+                <div class="rtp-sec">Datos que leímos de tus documentos</div>
+                <div class="rtp-grid">
+                    @foreach (var (lbl, val) in DatosDe(g))
+                    {
+                        <div class="rtp-fld"><span>@lbl</span><b>@val</b></div>
+                    }
+                </div>
+
+                <div class="rtp-sec">Documentos</div>
+                <ul class="rtp-docs">
+                    @foreach (var d in g.Documentos) { <li><i class="fi fi-rr-document"></i>@d</li> }
+                </ul>
+
+                <div class="rtp-sec">Contactos @(g.EsEmpresa ? "de la empresa" : "")</div>
+                <p class="rtp-muted rtp-m0">Anota las personas con las que la administración puede comunicarse y los correos donde recibes las facturas o cuentas de cobro. Es opcional.</p>
+
+                @if (g.Guardados.Count > 0)
+                {
+                    <ul class="rtp-saved">
+                        @foreach (var s in g.Guardados) { <li><i class="fi @s.Icono"></i><span>@s.Texto</span></li> }
+                    </ul>
+                }
+
+                <div class="rtp-cts">
+                    @foreach (var c in g.Contactos)
+                    {
+                        <div class="rtp-ct" @key="c.Id">
+                            <input class="rtp-in" placeholder="Nombre" maxlength="80" @bind="c.Nombre" @bind:event="oninput" />
+                            <input class="rtp-in" placeholder="Cargo" maxlength="60" @bind="c.Cargo" @bind:event="oninput" />
+                            <input class="rtp-in" placeholder="Teléfono" inputmode="tel" maxlength="30" @bind="c.Telefono" @bind:event="oninput" />
+                            <input class="rtp-in" placeholder="Correo" type="email" maxlength="200" @bind="c.Correo" @bind:event="oninput" />
+                            <button type="button" class="rtp-x" title="Quitar" @onclick="() => g.Contactos.Remove(c)"><i class="fi fi-rr-cross-small"></i></button>
+                        </div>
+                    }
+                </div>
+                <button type="button" class="rtp-add" @onclick="() => g.Contactos.Add(new ContactoVm())"><i class="fi fi-rr-plus-small"></i> Agregar contacto</button>
+
+                <div class="rtp-sec rtp-sec-sm">Correos de facturación</div>
+                <div class="rtp-fact">
+                    @foreach (var f in g.Facturacion)
+                    {
+                        <div class="rtp-fact-row" @key="f.Id">
+                            <input class="rtp-in" placeholder="facturacion@tuempresa.com" type="email" maxlength="200" @bind="f.Valor" @bind:event="oninput" />
+                            <button type="button" class="rtp-x" title="Quitar" @onclick="() => g.Facturacion.Remove(f)"><i class="fi fi-rr-cross-small"></i></button>
+                        </div>
+                    }
+                </div>
+                <button type="button" class="rtp-add" @onclick="() => g.Facturacion.Add(new CorreoVm())"><i class="fi fi-rr-plus-small"></i> Agregar correo de facturación</button>
+
+                @if (g.Error is not null) { <div class="rtp-err">@g.Error</div> }
+                @if (g.Ok is not null) { <div class="rtp-final">@g.Ok</div> }
+                <button type="button" class="rtp-btn rtp-btn-sm @(g.Guardando || !g.TieneAlgo ? "is-off" : "")" disabled="@(g.Guardando || !g.TieneAlgo)" @onclick="() => GuardarContactosAsync(g)">
+                    @(g.Guardando ? "Guardando..." : "Guardar contactos")
+                </button>
+            </div>
+        }
+        <div class="rtp-final rtp-final-out">Listo. Tus documentos quedaron registrados en <b>@_nombre</b>. Si te falta alguno, puedes subirlo cuando quieras con este mismo enlace.</div>
+    }
 }
 </div>
 
 <style>
-    .rtp-wrap { max-width:640px; margin:0 auto; padding:24px 16px 48px; font-family:inherit; }
+    .rtp-wrap { max-width:680px; margin:0 auto; padding:24px 16px 48px; font-family:inherit; }
     .rtp-hero { text-align:center; margin-bottom:18px; }
     .rtp-logo { width:72px; height:72px; border-radius:16px; object-fit:cover; margin:0 auto 10px; display:block; }
     .rtp-logo-ph { display:flex; align-items:center; justify-content:center; background:var(--propia-brand); color:var(--propia-text-inverse); font-weight:800; font-size:24px; }
     .rtp-title { font-size:22px; font-weight:800; color:var(--propia-text-h1); margin:0; }
     .rtp-sub { color:var(--propia-text-muted); margin:4px 0 0; }
     .rtp-card { background:var(--propia-bg-card); border:1px solid var(--propia-border-card); border-radius:16px; padding:20px 22px; box-shadow:0 10px 30px rgba(27,42,58,.08); }
+    .rtp-card + .rtp-card { margin-top:16px; }
     .rtp-center { text-align:center; }
     .rtp-text { color:var(--propia-text-body); margin:0 0 6px; }
     .rtp-list { margin:0 0 10px; padding-left:20px; color:var(--propia-text-body); font-size:14px; }
     .rtp-muted { color:var(--propia-text-muted); font-size:13px; }
+    .rtp-m0 { margin:0 0 10px; }
     .rtp-hp { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
     .rtp-chk { display:flex; gap:8px; align-items:flex-start; font-size:13px; color:var(--propia-text-body); margin:12px 0; cursor:pointer; }
     .rtp-chk input { margin-top:3px; }
-    .rtp-btn { display:flex; align-items:center; justify-content:center; width:100%; padding:13px 16px; border-radius:12px; cursor:pointer;
+    .rtp-btn { display:flex; align-items:center; justify-content:center; width:100%; padding:13px 16px; border-radius:12px; cursor:pointer; border:0;
         background:var(--propia-brand); color:var(--propia-text-inverse); font-weight:800; font-size:15px; margin:0; }
     .rtp-btn.is-off { opacity:.5; cursor:not-allowed; }
+    .rtp-btn-sm { margin-top:16px; padding:11px 16px; font-size:14px; }
     .rtp-hint { font-size:12px; color:var(--propia-text-muted); margin-top:6px; text-align:center; }
     .rtp-res { margin-top:16px; border-top:1px solid var(--propia-border-divider); }
+    .rtp-scan { padding-top:14px; }
+    .rtp-scan .iai-panel { margin-bottom:4px; }
     .rtp-row { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:13px; border-bottom:1px solid var(--propia-border-divider); }
     .rtp-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--propia-text-faint); }
     .rtp-row.is-trabajando .rtp-dot { background:var(--propia-brand); animation:rtp-pulso 1s ease-in-out infinite; }
@@ -103,7 +183,45 @@ else
     .rtp-msg { color:var(--propia-text-body); min-width:0; }
     .rtp-row.is-err .rtp-msg { color:var(--propia-danger); }
     .rtp-final { margin-top:14px; padding:10px 14px; border-radius:10px; background:var(--propia-ok-soft); color:var(--propia-text-body); font-size:13px; }
+    .rtp-final-out { margin-top:16px; }
+    .rtp-err { margin-top:12px; padding:10px 14px; border-radius:10px; background:var(--propia-danger-soft); color:var(--propia-danger); font-size:13px; }
+    /* ---- Resumen del tercero ---- */
+    .rtp-in { animation:rtp-entra .35s ease-out; }
+    .rtp-sum-head { display:flex; gap:12px; align-items:center; }
+    .rtp-sum-ic { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--propia-ok-soft); color:var(--propia-ok); font-size:18px; }
+    .rtp-sum-tt { min-width:0; }
+    .rtp-sum-name { font-size:17px; font-weight:800; color:var(--propia-text-h1); overflow-wrap:anywhere; }
+    .rtp-sum-sub { font-size:13px; color:var(--propia-text-muted); }
+    .rtp-sec { font-size:11.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--propia-text-secondary); margin:18px 0 8px; }
+    .rtp-sec-sm { margin-top:14px; }
+    .rtp-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; }
+    .rtp-fld { display:flex; flex-direction:column; gap:2px; min-width:0; padding:8px 10px; border-radius:10px; background:var(--propia-bg-app); }
+    .rtp-fld span { font-size:11.5px; color:var(--propia-text-muted); }
+    .rtp-fld b { font-size:13px; color:var(--propia-text-body); font-weight:600; overflow-wrap:anywhere; }
+    .rtp-docs, .rtp-saved { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+    .rtp-docs li, .rtp-saved li { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--propia-text-body); overflow-wrap:anywhere; }
+    .rtp-docs i { color:var(--propia-brand); }
+    .rtp-saved { margin-bottom:10px; }
+    .rtp-saved i { color:var(--propia-ok); }
+    .rtp-cts, .rtp-fact { display:flex; flex-direction:column; gap:8px; }
+    .rtp-ct { display:grid; grid-template-columns:1.2fr 1fr 1fr 1.4fr 32px; gap:6px; align-items:center; }
+    .rtp-fact-row { display:grid; grid-template-columns:1fr 32px; gap:6px; align-items:center; }
+    .rtp-in { width:100%; min-width:0; box-sizing:border-box; padding:9px 10px; border-radius:9px; font-size:13px; color:var(--propia-text-body);
+        background:var(--propia-bg-input); border:1px solid var(--propia-border-input); transition:border-color .12s, box-shadow .12s; }
+    .rtp-in:focus { outline:none; border-color:var(--propia-brand); box-shadow:0 0 0 3px rgba(109,79,227,.14); }
+    .rtp-x { width:32px; height:32px; border-radius:8px; border:0; background:transparent; color:var(--propia-text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .rtp-x:hover { background:var(--propia-danger-soft); color:var(--propia-danger); }
+    .rtp-add { margin-top:8px; border:0; background:transparent; color:var(--propia-brand); font-weight:700; font-size:13px; padding:4px 0; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+    @@media (max-width:560px) {
+        .rtp-card { padding:16px; }
+        .rtp-grid { grid-template-columns:1fr; }
+        .rtp-ct { grid-template-columns:1fr 1fr 32px; padding:8px; border-radius:10px; background:var(--propia-bg-app); }
+        .rtp-ct .rtp-in:nth-child(3) { grid-column:1; }
+        .rtp-ct .rtp-in:nth-child(4) { grid-column:2; }
+        .rtp-ct .rtp-x { grid-column:3; grid-row:1; }
+    }
     @@keyframes rtp-pulso { 50% { opacity:.35; } }
+    @@keyframes rtp-entra { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 </style>
 
 @code {
@@ -113,6 +231,10 @@ else
     private string? _cfgError, _logo, _website;
     private string _nombre = "";
     private readonly List<Item> _items = new();
+    private readonly List<Grupo> _grupos = new();
+    private List<Grupo> Grupos => _grupos;
+
+    private static readonly string[] Pasos = { "Subiendo el archivo", "Leyendo el documento", "Encontrando tus datos", "Preparando tu registro" };
 
     private sealed class Item
     {
@@ -120,11 +242,38 @@ else
         public string FileName { get; init; } = "";
         public byte[] Bytes { get; init; } = Array.Empty<byte>();
         public string Mime { get; init; } = "application/pdf";
+        public string Ext { get; init; } = "PDF";
+        public string? Thumb { get; set; }
         public IaLectura Ia { get; } = new();
         public string? Resultado { get; set; }
         public bool Ok { get; set; }
     }
+
+    // Un tercero del resumen: junta los documentos que cayeron en el mismo (RUT + Camara + certificacion bancaria).
+    private sealed class Grupo
+    {
+        public string Clave { get; init; } = "";        // grupo que devuelve el API (hash, no el id)
+        public string Token { get; set; } = "";         // clave firmada para anotar contactos (la mas reciente)
+        public string Nombre { get; set; } = "";
+        public bool Creado { get; set; }
+        public bool EsEmpresa { get; set; }
+        public string? Representante { get; set; }
+        public List<TerceroLeidoRequest> Datos { get; } = new();
+        public List<string> Documentos { get; } = new();
+        public List<ContactoVm> Contactos { get; } = new() { new ContactoVm() };
+        public List<CorreoVm> Facturacion { get; } = new() { new CorreoVm() };
+        public List<(string Icono, string Texto)> Guardados { get; } = new();
+        public bool Guardando { get; set; }
+        public string? Error { get; set; }
+        public string? Ok { get; set; }
+        public bool TieneAlgo => Contactos.Any(c => !string.IsNullOrWhiteSpace(c.Telefono) || !string.IsNullOrWhiteSpace(c.Correo))
+            || Facturacion.Any(f => !string.IsNullOrWhiteSpace(f.Valor));
+    }
+    private sealed class ContactoVm { public Guid Id { get; } = Guid.NewGuid(); public string? Nombre { get; set; } public string? Cargo { get; set; } public string? Telefono { get; set; } public string? Correo { get; set; } }
+    private sealed class CorreoVm { public Guid Id { get; } = Guid.NewGuid(); public string? Valor { get; set; } }
+
     private sealed record Cfg(string Nombre, string? LogoUrl);
+    private sealed record Registrado(string Nombre, bool Creado, string Documento, string? Representante, bool EsEmpresa, string Grupo, string Clave);
 
     private HttpClient Http() => HttpFactory.CreateClient("PropiaApi");
     private HttpClient HttpLargo() => HttpFactory.CreateClient("PropiaApiLong");
@@ -144,6 +293,7 @@ else
     private async Task OnArchivosAsync(InputFileChangeEventArgs e)
     {
         if (!_acepta) return;
+        var nuevos = new List<Item>();
         foreach (var f in e.GetMultipleFiles(10))
         {
             try
@@ -155,13 +305,20 @@ else
                     await st.CopyToAsync(ms);
                     bytes = ms.ToArray();
                 }
-                var it = new Item { FileName = f.Name, Bytes = bytes, Mime = string.IsNullOrWhiteSpace(f.ContentType) ? "application/pdf" : f.ContentType };
+                var mime = string.IsNullOrWhiteSpace(f.ContentType) ? "application/pdf" : f.ContentType;
+                var it = new Item { FileName = f.Name, Bytes = bytes, Mime = mime, Ext = ExtDe(f.Name, mime) };
+                // La pagina se repinta cuando cambia el ESTADO de la lectura (cola -> leyendo -> listo) para montar el
+                // escaner; el avance dentro de la lectura lo repinta el propio IaPanel (suscrito a Cambio).
+                var visto = IaEstado.Ninguno;
+                it.Ia.Cambio += () => { if (it.Ia.Estado == visto) return; visto = it.Ia.Estado; _ = InvokeAsync(StateHasChanged); };
                 it.Ia.EnCola();
                 _items.Add(it);
+                nuevos.Add(it);
             }
             catch { _items.Add(new Item { FileName = f.Name, Resultado = "No se pudo leer el archivo (máximo 20 MB).", Ok = false }); }
         }
         StateHasChanged();
+        _ = GenerarThumbsAsync(nuevos);
         if (_busy) return;
         _busy = true;
         try
@@ -175,6 +332,24 @@ else
         finally { _busy = false; StateHasChanged(); }
     }
 
+    // Miniatura de la primera pagina para la hoja del escaner (como Servicios publicos); sin ella se dibujan lineas.
+    private async Task GenerarThumbsAsync(List<Item> lista)
+    {
+        foreach (var it in lista)
+        {
+            try
+            {
+                var b64 = Convert.ToBase64String(it.Bytes);
+                if (it.Mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
+                    it.Thumb = await Js.InvokeAsync<string?>("propiaPdfThumb.render", b64, it.Mime, 120);
+                else if (IaIngestaLector.EsImagenSoportada(it.Mime) && await Js.InvokeAsync<string?>("propiaPdfThumb.redimensionarImagen", b64, it.Mime, 240) is { Length: > 0 } mini)
+                    it.Thumb = "data:image/jpeg;base64," + mini;
+            }
+            catch { it.Thumb = null; }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private async Task ProcesarAsync(Item it)
     {
         List<IaCampo> leidos = new();
@@ -182,7 +357,7 @@ else
         {
             var res = await IaIngestaLector.LeerAsync(it.Ia, it.Bytes, it.Mime, it.FileName, "tercero", Js, Http, HttpLargo,
                 campos => { leidos = campos.ToList(); return campos.Select(c => c.Nombre).Distinct().ToList(); },
-                _ => null, "Formato no soportado: sube PDF, JPG o PNG", guardarPdfOrigen: false, aceptarImagenes: true,
+                Etiqueta, "Formato no soportado: sube PDF, JPG o PNG", guardarPdfOrigen: false, aceptarImagenes: true,
                 endpoint: $"/api/publico/terceros/{TenantId}/leer");
             if (res is null || leidos.Count == 0) { it.Resultado = it.Ia.Msg ?? "No pudimos leer los datos de este documento."; it.Ok = false; return; }
             string? V(string k) => leidos.FirstOrDefault(c => c.Nombre == k)?.Valor is { Length: > 0 } v ? v.Trim() : null;
@@ -201,17 +376,100 @@ else
             var r = await resp.Content.ReadFromJsonAsync<Registrado>();
             it.Resultado = r is null ? "Registrado." : $"Registrado: {r.Nombre}";
             it.Ok = true;
+            if (r is not null) Agrupar(r, datos);
         }
         catch (Exception) { it.Resultado = "No se pudo procesar este documento. Intenta de nuevo."; it.Ok = false; }
     }
 
-    private sealed record Registrado(string Nombre, bool Creado, string Documento);
+    private void Agrupar(Registrado r, TerceroLeidoRequest datos)
+    {
+        var g = _grupos.FirstOrDefault(x => x.Clave == r.Grupo);
+        if (g is null) { g = new Grupo { Clave = r.Grupo, Creado = r.Creado }; _grupos.Add(g); }
+        g.Nombre = r.Nombre; g.EsEmpresa = r.EsEmpresa; g.Token = r.Clave;
+        g.Representante ??= r.Representante;
+        g.Datos.Add(datos);
+        g.Documentos.Add(r.Documento);
+    }
 
-    private static async Task<string> ErrorAsync(HttpResponseMessage resp)
+    // Lo que se leyo de los documentos del tercero (primer valor no vacio de cada dato).
+    private static IEnumerable<(string, string)> DatosDe(Grupo g)
+    {
+        string? P(Func<TerceroLeidoRequest, string?> f) => g.Datos.Select(f).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
+        var nit = P(d => d.Nit);
+        var doc = P(d => d.NumeroIdentificacion);
+        if (g.EsEmpresa && nit is not null) yield return ("NIT", nit);
+        else if (doc is not null) yield return ("Documento", doc);
+        if (P(d => d.NombreComercial) is { } nc && !nc.Equals(g.Nombre, StringComparison.OrdinalIgnoreCase)) yield return ("Nombre comercial", nc);
+        if (g.Representante is { } rep) yield return ("Representante legal", rep);
+        if (P(d => d.Direccion) is { } dir) yield return ("Dirección", dir);
+        if (P(d => d.Ciudad) is { } ciu) yield return ("Ciudad", ciu);
+        if (P(d => d.Email) is { } em) yield return ("Correo", em);
+        if (P(d => d.Telefono) is { } tel) yield return ("Teléfono", tel);
+        if (P(d => d.ActividadEconomica) is { } act) yield return ("Actividad económica", act);
+        if (P(d => d.RegimenTributario) is { } reg) yield return ("Régimen tributario", reg);
+        if (P(d => d.NumeroCuenta) is { } num)
+            yield return ("Cuenta bancaria", string.Join(" · ", new[] { P(d => d.Banco), P(d => d.TipoCuenta), num }.Where(x => !string.IsNullOrWhiteSpace(x))));
+    }
+
+    private async Task GuardarContactosAsync(Grupo g)
+    {
+        if (g.Guardando || !g.TieneAlgo) return;
+        g.Guardando = true; g.Error = null; g.Ok = null;
+        try
+        {
+            var contactos = g.Contactos.Where(c => !string.IsNullOrWhiteSpace(c.Telefono) || !string.IsNullOrWhiteSpace(c.Correo))
+                .Select(c => new ContactoTerceroRequest(c.Nombre, c.Cargo, c.Telefono, c.Correo)).ToList();
+            var fact = g.Facturacion.Select(f => f.Valor).Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v!.Trim()).ToList();
+            var resp = await Http().PostAsJsonAsync($"/api/publico/terceros/{TenantId}/contactos",
+                new { clave = g.Token, contactos, correosFacturacion = fact, website = _website ?? "" });
+            if (!resp.IsSuccessStatusCode) { g.Error = await ErrorAsync(resp, "No pudimos guardar los contactos."); return; }
+            foreach (var c in contactos)
+            {
+                var quien = string.Join(" · ", new[] { c.Nombre, c.Cargo }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+                var datos = string.Join(" · ", new[] { c.Telefono, c.Correo }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+                g.Guardados.Add(("fi-rr-user", string.IsNullOrEmpty(quien) ? datos : $"{quien}: {datos}"));
+            }
+            foreach (var f in fact) g.Guardados.Add(("fi-rr-envelope", $"Facturación: {f}"));
+            g.Contactos.Clear(); g.Contactos.Add(new ContactoVm());
+            g.Facturacion.Clear(); g.Facturacion.Add(new CorreoVm());
+            g.Ok = "Guardamos tus contactos. Si necesitas agregar más, anótalos y vuelve a guardar.";
+        }
+        catch { g.Error = "No pudimos guardar los contactos. Intenta de nuevo."; }
+        finally { g.Guardando = false; }
+    }
+
+    // Etiquetas de los datos encontrados (chips del escaner).
+    private static string? Etiqueta(string clave) => clave switch
+    {
+        "nit" => "NIT",
+        "razon_social" => "Razón social",
+        "nombre_comercial" => "Nombre comercial",
+        "numero_identificacion" => "Documento",
+        "nombres" => "Nombre",
+        "direccion" => "Dirección",
+        "ciudad" => "Ciudad",
+        "email" => "Correo",
+        "telefono" => "Teléfono",
+        "actividad_economica" => "Actividad económica",
+        "regimen_tributario" => "Régimen tributario",
+        "representante_legal_nombres" => "Representante legal",
+        "banco" => "Banco",
+        "numero_cuenta" => "Cuenta bancaria",
+        _ => null
+    };
+
+    private static string ExtDe(string nombre, string mime)
+    {
+        var ext = Path.GetExtension(nombre).TrimStart('.').ToUpperInvariant();
+        if (ext.Length is > 0 and <= 4) return ext == "JPEG" ? "JPG" : ext;
+        return mime.Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "PDF" : "IMG";
+    }
+
+    private static async Task<string> ErrorAsync(HttpResponseMessage resp, string generico = "No se pudo registrar el documento.")
     {
         var txt = await resp.Content.ReadAsStringAsync();
-        try { using var doc = System.Text.Json.JsonDocument.Parse(txt); if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? "No se pudo registrar."; } catch { }
-        return "No se pudo registrar el documento.";
+        try { using var doc = System.Text.Json.JsonDocument.Parse(txt); if (doc.RootElement.TryGetProperty("error", out var e)) return e.GetString() ?? generico; } catch { }
+        return $"{generico} ({(int)resp.StatusCode})";
     }
 
     private static string Iniciales(string n)

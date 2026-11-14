@@ -29,4 +29,13 @@ public interface ITercerosIaService
 {
     Task<TerceroDesdeDocumentoResultado> CrearDesdeDocumentoAsync(TerceroLeidoRequest datos, string nombreArchivo, string? contentType,
         long tamanoBytes, Stream contenido, CancellationToken ct);
+
+    /// <summary>Agrega al tercero los contactos que anoto quien lo registro (personas de la empresa con telefono y
+    /// correo, y correos de facturacion). Solo agrega: no repite un telefono o correo que el tercero ya tenga.
+    /// Devuelve cuantos contactos quedaron guardados.</summary>
+    Task<int> AgregarContactosAsync(EntidadDirectorio tipo, Guid id, IReadOnlyList<ContactoTerceroRequest> contactos,
+        IReadOnlyList<string> correosFacturacion, CancellationToken ct);
 }
+
+/// <summary>Persona de contacto de un tercero (sin documento: queda como contacto, no como persona del Directorio).</summary>
+public sealed record ContactoTerceroRequest(string? Nombre = null, string? Cargo = null, string? Telefono = null, string? Correo = null);

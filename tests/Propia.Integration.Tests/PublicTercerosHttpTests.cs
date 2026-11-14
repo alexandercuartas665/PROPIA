@@ -131,6 +131,65 @@ public class PublicTercerosHttpTests : IAsyncLifetime
         Assert.True(emp.RegimenTributario!.Length <= 100);
     }
 
+    [Fact]
+    public async Task Contactos_con_la_clave_del_registro_se_guardan_sin_repetir()
+    {
+        var tenant = await SeedTenantAsync("Ter Pub Contactos", EstadoCopropiedad.Activa);
+        var http = _factory.CreateClient();
+        var nit = Random.Shared.Next(800_000_000, 899_999_999).ToString();
+        var reg = await http.PostAsync($"/api/publico/terceros/{tenant}/registrar", Form(Datos(nit + "-" + Dv(nit)), "rut.pdf", "application/pdf"));
+        Assert.True(reg.IsSuccessStatusCode, await reg.Content.ReadAsStringAsync());
+        var r = await reg.Content.ReadFromJsonAsync<JsonElement>();
+        var clave = r.GetProperty("clave").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(r.GetProperty("grupo").GetString()));
+        Assert.True(r.GetProperty("esEmpresa").GetBoolean());
+
+        var body = new
+        {
+            clave,
+            contactos = new[] { new { nombre = "LAURA RIOS", cargo = "Contadora", telefono = "300 123 4567", correo = "laura@proveedor.test" } },
+            correosFacturacion = new[] { "facturas@proveedor.test" }
+        };
+        var resp = await http.PostAsJsonAsync($"/api/publico/terceros/{tenant}/contactos", body);
+        Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync());
+        Assert.Equal(3, (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("guardados").GetInt32());
+        // Repetir no duplica (el telefono se compara por digitos y el correo sin mayusculas).
+        var otra = new { clave, contactos = new[] { new { nombre = "Laura", cargo = "", telefono = "3001234567", correo = "LAURA@proveedor.test" } }, correosFacturacion = Array.Empty<string>() };
+        var resp2 = await http.PostAsJsonAsync($"/api/publico/terceros/{tenant}/contactos", otra);
+        Assert.Equal(0, (await resp2.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("guardados").GetInt32());
+
+        await using var db = Owner();
+        var emp = await db.Empresas.SingleAsync(e => e.Nit == nit);
+        var cts = await db.DirectorioContactos.IgnoreQueryFilters().Where(c => c.EntidadId == emp.Id).ToListAsync();
+        Assert.Equal(3, cts.Count);
+        Assert.All(cts, c => Assert.Equal(tenant, c.TenantId));
+        Assert.Contains(cts, c => c.Tipo == TipoContacto.Telefono && c.SubtipoLabel == "Laura Rios · Contadora");
+        Assert.Contains(cts, c => c.Tipo == TipoContacto.Email && c.SubtipoLabel == "Facturación" && c.Valor == "facturas@proveedor.test");
+    }
+
+    [Fact]
+    public async Task Contactos_con_clave_invalida_o_de_otra_copropiedad_se_rechazan()
+    {
+        var tenant = await SeedTenantAsync("Ter Pub Clave", EstadoCopropiedad.Activa);
+        var otro = await SeedTenantAsync("Ter Pub Clave Otro", EstadoCopropiedad.Activa);
+        var http = _factory.CreateClient();
+        var nit = Random.Shared.Next(800_000_000, 899_999_999).ToString();
+        var reg = await http.PostAsync($"/api/publico/terceros/{tenant}/registrar", Form(Datos(nit + "-" + Dv(nit)), "rut.pdf", "application/pdf"));
+        var clave = (await reg.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("clave").GetString();
+        var fact = new[] { "facturas@proveedor.test" };
+
+        var falsa = await http.PostAsJsonAsync($"/api/publico/terceros/{tenant}/contactos", new { clave = "no-es-una-clave", correosFacturacion = fact });
+        Assert.Equal(HttpStatusCode.BadRequest, falsa.StatusCode);
+        var ajena = await http.PostAsJsonAsync($"/api/publico/terceros/{otro}/contactos", new { clave, correosFacturacion = fact });
+        Assert.Equal(HttpStatusCode.BadRequest, ajena.StatusCode);
+        var malo = await http.PostAsJsonAsync($"/api/publico/terceros/{tenant}/contactos", new { clave, correosFacturacion = new[] { "no-es-correo" } });
+        Assert.Equal(HttpStatusCode.BadRequest, malo.StatusCode);
+
+        await using var db = Owner();
+        var emp = await db.Empresas.SingleAsync(e => e.Nit == nit);
+        Assert.False(await db.DirectorioContactos.IgnoreQueryFilters().AnyAsync(c => c.EntidadId == emp.Id));
+    }
+
     // ---- helpers ----
 
     private static TerceroLeidoRequest Datos(string nit)

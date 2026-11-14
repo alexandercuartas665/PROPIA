@@ -158,6 +158,22 @@ else
                         <input class="fr-in fr-in--ro" readonly tabindex="-1" value="@(_estado == EstadoDirectorio.Activo ? "Activo" : "Inactivo")" />
                     </div>
                 </div>
+                @* Contactos adicionales (p. ej. los que anota el proveedor en el registro publico por link: personas de la
+                   empresa con telefono/correo y correos de facturacion). Solo lectura. *@
+                @if (_contactos.Count > 0)
+                {
+                    <div class="fr-sectlbl fr-cts-lbl">CONTACTOS</div>
+                    <ul class="fr-cts">
+                        @foreach (var c in _contactos)
+                        {
+                            <li class="fr-ct">
+                                <span class="fr-ct-ic"><i class="fi @(c.Tipo == TipoContacto.Email ? "fi-rr-envelope" : "fi-rr-phone-call")"></i></span>
+                                <span class="fr-ct-lbl">@(c.SubtipoLabel ?? (c.Tipo == TipoContacto.Email ? "Correo" : "Teléfono"))</span>
+                                <span class="fr-ct-val">@c.Valor</span>
+                            </li>
+                        }
+                    </ul>
+                }
             </div>
         </div>
     }
@@ -356,6 +372,12 @@ else
     .fr-access { align-self: stretch; width: 100%; text-align: left; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--propia-border-divider); display: flex; flex-direction: column; gap: 4px; }
 
     .fr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .fr-cts-lbl { margin-top: 18px; }
+    .fr-cts { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .fr-ct { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--propia-border-card); border-radius: 10px; font-size: 13px; min-width: 0; }
+    .fr-ct-ic { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--propia-brand-soft); color: var(--propia-brand); }
+    .fr-ct-lbl { color: var(--propia-text-muted); flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fr-ct-val { color: var(--propia-text-body); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
     .fr-fld { display: flex; flex-direction: column; gap: 4px; }
     .fr-fld label { font-size: 11px; color: var(--propia-text-muted); font-weight: 700; }
     .fr-in { width: 100%; border: 1px solid var(--propia-border-card); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: var(--propia-text-body); outline: none; background: var(--propia-bg-card); box-sizing: border-box; }
@@ -450,6 +472,7 @@ else
     private string _documento = "";
     private string? _email;
     private string? _telefono;
+    private List<ContactoDto> _contactos = new();
     private string? _imagenUrl;           // foto (persona) o logo (empresa)
     private string? _empresa;             // empresa a la que pertenece (persona); "-" por defecto
     private EstadoDirectorio _estado = EstadoDirectorio.Activo;
@@ -547,6 +570,8 @@ else
                     _razonSocial = e.RazonSocial;
                     _accesoPersonaId = e.RepresentanteLegalPersonaId;
                     TomarServicios(dto.VinculosEnCopropiedad);
+                    _contactos = dto.Contactos.Where(c => c.Activo && c.Tipo is TipoContacto.Email or TipoContacto.Telefono or TipoContacto.Whatsapp)
+                        .OrderBy(c => c.SubtipoLabel == "Facturación").ThenBy(c => c.SubtipoLabel).ThenByDescending(c => c.Tipo).ToList();
                 }
             }
             else
@@ -560,6 +585,8 @@ else
                     _email = p.Email; _telefono = p.Telefono; _imagenUrl = p.FotoUrl; _estado = p.Estado;
                     _accesoPersonaId = p.Id;
                     TomarServicios(dto.VinculosEnCopropiedad);
+                    _contactos = dto.Contactos.Where(c => c.Activo && c.Tipo is TipoContacto.Email or TipoContacto.Telefono or TipoContacto.Whatsapp)
+                        .OrderBy(c => c.SubtipoLabel == "Facturación").ThenBy(c => c.SubtipoLabel).ThenByDescending(c => c.Tipo).ToList();
                 }
             }
             await CargarAdjuntosAsync();
