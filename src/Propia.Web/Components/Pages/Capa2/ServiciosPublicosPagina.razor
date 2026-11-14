@@ -65,10 +65,30 @@ else
             <div class="spx-carga-ic"><i class="fi fi-rr-sparkles"></i></div>
             <div class="spx-crear-ia-txt">
                 <div class="spx-carga-t">Crear servicios con IA</div>
-                <div class="spx-carga-s">Sube las facturas (una o varias, también las que cobran varios servicios con un mismo contrato). La IA arma cada servicio con su tipo, prestador, referencia y unidad, y registra ese mes con su documento y desglose.</div>
+                <div class="spx-carga-s">Sube las facturas (una o varias, también las que cobran varios servicios con un mismo contrato). La IA crea cada servicio en esta tabla con su tipo, prestador, referencia y unidad, y guarda ese mes en su historial con el documento y el desglose.</div>
             </div>
-            <button type="button" class="srv-btn-primary sm" @onclick="CrearConIaAsync"><i class="fi fi-rr-upload"></i> Subir facturas</button>
+            <label class="srv-btn-primary sm spx-crear-ia-btn @(_procesandoCrear ? "is-busy" : "")">
+                <i class="fi fi-rr-upload"></i> @(_procesandoCrear ? "Procesando..." : "Subir facturas")
+                <InputFile OnChange="OnFacturasCrearAsync" multiple accept=".pdf,image/*" style="display:none" disabled="@_procesandoCrear" />
+            </label>
         </div>
+        @if (_colaCrear.Count > 0)
+        {
+            <div class="sp-card spx-crear-res">
+                <div class="spx-crear-res-h"><span>Facturas</span>
+                    @if (!_procesandoCrear && _colaCrear.Any(q => q.Resultado is not null)) { <button type="button" class="srv-btn-ghost sm" @onclick="LimpiarCrear">Limpiar</button> }</div>
+                @foreach (var q in _colaCrear)
+                {
+                    var estado = q.Resultado is not null ? (q.ResultadoOk ? "ok" : "err")
+                        : q.Ia.Estado == IaEstado.Cola ? "cola" : "trabajando";
+                    <div class="spx-crear-row is-@estado" @key="q.Id">
+                        <i class="fi @(estado == "ok" ? "fi-rr-check-circle" : estado == "err" ? "fi-rr-cross-circle" : estado == "cola" ? "fi-rr-clock" : "fi-rr-sparkles")"></i>
+                        <span class="spx-crear-file">@q.FileName@(q.Parte is null ? "" : " · " + q.Parte)</span>
+                        <span class="spx-crear-msg">@(q.Resultado ?? (q.Ia.Estado == IaEstado.Cola ? "En cola" : q.Ia.Estado == IaEstado.Leyendo ? $"Leyendo con IA... {q.Ia.Pct}%" : "Creando el servicio..."))</span>
+                    </div>
+                }
+            </div>
+        }
 
         <div class="spx-bandeja">
             <div class="dst-filtros">

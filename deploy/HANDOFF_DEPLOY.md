@@ -1,5 +1,11 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SERVICIOS PUBLICOS - "CREAR SERVICIOS CON IA" EN LA PESTANA CONFIGURACION (2026-11-13): SOLO Web, sin migracion.**
+> - Ajuste pedido por Alex sobre la ola D: el boton "Subir facturas" ya no pasa a Recibos. Las facturas se procesan en la misma
+>   pestana Configuracion: cada servicio se crea en la tabla (resaltado) y su recibo queda como primer mes del historial
+>   (documento + desglose). Facturas combinadas crean un servicio por tipo. Si el servicio ya existe se usa; si el mes ya estaba
+>   registrado no se reemplaza. Lista de resultados por factura en la tarjeta.
+
 > **LINEAS WHATSAPP - WEBHOOK EN EL ALTA DE LINEA YCLOUD (2026-11-13): SOLO Web, sin migracion.**
 > - Modal "Nueva linea" con proveedor YCloud: muestra la URL universal del webhook (`https://app.propia-ad.com/webhooks/ycloud`,
 >   boton Copiar), los pasos en YCloud y un campo opcional para el secreto. Con secreto, la linea nace con el webhook configurado;
