@@ -33,6 +33,9 @@ public sealed class ReciboEnCola
     public string? Parte { get; set; }
     /// <summary>Subido desde "Crear servicios con IA" (Configuracion): si el servicio no existe, un solo clic lo crea y registra el mes.</summary>
     public bool ModoCrear { get; set; }
+    /// <summary>Resultado en "Crear servicios con IA" (pestana Configuracion): que se hizo con este recibo.</summary>
+    public string? Resultado { get; set; }
+    public bool ResultadoOk { get; set; }
 }
 
 /// <summary>Pestana Recibos y consumo (replica: renderRecibos()).</summary>
@@ -160,14 +163,14 @@ public partial class ServiciosPublicosPagina
         {
             while (_vivo && _cola.LastOrDefault(q => q.Ia.Estado == IaEstado.Cola) is { } q)
             {
-                await LeerAsync(q);
+                await LeerAsync(q, _cola);
                 if (_vivo) await InvokeAsync(StateHasChanged);
             }
         }
         finally { _procesando = false; }
     }
 
-    private async Task LeerAsync(ReciboEnCola q)
+    private async Task LeerAsync(ReciboEnCola q, List<ReciboEnCola> lista)
     {
         List<IaCampo> leidos = new();
         var res = await IaIngestaLector.LeerAsync(q.Ia, q.Bytes, q.Mime, q.FileName, "recibo_servicio", Js, Auth, AuthLong,
@@ -192,11 +195,11 @@ public partial class ServiciosPublicosPagina
         var partes = PartesFacturaCombinada(leidos, q.Req);
         if (partes.Count >= 2)
         {
-            var pos = _cola.IndexOf(q);
+            var pos = lista.IndexOf(q);
             for (var i = 0; i < partes.Count; i++)
             {
                 var item = i == 0 ? q : new ReciboEnCola { FileName = q.FileName, Bytes = q.Bytes, Mime = q.Mime, Ext = q.Ext };
-                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.ModoCrear = q.ModoCrear; item.Ia.YaLeido(); _cola.Insert(pos + i, item); }
+                if (i > 0) { item.Thumb = q.Thumb; item.SinDocumento = q.SinDocumento; item.ModoCrear = q.ModoCrear; item.Ia.YaLeido(); lista.Insert(pos + i, item); }
                 item.Req = partes[i];
                 item.Parte = $"{TiposServicioPublico.De(ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio) ?? TipoServicioPublico.EnergiaElectrica).Nombre} · {i + 1} de {partes.Count}";
                 item.TipoDetectado = ReglasServicioPublico.TipoDesdeTexto(partes[i].TipoServicio);
@@ -298,6 +301,92 @@ public partial class ServiciosPublicosPagina
         foreach (var q in _cola.Where(x => x.Req is not null && x.Ia.Estado == IaEstado.Listo).ToList())
             if (await EvaluarAsync(q.Req!) is { } ev) q.Eval = ev;
     }
+
+    // ===== "Crear servicios con IA" EN LA PESTANA CONFIGURACION (pedido de Alex 2026-11-13): se suben las facturas ahi
+    // mismo, la IA las lee y cada servicio se crea en la tabla de Configuracion (resaltado) y su recibo queda como el
+    // primer mes del historial, sin pasar a la pestana Recibos. Una factura combinada crea un servicio por tipo. =====
+    private readonly List<ReciboEnCola> _colaCrear = new();
+    private bool _procesandoCrear;
+
+    private async Task OnFacturasCrearAsync(InputFileChangeEventArgs e)
+    {
+        var nuevos = new List<ReciboEnCola>();
+        foreach (var f in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                byte[] bytes;   // bufferizar al seleccionar (el InputFile puede desmontarse)
+                await using (var s = f.OpenReadStream(20 * 1024 * 1024))
+                {
+                    using var ms = new MemoryStream();
+                    await s.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
+                var q = Nuevo(f.Name, bytes, f.ContentType);
+                q.Ia.EnCola();
+                nuevos.Add(q);
+            }
+            catch { Mensaje($"No se pudo leer {f.Name} (máximo 20 MB).", true); }
+        }
+        if (nuevos.Count == 0) return;
+        _colaCrear.AddRange(nuevos);
+        StateHasChanged();
+        _ = ProcesarCrearAsync();
+    }
+
+    private async Task ProcesarCrearAsync()
+    {
+        if (_procesandoCrear) return;
+        _procesandoCrear = true;
+        try
+        {
+            while (_vivo && _colaCrear.FirstOrDefault(q => q.Ia.Estado == IaEstado.Cola) is { } q)
+            {
+                await LeerAsync(q, _colaCrear);   // las partes de una factura combinada quedan en _colaCrear
+                if (_vivo) await InvokeAsync(StateHasChanged);
+                foreach (var p in _colaCrear.Where(x => x.Resultado is null && x.Ia.Estado is IaEstado.Listo or IaEstado.Error).ToList())
+                {
+                    await CrearServicioDeReciboAsync(p);
+                    if (_vivo) await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        finally { _procesandoCrear = false; }
+        await CargarAsync();
+        if (_vivo) await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Un recibo leido: si su servicio no existe lo crea (tipo, prestador, referencia, unidad y dia de pago del
+    /// recibo); si ya existe lo usa. Luego registra el mes (sin reemplazar uno ya registrado).</summary>
+    private async Task CrearServicioDeReciboAsync(ReciboEnCola q)
+    {
+        void Fin(string texto, bool ok) { q.Resultado = texto; q.ResultadoOk = ok; }
+        if (q.Ia.Estado == IaEstado.Error || q.Req is null || q.Eval is null) { Fin(q.Ia.Msg ?? "La IA no pudo leer este archivo.", false); return; }
+        var periodo = q.Eval.PeriodoLabel ?? "el periodo del recibo";
+        try
+        {
+            var ev = q.Eval;
+            var creado = false;
+            if (ev.CuentaId is null)
+            {
+                if (string.IsNullOrWhiteSpace(q.Req.Referencia)) { Fin("La IA no encontró la referencia del contrato: crea este servicio a mano.", false); return; }
+                var r = await Auth().PostAsJsonAsync("/api/servicios-publicos/recibos/agregar-servicio", q.Req);
+                if (!r.IsSuccessStatusCode) { Fin(await SpxFormato.ErrorDeAsync(r, "No se pudo crear el servicio."), false); return; }
+                ev = await r.Content.ReadFromJsonAsync<EvaluacionReciboDto>() ?? ev;
+                if (ev.CuentaId is null) { Fin("El servicio se creó, pero el recibo no quedó asociado.", false); return; }
+                creado = true;
+                _recien.Add(ev.CuentaId.Value);
+            }
+            var alias = ev.CuentaAlias ?? "el servicio";
+            if (ev.Duplicado) { Fin($"{(creado ? "Servicio creado" : "Ya existía")}: {alias}. El recibo de {periodo} ya estaba registrado (no se reemplazó).", true); return; }
+            var rc = await Auth().PostAsJsonAsync("/api/servicios-publicos/recibos/confirmar", q.Req with { CuentaId = ev.CuentaId });
+            if (!rc.IsSuccessStatusCode) { Fin($"{(creado ? "Servicio creado" : "Ya existía")}: {alias}, pero no se pudo registrar {periodo}: " + await SpxFormato.ErrorDeAsync(rc, "error"), false); return; }
+            Fin($"{(creado ? "Servicio creado" : "Ya existía")}: {alias} · recibo de {periodo} registrado.", true);
+        }
+        catch (Exception ex) { Fin(ex.Message, false); }
+    }
+
+    private void LimpiarCrear() { _colaCrear.RemoveAll(q => q.Resultado is not null); StateHasChanged(); }
 
     // ===== "Crear servicios con IA" (ola D): desde Configuracion se suben facturas y cada servicio nuevo se crea y
     // registra ese mes en un solo paso (tipo, prestador, referencia y unidad salen del recibo). =====
