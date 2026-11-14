@@ -29,10 +29,12 @@ public class PublicTercerosController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly ITercerosIaService _terceros;
     private readonly IMemoryCache _cache;
+    private readonly ILogger<PublicTercerosController> _log;
 
-    public PublicTercerosController(PropiaDbContext db, ITenantContext tenant, ITercerosIaService terceros, IMemoryCache cache)
+    public PublicTercerosController(PropiaDbContext db, ITenantContext tenant, ITercerosIaService terceros, IMemoryCache cache,
+        ILogger<PublicTercerosController> log)
     {
-        _db = db; _tenant = tenant; _terceros = terceros; _cache = cache;
+        _db = db; _tenant = tenant; _terceros = terceros; _cache = cache; _log = log;
     }
 
     /// <summary>Nombre y logo de la copropiedad para el encabezado del formulario (404 si no existe o no esta activa).</summary>
@@ -77,6 +79,12 @@ public class PublicTercerosController : ControllerBase
             return Ok(new { nombre = r.Nombre, creado = r.Creado, documento = r.DocumentoAsociado });
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Pagina publica: el proveedor no ve detalles tecnicos; el detalle queda en el log para la administracion.
+            _log.LogError(ex, "Registro publico de tercero fallo (copropiedad {TenantId}, archivo {Archivo})", tenantId, file.FileName);
+            return StatusCode(500, new { error = "No pudimos registrar este documento. Intenta de nuevo o envíalo a la administración." });
+        }
     }
 
     // Copropiedad activa + limite por IP; fija la copropiedad del link en el request (RLS) como el PQRSD publico.

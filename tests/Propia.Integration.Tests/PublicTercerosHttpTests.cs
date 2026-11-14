@@ -110,6 +110,27 @@ public class PublicTercerosHttpTests : IAsyncLifetime
         Assert.False(await db.DirectorioAdjuntos.IgnoreQueryFilters().AnyAsync(a => a.TenantId == otro));
     }
 
+    [Fact]
+    public async Task Registrar_un_RUT_con_actividad_economica_larga_no_falla()
+    {
+        // Caso real de prod (2026-11-14): el RUT trae la actividad completa (>100) y el INSERT fallaba con 22001.
+        var tenant = await SeedTenantAsync("Ter Pub Largo", EstadoCopropiedad.Activa);
+        var http = _factory.CreateClient();
+        var nit = Random.Shared.Next(800_000_000, 899_999_999).ToString();
+        var actividad = "6201 - Actividades de desarrollo de sistemas informaticos (planificacion, analisis, diseno, programacion, pruebas) y otras conexas";
+        var datos = Datos(nit + "-" + Dv(nit)) with { ActividadEconomica = actividad, RegimenTributario = new string('R', 140) };
+
+        var resp = await http.PostAsync($"/api/publico/terceros/{tenant}/registrar", Form(datos, "rut-largo.pdf", "application/pdf"));
+        Assert.True(resp.IsSuccessStatusCode, $"{(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync()}");
+
+        await using var db = Owner();
+        var emp = await db.Empresas.SingleAsync(e => e.Nit == nit);
+        Assert.NotNull(emp.SectorEconomico);
+        Assert.True(emp.SectorEconomico!.Length <= 100);
+        Assert.StartsWith("6201 - Actividades de desarrollo", emp.SectorEconomico);
+        Assert.True(emp.RegimenTributario!.Length <= 100);
+    }
+
     // ---- helpers ----
 
     private static TerceroLeidoRequest Datos(string nit)

@@ -51,9 +51,9 @@ public sealed class TercerosIaService : ITercerosIaService
             var direccion = Direccion(d);
             if (existe is null)
             {
-                var razon = Limpio(d.RazonSocial) ?? throw new InvalidOperationException("La IA no encontró la razón social del tercero.");
+                var razon = Corto(d.RazonSocial, MaxTexto200) ?? throw new InvalidOperationException("La IA no encontró la razón social del tercero.");
                 var e = await _dir.CrearEmpresaAsync(new CrearEmpresaRequest(nitSinDv, dv, razon, Limpio(d.NombreComercial),
-                    Limpio(d.Email), Limpio(d.Telefono), direccion, null, Limpio(d.ActividadEconomica), Limpio(d.RegimenTributario), null), ct);
+                    Correo(d.Email), Limpio(d.Telefono), direccion, null, Corto(d.ActividadEconomica, MaxTexto100), Corto(d.RegimenTributario, MaxTexto100), null), ct);
                 id = e.Id; nombre = e.RazonSocial; creado = true;
                 if (repId is { } rid)
                     await _dir.ActualizarEmpresaAsync(id, new ActualizarEmpresaRequest(e.RazonSocial, e.NombreComercial, e.Email, e.Telefono,
@@ -65,8 +65,8 @@ public sealed class TercerosIaService : ITercerosIaService
                 // Completa solo lo vacio (lo que alguien ya edito se respeta).
                 await _dir.ActualizarEmpresaAsync(existe.Id, new ActualizarEmpresaRequest(
                     existe.RazonSocial, existe.NombreComercial ?? Limpio(d.NombreComercial),
-                    existe.Email ?? Limpio(d.Email), existe.Telefono ?? Limpio(d.Telefono), existe.Direccion ?? direccion,
-                    existe.TipoEmpresa, existe.SectorEconomico ?? Limpio(d.ActividadEconomica), existe.RegimenTributario ?? Limpio(d.RegimenTributario),
+                    existe.Email ?? Correo(d.Email), existe.Telefono ?? Limpio(d.Telefono), existe.Direccion ?? direccion,
+                    existe.TipoEmpresa, existe.SectorEconomico ?? Corto(d.ActividadEconomica, MaxTexto100), existe.RegimenTributario ?? Corto(d.RegimenTributario, MaxTexto100),
                     existe.SitioWeb, existe.LogoUrl, existe.RepresentanteLegalPersonaId ?? repId), ct);
                 id = existe.Id; nombre = existe.RazonSocial; creado = false;
                 if (existe.RepresentanteLegalPersonaId is not null) representante = existe.RepresentanteLegalNombre;
@@ -79,7 +79,7 @@ public sealed class TercerosIaService : ITercerosIaService
                 ?? throw new InvalidOperationException("La IA no encontró el número de documento del tercero.");
             var nombres = Titulo(d.Nombres) ?? throw new InvalidOperationException("La IA no encontró el nombre del tercero.");
             var p = await PersonaAsync(Tipo(d.TipoIdentificacion) is TipoDocumento.NIT or null ? TipoDocumento.CC : Tipo(d.TipoIdentificacion)!.Value,
-                numero, nombres, Titulo(d.Apellidos) ?? "", Limpio(d.Email), Limpio(d.Telefono), ct);
+                numero, nombres, Titulo(d.Apellidos) ?? "", Correo(d.Email), Limpio(d.Telefono), ct);
             tipo = EntidadDirectorio.Persona; id = p.Id; nombre = p.Nombre; creado = p.Creado;
         }
 
@@ -96,6 +96,7 @@ public sealed class TercerosIaService : ITercerosIaService
     private async Task<(Guid Id, string Nombre, bool Creado)> PersonaAsync(TipoDocumento tipo, string numero, string nombres, string apellidos,
         string? email, string? telefono, CancellationToken ct)
     {
+        if (numero.Length > MaxDocumento) throw new InvalidOperationException("El número de documento leído no es válido: revisa el documento o crea el tercero a mano.");
         var existe = await _dir.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(tipo, numero), ct);
         if (existe is not null)
         {
@@ -114,7 +115,8 @@ public sealed class TercerosIaService : ITercerosIaService
             if (partes.Length >= 2) { var k = partes.Length >= 4 ? 2 : 1; nombres = string.Join(' ', partes[..k]); apellidos = string.Join(' ', partes[k..]); }
             else apellidos = "-";
         }
-        var p = await _dir.CrearPersonaAsync(new CrearPersonaRequest(tipo, numero, nombres, apellidos, email, telefono, null, null), ct);
+        var p = await _dir.CrearPersonaAsync(new CrearPersonaRequest(tipo, numero, Corto(nombres, MaxNombre)!, Corto(apellidos, MaxNombre)!,
+            email, telefono, null, null), ct);
         return (p.Id, $"{p.Nombres} {p.Apellidos}".Trim(), true);
     }
 
@@ -180,6 +182,26 @@ public sealed class TercerosIaService : ITercerosIaService
     }
 
     private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    // Limites de columna (empresas / personas). Un RUT real trae la actividad economica completa ("6201 - Actividades
+    // de desarrollo de sistemas informaticos (planificacion, ...)") y pasaba de 100: el INSERT fallaba con 22001.
+    private const int MaxTexto100 = 100, MaxTexto200 = 200, MaxNombre = 150, MaxDocumento = 20;
+
+    // Recorta al limite de la columna sin partir palabras cuando se puede.
+    internal static string? Corto(string? s, int max)
+    {
+        var v = Limpio(s);
+        if (v is null || v.Length <= max) return v;
+        var corte = v.LastIndexOf(' ', max);
+        return (corte > max / 2 ? v[..corte] : v[..max]).TrimEnd(' ', ',', ';', '-', '(');
+    }
+
+    // Un correo que no cabe en la columna no es un correo valido: se descarta en vez de recortarlo.
+    private static string? Correo(string? s)
+    {
+        var v = Limpio(s);
+        return v is null || v.Length > MaxTexto200 ? null : v;
+    }
 
     // "JUAN CARLOS" -> "Juan Carlos" (los certificados vienen en mayusculas).
     private static string? Titulo(string? s)
