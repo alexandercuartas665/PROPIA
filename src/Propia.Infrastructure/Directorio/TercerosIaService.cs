@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Directorio;
 using Propia.Application.Documentos;
@@ -91,6 +92,64 @@ public sealed class TercerosIaService : ITercerosIaService
         await _dir.AgregarAdjuntoAsync(tipo, id, nombreDoc, contentType, tamanoBytes, contenido, ct);
         return new TerceroDesdeDocumentoResultado(tipo, id, nombre, creado, nombreDoc, representante);
     }
+
+    public async Task<int> AgregarContactosAsync(EntidadDirectorio tipo, Guid id, IReadOnlyList<ContactoTerceroRequest> contactos,
+        IReadOnlyList<string> correosFacturacion, CancellationToken ct)
+    {
+        // (tipo, valor, etiqueta): telefono y correo de cada persona con "Nombre · Cargo"; facturacion aparte.
+        var nuevos = new List<(TipoContacto Tipo, string Valor, string Etiqueta)>();
+        foreach (var c in contactos.Take(MaxContactos))
+        {
+            var etiqueta = EtiquetaContacto(c.Nombre, c.Cargo);
+            var tel = Limpio(c.Telefono);
+            if (tel is not null)
+            {
+                if (Digitos(tel) is not { Length: >= 7 and <= 15 }) throw new InvalidOperationException($"El teléfono \"{tel}\" no es válido.");
+                nuevos.Add((TipoContacto.Telefono, tel, etiqueta));
+            }
+            if (Limpio(c.Correo) is { } correo) nuevos.Add((TipoContacto.Email, CorreoValido(correo), etiqueta));
+        }
+        foreach (var correo in correosFacturacion.Select(Limpio).OfType<string>().Take(MaxCorreosFacturacion))
+            nuevos.Add((TipoContacto.Email, CorreoValido(correo), "Facturación"));
+        if (nuevos.Count == 0) return 0;
+
+        // Solo agrega: un telefono o correo que el tercero ya tiene (en esta copropiedad) no se repite.
+        var existentes = (await _db.DirectorioContactos.AsNoTracking()
+                .Where(x => x.EntidadTipo == tipo && x.EntidadId == id && x.Activo)
+                .Select(x => new { x.Tipo, x.Valor }).ToListAsync(ct))
+            .Select(x => (x.Tipo, Clave(x.Tipo, x.Valor))).ToHashSet();
+        var guardados = 0;
+        foreach (var n in nuevos)
+        {
+            if (!existentes.Add((n.Tipo, Clave(n.Tipo, n.Valor)))) continue;
+            await _dir.AgregarContactoAsync(new AgregarContactoRequest(tipo, id, n.Tipo, n.Etiqueta, n.Valor, null, null,
+                false, VisibilidadContacto.Copropiedad), ct);
+            guardados++;
+        }
+        return guardados;
+    }
+
+    private const int MaxContactos = 20, MaxCorreosFacturacion = 5, MaxEtiqueta = 50;
+
+    // "Laura Rios · Contadora" (la columna admite 50); sin nombre ni cargo = "Contacto".
+    internal static string EtiquetaContacto(string? nombre, string? cargo)
+    {
+        var partes = new[] { Titulo(nombre), Limpio(cargo) }.OfType<string>().ToList();
+        var e = partes.Count == 0 ? "Contacto" : string.Join(" · ", partes);
+        return e.Length <= MaxEtiqueta ? e : e[..MaxEtiqueta].TrimEnd();
+    }
+
+    private static string CorreoValido(string correo)
+    {
+        var c = correo.Trim();
+        if (c.Length > MaxTexto200 || !System.Text.RegularExpressions.Regex.IsMatch(c, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            throw new InvalidOperationException($"El correo \"{c}\" no es válido.");
+        return c;
+    }
+
+    // Comparacion de duplicados: telefono por sus digitos, correo sin mayusculas.
+    private static string Clave(TipoContacto tipo, string valor)
+        => tipo == TipoContacto.Email ? valor.Trim().ToLowerInvariant() : Digitos(valor) ?? valor.Trim();
 
     // Busca la persona por documento (la vincula a la copropiedad) o la crea; completa correo/telefono si le faltan.
     private async Task<(Guid Id, string Nombre, bool Creado)> PersonaAsync(TipoDocumento tipo, string numero, string nombres, string apellidos,

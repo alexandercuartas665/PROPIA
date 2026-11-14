@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -30,11 +33,16 @@ public class PublicTercerosController : ControllerBase
     private readonly ITercerosIaService _terceros;
     private readonly IMemoryCache _cache;
     private readonly ILogger<PublicTercerosController> _log;
+    private readonly ITimeLimitedDataProtector _clave;
+
+    /// <summary>Vigencia de la clave que entrega el registro para anotar los contactos del tercero.</summary>
+    public static readonly TimeSpan VigenciaClave = TimeSpan.FromHours(2);
 
     public PublicTercerosController(PropiaDbContext db, ITenantContext tenant, ITercerosIaService terceros, IMemoryCache cache,
-        ILogger<PublicTercerosController> log)
+        ILogger<PublicTercerosController> log, IDataProtectionProvider dp)
     {
         _db = db; _tenant = tenant; _terceros = terceros; _cache = cache; _log = log;
+        _clave = dp.CreateProtector("Propia.TercerosRegistroPublico.Contactos").ToTimeLimitedDataProtector();
     }
 
     /// <summary>Nombre y logo de la copropiedad para el encabezado del formulario (404 si no existe o no esta activa).</summary>
@@ -76,7 +84,11 @@ public class PublicTercerosController : ControllerBase
         {
             await using var s = file.OpenReadStream();
             var r = await _terceros.CrearDesdeDocumentoAsync(req ?? new TerceroLeidoRequest(), file.FileName, file.ContentType, file.Length, s, ct);
-            return Ok(new { nombre = r.Nombre, creado = r.Creado, documento = r.DocumentoAsociado });
+            // clave: firmada y con vencimiento; solo quien registro el tercero puede anotarle contactos (no expone el id).
+            // grupo: agrupa en el resumen los documentos que cayeron en el mismo tercero.
+            var clave = _clave.Protect($"{tenantId:N}|{(int)r.Tipo}|{r.Id:N}", VigenciaClave);
+            return Ok(new { nombre = r.Nombre, creado = r.Creado, documento = r.DocumentoAsociado, representante = r.RepresentanteLegal,
+                esEmpresa = r.Tipo == EntidadDirectorio.Empresa, grupo = Grupo(tenantId, r.Id), clave });
         }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -86,6 +98,46 @@ public class PublicTercerosController : ControllerBase
             return StatusCode(500, new { error = "No pudimos registrar este documento. Intenta de nuevo o envíalo a la administración." });
         }
     }
+
+    /// <summary>Contactos que anota el proveedor al terminar el registro (personas de la empresa y correos de facturacion).</summary>
+    [HttpPost("{tenantId:guid}/contactos")]
+    public async Task<IActionResult> Contactos(Guid tenantId, [FromBody] ContactosRegistroRequest req, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(req.Website)) return BadRequest(new { error = "No se pudo procesar la solicitud." });
+        if (LeerClave(req.Clave, tenantId) is not { } ent)
+            return BadRequest(new { error = "El registro venció. Vuelve a subir un documento para anotar los contactos." });
+        if (await ValidarAsync(tenantId, contar: false, ct) is { } error) return error;
+        try
+        {
+            var n = await _terceros.AgregarContactosAsync(ent.Tipo, ent.Id, req.Contactos ?? new(), req.CorreosFacturacion ?? new(), ct);
+            return Ok(new { guardados = n });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogError(ex, "Contactos del registro publico de tercero fallaron (copropiedad {TenantId})", tenantId);
+            return StatusCode(500, new { error = "No pudimos guardar los contactos. Intenta de nuevo." });
+        }
+    }
+
+    public sealed record ContactosRegistroRequest(string? Clave, List<ContactoTerceroRequest>? Contactos, List<string>? CorreosFacturacion,
+        string? Website = null);
+
+    private (EntidadDirectorio Tipo, Guid Id)? LeerClave(string? clave, Guid tenantId)
+    {
+        if (string.IsNullOrWhiteSpace(clave)) return null;
+        try
+        {
+            var p = _clave.Unprotect(clave).Split('|');
+            if (p.Length != 3 || !Guid.TryParse(p[0], out var t) || t != tenantId || !int.TryParse(p[1], out var tipo)
+                || !Enum.IsDefined(typeof(EntidadDirectorio), tipo) || !Guid.TryParse(p[2], out var id)) return null;
+            return ((EntidadDirectorio)tipo, id);
+        }
+        catch (CryptographicException) { return null; }   // alterada o vencida
+    }
+
+    private static string Grupo(Guid tenantId, Guid id)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId:N}{id:N}")))[..16].ToLowerInvariant();
 
     // Copropiedad activa + limite por IP; fija la copropiedad del link en el request (RLS) como el PQRSD publico.
     private async Task<IActionResult?> ValidarAsync(Guid tenantId, bool contar, CancellationToken ct)
