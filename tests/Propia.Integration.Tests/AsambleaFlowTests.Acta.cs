@@ -211,6 +211,9 @@ public partial class AsambleaFlowTests
         // Citar no envia mensajes: el acta cita la fecha de la convocatoria sin afirmar que se envio.
         Assert.Contains("previa convocatoria del ", baseHtml);
         Assert.DoesNotContain("convocatoria enviada", baseHtml);
+        // Votacion de mayoria simple: el porcentaje es sobre los coeficientes presentes; el presidente lleva su unidad.
+        Assert.Contains("de los coeficientes presentes", baseHtml);
+        Assert.Matches(@"como presidente <b>[^<]+</b> \([^)]+\) y como secretario", baseHtml!);
 
         ia.Respuesta = new AiChatResult(false, null, "Cuota agotada");
         await acta.RedactarAsync(actaId, Ct);

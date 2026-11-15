@@ -441,6 +441,13 @@ internal static class ActaRedaccion
         TipoSesion.Comite => "Sesión del Comité de Convivencia",
         _ => t.ToString()
     };
+    // " (T1-101)": unidad por la que asiste el presidente (vacio si no se encuentra, ej. presidente externo).
+    private static string UnidadDe(ActaContexto c, Guid? personaId)
+    {
+        var p = personaId is null ? null : c.Sesion.Participantes.FirstOrDefault(x => x.PersonaId == personaId);
+        return p is not null && c.NumerosUnidad.TryGetValue(p.UnidadPrivadaId, out var n) ? $" ({E(n)})" : "";
+    }
+
     private static string OpcionTexto(string o) => o switch { "Si" => "Sí", "Abstencion" => "Abstención", _ => o };
 
     public const string PlantillaBase = """
@@ -480,7 +487,7 @@ internal static class ActaRedaccion
             h.Append($"La reunión se instaló a las {E(Hora(inst))} con el {Pct(s.QuorumInstalacionPct ?? 0)} de los coeficientes")
              .Append(s.SegundaConvocatoria ? " (segunda convocatoria: decide con un número plural de propietarios, Ley 675 art. 41)"
                  : EsAsamblea(s) ? ", con lo que hubo quórum para deliberar y decidir (Ley 675 art. 45)" : ", con el quórum que exigen los estatutos")
-             .Append($". Fueron designados como presidente <b>{E(s.PresidenteNombre)}</b> y como secretario <b>{E(s.SecretarioNombre)}</b>.");
+             .Append($". Fueron designados como presidente <b>{E(s.PresidenteNombre)}</b>{UnidadDe(c, s.PresidentePersonaId)} y como secretario <b>{E(s.SecretarioNombre)}</b>.");
         }
         else h.Append("La reunión no se instaló.");
         if (!string.IsNullOrWhiteSpace(s.JustificacionQuorum)) h.Append($" Nota sobre el quórum: {E(s.JustificacionQuorum)}");
@@ -511,7 +518,7 @@ internal static class ActaRedaccion
                 h.Append("<p class=\"asm-acta-dec\">")
                  .Append(eleccion ? "Sometido a elección (gana la opción con más coeficiente, voto " : $"Sometido a votación (mayoría {p.TipoMayoria.ToString().ToLower(Es)} de más del {p.MayoriaPct:0.##} %, voto ")
                  .Append(p.ModalidadVoto == ModalidadVoto.Secreto ? "secreto" : "público").Append($"), se registraron {v.Votos.Count} votos")
-                 .Append(dg is { Count: > 0 } ? ": " + string.Join(" · ", dg.Select(x => $"{E(OpcionTexto(x.Opcion))} {Pct(x.Pct)}")) : "")
+                 .Append(dg is { Count: > 0 } ? ": " + string.Join(" · ", dg.Select(x => $"{E(OpcionTexto(x.Opcion))} {Pct(x.Pct)}")) + (p.TipoMayoria == TipoMayoria.Calificada ? " del total de coeficientes" : " de los coeficientes presentes") : "")
                  .Append(". <b>Decisión: ")
                  .Append(v.ResultadoFinal switch
                  {
