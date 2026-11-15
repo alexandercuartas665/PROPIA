@@ -7,6 +7,7 @@ window.propiaSala = (function () {
     var MAX_TILES = 24;
     var cargando = null, room = null, ref = null, grid = null, audios = null, timer = null;
     var tiles = {}, manos = {}, palabra = null, moderador = false;
+    var prueba = null;   // stream de "Probar camara" (antes de abrir la sala; no usa LiveKit)
 
     function cargar() {
         if (window.LivekitClient) return Promise.resolve();
@@ -208,6 +209,26 @@ window.propiaSala = (function () {
         silenciarTodos: function () { if (room && moderador) enviar({ t: 'silenciar' }); },
         activarAudio: async function () { if (room) { try { await room.startAudio(); } catch (e) { } } },
         salir: async function () { if (!room) return; var r = room; try { await r.disconnect(); } catch (e) { } limpiar(); },
-        soltar: function () { ref = null; }
+        soltar: function () { ref = null; },
+        /* "Probar camara" antes de abrir la sala: vista previa local (getUserMedia), sin conectarse a LiveKit.
+           Devuelve 'ok', 'ok:sin-microfono' (solo video), 'denegado' (sin permiso) o 'error:<mensaje>'. */
+        probar: async function (videoId) {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'error:este navegador no permite usar la cámara';
+            var aviso = 'ok';
+            try {
+                if (prueba) { prueba.getTracks().forEach(function (t) { t.stop(); }); prueba = null; }
+                try { prueba = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
+                catch (e) {
+                    if (e && e.name === 'NotAllowedError') return 'denegado';
+                    prueba = await navigator.mediaDevices.getUserMedia({ video: true }); aviso = 'ok:sin-microfono';
+                }
+            } catch (e) { return e && e.name === 'NotAllowedError' ? 'denegado' : 'error:' + (e && e.message ? e.message : e); }
+            var v = document.getElementById(videoId);
+            if (v) { v.srcObject = prueba; v.muted = true; try { await v.play(); } catch (e) { } }
+            return aviso;
+        },
+        terminarPrueba: function () {
+            if (prueba) { prueba.getTracks().forEach(function (t) { t.stop(); }); prueba = null; }
+        }
     };
 })();

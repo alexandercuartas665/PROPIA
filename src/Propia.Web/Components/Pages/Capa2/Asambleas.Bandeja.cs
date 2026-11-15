@@ -90,7 +90,8 @@ public partial class Asambleas
         {
             // Navegacion < n/total > entre las sesiones de la vista (orden y filtros de la bandeja).
             var lista = Ordenadas().Select(s => s.Id).ToList();
-            var p = new ModalParameters().Set("Jwt", _jwt).Set("SesionId", id).Set("Lista", lista).Set("Tab", tab);
+            var p = new ModalParameters().Set("Jwt", _jwt).Set("SesionId", id).Set("Lista", lista).Set("Tab", tab)
+                .Set("AlCambiar", (Func<Task>)(async () => { await CargarAsync(); StateHasChanged(); }));
             var opts = new ModalOptions { Width = "1056px", Height = "86vh", CssClass = "is-fixedh asm-modal" };
             var cambio = await Modals.OpenAsync<AsambleaFichaModal, bool>(p, opts);
             if (cambio) await CargarAsync();
