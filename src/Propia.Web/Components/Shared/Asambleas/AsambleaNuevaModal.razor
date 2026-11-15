@@ -7,6 +7,8 @@
 @using Propia.Application.Asambleas
 @using Propia.Domain.Enums
 @inject IHttpClientFactory HttpFactory
+@inject IJSRuntime Js
+@inject NavigationManager Nav
 
 <div class="asm-wz">
     @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
@@ -176,7 +178,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { _plazoCitacion = (await Auth().GetFromJsonAsync<AsambleaConfigDto>("/api/asambleas/config"))?.PlazoCitacionDias ?? 0; }
+        try
+        {
+            var r = await EnviarAsync(h => h.GetAsync("/api/asambleas/config"));
+            r.EnsureSuccessStatusCode();
+            _plazoCitacion = (await r.Content.ReadFromJsonAsync<AsambleaConfigDto>())?.PlazoCitacionDias ?? 0;
+        }
         catch { _plazoCitacion = 0; }
         // Fecha sugerida: respeta el plazo de citacion (+2 dias de margen) a las 7:00 p. m.
         _fecha = DateTime.Today.AddDays(_plazoCitacion + 2).AddHours(19);
@@ -229,7 +236,7 @@
                     p.Numero, p.Titulo.Trim(), p.Descripcion, p.RequiereVotacion, p.TipoMayoria, p.MayoriaPct, p.ModalidadVoto, null,
                     p.RequiereVotacion ? p.ListaOpciones() : null)).ToList(),
                 SalaPropia: _modalidad != ModalidadSesion.Presencial && _salaPropia);
-            var resp = await Auth().PostAsJsonAsync("/api/asambleas", req);
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync("/api/asambleas", req));
             if (!resp.IsSuccessStatusCode)
             {
                 var txt = await resp.Content.ReadAsStringAsync();
@@ -270,6 +277,18 @@
         ModalidadSesion.Mixta => "Combina asistencia presencial y remota.",
         _ => string.Empty
     };
+
+    // 401 (token vencido): refresca la sesion una vez y repite; si no se puede, SessionHelper lleva al login.
+    private async Task<HttpResponseMessage> EnviarAsync(Func<HttpClient, Task<HttpResponseMessage>> llamada)
+    {
+        var resp = await llamada(Auth());
+        if (resp.StatusCode != System.Net.HttpStatusCode.Unauthorized) return resp;
+        var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+        if (string.IsNullOrEmpty(nuevo)) return resp;
+        Jwt = nuevo;
+        resp.Dispose();
+        return await llamada(Auth());
+    }
 
     private HttpClient Auth()
     {

@@ -472,7 +472,7 @@ internal static class ActaRedaccion
         var donde = s.LugarFisico is { Length: > 0 } l ? $" ({E(l)}{(s.Modalidad != ModalidadSesion.Presencial && s.SalaPropia ? " y sala virtual de PROPIA" : "")})"
             : s.SalaPropia ? " (sala virtual de PROPIA)" : "";
         h.Append($"<p>El {E(FechaLarga(inicio))}, siendo las {E(Hora(inicio))}, se reunió la {E(TipoTexto(s.Tipo).ToLower(Es))} de {E(c.Tenant.Nombre)}, en modalidad {E(s.Modalidad.ToString().ToLower(Es))}{donde}")
-         .Append(s.FechaCitacionEnviada is { } fc ? $", previa convocatoria enviada el {E(fc.ToOffset(Co).ToString("d 'de' MMMM 'de' yyyy", Es))}" : "").Append(".</p>");
+         .Append(s.FechaCitacionEnviada is { } fc ? $", previa convocatoria del {E(fc.ToOffset(Co).ToString("d 'de' MMMM 'de' yyyy", Es))}" : "").Append(".</p>");
         h.Append($"<h4>Verificación del quórum e instalación</h4><p>Se registraron {c.Presentes} de {s.Participantes.Count} unidades privadas")
          .Append(c.PoderesAprobados > 0 ? $", {c.PoderesAprobados} de ellas representada{(c.PoderesAprobados == 1 ? "" : "s")} por poder" : "").Append(". ");
         if (s.InstaladaEn is { } inst)

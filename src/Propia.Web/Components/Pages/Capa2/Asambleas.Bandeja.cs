@@ -70,7 +70,9 @@ public partial class Asambleas
     {
         try
         {
-            _b = await Auth().GetFromJsonAsync<SesionBandejaDto>("/api/asambleas");
+            var resp = await EnviarAsync(h => h.GetAsync("/api/asambleas"));
+            resp.EnsureSuccessStatusCode();
+            _b = await resp.Content.ReadFromJsonAsync<SesionBandejaDto>();
             await CargarConfigColsAsync();
             _sel.RemoveWhere(id => Items.All(s => s.Id != id));
         }
@@ -83,6 +85,7 @@ public partial class Asambleas
     {
         if (_modalAbierto) return;
         _modalAbierto = true;
+        await TokenVigenteAsync();
         try
         {
             // Navegacion < n/total > entre las sesiones de la vista (orden y filtros de la bandeja).
@@ -104,6 +107,7 @@ public partial class Asambleas
     {
         if (_modalAbierto || string.IsNullOrEmpty(_jwt)) return;
         _modalAbierto = true;
+        await TokenVigenteAsync();
         Guid? creada = null;
         try
         {
@@ -129,6 +133,7 @@ public partial class Asambleas
     {
         if (_modalAbierto || string.IsNullOrEmpty(_jwt)) return;
         _modalAbierto = true;
+        await TokenVigenteAsync();
         try { await Modals.OpenAsync<GestionarGobiernoModal, bool>(new ModalParameters().Set("Jwt", _jwt), new ModalOptions { Width = "920px" }); }
         finally { _modalAbierto = false; }
     }
@@ -151,7 +156,9 @@ public partial class Asambleas
         _asmCfgError = null;
         try
         {
-            var c = await Auth().GetFromJsonAsync<AsambleaConfigDto>("/api/asambleas/config");
+            var rc = await EnviarAsync(h => h.GetAsync("/api/asambleas/config"));
+            rc.EnsureSuccessStatusCode();
+            var c = await rc.Content.ReadFromJsonAsync<AsambleaConfigDto>();
             if (c is null) return;
             _asmCfg = new ConfigVm
             {
@@ -173,7 +180,7 @@ public partial class Asambleas
         {
             var req = new ActualizarAsambleaConfigRequest(_asmCfg.PlazoCitacionDias, _asmCfg.LimitePoderes,
                 _asmCfg.GraciaReconexionSeg, _asmCfg.NotifRecordatorioDias, _asmCfg.Criterio);
-            var resp = await Auth().PutAsJsonAsync("/api/asambleas/config", req);
+            var resp = await EnviarAsync(h => h.PutAsJsonAsync("/api/asambleas/config", req));
             if (resp.IsSuccessStatusCode)
             {
                 _asmCfg = null;
@@ -226,13 +233,15 @@ public partial class Asambleas
         return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
     }
     private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
-    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    { try { await EnviarAsync(h => h.PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req)); } catch { } }
 
     private async Task CargarConfigColsAsync()
     {
         try
         {
-            var lista = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}") ?? new();
+            var rl = await EnviarAsync(h => h.GetAsync($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}"));
+            rl.EnsureSuccessStatusCode();
+            var lista = await rl.Content.ReadFromJsonAsync<List<UnidadCampoConfigDto>>() ?? new();
             _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }
         catch { _cfg = new(StringComparer.Ordinal); }
@@ -533,7 +542,7 @@ public partial class Asambleas
             if (s.Estado != EstadoSesion.Borrador && s.Estado != EstadoSesion.Cancelada) { noBorrables++; continue; }
             try
             {
-                var r = await Auth().DeleteAsync($"/api/asambleas/{id}");
+                var r = await EnviarAsync(h => h.DeleteAsync($"/api/asambleas/{id}"));
                 if (!r.IsSuccessStatusCode) error ??= r.StatusCode == System.Net.HttpStatusCode.Forbidden
                     ? "No tienes permiso para eliminar sesiones." : await LeerErrorAsync(r, "No se pudo eliminar la sesión.");
             }
@@ -629,6 +638,30 @@ public partial class Asambleas
         }
         catch { }
     }
+    // 401 (token vencido): refresca la sesion una vez y repite; si no se puede, SessionHelper lleva al login.
+    private async Task<HttpResponseMessage> EnviarAsync(Func<HttpClient, Task<HttpResponseMessage>> llamada)
+    {
+        var resp = await llamada(Auth());
+        if (resp.StatusCode != System.Net.HttpStatusCode.Unauthorized) return resp;
+        var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+        if (string.IsNullOrEmpty(nuevo)) return resp;
+        _jwt = nuevo;
+        resp.Dispose();
+        return await llamada(Auth());
+    }
+
+    // La pagina guarda una copia del token; el navegador lo renueva solo (y las fichas al recibir un 401).
+    // Antes de abrir un modal se toma el vigente para no pasarle uno vencido.
+    private async Task TokenVigenteAsync()
+    {
+        try
+        {
+            var t = await Js.InvokeAsync<string?>("propiaAuth.get", "propia_jwt");
+            if (!string.IsNullOrEmpty(t)) _jwt = t;
+        }
+        catch { }
+    }
+
     private HttpClient Auth()
     {
         var http = HttpFactory.CreateClient("PropiaApi");
