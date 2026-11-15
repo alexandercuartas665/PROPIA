@@ -208,6 +208,9 @@ public partial class AsambleaFlowTests
         var (acta, ia, agentes, _, _) = BuildActa(tenantId);
         await acta.PrepararAsync(sid, Ct);
         var baseHtml = (await svc.GetSesionAsync(sid, Ct))!.Acta!.BorradorHtml;
+        // Citar no envia mensajes: el acta cita la fecha de la convocatoria sin afirmar que se envio.
+        Assert.Contains("previa convocatoria del ", baseHtml);
+        Assert.DoesNotContain("convocatoria enviada", baseHtml);
 
         ia.Respuesta = new AiChatResult(false, null, "Cuota agotada");
         await acta.RedactarAsync(actaId, Ct);

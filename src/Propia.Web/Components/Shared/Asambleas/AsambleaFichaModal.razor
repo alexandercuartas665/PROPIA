@@ -80,7 +80,7 @@
         }
         @if (_s.Estado == EstadoSesion.Borrador)
         {
-            <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="() => CitarAsync(false)" disabled="@_busy">Citar (envia citacion)</button>
+            <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="() => CitarAsync(false)" disabled="@_busy" title="Registra a las unidades como participantes y genera la Convocatoria en Documentos. No envía mensajes: para eso está «Enviar enlaces de voto».">Citar (genera la convocatoria)</button>
         }
         @if (_s.Estado == EstadoSesion.Citada)
         {
@@ -453,7 +453,7 @@
         if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
         try
         {
-            var resp = await Auth().GetAsync($"/api/asambleas/{_id}/enviar-enlaces/estado");
+            var resp = await EnviarAsync(h => h.GetAsync($"/api/asambleas/{_id}/enviar-enlaces/estado"));
             if (resp.StatusCode == System.Net.HttpStatusCode.OK) _envio = await resp.Content.ReadFromJsonAsync<EstadoEnvioEnlacesDto>();
         }
         catch { }
@@ -465,7 +465,7 @@
         if (_s is null || (_s.Estado != EstadoSesion.Citada && _s.Estado != EstadoSesion.EnCurso)) return;
         try
         {
-            var resp = await Auth().GetAsync($"/api/asambleas/{_id}/mi-enlace");
+            var resp = await EnviarAsync(h => h.GetAsync($"/api/asambleas/{_id}/mi-enlace"));
             if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnlaceResidenteDto>() is { } e) _miRuta = e.Ruta;
         }
         catch { }
@@ -477,7 +477,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await llamada(Auth());
+            var resp = await EnviarAsync(llamada);
             if (!resp.IsSuccessStatusCode)
             {
                 _msg = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para esta acción." : await LeerErrorAsync(resp);
@@ -499,7 +499,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/{_id}/citar", new EnviarCitacionRequest(null, confirmar));
+            var resp = await EnviarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}/citar", new EnviarCitacionRequest(null, confirmar)));
             if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
                 _confirmTexto = await LeerErrorAsync(resp);
@@ -546,7 +546,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/segunda-convocatoria", null);
+            var resp = await EnviarAsync(h => h.PostAsync($"/api/asambleas/{_id}/segunda-convocatoria", null));
             if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
             var id = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
             _hubo = true;
@@ -579,7 +579,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/votaciones/{_bloqueVotacionId}/votar-bloque", new VotarBloqueRequest(votos));
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/asambleas/votaciones/{_bloqueVotacionId}/votar-bloque", new VotarBloqueRequest(votos)));
             if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
             var r = await resp.Content.ReadFromJsonAsync<VotarBloqueResultado>();
             _hubo = true; _dlg = Dlg.Ninguno;
@@ -623,7 +623,7 @@
         _busy = true; _firmaError = null;
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/codigo-firma", new SolicitarCodigoFirmaRequest(_firmaRol));
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/codigo-firma", new SolicitarCodigoFirmaRequest(_firmaRol)));
             if (resp.IsSuccessStatusCode) _codigo = await resp.Content.ReadFromJsonAsync<CodigoFirmaDto>();
             else _firmaError = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para esta acción." : await LeerErrorAsync(resp);
         }
@@ -635,7 +635,7 @@
         _busy = true; _firmaError = null;
         try
         {
-            var resp = await Auth().PutAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/firmar", new FirmarActaRolRequest(_firmaRol, codigo?.Trim()));
+            var resp = await EnviarAsync(h => h.PutAsJsonAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/firmar", new FirmarActaRolRequest(_firmaRol, codigo?.Trim())));
             if (!resp.IsSuccessStatusCode) { _firmaError = await LeerErrorAsync(resp); return; }
             _hubo = true; _dlg = Dlg.Ninguno;
             await CargarAsync();
@@ -660,7 +660,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await Auth().PutAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/publicar", null);
+            var resp = await EnviarAsync(h => h.PutAsync($"/api/asambleas/actas/{_s!.Acta!.Id}/publicar", null));
             if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
             var r = await resp.Content.ReadFromJsonAsync<PublicacionActaDto>();
             _hubo = true;
@@ -745,8 +745,8 @@
         _parcial = null;
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{_id}/transcripcion",
-                new AgregarTranscripcionRequest(texto.Trim(), confianza is double c ? (decimal)Math.Round(c, 4) : null));
+            var req = new AgregarTranscripcionRequest(texto.Trim(), confianza is double c ? (decimal)Math.Round(c, 4) : null);
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/asambleas/{_id}/transcripcion", req));
             if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<TranscripcionLineaDto>() is { } l) _tx.Add(l);
             else if (!resp.IsSuccessStatusCode) { _dictadoError = await LeerErrorAsync(resp); await DetenerDictadoAsync(); }
         }
@@ -813,7 +813,7 @@
         _busy = true; _msg = null;
         try
         {
-            var resp = await Auth().PostAsJsonAsync($"/api/asambleas/{_id}/enviar-enlaces", new EnviarEnlacesRequest(null, Nav.BaseUri));
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/asambleas/{_id}/enviar-enlaces", new EnviarEnlacesRequest(null, Nav.BaseUri)));
             if (resp.IsSuccessStatusCode && await resp.Content.ReadFromJsonAsync<EnvioEnlacesDto>() is { } r)
             {
                 var sin = r.SinCorreo.Count == 0 ? "" :
@@ -885,6 +885,19 @@
     };
     private static string OpcionTexto(string op) => op switch { "Si" => "Sí", "Abstencion" => "Abstención", _ => op };
     private static bool EsEleccion(SesionPuntoDto p) => !p.OpcionesVoto.Contains("Si");
+
+    // Acciones: un 401 (token vencido) refresca la sesion una vez y repite la llamada, como CargarAsync.
+    // Es seguro repetir: el 401 lo da la autenticacion antes de ejecutar la accion.
+    private async Task<HttpResponseMessage> EnviarAsync(Func<HttpClient, Task<HttpResponseMessage>> llamada)
+    {
+        var resp = await llamada(Auth());
+        if (resp.StatusCode != System.Net.HttpStatusCode.Unauthorized) return resp;
+        var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+        if (string.IsNullOrEmpty(nuevo)) return resp;
+        Jwt = nuevo;
+        resp.Dispose();
+        return await llamada(Auth());
+    }
 
     private HttpClient Auth()
     {
@@ -1127,7 +1140,9 @@
         {
             try
             {
-                var l = await Auth().GetFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
+                var ru = await EnviarAsync(h => h.GetAsync("/api/mi-copropiedad/unidades"));
+                ru.EnsureSuccessStatusCode();
+                var l = await ru.Content.ReadFromJsonAsync<List<Propia.Application.MiCopropiedad.UnidadDto>>() ?? new();
                 _unidades = l.OrderBy(u => u.Numero).Select(u => (u.Id, u.Numero, u.PropietarioNombre ?? "")).ToList();
             }
             catch { _unidades = new(); }
@@ -1337,7 +1352,7 @@
         _salaAviso = null; _salaConectando = true;
         try
         {
-            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/sala/acceso", null);
+            var resp = await EnviarAsync(h => h.PostAsync($"/api/asambleas/{_id}/sala/acceso", null));
             if (!resp.IsSuccessStatusCode) { _salaAviso = await LeerErrorAsync(resp); return; }
             var a = (await resp.Content.ReadFromJsonAsync<SalaAccesoDto>())!;
             StateHasChanged();
@@ -1581,12 +1596,19 @@
             // Bufferizar antes de cualquier await de red (InputFile se puede desmontar al re-renderizar).
             using var ms = new MemoryStream();
             await f.OpenReadStream(10_000_000).CopyToAsync(ms);
-            using var form = new MultipartFormDataContent();
-            var file = new ByteArrayContent(ms.ToArray());
-            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType);
-            form.Add(file, "file", f.Name);
-            form.Add(new StringContent(((int)_docTipo).ToString()), "tipo");
-            var resp = await Auth().PostAsync($"/api/asambleas/{_id}/documentos/archivo", form);
+            var bytes = ms.ToArray();
+            var tipoArchivo = string.IsNullOrEmpty(f.ContentType) ? "application/octet-stream" : f.ContentType;
+            var tipoDoc = ((int)_docTipo).ToString();
+            // El formulario se arma en cada intento: si hay 401 y se reintenta, no se reusa un contenido ya enviado.
+            var resp = await EnviarAsync(h =>
+            {
+                var form = new MultipartFormDataContent();
+                var file = new ByteArrayContent(bytes);
+                file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(tipoArchivo);
+                form.Add(file, "file", f.Name);
+                form.Add(new StringContent(tipoDoc), "tipo");
+                return h.PostAsync($"/api/asambleas/{_id}/documentos/archivo", form);
+            });
             if (!resp.IsSuccessStatusCode) { _msg = await LeerErrorAsync(resp); _msgClass = "alert-danger"; return; }
             _hubo = true;
             await CargarAsync();
