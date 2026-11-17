@@ -102,6 +102,13 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PolizaReclamacion> PolizaReclamaciones => Set<PolizaReclamacion>();
     public DbSet<PolizaReclamacionComentario> PolizaReclamacionComentarios => Set<PolizaReclamacionComentario>();
     public DbSet<PolizaDocumento> PolizaDocumentos => Set<PolizaDocumento>();
+    // Modulo Siniestros (2026-11-16)
+    public DbSet<Siniestro> Siniestros => Set<Siniestro>();
+    public DbSet<SiniestroEstado> SiniestroEstados => Set<SiniestroEstado>();
+    public DbSet<SiniestroDocumento> SiniestroDocumentos => Set<SiniestroDocumento>();
+    public DbSet<SiniestroComentario> SiniestroComentarios => Set<SiniestroComentario>();
+    public DbSet<SiniestroCampo> SiniestroCampos => Set<SiniestroCampo>();
+    public DbSet<SiniestroCampoValor> SiniestroCampoValores => Set<SiniestroCampoValor>();
     // Informes de gestion (plantillas inteligentes + generacion IA)
     public DbSet<InformePlantilla> InformePlantillas => Set<InformePlantilla>();
     public DbSet<InformePlantillaSeccion> InformePlantillaSecciones => Set<InformePlantillaSeccion>();
@@ -449,6 +456,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
         ConfigurePorteriaReservasGlobales(modelBuilder);
         ConfigureAuditoriaIaBilling(modelBuilder);
         ConfigureListasTenant(modelBuilder);
+        ConfigureSiniestros(modelBuilder);
 
     }
 

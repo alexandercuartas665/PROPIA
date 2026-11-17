@@ -1,0 +1,2103 @@
+@page "/siniestros"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Siniestros
+@using Propia.Application.Seguros
+@using Propia.Application.Directorio
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Catalogos
+@using Propia.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IModalService Modals
+@implements IDisposable
+
+<PageTitle>Siniestros - PROPIA</PageTitle>
+
+@* Modulo Siniestros (S2, 2026-11-16). Hermano de Seguros: MISMA bandeja canon (Tarjetas/Tabla, filtros, ordenar,
+   agrupar, columnas, campos propios, descarga, alta inline con guardado invisible) y MISMA ficha (marco de Poliza:
+   pestana principal con panel de Actividad lateral + pestana Documentos). Los estilos seg-* son los de Seguros
+   (componente compartido SegurosEstilos), no una copia. Backend: api/siniestros (S1). *@
+
+<div class="seg-page">
+    <div class="mod-pagehead">
+        <div>
+            <h1 class="mod-pagetitle">Siniestros</h1>
+            <p class="mod-pagesub">Daños y pérdidas de la copropiedad y su trámite con la aseguradora.</p>
+        </div>
+        @if (_authChecked && _jwt is not null)
+        {
+            <div class="seg-head-actions">
+                <button class="propia-btn-brand" @onclick="() => AbrirModal(null)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+                    Nuevo siniestro
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (!_authChecked)
+    {
+        <div class="seg-loading"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+    }
+    else if (string.IsNullOrEmpty(_jwt))
+    {
+        <AuthMessage />
+    }
+    else
+    {
+        <div class="mod-filtros">
+            <div class="seg-filtro-wrap">
+                <button type="button" class="seg-fsel @(HayReglasActivas ? "on" : "")" @onclick="ToggleFiltros" title="Filtrar siniestros">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 5h18M6 12h12M10 19h4"/></svg><span>Filtros</span>
+                    @if (CuentaReglas > 0) { <span class="seg-fbadge">@CuentaReglas</span> }
+                </button>
+                @if (_filtrosMenu)
+                {
+                    <div class="seg-menu-bd" @onclick="() => _filtrosMenu = false"></div>
+                    <div class="seg-fpop" @onclick:stopPropagation="true">
+                        @if (_reglas.Count == 0)
+                        {
+                            <div class="seg-fpop-empty">Sin filtros aplicados.<br />Agrega una condición para acotar los siniestros.</div>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < _reglas.Count; i++)
+                            {
+                                var idx = i; var r = _reglas[idx];
+                                <div class="seg-frule">
+                                    @if (idx == 0)
+                                    {
+                                        <span class="seg-frule-lead">Donde</span>
+                                    }
+                                    else if (idx == 1)
+                                    {
+                                        <select class="seg-frule-lead seg-frule-logic" @onchange="SetLogica">
+                                            <option value="and" selected="@(_logica == "and")">Y</option>
+                                            <option value="or" selected="@(_logica == "or")">O</option>
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <span class="seg-frule-lead">@(_logica == "or" ? "O" : "Y")</span>
+                                    }
+                                    <select class="seg-frule-f" @onchange="(e) => SetReglaCampo(idx, e)">
+                                        @foreach (var opt in CamposFiltro()) { <option value="@opt.Key" selected="@(r.Campo == opt.Key)">@opt.Label</option> }
+                                    </select>
+                                    <select class="seg-frule-op" @onchange="(e) => SetReglaOp(idx, e)">
+                                        @foreach (var op in Operadores(r.Campo)) { <option value="@op.Key" selected="@(r.Op == op.Key)">@op.Label</option> }
+                                    </select>
+                                    @if (r.Op is not "vacio" and not "no_vacio")
+                                    {
+                                        @RenderValor(idx)
+                                    }
+                                    <button class="seg-frule-del" title="Quitar condición" @onclick="() => QuitarRegla(idx)">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    </button>
+                                </div>
+                            }
+                        }
+                        <div class="seg-fpop-foot">
+                            <button class="seg-fadd" @onclick="AgregarRegla">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Agregar filtro
+                            </button>
+                            @if (_reglas.Count > 0) { <button class="seg-fclear2" @onclick="LimpiarReglas">Limpiar todo</button> }
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="seg-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input class="seg-search-inp" placeholder="Buscar por número, título, elemento, póliza..." @oninput="OnBuscar" />
+            </div>
+            <div class="mod-filtros-spacer"></div>
+            <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="() => StateHasChanged()" />
+            <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+            <TablaColumnasMenu Columnas="ColsVisibilidad()" OnMover="MoverColMenu" OnToggleVisible="ToggleVisibleColMenu"
+                               OnEliminar="PedirEliminarCol" OnOcultarTodas="OcultarTodasColMenu"
+                               OnMostrarTodas="MostrarTodasColMenu" OnRestablecer="RestablecerColMenu" />
+            @if (_crearCampoAbierto)
+            {
+                <CrearCampoModal Prefijo="siniestros" RutaCatalogo="/api/siniestros/campos" EntidadConfig="siniestro" TituloSingular="siniestro"
+                                 Ejemplo="Ej. Perito asignado, Fecha de inspección"
+                                 Jwt="@_jwt" TiposAvanzados="false" OfreceFuncion="true" Catalogo="@SiniestroCatalogo"
+                                 Guardado="RecargarCamposYConfigAsync"
+                                 Cerrado="() => _crearCampoAbierto = false"
+                                 AbrirGestorAvanzado="() => { _crearCampoAbierto = false; _showCampos = true; }" />
+            }
+            @if (_campoAEliminarMenu is not null)
+            {
+                <div class="seg-ov seg-ov--top" @onclick="() => _campoAEliminarMenu = null"></div>
+                <div class="seg-confirm" @onclick:stopPropagation="true">
+                    <div class="seg-confirm-t">Eliminar campo</div>
+                    <div class="seg-confirm-s">¿Eliminar el campo "<strong>@_campoAEliminarMenu.Label</strong>"? Se borran la definición y todos sus valores. No se puede deshacer.</div>
+                    <div class="seg-confirm-acts">
+                        <button class="seg-btn-ghost" @onclick="() => _campoAEliminarMenu = null" disabled="@_colBusyMenu">Cancelar</button>
+                        <button class="seg-btn-danger" @onclick="EliminarColConfirm" disabled="@_colBusyMenu">@(_colBusyMenu ? "Eliminando..." : "Eliminar")</button>
+                    </div>
+                </div>
+            }
+            <div class="seg-menu-wrap">
+                <button type="button" class="seg-fsel @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Campos: orden, visibilidad y campos personalizados">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M3 3h7v18H3zM14 3h7v18h-7z"/></svg>Campos
+                </button>
+                @if (_showCampos)
+                {
+                    <div class="seg-menu-bd" @onclick="() => _showCampos = false"></div>
+                    <div class="seg-campospop" @onclick:stopPropagation="true">
+                        <div class="seg-campospop-h">CAMPOS DEL SINIESTRO (orden, visibilidad y campos propios)</div>
+                        <ConfigCamposEntidad Prefijo="siniestros"
+                                             RutaCatalogo="/api/siniestros/campos"
+                                             EntidadConfig="siniestro"
+                                             Catalogo="@SiniestroCatalogo"
+                                             TituloSingular="siniestro"
+                                             TituloPlural="Siniestros"
+                                             Ejemplo="Ej. Perito asignado, Fecha de inspección"
+                                             TiposAvanzados="true"
+                                             Jwt="@_jwt"
+                                             Cambiado="RecargarCamposYConfigAsync" />
+                    </div>
+                }
+            </div>
+            @if (_vista == "tabla")
+            {
+                <TablaExportar Vista="VistaExport" />
+            }
+            <TablaVistaToggle Opciones="@(new[] { TablaVistaToggle.Tarjetas("tarjetas"), TablaVistaToggle.Tabla("tabla") })" Valor="@_vista" OnCambiar="SetVista" />
+        </div>
+
+        <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOferta" />
+
+        @* Editor de ESTADOS = componente COMPARTIDO GestionarEstadosColumna (el mismo de Tareas/PQRSD/Contratos),
+           lanzado desde EditarCampoSistemaModal de la columna "Estado". API propia: api/siniestros/estados. *@
+        <GestionarEstadosColumna Visible="_estEditorOpen" Ancla="(_popX, _popY)" HaciaArriba="_popUp" Busy="_busy"
+                                 Titulo="Estados del siniestro"
+                                 Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Los estados base se pueden renombrar o inactivar, pero no eliminar."
+                                 PlaceholderNuevo="Nuevo estado (ej. En peritaje)..."
+                                 Estados="EstadosVm()"
+                                 OnAgregar="AgregarEstadoAsync"
+                                 OnRenombrar="RenombrarEstadoAsync"
+                                 OnColor="ColorEstadoAsync"
+                                 OnMover="MoverEstadoAsync"
+                                 OnEliminar="EliminarEstadoAsync"
+                                 OnToggleActivo="ToggleActivoEstadoAsync"
+                                 Error="@_estEditorErr"
+                                 Cerrar="() => { _estEditorOpen = false; _estEditorErr = null; }" />
+
+        @if (_editSisClave == "estado")
+        {
+            <EditarCampoSistemaModal Clave="estado" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="false"
+                                     EntidadConfig="siniestro" TituloSingular="siniestro" Jwt="@_jwt"
+                                     OpcionesLista="EstadosVista()" PermiteAgregar="false"
+                                     HintReadOnly="Gestiona los estados (crear, renombrar, color, orden, inactivar) con el botón de abajo."
+                                     AbrirGestorAvanzado="EventCallback.Factory.Create(this, AbrirEstadosEditor)"
+                                     Guardado="RecargarCamposYConfigAsync" Cerrado="() => _editSisClave = null" />
+        }
+        else if (_editSisClave is not null)
+        {
+            <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+                                     EntidadConfig="siniestro" TituloSingular="siniestro" Jwt="@_jwt"
+                                     ListaTenant="@(_editSisClave == "tipo" ? ListaTipo : null)"
+                                     Guardado="RecargarTodoAsync" Cerrado="() => _editSisClave = null" />
+        }
+        @if (_colToast is not null)
+        {
+            <div class="sin-coltoast" @onclick="() => _colToast = null">@_colToast</div>
+        }
+
+        @if (_loadError is not null) { <div class="alert alert-danger">@_loadError</div> }
+
+        @if (Filtradas.Count == 0 && _vista == "tarjetas")
+        {
+            <div class="seg-empty"><strong>Sin siniestros.</strong><span>Usa "Nuevo siniestro" para registrar el primero.</span></div>
+        }
+        else if (_vista == "tabla")
+        {
+            @if (_sel.Count > 0)
+            {
+                <div class="seg-selbar">
+                    <span class="seg-selbar-n">@_sel.Count seleccionado@(_sel.Count == 1 ? "" : "s")</span>
+                    <div style="flex:1"></div>
+                    <button type="button" class="seg-selbar-del" @onclick="BulkEliminar" disabled="@_eliminando">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        Eliminar (@_sel.Count)
+                    </button>
+                    <button type="button" class="seg-selbar-x" @onclick="() => _sel.Clear()" disabled="@_eliminando">Deseleccionar</button>
+                </div>
+            }
+            <div class="seg-table">
+                <div class="seg-scroll">
+                    <div class="seg-head seg-grid" style="@GridStyle()">
+                        <div class="seg-sel"><input type="checkbox" class="seg-chk" title="Seleccionar todo" checked="@TodosSel" @onchange="e => ToggleSelAll((bool)(e.Value ?? false))" /></div>
+                        <div></div>
+                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th" data-clave="@ck" title="Arrastra: mover columna" @onmousedown="e => IniciarReorder(e, ck)"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))<span class="seg-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(ck, 0)" @ondblclick:stopPropagation="true"></span></div> }
+                        <div class="seg-addcol-h"><button type="button" class="seg-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => _crearCampoAbierto = true"><i class="fi fi-rr-plus"></i></button></div>
+                    </div>
+                    @foreach (var item in FilasRender())
+                    {
+                        if (item.EsGrupo)
+                        {
+                            var colsG = ColsVisibles().ToList();
+                            var idxAgg = colsG.FindIndex(k => ModoActivo(k) != "off");
+                            <div class="seg-grouprow seg-grid seg-gl@(item.Nivel > 2 ? 2 : item.Nivel)" style="@GridStyle()">
+                                <div class="seg-grouplead" style="grid-column:1 / @(idxAgg < 0 ? "-1" : (3 + idxAgg).ToString()); padding-left:@(14 + item.Nivel * 16)px;">
+                                    @if (item.Color is not null) { <span class="sin-gdot" style="background:@item.Color;"></span> }
+                                    <span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span>
+                                </div>
+                                @if (idxAgg >= 0 && item.Nodo is { } nodo)
+                                {
+                                    var miembros = TodasFilas(nodo);
+                                    @for (int ci = idxAgg; ci < colsG.Count; ci++)
+                                    {
+                                        var kG = colsG[ci];
+                                        @if (ModoActivo(kG) != "off")
+                                        {
+                                            var (hayG, txtG, tagG) = AggCelda(miembros, kG);
+                                            <div class="seg-groupagg">@if (hayG) { <span title="@TituloAgg(tagG)">@txtG@if (tagG.Length > 0) { <span class="seg-aggtag">@tagG</span> }</span> }</div>
+                                        }
+                                        else
+                                        {
+                                            <div></div>
+                                        }
+                                    }
+                                    <div></div>
+                                }
+                            </div>
+                            continue;
+                        }
+                        var s = item.Siniestro!;
+                        var ss = s;
+                        <div class="seg-row seg-grid @(_recienCreados.Contains(s.Id) ? "seg-row-nuevo" : "") @(_sel.Contains(s.Id) ? "seg-row-sel" : "")" style="@GridStyle()"
+                             @oncontextmenu="e => AbrirCtx(e, ss)" @oncontextmenu:preventDefault="true">
+                            <div class="seg-sel" @onclick:stopPropagation="true">
+                                <input type="checkbox" class="seg-chk" checked="@_sel.Contains(ss.Id)" @onchange="e => ToggleSel(ss.Id, (bool)(e.Value ?? false))" />
+                            </div>
+                            <div class="seg-exp-col">
+                                <button type="button" class="seg-exp" title="Abrir la ficha" @onclick="() => AbrirModal(ss.Id)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
+                            </div>
+                            @foreach (var clave in ColsVisibles())
+                            {
+                                var col = clave;
+                                <div class="@ColCeldaClass(col)" title="@ColLabel(col)">
+                                    @if (col == "estado") { @EstadoBadge(s.EstadoNombre, s.EstadoColor) }
+                                    else if (col == "numero") { <span class="cod-key">@s.Numero</span> }
+                                    else { @CeldaTexto(s, col) }
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (_altaAbierta)
+                    {
+                        <div class="seg-row seg-newrow seg-newrow--edit seg-grid" style="@GridStyle()" @onkeydown="OnAltaKeydown">
+                            <div class="seg-sel"></div>
+                            <div class="seg-exp-col">
+                                <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Abrir el formulario completo con lo escrito" @onclick="AbrirModalDesdeAltaAsync" disabled="@_creandoInline">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                </button>
+                            </div>
+                            @foreach (var clave in ColsVisibles())
+                            {
+                                var col = clave;
+                                <div class="@AltaCeldaClass(col)">
+                                    @switch (col)
+                                    {
+                                        case "titulo": <input class="seg-nf-inp" @bind="_nTitulo" @bind:event="oninput" placeholder="Qué pasó *" /> break;
+                                        case "tipo":
+                                            <select class="seg-nf-inp" value="@_nTipo" @onchange="e => _nTipo = e.Value?.ToString() ?? string.Empty">
+                                                <option value="">Tipo</option>
+                                                @foreach (var t in TiposActivos) { <option value="@t.Clave">@t.Label</option> }
+                                            </select>
+                                            break;
+                                        case "elemento":
+                                            <select class="seg-nf-inp" value="@_nElemento" @onchange="e => _nElemento = e.Value?.ToString() ?? string.Empty">
+                                                <option value="">Elemento afectado</option>
+                                                @if (_equipos.Count > 0) { <optgroup label="Equipos">@foreach (var x in _equipos) { <option value="@("equipo:" + x.Id)">@x.Nombre</option> }</optgroup> }
+                                                @if (_zonas.Count > 0) { <optgroup label="Zonas comunes">@foreach (var x in _zonas) { <option value="@("zona:" + x.Id)">@x.Nombre</option> }</optgroup> }
+                                                @if (_unidades.Count > 0) { <optgroup label="Unidades">@foreach (var x in _unidades) { <option value="@("unidad:" + x.Id)">@x.Numero</option> }</optgroup> }
+                                            </select>
+                                            break;
+                                        case "fechaocurrencia": <input type="date" class="seg-nf-inp" value="@_nOcurrencia" @oninput="e => _nOcurrencia = e.Value?.ToString() ?? string.Empty" /> break;
+                                        case "fechareporte": <input type="date" class="seg-nf-inp" value="@_nReporte" @oninput="e => _nReporte = e.Value?.ToString() ?? string.Empty" /> break;
+                                        case "poliza":
+                                            <select class="seg-nf-inp" value="@_nPoliza" @onchange="e => _nPoliza = e.Value?.ToString() ?? string.Empty">
+                                                <option value="">Póliza</option>
+                                                @foreach (var p in _polizas) { <option value="@p.Id">@PolizaEtiqueta(p)</option> }
+                                            </select>
+                                            break;
+                                        case "numeroreclamacion": <input class="seg-nf-inp" @bind="_nReclamacion" @bind:event="oninput" placeholder="N° reclamación" /> break;
+                                        case "montoestimado": <input type="number" step="1000" class="seg-nf-inp" value="@_nEstimado" @oninput="e => _nEstimado = e.Value?.ToString() ?? string.Empty" placeholder="Estimado" /> break;
+                                        case "montoreclamado": <input type="number" step="1000" class="seg-nf-inp" value="@_nReclamado" @oninput="e => _nReclamado = e.Value?.ToString() ?? string.Empty" placeholder="Reclamado" /> break;
+                                        case "deducible": <input type="number" step="1000" class="seg-nf-inp" value="@_nDeducible" @oninput="e => _nDeducible = e.Value?.ToString() ?? string.Empty" placeholder="Deducible" /> break;
+                                        case "descripcion": <input class="seg-nf-inp" @bind="_nDescripcion" @bind:event="oninput" placeholder="Descripción" /> break;
+                                        case "responsable":
+                                            <SelectorPersona Jwt="@_jwt" Seleccionada="_nResponsable" SeleccionadaChanged="v => _nResponsable = v" Flotante="true" Placeholder="Responsable..." />
+                                            break;
+                                        case "numero":
+                                        case "estado":
+                                            <span>(auto)</span>
+                                            break;
+                                        default: <span>-</span> break;
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="seg-newrow tbl-nf-hintrow seg-grid" style="@GridStyle()">
+                            <div class="seg-sel"></div>
+                            <div class="seg-exp-col"></div>
+                            <div style="grid-column: 3 / -1;">
+                                <span class="tbl-nf-hint-txt">
+                                    <kbd class="tbl-kbd">Tab</kbd> o clic fuera para guardar la fila
+                                    <span class="tbl-nf-hint-sep">&middot;</span>
+                                    <kbd class="tbl-kbd">Esc</kbd> para cancelar
+                                </span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="seg-row seg-cta-row seg-grid" style="@GridStyle()">
+                            <div class="seg-sel"></div>
+                            <div class="seg-exp-col"></div>
+                            <div class="seg-nf-ctacell" style="grid-column: 3 / -1;">
+                                <button type="button" class="row-add--sm" @onclick="FabNuevo">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                    Agregar siniestro
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(_inlineMsg)) { <div class="seg-toast @(_inlineMsgEsError ? "seg-toast--error" : "")" @onclick="() => _inlineMsg = null">@_inlineMsg</div> }
+                @if (_grupos.Count == 0)
+                {
+                    <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabNuevo" title="Agregar siniestro">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                        Agregar registro
+                    </button>
+                    <div class="tbl-foot"><strong>@Filtradas.Count</strong>&nbsp;@(Filtradas.Count == 1 ? "siniestro" : "siniestros")</div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="seg-cards">
+                @foreach (var item in FilasRender())
+                {
+                    if (item.EsGrupo)
+                    {
+                        <div class="seg-group seg-group--card"><span class="seg-group-t">@item.Grupo</span><span class="seg-group-n">@item.Count</span></div>
+                        continue;
+                    }
+                    var s = item.Siniestro!;
+                    var ss = s;
+                    <button type="button" class="seg-card" @onclick="() => AbrirModal(ss.Id)">
+                        <div class="seg-card-top">
+                            <span class="seg-card-aseg">@s.Titulo</span>
+                            @EstadoBadge(s.EstadoNombre, s.EstadoColor)
+                        </div>
+                        <div class="seg-card-num">@s.Numero@(string.IsNullOrWhiteSpace(s.TipoLabel) ? "" : " - " + s.TipoLabel)</div>
+                        <div class="seg-card-meta">
+                            @s.FechaOcurrencia.ToString("dd MMM yyyy")
+                            @(ElementoTexto(s) is { } et && et != "-" ? " - " + et : "")
+                            @(s.MontoReclamado is { } mr ? " - $" + mr.ToString("N0") : "")
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (_modal)
+{
+    <div class="seg-ov" @onclick="() => _modal = false"></div>
+    <div class="seg-modal">
+        <div class="seg-modal-head">
+            <div class="seg-modal-ic"><i class="fi fi-rr-house-crack" style="font-size:19px;line-height:1;"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="seg-modal-title">@(_editId is null ? "Nuevo siniestro" : (_dto?.Numero ?? "Siniestro"))</div>
+                <div class="seg-modal-sub">@(_editId is null ? "Registra qué pasó, qué afectó y su trámite con la aseguradora." : _f.Titulo)</div>
+            </div>
+            @if (_editId is not null && _dto is not null)
+            {
+                @EstadoBadge(_dto.EstadoNombre, _dto.EstadoColor)
+            }
+            <button class="seg-x" @onclick="() => _modal = false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+
+        @if (_editId is not null)
+        {
+            <div class="seg-tabs">
+                <button class="@(_tab == "siniestro" ? "on" : "")" @onclick='() => _tab = "siniestro"'>Siniestro</button>
+                <button class="@(_tab == "docs" ? "on" : "")" @onclick='() => _tab = "docs"'>Documentos <span class="seg-tab-n">@_docs.Count</span></button>
+            </div>
+        }
+
+        <div class="seg-modal-body">
+            @if (_editId is null || _tab == "siniestro")
+            {
+            <div class="seg-2col @(_editId is null ? "seg-2col--solo" : "")">
+            <div class="seg-mainpane">
+                @if (_editId is not null)
+                {
+                    @* Estado: se cambia aqui mismo (PUT /estado). Pagado/Cerrado piden el monto reconocido si falta. *@
+                    <div class="sin-estbar">
+                        <label class="seg-lbl" style="margin:0;">Estado</label>
+                        <select class="seg-input sin-estsel" value="@(_estadoSel?.ToString() ?? "")" @onchange="OnEstadoChange" disabled="@_busy">
+                            @foreach (var e in _estados.Where(x => x.Activo || x.Id == _dto?.EstadoId).OrderBy(x => x.Orden))
+                            {
+                                <option value="@e.Id">@e.Nombre</option>
+                            }
+                        </select>
+                        @if (_pideMonto)
+                        {
+                            <div class="sin-pidemonto">
+                                <span>Monto reconocido por la aseguradora *</span>
+                                <input class="seg-input seg-mini" type="number" step="any" @bind="_montoRecEstado" placeholder="0" />
+                                @if (_estadoDestinoClave == EstadoSiniestroClave.Pagado)
+                                {
+                                    <span>Fecha de pago</span>
+                                    <input class="seg-input seg-mini" type="date" @bind="_fechaPagoEstado" />
+                                }
+                                <button class="seg-btn-brand" @onclick="ConfirmarCambioEstado" disabled="@_busy">Cambiar estado</button>
+                                <button class="seg-btn-ghost" @onclick="CancelarCambioEstado" disabled="@_busy">Cancelar</button>
+                            </div>
+                        }
+                        @* S3: tarea de reparacion (tablero General, ligada al elemento afectado y al siniestro). *@
+                        <div class="sin-tarea">
+                            @if (_dto?.TareaNumero is { } tnum && _dto.TareaId is { } tid)
+                            {
+                                <a class="sin-tarea-link" href="@($"/tareas?abrir={tid}")" title="Abrir la tarea en Tareas">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                                    Tarea de reparación <b>@tnum</b>@(string.IsNullOrEmpty(_dto.TareaEstado) ? "" : $" · {_dto.TareaEstado}")
+                                </a>
+                            }
+                            else
+                            {
+                                <button class="seg-btn-ghost" @onclick="CrearTareaReparacionAsync" disabled="@_busy">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
+                                    Crear tarea de reparación
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="sin-nota">El siniestro se crea en estado <b>@(_estados.FirstOrDefault(e => e.Clave == EstadoSiniestroClave.Reportado)?.Nombre ?? "Reportado")</b> con el siguiente consecutivo.</div>
+                }
+
+                <div class="seg-grid-form">
+                    <div class="seg-col-full"><label class="seg-lbl">Qué pasó *</label><input class="seg-input" @bind="_f.Titulo" @bind:event="oninput" placeholder="Ej. Filtración de agua en el cuarto de bombas" /></div>
+                    <div>
+                        <label class="seg-lbl">Tipo de siniestro</label>
+                        <select class="seg-input" value="@(_f.TipoClave ?? "")" @onchange="e => _f.TipoClave = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()">
+                            <option value="">- Selecciona -</option>
+                            @foreach (var t in TiposParaSelect(_f.TipoClave)) { <option value="@t.Clave">@t.Label</option> }
+                        </select>
+                    </div>
+                    <div><label class="seg-lbl">Fecha de ocurrencia *</label><input class="seg-input" type="date" @bind="_f.Ocurrencia" /></div>
+                    <div>
+                        <label class="seg-lbl">Elemento afectado</label>
+                        <select class="seg-input" value="@((int)_f.ElementoTipo)" @onchange="OnElementoTipoChange">
+                            <option value="0">Ninguno</option>
+                            <option value="1">Equipo</option>
+                            <option value="2">Zona común</option>
+                            <option value="3">Unidad</option>
+                            <option value="4">Otro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="seg-lbl">@ElementoDetalleLabel()</label>
+                        @switch (_f.ElementoTipo)
+                        {
+                            case ElementoSiniestro.Equipo:
+                                <select class="seg-input" value="@(_f.ElementoId?.ToString() ?? "")" @onchange="OnElementoIdChange">
+                                    <option value="">- Selecciona el equipo -</option>
+                                    @foreach (var x in _equipos) { <option value="@x.Id">@x.Nombre</option> }
+                                </select>
+                                break;
+                            case ElementoSiniestro.Zona:
+                                <select class="seg-input" value="@(_f.ElementoId?.ToString() ?? "")" @onchange="OnElementoIdChange">
+                                    <option value="">- Selecciona la zona -</option>
+                                    @foreach (var x in _zonas) { <option value="@x.Id">@x.Nombre</option> }
+                                </select>
+                                break;
+                            case ElementoSiniestro.Unidad:
+                                <select class="seg-input" value="@(_f.ElementoId?.ToString() ?? "")" @onchange="OnElementoIdChange">
+                                    <option value="">- Selecciona la unidad -</option>
+                                    @foreach (var x in _unidades) { <option value="@x.Id">@x.Numero</option> }
+                                </select>
+                                break;
+                            case ElementoSiniestro.Otro:
+                                <input class="seg-input" @bind="_f.ElementoOtro" @bind:event="oninput" placeholder="Describe qué se afectó" />
+                                break;
+                            default:
+                                <input class="seg-input" disabled placeholder="Sin elemento" />
+                                break;
+                        }
+                    </div>
+                    <div class="seg-col-full"><label class="seg-lbl">Descripción</label><textarea data-dictado data-dictado-contexto="Descripcion de un siniestro (dano o perdida) en una copropiedad" class="seg-input" rows="3" @bind="_f.Descripcion" placeholder="Qué pasó, cómo se detectó, qué daños hay"></textarea></div>
+
+                    <div class="seg-col-full"><div class="seg-doc-h" style="margin-top:4px;">Trámite con la aseguradora</div></div>
+                    <div class="seg-col-full">
+                        <label class="seg-lbl">Póliza <span class="seg-hint">(opcional; debe cubrir la fecha de ocurrencia)</span></label>
+                        <select class="seg-input" value="@(_f.PolizaId?.ToString() ?? "")" @onchange="e => _f.PolizaId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null">
+                            <option value="">- Sin póliza -</option>
+                            @foreach (var p in _polizas) { <option value="@p.Id">@PolizaEtiqueta(p)</option> }
+                        </select>
+                    </div>
+                    <div><label class="seg-lbl">Fecha de reporte</label><input class="seg-input" type="date" @bind="_f.Reporte" /></div>
+                    <div><label class="seg-lbl">N° de reclamación</label><input class="seg-input" @bind="_f.NumeroReclamacion" @bind:event="oninput" placeholder="Radicado de la aseguradora" /></div>
+                    <div class="seg-col-full">
+                        <label class="seg-lbl">Responsable <span class="seg-hint">(del Directorio)</span></label>
+                        <SelectorPersona Jwt="@_jwt" Seleccionada="_responsableSel" SeleccionadaChanged="OnResponsableSel" Placeholder="Buscar persona responsable del trámite..." />
+                    </div>
+                    <div><label class="seg-lbl">Monto estimado (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.MontoEstimado" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Monto reclamado (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.MontoReclamado" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Deducible (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.Deducible" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Monto reconocido (COP)</label><input class="seg-input" type="number" step="any" @bind="_f.MontoReconocido" placeholder="0" /></div>
+                    <div><label class="seg-lbl">Fecha de pago</label><input class="seg-input" type="date" @bind="_f.FechaPago" /></div>
+
+                    @if (CamposActivos.Any())
+                    {
+                        <div class="seg-col-full"><div class="seg-doc-h" style="margin-top:4px;">Campos personalizados</div></div>
+                        @foreach (var cm in CamposActivos)
+                        {
+                            var cid = cm.Id;
+                            var full = cm.Tipo is TipoCampoTablero.AreaTexto or TipoCampoTablero.Seleccion;
+                            <div class="@(full ? "seg-col-full" : "")">
+                                <label class="seg-lbl">@cm.Label</label>
+                                @switch (cm.Tipo)
+                                {
+                                    case TipoCampoTablero.Formula:
+                                    case TipoCampoTablero.Total:
+                                        <input class="seg-input" disabled value="@(Val(cid) ?? "")" placeholder="(calculado)" />
+                                        break;
+                                    case TipoCampoTablero.AreaTexto:
+                                        <textarea class="seg-input" rows="2" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput"></textarea>
+                                        break;
+                                    case TipoCampoTablero.Numero:
+                                    case TipoCampoTablero.Moneda:
+                                    case TipoCampoTablero.Porcentaje:
+                                        <input class="seg-input" type="number" step="any" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Fecha:
+                                        <input class="seg-input" type="date" value="@Val(cid)" @oninput="e => SetVal(cid, e.Value?.ToString())" />
+                                        break;
+                                    case TipoCampoTablero.Booleano:
+                                        <label class="seg-check" style="margin-top:6px;"><input type="checkbox" checked="@(Val(cid) == "true")" @onchange='e => SetVal(cid, ((bool)(e.Value ?? false)) ? "true" : "false")' /> Sí</label>
+                                        break;
+                                    case TipoCampoTablero.Seleccion:
+                                        <select class="seg-input" value="@Val(cid)" @onchange="e => SetVal(cid, e.Value?.ToString())">
+                                            <option value="">- Selecciona -</option>
+                                            @foreach (var op in OpcionCampo.VisiblesK(cm.Opciones)) { <option value="@op">@op</option> }
+                                        </select>
+                                        break;
+                                    default:
+                                        <input class="seg-input" @bind:get="Val(cid)" @bind:set="v => SetVal(cid, v)" @bind:event="oninput" />
+                                        break;
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+            @if (_editId is not null)
+            {
+                <aside class="seg-actpane">
+                    <div class="act-panel">
+                        <div class="act-h"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Actividad</div>
+                        <div class="act-chat">
+                            @if (_comentarios.Count == 0)
+                            {
+                                <div class="act-empty">Aún no hay actividad. Escribe el primer mensaje sobre el siniestro.</div>
+                            }
+                            else
+                            {
+                                @foreach (var c in _comentarios)
+                                {
+                                    if (c.EsSistema)
+                                    {
+                                        <div class="sin-act-sis"><span>@c.Texto</span><span class="act-time">@c.CreatedAt.ToLocalTime().ToString("dd MMM - HH:mm")</span></div>
+                                        continue;
+                                    }
+                                    var mine = c.AutorUsuarioId is { } au && au == _miUsuarioId;
+                                    var autor = string.IsNullOrWhiteSpace(c.AutorNombre) ? "Usuario" : c.AutorNombre!;
+                                    <div class="act-msg @(mine ? "mine" : "")">
+                                        <span class="act-av">@Iniciales(autor)</span>
+                                        <div class="act-msg-b">
+                                            <div class="act-who">@autor</div>
+                                            <div class="act-bubble">@c.Texto</div>
+                                            <div class="act-time">@c.CreatedAt.ToLocalTime().ToString("dd MMM - HH:mm")</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="act-qr-row">
+                            <span class="act-qr-lbl">Respuesta rápida</span>
+                            @foreach (var qr in _respuestasRapidas)
+                            {
+                                var t = qr;
+                                <button type="button" class="act-qr" @onclick="() => EnviarComentario(t)" disabled="@_busy">@t</button>
+                            }
+                        </div>
+                        <div class="act-composer">
+                            <input class="seg-input" @bind="_nuevoComentario" @bind:event="oninput" placeholder="Escribe un mensaje..." @onkeydown="OnChatKey" />
+                            <button type="button" class="act-cbtn act-send" title="Enviar" @onclick="() => EnviarComentario(null)" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoComentario))"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+                        </div>
+                    </div>
+                </aside>
+            }
+            </div>
+            }
+            else if (_tab == "docs")
+            {
+                <div class="seg-docpane">
+                    <DocumentosPanel Documentos="DocsItems()" Subiendo="_docsSubiendo" Fill="true" Padding="0"
+                                     EmptyHint="Sube fotos del daño, cotizaciones, el informe del perito y la respuesta de la aseguradora."
+                                     OnSubir="OnSubirDocumento" OnEliminar="OnEliminarDocumento" />
+                </div>
+            }
+        </div>
+        @if (_modalError is not null) { <div class="seg-banner err" style="margin:12px 20px 0;">@_modalError</div> }
+        @if (_editId is null || _tab == "siniestro")
+        {
+            <div class="seg-modal-foot">
+                @if (_editId is not null)
+                {
+                    <button class="seg-btn-danger" style="margin-right:auto;" @onclick="() => _confirmEliminar = true" disabled="@_busy">Eliminar</button>
+                }
+                <button class="seg-btn-ghost" @onclick="() => _modal = false">Cancelar</button>
+                <button class="seg-btn-brand" @onclick="GuardarAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_f.Titulo))">@(_editId is null ? "Crear siniestro" : "Guardar siniestro")</button>
+            </div>
+        }
+    </div>
+    @if (_confirmEliminar)
+    {
+        <div class="seg-ov seg-ov--top" @onclick="() => { if (!_eliminando) _confirmEliminar = false; }"></div>
+        <div class="seg-confirm" @onclick:stopPropagation="true">
+            <div class="seg-confirm-t">Eliminar siniestro</div>
+            <div class="seg-confirm-s">Se eliminará el siniestro @(_dto?.Numero) junto con sus documentos, actividad y valores. Esta acción no se puede deshacer.</div>
+            <div class="seg-confirm-acts">
+                <button class="seg-btn-ghost" @onclick="() => _confirmEliminar = false" disabled="@_eliminando">Cancelar</button>
+                <button class="seg-btn-danger" @onclick="BorrarAsync" disabled="@_eliminando">@(_eliminando ? "Eliminando..." : "Sí, eliminar")</button>
+            </div>
+        </div>
+    }
+}
+
+<TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
+
+<ModalHost />
+
+<SegurosEstilos />
+<style>
+    /* Extras de Siniestros sobre el canon seg-* (solo tokens). */
+    .sin-est { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--propia-text-body); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 999px; padding: 3px 10px 3px 8px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .sin-est i { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+    .sin-gdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; flex: 0 0 auto; }
+    .sin-estbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 10px; }
+    .sin-estsel { width: auto; min-width: 220px; }
+    .sin-pidemonto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; font-size: 12.5px; color: var(--propia-text-secondary); padding-top: 8px; border-top: 1px dashed var(--propia-border-divider); }
+    .sin-tarea { margin-left: auto; display: flex; align-items: center; }
+    .sin-tarea .seg-btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
+    .sin-tarea-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); border-radius: 8px; padding: 6px 10px; text-decoration: none; }
+    .sin-tarea-link:hover { background: var(--propia-brand-soft-2); }
+    .sin-tarea-link b { font-weight: 800; }
+    .sin-nota { font-size: 12.5px; color: var(--propia-text-secondary); background: var(--propia-brand-soft-2); border: 1px solid var(--propia-brand-border); border-radius: 9px; padding: 8px 11px; margin-bottom: 14px; }
+    .sin-nota b { color: var(--propia-text-h1); }
+    .sin-act-sis { display: flex; flex-direction: column; align-items: center; gap: 1px; align-self: center; text-align: center; font-size: 11.5px; color: var(--propia-text-muted); background: var(--propia-bg-card); border: 1px dashed var(--propia-border-card); border-radius: 9px; padding: 5px 10px; max-width: 92%; }
+    .sin-coltoast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--propia-text-h1); color: var(--propia-text-inverse); padding: 8px 16px; border-radius: 9px; z-index: 5000; font-size: 12.5px; cursor: pointer; box-shadow: 0 6px 18px rgba(27,42,58,.28); }
+</style>
+
+@code {
+    private const string ListaTipo = "siniestro.tipo";
+
+    // ===== Estado general =====
+    private string? _jwt;
+    private Guid? _miUsuarioId;
+    private bool _authChecked;
+    private string? _loadError;
+    private List<SiniestroDto> _items = new();
+    private List<SiniestroEstadoDto> _estados = new();
+    private List<OpcionEfectivaDto> _tipos = new();
+    private List<SiniestroCampoDto> _campos = new();
+    private Dictionary<Guid, Dictionary<Guid, string?>> _valores = new();   // siniestroId -> (campoId -> valor)
+    private IReadOnlyList<SiniestroCampoDto> CamposActivos => _campos.Where(c => c.Activo).OrderBy(c => c.Orden).ToList();
+    private IEnumerable<OpcionEfectivaDto> TiposActivos => _tipos.Where(t => t.Activo).OrderBy(t => t.Orden);
+
+    // Listas de apoyo (alta y ficha): se cargan una vez.
+    private sealed record ElemLite(Guid Id, string? Nombre, string? Numero);
+    private List<ElemLite> _equipos = new(), _zonas = new(), _unidades = new();
+    private List<PolizaDto> _polizas = new();
+    private bool _apoyoCargado;
+
+    private string _q = "";
+    private string _vista = "tabla";
+    private const string VistaKey = "propia_view_siniestros";
+    private List<string> _grupos = new();
+    private const string AgruparKey = "propia_agrupar_siniestros";
+
+    // ===== Menu contextual de la fila =====
+    private bool _ctxOpen;
+    private double _ctxX, _ctxY;
+    private List<TablaCtxMenu.Item> _ctxItems = new();
+    private void AbrirCtx(MouseEventArgs e, SiniestroDto s)
+    {
+        _ctxX = e.ClientX; _ctxY = e.ClientY;
+        _ctxItems = new()
+        {
+            new("Abrir ficha", "fi-rr-expand", OnClick: () => AbrirModal(s.Id)),
+            new("Copiar enlace del registro", "fi-rr-link-alt", OnClick: () => CopiarEnlace(s)),
+        };
+        _ctxOpen = true;
+    }
+    private async Task CopiarEnlace(SiniestroDto s)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", $"{Nav.BaseUri}siniestros#siniestro-{s.Id}"); }
+        catch { }
+    }
+
+    // ===== Seleccion multiple =====
+    private readonly HashSet<Guid> _sel = new();
+    private bool TodosSel { get { var ids = Filtradas.Select(s => s.Id).ToList(); return ids.Count > 0 && ids.All(_sel.Contains); } }
+    private void ToggleSel(Guid id, bool on) { if (on) _sel.Add(id); else _sel.Remove(id); }
+    private void ToggleSelAll(bool on) { _sel.Clear(); if (on) foreach (var s in Filtradas) _sel.Add(s.Id); }
+    private async Task BulkEliminar()
+    {
+        if (_sel.Count == 0) return;
+        var n = _sel.Count;
+        bool ok;
+        try { ok = await Js.InvokeAsync<bool>("confirm", $"¿Eliminar {n} siniestro{(n == 1 ? "" : "s")}? Esta acción no se puede deshacer."); }
+        catch { ok = false; }
+        if (!ok) return;
+        _eliminando = true;
+        try
+        {
+            foreach (var id in _sel.ToList()) { try { await Auth().DeleteAsync($"/api/siniestros/{id}"); } catch { } }
+            _sel.Clear();
+            await CargarAsync();
+        }
+        finally { _eliminando = false; }
+    }
+
+    // ===== FAB + scroll infinito (render-all) =====
+    private bool _ctaVisible = true;
+    private bool _scrollCtaPend;
+    private string? _fabSig;
+    private DotNetObjectReference<Siniestros>? _self;
+    [JSInvokable] public Task CargarMas() => Task.CompletedTask;
+    [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
+    private async Task FabNuevo() { _altaAbierta = true; LimpiarAlta(); _scrollCtaPend = true; await CargarApoyoAsync(); }
+    public void Dispose() { _self?.Dispose(); }
+
+    // ===== Alta inline (guardado invisible) =====
+    private bool _altaAbierta;
+    private string _nTitulo = "", _nTipo = "", _nElemento = "", _nOcurrencia = "", _nReporte = "", _nPoliza = "", _nReclamacion = "",
+        _nEstimado = "", _nReclamado = "", _nDeducible = "", _nDescripcion = "";
+    private PersonaCandidatoDto? _nResponsable;
+    private bool _creandoInline;
+    private string? _inlineMsg;
+    private bool _inlineMsgEsError;
+    private readonly List<Guid> _recienCreados = new();
+    private void LimpiarAlta()
+    {
+        _nTitulo = _nTipo = _nElemento = _nReporte = _nPoliza = _nReclamacion = _nEstimado = _nReclamado = _nDeducible = _nDescripcion = "";
+        _nOcurrencia = HoyColombia().ToString("yyyy-MM-dd");
+        _nResponsable = null;
+    }
+    private void CerrarAlta() { _altaAbierta = false; LimpiarAlta(); }
+    private async Task OnAltaKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CerrarAlta();
+        else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_nTitulo)) await CrearDesdeAltaAsync();
+    }
+    [JSInvokable] public async Task AltaBlurGuardar()
+    {
+        if (!_altaAbierta || _creandoInline) return;
+        if (string.IsNullOrWhiteSpace(_nTitulo) || string.IsNullOrWhiteSpace(_nOcurrencia)) { CerrarAlta(); StateHasChanged(); return; }
+        await CrearDesdeAltaAsync();
+        StateHasChanged();
+    }
+    private static (ElementoSiniestro Tipo, Guid? Id) ParseElementoAlta(string v)
+    {
+        var i = v.IndexOf(':');
+        if (i <= 0 || !Guid.TryParse(v[(i + 1)..], out var g)) return (ElementoSiniestro.Ninguno, null);
+        return v[..i] switch
+        {
+            "equipo" => (ElementoSiniestro.Equipo, g),
+            "zona" => (ElementoSiniestro.Zona, g),
+            "unidad" => (ElementoSiniestro.Unidad, g),
+            _ => (ElementoSiniestro.Ninguno, null)
+        };
+    }
+    private static decimal? Dec(string s)
+        => decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    private static string? Txt(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private async Task CrearDesdeAltaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nTitulo)) { _inlineMsg = "Indica qué pasó para crear el siniestro."; _inlineMsgEsError = true; return; }
+        if (!DateOnly.TryParse(_nOcurrencia, out var oc)) { _inlineMsg = "Indica la fecha de ocurrencia."; _inlineMsgEsError = true; return; }
+        _creandoInline = true;
+        try
+        {
+            var (et, eid) = ParseElementoAlta(_nElemento);
+            var req = new CrearSiniestroRequest(_nTitulo.Trim(), oc,
+                Descripcion: Txt(_nDescripcion), TipoClave: Txt(_nTipo),
+                FechaReporte: DateOnly.TryParse(_nReporte, out var fr) ? fr : null,
+                ElementoTipo: et, ElementoId: eid,
+                PolizaId: Guid.TryParse(_nPoliza, out var pg) ? pg : null,
+                NumeroReclamacion: Txt(_nReclamacion), ResponsablePersonaId: _nResponsable?.PersonaId,
+                MontoEstimado: Dec(_nEstimado), MontoReclamado: Dec(_nReclamado), Deducible: Dec(_nDeducible));
+            var resp = await Auth().PostAsJsonAsync("/api/siniestros", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                try { var c = await resp.Content.ReadFromJsonAsync<SiniestroDto>(); if (c is not null) _recienCreados.Add(c.Id); } catch { }
+                _altaAbierta = false; LimpiarAlta();
+                _inlineMsg = "Siniestro creado."; _inlineMsgEsError = false;
+                await CargarAsync();
+            }
+            else { _inlineMsg = await MensajeErrorAsync(resp); _inlineMsgEsError = true; }
+        }
+        catch (Exception ex) { _inlineMsg = ex.Message; _inlineMsgEsError = true; }
+        finally { _creandoInline = false; }
+    }
+    // Expander de la fila de alta: lleva lo escrito al modal (sin crear) y cierra la fila (evita el doble alta del blur).
+    private async Task AbrirModalDesdeAltaAsync()
+    {
+        var t = _nTitulo; var tipo = _nTipo; var el = _nElemento; var oc = _nOcurrencia; var rep = _nReporte; var pol = _nPoliza;
+        var rec = _nReclamacion; var est = _nEstimado; var recl = _nReclamado; var ded = _nDeducible; var desc = _nDescripcion; var resp = _nResponsable;
+        _altaAbierta = false; _inlineMsg = null; LimpiarAlta();
+        await AbrirModal(null);
+        _f.Titulo = t.Trim(); _f.TipoClave = Txt(tipo); _f.Descripcion = Txt(desc); _f.NumeroReclamacion = Txt(rec);
+        var (et, eid) = ParseElementoAlta(el); _f.ElementoTipo = et; _f.ElementoId = eid;
+        if (DateTime.TryParse(oc, out var d1)) _f.Ocurrencia = d1;
+        if (DateTime.TryParse(rep, out var d2)) _f.Reporte = d2;
+        _f.PolizaId = Guid.TryParse(pol, out var pg) ? pg : null;
+        _f.MontoEstimado = Dec(est); _f.MontoReclamado = Dec(recl); _f.Deducible = Dec(ded);
+        if (resp is not null) OnResponsableSel(resp);
+    }
+
+    // ===== Catalogo de columnas (unidades-config, entidad 'siniestro') =====
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+    private static readonly IReadOnlyList<CampoSistemaDef> SiniestroCatalogo =
+        SiniestroCamposSistema.Todos.Select(c => new CampoSistemaDef(
+            c.Clave, c.Label, c.Tipo, c.VisiblePorDefecto, c.Fija,
+            OpcionesEditables: false, Semilla: null, Entero: false, Ayuda: null,
+            TiposIntercambiables: Array.Empty<TipoCampoTablero>(), ListaExterna: false, SinFormato: true)).ToList();
+    private static string ClaveCustom(SiniestroCampoDto c) => "cd:" + c.Id;
+    private SiniestroCampoDto? CampoCustom(string clave)
+        => clave.StartsWith("cd:", StringComparison.Ordinal) && Guid.TryParse(clave[3..], out var g)
+            ? CamposActivos.FirstOrDefault(c => c.Id == g) : null;
+    private IEnumerable<string> ClavesCandidatas()
+        => SiniestroCamposSistema.Todos.Select(c => c.Clave).Concat(CamposActivos.Select(ClaveCustom));
+    private bool VisibleColDefault(string clave)
+        => clave.StartsWith("cd:", StringComparison.Ordinal) || (SiniestroCamposSistema.Por(clave)?.VisiblePorDefecto ?? true);
+    private bool VisibleCol(string clave) => _cfg.TryGetValue(clave, out var c) ? !c.Oculto : VisibleColDefault(clave);
+    private int OrdenCol(string clave, int fallback) => _cfg.TryGetValue(clave, out var c) && c.Orden is { } o ? o : 1000 + fallback;
+    private IEnumerable<string> ClavesOrdenadas()
+        => ClavesCandidatas().Select((k, i) => (k, ord: OrdenCol(k, i))).OrderBy(x => x.ord).Select(x => x.k);
+    private IEnumerable<string> ColsVisibles() => ClavesOrdenadas().Where(VisibleCol);
+    private string ColLabel(string clave)
+    {
+        if (_cfg.TryGetValue(clave, out var c) && !string.IsNullOrWhiteSpace(c.Alias)) return c.Alias!;
+        return CampoCustom(clave)?.Label ?? SiniestroCamposSistema.Por(clave)?.Label ?? clave;
+    }
+    private bool EsFija(string k) => SiniestroCamposSistema.Por(k)?.Fija ?? false;
+
+    // ===== Menu "Columnas" =====
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        _cfg.TryGetValue(clave, out var c);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? false, Orden: c?.Orden, Entidad: "siniestro", Descripcion: c?.Descripcion);
+    }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    { try { await Auth().PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req); } catch { } }
+    private List<TablaColumnasMenu.Col> ColsVisibilidad()
+        => ClavesOrdenadas().Select(k => new TablaColumnasMenu.Col(
+            k, ColLabel(k), EsDinamico: k.StartsWith("cd:", StringComparison.Ordinal), Visible: VisibleCol(k),
+            Movible: !EsFija(k), Ocultable: !EsFija(k))).ToList();
+    private async Task MoverColMenu((string Key, int Dir) a)
+    {
+        var keys = ClavesOrdenadas().ToList();
+        var i = keys.IndexOf(a.Key); var j = i + a.Dir;
+        if (i < 0 || j < 0 || j >= keys.Count) return;
+        (keys[i], keys[j]) = (keys[j], keys[i]);
+        for (int k = 0; k < keys.Count; k++) await GuardarCfg(FilaConfig(keys[k]) with { Orden = k });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private async Task ToggleVisibleColMenu(string k)
+    { if (EsFija(k)) return; await GuardarCfg(FilaConfig(k) with { Oculto = VisibleCol(k) }); await CargarConfigAsync(); StateHasChanged(); }
+    private async Task OcultarTodasColMenu()
+    { foreach (var k in ClavesOrdenadas()) { if (EsFija(k)) continue; await GuardarCfg(FilaConfig(k) with { Oculto = true }); } await CargarConfigAsync(); StateHasChanged(); }
+    private async Task MostrarTodasColMenu()
+    { foreach (var k in ClavesOrdenadas()) await GuardarCfg(FilaConfig(k) with { Oculto = false }); await CargarConfigAsync(); StateHasChanged(); }
+    private async Task RestablecerColMenu()
+    { foreach (var k in ClavesOrdenadas()) await GuardarCfg(FilaConfig(k) with { Oculto = false, Orden = null }); await CargarConfigAsync(); StateHasChanged(); }
+    private SiniestroCampoDto? _campoAEliminarMenu;
+    private bool _colBusyMenu;
+    private bool _crearCampoAbierto;
+    private bool _showCampos;
+    private void PedirEliminarCol(string k) { if (CampoCustom(k) is { } cd) _campoAEliminarMenu = cd; }
+    private async Task EliminarColConfirm()
+    {
+        if (_campoAEliminarMenu is null) return;
+        _colBusyMenu = true;
+        try { var r = await Auth().DeleteAsync($"/api/siniestros/campos/{_campoAEliminarMenu.Id}"); if (r.IsSuccessStatusCode) await RecargarCamposYConfigAsync(); }
+        catch { }
+        _campoAEliminarMenu = null; _colBusyMenu = false; StateHasChanged();
+    }
+
+    // ===== Ordenar =====
+    private List<TablaOrdenarMenu.Sort> _sorts = new();
+    private List<TablaOrdenarMenu.Col> ColsOrdenables() => ColsVisibles().Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+
+    // ===== Menu de columna (flecha del header) =====
+    private TablaColMenu? _colMenu;
+    private string? _colToast;
+    private double _colMenuX, _colMenuY;
+    private void AbrirColMenu(MouseEventArgs e, string clave, string label, bool dyn)
+    {
+        _colMenuX = e.ClientX; _colMenuY = e.ClientY;
+        _colMenu?.Abrir(new TablaColMenu.Ctx(clave, label, dyn), e.ClientX, e.ClientY);
+    }
+    private string? _editSisClave;
+    private string _editSisLabel = "";
+    private TipoCampoTablero? _editSisTipo;
+    private bool _editSisReq;
+    private void AbrirEditarCampoSistema(string clave)
+    {
+        var s = SiniestroCatalogo.FirstOrDefault(c => c.Clave == clave);
+        _editSisLabel = s?.Label ?? clave;
+        _editSisTipo = s?.Tipo;
+        _editSisReq = s?.Fija ?? false;
+        _editSisClave = clave;
+    }
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; break;
+            case TablaColMenu.Accion.OrdenarDesc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; break;
+            case TablaColMenu.Accion.AgregarSuma: await FijarAgg(col.Key, "suma"); break;
+            case TablaColMenu.Accion.AgregarPromedio: await FijarAgg(col.Key, "prom"); break;
+            case TablaColMenu.Accion.AgregarMinimo: await FijarAgg(col.Key, "min"); break;
+            case TablaColMenu.Accion.AgregarMaximo: await FijarAgg(col.Key, "max"); break;
+            case TablaColMenu.Accion.AgregarConteo: await FijarAgg(col.Key, "cont"); break;
+            case TablaColMenu.Accion.AgregarNinguno: await FijarAgg(col.Key, "off"); break;
+            case TablaColMenu.Accion.Agrupar:
+                await SetGroup(col.EsDinamico && !col.Key.StartsWith("cd:", StringComparison.Ordinal) ? "cd:" + col.Key : col.Key);
+                break;
+            case TablaColMenu.Accion.Filtrar:
+                _colToast = "Usa el botón Filtros para filtrar por este campo.";
+                break;
+            case TablaColMenu.Accion.Duplicar:
+                {
+                    var campo = col.EsDinamico ? CampoCustom(col.Key) : null;
+                    if (campo is null) { _colToast = "Solo se pueden duplicar campos propios."; break; }
+                    try
+                    {
+                        var rr = await Auth().PostAsJsonAsync("/api/siniestros/campos", new CrearSiniestroCampoRequest(campo.Label + " (copia)", campo.Tipo, campo.Opciones, campo.Descripcion));
+                        if (rr.IsSuccessStatusCode) { await RecargarCamposYConfigAsync(); _colToast = "Campo duplicado."; }
+                        else _colToast = await MensajeErrorAsync(rr);
+                    }
+                    catch { _colToast = "No se pudo duplicar el campo."; }
+                }
+                break;
+            case TablaColMenu.Accion.Eliminar:
+                {
+                    var campo = col.EsDinamico ? CampoCustom(col.Key) : null;
+                    if (campo is null) { _colToast = "Los campos del sistema no se eliminan aquí."; break; }
+                    if (!await Modals.ConfirmEliminarCampoAsync(campo.Label)) break;
+                    try
+                    {
+                        var rr = await Auth().DeleteAsync($"/api/siniestros/campos/{campo.Id}");
+                        if (rr.IsSuccessStatusCode) { await RecargarCamposYConfigAsync(); _colToast = "Campo eliminado."; }
+                        else _colToast = "No se pudo eliminar el campo.";
+                    }
+                    catch { _colToast = "No se pudo eliminar el campo."; }
+                }
+                break;
+            case TablaColMenu.Accion.Editar:
+                if (col.EsDinamico) { _showCampos = true; _colToast = "Edita el campo en el panel de Campos."; }
+                else AbrirEditarCampoSistema(col.Key);
+                break;
+            case TablaColMenu.Accion.Ocultar:
+                if (EsFija(col.Key)) { _colToast = "Esta columna es fija y no se puede ocultar."; break; }
+                await GuardarCfg(FilaConfig(col.Key) with { Oculto = true });
+                await CargarConfigAsync();
+                _colToast = "Columna oculta. Usa Columnas para restaurarla.";
+                break;
+            case TablaColMenu.Accion.InsertarIzq:
+            case TablaColMenu.Accion.InsertarDer:
+                _crearCampoAbierto = true;
+                break;
+            default:
+                _colToast = "En construcción: " + accion + ".";
+                break;
+        }
+        StateHasChanged();
+    }
+    private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="seg-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+
+    // ===== Estados (gestor compartido) =====
+    private bool _estEditorOpen;
+    private double _popX, _popY; private bool _popUp;
+    private string? _estEditorErr;
+    private async Task AbrirEstadosEditor()
+    {
+        _editSisClave = null;
+        _popX = _colMenuX; _popY = _colMenuY;
+        try { var vh = await Js.InvokeAsync<double>("propiaViewportH"); _popUp = vh > 0 && _colMenuY > vh * 0.55; }
+        catch { _popUp = false; }
+        _estEditorErr = null;
+        _estEditorOpen = true;
+    }
+    private List<EditarCampoSistemaModal.OpcionVista> EstadosVista()
+        => _estados.OrderBy(e => e.Orden).Select(e => new EditarCampoSistemaModal.OpcionVista(e.Nombre, e.Color)).ToList();
+    private List<GestionarEstadosColumna.EstadoVm> EstadosVm()
+        => _estados.OrderBy(e => e.Orden).Select(e => new GestionarEstadosColumna.EstadoVm(
+               e.Id, e.Nombre, e.Color, e.SiniestrosCount, "siniestros",
+               PuedeEliminar: e.Clave is null,
+               Badge: e.Clave is null ? null : "Base",
+               BadgeTitulo: e.Clave is null ? null : "Estado base del ciclo: se renombra o inactiva, no se elimina.",
+               Activo: e.Activo, PuedeInactivar: e.Clave != EstadoSiniestroClave.Reportado)).ToList();
+    private async Task RecargarEstadosAsync()
+    {
+        try { _estados = await Auth().GetFromJsonAsync<List<SiniestroEstadoDto>>("/api/siniestros/estados") ?? _estados; } catch { }
+    }
+    private async Task<bool> EstadoOpAsync(Func<Task<HttpResponseMessage>> op, bool recargarLista = false)
+    {
+        _estEditorErr = null; _busy = true;
+        try
+        {
+            var r = await op();
+            if (!r.IsSuccessStatusCode) { _estEditorErr = await MensajeErrorAsync(r); return false; }
+            await RecargarEstadosAsync();
+            if (recargarLista) await CargarAsync();
+            return true;
+        }
+        catch (Exception ex) { _estEditorErr = ex.Message; return false; }
+        finally { _busy = false; }
+    }
+    private Task AgregarEstadoAsync(string nombre)
+        => string.IsNullOrWhiteSpace(nombre) ? Task.CompletedTask
+           : EstadoOpAsync(() => Auth().PostAsJsonAsync("/api/siniestros/estados", new CrearSiniestroEstadoRequest(nombre.Trim(), null)));
+    private Task RenombrarEstadoAsync((Guid Id, string Nombre) x)
+        => EstadoOpAsync(() => Auth().PutAsJsonAsync($"/api/siniestros/estados/{x.Id}", new ActualizarSiniestroEstadoRequest(Nombre: x.Nombre)), true);
+    private Task ColorEstadoAsync((Guid Id, string Color) x)
+        => EstadoOpAsync(() => Auth().PutAsJsonAsync($"/api/siniestros/estados/{x.Id}", new ActualizarSiniestroEstadoRequest(Color: x.Color)), true);
+    private Task ToggleActivoEstadoAsync((Guid Id, bool Activo) x)
+        => EstadoOpAsync(() => Auth().PutAsJsonAsync($"/api/siniestros/estados/{x.Id}", new ActualizarSiniestroEstadoRequest(Activo: x.Activo)));
+    private Task EliminarEstadoAsync(Guid id)
+        => EstadoOpAsync(() => Auth().DeleteAsync($"/api/siniestros/estados/{id}"), true);
+    private async Task MoverEstadoAsync((Guid Id, int Dir) x)
+    {
+        var orden = _estados.OrderBy(e => e.Orden).Select(e => e.Id).ToList();
+        var i = orden.IndexOf(x.Id); var j = i + x.Dir;
+        if (i < 0 || j < 0 || j >= orden.Count) return;
+        (orden[i], orden[j]) = (orden[j], orden[i]);
+        await EstadoOpAsync(() => Auth().PutAsJsonAsync("/api/siniestros/estados/orden", new ReordenarSiniestroEstadosRequest(orden)));
+    }
+
+    // ===== Celdas =====
+    private static RenderFragment EstadoBadge(string nombre, string? color) => builder =>
+    {
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", "sin-est");
+        builder.OpenElement(2, "i");
+        builder.AddAttribute(3, "style", "background:" + (string.IsNullOrWhiteSpace(color) ? "var(--propia-text-muted)" : color));
+        builder.CloseElement();
+        builder.AddContent(4, nombre);
+        builder.CloseElement();
+    };
+    private static string ElemTipoLabel(ElementoSiniestro t) => t switch
+    {
+        ElementoSiniestro.Equipo => "Equipo",
+        ElementoSiniestro.Zona => "Zona común",
+        ElementoSiniestro.Unidad => "Unidad",
+        ElementoSiniestro.Otro => "Otro",
+        _ => ""
+    };
+    private static string ElementoTexto(SiniestroDto s)
+    {
+        if (s.ElementoTipo == ElementoSiniestro.Ninguno) return "-";
+        var nombre = s.ElementoTipo == ElementoSiniestro.Otro ? (s.ElementoOtro ?? s.ElementoNombre) : s.ElementoNombre;
+        return string.IsNullOrWhiteSpace(nombre) ? ElemTipoLabel(s.ElementoTipo) : $"{ElemTipoLabel(s.ElementoTipo)} · {nombre}";
+    }
+    private static string PolizaTexto(SiniestroDto s)
+        => !string.IsNullOrWhiteSpace(s.PolizaNumero) ? s.PolizaNumero! + (string.IsNullOrWhiteSpace(s.Aseguradora) ? "" : " · " + s.Aseguradora)
+           : (string.IsNullOrWhiteSpace(s.Aseguradora) ? "-" : s.Aseguradora!);
+    private static string PolizaEtiqueta(PolizaDto p)
+        => (string.IsNullOrWhiteSpace(p.NumeroPoliza) ? "Sin número" : "N° " + p.NumeroPoliza) + " · " + p.Aseguradora
+           + (p.FechaFin is { } f ? " (vence " + f.ToString("dd MMM yyyy") + ")" : "");
+    private static string Money(decimal? v) => v is { } m ? "$" + m.ToString("N0") : "-";
+    private string CeldaTexto(SiniestroDto s, string clave) => clave switch
+    {
+        "numero" => s.Numero,
+        "titulo" => s.Titulo,
+        "tipo" => string.IsNullOrWhiteSpace(s.TipoLabel) ? "-" : s.TipoLabel!,
+        "elemento" => ElementoTexto(s),
+        "fechaocurrencia" => s.FechaOcurrencia.ToString("dd MMM yyyy"),
+        "fechareporte" => s.FechaReporte?.ToString("dd MMM yyyy") ?? "-",
+        "fechapago" => s.FechaPago?.ToString("dd MMM yyyy") ?? "-",
+        "estado" => s.EstadoNombre,
+        "poliza" => PolizaTexto(s),
+        "numeroreclamacion" => string.IsNullOrWhiteSpace(s.NumeroReclamacion) ? "-" : s.NumeroReclamacion!,
+        "responsable" => string.IsNullOrWhiteSpace(s.ResponsableNombre) ? "-" : s.ResponsableNombre!,
+        "montoestimado" => Money(s.MontoEstimado),
+        "montoreclamado" => Money(s.MontoReclamado),
+        "deducible" => Money(s.Deducible),
+        "montoreconocido" => Money(s.MontoReconocido),
+        "descripcion" => string.IsNullOrWhiteSpace(s.Descripcion) ? "-" : s.Descripcion!,
+        "documentos" => s.DocumentosCount > 0 ? s.DocumentosCount.ToString() : "-",
+        _ => CampoCustom(clave) is { } cm && ValorCampoTexto(s, cm) is { Length: > 0 } vv ? vv : "-"
+    };
+    private string? RawCampo(SiniestroDto s, Guid campoId)
+        => _valores.TryGetValue(s.Id, out var d) && d.TryGetValue(campoId, out var v) ? v : null;
+    private string ValorCampoTexto(SiniestroDto s, SiniestroCampoDto cm)
+    {
+        var raw = RawCampo(s, cm.Id);
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        return cm.Tipo switch
+        {
+            TipoCampoTablero.Booleano => raw == "true" ? "Sí" : "No",
+            TipoCampoTablero.Moneda => Dec(raw) is { } m ? "$" + m.ToString("N0") : raw,
+            _ => raw
+        };
+    }
+    private static string ColCeldaClass(string clave) => clave switch
+    {
+        "numero" => "seg-c seg-c--num",
+        "titulo" => "seg-c seg-c--aseg",
+        _ => "seg-c"
+    };
+    private static readonly HashSet<string> _altaEditables = new(StringComparer.Ordinal)
+        { "titulo", "tipo", "elemento", "fechaocurrencia", "fechareporte", "poliza", "numeroreclamacion", "montoestimado", "montoreclamado", "deducible", "descripcion", "responsable" };
+    private static string AltaCeldaClass(string clave) => _altaEditables.Contains(clave) ? "seg-c" : "seg-c seg-c--auto";
+    private string? Val(Guid campoId) => _campoValores.TryGetValue(campoId, out var v) ? v : null;
+    private void SetVal(Guid campoId, string? v) => _campoValores[campoId] = v;
+
+    // ===== Orden / agrupacion por valor =====
+    private string ValorOrden(SiniestroDto s, string clave)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return clave switch
+        {
+            "fechaocurrencia" => s.FechaOcurrencia.ToString("yyyy-MM-dd", ci),
+            "fechareporte" => s.FechaReporte?.ToString("yyyy-MM-dd", ci) ?? "",
+            "fechapago" => s.FechaPago?.ToString("yyyy-MM-dd", ci) ?? "",
+            "montoestimado" => s.MontoEstimado?.ToString(ci) ?? "",
+            "montoreclamado" => s.MontoReclamado?.ToString(ci) ?? "",
+            "deducible" => s.Deducible?.ToString(ci) ?? "",
+            "montoreconocido" => s.MontoReconocido?.ToString(ci) ?? "",
+            "documentos" => s.DocumentosCount > 0 ? s.DocumentosCount.ToString(ci) : "",
+            "estado" => (_estados.FirstOrDefault(e => e.Id == s.EstadoId)?.Orden ?? 999).ToString("D4", ci),
+            _ => CeldaTexto(s, clave) is var t && t == "-" ? "" : CeldaTexto(s, clave)
+        };
+    }
+    private static int CmpOrd(string a, string b)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var na = decimal.TryParse(a, System.Globalization.NumberStyles.Any, ci, out var da);
+        var nb = decimal.TryParse(b, System.Globalization.NumberStyles.Any, ci, out var db);
+        if (na && nb) return da.CompareTo(db);
+        if (na) return -1; if (nb) return 1;
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ===== Anchos / reorden por arrastre =====
+    private async Task IniciarReorder(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, clave, e.ClientX, e.ClientY); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return;
+        var keys = ClavesOrdenadas().ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        for (int i = 0; i < keys.Count; i++) await GuardarCfg(FilaConfig(keys[i]) with { Orden = i });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private async Task IniciarResize(MouseEventArgs e, string clave)
+    {
+        _self ??= DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, clave, e.ClientX); } catch { }
+    }
+    [JSInvokable]
+    public async Task OnColResize(string clave, int width)
+    {
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        var fila = FilaConfig(clave);
+        await GuardarCfg(fila with { Formato = ConAncho(fila.Formato, w) });
+        await CargarConfigAsync(); StateHasChanged();
+    }
+    private void HidratarAnchos()
+    {
+        _colW.Clear();
+        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    {
+        try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); }
+        catch { return null; }
+    }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
+    }
+    private string GridStyle()
+    {
+        var visibles = ColsVisibles().ToList();
+        var cols = "38px 34px" + string.Concat(visibles.Select(k => " " + (_colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k)))) + " 44px";
+        var min = 282 + visibles.Count * 130;
+        return $"grid-template-columns:{cols};min-width:{min}px";
+    }
+    private static string ColWidth(string clave) => clave switch
+    {
+        "titulo" => "1.7fr",
+        "elemento" => "1.5fr",
+        "estado" => "1.3fr",
+        "poliza" or "responsable" => "1.3fr",
+        "descripcion" => "1.7fr",
+        "tipo" => "1.2fr",
+        _ => "1fr"
+    };
+
+    // ===== Filtros (constructor de reglas, patron Seguros/Contratos) =====
+    private sealed class Regla { public string Campo = "estado"; public string Op = "es"; public string Valor = ""; }
+    private readonly List<Regla> _reglas = new();
+    private string _logica = "and";
+    private bool _filtrosMenu;
+    private static bool ReglaActiva(Regla r) => r.Op is "vacio" or "no_vacio" || !string.IsNullOrWhiteSpace(r.Valor);
+    private int CuentaReglas => _reglas.Count(ReglaActiva);
+    private bool HayReglasActivas => _reglas.Any(ReglaActiva);
+    private void ToggleFiltros() { _filtrosMenu = !_filtrosMenu; if (_filtrosMenu && _reglas.Count == 0) AgregarRegla(); }
+    private void AgregarRegla() => _reglas.Add(new Regla());
+    private void QuitarRegla(int idx) { if (idx >= 0 && idx < _reglas.Count) _reglas.RemoveAt(idx); }
+    private void LimpiarReglas() { _reglas.Clear(); _logica = "and"; }
+    private void SetLogica(ChangeEventArgs e) => _logica = e.Value?.ToString() == "or" ? "or" : "and";
+    private void SetReglaCampo(int idx, ChangeEventArgs e)
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        _reglas[idx].Campo = e.Value?.ToString() ?? "estado";
+        var ops = Operadores(_reglas[idx].Campo);
+        if (!ops.Any(o => o.Key == _reglas[idx].Op)) _reglas[idx].Op = ops.First().Key;
+        _reglas[idx].Valor = "";
+    }
+    private void SetReglaOp(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) _reglas[idx].Op = e.Value?.ToString() ?? "es"; }
+    private void SetReglaValor(int idx, ChangeEventArgs e) { if (idx >= 0 && idx < _reglas.Count) _reglas[idx].Valor = e.Value?.ToString() ?? ""; }
+    private IEnumerable<(string Key, string Label)> CamposFiltro()
+    {
+        yield return ("numero", "N° siniestro");
+        yield return ("titulo", "Título");
+        yield return ("estado", "Estado");
+        yield return ("tipo", "Tipo");
+        yield return ("elemento", "Elemento afectado");
+        yield return ("ocurrencia", "Fecha de ocurrencia");
+        yield return ("poliza", "Póliza");
+        yield return ("reclamado", "Monto reclamado");
+        yield return ("reconocido", "Monto reconocido");
+        foreach (var c in CamposActivos) yield return (c.Id.ToString(), c.Label);
+    }
+    private SiniestroCampoDto? CampoDin(string campo) => Guid.TryParse(campo, out var g) ? CamposActivos.FirstOrDefault(c => c.Id == g) : null;
+    private string FiltroKind(string campo) => campo switch
+    {
+        "estado" => "sel-estado",
+        "tipo" => "sel-tipo",
+        "elemento" => "sel-elem",
+        "ocurrencia" => "fecha",
+        "reclamado" or "reconocido" => "num",
+        "numero" or "titulo" or "poliza" => "texto",
+        _ => CampoDin(campo)?.Tipo switch
+        {
+            TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje or TipoCampoTablero.Formula => "num",
+            TipoCampoTablero.Fecha => "fecha",
+            TipoCampoTablero.Seleccion => "sel-din",
+            TipoCampoTablero.Booleano => "sel-bool",
+            _ => "texto"
+        }
+    };
+    private IEnumerable<(string Key, string Label)> Operadores(string campo)
+    {
+        switch (FiltroKind(campo))
+        {
+            case "num":
+                return new[] { ("=", "es igual a"), ("!=", "es distinto de"), (">", "mayor que"), (">=", "mayor o igual"),
+                               ("<", "menor que"), ("<=", "menor o igual"), ("vacio", "está vacío"), ("no_vacio", "no está vacío") };
+            case "fecha":
+                return new[] { ("es", "es"), ("antes", "antes de"), ("despues", "después de"), ("vacio", "está vacío"), ("no_vacio", "no está vacío") };
+            case "texto":
+                return new[] { ("contiene", "contiene"), ("no_contiene", "no contiene"), ("es", "es"), ("no_es", "no es"),
+                               ("vacio", "está vacío"), ("no_vacio", "no está vacío") };
+            default:
+                return new[] { ("es", "es"), ("no_es", "no es"), ("vacio", "está vacío"), ("no_vacio", "no está vacío") };
+        }
+    }
+    private string ValorTextoFiltro(SiniestroDto s, string campo) => campo switch
+    {
+        "numero" => s.Numero,
+        "titulo" => s.Titulo,
+        "estado" => s.EstadoId.ToString(),
+        "tipo" => s.TipoClave ?? "",
+        "elemento" => s.ElementoTipo == ElementoSiniestro.Ninguno ? "" : ((int)s.ElementoTipo).ToString(),
+        "poliza" => PolizaTexto(s) is var p && p == "-" ? "" : PolizaTexto(s),
+        _ => CampoDin(campo) is { } cm ? (cm.Tipo == TipoCampoTablero.Booleano
+                ? (RawCampo(s, cm.Id) == "true" ? "Sí" : (RawCampo(s, cm.Id) == "false" ? "No" : ""))
+                : RawCampo(s, cm.Id) ?? "") : ""
+    };
+    private decimal? ValorNumFiltro(SiniestroDto s, string campo) => campo switch
+    {
+        "reclamado" => s.MontoReclamado,
+        "reconocido" => s.MontoReconocido,
+        _ => CampoDin(campo) is { } cm ? Dec(RawCampo(s, cm.Id) ?? "") : null
+    };
+    private DateOnly? FechaFiltro(SiniestroDto s, string campo)
+    {
+        if (campo == "ocurrencia") return s.FechaOcurrencia;
+        return CampoDin(campo) is { } cm && DateOnly.TryParse(RawCampo(s, cm.Id), out var d) ? d : null;
+    }
+    private bool EvalRegla(SiniestroDto s, Regla r)
+    {
+        var kind = FiltroKind(r.Campo);
+        if (kind == "num")
+        {
+            var nv = ValorNumFiltro(s, r.Campo);
+            if (r.Op == "vacio") return nv is null;
+            if (r.Op == "no_vacio") return nv is not null;
+            if (Dec(r.Valor) is not { } rv) return true;
+            if (nv is null) return false;
+            return r.Op switch { "=" => nv == rv, "!=" => nv != rv, ">" => nv > rv, ">=" => nv >= rv, "<" => nv < rv, "<=" => nv <= rv, _ => true };
+        }
+        if (kind == "fecha")
+        {
+            var dv = FechaFiltro(s, r.Campo);
+            if (r.Op == "vacio") return dv is null;
+            if (r.Op == "no_vacio") return dv is not null;
+            if (!DateOnly.TryParse(r.Valor, out var rd)) return true;
+            if (dv is null) return false;
+            return r.Op switch { "es" => dv == rd, "antes" => dv < rd, "despues" => dv > rd, _ => true };
+        }
+        var sv = ValorTextoFiltro(s, r.Campo);
+        if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
+        if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
+        if (string.IsNullOrEmpty(r.Valor)) return true;
+        return r.Op switch
+        {
+            "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_es" => !string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
+            "contiene" => sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            "no_contiene" => !sv.Contains(r.Valor, StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+    private IEnumerable<(string Val, string Txt)> OpcionesFiltro(string campo) => FiltroKind(campo) switch
+    {
+        "sel-estado" => _estados.OrderBy(e => e.Orden).Select(e => (e.Id.ToString(), e.Nombre)),
+        "sel-tipo" => _tipos.OrderBy(t => t.Orden).Select(t => (t.Clave, t.Label)),
+        "sel-elem" => new[] { ("1", "Equipo"), ("2", "Zona común"), ("3", "Unidad"), ("4", "Otro") },
+        "sel-din" => OpcionCampo.VisiblesK(CampoDin(campo)?.Opciones).Select(o => (o, o)),
+        "sel-bool" => new[] { ("Sí", "Sí"), ("No", "No") },
+        _ => Array.Empty<(string, string)>()
+    };
+    private RenderFragment RenderValor(int idx) => builder =>
+    {
+        if (idx < 0 || idx >= _reglas.Count) return;
+        var r = _reglas[idx];
+        var kind = FiltroKind(r.Campo);
+        if (kind.StartsWith("sel-", StringComparison.Ordinal))
+        {
+            builder.OpenElement(0, "select");
+            builder.AddAttribute(1, "class", "seg-frule-v");
+            builder.AddAttribute(2, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+            builder.OpenElement(3, "option");
+            builder.AddAttribute(4, "value", "");
+            builder.AddAttribute(5, "selected", string.IsNullOrEmpty(r.Valor));
+            builder.AddContent(6, "Elegir...");
+            builder.CloseElement();
+            foreach (var (val, txt) in OpcionesFiltro(r.Campo))
+            {
+                builder.OpenElement(7, "option");
+                builder.AddAttribute(8, "value", val);
+                builder.AddAttribute(9, "selected", r.Valor == val);
+                builder.AddContent(10, txt);
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            return;
+        }
+        builder.OpenElement(20, "input");
+        builder.AddAttribute(21, "class", "seg-frule-v");
+        builder.AddAttribute(22, "type", kind == "num" ? "number" : kind == "fecha" ? "date" : "text");
+        builder.AddAttribute(23, "value", r.Valor);
+        builder.AddAttribute(24, "placeholder", "Valor");
+        builder.AddAttribute(25, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => SetReglaValor(idx, e)));
+        builder.CloseElement();
+    };
+    private string ResumenReglas()
+    {
+        var partes = _reglas.Where(ReglaActiva).Select(r =>
+        {
+            var campo = CamposFiltro().FirstOrDefault(x => x.Key == r.Campo).Label ?? r.Campo;
+            var op = Operadores(r.Campo).FirstOrDefault(o => o.Key == r.Op).Label ?? r.Op;
+            if (r.Op is "vacio" or "no_vacio") return $"{campo} {op}";
+            var val = OpcionesFiltro(r.Campo).FirstOrDefault(o => o.Val == r.Valor).Txt ?? r.Valor;
+            return $"{campo} {op} {val}";
+        }).ToList();
+        return string.Join(_logica == "or" ? " O " : " Y ", partes);
+    }
+
+    private List<SiniestroDto> Filtradas
+    {
+        get
+        {
+            var q = _q.Trim();
+            var activas = _reglas.Where(ReglaActiva).ToList();
+            var lista = _items.Where(s =>
+            {
+                if (q != ""
+                    && !s.Numero.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !s.Titulo.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !ElementoTexto(s).Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !PolizaTexto(s).Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !(s.NumeroReclamacion ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+                    return false;
+                if (activas.Count == 0) return true;
+                return _logica == "or" ? activas.Any(r => EvalRegla(s, r)) : activas.All(r => EvalRegla(s, r));
+            }).ToList();
+            if (_sorts.Count > 0)
+            {
+                lista = lista.OrderBy(s => s, Comparer<SiniestroDto>.Create((a, b) =>
+                {
+                    foreach (var so in _sorts)
+                    {
+                        var cmp = CmpOrd(ValorOrden(a, so.Key), ValorOrden(b, so.Key)) * so.Dir;
+                        if (cmp != 0) return cmp;
+                    }
+                    return 0;
+                })).ToList();
+            }
+            return lista;
+        }
+    }
+
+    // ===== Agrupar =====
+    private readonly record struct Fila(bool EsGrupo, string? Grupo, int Count, SiniestroDto? Siniestro, int Nivel = 0, string? Color = null, NodoGrupo<SiniestroDto>? Nodo = null);
+    private async Task OnGruposChanged() { try { await Js.InvokeVoidAsync("localStorage.setItem", AgruparKey, string.Join(",", _grupos)); } catch { } StateHasChanged(); }
+    private async Task SetGroup(string clave) { _grupos = new() { clave }; await OnGruposChanged(); }
+    private List<TablaAgruparMenu.Col> ColsAgrupables() => ColsVisibles().Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
+    private IEnumerable<ValorGrupo> ValorGrupoS(SiniestroDto s, string clave)
+    {
+        if (clave == "estado")
+        {
+            var e = _estados.FirstOrDefault(x => x.Id == s.EstadoId);
+            yield return new ValorGrupo(s.EstadoId.ToString(), s.EstadoNombre, Orden: e?.Orden ?? 999, Color: s.EstadoColor);
+            yield break;
+        }
+        var t = CeldaTexto(s, clave);
+        if (string.IsNullOrWhiteSpace(t) || t == "-") t = "(Sin dato)";
+        yield return new ValorGrupo(t, t);
+    }
+    private IEnumerable<Fila> FilasRender()
+    {
+        if (_grupos.Count == 0)
+        {
+            foreach (var s in Filtradas) yield return new Fila(false, null, 0, s);
+            yield break;
+        }
+        foreach (var el in TablaAgrupador.Aplanar(TablaAgrupador.Agrupar(Filtradas.ToList(), _grupos, ValorGrupoS)))
+        {
+            if (el.Grupo is { } g) yield return new Fila(true, g.Titulo, g.Conteo, null, g.Nivel, g.Color, g);
+            else yield return new Fila(false, null, 0, el.Fila);
+        }
+    }
+
+    // ===== Totales por columna en grupos =====
+    private const string AggKey = "propia_agregado_siniestros";
+    private readonly Dictionary<string, string> _agg = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> NumSistema = new(StringComparer.Ordinal)
+        { "montoestimado", "montoreclamado", "deducible", "montoreconocido", "documentos" };
+    private bool EsNumericaCol(string k)
+    {
+        var cm = CampoCustom(k);
+        if (cm is not null) return cm.Tipo is TipoCampoTablero.Numero or TipoCampoTablero.Moneda or TipoCampoTablero.Porcentaje;
+        return NumSistema.Contains(k);
+    }
+    private decimal? ValorNumCol(SiniestroDto s, string k)
+    {
+        var cm = CampoCustom(k);
+        if (cm is not null) return Dec(RawCampo(s, cm.Id) ?? "");
+        return k switch
+        {
+            "montoestimado" => s.MontoEstimado,
+            "montoreclamado" => s.MontoReclamado,
+            "deducible" => s.Deducible,
+            "montoreconocido" => s.MontoReconocido,
+            "documentos" => s.DocumentosCount,
+            _ => null
+        };
+    }
+    private string TextoAggCol(SiniestroDto s, string k) { var t = CeldaTexto(s, k); return t == "-" ? "" : t; }
+    private string ModoActivo(string k) => _agg.TryGetValue(k, out var m) ? m : (EsNumericaCol(k) && k != "documentos" ? "suma" : "off");
+    private static int ModoCodigo(string modo) => modo switch { "suma" => 1, "prom" => 2, "cont" => 3, "min" => 4, "max" => 5, _ => 0 };
+    private TablaColMenu.AggOferta AggOferta(string k) => new(EsNumericaCol(k), ModoCodigo(ModoActivo(k)));
+    private async Task FijarAgg(string k, string modo)
+    {
+        _agg[k] = modo;
+        try { await Js.InvokeVoidAsync("localStorage.setItem", AggKey, string.Join(";", _agg.Select(kv => kv.Key + "=" + kv.Value))); } catch { }
+        StateHasChanged();
+    }
+    private void CargarAgg(string? raw)
+    {
+        _agg.Clear();
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var par in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        { var i = par.IndexOf('='); if (i > 0) _agg[par[..i]] = par[(i + 1)..]; }
+    }
+    private static IReadOnlyList<SiniestroDto> TodasFilas(NodoGrupo<SiniestroDto> n)
+    {
+        if (n.EsHoja) return n.Filas;
+        var acc = new List<SiniestroDto>();
+        foreach (var s in n.Subgrupos) acc.AddRange(TodasFilas(s));
+        return acc;
+    }
+    private string FmtNumCol(decimal v, string k)
+    {
+        var es = new System.Globalization.CultureInfo("es-CO");
+        var tipo = CampoCustom(k)?.Tipo;
+        if (k.StartsWith("monto", StringComparison.Ordinal) || k == "deducible" || tipo == TipoCampoTablero.Moneda)
+            return "$ " + Math.Round(v, 0, MidpointRounding.AwayFromZero).ToString("N0", es);
+        if (tipo == TipoCampoTablero.Porcentaje) return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es) + "%";
+        return Math.Round(v, 2, MidpointRounding.AwayFromZero).ToString("0.##", es);
+    }
+    private (bool Hay, string Texto, string Tag) AggCelda(IReadOnlyList<SiniestroDto> miembros, string k)
+    {
+        var modo = ModoActivo(k);
+        if (modo == "off") return (false, "", "");
+        if (modo == "cont")
+        {
+            var n = miembros.Count(s => !string.IsNullOrWhiteSpace(TextoAggCol(s, k)));
+            return (true, n.ToString(new System.Globalization.CultureInfo("es-CO")), "CONT");
+        }
+        var vals = new List<decimal>();
+        foreach (var s in miembros) if (ValorNumCol(s, k) is { } v) vals.Add(v);
+        if (vals.Count == 0) return (false, "", "");
+        var (res, tag) = modo switch
+        {
+            "prom" => (vals.Sum() / vals.Count, "PROM"),
+            "min" => (vals.Min(), "MIN"),
+            "max" => (vals.Max(), "MAX"),
+            _ => (vals.Sum(), "")
+        };
+        return (true, FmtNumCol(res, k), tag);
+    }
+    private static string TituloAgg(string tag) => tag switch
+    {
+        "PROM" => "Promedio del grupo",
+        "MIN" => "Mínimo del grupo",
+        "MAX" => "Máximo del grupo",
+        "CONT" => "Conteo (no vacíos) del grupo",
+        _ => "Suma del grupo"
+    };
+
+    // ===== Descarga (TablaExportar) =====
+    private string? _copropiedadNombre;
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles().ToList();
+        bool EsNum(string k) => EsNumericaCol(k) || CampoCustom(k)?.Tipo is TipoCampoTablero.Total or TipoCampoTablero.Formula;
+        string Fmt(string k) => k.StartsWith("monto", StringComparison.Ordinal) || k == "deducible" || CampoCustom(k)?.Tipo == TipoCampoTablero.Moneda ? "\"$\"#,##0" : "General";
+        object? Celda(SiniestroDto s, string k)
+        {
+            if (EsNum(k) && (ValorNumCol(s, k) ?? (CampoCustom(k) is { } cm ? Dec(RawCampo(s, cm.Id) ?? "") : null)) is { } num) return num;
+            var t = CeldaTexto(s, k);
+            return string.IsNullOrWhiteSpace(t) || t == "-" ? null : t;
+        }
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k), EsNum(k), EsNum(k) ? Fmt(k) : null)).ToList();
+        ExportFila FilaX(SiniestroDto s, IReadOnlyList<string>? ruta) => new(cols.Select(k => Celda(s, k)).ToList(), Ruta: ruta);
+        var lista = Filtradas;
+        var filas = new List<ExportFila>();
+        if (_grupos.Count == 0) filas.AddRange(lista.Select(s => FilaX(s, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<SiniestroDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(s => FilaX(s, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(TablaAgrupador.Agrupar(lista, _grupos, ValorGrupoS), new());
+        }
+        var criterios = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_q)) criterios.Add($"Búsqueda: \"{_q.Trim()}\"");
+        if (ResumenReglas() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(s => $"{ColLabel(s.Key)} {(s.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (_grupos.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", _grupos.Select(ColLabel)));
+        criterios.Add($"{lista.Count} siniestros");
+        return new ExportVista("Siniestros", _copropiedadNombre, columnas, filas, criterios, _grupos.Select(ColLabel).ToList());
+    }
+
+    // ===== Ciclo de vida =====
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_jwt is not null && _vista == "tabla")
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            var sig = _vista + ":" + Filtradas.Count + ":" + _altaAbierta + ":" + (_grupos.Count == 0);
+            if (sig != _fabSig)
+            {
+                _fabSig = sig;
+                if (_grupos.Count == 0) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".seg-scroll"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".seg-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
+            }
+        }
+        else { _fabSig = null; try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
+        if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".seg-scroll"); } catch { } }
+
+        if (!firstRender || _jwt is not null) return;
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt");
+            _authChecked = true;
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                _jwt = stored;
+                _miUsuarioId = UserIdFromJwt(stored);
+                try { var v = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey); if (v is "tabla" or "tarjetas") _vista = v; } catch { }
+                try { var g = await Js.InvokeAsync<string?>("localStorage.getItem", AgruparKey); _grupos = string.IsNullOrWhiteSpace(g) ? new() : g.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(); } catch { }
+                try { CargarAgg(await Js.InvokeAsync<string?>("localStorage.getItem", AggKey)); } catch { }
+                try { _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre"); } catch { }
+                await CargarAsync();
+                // Enlace directo (#siniestro-{id}, "Copiar enlace del registro"): abre la ficha.
+                var frag = new Uri(Nav.Uri).Fragment;
+                if (frag.StartsWith("#siniestro-", StringComparison.Ordinal) && Guid.TryParse(frag["#siniestro-".Length..], out var sid)) await AbrirModal(sid);
+            }
+            else { Nav.NavigateTo("/login?returnUrl=%2Fsiniestros", true); return; }
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private static Guid? UserIdFromJwt(string jwt)
+    {
+        try
+        {
+            var parts = jwt.Split('.');
+            if (parts.Length < 2) return null;
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("user_id", out var e) && Guid.TryParse(e.GetString(), out var g)) return g;
+        }
+        catch { }
+        return null;
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    private static async Task<string> MensajeErrorAsync(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción en Siniestros.";
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "No se pudo guardar el siniestro." : cuerpo;
+    }
+
+    private static DateOnly HoyColombia()
+    {
+        try { return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("America/Bogota"))); }
+        catch { return DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5)); }
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _loadError = null;
+            _items = await Auth().GetFromJsonAsync<List<SiniestroDto>>("/api/siniestros") ?? new();
+            await RecargarEstadosAsync();
+            try { _tipos = await Auth().GetFromJsonAsync<List<OpcionEfectivaDto>>($"/api/campos/opciones?lista={ListaTipo}&incluirOcultas=true") ?? new(); } catch { }
+            await RecargarCamposYConfigAsync();
+        }
+        catch (Exception ex) { _loadError = ex.Message; }
+    }
+    private async Task RecargarTodoAsync() => await CargarAsync();
+    private async Task RecargarCamposYConfigAsync()
+    {
+        try { _campos = await Auth().GetFromJsonAsync<List<SiniestroCampoDto>>("/api/siniestros/campos") ?? new(); } catch { }
+        try
+        {
+            var flat = await Auth().GetFromJsonAsync<List<SiniestroCampoValorFlatDto>>("/api/siniestros/campos-valores") ?? new();
+            _valores = flat.GroupBy(v => v.SiniestroId).ToDictionary(g => g.Key, g => g.ToDictionary(v => v.DefinicionId, v => v.Valor));
+        }
+        catch { }
+        await CargarConfigAsync();
+    }
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var cfg = await Auth().GetFromJsonAsync<List<UnidadCampoConfigDto>>("/api/mi-copropiedad/unidades-config?entidad=siniestro") ?? new();
+            _cfg = cfg.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+            HidratarAnchos();
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
+    }
+    private async Task CargarApoyoAsync()
+    {
+        if (_apoyoCargado) return;
+        _apoyoCargado = true;
+        try { _equipos = (await Auth().GetFromJsonAsync<List<ElemLite>>("/api/mi-copropiedad/equipos") ?? new()).OrderBy(x => x.Nombre).ToList(); } catch { }
+        try { _zonas = (await Auth().GetFromJsonAsync<List<ElemLite>>("/api/mi-copropiedad/zonas") ?? new()).OrderBy(x => x.Nombre).ToList(); } catch { }
+        try { _unidades = (await Auth().GetFromJsonAsync<List<ElemLite>>("/api/mi-copropiedad/unidades") ?? new()).OrderBy(x => x.Numero).ToList(); } catch { }
+        try { _polizas = (await Auth().GetFromJsonAsync<List<PolizaDto>>("/api/seguros/polizas") ?? new()).OrderByDescending(p => p.FechaFin).ToList(); } catch { }
+    }
+
+    private void OnBuscar(ChangeEventArgs e) { _q = e.Value?.ToString() ?? ""; }
+    private async Task SetVista(string v) { _vista = v; try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, v); } catch { } }
+
+    // ===== Ficha =====
+    private sealed class Form
+    {
+        public string Titulo = "";
+        public string? Descripcion, TipoClave, ElementoOtro, NumeroReclamacion;
+        public DateTime? Ocurrencia, Reporte, FechaPago;
+        public ElementoSiniestro ElementoTipo;
+        public Guid? ElementoId, PolizaId, ResponsableId;
+        public decimal? MontoEstimado, MontoReclamado, Deducible, MontoReconocido;
+    }
+    private bool _modal;
+    private string _tab = "siniestro";
+    private Guid? _editId;
+    private SiniestroDto? _dto;
+    private Form _f = new();
+    private bool _busy;
+    private string? _modalError;
+    private PersonaCandidatoDto? _responsableSel;
+    private Dictionary<Guid, string?> _campoValores = new();
+
+    // Tipos para el select de la ficha: activos + el actual aunque este oculto (no se pierde al guardar).
+    private IEnumerable<OpcionEfectivaDto> TiposParaSelect(string? actual)
+        => _tipos.Where(t => t.Activo || t.Clave == actual).OrderBy(t => t.Orden);
+    private string ElementoDetalleLabel() => _f.ElementoTipo switch
+    {
+        ElementoSiniestro.Equipo => "Equipo",
+        ElementoSiniestro.Zona => "Zona común",
+        ElementoSiniestro.Unidad => "Unidad",
+        ElementoSiniestro.Otro => "Descripción del elemento *",
+        _ => "Detalle"
+    };
+    private void OnElementoTipoChange(ChangeEventArgs e)
+    {
+        _f.ElementoTipo = int.TryParse(e.Value?.ToString(), out var n) && Enum.IsDefined(typeof(ElementoSiniestro), n) ? (ElementoSiniestro)n : ElementoSiniestro.Ninguno;
+        _f.ElementoId = null;
+        if (_f.ElementoTipo != ElementoSiniestro.Otro) _f.ElementoOtro = null;
+    }
+    private void OnElementoIdChange(ChangeEventArgs e) => _f.ElementoId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null;
+    private static PersonaCandidatoDto Cand(Guid id, string nombre)
+        => new(id, nombre, TipoDocumento.CC, "", true, Array.Empty<string>(), EntidadDirectorio.Persona);
+    private void OnResponsableSel(PersonaCandidatoDto? s)
+    {
+        _responsableSel = s;
+        _f.ResponsableId = s?.PersonaId;
+    }
+
+    private async Task AbrirModal(Guid? id)
+    {
+        _modalError = null; _tab = "siniestro"; _comentarios = new(); _docs = new(); _nuevoComentario = "";
+        _campoValores = new(); _f = new(); _dto = null; _responsableSel = null; _pideMonto = false; _estadoSel = null;
+        await CargarApoyoAsync();
+        if (id is null)
+        {
+            _editId = null;
+            _f.Ocurrencia = HoyColombia().ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _editId = id;
+            try { _dto = await Auth().GetFromJsonAsync<SiniestroDto>($"/api/siniestros/{id}"); } catch { }
+            _dto ??= _items.FirstOrDefault(x => x.Id == id);
+            if (_dto is null) { _inlineMsg = "No se encontró el siniestro."; _inlineMsgEsError = true; return; }
+            CargarForm(_dto);
+            try
+            {
+                var din = await Auth().GetFromJsonAsync<List<SiniestroCampoDinDto>>($"/api/siniestros/{id}/campos-din") ?? new();
+                foreach (var v in din) _campoValores[v.DefinicionId] = v.Valor;
+            }
+            catch { }
+            try { _comentarios = await Auth().GetFromJsonAsync<List<SiniestroComentarioDto>>($"/api/siniestros/{id}/comentarios") ?? new(); } catch { }
+            try { _docs = await Auth().GetFromJsonAsync<List<SiniestroDocumentoDto>>($"/api/siniestros/{id}/documentos") ?? new(); } catch { }
+        }
+        _modal = true;
+    }
+    private void CargarForm(SiniestroDto s)
+    {
+        _f.Titulo = s.Titulo; _f.Descripcion = s.Descripcion; _f.TipoClave = s.TipoClave;
+        _f.Ocurrencia = s.FechaOcurrencia.ToDateTime(TimeOnly.MinValue);
+        _f.Reporte = s.FechaReporte?.ToDateTime(TimeOnly.MinValue);
+        _f.FechaPago = s.FechaPago?.ToDateTime(TimeOnly.MinValue);
+        _f.ElementoTipo = s.ElementoTipo; _f.ElementoId = s.ElementoId; _f.ElementoOtro = s.ElementoOtro;
+        _f.PolizaId = s.PolizaId; _f.NumeroReclamacion = s.NumeroReclamacion; _f.ResponsableId = s.ResponsablePersonaId;
+        _f.MontoEstimado = s.MontoEstimado; _f.MontoReclamado = s.MontoReclamado; _f.Deducible = s.Deducible; _f.MontoReconocido = s.MontoReconocido;
+        _responsableSel = s.ResponsablePersonaId is { } rp ? Cand(rp, s.ResponsableNombre ?? "") : null;
+        _estadoSel = s.EstadoId;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _modalError = null;
+        if (string.IsNullOrWhiteSpace(_f.Titulo)) { _modalError = "Indica qué pasó."; return; }
+        if (_f.Ocurrencia is null) { _modalError = "La fecha de ocurrencia es obligatoria."; return; }
+        if (_f.ElementoTipo is ElementoSiniestro.Equipo or ElementoSiniestro.Zona or ElementoSiniestro.Unidad && _f.ElementoId is null)
+        { _modalError = "Selecciona el elemento afectado o cambia el tipo a Ninguno."; return; }
+        static DateOnly? D(DateTime? d) => d.HasValue ? DateOnly.FromDateTime(d.Value) : null;
+        _busy = true;
+        try
+        {
+            HttpResponseMessage resp;
+            var oc = DateOnly.FromDateTime(_f.Ocurrencia.Value);
+            if (_editId is null)
+            {
+                resp = await Auth().PostAsJsonAsync("/api/siniestros", new CrearSiniestroRequest(
+                    _f.Titulo.Trim(), oc, Txt(_f.Descripcion), Txt(_f.TipoClave), D(_f.Reporte),
+                    _f.ElementoTipo, _f.ElementoId, Txt(_f.ElementoOtro), _f.PolizaId, Txt(_f.NumeroReclamacion),
+                    _f.ResponsableId, _f.MontoEstimado, _f.MontoReclamado, _f.Deducible));
+            }
+            else
+            {
+                // PUT es MERGE: los opcionales vacios se nombran en Limpiar para borrarlos de verdad.
+                var limpiar = new List<string>();
+                if (Txt(_f.Descripcion) is null) limpiar.Add("descripcion");
+                if (Txt(_f.TipoClave) is null) limpiar.Add("tipo");
+                if (_f.Reporte is null) limpiar.Add("fechareporte");
+                if (_f.PolizaId is null) limpiar.Add("poliza");
+                if (Txt(_f.NumeroReclamacion) is null) limpiar.Add("numeroreclamacion");
+                if (_f.ResponsableId is null) limpiar.Add("responsable");
+                if (_f.MontoEstimado is null) limpiar.Add("montoestimado");
+                if (_f.MontoReclamado is null) limpiar.Add("montoreclamado");
+                if (_f.Deducible is null) limpiar.Add("deducible");
+                if (_f.MontoReconocido is null) limpiar.Add("montoreconocido");
+                if (_f.FechaPago is null) limpiar.Add("fechapago");
+                resp = await Auth().PutAsJsonAsync($"/api/siniestros/{_editId}", new ActualizarSiniestroRequest(
+                    _f.Titulo.Trim(), Txt(_f.Descripcion), Txt(_f.TipoClave), oc, D(_f.Reporte),
+                    _f.ElementoTipo, _f.ElementoId, Txt(_f.ElementoOtro), _f.PolizaId, Txt(_f.NumeroReclamacion),
+                    _f.ResponsableId, _f.MontoEstimado, _f.MontoReclamado, _f.Deducible, _f.MontoReconocido, D(_f.FechaPago),
+                    limpiar.Count > 0 ? limpiar : null));
+            }
+            if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); return; }
+            Guid? sid = _editId;
+            if (sid is null)
+            {
+                try { var c = await resp.Content.ReadFromJsonAsync<SiniestroDto>(); sid = c?.Id; if (c is not null) _recienCreados.Add(c.Id); } catch { }
+            }
+            if (sid is { } id)
+            {
+                foreach (var cm in CamposActivos.Where(c => c.Tipo is not (TipoCampoTablero.Formula or TipoCampoTablero.Total)))
+                {
+                    var val = _campoValores.TryGetValue(cm.Id, out var vv) ? vv : null;
+                    var antes = _editId is null ? null : _valores.TryGetValue(id, out var d) && d.TryGetValue(cm.Id, out var a) ? a : null;
+                    if (_editId is not null && (antes ?? "") == (val ?? "")) continue;
+                    if (_editId is null && string.IsNullOrWhiteSpace(val)) continue;
+                    try { await Auth().PutAsJsonAsync($"/api/siniestros/{id}/campos/{cm.Id}", new GuardarSiniestroCampoValorRequest(string.IsNullOrWhiteSpace(val) ? null : val)); } catch { }
+                }
+            }
+            _modal = false;
+            _inlineMsg = _editId is null ? "Siniestro creado." : "Siniestro guardado."; _inlineMsgEsError = false;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ---- Cambio de estado (desde la ficha) ----
+    private Guid? _estadoSel;
+    private bool _pideMonto;
+    private Guid? _estadoDestino;
+    private string? _estadoDestinoClave;
+    private decimal? _montoRecEstado;
+    private DateTime? _fechaPagoEstado;
+    private async Task OnEstadoChange(ChangeEventArgs e)
+    {
+        if (_dto is null || !Guid.TryParse(e.Value?.ToString(), out var destino) || destino == _dto.EstadoId) return;
+        var est = _estados.FirstOrDefault(x => x.Id == destino);
+        _estadoDestino = destino; _estadoDestinoClave = est?.Clave; _estadoSel = destino;
+        if (EstadoSiniestroClave.PideMontoReconocido(est?.Clave) && (_dto.MontoReconocido is null))
+        {
+            _montoRecEstado = _f.MontoReconocido ?? _f.MontoReclamado;
+            _fechaPagoEstado = HoyColombia().ToDateTime(TimeOnly.MinValue);
+            _pideMonto = true;
+            return;
+        }
+        await AplicarEstadoAsync(destino, null, est?.Clave == EstadoSiniestroClave.Pagado ? HoyColombia() : null);
+    }
+    private async Task ConfirmarCambioEstado()
+    {
+        if (_estadoDestino is not { } destino) return;
+        if (_montoRecEstado is null) { _modalError = "Indica el monto reconocido por la aseguradora."; return; }
+        await AplicarEstadoAsync(destino, _montoRecEstado,
+            _estadoDestinoClave == EstadoSiniestroClave.Pagado && _fechaPagoEstado is { } fp ? DateOnly.FromDateTime(fp) : null);
+    }
+    private void CancelarCambioEstado() { _pideMonto = false; _estadoDestino = null; _estadoSel = _dto?.EstadoId; }
+    private async Task AplicarEstadoAsync(Guid destino, decimal? monto, DateOnly? fechaPago)
+    {
+        if (_editId is not { } id) return;
+        _busy = true; _modalError = null;
+        try
+        {
+            var r = await Auth().PutAsJsonAsync($"/api/siniestros/{id}/estado", new CambiarEstadoSiniestroRequest(destino, monto, fechaPago));
+            if (!r.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(r); _estadoSel = _dto?.EstadoId; return; }
+            _pideMonto = false; _estadoDestino = null;
+            try { _dto = await Auth().GetFromJsonAsync<SiniestroDto>($"/api/siniestros/{id}") ?? _dto; } catch { }
+            if (_dto is not null)
+            {
+                // Solo lo que el cambio de estado toca: no se pisan ediciones sin guardar del formulario.
+                _estadoSel = _dto.EstadoId;
+                _f.MontoReconocido = _dto.MontoReconocido;
+                _f.FechaPago = _dto.FechaPago?.ToDateTime(TimeOnly.MinValue);
+            }
+            try { _comentarios = await Auth().GetFromJsonAsync<List<SiniestroComentarioDto>>($"/api/siniestros/{id}/comentarios") ?? _comentarios; } catch { }
+            try { _items = await Auth().GetFromJsonAsync<List<SiniestroDto>>("/api/siniestros") ?? _items; await RecargarEstadosAsync(); } catch { }
+        }
+        catch (Exception ex) { _modalError = ex.Message; _estadoSel = _dto?.EstadoId; }
+        finally { _busy = false; }
+    }
+
+    // ---- S3: tarea de reparacion ----
+    private async Task CrearTareaReparacionAsync()
+    {
+        if (_editId is not { } id) return;
+        _busy = true; _modalError = null;
+        try
+        {
+            var r = await Auth().PostAsync($"/api/siniestros/{id}/tarea-reparacion", null);
+            if (!r.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(r); return; }
+            var dto = await r.Content.ReadFromJsonAsync<SiniestroDto>();
+            if (dto is not null && _dto is not null) _dto = _dto with { TareaId = dto.TareaId, TareaNumero = dto.TareaNumero, TareaEstado = dto.TareaEstado };
+            try { _comentarios = await Auth().GetFromJsonAsync<List<SiniestroComentarioDto>>($"/api/siniestros/{id}/comentarios") ?? _comentarios; } catch { }
+            try { _items = await Auth().GetFromJsonAsync<List<SiniestroDto>>("/api/siniestros") ?? _items; } catch { }
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    // ---- Eliminar ----
+    private bool _confirmEliminar;
+    private bool _eliminando;
+    private async Task BorrarAsync()
+    {
+        if (_editId is not Guid id) { _confirmEliminar = false; return; }
+        _eliminando = true;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/siniestros/{id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _confirmEliminar = false; _modal = false;
+                _inlineMsg = "Siniestro eliminado."; _inlineMsgEsError = false;
+                await CargarAsync();
+            }
+            else { _modalError = await MensajeErrorAsync(resp); _confirmEliminar = false; }
+        }
+        catch (Exception ex) { _modalError = ex.Message; _confirmEliminar = false; }
+        finally { _eliminando = false; }
+    }
+
+    // ---- Actividad ----
+    private List<SiniestroComentarioDto> _comentarios = new();
+    private string _nuevoComentario = "";
+    private static readonly string[] _respuestasRapidas = { "Reportado a la aseguradora", "Esperando perito", "Documentos enviados", "Pago recibido" };
+    private static string Iniciales(string? nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var parts = nombre.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, 1).ToUpperInvariant();
+        return (parts[0].Substring(0, 1) + parts[^1].Substring(0, 1)).ToUpperInvariant();
+    }
+    private async Task EnviarComentario(string? textoRapido)
+    {
+        if (_editId is not { } id) return;
+        var texto = (textoRapido ?? _nuevoComentario).Trim();
+        if (string.IsNullOrWhiteSpace(texto)) return;
+        _busy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/siniestros/{id}/comentarios", new AgregarComentarioSiniestroRequest(texto));
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<SiniestroComentarioDto>();
+                if (dto is not null) _comentarios.Add(dto);
+                if (textoRapido is null) _nuevoComentario = "";
+            }
+            else _modalError = await MensajeErrorAsync(resp);
+        }
+        catch { }
+        finally { _busy = false; }
+    }
+    private async Task OnChatKey(KeyboardEventArgs e) { if (e.Key == "Enter") await EnviarComentario(null); }
+
+    // ---- Documentos ----
+    private List<SiniestroDocumentoDto> _docs = new();
+    private bool _docsSubiendo;
+    private List<DocumentosPanel.Item> DocsItems() => _docs.Select(d => new DocumentosPanel.Item(d.Id, d.Nombre, d.Url)).ToList();
+    private async Task OnSubirDocumento(InputFileChangeEventArgs e)
+    {
+        if (_editId is not { } id) return;
+        _docsSubiendo = true; _modalError = null;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                using var content = new MultipartFormDataContent();
+                var sc = new StreamContent(file.OpenReadStream(10_000_000));
+                sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+                content.Add(sc, "file", file.Name);
+                var resp = await Auth().PostAsync($"/api/siniestros/{id}/documentos", content);
+                if (!resp.IsSuccessStatusCode) { _modalError = await MensajeErrorAsync(resp); break; }
+            }
+            _docs = await Auth().GetFromJsonAsync<List<SiniestroDocumentoDto>>($"/api/siniestros/{id}/documentos") ?? _docs;
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _docsSubiendo = false; }
+    }
+    private async Task OnEliminarDocumento(Guid docId)
+    {
+        var resp = await Auth().DeleteAsync($"/api/siniestros/documentos/{docId}");
+        if (resp.IsSuccessStatusCode) _docs.RemoveAll(d => d.Id == docId);
+        else _modalError = await MensajeErrorAsync(resp);
+    }
+}

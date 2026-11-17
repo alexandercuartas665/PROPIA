@@ -1,5 +1,38 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **SINIESTROS - MENU + S3 HISTORIAL Y TAREA DE REPARACION (2026-11-16): 1 MIGRACION NUEVA (solo datos). API y Web.**
+> - Migracion `20261116202113_AddMenuSiniestros` (owner `propia`, `dotnet ef database update`, va DESPUES de
+>   `AddSiniestros`): solo inserta en `menu_overrides` el item `fin-siniestros` en la MISMA seccion y orden que
+>   `fin-seguros`, si el Super Admin movio Seguros (en dev: `tabOperacion`, queda Seguros -> Siniestros -> Servicios). Si
+>   Seguros no fue movido no inserta nada (el catalogo base ya lo pone en Finanzas). Idempotente; Down borra la fila.
+>   En dev: aplicada. Esto reemplaza el "OJO menu" de S2: ya no hay que ubicarlo a mano.
+> - API: `POST /api/siniestros/{id}/tarea-reparacion` (permiso SINIESTROS Editar) crea la tarea en el tablero General,
+>   ligada al elemento afectado (sale en su historial) y al siniestro (columna Origen = "Siniestros"); una por siniestro.
+>   `SiniestroDto` suma `TareaNumero`/`TareaEstado`. `GET /api/historial/{tipo}/{id}` suma los siniestros del elemento
+>   (`TotalSiniestros`) y corrige la fecha de mantenimientos/siniestros (se veia un dia antes por la zona horaria).
+> - Web: boton "Crear tarea de reparacion" en la ficha del siniestro; el historial de Zonas/Equipos muestra siniestros y la
+>   ficha de la Unidad (pestana Historial) gana el "Historial relacionado" (tareas, PQRSD, siniestros) sobre la bitacora.
+> - Sin config nueva. Verificar en prod: el menu muestra Siniestros junto a Seguros; en un siniestro de prueba ligado a una
+>   zona, "Crear tarea de reparacion" y ver el siniestro + la tarea en el Historial de la zona; borrar ambos.
+
+> **SINIESTROS - S2 PANTALLA (2026-11-16): SIN MIGRACION. Solo Web (+ 1 linea en API).**
+> - Pagina nueva `/siniestros` (Finanzas). Los estilos `seg-*` de Seguros pasaron a `Shared/SegurosEstilos.razor`, que
+>   ahora usan Seguros y Siniestros (sin cambio visual en Seguros).
+> - API: la entidad de config de columnas `siniestro` entra a la lista blanca de `unidades-config` (MiCopropiedadService).
+> - Menu: item base `fin-siniestros` en la seccion Finanzas. (Ubicacion junto a Seguros: ver la migracion AddMenuSiniestros arriba.)
+> - Verificar en prod: abrir `/siniestros`, crear un siniestro de prueba en la fila de alta y borrarlo.
+
+> **SINIESTROS - S1 BACKEND (2026-11-16): 1 MIGRACION NUEVA, ADITIVA. Solo API (sin pantalla todavia).**
+> - Migracion `20261116131711_AddSiniestros` (owner `propia`, `dotnet ef database update`): 6 tablas nuevas
+>   (`siniestros`, `siniestro_estados`, `siniestro_documentos`, `siniestro_comentarios`, `siniestro_campos`,
+>   `siniestro_campo_valores`) con RLS ENABLE+FORCE+policy `tenant_isolation`+GRANT propia_app, y siembra el permiso
+>   `SINIESTROS` al rol base Administrador (copia de su fila DOCUMENTOS). No toca tablas existentes. En dev: aplicada.
+> - API nueva `api/siniestros` (`SiniestrosController`): CRUD, `PUT {id}/estado`, estados editables, campos propios,
+>   documentos y actividad. GET abiertos al tenant; escrituras con `[RequierePermiso(SINIESTROS, ...)]`.
+> - Lista nueva del catalogo global `siniestro.tipo` (9 opciones): la siembra `CatalogoListasSeeder` al arrancar, sin SQL.
+> - Los 6 estados base se crean solos por copropiedad al primer uso. Sin config nueva. La pantalla llega en S2.
+> - Verificar en prod tras el deploy: `GET /api/siniestros/estados` con un token de copropiedad devuelve 6 estados.
+
 > **TERCEROS - OLA C, LINK PUBLICO DE REGISTRO (2026-11-14): SIN MIGRACION. API y Web.**
 > - Terceros tiene el boton **"Compartir link de registro"**: copia `https://app.propia-ad.com/terceros/registro/{tenantId}`.
 >   La pagina publica (sin sesion) deja subir RUT / Camara / certificacion bancaria; el tercero queda CREADO directo.

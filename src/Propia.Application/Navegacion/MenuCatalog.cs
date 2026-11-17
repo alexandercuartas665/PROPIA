@@ -64,7 +64,8 @@ public static class MenuCatalog
         new MenuItemDef("fin-servicios", "tabFinanzas", "Servicios", "/servicios", "fi-rr-briefcase", 3),
         new MenuItemDef("fin-contratos", "tabFinanzas", "Contratos", "/contratos", "fi-rr-file-signature", 4),
         new MenuItemDef("fin-seguros", "tabFinanzas", "Seguros", "/seguros", "fi-rr-shield", 5),
-        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 6),
+        new MenuItemDef("fin-siniestros", "tabFinanzas", "Siniestros", "/siniestros", "fi-rr-house-crack", 6),
+        new MenuItemDef("fin-numeracion", "tabFinanzas", "Numeracion de documentos", "/finanzas/numeracion", "fi-rr-hashtag", 7),
 
         // Gobierno y convivencia
         new MenuItemDef("gob-asambleas", "tabGobierno", "Asambleas y organos", "/asambleas", "fi-rr-podium-star", 1),

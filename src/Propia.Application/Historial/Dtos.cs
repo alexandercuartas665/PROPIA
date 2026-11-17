@@ -2,7 +2,7 @@ using Propia.Domain.Enums;
 
 namespace Propia.Application.Historial;
 
-/// <summary>Una entrada del historial relacionado de una entidad (tarea, PQRSD o mantenimiento).</summary>
+/// <summary>Una entrada del historial relacionado de una entidad (tarea, PQRSD, mantenimiento o siniestro).</summary>
 public record HistorialItemDto(
     Guid Id,
     OrigenHistorial Origen,
@@ -17,4 +17,5 @@ public record HistorialRelacionadoDto(
     int TotalTareas,
     int TotalPqrsd,
     int TotalMantenimientos,
-    IReadOnlyList<HistorialItemDto> Items);
+    IReadOnlyList<HistorialItemDto> Items,
+    int TotalSiniestros = 0);
