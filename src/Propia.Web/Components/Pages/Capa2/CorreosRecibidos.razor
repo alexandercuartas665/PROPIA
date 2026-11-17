@@ -1,0 +1,622 @@
+@page "/correos"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Integraciones
+@using Propia.Domain.Entities
+@using Propia.Web.Components.Shared
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Correos recibidos - PROPIA</PageTitle>
+
+@* Lector de buzon (Ola 1, 2026-11-17). El Coordinador de correo lee el buzon de la copropiedad por IMAP (misma cuenta y
+   contrasena de aplicacion del correo saliente) y clasifica cada correo por tema. En Ola 1 SOLO propone: no ejecuta
+   acciones. Backend: api/correos-recibidos. Estilos cor-* en css/modules/correos.css. *@
+
+<div class="dst-pagehead">
+    <div>
+        <h1 class="dst-pagetitle">Correos recibidos</h1>
+        <p class="dst-pagesub">El Coordinador de correo lee el buzón de la copropiedad y clasifica cada correo por tema. Por ahora solo propone: no ejecuta nada.</p>
+    </div>
+    @if (_authChecked && !string.IsNullOrEmpty(_jwt) && _cfg?.LecturaActiva == true)
+    {
+        <div class="dst-head-actions">
+            <button class="propia-btn-brand" type="button" disabled="@_revisando" @onclick="RevisarAsync">
+                @if (_revisando) { <span class="spinner-border spinner-border-sm"></span> }
+                else { <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> }
+                Revisar ahora
+            </button>
+        </div>
+    }
+</div>
+
+@if (!_authChecked)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+    return;
+}
+@if (string.IsNullOrEmpty(_jwt))
+{
+    <AuthMessage />
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
+
+@* ===== Conexion del buzon ===== *@
+<div class="cor-cfg">
+    <div class="cor-cfg-top">
+        <span class="cor-cfg-ico"><i class="fi fi-rr-envelope"></i></span>
+        <div class="cor-cfg-main">
+            @if (_cfg is null)
+            {
+                <div class="cor-cfg-tit">Buzón de la copropiedad</div>
+                <div class="cor-cfg-sub">Cargando…</div>
+            }
+            else if (string.IsNullOrWhiteSpace(_cfg.Cuenta) || !_cfg.TienePassword)
+            {
+                <div class="cor-cfg-tit">Conecta el buzón de la copropiedad</div>
+                <div class="cor-cfg-sub">Escribe el correo y su contraseña de aplicación para que el Coordinador pueda leerlo.</div>
+            }
+            else
+            {
+                <div class="cor-cfg-tit">@_cfg.Cuenta</div>
+                <div class="cor-cfg-sub">
+                    @if (_cfg.LecturaActiva)
+                    {
+                        <span>Lectura activa: revisa cada 10 minutos los correos recibidos desde <b>@Fecha(_cfg.LecturaDesde)</b>.</span>
+                    }
+                    else
+                    {
+                        <span>Lectura apagada: no se está leyendo el buzón.</span>
+                    }
+                    @if (_cfg.UltimaRevision is not null) { <span> Última revisión: <b>@Fecha(_cfg.UltimaRevision)</b>.</span> }
+                </div>
+            }
+        </div>
+        @if (_cfg is not null)
+        {
+            <div class="cor-cfg-acts">
+                @if (!string.IsNullOrWhiteSpace(_cfg.Cuenta) && _cfg.TienePassword)
+                {
+                    <label class="cor-switch" title="Leer el buzón cada 10 minutos">
+                        <input type="checkbox" checked="@_cfg.LecturaActiva" disabled="@_guardando" @onchange="e => CambiarLecturaAsync((bool)(e.Value ?? false))" />
+                        <span class="cor-switch-track"></span>
+                        Leer buzón
+                    </label>
+                }
+                <button type="button" class="dst-fbtn @(_verForm ? "on" : "")" @onclick="AbrirForm">
+                    <i class="fi fi-rr-settings"></i><span>Cuenta</span>
+                </button>
+            </div>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_cfg?.UltimoError))
+    {
+        <div class="cor-cfg-err">@_cfg!.UltimoError</div>
+    }
+    @if (_verForm)
+    {
+        <div class="cor-form">
+            <div class="cor-fld">
+                <label>Correo de la cuenta</label>
+                <input class="cor-inp" type="email" placeholder="copropiedad@gmail.com" autocomplete="off" @bind="_fCuenta" @bind:event="oninput" />
+            </div>
+            <div class="cor-fld">
+                <label>Contraseña de aplicación</label>
+                <input class="cor-inp" type="password" autocomplete="new-password"
+                       placeholder="@(_cfg?.TienePassword == true ? "Guardada (escribe otra para cambiarla)" : "16 letras que entrega Google")"
+                       @bind="_fPassword" @bind:event="oninput" />
+            </div>
+            <div class="cor-fld">
+                <label>Servidor IMAP</label>
+                <input class="cor-inp" placeholder="imap.gmail.com" @bind="_fHost" @bind:event="oninput" />
+            </div>
+            <div class="cor-fld">
+                <label>Puerto</label>
+                <input class="cor-inp" type="number" min="1" @bind="_fPort" @bind:event="oninput" />
+            </div>
+            <div class="cor-help">
+                En Gmail: Cuenta de Google &gt; Seguridad &gt; Verificación en dos pasos (activa) &gt; Contraseñas de aplicación.
+                Es la misma cuenta con la que la copropiedad envía correos (PQRSD &gt; Configurar &gt; Correo): cambiarla aquí la cambia allá.
+                El buzón se lee en modo solo lectura: no se marcan correos como leídos ni se borra nada.
+            </div>
+            <div class="cor-form-acts">
+                <button type="button" class="propia-btn-ghost" disabled="@(_guardando || _probando)" @onclick="ProbarAsync">
+                    @if (_probando) { <span class="spinner-border spinner-border-sm"></span> } Probar conexión
+                </button>
+                <button type="button" class="propia-btn-ghost" @onclick="() => _verForm = false">Cancelar</button>
+                <button type="button" class="propia-btn-brand" disabled="@_guardando" @onclick="GuardarFormAsync">
+                    @if (_guardando) { <span class="spinner-border spinner-border-sm"></span> } Guardar
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@* ===== Bandeja ===== *@
+@if (_items is null)
+{
+    <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+}
+else
+{
+    <div class="cor-tabs" role="tablist">
+        @foreach (var t in Tabs)
+        {
+            var tab = t;
+            <button type="button" class="cor-tab @(_tab == tab.Key ? "on" : "")" @onclick="() => { _tab = tab.Key; _pagina = 1; }">
+                @tab.Label <span class="cor-tab-n">@Contar(tab.Key)</span>
+            </button>
+        }
+    </div>
+
+    <div class="dst-filtros">
+        <div class="dst-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input class="dst-search-inp" placeholder="Buscar por asunto, remitente o resumen..." @bind="_query" @bind:event="oninput" @bind:after="() => _pagina = 1" />
+        </div>
+    </div>
+
+    <div class="dst-table">
+        <div class="tblwrap">
+            <div class="tblscroll">
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>De</th>
+                            <th>Asunto</th>
+                            <th>Tema</th>
+                            <th>Confianza</th>
+                            <th>Resumen</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Filtrados.Count == 0)
+                        {
+                            <tr><td colspan="7" class="cor-empty">
+                                <strong>@(_items.Count == 0 ? "Aún no hay correos." : "Ningún correo coincide.")</strong>
+                                @(_items.Count == 0 ? "Cuando la lectura esté activa, aquí aparecen los correos que lleguen al buzón." : "Cambia de pestaña o ajusta la búsqueda.")
+                            </td></tr>
+                        }
+                        @foreach (var c in Pagina)
+                        {
+                            var item = c;
+                            <tr class="cor-row" @onclick="() => AbrirDetalleAsync(item.Id)">
+                                <td class="mut">@Fecha(item.FechaCorreo)</td>
+                                <td>
+                                    <div class="cor-de">
+                                        <span class="cor-de-nom">@(string.IsNullOrWhiteSpace(item.RemitenteNombre) ? item.RemitenteCorreo : item.RemitenteNombre)</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.RemitenteNombre)) { <span class="cor-de-mail">@item.RemitenteCorreo</span> }
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="cor-asunto" title="@item.Asunto">
+                                        @if (item.Adjuntos > 0) { <i class="fi fi-rr-clip cor-clip" title="@item.Adjuntos documento(s)"></i> }
+                                        <span class="nom">@(string.IsNullOrWhiteSpace(item.Asunto) ? "(sin asunto)" : item.Asunto)</span>
+                                    </div>
+                                </td>
+                                <td><span class="cor-chip @TemaCss(item.Tema)">@TemaLabel(item.Tema)</span></td>
+                                <td class="cor-conf">@(item.Confianza is decimal cf ? $"{cf * 100:0}%" : "—")</td>
+                                <td><div class="cor-resumen" title="@item.Resumen">@(item.Error ?? item.Resumen)</div></td>
+                                <td><span class="cor-chip @EstadoCss(item.Estado)">@EstadoLabel(item.Estado)</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="correos"
+                    PaginaChanged="p => { _pagina = p; }"
+                    PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+    </div>
+}
+
+@* ===== Detalle del correo ===== *@
+@if (_detalle is not null)
+{
+    var d = _detalle;
+    <div class="cor-ov" @onclick="CerrarDetalle">
+        <div class="cor-dlg" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="cor-dlg-head">
+                <div class="cor-dlg-tit">
+                    <h3>@(string.IsNullOrWhiteSpace(d.Asunto) ? "(sin asunto)" : d.Asunto)</h3>
+                    <div class="cor-dlg-meta">
+                        De: @(string.IsNullOrWhiteSpace(d.RemitenteNombre) ? "" : d.RemitenteNombre + " ")&lt;@d.RemitenteCorreo&gt; · @Fecha(d.FechaCorreo)
+                        @if (!string.IsNullOrWhiteSpace(d.Para)) { <br /><span>Para: @d.Para</span> }
+                    </div>
+                </div>
+                <button type="button" class="cor-x" title="Cerrar" @onclick="CerrarDetalle">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="cor-dlg-body">
+                <div class="cor-ia">
+                    <div class="cor-ia-head">
+                        <i class="fi fi-rr-robot"></i> Coordinador de correo
+                        <span class="cor-chip @TemaCss(d.Tema)">@TemaLabel(d.Tema)</span>
+                        @if (d.Confianza is decimal cf2) { <span class="cor-conf">Confianza @($"{cf2 * 100:0}%")</span> }
+                        <span class="cor-chip @EstadoCss(d.Estado)">@EstadoLabel(d.Estado)</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(d.Error))
+                    {
+                        <p class="cor-cfg-err" style="margin:0;">@d.Error</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(d.Resumen))
+                    {
+                        <div><div class="cor-ia-lbl">Resumen</div><p>@d.Resumen</p></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(d.AccionSugerida))
+                    {
+                        <div><div class="cor-ia-lbl">Acción sugerida</div><p>@d.AccionSugerida</p></div>
+                    }
+                    @{ var datos = Datos(d.DatosJson); }
+                    @if (datos.Count > 0)
+                    {
+                        <div>
+                            <div class="cor-ia-lbl">Datos detectados</div>
+                            <dl class="cor-datos">
+                                @foreach (var kv in datos) { <dt>@kv.Key</dt><dd>@kv.Value</dd> }
+                            </dl>
+                        </div>
+                    }
+                </div>
+
+                @if (d.Adjuntos.Count > 0)
+                {
+                    <div>
+                        <div class="cor-sec-lbl">Documentos</div>
+                        <div class="cor-adjs">
+                            @foreach (var a in d.Adjuntos)
+                            {
+                                <a class="cor-adj" href="@a.Url" target="_blank" rel="noopener">
+                                    <i class="fi fi-rr-document"></i> @a.Nombre <small>@Tamano(a.Tamano)</small>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div>
+                    <div class="cor-sec-lbl">Mensaje</div>
+                    <div class="cor-cuerpo">@(string.IsNullOrWhiteSpace(d.Cuerpo) ? "(sin texto)" : d.Cuerpo)</div>
+                </div>
+            </div>
+            <div class="cor-dlg-foot">
+                @if (d.Estado == EstadoCorreoRecibido.Descartado)
+                {
+                    <button type="button" class="propia-btn-ghost" disabled="@_accion" @onclick="() => DescartarAsync(d.Id, false)">Restaurar</button>
+                }
+                else
+                {
+                    <button type="button" class="propia-btn-ghost" disabled="@_accion" @onclick="() => DescartarAsync(d.Id, true)">Descartar</button>
+                }
+                <button type="button" class="propia-btn-brand" disabled="@_accion" @onclick="() => ReclasificarAsync(d.Id)">
+                    @if (_accion) { <span class="spinner-border spinner-border-sm"></span> } Reclasificar
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? _jwt;
+    private bool _authChecked;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+
+    private CorreoLecturaConfigDto? _cfg;
+    private List<CorreoRecibidoDto>? _items;
+    private CorreoRecibidoDetalleDto? _detalle;
+
+    private bool _verForm, _guardando, _probando, _revisando, _accion;
+    private string? _fCuenta, _fPassword, _fHost;
+    private int _fPort = 993;
+
+    private string _tab = "todos";
+    private string? _query;
+    private int _pagina = 1;
+    private int _porPagina = 25;
+
+    private sealed record TabDef(string Key, string Label);
+    private static readonly TabDef[] Tabs =
+    {
+        new("todos", "Todos"), new("recibo", "Recibos"), new("pqrsd", "PQRSD"), new("poliza", "Pólizas y contratos"),
+        new("otro", "Otros"), new("irrel", "Irrelevantes"), new("error", "Con error"), new("desc", "Descartados"),
+    };
+
+    private bool EnTab(CorreoRecibidoDto c, string tab) => tab switch
+    {
+        "todos" => c.Estado != EstadoCorreoRecibido.Descartado,
+        "desc" => c.Estado == EstadoCorreoRecibido.Descartado,
+        "error" => c.Estado == EstadoCorreoRecibido.Error,
+        _ => c.Estado != EstadoCorreoRecibido.Descartado && TemaKey(c.Tema) == tab,
+    };
+
+    private int Contar(string tab) => _items?.Count(c => EnTab(c, tab)) ?? 0;
+
+    private List<CorreoRecibidoDto> Filtrados
+    {
+        get
+        {
+            if (_items is null) return new();
+            var q = (_query ?? "").Trim();
+            return _items.Where(c => EnTab(c, _tab))
+                .Where(c => q.Length == 0
+                    || (c.Asunto ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || (c.RemitenteCorreo ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || (c.RemitenteNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || (c.Resumen ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private IEnumerable<CorreoRecibidoDto> Pagina => Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); } catch { }
+        _authChecked = true;
+        if (!string.IsNullOrWhiteSpace(_jwt)) await CargarAsync();
+        StateHasChanged();
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(_jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
+        return http;
+    }
+
+    /// <summary>Envia la peticion y, si el token vencio, lo renueva y reintenta una vez (patron SessionHelper).</summary>
+    private async Task<HttpResponseMessage?> EnviarAsync(Func<HttpClient, Task<HttpResponseMessage>> enviar)
+    {
+        var resp = await enviar(Auth());
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (string.IsNullOrEmpty(nuevo)) return null;
+            _jwt = nuevo;
+            resp = await enviar(Auth());
+        }
+        return resp;
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            var r1 = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos/config"));
+            if (r1 is null) return;
+            r1.EnsureSuccessStatusCode();
+            _cfg = await r1.Content.ReadFromJsonAsync<CorreoLecturaConfigDto>();
+            var r2 = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos"));
+            if (r2 is null) return;
+            r2.EnsureSuccessStatusCode();
+            _items = await r2.Content.ReadFromJsonAsync<List<CorreoRecibidoDto>>() ?? new();
+            if (!_verForm && _cfg is not null && (string.IsNullOrWhiteSpace(_cfg.Cuenta) || !_cfg.TienePassword)) AbrirForm();
+        }
+        catch (Exception ex) { Aviso("No se pudo cargar la bandeja: " + ex.Message, false); _items ??= new(); }
+    }
+
+    private void AbrirForm()
+    {
+        _verForm = !_verForm || _cfg is null || string.IsNullOrWhiteSpace(_cfg.Cuenta);
+        _fCuenta = _cfg?.Cuenta;
+        _fPassword = null;
+        _fHost = _cfg?.ImapHost ?? "imap.gmail.com";
+        _fPort = _cfg?.ImapPort ?? 993;
+    }
+
+    private async Task<bool> GuardarAsync(GuardarCorreoLecturaRequest req)
+    {
+        _guardando = true;
+        try
+        {
+            var resp = await EnviarAsync(h => h.PutAsJsonAsync("/api/correos-recibidos/config", req));
+            if (resp is null) return false;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return false; }
+            _cfg = await resp.Content.ReadFromJsonAsync<CorreoLecturaConfigDto>();
+            return true;
+        }
+        catch (Exception ex) { Aviso("No se pudo guardar: " + ex.Message, false); return false; }
+        finally { _guardando = false; }
+    }
+
+    private async Task GuardarFormAsync()
+    {
+        var ok = await GuardarAsync(new GuardarCorreoLecturaRequest(
+            Cuenta: _fCuenta ?? "", Password: string.IsNullOrWhiteSpace(_fPassword) ? null : _fPassword,
+            ImapHost: _fHost, ImapPort: _fPort));
+        if (ok) { _verForm = false; _fPassword = null; Aviso("Cuenta guardada. Usa \"Probar conexión\" o activa \"Leer buzón\".", true); }
+    }
+
+    private async Task CambiarLecturaAsync(bool activa)
+    {
+        if (await GuardarAsync(new GuardarCorreoLecturaRequest(LecturaActiva: activa)))
+            Aviso(activa ? "Lectura activada: se leerán los correos que lleguen desde ahora." : "Lectura apagada.", true);
+    }
+
+    private async Task ProbarAsync()
+    {
+        // Si hay cambios en el formulario, se guardan primero para probar con ellos.
+        if (!string.IsNullOrWhiteSpace(_fPassword) || !string.Equals(_fCuenta, _cfg?.Cuenta, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await GuardarAsync(new GuardarCorreoLecturaRequest(Cuenta: _fCuenta ?? "",
+                    Password: string.IsNullOrWhiteSpace(_fPassword) ? null : _fPassword, ImapHost: _fHost, ImapPort: _fPort))) return;
+            _fPassword = null;
+        }
+        _probando = true;
+        try
+        {
+            var resp = await EnviarAsync(h => h.PostAsync("/api/correos-recibidos/config/probar", null));
+            if (resp is null) return;
+            if (resp.IsSuccessStatusCode) Aviso("Conexión correcta: el Coordinador puede leer el buzón.", true);
+            else Aviso(await ErrorAsync(resp), false);
+        }
+        catch (Exception ex) { Aviso("No se pudo probar: " + ex.Message, false); }
+        finally { _probando = false; }
+    }
+
+    private async Task RevisarAsync()
+    {
+        _revisando = true;
+        StateHasChanged();
+        try
+        {
+            var resp = await EnviarAsync(h => h.PostAsync("/api/correos-recibidos/revisar", null));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return; }
+            var r = await resp.Content.ReadFromJsonAsync<RevisionBuzonResult>();
+            await CargarAsync();
+            if (r is null) return;
+            if (!r.Ok && r.Nuevos == 0)
+                Aviso((r.Error ?? "No se pudo revisar el buzón.")
+                    + (r.Clasificados > 0 ? $" Se clasificaron {r.Clasificados} correo(s) que estaban pendientes." : ""), false);
+            else Aviso(r.Nuevos == 0
+                ? "No hay correos nuevos."
+                : $"{r.Nuevos} correo(s) nuevo(s); {r.Clasificados} clasificado(s)" + (r.ConError > 0 ? $", {r.ConError} con error." : "."), r.ConError == 0);
+        }
+        catch (Exception ex) { Aviso("No se pudo revisar: " + ex.Message, false); }
+        finally { _revisando = false; }
+    }
+
+    private async Task AbrirDetalleAsync(Guid id)
+    {
+        try
+        {
+            var resp = await EnviarAsync(h => h.GetAsync($"/api/correos-recibidos/{id}"));
+            if (resp is null) return;
+            resp.EnsureSuccessStatusCode();
+            _detalle = await resp.Content.ReadFromJsonAsync<CorreoRecibidoDetalleDto>();
+        }
+        catch (Exception ex) { Aviso("No se pudo abrir el correo: " + ex.Message, false); }
+    }
+
+    private void CerrarDetalle() => _detalle = null;
+
+    private async Task ReclasificarAsync(Guid id)
+    {
+        _accion = true;
+        try
+        {
+            var resp = await EnviarAsync(h => h.PostAsync($"/api/correos-recibidos/{id}/reclasificar", null));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return; }
+            await ActualizarFilaAsync(resp, id);
+        }
+        catch (Exception ex) { Aviso("No se pudo reclasificar: " + ex.Message, false); }
+        finally { _accion = false; }
+    }
+
+    private async Task DescartarAsync(Guid id, bool descartar)
+    {
+        _accion = true;
+        try
+        {
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/correos-recibidos/{id}/descartar", new { descartar }));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return; }
+            await ActualizarFilaAsync(resp, id);
+            if (descartar) _detalle = null;
+        }
+        catch (Exception ex) { Aviso("No se pudo actualizar: " + ex.Message, false); }
+        finally { _accion = false; }
+    }
+
+    private async Task ActualizarFilaAsync(HttpResponseMessage resp, Guid id)
+    {
+        var dto = await resp.Content.ReadFromJsonAsync<CorreoRecibidoDto>();
+        if (dto is not null && _items is not null)
+        {
+            var i = _items.FindIndex(x => x.Id == id);
+            if (i >= 0) _items[i] = dto;
+        }
+        if (_detalle is not null && _detalle.Id == id) await AbrirDetalleAsync(id);
+    }
+
+    private static async Task<string> ErrorAsync(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción en Comunicaciones.";
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "La operación no se pudo completar." : cuerpo;
+    }
+
+    private void Aviso(string msg, bool ok) { _msg = msg; _msgClass = ok ? "alert-success" : "alert-danger"; }
+
+    private static string Fecha(DateTimeOffset? d)
+        => d is null ? "—" : d.Value.ToOffset(TimeSpan.FromHours(-5)).ToString("dd/MM/yyyy HH:mm");
+
+    private static string Tamano(long b) => b >= 1024 * 1024 ? $"{b / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, b / 1024)} KB";
+
+    private static string TemaKey(TemaCorreo t) => t switch
+    {
+        TemaCorreo.ReciboServicio => "recibo",
+        TemaCorreo.Pqrsd => "pqrsd",
+        TemaCorreo.PolizaContrato => "poliza",
+        TemaCorreo.Otro => "otro",
+        TemaCorreo.Irrelevante => "irrel",
+        _ => "sin",
+    };
+
+    private static string TemaLabel(TemaCorreo t) => t switch
+    {
+        TemaCorreo.ReciboServicio => "Recibo de servicio",
+        TemaCorreo.Pqrsd => "PQRSD",
+        TemaCorreo.PolizaContrato => "Póliza o contrato",
+        TemaCorreo.Otro => "Otro",
+        TemaCorreo.Irrelevante => "Irrelevante",
+        _ => "Sin clasificar",
+    };
+
+    private static string TemaCss(TemaCorreo t) => "cor-t-" + TemaKey(t);
+
+    private static string EstadoLabel(EstadoCorreoRecibido e) => e switch
+    {
+        EstadoCorreoRecibido.Clasificado => "Clasificado",
+        EstadoCorreoRecibido.Error => "Error",
+        EstadoCorreoRecibido.Descartado => "Descartado",
+        EstadoCorreoRecibido.Procesado => "Procesado",
+        _ => "Sin clasificar",
+    };
+
+    private static string EstadoCss(EstadoCorreoRecibido e) => e switch
+    {
+        EstadoCorreoRecibido.Clasificado or EstadoCorreoRecibido.Procesado => "cor-e-ok",
+        EstadoCorreoRecibido.Error => "cor-e-error",
+        _ => "cor-e-desc",
+    };
+
+    /// <summary>"datos" del coordinador como pares legibles (solo valores simples).</summary>
+    private static List<KeyValuePair<string, string>> Datos(string? json)
+    {
+        var res = new List<KeyValuePair<string, string>>();
+        if (string.IsNullOrWhiteSpace(json)) return res;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                var v = p.Value.ValueKind switch
+                {
+                    System.Text.Json.JsonValueKind.String => p.Value.GetString(),
+                    System.Text.Json.JsonValueKind.Number or System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False => p.Value.GetRawText(),
+                    _ => null
+                };
+                if (!string.IsNullOrWhiteSpace(v)) res.Add(new(p.Name.Replace('_', ' '), v!));
+            }
+        }
+        catch { }
+        return res;
+    }
+}

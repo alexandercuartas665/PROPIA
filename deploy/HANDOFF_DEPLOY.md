@@ -1,5 +1,22 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **LECTOR DE BUZON - OLA 1 (2026-11-17): 1 MIGRACION NUEVA, ADITIVA. API y Web. Paquete NuGet nuevo: MailKit 5.0.0.**
+> - IMPORTANTE (leccion de Siniestros): aplicar ANTES o JUNTO con el deploy. `TenantEmailConfig` suma columnas que lee
+>   tambien el correo saliente de PQRSD: desplegar sin la migracion rompe `/api/config/correo` y el envio de PQRSD.
+> - Migracion `20261117195714_AddLectorBuzon` (owner `propia`, `dotnet ef database update`): tabla nueva
+>   `correos_recibidos` (RLS ENABLE+FORCE+policy `tenant_isolation`+GRANT propia_app); columnas nuevas en
+>   `tenant_email_configs` (imap_host/imap_port 993/lectura_*; backfill imap_host='imap.gmail.com' con NO FORCE temporal);
+>   y en `menu_overrides` el item `com-correos` en la seccion "Infraestructura..." (o junto a `ia-agentes`; idempotente). Si en prod no queda ahi, moverlo en Super Admin > Menu.
+>   En dev: aplicada.
+> - API nueva `api/correos-recibidos` (GET abiertos; escrituras con permiso COMUNICACIONES Editar). Job nuevo
+>   `CorreoEntrante` cada 10 min (solo copropiedades con "Leer buzon" activo; con `Jobs:Enabled=false` no corre).
+> - Semilla nueva: plantilla de agente "Coordinador de correo" (clave `coordinador-correo`) con el proveedor habilitado mas
+>   reciente; revisar en prod que ese proveedor tenga llave vigente (Super Admin > Plantillas de Agentes IA).
+> - Web: pagina `/correos` ("Correos recibidos", css `correos.css?v=1`).
+> - Sin config nueva. Lectura por IMAP con la cuenta + contrasena de aplicacion del correo saliente (no OAuth de Google).
+> - Verificar en prod: abrir `/correos` (debe cargar vacio, sin errores) y `/pqrsd` > Configurar > Correo sigue cargando.
+>   NO activar "Leer buzon" en prod hasta que Alex lo pida (Ola 1 esta en pruebas).
+
 > **SINIESTROS - MENU + S3 HISTORIAL Y TAREA DE REPARACION (2026-11-16): 1 MIGRACION NUEVA (solo datos). API y Web.**
 > - Migracion `20261116202113_AddMenuSiniestros` (owner `propia`, `dotnet ef database update`, va DESPUES de
 >   `AddSiniestros`): solo inserta en `menu_overrides` el item `fin-siniestros` en la MISMA seccion y orden que

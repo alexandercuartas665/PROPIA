@@ -91,6 +91,7 @@ public static class MenuCatalog
         new MenuItemDef("ia-automatizaciones", "tabComunicacion", "Automatizaciones", "/ia/automatizaciones", "fi-rr-bolt", 9),
         new MenuItemDef("ia-lista-negra", "tabComunicacion", "Lista negra", "/ia/lista-negra", "fi-rr-ban", 10),
         new MenuItemDef("ia-plantillas", "tabComunicacion", "Plantillas de WhatsApp", "/ia/plantillas", "fi-rr-template", 11),
+        new MenuItemDef("com-correos", "tabComunicacion", "Correos recibidos", "/correos", "fi-rr-envelope", 12),
 
         // Organizacion (Capa 1)
         new MenuItemDef("org-panel", "tabOrg", "Panel consolidado", "/org/panel-consolidado", "fi-rr-dashboard", 1),

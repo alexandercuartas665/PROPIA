@@ -36,4 +36,29 @@ public class TenantEmailConfig : TenantEntity
 
     /// <summary>Ultima validacion (envio de prueba) exitosa.</summary>
     public DateTimeOffset? LastValidatedAt { get; set; }
+
+    // ---- Lector de buzon (IMAP, misma cuenta y contrasena de aplicacion) ----
+
+    /// <summary>Host IMAP (por defecto imap.gmail.com).</summary>
+    public string? ImapHost { get; set; } = "imap.gmail.com";
+
+    /// <summary>Puerto IMAP (993 SSL).</summary>
+    public int ImapPort { get; set; } = 993;
+
+    /// <summary>Si el job revisa el buzon de esta copropiedad.</summary>
+    public bool LecturaActiva { get; set; }
+
+    /// <summary>Solo se leen correos recibidos desde esta fecha (se fija al activar la lectura).</summary>
+    public DateTimeOffset? LecturaDesde { get; set; }
+
+    /// <summary>UIDVALIDITY de la bandeja de entrada cuando se fijo <see cref="LecturaUltimoUid"/>.</summary>
+    public long? LecturaUidValidity { get; set; }
+
+    /// <summary>Ultimo UID IMAP ya leido (el siguiente ciclo pide solo los mayores).</summary>
+    public long? LecturaUltimoUid { get; set; }
+
+    public DateTimeOffset? LecturaUltimaRevision { get; set; }
+
+    /// <summary>Error de la ultima revision (null si fue bien).</summary>
+    public string? LecturaUltimoError { get; set; }
 }
