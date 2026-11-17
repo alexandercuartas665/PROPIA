@@ -10,7 +10,8 @@ namespace Propia.Application.Historial;
 /// - Mantenimiento: por ActivoTipo+ActivoId (fiable) para Zona y Equipo.
 /// - Tareas: por Tarea.OrigenEntidadId (fiable); las tareas legado sin Id se resuelven por nombre
 ///   (OrigenTipo + OrigenReferencia). Aplica a los tres tipos.
-/// - PQRSD: por PqrsdExpediente.UnidadPrivadaId. Solo aplica a Unidad (no hay vinculo a zona/equipo).</summary>
+/// - PQRSD: por PqrsdExpediente.UnidadPrivadaId. Solo aplica a Unidad (no hay vinculo a zona/equipo).
+/// - Siniestro: por Siniestro.ElementoTipo + ElementoId (fiable). Aplica a los tres tipos.</summary>
 public interface IHistorialRelacionadoService
 {
     Task<HistorialRelacionadoDto> GetAsync(TipoEntidadHistorial tipo, Guid entidadId, CancellationToken ct);

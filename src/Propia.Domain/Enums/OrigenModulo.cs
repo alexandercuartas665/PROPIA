@@ -12,6 +12,7 @@ public static class OrigenModulo
     public const string Seguro = "SEGUROS";
     public const string Mantenimiento = "MANTENIMIENTO";
     public const string Porteria = "PORTERIA";
+    public const string Siniestro = "SINIESTROS";
 
     /// <summary>Etiqueta legible para la columna Origen. Codigo vacio/nulo = tarea propia (manual).</summary>
     public static string Etiqueta(string? codigo) => codigo switch
@@ -21,6 +22,7 @@ public static class OrigenModulo
         Seguro => "Seguros",
         Mantenimiento or "2.11" => "Mantenimiento",
         Porteria => "Portería",  // "2.11" = codigo historico del modulo de mantenimiento
+        Siniestro => "Siniestros",
         null or "" => "Propia",
         _ => codigo!
     };

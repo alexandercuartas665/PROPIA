@@ -7,7 +7,7 @@ namespace Propia.Infrastructure.Historial;
 
 /// <summary>
 /// Historial relacionado cross-modulo (base de las pestanas "Historial" de las fichas).
-/// Reune, para una entidad (unidad/zona/equipo), sus mantenimientos, tareas y PQRSD y los
+/// Reune, para una entidad (unidad/zona/equipo), sus mantenimientos, tareas, PQRSD y siniestros y los
 /// ordena por fecha descendente. El filtrado por tenant lo aplica el HasQueryFilter global.
 /// </summary>
 public class HistorialRelacionadoService : IHistorialRelacionadoService
@@ -72,20 +72,42 @@ public class HistorialRelacionadoService : IHistorialRelacionadoService
                 p.FechaCierre ?? p.CreatedAt, "/pqrs")));
         }
 
+        // --- Siniestros: vinculo fuerte por ElementoTipo + ElementoId (los tres tipos) ---
+        var elementoSin = tipo switch
+        {
+            TipoEntidadHistorial.Equipo => ElementoSiniestro.Equipo,
+            TipoEntidadHistorial.ZonaComun => ElementoSiniestro.Zona,
+            _ => ElementoSiniestro.Unidad
+        };
+        var siniestros = await _db.Siniestros.AsNoTracking()
+            .Where(s => s.ElementoTipo == elementoSin && s.ElementoId == entidadId)
+            .Select(s => new { s.Id, s.Titulo, s.Numero, Estado = s.Estado != null ? s.Estado.Nombre : null, s.FechaOcurrencia })
+            .ToListAsync(ct);
+
+        items.AddRange(siniestros.Select(s => new HistorialItemDto(
+            s.Id, OrigenHistorial.Siniestro, s.Titulo, s.Numero, s.Estado,
+            AFechaCo(s.FechaOcurrencia),
+            $"/siniestros#siniestro-{s.Id}")));
+
         var ordenados = items.OrderByDescending(i => i.Fecha).ToList();
         return new HistorialRelacionadoDto(
             ordenados.Count(i => i.Origen == OrigenHistorial.Tarea),
             ordenados.Count(i => i.Origen == OrigenHistorial.Pqrsd),
             ordenados.Count(i => i.Origen == OrigenHistorial.Mantenimiento),
-            ordenados);
+            ordenados,
+            ordenados.Count(i => i.Origen == OrigenHistorial.Siniestro));
     }
 
     // Fecha representativa del mantenimiento: cierre > inicio real > programada > creacion.
     private static DateTimeOffset FechaDe(DateOnly? cierre, DateOnly? inicio, DateOnly? programada, DateTimeOffset creacion)
     {
         var d = cierre ?? inicio ?? programada;
-        return d.HasValue ? new DateTimeOffset(d.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : creacion;
+        return d.HasValue ? AFechaCo(d.Value) : creacion;
     }
+
+    // Fecha de calendario (DateOnly) como medianoche en hora de Colombia: el panel la muestra con ToCo(), y una
+    // medianoche UTC se veia como el dia anterior (19:00 del dia previo en Colombia).
+    private static DateTimeOffset AFechaCo(DateOnly d) => new(d.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(-5));
 
     // Nombre legible del elemento, para casar las tareas legado que solo guardan OrigenReferencia.
     private async Task<string?> NombreEntidadAsync(TipoEntidadHistorial tipo, Guid id, CancellationToken ct) => tipo switch

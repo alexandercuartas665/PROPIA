@@ -317,6 +317,19 @@ public static class CatalogoListasSeeder
             new("e:Recepcion", "Recepción", 7),
             new("e:Otro", "Otro", 8),
         }));
+        // Siniestros (2026-11-16): tipo de siniestro. Lista libre sin enum: la clave es un slug estable.
+        reg.Add(("siniestro.tipo", new List<SemillaOpcion>
+        {
+            new("agua", "Daño por agua", 0, null, "#3B82F6"),
+            new("incendio", "Incendio", 1, null, "#C0383C"),
+            new("electrico", "Daño eléctrico", 2, null, "#E8910C"),
+            new("robo", "Robo o hurto", 3, null, "#6D4FE3"),
+            new("vandalismo", "Vandalismo", 4, null, "#B4235F"),
+            new("natural", "Fenómeno natural", 5, null, "#0FB5A5"),
+            new("maquinaria", "Rotura de maquinaria", 6, null, "#516F90"),
+            new("rc", "Responsabilidad civil", 7, null, "#7A5C2E"),
+            new("otro", "Otro", 8, null, "#6B7280"),
+        }));
         reg.Add(("gobierno.cargoconsejo", new List<SemillaOpcion>
         {
             new("e:Presidente", "Presidente", 0),

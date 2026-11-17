@@ -55,6 +55,7 @@ public static class CatalogoListasRegistro
         new("pqrsd.mediorecepcion",        "PQRSD · Medio de recepción",           false),
         new("equipotrabajo.rol",           "Equipo de trabajo · Rol operativo",    false),
         new("gobierno.cargoconsejo",       "Consejo · Cargo",                      false),
+        new("siniestro.tipo",              "Siniestros · Tipo de siniestro",       false),
         new("pqrsd.tipo",           "PQRSD · Tipo (plazo legal Ley 1755)",  true),
         new("pqrsd.estado",         "PQRSD · Etapa (columnas del tablero)", true),
         new("mantenimiento.periodicidad",   "Mantenimiento · Periodicidad",        true),

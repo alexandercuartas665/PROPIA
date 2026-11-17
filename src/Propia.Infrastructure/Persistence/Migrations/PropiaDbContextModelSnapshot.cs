@@ -16747,6 +16747,425 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("sesion_transcripcion_lineas", (string)null);
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.Siniestro", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<decimal?>("Deducible")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("deducible");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<Guid?>("ElementoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("elemento_id");
+
+                    b.Property<string>("ElementoOtro")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("elemento_otro");
+
+                    b.Property<int>("ElementoTipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("elemento_tipo");
+
+                    b.Property<Guid>("EstadoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("estado_id");
+
+                    b.Property<DateTimeOffset?>("FechaCierre")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_cierre");
+
+                    b.Property<DateOnly>("FechaOcurrencia")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_ocurrencia");
+
+                    b.Property<DateOnly?>("FechaPago")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_pago");
+
+                    b.Property<DateOnly?>("FechaReporte")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_reporte");
+
+                    b.Property<decimal?>("MontoEstimado")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("monto_estimado");
+
+                    b.Property<decimal?>("MontoReclamado")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("monto_reclamado");
+
+                    b.Property<decimal?>("MontoReconocido")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("monto_reconocido");
+
+                    b.Property<string>("Numero")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("numero");
+
+                    b.Property<string>("NumeroReclamacion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("numero_reclamacion");
+
+                    b.Property<Guid?>("PolizaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("poliza_id");
+
+                    b.Property<Guid?>("ResponsablePersonaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("responsable_persona_id");
+
+                    b.Property<Guid?>("TareaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tarea_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TipoClave")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipo_clave");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("titulo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EstadoId");
+
+                    b.HasIndex("PolizaId");
+
+                    b.HasIndex("TenantId", "EstadoId");
+
+                    b.HasIndex("TenantId", "Numero")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ElementoTipo", "ElementoId");
+
+                    b.ToTable("siniestros", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroCampo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("Opciones")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("opciones");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("integer")
+                        .HasColumnName("tipo");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("siniestro_campos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroCampoValor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("SiniestroCampoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("siniestro_campo_id");
+
+                    b.Property<Guid>("SiniestroId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("siniestro_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Valor")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("valor");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiniestroId", "SiniestroCampoId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "SiniestroId");
+
+                    b.ToTable("siniestro_campo_valores", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroComentario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AutorNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("autor_nombre");
+
+                    b.Property<Guid?>("AutorUsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autor_usuario_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("EsSistema")
+                        .HasColumnType("boolean")
+                        .HasColumnName("es_sistema");
+
+                    b.Property<Guid>("SiniestroId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("siniestro_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("texto");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiniestroId");
+
+                    b.HasIndex("TenantId", "SiniestroId");
+
+                    b.ToTable("siniestro_comentarios", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroDocumento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre");
+
+                    b.Property<Guid>("SiniestroId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("siniestro_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiniestroId");
+
+                    b.HasIndex("TenantId", "SiniestroId");
+
+                    b.ToTable("siniestro_documentos", (string)null);
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroEstado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Clave")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("clave");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("nombre");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Clave")
+                        .IsUnique()
+                        .HasFilter("clave IS NOT NULL");
+
+                    b.ToTable("siniestro_estados", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.SistemaIncidente", b =>
                 {
                     b.Property<Guid>("Id")
@@ -24127,6 +24546,46 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Punto");
 
                     b.Navigation("Sesion");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.Siniestro", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.SiniestroEstado", "Estado")
+                        .WithMany()
+                        .HasForeignKey("EstadoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Propia.Domain.Entities.Poliza", "Poliza")
+                        .WithMany()
+                        .HasForeignKey("PolizaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Estado");
+
+                    b.Navigation("Poliza");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroComentario", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Siniestro", "Siniestro")
+                        .WithMany()
+                        .HasForeignKey("SiniestroId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Siniestro");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.SiniestroDocumento", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.Siniestro", "Siniestro")
+                        .WithMany()
+                        .HasForeignKey("SiniestroId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Siniestro");
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.SuperAdminApiToken", b =>

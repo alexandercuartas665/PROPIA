@@ -1,7 +1,7 @@
 namespace Propia.Domain.Enums;
 
 /// <summary>Tipo de entidad de la copropiedad sobre la que se arma el "Historial relacionado"
-/// (tareas + PQRSD + mantenimientos vinculados). Ver IHistorialRelacionadoService.</summary>
+/// (tareas + PQRSD + mantenimientos + siniestros vinculados). Ver IHistorialRelacionadoService.</summary>
 public enum TipoEntidadHistorial
 {
     Unidad = 1,
@@ -14,5 +14,6 @@ public enum OrigenHistorial
 {
     Tarea = 1,
     Pqrsd = 2,
-    Mantenimiento = 3
+    Mantenimiento = 3,
+    Siniestro = 4
 }

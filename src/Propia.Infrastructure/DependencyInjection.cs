@@ -273,6 +273,9 @@ public static class DependencyInjection
         // Modulo Seguros (Ola 4): polizas + reclamaciones
         services.AddScoped<Application.Seguros.ISegurosService, Seguros.SegurosService>();
 
+        // Modulo Siniestros (2026-11-16)
+        services.AddScoped<Application.Siniestros.ISiniestrosService, Siniestros.SiniestrosService>();
+
         // Modulo 2.14 Comunicaciones
         services.AddScoped<Application.Comunicaciones.IComunicacionesService, Comunicaciones.ComunicacionesService>();
 
