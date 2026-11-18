@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Propia.Application.Catalogos;
 using Propia.Application.Common;
 using Propia.Application.InfraestructuraIa;
 using Propia.Application.Integraciones;
@@ -13,10 +14,11 @@ using Xunit;
 namespace Propia.Integration.Tests;
 
 /// <summary>
-/// Lector de buzon (Ola 1): config de lectura (merge, sin exponer la clave, activar exige cuenta), clasificacion con el
-/// Coordinador de correo (respuesta valida -> tema; invalida -> Error reclasificable), descartar/restaurar y aislamiento
-/// por copropiedad (HasQueryFilter + RLS FORCE contra PostgreSQL real con propia_app). El IMAP real no se prueba aqui
-/// (se verifica en runtime con una cuenta de prueba).
+/// Lector de buzon: buzones por copropiedad (crear/editar en merge sin exponer la clave, activar exige clave, cuenta
+/// unica, temas que atiende, eliminar deja los correos), clasificacion con el Coordinador contra los temas del buzon
+/// (lista "correo.tema" con temas propios; un tema que el buzon no atiende queda como Error reclasificable),
+/// descartar/restaurar y aislamiento por copropiedad (HasQueryFilter + RLS FORCE contra PostgreSQL real con
+/// propia_app). El IMAP real no se prueba aqui (se verifica en runtime con una cuenta de prueba).
 /// </summary>
 [Collection(nameof(PostgresCollection))]
 public class CorreosRecibidosFlowTests
@@ -27,68 +29,99 @@ public class CorreosRecibidosFlowTests
     public CorreosRecibidosFlowTests(PostgresFixture fx) => _fx = fx;
 
     [Fact]
-    public async Task Config_merge_no_expone_la_clave_y_activar_exige_cuenta()
+    public async Task Buzones_merge_no_expone_la_clave_activar_exige_clave_y_cuenta_unica()
     {
-        var t = await SeedTenantAsync("[COR] config");
+        var t = await SeedTenantAsync("[COR] buzones");
         try
         {
             var svc = Build(t, new FakeIa(null));
-            Assert.False((await svc.GetConfigAsync(Ct)).LecturaActiva);
+            Assert.Empty(await svc.ListarBuzonesAsync(Ct));
 
-            // Sin cuenta no se puede activar.
-            Assert.NotNull(await svc.GuardarConfigAsync(new GuardarCorreoLecturaRequest(LecturaActiva: true), Ct));
+            // Sin clave no se puede activar.
+            var (sinClave, err) = await svc.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "buzon@ejemplo.com", Activo: true), Ct);
+            Assert.Null(sinClave);
+            Assert.NotNull(err);
 
-            Assert.Null(await svc.GuardarConfigAsync(new GuardarCorreoLecturaRequest(Cuenta: "buzon@ejemplo.com", Password: "abcd efgh ijkl mnop"), Ct));
-            var cfg = await svc.GetConfigAsync(Ct);
-            Assert.Equal("buzon@ejemplo.com", cfg.Cuenta);
-            Assert.True(cfg.TienePassword);
-            Assert.Equal("imap.gmail.com", cfg.ImapHost);
-            Assert.Equal(993, cfg.ImapPort);
+            var (b, err2) = await svc.CrearBuzonAsync(new GuardarBuzonRequest(Nombre: "Administraci\u00f3n",
+                Cuenta: "buzon@ejemplo.com", Password: "abcd efgh ijkl mnop", Activo: false), Ct);
+            Assert.Null(err2);
+            Assert.True(b!.TienePassword);
+            Assert.False(b.Activo);
+            Assert.Equal("imap.gmail.com", b.ImapHost);
+            Assert.Equal(993, b.ImapPort);
+            Assert.Null(b.Temas);   // todos
 
-            Assert.Null(await svc.GuardarConfigAsync(new GuardarCorreoLecturaRequest(LecturaActiva: true), Ct));
-            cfg = await svc.GetConfigAsync(Ct);
-            Assert.True(cfg.LecturaActiva);
-            Assert.NotNull(cfg.LecturaDesde);
-            Assert.Equal("buzon@ejemplo.com", cfg.Cuenta);   // MERGE: activar no borra la cuenta
+            // MERGE: activar y marcar temas no borra la cuenta ni la clave.
+            var (b2, _) = await svc.GuardarBuzonAsync(b.Id, new GuardarBuzonRequest(Activo: true, Temas: new() { "pqrsd" }), Ct);
+            Assert.True(b2!.Activo);
+            Assert.NotNull(b2.LecturaDesde);
+            Assert.Equal("buzon@ejemplo.com", b2.Cuenta);
+            Assert.True(b2.TienePassword);
+            Assert.Equal(new[] { "pqrsd" }, b2.Temas);
+            var (b3, _) = await svc.GuardarBuzonAsync(b.Id, new GuardarBuzonRequest(TodosLosTemas: true), Ct);
+            Assert.Null(b3!.Temas);
 
-            await using var db = AppDb(t);
-            var fila = await db.TenantEmailConfigs.AsNoTracking().SingleAsync();
-            Assert.Equal("enc:abcdefghijklmnop", fila.SmtpPasswordEncrypted);   // cifrada y sin espacios
-            Assert.Equal("buzon@ejemplo.com", fila.FromEmail);
+            // Otra cuenta igual (sin importar mayusculas) se rechaza; una distinta es otro buzon.
+            Assert.NotNull((await svc.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "BUZON@ejemplo.com", Password: "x"), Ct)).Error);
+            var (otro, _) = await svc.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "contabilidad@ejemplo.com", Password: "x"), Ct);
+            Assert.Equal("contabilidad", otro!.Nombre);   // sin nombre: la parte local de la cuenta
+            Assert.Equal(2, (await svc.ListarBuzonesAsync(Ct)).Count);
+
+            await using (var db = AppDb(t))
+            {
+                var fila = await db.BuzonesCorreo.AsNoTracking().SingleAsync(x => x.Id == b.Id);
+                Assert.Equal("enc:abcdefghijklmnop", fila.PasswordCifrada);   // cifrada y sin espacios
+            }
+
+            // Eliminar el buzon deja sus correos en la bandeja, sin buzon.
+            var idCorreo = await SeedCorreoAsync(t, "[COR] Correo del buzon", b.Id);
+            Assert.True(await svc.EliminarBuzonAsync(b.Id, Ct));
+            Assert.Null((await svc.ObtenerAsync(idCorreo, Ct))!.BuzonId);
+            Assert.Single(await svc.ListarBuzonesAsync(Ct));
         }
         finally { await CleanupTenantAsync(t); }
     }
 
     [Fact]
-    public async Task Reclasificar_aplica_el_tema_del_coordinador_o_deja_error()
+    public async Task Reclasificar_usa_los_temas_del_buzon_incluidos_los_propios()
     {
         var t = await SeedTenantAsync("[COR] clasificar");
         try
         {
-            var id = await SeedCorreoAsync(t, "Su factura EPM de octubre");
-            var ok = Build(t, new FakeIa("{\"tema\":\"recibo_servicio\",\"confianza\":0.9,\"resumen\":\"Factura EPM\",\"accion_sugerida\":\"Registrar\",\"datos\":{\"servicio\":\"energia\"}}"));
-            var r = await ok.ReclasificarAsync(id, Ct);
-            Assert.Equal(TemaCorreo.ReciboServicio, r!.Tema);
+            var opciones = new FakeOpciones();
+            var ia = new FakeIa("{\"tema\":\"c:asc\",\"confianza\":0.9,\"resumen\":\"Reporte del ascensor\",\"accion_sugerida\":\"Crear tarea\",\"datos\":{\"torre\":\"2\"}}");
+            var svc = Build(t, ia, opciones);
+            var (b, _) = await svc.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "porteria@ejemplo.com", Password: "x",
+                Temas: new() { "c:asc" }), Ct);
+            var id = await SeedCorreoAsync(t, "[COR] Ascensor torre 2 detenido", b!.Id);
+
+            var r = await svc.ReclasificarAsync(id, Ct);
+            Assert.Equal("c:asc", r!.TemaClave);
             Assert.Equal(EstadoCorreoRecibido.Clasificado, r.Estado);
-            var det = await ok.ObtenerAsync(id, Ct);
-            Assert.Equal("Factura EPM", det!.Resumen);
-            Assert.Contains("energia", det.DatosJson);
+            // El prompt solo ofrece los temas del buzon (+ otro e irrelevante), con la descripcion del tema propio.
+            Assert.Contains("\"c:asc\": Ascensores. Fallas y mantenimiento", ia.UltimoPrompt);
+            Assert.Contains("\"otro\"", ia.UltimoPrompt);
+            Assert.DoesNotContain("\"recibo_servicio\"", ia.UltimoPrompt);
+            var det = await svc.ObtenerAsync(id, Ct);
+            Assert.Equal("Reporte del ascensor", det!.Resumen);
+            Assert.Equal("porteria", det.BuzonNombre);
             Assert.NotNull(det.ClasificadoEn);
 
-            var malo = Build(t, new FakeIa("no entiendo"));
-            r = await malo.ReclasificarAsync(id, Ct);
+            // Un tema que el buzon no atiende (o que no existe) no se inventa: queda en Error.
+            var fuera = Build(t, new FakeIa("{\"tema\":\"recibo_servicio\"}"), opciones);
+            r = await fuera.ReclasificarAsync(id, Ct);
             Assert.Equal(EstadoCorreoRecibido.Error, r!.Estado);
             Assert.False(string.IsNullOrWhiteSpace(r.Error));
 
             // Descartar y restaurar (vuelve a Clasificado porque ya se habia clasificado una vez).
-            Assert.Equal(EstadoCorreoRecibido.Descartado, (await ok.DescartarAsync(id, true, Ct))!.Estado);
-            Assert.Equal(EstadoCorreoRecibido.Clasificado, (await ok.DescartarAsync(id, false, Ct))!.Estado);
+            Assert.Equal(EstadoCorreoRecibido.Descartado, (await svc.DescartarAsync(id, true, Ct))!.Estado);
+            Assert.Equal(EstadoCorreoRecibido.Clasificado, (await svc.DescartarAsync(id, false, Ct))!.Estado);
         }
         finally { await CleanupTenantAsync(t); }
     }
 
     [Fact]
-    public async Task Correos_y_config_no_se_ven_entre_copropiedades()
+    public async Task Correos_y_buzones_no_se_ven_entre_copropiedades()
     {
         var tA = await SeedTenantAsync("[COR] ISO A");
         var tB = await SeedTenantAsync("[COR] ISO B");
@@ -98,19 +131,23 @@ public class CorreosRecibidosFlowTests
             var svcA = Build(tA, ia);
             var svcB = Build(tB, ia);
             var idA = await SeedCorreoAsync(tA, "[COR] Queja por ruido");
-            Assert.Null(await svcA.GuardarConfigAsync(new GuardarCorreoLecturaRequest(Cuenta: "a@ejemplo.com", Password: "x"), Ct));
+            var (bA, _) = await svcA.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "a@ejemplo.com", Password: "x"), Ct);
 
             Assert.Single(await svcA.ListarAsync(Ct));
             Assert.Empty(await svcB.ListarAsync(Ct));
             Assert.Null(await svcB.ObtenerAsync(idA, Ct));
             Assert.Null(await svcB.ReclasificarAsync(idA, Ct));
             Assert.Null(await svcB.DescartarAsync(idA, true, Ct));
-            Assert.Null((await svcB.GetConfigAsync(Ct)).Cuenta);
+            Assert.Empty(await svcB.ListarBuzonesAsync(Ct));
+            Assert.Null((await svcB.GuardarBuzonAsync(bA!.Id, new GuardarBuzonRequest(Nombre: "robado"), Ct)).Buzon);
+            Assert.False(await svcB.EliminarBuzonAsync(bA.Id, Ct));
 
-            // El mismo Message-ID puede existir en otra copropiedad (indice unico por tenant).
+            // La misma cuenta y el mismo Message-ID pueden existir en otra copropiedad (indices unicos por tenant).
+            Assert.NotNull((await svcB.CrearBuzonAsync(new GuardarBuzonRequest(Cuenta: "a@ejemplo.com", Password: "x"), Ct)).Buzon);
             await SeedCorreoAsync(tB, "[COR] Queja por ruido");
             Assert.Single(await svcB.ListarAsync(Ct));
             Assert.Equal(EstadoCorreoRecibido.Nuevo, (await svcA.ObtenerAsync(idA, Ct))!.Estado);
+            Assert.Equal("a", (await svcA.ListarBuzonesAsync(Ct)).Single().Nombre);
         }
         finally { await CleanupTenantAsync(tA); await CleanupTenantAsync(tB); }
     }
@@ -120,12 +157,29 @@ public class CorreosRecibidosFlowTests
     private sealed class FakeIa : IAiInferenceService
     {
         private readonly string? _respuesta;
+        public string UltimoPrompt { get; private set; } = "";
         public FakeIa(string? respuesta) => _respuesta = respuesta;
         public Task<AiChatResult> TestChatAsync(Guid agentId, IReadOnlyList<AiChatTurn> turns, string? systemPromptOverride = null,
             string? bearerToken = null, string? contactPhone = null, Guid? conversationId = null, CancellationToken ct = default)
-            => Task.FromResult(_respuesta is null ? new AiChatResult(false, null, "sin IA") : new AiChatResult(true, _respuesta, null));
+        {
+            UltimoPrompt = turns.LastOrDefault()?.Text ?? "";
+            return Task.FromResult(_respuesta is null ? new AiChatResult(false, null, "sin IA") : new AiChatResult(true, _respuesta, null));
+        }
         public Task<string?> DescribeInboundMediaAsync(Guid agentId, string mimeType, string base64, string instruction, CancellationToken ct = default)
             => Task.FromResult<string?>(null);
+    }
+
+    /// <summary>Lista "correo.tema" de la copropiedad: los 5 base + un tema propio.</summary>
+    private sealed class FakeOpciones : IOpcionesEfectivas
+    {
+        public Task<IReadOnlyList<OpcionEfectivaDto>> OpcionesAsync(string lista, bool incluirOcultas = false, CancellationToken ct = default)
+        {
+            var l = CoordinadorCorreoAgente.TemasBase
+                .Select((x, i) => new OpcionEfectivaDto(x.Clave, x.Label, i, x.Color, true, true, "{\"descripcion\":\"" + x.Clave + "\"}"))
+                .Append(new OpcionEfectivaDto("c:asc", "Ascensores", 9, null, true, false, "{\"descripcion\":\"Fallas y mantenimiento de ascensores.\"}"))
+                .ToList();
+            return Task.FromResult<IReadOnlyList<OpcionEfectivaDto>>(l);
+        }
     }
 
     private sealed class FakeAgentes : IAgentesSistema
@@ -149,7 +203,7 @@ public class CorreosRecibidosFlowTests
         public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);
     }
 
-    private ICorreoEntranteService Build(Guid tenantId, IAiInferenceService ia)
+    private ICorreoEntranteService Build(Guid tenantId, IAiInferenceService ia, IOpcionesEfectivas? opciones = null)
     {
         var tenantCtx = new TenantContext();
         tenantCtx.SetTenant(tenantId);
@@ -159,7 +213,7 @@ public class CorreosRecibidosFlowTests
             .Options;
         var db = new PropiaDbContext(options, tenantCtx);
         return new CorreoEntranteService(db, tenantCtx, new FakeSecret(), new FakeAgentes(), ia, new FakeBlob(),
-            NullLogger<CorreoEntranteService>.Instance);
+            opciones ?? new FakeOpciones(), NullLogger<CorreoEntranteService>.Instance);
     }
 
     private PropiaDbContext AppDb(Guid tenantId)
@@ -188,11 +242,12 @@ public class CorreosRecibidosFlowTests
         return t.Id;
     }
 
-    private async Task<Guid> SeedCorreoAsync(Guid tenantId, string asunto)
+    private async Task<Guid> SeedCorreoAsync(Guid tenantId, string asunto, Guid? buzonId = null)
     {
         await using var db = AppDb(tenantId);
         var c = new CorreoRecibido
         {
+            BuzonId = buzonId,
             MessageId = "<" + asunto.GetHashCode().ToString("x") + "@ejemplo.com>",
             ImapUid = 1,
             RemitenteCorreo = "vecino@ejemplo.com",
@@ -210,7 +265,7 @@ public class CorreosRecibidosFlowTests
         await using var ctx = OwnerDb();
         await ctx.Database.OpenConnectionAsync();
         await ctx.Database.ExecuteSqlRawAsync($"SELECT set_config('app.tenant_id', '{tenantId}', false)");
-        foreach (var tabla in new[] { "correos_recibidos", "tenant_email_configs" })
+        foreach (var tabla in new[] { "correos_recibidos", "buzones_correo", "tenant_email_configs" })
             await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM {tabla} WHERE tenant_id = '{tenantId}'");
         await ctx.Database.ExecuteSqlRawAsync($"DELETE FROM tenants WHERE id = '{tenantId}'");
     }

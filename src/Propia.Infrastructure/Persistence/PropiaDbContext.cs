@@ -233,6 +233,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     // Cuenta de correo saliente (SMTP) por copropiedad. Tenant + RLS.
     public DbSet<TenantEmailConfig> TenantEmailConfigs => Set<TenantEmailConfig>();
     public DbSet<CorreoRecibido> CorreosRecibidos => Set<CorreoRecibido>();
+    public DbSet<BuzonCorreo> BuzonesCorreo => Set<BuzonCorreo>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();

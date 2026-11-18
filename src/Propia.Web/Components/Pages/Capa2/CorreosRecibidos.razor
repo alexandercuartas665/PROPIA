@@ -1,31 +1,41 @@
 @page "/correos"
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Propia.Application.Catalogos
 @using Propia.Application.Integraciones
 @using Propia.Domain.Entities
 @using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 <PageTitle>Correos recibidos - PROPIA</PageTitle>
 
-@* Lector de buzon (Ola 1, 2026-11-17). El Coordinador de correo lee el buzon de la copropiedad por IMAP (misma cuenta y
-   contrasena de aplicacion del correo saliente) y clasifica cada correo por tema. En Ola 1 SOLO propone: no ejecuta
-   acciones. Backend: api/correos-recibidos. Estilos cor-* en css/modules/correos.css. *@
+@* Lector de buzon. El Coordinador de correo lee los buzones de la copropiedad por IMAP (uno o varios, cada uno con su
+   cuenta y contrasena de aplicacion) y clasifica cada correo entre los temas de la copropiedad (lista "correo.tema").
+   Por ahora SOLO propone: no ejecuta acciones. Los buzones se configuran en el modal CorreosBuzonesModal.
+   Backend: api/correos-recibidos. Estilos cor-* en css/modules/correos.css. *@
 
 <div class="dst-pagehead">
     <div>
         <h1 class="dst-pagetitle">Correos recibidos</h1>
-        <p class="dst-pagesub">El Coordinador de correo lee el buzón de la copropiedad y clasifica cada correo por tema. Por ahora solo propone: no ejecuta nada.</p>
+        <p class="dst-pagesub">El Coordinador de correo lee los buzones de la copropiedad y clasifica cada correo por tema. Por ahora solo propone: no ejecuta nada.</p>
     </div>
-    @if (_authChecked && !string.IsNullOrEmpty(_jwt) && _cfg?.LecturaActiva == true)
+    @if (_authChecked && !string.IsNullOrEmpty(_jwt))
     {
         <div class="dst-head-actions">
-            <button class="propia-btn-brand" type="button" disabled="@_revisando" @onclick="RevisarAsync">
-                @if (_revisando) { <span class="spinner-border spinner-border-sm"></span> }
-                else { <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> }
-                Revisar ahora
+            <button class="propia-btn-ghost" type="button" @onclick="() => _verBuzones = true">
+                <i class="fi fi-rr-settings"></i> Buzones
+                @if (_buzones is { Count: > 0 }) { <span class="cor-tab-n">@_buzones.Count</span> }
             </button>
+            @if (_buzones?.Any(b => b.Activo) == true)
+            {
+                <button class="propia-btn-brand" type="button" disabled="@_revisando" @onclick="RevisarAsync">
+                    @if (_revisando) { <span class="spinner-border spinner-border-sm"></span> }
+                    else { <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg> }
+                    Revisar ahora
+                </button>
+            }
         </div>
     }
 </div>
@@ -43,98 +53,35 @@
 
 @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small">@_msg</div> }
 
-@* ===== Conexion del buzon ===== *@
-<div class="cor-cfg">
-    <div class="cor-cfg-top">
-        <span class="cor-cfg-ico"><i class="fi fi-rr-envelope"></i></span>
-        <div class="cor-cfg-main">
-            @if (_cfg is null)
-            {
-                <div class="cor-cfg-tit">Buzón de la copropiedad</div>
-                <div class="cor-cfg-sub">Cargando…</div>
-            }
-            else if (string.IsNullOrWhiteSpace(_cfg.Cuenta) || !_cfg.TienePassword)
-            {
-                <div class="cor-cfg-tit">Conecta el buzón de la copropiedad</div>
-                <div class="cor-cfg-sub">Escribe el correo y su contraseña de aplicación para que el Coordinador pueda leerlo.</div>
-            }
-            else
-            {
-                <div class="cor-cfg-tit">@_cfg.Cuenta</div>
-                <div class="cor-cfg-sub">
-                    @if (_cfg.LecturaActiva)
-                    {
-                        <span>Lectura activa: revisa cada 10 minutos los correos recibidos desde <b>@Fecha(_cfg.LecturaDesde)</b>.</span>
-                    }
-                    else
-                    {
-                        <span>Lectura apagada: no se está leyendo el buzón.</span>
-                    }
-                    @if (_cfg.UltimaRevision is not null) { <span> Última revisión: <b>@Fecha(_cfg.UltimaRevision)</b>.</span> }
-                </div>
-            }
+@* ===== Estado de los buzones (resumen; la configuracion vive en el modal) ===== *@
+@if (_buzones is { Count: 0 })
+{
+    <div class="cor-aviso">
+        <span class="cor-aviso-ic"><i class="fi fi-rr-envelope"></i></span>
+        <div class="cor-aviso-main">
+            <div class="cor-aviso-tit">Aún no hay buzones conectados</div>
+            <div class="cor-aviso-sub">Conecta uno o varios correos de la copropiedad para que el Coordinador los lea y los clasifique.</div>
         </div>
-        @if (_cfg is not null)
-        {
-            <div class="cor-cfg-acts">
-                @if (!string.IsNullOrWhiteSpace(_cfg.Cuenta) && _cfg.TienePassword)
-                {
-                    <label class="cor-switch" title="Leer el buzón cada 10 minutos">
-                        <input type="checkbox" checked="@_cfg.LecturaActiva" disabled="@_guardando" @onchange="e => CambiarLecturaAsync((bool)(e.Value ?? false))" />
-                        <span class="cor-switch-track"></span>
-                        Leer buzón
-                    </label>
-                }
-                <button type="button" class="dst-fbtn @(_verForm ? "on" : "")" @onclick="AbrirForm">
-                    <i class="fi fi-rr-settings"></i><span>Cuenta</span>
-                </button>
-            </div>
-        }
+        <button type="button" class="propia-btn-brand" @onclick="() => _verBuzones = true">Configurar buzones</button>
     </div>
-    @if (!string.IsNullOrWhiteSpace(_cfg?.UltimoError))
+}
+else if (_buzones is not null)
+{
+    @foreach (var b in _buzones.Where(b => b.Activo && !string.IsNullOrWhiteSpace(b.UltimoError)))
     {
-        <div class="cor-cfg-err">@_cfg!.UltimoError</div>
-    }
-    @if (_verForm)
-    {
-        <div class="cor-form">
-            <div class="cor-fld">
-                <label>Correo de la cuenta</label>
-                <input class="cor-inp" type="email" placeholder="copropiedad@gmail.com" autocomplete="off" @bind="_fCuenta" @bind:event="oninput" />
+        <div class="cor-aviso is-err">
+            <span class="cor-aviso-ic"><i class="fi fi-rr-exclamation"></i></span>
+            <div class="cor-aviso-main">
+                <div class="cor-aviso-tit">@b.Nombre (@b.Cuenta)</div>
+                <div class="cor-aviso-sub">@b.UltimoError</div>
             </div>
-            <div class="cor-fld">
-                <label>Contraseña de aplicación</label>
-                <input class="cor-inp" type="password" autocomplete="new-password"
-                       placeholder="@(_cfg?.TienePassword == true ? "Guardada (escribe otra para cambiarla)" : "16 letras que entrega Google")"
-                       @bind="_fPassword" @bind:event="oninput" />
-            </div>
-            <div class="cor-fld">
-                <label>Servidor IMAP</label>
-                <input class="cor-inp" placeholder="imap.gmail.com" @bind="_fHost" @bind:event="oninput" />
-            </div>
-            <div class="cor-fld">
-                <label>Puerto</label>
-                <input class="cor-inp" type="number" min="1" @bind="_fPort" @bind:event="oninput" />
-            </div>
-            <div class="cor-help">
-                En Gmail: Cuenta de Google &gt; Seguridad &gt; Verificación en dos pasos (activa) &gt; Contraseñas de aplicación.
-                Es la misma cuenta con la que la copropiedad envía correos (PQRSD &gt; Configurar &gt; Correo): cambiarla aquí la cambia allá.
-                El buzón se lee en modo solo lectura: no se marcan correos como leídos ni se borra nada.
-            </div>
-            <div class="cor-form-acts">
-                <button type="button" class="propia-btn-ghost" disabled="@(_guardando || _probando)" @onclick="ProbarAsync">
-                    @if (_probando) { <span class="spinner-border spinner-border-sm"></span> } Probar conexión
-                </button>
-                <button type="button" class="propia-btn-ghost" @onclick="() => _verForm = false">Cancelar</button>
-                <button type="button" class="propia-btn-brand" disabled="@_guardando" @onclick="GuardarFormAsync">
-                    @if (_guardando) { <span class="spinner-border spinner-border-sm"></span> } Guardar
-                </button>
-            </div>
+            <button type="button" class="propia-btn-ghost" @onclick="() => _verBuzones = true">Ver buzones</button>
         </div>
     }
-</div>
+}
 
-@* ===== Bandeja ===== *@
+@* ===== Bandeja: vista tabla canonica (molde Comunicaciones = Unidades). Pestanas de texto simples arriba;
+   tema, estado y buzon son columnas que se filtran/ordenan/agrupan con las herramientas de la barra. ===== *@
 @if (_items is null)
 {
     <div class="text-center py-5"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
@@ -151,67 +98,121 @@ else
         }
     </div>
 
+    @* === Barra canonica: Filtros, Buscar ... Ordenar, Agrupar, Columnas, Descargar === *@
     <div class="dst-filtros">
+        <FiltroDinamico @ref="_fd" Campos="CamposFiltro" OnChanged="@(() => { _pagina = 1; StateHasChanged(); })" />
         <div class="dst-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input class="dst-search-inp" placeholder="Buscar por asunto, remitente o resumen..." @bind="_query" @bind:event="oninput" @bind:after="() => _pagina = 1" />
         </div>
+        <div class="dst-filtros-spacer"></div>
+        <TablaOrdenarMenu Columnas="ColsOrdenables()" Sorts="_sorts" SortsChanged="() => { _pagina = 1; GuardarVista(); StateHasChanged(); }" />
+        <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
+        <div class="dst-menu-wrap">
+            <button type="button" class="dst-fbtn @(_showCampos ? "on" : "")" @onclick="() => _showCampos = !_showCampos" title="Columnas: orden y visibilidad">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+                <span>Columnas</span>
+            </button>
+            @if (_showCampos)
+            {
+                <div class="dst-menu-bd" @onclick="() => _showCampos = false"></div>
+                <div class="dst-menu dst-colmenu">
+                    <div class="dst-col-search">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                        <input placeholder="Buscar campo..." @bind="_colQ" @bind:event="oninput" />
+                    </div>
+                    <div class="dst-col-list">
+                        @for (int i = 0; i < _colOrder.Count; i++)
+                        {
+                            var idx = i;
+                            var col = Catalogo.First(c => c.Key == _colOrder[idx]);
+                            var key = col.Key;
+                            if (!string.IsNullOrWhiteSpace(_colQ) && !col.Label.Contains(_colQ, StringComparison.OrdinalIgnoreCase)) { continue; }
+                            var visible = !_colHidden.Contains(key);
+                            <div class="dst-col-it">
+                                <button class="dst-col-mv" disabled="@(idx == 0)" @onclick="() => MoverCol(idx, -1)">▲</button>
+                                <button class="dst-col-mv" disabled="@(idx == _colOrder.Count - 1)" @onclick="() => MoverCol(idx, 1)">▼</button>
+                                <span class="dst-col-name">@col.Label</span>
+                                @if (!col.Hideable) { <span class="dst-col-fija">fija</span> }
+                                else
+                                {
+                                    <button class="dst-col-eye @(visible ? "on" : "")" title="@(visible ? "Ocultar" : "Mostrar")" @onclick="() => SetColVisible(key, !visible)"><i class="fi @(visible ? "fi-rr-eye" : "fi-rr-eye-crossed")"></i></button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="dst-col-massacts">
+                        <button type="button" class="dst-col-mass" @onclick="OcultarTodo"><i class="fi fi-rr-eye-crossed"></i> Ocultar todos</button>
+                        <button type="button" class="dst-col-mass" @onclick="MostrarTodo"><i class="fi fi-rr-eye"></i> Mostrar todo</button>
+                        <button type="button" class="dst-col-reset" @onclick="RestablecerCol">Restablecer</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <TablaExportar Vista="VistaExport" />
     </div>
 
+    var cols = ColsVisibles.ToList();
+    var niveles = Niveles;
     <div class="dst-table">
         <div class="tblwrap">
-            <div class="tblscroll">
+            <div class="dst-scroll tblscroll">
                 <table class="tbl">
+                    <colgroup>
+                        <col style="width:34px" />
+                        @foreach (var key in cols) { <col style="@ColStyle(key)" /> }
+                        <col style="width:76px" />
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th>Fecha</th>
-                            <th>De</th>
-                            <th>Asunto</th>
-                            <th>Tema</th>
-                            <th>Confianza</th>
-                            <th>Resumen</th>
-                            <th>Estado</th>
+                            <th class="tbl-exp"></th>
+                            @foreach (var key in cols)
+                            {
+                                var k = key;
+                                <th class="tbl-th--menu" data-clave="@k" title="Clic: ordenar | arrastra: mover columna" @onmousedown="e => IniciarReorder(e, k)" @onclick="() => OrdenarPorClic(k)">
+                                    <span class="tbl-th-lbl">@ColLabel(k)</span>
+                                    @SortInd(k)
+                                    @ChevCol(k)
+                                    <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, k)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(k, 0)" @ondblclick:stopPropagation="true"></span>
+                                </th>
+                            }
+                            <th class="tbl-addcol"></th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (Filtrados.Count == 0)
                         {
-                            <tr><td colspan="7" class="cor-empty">
+                            <tr><td colspan="@(cols.Count + 2)" class="cor-empty">
                                 <strong>@(_items.Count == 0 ? "Aún no hay correos." : "Ningún correo coincide.")</strong>
-                                @(_items.Count == 0 ? "Cuando la lectura esté activa, aquí aparecen los correos que lleguen al buzón." : "Cambia de pestaña o ajusta la búsqueda.")
+                                @(_items.Count == 0 ? "Cuando un buzón tenga la lectura activa, aquí aparecen los correos que lleguen." : "Cambia de pestaña o ajusta la búsqueda y los filtros.")
                             </td></tr>
                         }
-                        @foreach (var c in Pagina)
+                        else if (niveles.Count > 0)
                         {
-                            var item = c;
-                            <tr class="cor-row" @onclick="() => AbrirDetalleAsync(item.Id)">
-                                <td class="mut">@Fecha(item.FechaCorreo)</td>
-                                <td>
-                                    <div class="cor-de">
-                                        <span class="cor-de-nom">@(string.IsNullOrWhiteSpace(item.RemitenteNombre) ? item.RemitenteCorreo : item.RemitenteNombre)</span>
-                                        @if (!string.IsNullOrWhiteSpace(item.RemitenteNombre)) { <span class="cor-de-mail">@item.RemitenteCorreo</span> }
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="cor-asunto" title="@item.Asunto">
-                                        @if (item.Adjuntos > 0) { <i class="fi fi-rr-clip cor-clip" title="@item.Adjuntos documento(s)"></i> }
-                                        <span class="nom">@(string.IsNullOrWhiteSpace(item.Asunto) ? "(sin asunto)" : item.Asunto)</span>
-                                    </div>
-                                </td>
-                                <td><span class="cor-chip @TemaCss(item.Tema)">@TemaLabel(item.Tema)</span></td>
-                                <td class="cor-conf">@(item.Confianza is decimal cf ? $"{cf * 100:0}%" : "—")</td>
-                                <td><div class="cor-resumen" title="@item.Resumen">@(item.Error ?? item.Resumen)</div></td>
-                                <td><span class="cor-chip @EstadoCss(item.Estado)">@EstadoLabel(item.Estado)</span></td>
-                            </tr>
+                            <TablaGruposRenderTr T="CorreoRecibidoDto" Nodos="@ArbolGrupos(niveles)" FilaTemplate="FilaTpl" Colspan="@(cols.Count + 2)" />
+                        }
+                        else
+                        {
+                            @foreach (var c in Pagina) { @FilaTpl(c) }
                         }
                     </tbody>
                 </table>
             </div>
         </div>
-        <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="correos"
-                    PaginaChanged="p => { _pagina = p; }"
-                    PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        @if (niveles.Count == 0)
+        {
+            <TablaPager Total="Filtrados.Count" Pagina="_pagina" PorPagina="_porPagina" Entidad="correos"
+                        PaginaChanged="p => { _pagina = p; }"
+                        PorPaginaChanged="n => { _porPagina = n; _pagina = 1; }" />
+        }
     </div>
+}
+
+<TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" />
+
+@if (_verBuzones)
+{
+    <CorreosBuzonesModal Jwt="@_jwt" Cerrado="() => _verBuzones = false" Cambio="CargarAsync" />
 }
 
 @* ===== Detalle del correo ===== *@
@@ -225,6 +226,7 @@ else
                     <h3>@(string.IsNullOrWhiteSpace(d.Asunto) ? "(sin asunto)" : d.Asunto)</h3>
                     <div class="cor-dlg-meta">
                         De: @(string.IsNullOrWhiteSpace(d.RemitenteNombre) ? "" : d.RemitenteNombre + " ")&lt;@d.RemitenteCorreo&gt; · @Fecha(d.FechaCorreo)
+                        @if (!string.IsNullOrWhiteSpace(d.BuzonNombre)) { <span> · Buzón: @d.BuzonNombre</span> }
                         @if (!string.IsNullOrWhiteSpace(d.Para)) { <br /><span>Para: @d.Para</span> }
                     </div>
                 </div>
@@ -236,7 +238,7 @@ else
                 <div class="cor-ia">
                     <div class="cor-ia-head">
                         <i class="fi fi-rr-robot"></i> Coordinador de correo
-                        <span class="cor-chip @TemaCss(d.Tema)">@TemaLabel(d.Tema)</span>
+                        <span class="cor-chip cor-chip-t" style="@TemaStyle(d.TemaClave)">@TemaLabel(d.TemaClave)</span>
                         @if (d.Confianza is decimal cf2) { <span class="cor-conf">Confianza @($"{cf2 * 100:0}%")</span> }
                         <span class="cor-chip @EstadoCss(d.Estado)">@EstadoLabel(d.Estado)</span>
                     </div>
@@ -307,35 +309,99 @@ else
     private string? _msg;
     private string _msgClass = "alert-info";
 
-    private CorreoLecturaConfigDto? _cfg;
+    private List<BuzonCorreoDto>? _buzones;
+    private List<OpcionEfectivaDto> _temas = new();
     private List<CorreoRecibidoDto>? _items;
     private CorreoRecibidoDetalleDto? _detalle;
 
-    private bool _verForm, _guardando, _probando, _revisando, _accion;
-    private string? _fCuenta, _fPassword, _fHost;
-    private int _fPort = 993;
+    private bool _verBuzones, _revisando, _accion;
 
     private string _tab = "todos";
     private string? _query;
     private int _pagina = 1;
     private int _porPagina = 25;
+    private string? _copropiedadNombre;   // titulo de la descarga
+
+    private bool VariosBuzones => (_buzones?.Count ?? 0) > 1;
 
     private sealed record TabDef(string Key, string Label);
+
+    // Pestanas de texto simples (canon Directorio/Usuarios). El tema NO es pestana: es columna filtrable/agrupable.
     private static readonly TabDef[] Tabs =
     {
-        new("todos", "Todos"), new("recibo", "Recibos"), new("pqrsd", "PQRSD"), new("poliza", "Pólizas y contratos"),
-        new("otro", "Otros"), new("irrel", "Irrelevantes"), new("error", "Con error"), new("desc", "Descartados"),
+        new("todos", "Todos"),
+        new("error", "Con error"),
+        new("desc", "Descartados"),
     };
 
-    private bool EnTab(CorreoRecibidoDto c, string tab) => tab switch
+    private static bool EnTab(CorreoRecibidoDto c, string tab) => tab switch
     {
-        "todos" => c.Estado != EstadoCorreoRecibido.Descartado,
         "desc" => c.Estado == EstadoCorreoRecibido.Descartado,
         "error" => c.Estado == EstadoCorreoRecibido.Error,
-        _ => c.Estado != EstadoCorreoRecibido.Descartado && TemaKey(c.Tema) == tab,
+        _ => c.Estado != EstadoCorreoRecibido.Descartado,
     };
 
     private int Contar(string tab) => _items?.Count(c => EnTab(c, tab)) ?? 0;
+
+    // ===== Vista tabla canonica (molde Comunicaciones) =====
+    private FiltroDinamico? _fd;
+    private TablaColMenu? _colMenu;
+    private bool _showCampos;
+    private string _colQ = "";
+    private List<TablaOrdenarMenu.Sort> _sorts = new() { new TablaOrdenarMenu.Sort { Key = "fecha", Dir = -1 } };
+    private List<string> _grupos = new();
+    private DotNetObjectReference<CorreosRecibidos>? _self;
+
+    // Orden, visibilidad, anchos, orden de filas y agrupacion se recuerdan por navegador.
+    private const string VistaKey = "propia_correos_vista_v2";   // v2: descarta la vista que quedo de las pruebas
+
+    private sealed record ColDef(string Key, string Label, bool Hideable);
+    private static readonly ColDef[] Catalogo =
+    {
+        new("fecha", "Fecha", true),
+        new("buzon", "Buzón", true),
+        new("de", "De", true),
+        new("asunto", "Asunto", false),
+        new("tema", "Tema", true),
+        new("confianza", "Confianza", true),
+        new("resumen", "Resumen", true),
+        new("estado", "Estado", true),
+    };
+    private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
+    private readonly HashSet<string> _colHidden = new();
+    private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
+    private bool _vistaGuardada;   // si no hay vista guardada, Buzon se oculta mientras haya un solo buzon
+
+    private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
+    private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
+
+    private List<FiltroDinamico.CampoDef> CamposFiltro => new()
+    {
+        new() { Key = "asunto", Label = "Asunto", Kind = "texto" },
+        new() { Key = "de", Label = "De", Kind = "texto" },
+        new() { Key = "tema", Label = "Tema", Kind = "sel",
+                Opciones = _temas.Select(t => (t.Clave, t.Label)).ToList() },
+        new() { Key = "estado", Label = "Estado", Kind = "sel",
+                Opciones = Enum.GetValues<EstadoCorreoRecibido>().Select(e => (e.ToString(), EstadoLabel(e))).ToList() },
+        new() { Key = "buzon", Label = "Buzón", Kind = "sel",
+                Opciones = (_buzones ?? new()).Select(b => (b.Id.ToString(), b.Nombre)).ToList() },
+        new() { Key = "fecha", Label = "Fecha", Kind = "fecha" },
+        new() { Key = "confianza", Label = "Confianza (%)", Kind = "num" },
+        new() { Key = "resumen", Label = "Resumen", Kind = "texto" },
+    };
+
+    private static string? ValorCrudo(CorreoRecibidoDto c, string key) => key switch
+    {
+        "asunto" => c.Asunto,
+        "de" => $"{c.RemitenteNombre} {c.RemitenteCorreo}".Trim(),
+        "tema" => c.TemaClave,
+        "estado" => c.Estado.ToString(),
+        "buzon" => c.BuzonId?.ToString(),
+        "fecha" => c.FechaCorreo.ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd"),
+        "confianza" => c.Confianza is decimal cf ? (cf * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture) : null,
+        "resumen" => c.Error ?? c.Resumen,
+        _ => null,
+    };
 
     private List<CorreoRecibidoDto> Filtrados
     {
@@ -343,24 +409,284 @@ else
         {
             if (_items is null) return new();
             var q = (_query ?? "").Trim();
-            return _items.Where(c => EnTab(c, _tab))
+            var src = _items.Where(c => EnTab(c, _tab))
                 .Where(c => q.Length == 0
                     || (c.Asunto ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (c.RemitenteCorreo ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
                     || (c.RemitenteNombre ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
-                    || (c.Resumen ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+                    || (c.Resumen ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
+            if (_fd is not null) src = src.Where(c => _fd.Pasa(key => ValorCrudo(c, key)));
+            return Ordenar(src).ToList();
         }
     }
 
     private IEnumerable<CorreoRecibidoDto> Pagina => Filtrados.Skip((_pagina - 1) * _porPagina).Take(_porPagina);
+
+    // Orden multi-criterio (estable). Sin criterios queda el del API.
+    private IEnumerable<CorreoRecibidoDto> Ordenar(IEnumerable<CorreoRecibidoDto> src)
+    {
+        if (_sorts.Count == 0) return src;
+        IOrderedEnumerable<CorreoRecibidoDto>? o = null;
+        foreach (var srt in _sorts)
+        {
+            Func<CorreoRecibidoDto, IComparable> sel = c => ValorOrden(c, srt.Key);
+            o = o is null ? (srt.Dir >= 0 ? src.OrderBy(sel) : src.OrderByDescending(sel))
+                          : (srt.Dir >= 0 ? o.ThenBy(sel) : o.ThenByDescending(sel));
+        }
+        return o!;
+    }
+    private IComparable ValorOrden(CorreoRecibidoDto c, string k) => k switch
+    {
+        "fecha" => c.FechaCorreo,
+        "confianza" => c.Confianza ?? -1m,
+        _ => TextoCelda(c, k),
+    };
+    private List<TablaOrdenarMenu.Col> ColsOrdenables() => ColsVisibles.Select(k => new TablaOrdenarMenu.Col(k, ColLabel(k))).ToList();
+    private void OrdenarPorClic(string k)
+    {
+        var dir = _sorts.Count == 1 && _sorts[0].Key == k ? -_sorts[0].Dir : 1;
+        _sorts = new() { new TablaOrdenarMenu.Sort { Key = k, Dir = dir } };
+        _pagina = 1;
+        GuardarVista();
+    }
+    private RenderFragment SortInd(string k)
+    {
+        var srt = _sorts.FirstOrDefault(x => x.Key == k);
+        return srt is null ? (__b => { }) : (@<span class="tbl-th-arrow">@((MarkupString)(srt.Dir >= 0 ? "&#9650;" : "&#9660;"))</span>);
+    }
+
+    // Agrupar (multi-nivel) con el mismo texto que se ve; tema/estado llevan su color; fecha por dia (reciente primero).
+    private List<TablaAgruparMenu.Col> ColsAgrupables() => ColsVisibles.Where(k => k != "resumen").Select(k => new TablaAgruparMenu.Col(k, ColLabel(k))).ToList();
+    private List<string> Niveles => _grupos.Where(k => ColsVisibles.Contains(k)).ToList();
+    private Task OnGruposChanged()
+    {
+        _pagina = 1;
+        GuardarVista();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+    private IReadOnlyList<NodoGrupo<CorreoRecibidoDto>> ArbolGrupos(List<string> niveles)
+        => TablaAgrupador.Agrupar(Filtrados, niveles, ValorGrupoDe, "(Sin dato)");
+    private IEnumerable<ValorGrupo> ValorGrupoDe(CorreoRecibidoDto c, string k)
+    {
+        if (k == "fecha")
+        {
+            var d = DateOnly.FromDateTime(c.FechaCorreo.ToOffset(TimeSpan.FromHours(-5)).DateTime);
+            yield return new ValorGrupo(d.ToString("yyyy-MM-dd"), d.ToString("dd/MM/yyyy"), Orden: -d.DayNumber);
+            yield break;
+        }
+        if (k == "tema")
+        {
+            var t = Tema(c.TemaClave);
+            yield return new ValorGrupo(c.TemaClave ?? "", TemaLabel(c.TemaClave), Color: t?.Color, Orden: t?.Orden ?? 999);
+            yield break;
+        }
+        var v = TextoCelda(c, k);
+        yield return string.IsNullOrWhiteSpace(v) || v == "—" ? new ValorGrupo("", "(Sin dato)") : new ValorGrupo(v, v);
+    }
+
+    // Texto visible de una celda (agrupar, ordenar y descargar usan el mismo texto que se ve).
+    private string TextoCelda(CorreoRecibidoDto c, string k) => k switch
+    {
+        "fecha" => Fecha(c.FechaCorreo),
+        "buzon" => BuzonNombre(c.BuzonId),
+        "de" => string.IsNullOrWhiteSpace(c.RemitenteNombre) ? c.RemitenteCorreo ?? "" : $"{c.RemitenteNombre} <{c.RemitenteCorreo}>",
+        "asunto" => string.IsNullOrWhiteSpace(c.Asunto) ? "(sin asunto)" : c.Asunto,
+        "tema" => TemaLabel(c.TemaClave),
+        "confianza" => c.Confianza is decimal cf ? $"{cf * 100:0}%" : "",
+        "resumen" => c.Error ?? c.Resumen ?? "",
+        "estado" => EstadoLabel(c.Estado),
+        _ => "",
+    };
+
+    // Fila canonica: expander (abre el detalle) + celdas de solo lectura (clic = abrir) + columna final.
+    private RenderFragment<CorreoRecibidoDto> FilaTpl => c => @<tr class="cor-row">
+        <td class="tbl-exp">
+            <button type="button" class="tbl-exp-btn" title="Abrir el correo" @onclick="() => AbrirDetalleAsync(c.Id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+        </td>
+        @foreach (var key in ColsVisibles)
+        {
+            var k = key;
+            <td class="@(k is "fecha" or "buzon" ? "mut" : "")" @onclick="() => AbrirDetalleAsync(c.Id)">@Celda(c, k)</td>
+        }
+        <td class="tbl-addcol"></td>
+    </tr>;
+
+    private RenderFragment Celda(CorreoRecibidoDto c, string k) => k switch
+    {
+        "de" => @<div class="cor-de">
+                    <span class="cor-de-nom">@(string.IsNullOrWhiteSpace(c.RemitenteNombre) ? c.RemitenteCorreo : c.RemitenteNombre)</span>
+                    @if (!string.IsNullOrWhiteSpace(c.RemitenteNombre)) { <span class="cor-de-mail">@c.RemitenteCorreo</span> }
+                 </div>,
+        "asunto" => @<div class="cor-asunto" title="@c.Asunto">
+                        @if (c.Adjuntos > 0) { <i class="fi fi-rr-clip cor-clip" title="@c.Adjuntos documento(s)"></i> }
+                        <span class="nom">@TextoCelda(c, "asunto")</span>
+                     </div>,
+        "tema" => @<span class="cor-chip cor-chip-t" style="@TemaStyle(c.TemaClave)">@TemaLabel(c.TemaClave)</span>,
+        "confianza" => @<span class="cor-conf">@(c.Confianza is decimal cf ? $"{cf * 100:0}%" : "—")</span>,
+        "resumen" => @<div class="cor-resumen" title="@(c.Error ?? c.Resumen)">@(c.Error ?? c.Resumen)</div>,
+        "estado" => @<span class="cor-chip @EstadoCss(c.Estado)">@EstadoLabel(c.Estado)</span>,
+        _ => @<span>@TextoCelda(c, k)</span>,
+    };
+
+    // Menu de columna (chevron del encabezado): ordenar, filtrar, agrupar y ocultar. Sin campos propios.
+    private RenderFragment ChevCol(string clave) =>@<button type="button" class="tbl-th-edit" title="Opciones de columna" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" @onclick="(e) => _colMenu?.Abrir(new TablaColMenu.Ctx(clave, ColLabel(clave), false), e.ClientX, e.ClientY)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
+    private async Task OnColAccion((TablaColMenu.Accion Accion, TablaColMenu.Ctx Col) a)
+    {
+        var (accion, col) = a;
+        switch (accion)
+        {
+            case TablaColMenu.Accion.OrdenarAsc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = 1 } }; _pagina = 1; GuardarVista(); break;
+            case TablaColMenu.Accion.OrdenarDesc: _sorts = new() { new TablaOrdenarMenu.Sort { Key = col.Key, Dir = -1 } }; _pagina = 1; GuardarVista(); break;
+            case TablaColMenu.Accion.Filtrar:
+                if (_fd is not null && CamposFiltro.Any(c => c.Key == col.Key)) await _fd.AgregarReglaCampo(col.Key);
+                else Aviso("Filtrar por este campo aún no está disponible; usa el botón Filtros.", true);
+                break;
+            case TablaColMenu.Accion.Agrupar: _grupos = new() { col.Key }; await OnGruposChanged(); break;
+            case TablaColMenu.Accion.Ocultar:
+                if (!Catalogo.First(c => c.Key == col.Key).Hideable) Aviso("Esta columna es fija y no se puede ocultar.", true);
+                else SetColVisible(col.Key, false);
+                break;
+            default: Aviso("Los correos no tienen campos propios: esta opción no aplica aquí.", true); break;
+        }
+        StateHasChanged();
+    }
+
+    // Descargar la vista tal como se ve (TablaExportar): columnas visibles, todas las filas filtradas y ordenadas, grupos.
+    private ExportVista VistaExport()
+    {
+        var cols = ColsVisibles.ToList();
+        var columnas = cols.Select(k => new ExportColumna(ColLabel(k))).ToList();
+        ExportFila Fila(CorreoRecibidoDto c, IReadOnlyList<string>? ruta)
+            => new(cols.Select(k => { var t = TextoCelda(c, k); return (object?)(string.IsNullOrWhiteSpace(t) || t == "—" ? null : t); }).ToList(), Ruta: ruta);
+        var filas = new List<ExportFila>();
+        var niveles = Niveles;
+        if (niveles.Count == 0) filas.AddRange(Filtrados.Select(c => Fila(c, null)));
+        else
+        {
+            void Recorrer(IReadOnlyList<NodoGrupo<CorreoRecibidoDto>> nodos, List<string> ruta)
+            {
+                foreach (var n in nodos)
+                {
+                    filas.Add(ExportFila.DeGrupo(n.Titulo, n.Nivel, n.Conteo));
+                    var r = new List<string>(ruta) { n.Titulo };
+                    if (n.EsHoja) filas.AddRange(n.Filas.Select(c => Fila(c, r)));
+                    else Recorrer(n.Subgrupos, r);
+                }
+            }
+            Recorrer(ArbolGrupos(niveles), new());
+        }
+        var criterios = new List<string> { "Pestaña: " + Tabs.First(t => t.Key == _tab).Label };
+        if (!string.IsNullOrWhiteSpace(_query)) criterios.Add($"Búsqueda: \"{_query.Trim()}\"");
+        if (_fd?.Resumen() is { Length: > 0 } fr) criterios.Add("Filtros: " + fr);
+        if (_sorts.Count > 0) criterios.Add("Orden: " + string.Join(", ", _sorts.Select(x => $"{ColLabel(x.Key)} {(x.Dir >= 0 ? "ascendente" : "descendente")}")));
+        if (niveles.Count > 0) criterios.Add("Agrupado por: " + string.Join(" > ", niveles.Select(ColLabel)));
+        criterios.Add($"{Filtrados.Count} correos");
+        return new ExportVista("Correos recibidos", _copropiedadNombre, columnas, filas, criterios, niveles.Select(ColLabel).ToList());
+    }
+
+    // ===== Columnas: orden / visibilidad / ancho (recordados por navegador) =====
+    private void MoverCol(int idx, int delta)
+    {
+        var j = idx + delta;
+        if (j < 0 || j >= _colOrder.Count) return;
+        (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
+        GuardarVista();
+    }
+    private void SetColVisible(string key, bool visible)
+    {
+        if (!Catalogo.First(c => c.Key == key).Hideable) return;
+        if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
+        GuardarVista();
+    }
+    private void MostrarTodo() { _colHidden.Clear(); GuardarVista(); }
+    private void OcultarTodo() { foreach (var c in Catalogo.Where(c => c.Hideable)) _colHidden.Add(c.Key); GuardarVista(); }
+    private void RestablecerCol()
+    {
+        _colOrder = Catalogo.Select(c => c.Key).ToList();
+        _colHidden.Clear();
+        _colW.Clear();
+        if (!VariosBuzones) _colHidden.Add("buzon");
+        GuardarVista();
+    }
+
+    private string ColStyle(string k) => $"width:{(_colW.TryGetValue(k, out var w) ? w : AnchoDefault(k))}px";
+    private static int AnchoDefault(string k) => k switch
+    {
+        "fecha" => 140, "buzon" => 150, "de" => 220, "asunto" => 320, "tema" => 160, "confianza" => 110, "resumen" => 360, _ => 130,
+    };
+
+    // ===== Reordenar (drag) + redimensionar columnas (JS compartido propiaTablaColReorder/propiaTablaResize) =====
+    private async Task IniciarReorder(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
+    [JSInvokable]
+    public Task OnColReorder(string src, string dest)
+    {
+        if (src == dest) return Task.CompletedTask;
+        var keys = ColsVisibles.ToList();
+        var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
+        if (from < 0 || to < 0) return Task.CompletedTask;
+        keys.RemoveAt(from); keys.Insert(to, src);
+        _colOrder = keys.Concat(_colOrder.Where(k => !keys.Contains(k))).ToList();
+        GuardarVista();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+    private async Task IniciarResize(MouseEventArgs e, string k)
+    { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
+    [JSInvokable]
+    public Task OnColResize(string clave, int width)
+    {
+        if (width <= 0) _colW.Remove(clave); else _colW[clave] = Math.Max(70, width);
+        GuardarVista();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+    public void Dispose() { _self?.Dispose(); }
+
+    private sealed record VistaGuardada(List<string>? Orden, List<string>? Ocultas, Dictionary<string, int>? Anchos,
+        List<string>? Grupos, List<TablaOrdenarMenu.Sort>? Sorts);
+
+    private void GuardarVista()
+    {
+        _vistaGuardada = true;
+        var json = System.Text.Json.JsonSerializer.Serialize(new VistaGuardada(_colOrder, _colHidden.ToList(), new(_colW), _grupos, _sorts));
+        _ = GuardarLocalAsync(json);
+    }
+    private async Task GuardarLocalAsync(string json)
+    { try { await Js.InvokeVoidAsync("localStorage.setItem", VistaKey, json); } catch { } }
+
+    private async Task CargarVistaAsync()
+    {
+        try
+        {
+            _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre");
+            var json = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
+            if (string.IsNullOrWhiteSpace(json)) return;
+            var v = System.Text.Json.JsonSerializer.Deserialize<VistaGuardada>(json);
+            if (v is null) return;
+            _vistaGuardada = true;
+            if (v.Orden is { Count: > 0 })
+                _colOrder = v.Orden.Where(k => Catalogo.Any(c => c.Key == k))
+                    .Concat(Catalogo.Select(c => c.Key).Where(k => !v.Orden.Contains(k))).ToList();
+            _colHidden.Clear();
+            foreach (var k in v.Ocultas ?? new()) if (Catalogo.Any(c => c.Key == k && c.Hideable)) _colHidden.Add(k);
+            _colW.Clear();
+            foreach (var kv in v.Anchos ?? new()) if (kv.Value > 0) _colW[kv.Key] = kv.Value;
+            if (v.Grupos is not null) _grupos = v.Grupos.Where(k => Catalogo.Any(c => c.Key == k)).ToList();
+            if (v.Sorts is not null) _sorts = v.Sorts.Where(s => Catalogo.Any(c => c.Key == s.Key)).ToList();
+        }
+        catch { }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         try { _jwt = await Js.InvokeAsync<string?>("sessionStorage.getItem", "propia_jwt"); } catch { }
         _authChecked = true;
-        if (!string.IsNullOrWhiteSpace(_jwt)) await CargarAsync();
+        if (!string.IsNullOrWhiteSpace(_jwt)) { await CargarVistaAsync(); await CargarAsync(); }
         StateHasChanged();
     }
 
@@ -390,76 +716,21 @@ else
     {
         try
         {
-            var r1 = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos/config"));
+            var r1 = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos/buzones"));
             if (r1 is null) return;
             r1.EnsureSuccessStatusCode();
-            _cfg = await r1.Content.ReadFromJsonAsync<CorreoLecturaConfigDto>();
+            _buzones = await r1.Content.ReadFromJsonAsync<List<BuzonCorreoDto>>() ?? new();
             var r2 = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos"));
             if (r2 is null) return;
             r2.EnsureSuccessStatusCode();
             _items = await r2.Content.ReadFromJsonAsync<List<CorreoRecibidoDto>>() ?? new();
-            if (!_verForm && _cfg is not null && (string.IsNullOrWhiteSpace(_cfg.Cuenta) || !_cfg.TienePassword)) AbrirForm();
+            var r3 = await EnviarAsync(h => h.GetAsync($"/api/campos/opciones?lista={Uri.EscapeDataString(TemasCorreoBase.Lista)}&incluirOcultas=true"));
+            if (r3 is not null && r3.IsSuccessStatusCode)
+                _temas = await r3.Content.ReadFromJsonAsync<List<OpcionEfectivaDto>>() ?? new();
+            // Sin vista guardada, la columna Buzon solo aparece cuando hay mas de un buzon.
+            if (!_vistaGuardada) { if (VariosBuzones) _colHidden.Remove("buzon"); else _colHidden.Add("buzon"); }
         }
         catch (Exception ex) { Aviso("No se pudo cargar la bandeja: " + ex.Message, false); _items ??= new(); }
-    }
-
-    private void AbrirForm()
-    {
-        _verForm = !_verForm || _cfg is null || string.IsNullOrWhiteSpace(_cfg.Cuenta);
-        _fCuenta = _cfg?.Cuenta;
-        _fPassword = null;
-        _fHost = _cfg?.ImapHost ?? "imap.gmail.com";
-        _fPort = _cfg?.ImapPort ?? 993;
-    }
-
-    private async Task<bool> GuardarAsync(GuardarCorreoLecturaRequest req)
-    {
-        _guardando = true;
-        try
-        {
-            var resp = await EnviarAsync(h => h.PutAsJsonAsync("/api/correos-recibidos/config", req));
-            if (resp is null) return false;
-            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return false; }
-            _cfg = await resp.Content.ReadFromJsonAsync<CorreoLecturaConfigDto>();
-            return true;
-        }
-        catch (Exception ex) { Aviso("No se pudo guardar: " + ex.Message, false); return false; }
-        finally { _guardando = false; }
-    }
-
-    private async Task GuardarFormAsync()
-    {
-        var ok = await GuardarAsync(new GuardarCorreoLecturaRequest(
-            Cuenta: _fCuenta ?? "", Password: string.IsNullOrWhiteSpace(_fPassword) ? null : _fPassword,
-            ImapHost: _fHost, ImapPort: _fPort));
-        if (ok) { _verForm = false; _fPassword = null; Aviso("Cuenta guardada. Usa \"Probar conexión\" o activa \"Leer buzón\".", true); }
-    }
-
-    private async Task CambiarLecturaAsync(bool activa)
-    {
-        if (await GuardarAsync(new GuardarCorreoLecturaRequest(LecturaActiva: activa)))
-            Aviso(activa ? "Lectura activada: se leerán los correos que lleguen desde ahora." : "Lectura apagada.", true);
-    }
-
-    private async Task ProbarAsync()
-    {
-        // Si hay cambios en el formulario, se guardan primero para probar con ellos.
-        if (!string.IsNullOrWhiteSpace(_fPassword) || !string.Equals(_fCuenta, _cfg?.Cuenta, StringComparison.OrdinalIgnoreCase))
-        {
-            if (!await GuardarAsync(new GuardarCorreoLecturaRequest(Cuenta: _fCuenta ?? "",
-                    Password: string.IsNullOrWhiteSpace(_fPassword) ? null : _fPassword, ImapHost: _fHost, ImapPort: _fPort))) return;
-            _fPassword = null;
-        }
-        _probando = true;
-        try
-        {
-            var resp = await EnviarAsync(h => h.PostAsync("/api/correos-recibidos/config/probar", null));
-            if (resp is null) return;
-            if (resp.IsSuccessStatusCode) Aviso("Conexión correcta: el Coordinador puede leer el buzón.", true);
-            else Aviso(await ErrorAsync(resp), false);
-        }
-        catch (Exception ex) { Aviso("No se pudo probar: " + ex.Message, false); }
-        finally { _probando = false; }
     }
 
     private async Task RevisarAsync()
@@ -557,29 +828,22 @@ else
     private static string Fecha(DateTimeOffset? d)
         => d is null ? "—" : d.Value.ToOffset(TimeSpan.FromHours(-5)).ToString("dd/MM/yyyy HH:mm");
 
+    private string BuzonNombre(Guid? id)
+        => id is Guid g ? _buzones?.FirstOrDefault(b => b.Id == g)?.Nombre ?? "—" : "—";
+
+    private OpcionEfectivaDto? Tema(string? clave)
+        => clave is null ? null : _temas.FirstOrDefault(t => string.Equals(t.Clave, clave, StringComparison.OrdinalIgnoreCase));
+
+    private string TemaLabel(string? clave) => string.IsNullOrWhiteSpace(clave) ? "Sin clasificar" : Tema(clave)?.Label ?? clave;
+
+    // Color de la opcion (dato de la lista por copropiedad) como variable CSS; el chip lo mezcla con el fondo.
+    private string TemaStyle(string? clave)
+    {
+        var c = Tema(clave)?.Color;
+        return string.IsNullOrWhiteSpace(c) ? "" : $"--tc:{c}";
+    }
+
     private static string Tamano(long b) => b >= 1024 * 1024 ? $"{b / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, b / 1024)} KB";
-
-    private static string TemaKey(TemaCorreo t) => t switch
-    {
-        TemaCorreo.ReciboServicio => "recibo",
-        TemaCorreo.Pqrsd => "pqrsd",
-        TemaCorreo.PolizaContrato => "poliza",
-        TemaCorreo.Otro => "otro",
-        TemaCorreo.Irrelevante => "irrel",
-        _ => "sin",
-    };
-
-    private static string TemaLabel(TemaCorreo t) => t switch
-    {
-        TemaCorreo.ReciboServicio => "Recibo de servicio",
-        TemaCorreo.Pqrsd => "PQRSD",
-        TemaCorreo.PolizaContrato => "Póliza o contrato",
-        TemaCorreo.Otro => "Otro",
-        TemaCorreo.Irrelevante => "Irrelevante",
-        _ => "Sin clasificar",
-    };
-
-    private static string TemaCss(TemaCorreo t) => "cor-t-" + TemaKey(t);
 
     private static string EstadoLabel(EstadoCorreoRecibido e) => e switch
     {

@@ -19,7 +19,7 @@ public static class CatalogoListasRegistro
     public sealed record ListaInfo(string Lista, string Nombre, bool ConLogica, IReadOnlyList<MetaCampoDef>? MetaSchema = null);
 
     /// <summary>Tipo de dato de un campo de metadata editable (Ola 4c).</summary>
-    public enum MetaTipo { Bool, Entero, Seleccion }
+    public enum MetaTipo { Bool, Entero, Seleccion, Texto }
 
     /// <summary>Un campo de la <see cref="ListaInfo.MetaSchema"/>: la clave en el JSON Meta, su etiqueta, el tipo
     /// de input y, para <see cref="MetaTipo.Seleccion"/>, las opciones disponibles.</summary>
@@ -72,6 +72,13 @@ public static class CatalogoListasRegistro
                 new("1", "Proveedores y personal"),
                 new("2", "Domicilios y otros"),
             }, "En cuál de las 3 columnas del tablero aparece este tipo de visitante."),
+        }),
+        // Lector de buzon: temas del Coordinador de correo. Meta.descripcion = lo que el agente lee para decidir el
+        // tema; la copropiedad renombra, oculta o agrega temas propios con su descripcion.
+        new("correo.tema", "Correos \u00b7 Temas del coordinador", true, new List<MetaCampoDef>
+        {
+            new("descripcion", "Qu\u00e9 correos caen en este tema", MetaTipo.Texto, null,
+                "El Coordinador de correo lee esta descripci\u00f3n para decidir el tema de cada correo."),
         }),
     };
 

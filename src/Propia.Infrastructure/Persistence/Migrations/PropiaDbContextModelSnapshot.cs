@@ -2164,6 +2164,96 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.ToTable("bitacora_mi_copropiedad");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.BuzonCorreo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Cuenta")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("cuenta");
+
+                    b.Property<string>("ImapHost")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("imap_host");
+
+                    b.Property<int>("ImapPort")
+                        .HasColumnType("integer")
+                        .HasColumnName("imap_port");
+
+                    b.Property<DateTimeOffset?>("LecturaDesde")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lectura_desde");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("nombre");
+
+                    b.Property<string>("PasswordCifrada")
+                        .HasColumnType("text")
+                        .HasColumnName("password_cifrada");
+
+                    b.Property<string>("TemasJson")
+                        .HasColumnType("text")
+                        .HasColumnName("temas_json");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<long?>("UidValidity")
+                        .HasColumnType("bigint")
+                        .HasColumnName("uid_validity");
+
+                    b.Property<DateTimeOffset?>("UltimaRevision")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ultima_revision");
+
+                    b.Property<string>("UltimoError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("ultimo_error");
+
+                    b.Property<long?>("UltimoUid")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ultimo_uid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Cuenta")
+                        .IsUnique();
+
+                    b.ToTable("buzones_correo", (string)null);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.CalendarioConfigUsuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3937,6 +4027,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("asunto");
 
+                    b.Property<Guid?>("BuzonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("buzon_id");
+
                     b.Property<DateTimeOffset?>("ClasificadoEn")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("clasificado_en");
@@ -4005,9 +4099,10 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("resumen");
 
-                    b.Property<int>("Tema")
-                        .HasColumnType("integer")
-                        .HasColumnName("tema");
+                    b.Property<string>("TemaClave")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tema_clave");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -4022,6 +4117,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_by");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BuzonId");
 
                     b.HasIndex("TenantId", "Estado");
 
@@ -19251,15 +19348,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("from_name");
 
-                    b.Property<string>("ImapHost")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("imap_host");
-
-                    b.Property<int>("ImapPort")
-                        .HasColumnType("integer")
-                        .HasColumnName("imap_port");
-
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean")
                         .HasColumnName("is_enabled");
@@ -19267,31 +19355,6 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LastValidatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_validated_at");
-
-                    b.Property<bool>("LecturaActiva")
-                        .HasColumnType("boolean")
-                        .HasColumnName("lectura_activa");
-
-                    b.Property<DateTimeOffset?>("LecturaDesde")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("lectura_desde");
-
-                    b.Property<long?>("LecturaUidValidity")
-                        .HasColumnType("bigint")
-                        .HasColumnName("lectura_uid_validity");
-
-                    b.Property<DateTimeOffset?>("LecturaUltimaRevision")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("lectura_ultima_revision");
-
-                    b.Property<string>("LecturaUltimoError")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("lectura_ultimo_error");
-
-                    b.Property<long?>("LecturaUltimoUid")
-                        .HasColumnType("bigint")
-                        .HasColumnName("lectura_ultimo_uid");
 
                     b.Property<string>("SmtpHost")
                         .HasColumnType("text")
@@ -23178,6 +23241,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("Persona");
 
                     b.Navigation("WhatsAppLine");
+                });
+
+            modelBuilder.Entity("Propia.Domain.Entities.CorreoRecibido", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.BuzonCorreo", null)
+                        .WithMany()
+                        .HasForeignKey("BuzonId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Propia.Domain.Entities.Correspondencia", b =>

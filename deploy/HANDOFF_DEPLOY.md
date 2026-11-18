@@ -1,5 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **LECTOR DE BUZON - VARIOS BUZONES + TEMAS CONFIGURABLES (2026-11-17): 1 MIGRACION NUEVA. API y Web.**
+> - Va DESPUES de `20261117195714_AddLectorBuzon` (bloque de abajo). Si el deploy de la Ola 1 aun no salio, se suben
+>   juntas en orden (`dotnet ef database update` aplica las dos). Aplicar ANTES o JUNTO con el deploy.
+> - Migracion `20261118004700_AddBuzonesCorreo` (owner `propia`): tabla nueva `buzones_correo` (RLS ENABLE+FORCE+policy
+>   `tenant_isolation`+GRANT propia_app; unico tenant+cuenta); `correos_recibidos` suma `buzon_id` (FK SET NULL) y
+>   `tema_clave` (reemplaza la columna `tema` numerica); backfill con NO FORCE temporal: la lectura de la Ola 1 que
+>   hubiera en `tenant_email_configs` pasa a un buzon "Administracion" y el tema numerico a su clave. Luego QUITA de
+>   `tenant_email_configs` las columnas imap_*/lectura_* (el correo saliente de PQRSD queda como antes de la Ola 1).
+>   En dev: aplicada (backfill probado con una fila Ola 1 simulada y borrada).
+> - Temas = lista por copropiedad `correo.tema` (catalogo global sembrado al arrancar: 5 base con descripcion en Meta;
+>   la copropiedad agrega los suyos desde /correos > Buzones > Temas). La plantilla "Coordinador de correo" sube a
+>   version 2 sola si su prompt seguia intacto; si el Super Admin lo edito, no se toca (los temas viajan en el mensaje).
+> - API: `api/correos-recibidos/buzones` (GET; POST/PUT/DELETE y `buzones/probar` con permiso COMUNICACIONES Editar);
+>   se retiran `config` y `config/probar`. Web: `/correos` sin la tarjeta de cuenta; boton "Buzones" abre el modal
+>   (`correos.css?v=3`). Sin config nueva.
+
 > **LECTOR DE BUZON - OLA 1 (2026-11-17): 1 MIGRACION NUEVA, ADITIVA. API y Web. Paquete NuGet nuevo: MailKit 5.0.0.**
 > - IMPORTANTE (leccion de Siniestros): aplicar ANTES o JUNTO con el deploy. `TenantEmailConfig` suma columnas que lee
 >   tambien el correo saliente de PQRSD: desplegar sin la migracion rompe `/api/config/correo` y el envio de PQRSD.
@@ -12,8 +28,8 @@
 >   `CorreoEntrante` cada 10 min (solo copropiedades con "Leer buzon" activo; con `Jobs:Enabled=false` no corre).
 > - Semilla nueva: plantilla de agente "Coordinador de correo" (clave `coordinador-correo`) con el proveedor habilitado mas
 >   reciente; revisar en prod que ese proveedor tenga llave vigente (Super Admin > Plantillas de Agentes IA).
-> - Web: pagina `/correos` ("Correos recibidos", css `correos.css?v=1`).
-> - Sin config nueva. Lectura por IMAP con la cuenta + contrasena de aplicacion del correo saliente (no OAuth de Google).
+> - Web: pagina `/correos` ("Correos recibidos"). (El bloque de arriba reemplaza la config de cuenta por buzones.)
+> - Sin config nueva. Lectura por IMAP con contrasena de aplicacion (no OAuth de Google).
 > - Verificar en prod: abrir `/correos` (debe cargar vacio, sin errores) y `/pqrsd` > Configurar > Correo sigue cargando.
 >   NO activar "Leer buzon" en prod hasta que Alex lo pida (Ola 1 esta en pruebas).
 

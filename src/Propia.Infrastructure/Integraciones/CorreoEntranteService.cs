@@ -9,6 +9,7 @@ using MailKit.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MimeKit;
+using Propia.Application.Catalogos;
 using Propia.Application.Common;
 using Propia.Application.InfraestructuraIa;
 using Propia.Application.Integraciones;
@@ -19,18 +20,21 @@ using Propia.Infrastructure.Storage;
 namespace Propia.Infrastructure.Integraciones;
 
 /// <summary>
-/// Lector de buzon (Ola 1). Lee por IMAP la bandeja de entrada de la copropiedad con la MISMA cuenta y contrasena de
-/// aplicacion del correo saliente (TenantEmailConfig), en SOLO LECTURA (no marca leidos, no mueve, no borra), guarda
-/// cada correo nuevo con sus documentos adjuntos y le pide al agente "Coordinador de correo" el tema. En Ola 1 no se
-/// ejecuta ninguna accion: la bandeja "Correos recibidos" muestra lo que el agente propone.
+/// Lector de buzon. Lee por IMAP la bandeja de entrada de cada buzon de la copropiedad (<see cref="BuzonCorreo"/>, con
+/// contrasena de aplicacion) en SOLO LECTURA (no marca leidos, no mueve, no borra), guarda cada correo nuevo con sus
+/// documentos adjuntos y le pide al agente "Coordinador de correo" el tema, escogiendo entre los temas de la
+/// copropiedad (lista "correo.tema") que atiende ese buzon. Aun no se ejecuta ninguna accion: la bandeja "Correos
+/// recibidos" muestra lo que el agente propone.
 /// </summary>
 public sealed class CorreoEntranteService : ICorreoEntranteService
 {
-    /// <summary>Correos que se bajan por revision (los demas quedan para el siguiente ciclo).</summary>
+    /// <summary>Correos que se bajan por buzon en cada revision (los demas quedan para el siguiente ciclo).</summary>
     public const int MaxPorRevision = 25;
     private const int MaxAdjuntos = 10;
     private const long MaxBytesAdjunto = 15L * 1024 * 1024;
     private const int MaxCuerpoGuardado = 20000;
+    private const int RecientesPorBuzon = 12;
+    private static readonly TimeSpan OffsetColombia = TimeSpan.FromHours(-5);
 
     // Una sola revision a la vez por copropiedad (job + boton "Revisar ahora" en el mismo proceso del API).
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> Candados = new();
@@ -43,103 +47,164 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
     private readonly IAgentesSistema _agentes;
     private readonly IAiInferenceService _inference;
     private readonly IBlobStorage _blob;
+    private readonly IOpcionesEfectivas _opciones;
     private readonly ILogger<CorreoEntranteService> _log;
 
     public CorreoEntranteService(PropiaDbContext db, ITenantContext tenant, ISecretProtector secret, IAgentesSistema agentes,
-        IAiInferenceService inference, IBlobStorage blob, ILogger<CorreoEntranteService> log)
+        IAiInferenceService inference, IBlobStorage blob, IOpcionesEfectivas opciones, ILogger<CorreoEntranteService> log)
     {
-        _db = db; _tenant = tenant; _secret = secret; _agentes = agentes; _inference = inference; _blob = blob; _log = log;
+        _db = db; _tenant = tenant; _secret = secret; _agentes = agentes; _inference = inference; _blob = blob;
+        _opciones = opciones; _log = log;
     }
 
-    // ---------------------------------------------------------------- config
+    // ---------------------------------------------------------------- buzones
 
-    private Task<TenantEmailConfig?> CfgAsync(bool tracking, CancellationToken ct)
+    public async Task<IReadOnlyList<BuzonCorreoDto>> ListarBuzonesAsync(CancellationToken ct = default)
     {
-        var tid = _tenant.CurrentTenantId;
-        var q = tracking ? _db.TenantEmailConfigs : _db.TenantEmailConfigs.AsNoTracking();
-        return q.Where(c => c.TenantId == tid).OrderBy(c => c.CreatedAt).FirstOrDefaultAsync(ct);
+        var buzones = await _db.BuzonesCorreo.AsNoTracking().OrderBy(b => b.CreatedAt).ToListAsync(ct);
+        var res = new List<BuzonCorreoDto>(buzones.Count);
+        foreach (var b in buzones) res.Add(await ADtoAsync(b, ct));
+        return res;
     }
 
-    public async Task<CorreoLecturaConfigDto> GetConfigAsync(CancellationToken ct = default)
+    private async Task<BuzonCorreoDto> ADtoAsync(BuzonCorreo b, CancellationToken ct)
     {
-        var c = await CfgAsync(false, ct);
-        if (c is null) return new CorreoLecturaConfigDto(null, false, "imap.gmail.com", 993, false, null, null, null);
-        return new CorreoLecturaConfigDto(c.SmtpUser, !string.IsNullOrEmpty(c.SmtpPasswordEncrypted),
-            string.IsNullOrWhiteSpace(c.ImapHost) ? "imap.gmail.com" : c.ImapHost!, c.ImapPort <= 0 ? 993 : c.ImapPort,
-            c.LecturaActiva, c.LecturaDesde, c.LecturaUltimaRevision, c.LecturaUltimoError);
+        var ahora = DateTimeOffset.UtcNow.ToOffset(OffsetColombia);
+        var inicioHoy = new DateTimeOffset(ahora.Date, OffsetColombia).ToUniversalTime();
+        var q = _db.CorreosRecibidos.AsNoTracking().Where(c => c.BuzonId == b.Id);
+        var total = await q.CountAsync(ct);
+        var hoy = await q.CountAsync(c => c.CreatedAt >= inicioHoy, ct);
+        var pendientes = await q.CountAsync(c => c.Estado == EstadoCorreoRecibido.Nuevo || c.Estado == EstadoCorreoRecibido.Error, ct);
+        var recientes = await q.OrderByDescending(c => c.CreatedAt).ThenByDescending(c => c.FechaCorreo).Take(RecientesPorBuzon)
+            .Select(c => new CorreoRecienteDto(c.Id, c.Asunto, c.TemaClave, c.Estado, c.FechaCorreo)).ToListAsync(ct);
+        return new BuzonCorreoDto(b.Id, b.Nombre, b.Cuenta, !string.IsNullOrEmpty(b.PasswordCifrada),
+            string.IsNullOrWhiteSpace(b.ImapHost) ? "imap.gmail.com" : b.ImapHost, b.ImapPort <= 0 ? 993 : b.ImapPort, b.Activo,
+            b.LecturaDesde, b.UltimaRevision, b.UltimoError, LeerTemas(b.TemasJson), hoy, total, pendientes, recientes);
     }
 
-    public async Task<string?> GuardarConfigAsync(GuardarCorreoLecturaRequest req, CancellationToken ct = default)
+    public async Task<(BuzonCorreoDto? Buzon, string? Error)> CrearBuzonAsync(GuardarBuzonRequest req, CancellationToken ct = default)
     {
-        if (_tenant.CurrentTenantId is null) return "No hay copropiedad activa.";
-        var c = await CfgAsync(true, ct);
-        if (c is null)
+        if (_tenant.CurrentTenantId is null) return (null, "No hay copropiedad activa.");
+        if (string.IsNullOrWhiteSpace(req.Cuenta)) return (null, "Escribe el correo de la cuenta (ej. copropiedad@gmail.com).");
+        var b = new BuzonCorreo();
+        var error = await AplicarAsync(b, req, nuevo: true, ct);
+        if (error is not null) return (null, error);
+        _db.BuzonesCorreo.Add(b);
+        await _db.SaveChangesAsync(ct);
+        return (await ADtoAsync(b, ct), null);
+    }
+
+    public async Task<(BuzonCorreoDto? Buzon, string? Error)> GuardarBuzonAsync(Guid id, GuardarBuzonRequest req, CancellationToken ct = default)
+    {
+        var b = await _db.BuzonesCorreo.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (b is null) return (null, null);
+        var error = await AplicarAsync(b, req, nuevo: false, ct);
+        if (error is not null)
         {
-            c = new TenantEmailConfig { IsEnabled = false };
-            _db.TenantEmailConfigs.Add(c);
+            // Un error no deja cambios pendientes en el contexto (si no, el siguiente guardado los arrastraria).
+            await _db.Entry(b).ReloadAsync(ct);
+            return (null, error);
         }
+        await _db.SaveChangesAsync(ct);
+        return (await ADtoAsync(b, ct), null);
+    }
 
+    // Aplica la peticion sobre el buzon (merge) y valida. Devuelve un error legible o null.
+    private async Task<string?> AplicarAsync(BuzonCorreo b, GuardarBuzonRequest req, bool nuevo, CancellationToken ct)
+    {
         if (req.Cuenta is not null)
         {
             var cuenta = req.Cuenta.Trim();
-            if (cuenta.Length == 0 || !cuenta.Contains('@')) return Rechazar("Escribe el correo de la cuenta (ej. copropiedad@gmail.com).");
-            if (!string.Equals(cuenta, c.SmtpUser, StringComparison.OrdinalIgnoreCase))
+            if (cuenta.Length == 0 || !cuenta.Contains('@') || cuenta.Length > 320)
+                return "Escribe el correo de la cuenta (ej. copropiedad@gmail.com).";
+            var cuentaMin = cuenta.ToLower();
+            var repetida = await _db.BuzonesCorreo.AsNoTracking()
+                .AnyAsync(x => x.Id != b.Id && x.Cuenta.ToLower() == cuentaMin, ct);
+            if (repetida) return "Esa cuenta ya est\u00e1 configurada en otro buz\u00f3n.";
+            if (!string.Equals(cuenta, b.Cuenta, StringComparison.OrdinalIgnoreCase))
             {
                 // Otra cuenta = otro buzon: el avance por UID de la anterior no sirve.
-                c.LecturaUltimoUid = null; c.LecturaUidValidity = null;
-                if (string.IsNullOrWhiteSpace(c.FromEmail) || string.Equals(c.FromEmail, c.SmtpUser, StringComparison.OrdinalIgnoreCase))
-                    c.FromEmail = cuenta;
+                b.UltimoUid = null; b.UidValidity = null;
+                if (b.Activo) b.LecturaDesde = DateTimeOffset.UtcNow;
             }
-            c.SmtpUser = cuenta;
+            b.Cuenta = cuenta;
         }
+        if (req.Nombre is not null) b.Nombre = Corta(req.Nombre, 120) ?? "";
+        if (string.IsNullOrWhiteSpace(b.Nombre)) b.Nombre = Corta(b.Cuenta.Split('@')[0], 120) ?? "Buz\u00f3n";
         if (!string.IsNullOrWhiteSpace(req.Password))
-            c.SmtpPasswordEncrypted = _secret.Protect(req.Password.Replace(" ", "").Trim());
-        if (!string.IsNullOrWhiteSpace(req.ImapHost)) c.ImapHost = req.ImapHost.Trim();
-        if (req.ImapPort is int p && p > 0) c.ImapPort = p;
-
-        if (req.LecturaActiva is bool activa && activa != c.LecturaActiva)
+            b.PasswordCifrada = _secret.Protect(req.Password.Replace(" ", "").Trim());
+        if (!string.IsNullOrWhiteSpace(req.ImapHost)) b.ImapHost = Corta(req.ImapHost, 200)!;
+        if (req.ImapPort is int p)
         {
-            if (activa)
+            if (p <= 0 || p > 65535) return "El puerto IMAP no es v\u00e1lido.";
+            b.ImapPort = p;
+        }
+
+        if (req.TodosLosTemas == true) b.TemasJson = null;
+        else if (req.Temas is not null)
+        {
+            var claves = req.Temas.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            b.TemasJson = claves.Count == 0 ? null : JsonSerializer.Serialize(claves, Json);
+        }
+
+        if (req.Activo is bool activo && (nuevo || activo != b.Activo))
+        {
+            if (activo)
             {
-                if (string.IsNullOrWhiteSpace(c.SmtpUser) || string.IsNullOrEmpty(c.SmtpPasswordEncrypted))
-                    return Rechazar("Para leer el buz\u00f3n primero guarda la cuenta y la contrase\u00f1a de aplicaci\u00f3n.");
+                if (string.IsNullOrWhiteSpace(b.Cuenta) || string.IsNullOrEmpty(b.PasswordCifrada))
+                    return "Para leer el buz\u00f3n primero escribe la cuenta y la contrase\u00f1a de aplicaci\u00f3n.";
                 // Se leen solo los correos que lleguen desde ahora (no todo el historico del buzon).
-                c.LecturaDesde = DateTimeOffset.UtcNow;
-                c.LecturaUltimoUid = null; c.LecturaUidValidity = null; c.LecturaUltimoError = null;
+                b.LecturaDesde = DateTimeOffset.UtcNow;
+                b.UltimoUid = null; b.UidValidity = null; b.UltimoError = null;
             }
-            c.LecturaActiva = activa;
+            b.Activo = activo;
         }
-        await _db.SaveChangesAsync(ct);
         return null;
-
-        // Un error no deja cambios pendientes en el contexto (si no, el siguiente guardado los arrastraria).
-        string Rechazar(string error)
-        {
-            var entrada = _db.Entry(c);
-            if (entrada.State == EntityState.Added) entrada.State = EntityState.Detached;
-            else entrada.Reload();
-            return error;
-        }
     }
 
-    public async Task<(bool Ok, string? Error)> ProbarConexionAsync(CancellationToken ct = default)
+    public async Task<bool> EliminarBuzonAsync(Guid id, CancellationToken ct = default)
     {
-        var c = await CfgAsync(false, ct);
-        var (cred, err) = Credenciales(c);
-        if (cred is null) return (false, err);
+        var b = await _db.BuzonesCorreo.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (b is null) return false;
+        // Los correos ya leidos se quedan en la bandeja, sin buzon.
+        var correos = await _db.CorreosRecibidos.Where(c => c.BuzonId == id).ToListAsync(ct);
+        foreach (var c in correos) c.BuzonId = null;
+        _db.BuzonesCorreo.Remove(b);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<(bool Ok, string? Error)> ProbarConexionAsync(ProbarBuzonRequest req, CancellationToken ct = default)
+    {
+        BuzonCorreo? guardado = null;
+        if (req.BuzonId is Guid id)
+            guardado = await _db.BuzonesCorreo.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+
+        var user = !string.IsNullOrWhiteSpace(req.Cuenta) ? req.Cuenta.Trim() : guardado?.Cuenta;
+        if (string.IsNullOrWhiteSpace(user)) return (false, "Escribe el correo de la cuenta.");
+        string? pass = !string.IsNullOrWhiteSpace(req.Password) ? req.Password.Replace(" ", "").Trim() : null;
+        if (pass is null)
+        {
+            if (guardado is null || string.IsNullOrEmpty(guardado.PasswordCifrada)) return (false, "Escribe la contrase\u00f1a de aplicaci\u00f3n.");
+            try { pass = _secret.Unprotect(guardado.PasswordCifrada); }
+            catch { return (false, "La contrase\u00f1a guardada no se pudo descifrar. Vuelve a escribirla."); }
+        }
+        var host = !string.IsNullOrWhiteSpace(req.ImapHost) ? req.ImapHost.Trim() : guardado?.ImapHost;
+        var port = req.ImapPort is int p && p > 0 ? p : guardado?.ImapPort ?? 993;
         try
         {
-            using var client = await ConectarAsync(c!, cred.Value.User, cred.Value.Pass, ct);
+            using var client = await ConectarAsync(host, port, user, pass, ct);
             await client.Inbox.OpenAsync(FolderAccess.ReadOnly, ct);
             await client.DisconnectAsync(true, ct);
             return (true, null);
         }
-        catch (Exception ex) { return (false, ErrorLegible(ex)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return (false, ErrorLegible(ex)); }
     }
 
     // ---------------------------------------------------------------- revision
 
-    public async Task<RevisionBuzonResult> RevisarAsync(CancellationToken ct = default)
+    public async Task<RevisionBuzonResult> RevisarAsync(Guid? buzonId = null, CancellationToken ct = default)
     {
         if (_tenant.CurrentTenantId is not Guid tid) return new RevisionBuzonResult(false, 0, 0, 0, "No hay copropiedad activa.");
         var candado = Candados.GetOrAdd(tid, _ => new SemaphoreSlim(1, 1));
@@ -147,29 +212,38 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
             return new RevisionBuzonResult(false, 0, 0, 0, "Ya hay una revisi\u00f3n del buz\u00f3n en curso. Intenta en un momento.");
         try
         {
-            var cfg = await CfgAsync(true, ct);
-            var (cred, err) = Credenciales(cfg);
-            if (cred is null) return new RevisionBuzonResult(false, 0, 0, 0, err);
+            var q = buzonId is Guid bid ? _db.BuzonesCorreo.Where(b => b.Id == bid) : _db.BuzonesCorreo.Where(b => b.Activo);
+            var buzones = await q.OrderBy(b => b.CreatedAt).ToListAsync(ct);
 
             int nuevos = 0;
-            string? errorImap = null;
-            try
+            var errores = new List<string>();
+            foreach (var b in buzones)
             {
-                nuevos = await DescargarNuevosAsync(cfg!, cred.Value.User, cred.Value.Pass, tid, ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                errorImap = ErrorLegible(ex);
-                _log.LogWarning(ex, "[Buzon] Error leyendo IMAP de la copropiedad {Tenant}", tid);
+                string? errorImap;
+                var (pass, errCred) = Clave(b);
+                if (pass is null) errorImap = errCred;
+                else
+                {
+                    errorImap = null;
+                    try { nuevos += await DescargarNuevosAsync(b, pass, tid, ct); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        errorImap = ErrorLegible(ex);
+                        _log.LogWarning(ex, "[Buzon] Error leyendo IMAP del buzon {Buzon} (copropiedad {Tenant})", b.Id, tid);
+                    }
+                }
+                b.UltimaRevision = DateTimeOffset.UtcNow;
+                b.UltimoError = Corta(errorImap, 1000);
+                await _db.SaveChangesAsync(ct);
+                if (errorImap is not null) errores.Add(buzones.Count > 1 ? $"{b.Nombre}: {errorImap}" : errorImap);
             }
 
             // Clasifica lo pendiente (lo recien bajado y lo que haya quedado sin clasificar antes).
             var (clasificados, conError) = await ClasificarPendientesAsync(ct);
-
-            cfg!.LecturaUltimaRevision = DateTimeOffset.UtcNow;
-            cfg.LecturaUltimoError = errorImap;
-            await _db.SaveChangesAsync(ct);
-            return new RevisionBuzonResult(errorImap is null, nuevos, clasificados, conError, errorImap);
+            if (buzones.Count == 0 && clasificados == 0 && conError == 0)
+                return new RevisionBuzonResult(false, 0, 0, 0, "No hay buzones con la lectura activa.");
+            return new RevisionBuzonResult(errores.Count == 0, nuevos, clasificados, conError,
+                errores.Count == 0 ? null : string.Join(" ", errores));
         }
         finally { candado.Release(); }
     }
@@ -187,9 +261,9 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
                 {
                     _tenant.SetTenant(tid);
                     await _db.Database.CloseConnectionAsync();
-                    var activa = await _db.TenantEmailConfigs.AsNoTracking().AnyAsync(c => c.TenantId == tid && c.LecturaActiva, ct);
+                    var activa = await _db.BuzonesCorreo.AsNoTracking().AnyAsync(b => b.TenantId == tid && b.Activo, ct);
                     if (!activa) continue;
-                    var r = await RevisarAsync(ct);
+                    var r = await RevisarAsync(null, ct);
                     total += r.Nuevos;
                     if (r.Nuevos > 0 || !r.Ok)
                         _log.LogInformation("[Buzon] Copropiedad {Tenant}: {Nuevos} nuevo(s), {Clas} clasificado(s), {Err} con error. {Error}",
@@ -210,15 +284,15 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         return total;
     }
 
-    private async Task<int> DescargarNuevosAsync(TenantEmailConfig cfg, string user, string pass, Guid tid, CancellationToken ct)
+    private async Task<int> DescargarNuevosAsync(BuzonCorreo b, string pass, Guid tid, CancellationToken ct)
     {
-        using var client = await ConectarAsync(cfg, user, pass, ct);
+        using var client = await ConectarAsync(b.ImapHost, b.ImapPort, b.Cuenta, pass, ct);
         var inbox = client.Inbox;
         await inbox.OpenAsync(FolderAccess.ReadOnly, ct);   // EXAMINE: no cambia banderas del buzon del cliente
         var validity = (long)inbox.UidValidity;
 
         List<UniqueId> candidatos;
-        if (cfg.LecturaUidValidity == validity && cfg.LecturaUltimoUid is long ultimo)
+        if (b.UidValidity == validity && b.UltimoUid is long ultimo)
         {
             var rango = new UniqueIdRange(new UniqueId(inbox.UidValidity, (uint)Math.Min(ultimo + 1, uint.MaxValue)), UniqueId.MaxValue);
             candidatos = (await inbox.SearchAsync(SearchQuery.Uids(rango), ct)).Where(u => u.Id > ultimo).ToList();
@@ -226,7 +300,7 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         else
         {
             // Primera lectura (o el servidor renumero la bandeja): desde la fecha en que se activo la lectura.
-            var desde = cfg.LecturaDesde ?? DateTimeOffset.UtcNow;
+            var desde = b.LecturaDesde ?? DateTimeOffset.UtcNow;
             var porFecha = await inbox.SearchAsync(SearchQuery.DeliveredAfter(desde.UtcDateTime.Date.AddDays(-1)), ct);
             candidatos = new List<UniqueId>();
             if (porFecha.Count > 0)
@@ -235,9 +309,9 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
                 candidatos = resumen.Where(s => s.InternalDate is null || s.InternalDate >= desde.AddMinutes(-5))
                     .Select(s => s.UniqueId).ToList();
             }
-            cfg.LecturaUidValidity = validity;
+            b.UidValidity = validity;
             // Sin correos desde la activacion: la linea base es el UID mas alto actual (los siguientes se piden por UID).
-            if (candidatos.Count == 0 && inbox.UidNext is UniqueId sig && sig.Id > 0) cfg.LecturaUltimoUid = sig.Id - 1;
+            if (candidatos.Count == 0 && inbox.UidNext is UniqueId sig && sig.Id > 0) b.UltimoUid = sig.Id - 1;
             await _db.SaveChangesAsync(ct);
         }
 
@@ -246,18 +320,20 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         {
             ct.ThrowIfCancellationRequested();
             var msg = await inbox.GetMessageAsync(uid, ct);
-            var messageId = string.IsNullOrWhiteSpace(msg.MessageId) ? $"uid:{validity}:{uid.Id}" : msg.MessageId.Trim();
+            var messageId = string.IsNullOrWhiteSpace(msg.MessageId) ? $"uid:{b.Id:N}:{validity}:{uid.Id}" : msg.MessageId.Trim();
             if (messageId.Length > 500) messageId = messageId[..500];
 
+            // Un mismo correo que llega a dos buzones (copia) se procesa una sola vez.
             var existe = await _db.CorreosRecibidos.AnyAsync(x => x.MessageId == messageId, ct);
             if (!existe)
             {
                 var correo = await ConstruirAsync(msg, uid, messageId, tid, ct);
+                correo.BuzonId = b.Id;
                 _db.CorreosRecibidos.Add(correo);
                 nuevos++;
             }
-            cfg.LecturaUltimoUid = uid.Id;
-            cfg.LecturaUidValidity = validity;
+            b.UltimoUid = uid.Id;
+            b.UidValidity = validity;
             await _db.SaveChangesAsync(ct);
         }
         await client.DisconnectAsync(true, ct);
@@ -310,28 +386,53 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
 
     // ---------------------------------------------------------------- clasificacion
 
+    // Temas activos de la copropiedad (lista "correo.tema"); si la lista aun no existe, los de fabrica.
+    private async Task<IReadOnlyList<TemaCorreoDef>> TemasActivosAsync(CancellationToken ct)
+    {
+        IReadOnlyList<OpcionEfectivaDto> ops;
+        try { ops = await _opciones.OpcionesAsync(TemasCorreoBase.Lista, false, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "[Buzon] No se pudo leer la lista de temas; se usan los de fabrica.");
+            ops = Array.Empty<OpcionEfectivaDto>();
+        }
+        var temas = ops.Where(o => !string.IsNullOrWhiteSpace(o.Clave))
+            .Select(o => new TemaCorreoDef(o.Clave, o.Label, CoordinadorCorreoAgente.DescripcionDeMeta(o.Meta), o.Color)).ToList();
+        return temas.Count == 0 ? CoordinadorCorreoAgente.TemasBase : temas;
+    }
+
     private async Task<(int Ok, int Error)> ClasificarPendientesAsync(CancellationToken ct)
     {
         var pendientes = await _db.CorreosRecibidos
             .Where(x => x.Estado == EstadoCorreoRecibido.Nuevo)
-            .OrderBy(x => x.FechaCorreo).Take(MaxPorRevision).ToListAsync(ct);
+            .OrderBy(x => x.FechaCorreo).Take(MaxPorRevision * 2).ToListAsync(ct);
+        if (pendientes.Count == 0) return (0, 0);
+        var activos = await TemasActivosAsync(ct);
+        var temasBuzon = await _db.BuzonesCorreo.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.TemasJson, ct);
         int ok = 0, err = 0;
         foreach (var c in pendientes)
         {
-            if (await ClasificarAsync(c, ct)) ok++; else err++;
+            if (await ClasificarAsync(c, TemasPara(c, activos, temasBuzon), ct)) ok++; else err++;
             await _db.SaveChangesAsync(ct);
         }
         return (ok, err);
     }
 
-    private async Task<bool> ClasificarAsync(CorreoRecibido c, CancellationToken ct)
+    private static IReadOnlyList<TemaCorreoDef> TemasPara(CorreoRecibido c, IReadOnlyList<TemaCorreoDef> activos,
+        IReadOnlyDictionary<Guid, string?> temasBuzon)
+    {
+        var marcados = c.BuzonId is Guid bid && temasBuzon.TryGetValue(bid, out var json) ? LeerTemas(json) : null;
+        return CoordinadorCorreoAgente.TemasDelBuzon(activos, marcados);
+    }
+
+    private async Task<bool> ClasificarAsync(CorreoRecibido c, IReadOnlyList<TemaCorreoDef> temas, CancellationToken ct)
     {
         var agente = await _agentes.AsegurarAsync(PlantillaAgente.ClaveCoordinadorCorreo, ct);
         if (agente is null) return Fallo(c, "No existe la plantilla del Coordinador de correo en el Super Admin.");
         if (!agente.Activo) return Fallo(c, "El agente Coordinador de correo est\u00e1 inactivo en esta copropiedad (Agentes de IA).");
 
         var adjuntos = LeerAdjuntos(c.AdjuntosJson).Select(a => a.Nombre);
-        var prompt = CoordinadorCorreoAgente.ArmarPrompt(c.RemitenteNombre, c.RemitenteCorreo, c.Asunto, c.FechaCorreo, adjuntos, c.Cuerpo);
+        var prompt = CoordinadorCorreoAgente.ArmarPrompt(temas, c.RemitenteNombre, c.RemitenteCorreo, c.Asunto, c.FechaCorreo, adjuntos, c.Cuerpo);
         AiChatResult res;
         try
         {
@@ -344,13 +445,13 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         }
         if (!res.Ok) return Fallo(c, Corta(res.Error, 1000) ?? "El agente no respondi\u00f3.");
 
-        var cl = CoordinadorCorreoAgente.Parsear(res.Text);
+        var cl = CoordinadorCorreoAgente.Parsear(res.Text, temas);
         if (cl is null)
         {
             _log.LogWarning("[Buzon] Respuesta no interpretable del coordinador para {Id}: {Texto}", c.Id, Corta(res.Text, 300));
-            return Fallo(c, "El agente respondi\u00f3 en un formato que no se pudo leer. Intenta reclasificar.");
+            return Fallo(c, "El agente respondi\u00f3 con un tema que no est\u00e1 en la lista o en un formato que no se pudo leer. Intenta reclasificar.");
         }
-        c.Tema = cl.Tema;
+        c.TemaClave = cl.TemaClave;
         c.Confianza = cl.Confianza;
         c.Resumen = cl.Resumen;
         c.AccionSugerida = cl.AccionSugerida;
@@ -381,17 +482,22 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
     {
         var x = await _db.CorreosRecibidos.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
         if (x is null) return null;
+        string? buzon = x.BuzonId is Guid bid
+            ? await _db.BuzonesCorreo.AsNoTracking().Where(b => b.Id == bid).Select(b => b.Nombre).FirstOrDefaultAsync(ct)
+            : null;
         var adj = LeerAdjuntos(x.AdjuntosJson)
             .Select(a => new CorreoAdjuntoDto(a.Nombre, a.Mime, a.Tamano, _blob.ResolveUrl(a.Ruta))).ToList();
-        return new CorreoRecibidoDetalleDto(x.Id, x.FechaCorreo, x.RemitenteCorreo, x.RemitenteNombre, x.Para, x.Asunto,
-            x.Cuerpo, adj, x.Tema, x.Confianza, x.Resumen, x.AccionSugerida, x.DatosJson, x.Estado, x.Error, x.ClasificadoEn);
+        return new CorreoRecibidoDetalleDto(x.Id, x.BuzonId, buzon, x.FechaCorreo, x.RemitenteCorreo, x.RemitenteNombre, x.Para,
+            x.Asunto, x.Cuerpo, adj, x.TemaClave, x.Confianza, x.Resumen, x.AccionSugerida, x.DatosJson, x.Estado, x.Error, x.ClasificadoEn);
     }
 
     public async Task<CorreoRecibidoDto?> ReclasificarAsync(Guid id, CancellationToken ct = default)
     {
         var x = await _db.CorreosRecibidos.FirstOrDefaultAsync(c => c.Id == id, ct);
         if (x is null) return null;
-        await ClasificarAsync(x, ct);
+        var activos = await TemasActivosAsync(ct);
+        var temasBuzon = await _db.BuzonesCorreo.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.TemasJson, ct);
+        await ClasificarAsync(x, TemasPara(x, activos, temasBuzon), ct);
         await _db.SaveChangesAsync(ct);
         return ADto(x);
     }
@@ -407,28 +513,40 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         return ADto(x);
     }
 
-    private static CorreoRecibidoDto ADto(CorreoRecibido x) => new(x.Id, x.FechaCorreo, x.RemitenteCorreo, x.RemitenteNombre,
-        x.Asunto, x.Tema, x.Confianza, x.Resumen, x.AccionSugerida, x.Estado, x.Error, LeerAdjuntos(x.AdjuntosJson).Count);
+    private static CorreoRecibidoDto ADto(CorreoRecibido x) => new(x.Id, x.BuzonId, x.FechaCorreo, x.RemitenteCorreo,
+        x.RemitenteNombre, x.Asunto, x.TemaClave, x.Confianza, x.Resumen, x.AccionSugerida, x.Estado, x.Error,
+        LeerAdjuntos(x.AdjuntosJson).Count);
 
     // ---------------------------------------------------------------- utilidades
 
-    private (( string User, string Pass)? Cred, string? Error) Credenciales(TenantEmailConfig? c)
+    private (string? Pass, string? Error) Clave(BuzonCorreo b)
     {
-        if (c is null || string.IsNullOrWhiteSpace(c.SmtpUser)) return (null, "Falta configurar la cuenta de correo.");
-        if (string.IsNullOrEmpty(c.SmtpPasswordEncrypted)) return (null, "Falta la contrase\u00f1a de aplicaci\u00f3n.");
-        try { return ((c.SmtpUser!.Trim(), _secret.Unprotect(c.SmtpPasswordEncrypted)), null); }
+        if (string.IsNullOrWhiteSpace(b.Cuenta)) return (null, "Falta el correo de la cuenta.");
+        if (string.IsNullOrEmpty(b.PasswordCifrada)) return (null, "Falta la contrase\u00f1a de aplicaci\u00f3n.");
+        try { return (_secret.Unprotect(b.PasswordCifrada), null); }
         catch { return (null, "La contrase\u00f1a guardada no se pudo descifrar. Vuelve a guardarla."); }
     }
 
-    private static async Task<ImapClient> ConectarAsync(TenantEmailConfig c, string user, string pass, CancellationToken ct)
+    private static List<string>? LeerTemas(string? json)
     {
-        var host = string.IsNullOrWhiteSpace(c.ImapHost) ? "imap.gmail.com" : c.ImapHost!.Trim();
-        var port = c.ImapPort <= 0 ? 993 : c.ImapPort;
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var l = JsonSerializer.Deserialize<List<string>>(json, Json);
+            return l is { Count: > 0 } ? l : null;
+        }
+        catch { return null; }
+    }
+
+    private static async Task<ImapClient> ConectarAsync(string? host, int port, string user, string pass, CancellationToken ct)
+    {
+        host = string.IsNullOrWhiteSpace(host) ? "imap.gmail.com" : host.Trim();
+        if (port <= 0) port = 993;
         var client = new ImapClient { Timeout = 30000 };
         try
         {
             await client.ConnectAsync(host, port, port == 993 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTlsWhenAvailable, ct);
-            await client.AuthenticateAsync(user, pass, ct);
+            await client.AuthenticateAsync(user.Trim(), pass, ct);
             return client;
         }
         catch { client.Dispose(); throw; }

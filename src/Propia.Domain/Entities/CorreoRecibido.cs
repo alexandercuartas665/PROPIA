@@ -3,17 +3,20 @@ using Propia.Domain.Common;
 namespace Propia.Domain.Entities;
 
 /// <summary>
-/// Lector de buzon (Ola 1, 2026-11-17): un correo que llego al buzon de la copropiedad (leido por IMAP con la misma
-/// cuenta y contrasena de aplicacion del correo saliente, ver <see cref="TenantEmailConfig"/>). El agente
-/// "Coordinador de correo" lo clasifica por tema; en Ola 2 lo delega al agente especialista. El buzon del cliente
-/// NO se modifica: se abre en solo lectura y no se marca nada como leido.
+/// Lector de buzon (Ola 1, 2026-11-17): un correo que llego a un buzon de la copropiedad (<see cref="BuzonCorreo"/>,
+/// leido por IMAP con contrasena de aplicacion). El agente "Coordinador de correo" lo clasifica por tema (lista por
+/// copropiedad "correo.tema"); en Ola 2 lo delega al agente especialista. El buzon del cliente NO se modifica: se
+/// abre en solo lectura y no se marca nada como leido.
 /// </summary>
 public class CorreoRecibido : TenantEntity
 {
     /// <summary>Message-ID del correo (o "uid:{validity}:{uid}" si no trae). Unico por copropiedad: evita reprocesar.</summary>
     public string MessageId { get; set; } = "";
 
-    /// <summary>UID IMAP del mensaje en la bandeja de entrada (referencia; el avance real va en TenantEmailConfig).</summary>
+    /// <summary>Buzon por el que llego (null si el buzon se elimino).</summary>
+    public Guid? BuzonId { get; set; }
+
+    /// <summary>UID IMAP del mensaje en la bandeja de entrada (referencia; el avance real va en el buzon).</summary>
     public long ImapUid { get; set; }
 
     public string? RemitenteCorreo { get; set; }
@@ -30,7 +33,9 @@ public class CorreoRecibido : TenantEntity
     /// <summary>Documentos adjuntos guardados en el storage: JSON [{nombre, mime, tamano, ruta}].</summary>
     public string? AdjuntosJson { get; set; }
 
-    public TemaCorreo Tema { get; set; } = TemaCorreo.SinClasificar;
+    /// <summary>Clave del tema que asigno el coordinador (opcion de la lista por copropiedad "correo.tema"; ej.
+    /// "pqrsd", o "c:..." para un tema propio). null = sin clasificar.</summary>
+    public string? TemaClave { get; set; }
 
     /// <summary>Que tan seguro esta el coordinador (0 a 1).</summary>
     public decimal? Confianza { get; set; }
@@ -52,20 +57,16 @@ public class CorreoRecibido : TenantEntity
     public DateTimeOffset? ClasificadoEn { get; set; }
 }
 
-/// <summary>Tema que le asigna el Coordinador de correo.</summary>
-public enum TemaCorreo
+/// <summary>Claves de los temas BASE del coordinador (lista por copropiedad "correo.tema"). La copropiedad puede
+/// renombrarlos, ocultarlos o agregar los suyos.</summary>
+public static class TemasCorreoBase
 {
-    SinClasificar = 0,
-    /// <summary>Recibo o factura de un servicio publico (energia, agua, gas, aseo, internet...).</summary>
-    ReciboServicio = 1,
-    /// <summary>Peticion, queja, reclamo, sugerencia o denuncia de un residente o tercero.</summary>
-    Pqrsd = 2,
-    /// <summary>Poliza de seguro o contrato (o documentos de su tramite).</summary>
-    PolizaContrato = 3,
-    /// <summary>Correo relevante para la administracion que no encaja en los temas anteriores.</summary>
-    Otro = 4,
-    /// <summary>Publicidad, boletines, notificaciones automaticas sin accion.</summary>
-    Irrelevante = 5
+    public const string Lista = "correo.tema";
+    public const string ReciboServicio = "recibo_servicio";
+    public const string Pqrsd = "pqrsd";
+    public const string PolizaContrato = "poliza_contrato";
+    public const string Otro = "otro";
+    public const string Irrelevante = "irrelevante";
 }
 
 public enum EstadoCorreoRecibido

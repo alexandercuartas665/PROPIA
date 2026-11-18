@@ -1,0 +1,505 @@
+@using Propia.Application.Catalogos
+@using Propia.Application.Integraciones
+@using Propia.Domain.Entities
+@using Propia.Web.Components.Shared
+@implements IDisposable
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+@* Lector de buzon: configuracion de los buzones de la copropiedad (uno o varios). Cada buzon es una tarjeta con su
+   estado, su actividad y una cinta con los asuntos de los ultimos correos que el Coordinador proceso (se refresca
+   sola mientras el modal esta abierto). Clic en la tarjeta = editar. "Temas" abre el editor de la lista por
+   copropiedad "correo.tema" (descripcion que lee el coordinador). Estilos cor-bz-* en css/modules/correos.css. *@
+
+<div class="cor-ov" @onclick="CerrarAsync">
+    <div class="cor-dlg cor-bz-dlg" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Buzones de correo">
+        <div class="cor-dlg-head">
+            <span class="cor-bz-hico"><i class="fi fi-rr-envelopes"></i></span>
+            <div class="cor-dlg-tit">
+                <h3>@(_edit is null ? "Buzones de correo" : (_edit.Id is null ? "Nuevo buzón" : _edit.Nombre))</h3>
+                <div class="cor-dlg-meta">
+                    @if (_edit is null)
+                    {
+                        <span>El Coordinador lee cada buzón en solo lectura (no marca leídos ni borra nada) y clasifica los correos por tema.</span>
+                    }
+                    else
+                    {
+                        <span>Cuenta de Gmail (u otro servidor IMAP) con contraseña de aplicación.</span>
+                    }
+                </div>
+            </div>
+            @if (_edit is null)
+            {
+                <button type="button" class="propia-btn-ghost cor-bz-temasbtn" @onclick="() => _gestTemas = true" title="Temas que puede asignar el Coordinador">
+                    <i class="fi fi-rr-tags"></i> <span class="cor-bz-temasbtn-t">Temas</span>
+                </button>
+            }
+            <button type="button" class="cor-x" title="Cerrar" @onclick="CerrarAsync">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="cor-dlg-body">
+            @if (!string.IsNullOrEmpty(_msg)) { <div class="alert @_msgClass py-2 small mb-0">@_msg</div> }
+
+            @if (_buzones is null)
+            {
+                <div class="text-center py-4"><div class="spinner-border" style="color: var(--propia-brand);"></div></div>
+            }
+            else if (_edit is null)
+            {
+                <div class="cor-bz-grid">
+                    @foreach (var b in _buzones)
+                    {
+                        var bz = b;
+                        var st = Estado(bz);
+                        <div class="cor-bz-card @st.Css" role="button" tabindex="0" @onclick="() => Editar(bz)"
+                             @onkeydown="e => TeclaCard(e, bz)">
+                            <div class="cor-bz-top">
+                                <span class="cor-bz-ic">
+                                    <i class="fi fi-rr-envelope"></i>
+                                    @if (st.Css == "is-on") { <span class="cor-bz-live"></span> }
+                                </span>
+                                <div class="cor-bz-id">
+                                    <div class="cor-bz-nom">@bz.Nombre</div>
+                                    <div class="cor-bz-mail">@bz.Cuenta</div>
+                                </div>
+                                <span class="cor-bz-st">@st.Label</span>
+                            </div>
+
+                            <div class="cor-bz-kpis">
+                                <div><b>@bz.Hoy</b><span>hoy</span></div>
+                                <div><b>@bz.Total</b><span>en total</span></div>
+                                <div class="@(bz.Pendientes > 0 ? "is-pend" : "")"><b>@bz.Pendientes</b><span>pendientes</span></div>
+                            </div>
+
+                            <div class="cor-bz-meta">
+                                @if (bz.UltimaRevision is not null) { <span>Revisado @Hace(bz.UltimaRevision.Value)</span> }
+                                else if (bz.Activo) { <span>Aún sin revisar</span> }
+                                @if (bz.Activo && bz.LecturaDesde is not null) { <span>· lee desde @Fecha(bz.LecturaDesde)</span> }
+                            </div>
+
+                            <div class="cor-bz-temas">
+                                @if (bz.Temas is null || bz.Temas.Count == 0)
+                                {
+                                    <span class="cor-bz-todos">Todos los temas</span>
+                                }
+                                else
+                                {
+                                    @foreach (var k in bz.Temas)
+                                    {
+                                        <span class="cor-chip cor-chip-t" style="@TemaStyle(k)">@TemaLabel(k)</span>
+                                    }
+                                }
+                            </div>
+
+                            @if (bz.Activo && !string.IsNullOrWhiteSpace(bz.UltimoError))
+                            {
+                                <div class="cor-bz-err" title="@bz.UltimoError">@bz.UltimoError</div>
+                            }
+
+                            <div class="cor-bz-tk" @onclick:stopPropagation="true">
+                                @if (bz.Recientes.Count == 0)
+                                {
+                                    <span class="cor-bz-tk-vacio">
+                                        @(bz.Activo ? "Esperando el primer correo" : "Sin correos procesados")
+                                        @if (bz.Activo) { <span class="cor-bz-dots"><i></i><i></i><i></i></span> }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <div class="cor-bz-track" style="--dur:@(Math.Max(18, bz.Recientes.Count * 6))s">
+                                        @for (var vuelta = 0; vuelta < 2; vuelta++)
+                                        {
+                                            var oculto = vuelta == 1;
+                                            @foreach (var r in bz.Recientes)
+                                            {
+                                                <span class="cor-bz-it" aria-hidden="@(oculto ? "true" : "false")">
+                                                    @if (r.Estado == EstadoCorreoRecibido.Nuevo)
+                                                    {
+                                                        <span class="cor-bz-dot is-wait" title="Clasificando"></span>
+                                                    }
+                                                    else if (r.Estado == EstadoCorreoRecibido.Error)
+                                                    {
+                                                        <span class="cor-bz-dot is-err" title="Error al clasificar"></span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="cor-chip cor-chip-t cor-chip-xs" style="@TemaStyle(r.TemaClave)">@TemaLabel(r.TemaClave)</span>
+                                                    }
+                                                    <span class="cor-bz-asunto">@(string.IsNullOrWhiteSpace(r.Asunto) ? "(sin asunto)" : r.Asunto)</span>
+                                                </span>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <button type="button" class="cor-bz-card cor-bz-add" @onclick="Nuevo">
+                        <span class="cor-bz-add-ic"><i class="fi fi-rr-plus"></i></span>
+                        <span class="cor-bz-add-t">Agregar buzón</span>
+                        <span class="cor-bz-add-s">Administración, contabilidad, portería... cada uno con su cuenta.</span>
+                    </button>
+                </div>
+
+                <div class="cor-bz-temasbar">
+                    <span class="cor-bz-temasbar-l">Temas del Coordinador</span>
+                    @foreach (var t in _temas.Where(t => t.Activo))
+                    {
+                        <span class="cor-chip cor-chip-t" style="@TemaStyle(t.Clave)">@t.Label</span>
+                    }
+                    <button type="button" class="cor-bz-link" @onclick="() => _gestTemas = true">Editar temas</button>
+                </div>
+            }
+            else
+            {
+                <div class="cor-form cor-bz-form">
+                    <div class="cor-fld">
+                        <label>Nombre del buzón</label>
+                        <input class="cor-inp" placeholder="Administración" maxlength="120" @bind="_edit.Nombre" @bind:event="oninput" />
+                    </div>
+                    <div class="cor-fld">
+                        <label>Correo de la cuenta</label>
+                        <input class="cor-inp" type="email" placeholder="copropiedad@gmail.com" autocomplete="off" @bind="_edit.Cuenta" @bind:event="oninput" />
+                    </div>
+                    <div class="cor-fld">
+                        <label>Contraseña de aplicación</label>
+                        <input class="cor-inp" type="password" autocomplete="new-password"
+                               placeholder="@(_edit.TienePassword ? "Guardada (escribe otra para cambiarla)" : "16 letras que entrega Google")"
+                               @bind="_edit.Password" @bind:event="oninput" />
+                    </div>
+                    <div class="cor-fld">
+                        <label>Servidor IMAP</label>
+                        <input class="cor-inp" placeholder="imap.gmail.com" @bind="_edit.Host" @bind:event="oninput" />
+                    </div>
+                    <div class="cor-fld">
+                        <label>Puerto</label>
+                        <input class="cor-inp" type="number" min="1" @bind="_edit.Port" @bind:event="oninput" />
+                    </div>
+                    <div class="cor-fld cor-bz-switchfld">
+                        <label>Lectura</label>
+                        <label class="cor-switch" title="Leer este buzón cada 10 minutos">
+                            <input type="checkbox" checked="@_edit.Activo" @onchange="e => _edit!.Activo = (bool)(e.Value ?? false)" />
+                            <span class="cor-switch-track"></span>
+                            @(_edit.Activo ? "Leer buzón" : "Pausado")
+                        </label>
+                    </div>
+
+                    <div class="cor-fld cor-bz-temasfld">
+                        <label>Temas que atiende</label>
+                        <div class="cor-bz-ck">
+                            <label class="cor-bz-ckit @(_edit.Todos ? "on" : "")">
+                                <input type="checkbox" checked="@_edit.Todos" @onchange="e => _edit!.Todos = (bool)(e.Value ?? false)" />
+                                Todos
+                            </label>
+                            @foreach (var t in TemasSeleccionables)
+                            {
+                                var tema = t;
+                                var on = !_edit.Todos && _edit.Temas.Contains(tema.Clave);
+                                <label class="cor-bz-ckit @(on ? "on" : "") @(_edit.Todos ? "is-dis" : "")" style="@TemaStyle(tema.Clave)">
+                                    <input type="checkbox" checked="@on" disabled="@_edit.Todos" @onchange="e => MarcarTema(tema.Clave, (bool)(e.Value ?? false))" />
+                                    @tema.Label
+                                </label>
+                            }
+                        </div>
+                        <span class="cor-help">Otro e Irrelevante aplican siempre. El Coordinador solo escoge entre los temas marcados.</span>
+                    </div>
+
+                    <div class="cor-help">
+                        En Gmail: Cuenta de Google &gt; Seguridad &gt; Verificación en dos pasos (activa) &gt; Contraseñas de aplicación.
+                        Al activar la lectura solo se toman los correos que lleguen desde ese momento, no el histórico.
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (_edit is not null)
+        {
+            <div class="cor-dlg-foot">
+                @if (_edit.Id is Guid idEdit)
+                {
+                    <button type="button" class="propia-btn-ghost cor-bz-del" disabled="@_busy" @onclick="() => EliminarAsync(idEdit)">
+                        @(_confirmarEliminar ? "¿Eliminar? Clic de nuevo" : "Eliminar")
+                    </button>
+                }
+                <span class="cor-bz-spacer"></span>
+                <button type="button" class="propia-btn-ghost" disabled="@(_busy || _probando)" @onclick="ProbarAsync">
+                    @if (_probando) { <span class="spinner-border spinner-border-sm"></span> } Probar conexión
+                </button>
+                <button type="button" class="propia-btn-ghost" disabled="@_busy" @onclick="CancelarEdicion">Cancelar</button>
+                <button type="button" class="propia-btn-brand" disabled="@_busy" @onclick="GuardarAsync">
+                    @if (_busy) { <span class="spinner-border spinner-border-sm"></span> } Guardar
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_gestTemas)
+{
+    <GestionarOpcionesListaModal Lista="@TemasCorreoBase.Lista" Titulo="Temas del Coordinador de correo" Jwt="@Jwt"
+                                 Guardado="CargarTemasAsync" Cerrado="CerrarTemasAsync" />
+}
+
+@code {
+    [Parameter] public string? Jwt { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+    /// <summary>Se invoca al cerrar si hubo cambios (buzones o temas), para que la bandeja recargue.</summary>
+    [Parameter] public EventCallback Cambio { get; set; }
+
+    private List<BuzonCorreoDto>? _buzones;
+    private List<OpcionEfectivaDto> _temas = new();
+    private EdicionBuzon? _edit;
+    private bool _busy, _probando, _gestTemas, _confirmarEliminar, _huboCambios;
+    private string? _msg;
+    private string _msgClass = "alert-info";
+    private System.Threading.Timer? _timer;
+    private bool _refrescando;
+
+    private sealed class EdicionBuzon
+    {
+        public Guid? Id;
+        public string Nombre = "";
+        public string Cuenta = "";
+        public string? Password;
+        public bool TienePassword;
+        public string Host = "imap.gmail.com";
+        public int Port = 993;
+        public bool Activo = true;
+        public bool Todos = true;
+        public HashSet<string> Temas = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private IEnumerable<OpcionEfectivaDto> TemasSeleccionables => _temas.Where(t => t.Activo
+        && !CoordinadorCorreoAgente.TemasSiempre.Contains(t.Clave, StringComparer.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarBuzonesAsync(), CargarTemasAsync());
+        // La cinta de asuntos y los contadores se refrescan solos mientras el modal esta abierto.
+        _timer = new System.Threading.Timer(_ => _ = InvokeAsync(RefrescarAsync), null, 8000, 8000);
+    }
+
+    private async Task RefrescarAsync()
+    {
+        if (_edit is not null || _busy || _refrescando || _gestTemas) return;
+        _refrescando = true;
+        try { await CargarBuzonesAsync(); StateHasChanged(); }
+        catch { /* el siguiente ciclo lo reintenta */ }
+        finally { _refrescando = false; }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    /// <summary>Envia la peticion y, si el token vencio, lo renueva y reintenta una vez (patron SessionHelper).</summary>
+    private async Task<HttpResponseMessage?> EnviarAsync(Func<HttpClient, Task<HttpResponseMessage>> enviar)
+    {
+        var resp = await enviar(Auth());
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            var nuevo = await Propia.Web.Services.SessionHelper.HandleUnauthorizedAsync(Js, Nav);
+            if (string.IsNullOrEmpty(nuevo)) return null;
+            Jwt = nuevo;
+            resp = await enviar(Auth());
+        }
+        return resp;
+    }
+
+    private async Task CargarBuzonesAsync()
+    {
+        try
+        {
+            var r = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos/buzones"));
+            if (r is null || !r.IsSuccessStatusCode) return;
+            _buzones = await r.Content.ReadFromJsonAsync<List<BuzonCorreoDto>>() ?? new();
+            if (_buzones.Count == 0 && _edit is null) Nuevo();
+        }
+        catch (Exception ex) { Aviso("No se pudieron cargar los buzones: " + ex.Message, false); _buzones ??= new(); }
+    }
+
+    private async Task CargarTemasAsync()
+    {
+        try
+        {
+            var r = await EnviarAsync(h => h.GetAsync($"/api/campos/opciones?lista={Uri.EscapeDataString(TemasCorreoBase.Lista)}&incluirOcultas=true"));
+            if (r is null || !r.IsSuccessStatusCode) return;
+            _temas = await r.Content.ReadFromJsonAsync<List<OpcionEfectivaDto>>() ?? new();
+        }
+        catch { /* sin temas: las tarjetas muestran la clave */ }
+    }
+
+    private async Task CerrarTemasAsync()
+    {
+        _gestTemas = false;
+        _huboCambios = true;
+        await CargarTemasAsync();
+    }
+
+    private void Nuevo()
+    {
+        _msg = null;
+        _confirmarEliminar = false;
+        _edit = new EdicionBuzon { Nombre = (_buzones?.Count ?? 0) == 0 ? "Administración" : "" };
+    }
+
+    private void Editar(BuzonCorreoDto b)
+    {
+        _msg = null;
+        _confirmarEliminar = false;
+        _edit = new EdicionBuzon
+        {
+            Id = b.Id, Nombre = b.Nombre, Cuenta = b.Cuenta, TienePassword = b.TienePassword, Host = b.ImapHost,
+            Port = b.ImapPort, Activo = b.Activo, Todos = b.Temas is null || b.Temas.Count == 0,
+            Temas = new HashSet<string>(b.Temas ?? (IReadOnlyList<string>)Array.Empty<string>(), StringComparer.OrdinalIgnoreCase),
+        };
+    }
+
+    private void TeclaCard(KeyboardEventArgs e, BuzonCorreoDto b)
+    {
+        if (e.Key is "Enter" or " ") Editar(b);
+    }
+
+    private void CancelarEdicion()
+    {
+        _msg = null;
+        _confirmarEliminar = false;
+        _edit = null;
+        if (_buzones is { Count: 0 }) _ = CerrarAsync();
+    }
+
+    private void MarcarTema(string clave, bool on)
+    {
+        if (_edit is null) return;
+        if (on) _edit.Temas.Add(clave); else _edit.Temas.Remove(clave);
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_edit is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            var todos = _edit.Todos || _edit.Temas.Count == 0;
+            var req = new GuardarBuzonRequest(
+                Nombre: _edit.Nombre, Cuenta: _edit.Cuenta ?? "",
+                Password: string.IsNullOrWhiteSpace(_edit.Password) ? null : _edit.Password,
+                ImapHost: _edit.Host, ImapPort: _edit.Port, Activo: _edit.Activo,
+                Temas: todos ? null : _edit.Temas.ToList(), TodosLosTemas: todos);
+            var id = _edit.Id;
+            var resp = await EnviarAsync(h => id is Guid g
+                ? h.PutAsJsonAsync($"/api/correos-recibidos/buzones/{g}", req)
+                : h.PostAsJsonAsync("/api/correos-recibidos/buzones", req));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return; }
+            _huboCambios = true;
+            _edit = null;
+            await CargarBuzonesAsync();
+            Aviso(id is null ? "Buzón agregado." : "Buzón guardado.", true);
+        }
+        catch (Exception ex) { Aviso("No se pudo guardar: " + ex.Message, false); }
+        finally { _busy = false; }
+    }
+
+    private async Task ProbarAsync()
+    {
+        if (_edit is null) return;
+        _probando = true; _msg = null;
+        try
+        {
+            var req = new ProbarBuzonRequest(_edit.Id, _edit.Cuenta, string.IsNullOrWhiteSpace(_edit.Password) ? null : _edit.Password,
+                _edit.Host, _edit.Port);
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync("/api/correos-recibidos/buzones/probar", req));
+            if (resp is null) return;
+            if (resp.IsSuccessStatusCode) Aviso("Conexión correcta: el Coordinador puede leer este buzón.", true);
+            else Aviso(await ErrorAsync(resp), false);
+        }
+        catch (Exception ex) { Aviso("No se pudo probar: " + ex.Message, false); }
+        finally { _probando = false; }
+    }
+
+    private async Task EliminarAsync(Guid id)
+    {
+        if (!_confirmarEliminar) { _confirmarEliminar = true; return; }
+        _busy = true; _msg = null;
+        try
+        {
+            var resp = await EnviarAsync(h => h.DeleteAsync($"/api/correos-recibidos/buzones/{id}"));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode) { Aviso(await ErrorAsync(resp), false); return; }
+            _huboCambios = true;
+            _edit = null;
+            _confirmarEliminar = false;
+            await CargarBuzonesAsync();
+            Aviso("Buzón eliminado. Sus correos siguen en la bandeja.", true);
+        }
+        catch (Exception ex) { Aviso("No se pudo eliminar: " + ex.Message, false); }
+        finally { _busy = false; }
+    }
+
+    private async Task CerrarAsync()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        if (_huboCambios) await Cambio.InvokeAsync();
+        await Cerrado.InvokeAsync();
+    }
+
+    private sealed record EstadoBuzon(string Label, string Css);
+
+    private static EstadoBuzon Estado(BuzonCorreoDto b)
+    {
+        if (!b.TienePassword) return new("Falta contraseña", "is-warn");
+        if (!b.Activo) return new("Pausado", "is-off");
+        return string.IsNullOrWhiteSpace(b.UltimoError) ? new("Leyendo", "is-on") : new("Con error", "is-err");
+    }
+
+    private OpcionEfectivaDto? Tema(string? clave)
+        => clave is null ? null : _temas.FirstOrDefault(t => string.Equals(t.Clave, clave, StringComparison.OrdinalIgnoreCase));
+
+    private string TemaLabel(string? clave) => Tema(clave)?.Label ?? (string.IsNullOrWhiteSpace(clave) ? "Sin clasificar" : clave);
+
+    // Color de la opcion (dato de la lista por copropiedad) como variable CSS; el chip lo mezcla con el fondo.
+    private string TemaStyle(string? clave)
+    {
+        var c = Tema(clave)?.Color;
+        return string.IsNullOrWhiteSpace(c) ? "" : $"--tc:{c}";
+    }
+
+    private static string Fecha(DateTimeOffset? d)
+        => d is null ? "—" : d.Value.ToOffset(TimeSpan.FromHours(-5)).ToString("dd/MM/yyyy HH:mm");
+
+    private static string Hace(DateTimeOffset d)
+    {
+        var s = DateTimeOffset.UtcNow - d;
+        if (s.TotalSeconds < 60) return "hace un momento";
+        if (s.TotalMinutes < 60) return $"hace {(int)s.TotalMinutes} min";
+        if (s.TotalHours < 24) return $"hace {(int)s.TotalHours} h";
+        return "el " + Fecha(d);
+    }
+
+    private static async Task<string> ErrorAsync(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) return "No tienes permiso para esta acción en Comunicaciones.";
+        var cuerpo = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
+            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(cuerpo) ? "La operación no se pudo completar." : cuerpo;
+    }
+
+    private void Aviso(string msg, bool ok) { _msg = msg; _msgClass = ok ? "alert-success" : "alert-danger"; }
+}
