@@ -15,17 +15,23 @@
 <div class="cor-ov" @onclick="CerrarAsync">
     <div class="cor-dlg cor-bz-dlg" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Buzones de correo">
         <div class="cor-dlg-head">
+            @if (_edit is not null)
+            {
+                <button type="button" class="cor-bz-back" title="Volver a los buzones" @onclick="CancelarEdicion">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+                </button>
+            }
             <span class="cor-bz-hico"><i class="fi fi-rr-envelopes"></i></span>
             <div class="cor-dlg-tit">
                 <h3>@(_edit is null ? "Buzones de correo" : (_edit.Id is null ? "Nuevo buzón" : _edit.Nombre))</h3>
                 <div class="cor-dlg-meta">
                     @if (_edit is null)
                     {
-                        <span>El Coordinador lee cada buzón en solo lectura (no marca leídos ni borra nada) y clasifica los correos por tema.</span>
+                        <span>Conecta uno o varios buzones (uno por área). El Coordinador los lee en solo lectura (no marca leídos ni borra nada) y clasifica los correos por tema.</span>
                     }
                     else
                     {
-                        <span>Cuenta de Gmail (u otro servidor IMAP) con contraseña de aplicación.</span>
+                        <span>Buzones › @(_edit.Id is null ? "Nuevo" : "Editar") · Cuenta de Gmail (u otro servidor IMAP) con contraseña de aplicación.</span>
                     }
                 </div>
             </div>
@@ -140,8 +146,8 @@
 
                     <button type="button" class="cor-bz-card cor-bz-add" @onclick="Nuevo">
                         <span class="cor-bz-add-ic"><i class="fi fi-rr-plus"></i></span>
-                        <span class="cor-bz-add-t">Agregar buzón</span>
-                        <span class="cor-bz-add-s">Administración, contabilidad, portería... cada uno con su cuenta.</span>
+                        <span class="cor-bz-add-t">@(_buzones.Count == 0 ? "Agregar el primer buzón" : "Agregar otro buzón")</span>
+                        <span class="cor-bz-add-s">Administración, contabilidad, portería... cada uno con su propia cuenta.</span>
                     </button>
                 </div>
 
@@ -322,8 +328,8 @@
         {
             var r = await EnviarAsync(h => h.GetAsync("/api/correos-recibidos/buzones"));
             if (r is null || !r.IsSuccessStatusCode) return;
+            // Siempre abre en la vista de buzones (tarjetas + "Agregar"): asi se entiende que pueden ser varios.
             _buzones = await r.Content.ReadFromJsonAsync<List<BuzonCorreoDto>>() ?? new();
-            if (_buzones.Count == 0 && _edit is null) Nuevo();
         }
         catch (Exception ex) { Aviso("No se pudieron cargar los buzones: " + ex.Message, false); _buzones ??= new(); }
     }
@@ -374,8 +380,7 @@
     {
         _msg = null;
         _confirmarEliminar = false;
-        _edit = null;
-        if (_buzones is { Count: 0 }) _ = CerrarAsync();
+        _edit = null;   // vuelve a la lista de buzones (no cierra el modal)
     }
 
     private void MarcarTema(string clave, bool on)
