@@ -352,8 +352,8 @@ else
     private List<string> _grupos = new();
     private DotNetObjectReference<CorreosRecibidos>? _self;
 
-    // Orden, visibilidad, anchos, orden de filas y agrupacion se recuerdan por navegador.
-    private const string VistaKey = "propia_correos_vista_v2";   // v2: descarta la vista que quedo de las pruebas
+    // Columnas: por copropiedad (unidad_campos_config). Agrupar y orden de filas: por navegador.
+    private const string VistaKey = "propia_correos_filas";   // agrupacion y orden de filas (por navegador)
 
     private sealed record ColDef(string Key, string Label, bool Hideable);
     private static readonly ColDef[] Catalogo =
@@ -370,7 +370,6 @@ else
     private List<string> _colOrder = Catalogo.Select(c => c.Key).ToList();
     private readonly HashSet<string> _colHidden = new();
     private readonly Dictionary<string, int> _colW = new(StringComparer.Ordinal);
-    private bool _vistaGuardada;   // si no hay vista guardada, Buzon se oculta mientras haya un solo buzon
 
     private IEnumerable<string> ColsVisibles => _colOrder.Where(k => !_colHidden.Contains(k));
     private static string ColLabel(string k) => Catalogo.First(c => c.Key == k).Label;
@@ -547,7 +546,7 @@ else
             case TablaColMenu.Accion.Agrupar: _grupos = new() { col.Key }; await OnGruposChanged(); break;
             case TablaColMenu.Accion.Ocultar:
                 if (!Catalogo.First(c => c.Key == col.Key).Hideable) Aviso("Esta columna es fija y no se puede ocultar.", true);
-                else SetColVisible(col.Key, false);
+                else await SetColVisible(col.Key, false);
                 break;
             default: Aviso("Los correos no tienen campos propios: esta opción no aplica aquí.", true); break;
         }
@@ -587,29 +586,93 @@ else
         return new ExportVista("Correos recibidos", _copropiedadNombre, columnas, filas, criterios, niveles.Select(ColLabel).ToList());
     }
 
-    // ===== Columnas: orden / visibilidad / ancho (recordados por navegador) =====
-    private void MoverCol(int idx, int delta)
+    // ===== Columnas: orden / visibilidad / ancho POR COPROPIEDAD (todos los usuarios ven la misma organizacion) =====
+    // Tabla generica unidad_campos_config con entidad 'correo' (mismo patron que Comunicaciones; sin backend nuevo).
+    // Agrupar y ordenar filas siguen siendo preferencia del navegador (como en los demas modulos).
+    private const string EntCfg = "correo";
+    private Dictionary<string, UnidadCampoConfigDto> _cfg = new(StringComparer.Ordinal);
+
+    private async Task MoverCol(int idx, int delta)
     {
         var j = idx + delta;
         if (j < 0 || j >= _colOrder.Count) return;
         (_colOrder[idx], _colOrder[j]) = (_colOrder[j], _colOrder[idx]);
-        GuardarVista();
+        await GuardarOrdenAsync(_colOrder);
     }
-    private void SetColVisible(string key, bool visible)
+    private async Task SetColVisible(string key, bool visible)
     {
         if (!Catalogo.First(c => c.Key == key).Hideable) return;
         if (visible) _colHidden.Remove(key); else _colHidden.Add(key);
-        GuardarVista();
+        await GuardarCfg(FilaConfig(key) with { Oculto = !visible });
+        await CargarConfigAsync();
     }
-    private void MostrarTodo() { _colHidden.Clear(); GuardarVista(); }
-    private void OcultarTodo() { foreach (var c in Catalogo.Where(c => c.Hideable)) _colHidden.Add(c.Key); GuardarVista(); }
-    private void RestablecerCol()
+    private async Task MostrarTodo()
+    { foreach (var c in Catalogo.Where(c => c.Hideable)) await GuardarCfg(FilaConfig(c.Key) with { Oculto = false }); await CargarConfigAsync(); }
+    private async Task OcultarTodo()
+    { foreach (var c in Catalogo.Where(c => c.Hideable)) await GuardarCfg(FilaConfig(c.Key) with { Oculto = true }); await CargarConfigAsync(); }
+    // Restablecer: orden, visibilidad y anchos de fabrica (Buzon visible solo si hay mas de un buzon).
+    private async Task RestablecerCol()
     {
-        _colOrder = Catalogo.Select(c => c.Key).ToList();
+        foreach (var c in Catalogo)
+            await GuardarCfg(FilaConfig(c.Key) with { Oculto = c.Key == "buzon" && !VariosBuzones, Orden = null, Formato = ConAncho(CfgDe(c.Key)?.Formato, null) });
+        await CargarConfigAsync();
+    }
+
+    private UnidadCampoConfigDto? CfgDe(string k) => _cfg.TryGetValue(k, out var c) ? c : null;
+    // Sin fila guardada se conserva el estado visible actual (ej. Buzon oculto por defecto con un solo buzon).
+    private GuardarUnidadCampoConfigRequest FilaConfig(string clave)
+    {
+        var c = CfgDe(clave);
+        return new GuardarUnidadCampoConfigRequest(clave, c?.Alias, c?.Opciones, c?.Tipo, c?.Formato, Oculto: c?.Oculto ?? _colHidden.Contains(clave), Orden: c?.Orden, Entidad: EntCfg, Descripcion: c?.Descripcion);
+    }
+    private async Task GuardarCfg(GuardarUnidadCampoConfigRequest req)
+    {
+        try
+        {
+            var resp = await EnviarAsync(h => h.PutAsJsonAsync("/api/mi-copropiedad/unidades-config", req));
+            if (resp is not null && !resp.IsSuccessStatusCode) Aviso(await ErrorAsync(resp), false);
+        }
+        catch (Exception ex) { Aviso("No se pudo guardar la configuración de columnas: " + ex.Message, false); }
+    }
+    private async Task GuardarOrdenAsync(List<string> orden)
+    {
+        for (int i = 0; i < orden.Count; i++) await GuardarCfg(FilaConfig(orden[i]) with { Orden = i });
+        await CargarConfigAsync();
+    }
+    private async Task CargarConfigAsync()
+    {
+        try
+        {
+            var resp = await EnviarAsync(h => h.GetAsync($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}"));
+            var lista = resp is not null && resp.IsSuccessStatusCode
+                ? await resp.Content.ReadFromJsonAsync<List<UnidadCampoConfigDto>>() ?? new()
+                : new();
+            _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
+        }
+        catch { _cfg = new(StringComparer.Ordinal); }
+        _colOrder = Catalogo.Select((c, i) => (c.Key, ord: CfgDe(c.Key)?.Orden ?? (1000 + i)))
+                            .OrderBy(x => x.ord).Select(x => x.Key).ToList();
         _colHidden.Clear();
+        foreach (var c in Catalogo)
+        {
+            if (!c.Hideable) continue;
+            var cfg = CfgDe(c.Key);
+            // Buzon sin decision guardada: visible solo cuando la copropiedad tiene mas de un buzon.
+            var oculto = cfg is null && c.Key == "buzon" ? !VariosBuzones : cfg?.Oculto ?? false;
+            if (oculto) _colHidden.Add(c.Key);
+        }
         _colW.Clear();
-        if (!VariosBuzones) _colHidden.Add("buzon");
-        GuardarVista();
+        foreach (var kv in _cfg) { var w = AnchoDeFormato(kv.Value.Formato); if (w is > 0) _colW[kv.Key] = w.Value; }
+    }
+    private static int? AnchoDeFormato(string? json)
+    { try { var o = System.Text.Json.Nodes.JsonNode.Parse(json ?? "") as System.Text.Json.Nodes.JsonObject; return o?["w"]?.GetValue<int>(); } catch { return null; } }
+    private static string? ConAncho(string? json, int? w)
+    {
+        System.Text.Json.Nodes.JsonObject o;
+        try { o = string.IsNullOrWhiteSpace(json) ? new() : (System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject ?? new()); }
+        catch { o = new(); }
+        if (w is null) o.Remove("w"); else o["w"] = w.Value;
+        return o.Count == 0 ? null : o.ToJsonString();
     }
 
     private string ColStyle(string k) => $"width:{(_colW.TryGetValue(k, out var w) ? w : AnchoDefault(k))}px";
@@ -622,37 +685,35 @@ else
     private async Task IniciarReorder(MouseEventArgs e, string k)
     { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaColReorder.start", _self, k, e.ClientX, e.ClientY); } catch { } }
     [JSInvokable]
-    public Task OnColReorder(string src, string dest)
+    public async Task OnColReorder(string src, string dest)
     {
-        if (src == dest) return Task.CompletedTask;
+        if (src == dest) return;
         var keys = ColsVisibles.ToList();
         var from = keys.IndexOf(src); var to = keys.IndexOf(dest);
-        if (from < 0 || to < 0) return Task.CompletedTask;
+        if (from < 0 || to < 0) return;
         keys.RemoveAt(from); keys.Insert(to, src);
-        _colOrder = keys.Concat(_colOrder.Where(k => !keys.Contains(k))).ToList();
-        GuardarVista();
+        await GuardarOrdenAsync(keys.Concat(_colOrder.Where(k => !keys.Contains(k))).ToList());
         StateHasChanged();
-        return Task.CompletedTask;
     }
     private async Task IniciarResize(MouseEventArgs e, string k)
     { _self ??= DotNetObjectReference.Create(this); try { await Js.InvokeVoidAsync("propiaTablaResize.start", _self, k, e.ClientX); } catch { } }
     [JSInvokable]
-    public Task OnColResize(string clave, int width)
+    public async Task OnColResize(string clave, int width)
     {
-        if (width <= 0) _colW.Remove(clave); else _colW[clave] = Math.Max(70, width);
-        GuardarVista();
+        int? w = width <= 0 ? null : Math.Max(70, width);
+        if (w is null) _colW.Remove(clave); else _colW[clave] = w.Value;
+        await GuardarCfg(FilaConfig(clave) with { Formato = ConAncho(CfgDe(clave)?.Formato, w) });
+        await CargarConfigAsync();
         StateHasChanged();
-        return Task.CompletedTask;
     }
     public void Dispose() { _self?.Dispose(); }
 
-    private sealed record VistaGuardada(List<string>? Orden, List<string>? Ocultas, Dictionary<string, int>? Anchos,
-        List<string>? Grupos, List<TablaOrdenarMenu.Sort>? Sorts);
+    // Preferencias del NAVEGADOR (no de la copropiedad): agrupacion y orden de filas.
+    private sealed record VistaGuardada(List<string>? Grupos, List<TablaOrdenarMenu.Sort>? Sorts);
 
     private void GuardarVista()
     {
-        _vistaGuardada = true;
-        var json = System.Text.Json.JsonSerializer.Serialize(new VistaGuardada(_colOrder, _colHidden.ToList(), new(_colW), _grupos, _sorts));
+        var json = System.Text.Json.JsonSerializer.Serialize(new VistaGuardada(_grupos, _sorts));
         _ = GuardarLocalAsync(json);
     }
     private async Task GuardarLocalAsync(string json)
@@ -663,18 +724,11 @@ else
         try
         {
             _copropiedadNombre = await Js.InvokeAsync<string?>("localStorage.getItem", "propia_copropiedad_nombre");
+            try { await Js.InvokeVoidAsync("localStorage.removeItem", "propia_correos_vista_v2"); } catch { }   // vista vieja (columnas por navegador)
             var json = await Js.InvokeAsync<string?>("localStorage.getItem", VistaKey);
             if (string.IsNullOrWhiteSpace(json)) return;
             var v = System.Text.Json.JsonSerializer.Deserialize<VistaGuardada>(json);
             if (v is null) return;
-            _vistaGuardada = true;
-            if (v.Orden is { Count: > 0 })
-                _colOrder = v.Orden.Where(k => Catalogo.Any(c => c.Key == k))
-                    .Concat(Catalogo.Select(c => c.Key).Where(k => !v.Orden.Contains(k))).ToList();
-            _colHidden.Clear();
-            foreach (var k in v.Ocultas ?? new()) if (Catalogo.Any(c => c.Key == k && c.Hideable)) _colHidden.Add(k);
-            _colW.Clear();
-            foreach (var kv in v.Anchos ?? new()) if (kv.Value > 0) _colW[kv.Key] = kv.Value;
             if (v.Grupos is not null) _grupos = v.Grupos.Where(k => Catalogo.Any(c => c.Key == k)).ToList();
             if (v.Sorts is not null) _sorts = v.Sorts.Where(s => Catalogo.Any(c => c.Key == s.Key)).ToList();
         }
@@ -727,8 +781,8 @@ else
             var r3 = await EnviarAsync(h => h.GetAsync($"/api/campos/opciones?lista={Uri.EscapeDataString(TemasCorreoBase.Lista)}&incluirOcultas=true"));
             if (r3 is not null && r3.IsSuccessStatusCode)
                 _temas = await r3.Content.ReadFromJsonAsync<List<OpcionEfectivaDto>>() ?? new();
-            // Sin vista guardada, la columna Buzon solo aparece cuando hay mas de un buzon.
-            if (!_vistaGuardada) { if (VariosBuzones) _colHidden.Remove("buzon"); else _colHidden.Add("buzon"); }
+            // Columnas de la copropiedad (despues de los buzones: Buzon se muestra por defecto solo con varios).
+            await CargarConfigAsync();
         }
         catch (Exception ex) { Aviso("No se pudo cargar la bandeja: " + ex.Message, false); _items ??= new(); }
     }
