@@ -332,6 +332,7 @@ public partial class PqrsdService
             ["radicado.categoria"] = exp.Categoria?.Nombre ?? "",
             ["radicado.fecha"] = exp.CreatedAt.ToLocalTime().ToString("dd 'de' MMMM 'de' yyyy", esCO),
             ["radicado.estado"] = exp.Estado.ToString(),
+            ["radicado.vencimiento"] = exp.FechaVencimiento.ToString("dd 'de' MMMM 'de' yyyy", esCO),
             ["solicitante.nombre"] = solNombre,
             ["solicitante.identificacion"] = solDoc,
             ["solicitante.correo"] = exp.IdentidadReservada ? "" : (rad?.Email ?? ""),

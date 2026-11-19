@@ -27,6 +27,13 @@ public partial class PropiaDbContext
             b.HasIndex(x => new { x.TenantId, x.Estado });
             b.HasIndex(x => x.BuzonId);
             b.HasOne<BuzonCorreo>().WithMany().HasForeignKey(x => x.BuzonId).OnDelete(DeleteBehavior.SetNull);
+            // PQRSD por correo (Ola P1): el expediente radicado desde el correo. Si el expediente se borra, el correo queda.
+            b.Property(x => x.PqrsdRadicado).HasMaxLength(60);
+            b.HasIndex(x => x.PqrsdExpedienteId);
+            b.HasOne<PqrsdExpediente>().WithMany().HasForeignKey(x => x.PqrsdExpedienteId).OnDelete(DeleteBehavior.SetNull);
+            // Ola P2: respuesta de radicado enviada desde la cuenta del buzon.
+            b.Property(x => x.AcuseDestino).HasMaxLength(320);
+            b.Property(x => x.AcuseError).HasMaxLength(1000);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });
 
@@ -37,6 +44,9 @@ public partial class PropiaDbContext
             b.Property(x => x.Cuenta).IsRequired().HasMaxLength(320);
             b.Property(x => x.ImapHost).IsRequired().HasMaxLength(200);
             b.Property(x => x.UltimoError).HasMaxLength(1000);
+            b.Property(x => x.UmbralAutoPqrsd).HasPrecision(4, 3);
+            // Ola P2: plantilla de la respuesta de radicado (si se borra la plantilla, se usa la predeterminada).
+            b.HasOne<PlantillaDocumento>().WithMany().HasForeignKey(x => x.PlantillaAcuseId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(x => new { x.TenantId, x.Cuenta }).IsUnique();
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
         });

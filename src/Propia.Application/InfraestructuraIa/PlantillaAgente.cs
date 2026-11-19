@@ -20,6 +20,8 @@ public static class PlantillaAgente
     public const string ClaveCorrectorTexto = "corrector-redaccion";
     /// <summary>Coordinador de correo (lector de buzon): clasifica cada correo entrante por tema y lo delega.</summary>
     public const string ClaveCoordinadorCorreo = "coordinador-correo";
+    /// <summary>Radicador de PQRSD por correo: lee un correo de tema PQRSD y propone tipo, categoria y unidad.</summary>
+    public const string ClaveRadicadorPqrsd = "radicador-pqrsd-correo";
 
     /// <summary>{COPROPIEDAD_NOMBRE} y {ORGANIZACION_NOMBRE} (sin organizacion, el de la copropiedad).</summary>
     public static string Render(string? texto, string copropiedadNombre, string? organizacionNombre)

@@ -2213,6 +2213,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password_cifrada");
 
+                    b.Property<Guid?>("PlantillaAcuseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plantilla_acuse_id");
+
+                    b.Property<bool>("ResponderRadicado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("responder_radicado");
+
                     b.Property<string>("TemasJson")
                         .HasColumnType("text")
                         .HasColumnName("temas_json");
@@ -2238,6 +2246,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("ultimo_uid");
 
+                    b.Property<decimal?>("UmbralAutoPqrsd")
+                        .HasPrecision(4, 3)
+                        .HasColumnType("numeric(4,3)")
+                        .HasColumnName("umbral_auto_pqrsd");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -2247,6 +2260,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_by");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PlantillaAcuseId");
 
                     b.HasIndex("TenantId", "Cuenta")
                         .IsUnique();
@@ -4018,6 +4033,20 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("accion_sugerida");
 
+                    b.Property<string>("AcuseDestino")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("acuse_destino");
+
+                    b.Property<DateTimeOffset?>("AcuseEnviadoAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("acuse_enviado_at");
+
+                    b.Property<string>("AcuseError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("acuse_error");
+
                     b.Property<string>("AdjuntosJson")
                         .HasColumnType("text")
                         .HasColumnName("adjuntos_json");
@@ -4084,6 +4113,23 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("para");
 
+                    b.Property<bool?>("PqrsdAutomatico")
+                        .HasColumnType("boolean")
+                        .HasColumnName("pqrsd_automatico");
+
+                    b.Property<Guid?>("PqrsdExpedienteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pqrsd_expediente_id");
+
+                    b.Property<string>("PqrsdRadicado")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("pqrsd_radicado");
+
+                    b.Property<string>("PropuestaPqrsdJson")
+                        .HasColumnType("text")
+                        .HasColumnName("propuesta_pqrsd_json");
+
                     b.Property<string>("RemitenteCorreo")
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)")
@@ -4119,6 +4165,8 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BuzonId");
+
+                    b.HasIndex("PqrsdExpedienteId");
 
                     b.HasIndex("TenantId", "Estado");
 
@@ -23020,6 +23068,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Navigation("UnidadPrivada");
                 });
 
+            modelBuilder.Entity("Propia.Domain.Entities.BuzonCorreo", b =>
+                {
+                    b.HasOne("Propia.Domain.Entities.PlantillaDocumento", null)
+                        .WithMany()
+                        .HasForeignKey("PlantillaAcuseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Propia.Domain.Entities.CalendarioConfigUsuario", b =>
                 {
                     b.HasOne("Propia.Domain.Entities.Organizacion", "Organizacion")
@@ -23248,6 +23304,11 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.HasOne("Propia.Domain.Entities.BuzonCorreo", null)
                         .WithMany()
                         .HasForeignKey("BuzonId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Propia.Domain.Entities.PqrsdExpediente", null)
+                        .WithMany()
+                        .HasForeignKey("PqrsdExpedienteId")
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 

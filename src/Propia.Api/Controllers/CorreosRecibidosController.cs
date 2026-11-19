@@ -17,7 +17,8 @@ namespace Propia.Api.Controllers;
 public class CorreosRecibidosController : ControllerBase
 {
     private readonly ICorreoEntranteService _svc;
-    public CorreosRecibidosController(ICorreoEntranteService svc) => _svc = svc;
+    private readonly ICorreoPqrsdService _pqrsd;
+    public CorreosRecibidosController(ICorreoEntranteService svc, ICorreoPqrsdService pqrsd) { _svc = svc; _pqrsd = pqrsd; }
 
     [HttpGet]
     public async Task<IActionResult> Listar(CancellationToken ct) => Ok(await _svc.ListarAsync(ct));
@@ -80,4 +81,14 @@ public class CorreosRecibidosController : ControllerBase
     [HttpPost("{id:guid}/descartar")]
     public async Task<IActionResult> Descartar(Guid id, [FromBody] DescartarRequest req, CancellationToken ct)
         => await _svc.DescartarAsync(id, req.Descartar, ct) is { } d ? Ok(d) : NotFound();
+
+    /// <summary>PQRSD por correo: radica (o confirma) la PQRSD del correo con lo que elija la persona; lo no enviado sale
+    /// de la propuesta del Radicador de PQRSD. Mismo permiso que radicar en el modulo PQRSD.</summary>
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Crear)]
+    [HttpPost("{id:guid}/radicar-pqrsd")]
+    public async Task<IActionResult> RadicarPqrsd(Guid id, [FromBody] RadicarCorreoPqrsdRequest req, CancellationToken ct)
+    {
+        var r = await _pqrsd.RadicarAsync(id, req, ct);
+        return r.Ok ? Ok(r) : BadRequest(new { error = r.Error });
+    }
 }

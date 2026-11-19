@@ -55,6 +55,30 @@ public class CorreoRecibido : TenantEntity
     public string? Error { get; set; }
 
     public DateTimeOffset? ClasificadoEn { get; set; }
+
+    // ----- PQRSD por correo (Ola P1, 2026-11-18) -----
+
+    /// <summary>Propuesta del agente "Radicador de PQRSD" (tipo, categoria, unidad, confianza) en JSON
+    /// (<c>PropuestaPqrsdCorreo</c>). Se usa para radicar solo (confianza alta) o para prellenar el formulario.</summary>
+    public string? PropuestaPqrsdJson { get; set; }
+
+    /// <summary>Expediente PQRSD que se radico desde este correo (null = aun no). Evita radicar dos veces.</summary>
+    public Guid? PqrsdExpedienteId { get; set; }
+
+    /// <summary>Numero de radicado del expediente (copia para mostrarlo en la bandeja sin cruzar tablas).</summary>
+    public string? PqrsdRadicado { get; set; }
+
+    /// <summary>True si se radico solo (confianza sobre el umbral del buzon); false si lo confirmo una persona.</summary>
+    public bool? PqrsdAutomatico { get; set; }
+
+    /// <summary>Ola P2: cuando se envio la respuesta de radicado desde la cuenta del buzon (null = no se envio).</summary>
+    public DateTimeOffset? AcuseEnviadoAt { get; set; }
+
+    /// <summary>A quien se respondio (el remitente del correo).</summary>
+    public string? AcuseDestino { get; set; }
+
+    /// <summary>Por que no salio la respuesta por el buzon (en ese caso se envio la confirmacion de la plataforma).</summary>
+    public string? AcuseError { get; set; }
 }
 
 /// <summary>Claves de los temas BASE del coordinador (lista por copropiedad "correo.tema"). La copropiedad puede

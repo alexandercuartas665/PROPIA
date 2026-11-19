@@ -48,13 +48,15 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
     private readonly IAiInferenceService _inference;
     private readonly IBlobStorage _blob;
     private readonly IOpcionesEfectivas _opciones;
+    private readonly ICorreoPqrsdService? _pqrsd;
     private readonly ILogger<CorreoEntranteService> _log;
 
     public CorreoEntranteService(PropiaDbContext db, ITenantContext tenant, ISecretProtector secret, IAgentesSistema agentes,
-        IAiInferenceService inference, IBlobStorage blob, IOpcionesEfectivas opciones, ILogger<CorreoEntranteService> log)
+        IAiInferenceService inference, IBlobStorage blob, IOpcionesEfectivas opciones, ILogger<CorreoEntranteService> log,
+        ICorreoPqrsdService? pqrsd = null)
     {
         _db = db; _tenant = tenant; _secret = secret; _agentes = agentes; _inference = inference; _blob = blob;
-        _opciones = opciones; _log = log;
+        _opciones = opciones; _log = log; _pqrsd = pqrsd;
     }
 
     // ---------------------------------------------------------------- buzones
@@ -79,7 +81,8 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
             .Select(c => new CorreoRecienteDto(c.Id, c.Asunto, c.TemaClave, c.Estado, c.FechaCorreo)).ToListAsync(ct);
         return new BuzonCorreoDto(b.Id, b.Nombre, b.Cuenta, !string.IsNullOrEmpty(b.PasswordCifrada),
             string.IsNullOrWhiteSpace(b.ImapHost) ? "imap.gmail.com" : b.ImapHost, b.ImapPort <= 0 ? 993 : b.ImapPort, b.Activo,
-            b.LecturaDesde, b.UltimaRevision, b.UltimoError, LeerTemas(b.TemasJson), hoy, total, pendientes, recientes);
+            b.LecturaDesde, b.UltimaRevision, b.UltimoError, LeerTemas(b.TemasJson), hoy, total, pendientes, recientes,
+            b.UmbralAutoPqrsd, b.ResponderRadicado, b.PlantillaAcuseId);
     }
 
     public async Task<(BuzonCorreoDto? Buzon, string? Error)> CrearBuzonAsync(GuardarBuzonRequest req, CancellationToken ct = default)
@@ -138,6 +141,24 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         {
             if (p <= 0 || p > 65535) return "El puerto IMAP no es v\u00e1lido.";
             b.ImapPort = p;
+        }
+
+        // PQRSD por correo: 0 o menos = nunca radicar solo (null); 0.5 a 1 = confianza minima.
+        if (req.UmbralAutoPqrsd is decimal um)
+        {
+            if (um <= 0) b.UmbralAutoPqrsd = null;
+            else if (um < 0.5m || um > 1m) return "El umbral para radicar PQRSD solo debe estar entre 50% y 100%.";
+            else b.UmbralAutoPqrsd = Math.Round(um, 3);
+        }
+
+        // Ola P2: respuesta de radicado por el buzon y su plantilla (de PQRSD; Guid.Empty = la predeterminada).
+        if (req.ResponderRadicado is bool rr) b.ResponderRadicado = rr;
+        if (req.PlantillaAcuseId is Guid pl)
+        {
+            if (pl == Guid.Empty) b.PlantillaAcuseId = null;
+            else if (!await _db.PlantillasDocumento.AnyAsync(x => x.Id == pl && x.Categoria == Application.Plantillas.PlantillasCatalogo.Pqrsd, ct))
+                return "La plantilla de respuesta no existe o no es de PQRSD.";
+            else b.PlantillaAcuseId = pl;
         }
 
         if (req.TodosLosTemas == true) b.TemasJson = null;
@@ -409,13 +430,33 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         if (pendientes.Count == 0) return (0, 0);
         var activos = await TemasActivosAsync(ct);
         var temasBuzon = await _db.BuzonesCorreo.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.TemasJson, ct);
+        var umbrales = await UmbralesAsync(ct);
         int ok = 0, err = 0;
         foreach (var c in pendientes)
         {
-            if (await ClasificarAsync(c, TemasPara(c, activos, temasBuzon), ct)) ok++; else err++;
+            if (await ClasificarAsync(c, TemasPara(c, activos, temasBuzon), ct))
+            {
+                ok++;
+                await _db.SaveChangesAsync(ct);
+                await DelegarAsync(c, umbrales, ct);
+            }
+            else err++;
             await _db.SaveChangesAsync(ct);
         }
         return (ok, err);
+    }
+
+    private async Task<Dictionary<Guid, decimal?>> UmbralesAsync(CancellationToken ct)
+        => await _db.BuzonesCorreo.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.UmbralAutoPqrsd, ct);
+
+    /// <summary>Tras clasificar: el tema PQRSD pasa al Radicador de PQRSD (propone y, con confianza alta, radica).
+    /// Un correo sin buzon (buzon eliminado) no se radica solo.</summary>
+    private async Task DelegarAsync(CorreoRecibido c, IReadOnlyDictionary<Guid, decimal?> umbrales, CancellationToken ct)
+    {
+        if (_pqrsd is null || c.PqrsdExpedienteId is not null) return;
+        if (!string.Equals(c.TemaClave, TemasCorreoBase.Pqrsd, StringComparison.OrdinalIgnoreCase)) return;
+        var umbral = c.BuzonId is Guid bid && umbrales.TryGetValue(bid, out var u) ? u : null;
+        await _pqrsd.ProcesarAsync(c, umbral, ct);
     }
 
     private static IReadOnlyList<TemaCorreoDef> TemasPara(CorreoRecibido c, IReadOnlyList<TemaCorreoDef> activos,
@@ -488,7 +529,9 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         var adj = LeerAdjuntos(x.AdjuntosJson)
             .Select(a => new CorreoAdjuntoDto(a.Nombre, a.Mime, a.Tamano, _blob.ResolveUrl(a.Ruta))).ToList();
         return new CorreoRecibidoDetalleDto(x.Id, x.BuzonId, buzon, x.FechaCorreo, x.RemitenteCorreo, x.RemitenteNombre, x.Para,
-            x.Asunto, x.Cuerpo, adj, x.TemaClave, x.Confianza, x.Resumen, x.AccionSugerida, x.DatosJson, x.Estado, x.Error, x.ClasificadoEn);
+            x.Asunto, x.Cuerpo, adj, x.TemaClave, x.Confianza, x.Resumen, x.AccionSugerida, x.DatosJson, x.Estado, x.Error, x.ClasificadoEn,
+            CorreoPqrsdService.LeerPropuesta(x.PropuestaPqrsdJson), x.PqrsdExpedienteId, x.PqrsdRadicado, x.PqrsdAutomatico,
+            x.AcuseEnviadoAt, x.AcuseDestino, x.AcuseError);
     }
 
     public async Task<CorreoRecibidoDto?> ReclasificarAsync(Guid id, CancellationToken ct = default)
@@ -497,8 +540,16 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         if (x is null) return null;
         var activos = await TemasActivosAsync(ct);
         var temasBuzon = await _db.BuzonesCorreo.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.TemasJson, ct);
-        await ClasificarAsync(x, TemasPara(x, activos, temasBuzon), ct);
+        // Un correo ya radicado conserva su radicado: reclasificar solo cambia el tema que muestra la bandeja.
+        if (await ClasificarAsync(x, TemasPara(x, activos, temasBuzon), ct) && x.PqrsdExpedienteId is not null)
+            x.Estado = EstadoCorreoRecibido.Procesado;
         await _db.SaveChangesAsync(ct);
+        if (x.PqrsdExpedienteId is null && x.Estado == EstadoCorreoRecibido.Clasificado)
+        {
+            if (!string.Equals(x.TemaClave, TemasCorreoBase.Pqrsd, StringComparison.OrdinalIgnoreCase)) x.PropuestaPqrsdJson = null;
+            await DelegarAsync(x, await UmbralesAsync(ct), ct);
+            await _db.SaveChangesAsync(ct);
+        }
         return ADto(x);
     }
 
@@ -515,7 +566,7 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
 
     private static CorreoRecibidoDto ADto(CorreoRecibido x) => new(x.Id, x.BuzonId, x.FechaCorreo, x.RemitenteCorreo,
         x.RemitenteNombre, x.Asunto, x.TemaClave, x.Confianza, x.Resumen, x.AccionSugerida, x.Estado, x.Error,
-        LeerAdjuntos(x.AdjuntosJson).Count);
+        LeerAdjuntos(x.AdjuntosJson).Count, x.PqrsdExpedienteId, x.PqrsdRadicado);
 
     // ---------------------------------------------------------------- utilidades
 

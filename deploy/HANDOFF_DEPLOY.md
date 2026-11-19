@@ -1,5 +1,42 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **PQRSD POR CORREO - OLA P2: RESPUESTA DE RADICADO POR EL BUZON + REENVIOS (2026-11-19): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
+> - Va DESPUES de `20261118204320_AddCorreoPqrsd` (bloque de abajo, P1); aplicar ANTES o JUNTO con el deploy.
+> - Migracion `20261119162249_AddRespuestaRadicadoBuzon` (owner `propia`): `buzones_correo` suma `responder_radicado`
+>   boolean NOT NULL DEFAULT true (los buzones existentes quedan respondiendo; ADD COLUMN con DEFAULT, sin UPDATE por fila)
+>   y `plantilla_acuse_id` (FK a `plantillas_documento`, SET NULL); `correos_recibidos` suma `acuse_enviado_at`,
+>   `acuse_destino`(320), `acuse_error`(1000). Sin tablas nuevas. En dev: aplicada.
+> - Al radicar un correo (solo o a mano) se le responde al remitente DESDE LA MISMA CUENTA DEL BUZON (SMTP smtp.gmail.com:587
+>   con la misma contrasena de aplicacion), en el mismo hilo ("Re: ...", In-Reply-To), con la plantilla del buzon. Si sale,
+>   la plataforma NO manda su "Radicado recibido"; si falla, se anota el error y SI sale la de la plataforma.
+> - Plantilla: la copropiedad recibe al primer uso "Acuse de radicado por correo" (categoria PQRSD, sin membrete); cada buzon
+>   puede elegir otra o "No responder". Dato nuevo de plantillas PQRSD: `{radicado.vencimiento}`.
+> - Reenvios ("RV:"/"Fwd:"): el solicitante es el remitente ORIGINAL del bloque reenviado (regla fija; si no alcanza, lo que
+>   vea el Radicador); la respuesta va a quien reenvio. Un correo que menciona un radicado existente NO se radica solo
+>   (seguimiento; adjuntarlo al expediente es la Ola P3).
+> - Semilla: la plantilla "Radicador de PQRSD" sube a version 2 sola si su prompt seguia intacto (Super Admin > Plantillas
+>   de Agentes IA > "Actualizar copropiedades" para llevarla a los agentes ya creados). Paquete: usa MailKit (ya estaba).
+> - Web: selector "Responder con el numero de radicado" en el buzon; lineas de reenvio / respuesta en el detalle del correo
+>   (`correos.css?v=9`). Sin config nueva.
+> - OJO prod: igual que P1, nada pasa mientras ningun buzon de prod lea. No activar sin OK de Alex.
+
+> **PQRSD POR CORREO - OLA P1 (2026-11-18): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
+> - Va DESPUES de `20261118004700_AddBuzonesCorreo` (bloque de abajo); aplicar ANTES o JUNTO con el deploy.
+> - Migracion `20261118204320_AddCorreoPqrsd` (owner `propia`): `correos_recibidos` suma `propuesta_pqrsd_json`,
+>   `pqrsd_expediente_id` (FK a `pqrsd_expedientes`, SET NULL), `pqrsd_radicado`, `pqrsd_automatico`;
+>   `buzones_correo` suma `umbral_auto_pqrsd` numeric(4,3) con backfill 0.900 (NO FORCE temporal). Sin tablas nuevas.
+>   En dev: aplicada.
+> - Semilla nueva: plantilla "Radicador de PQRSD" (clave `radicador-pqrsd-correo`) con el MISMO proveedor/modelo que el
+>   Coordinador de correo. Revisar en prod que ese proveedor tenga llave vigente.
+> - Comportamiento: un correo de tema PQRSD pasa al Radicador; con confianza del Coordinador Y del Radicador >= umbral del
+>   buzon (90% por defecto, "Nunca" = solo manual) se radica solo (medio Correo, fecha de recibido = fecha del correo,
+>   adjuntos + `correo-original.txt`; radicador = persona del directorio con ese correo o persona externa nueva con
+>   documento PENDIENTE-). El acuse "Radicado recibido" sale por el correo del sistema (igual que el radicar manual).
+> - API: `POST api/correos-recibidos/{id}/radicar-pqrsd` (permiso PQRS Crear). Web: bloque PQRSD en el detalle del
+>   correo, estado "Radicado PQRSD-..." en la bandeja y "Radicar PQRSD solo" en el buzon (`correos.css?v=8`). Sin config nueva.
+> - OJO prod: con un buzon con lectura activa, los PQRSD que lleguen se radican solos desde el deploy. Hoy ningun buzon de
+>   prod lee (la Ola 1 sigue en pruebas); no activar sin OK de Alex.
+
 > **LECTOR DE BUZON - VARIOS BUZONES + TEMAS CONFIGURABLES (2026-11-17): 1 MIGRACION NUEVA. API y Web.**
 > - Va DESPUES de `20261117195714_AddLectorBuzon` (bloque de abajo). Si el deploy de la Ola 1 aun no salio, se suben
 >   juntas en orden (`dotnet ef database update` aplica las dos). Aplicar ANTES o JUNTO con el deploy.

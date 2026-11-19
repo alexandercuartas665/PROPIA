@@ -64,6 +64,10 @@ public interface IPqrsdService
     // Radicacion (residente o admin)
     Task<PqrsdExpedienteDetalleDto> RadicarAsync(RadicarPqrsdRequest req, CancellationToken ct);
 
+    /// <summary>Confirmacion de radicado al radicador por sus canales (la misma que manda RadicarAsync). Para cuando se
+    /// radico con OmitirConfirmacionRadicador y el acuse por el buzon no salio. False si el expediente no existe.</summary>
+    Task<bool> EnviarConfirmacionRadicadoAsync(Guid expedienteId, CancellationToken ct);
+
     // Formulario publico (sin login): branding + catalogos, y radicacion externa
     /// <summary>Config del formulario publico (nombre + logo de la copropiedad + tipos/categorias activos). Null si el tenant no existe o no esta activo.</summary>
     Task<PqrsdPublicoConfigDto?> GetConfigPublicoAsync(Guid tenantId, CancellationToken ct);

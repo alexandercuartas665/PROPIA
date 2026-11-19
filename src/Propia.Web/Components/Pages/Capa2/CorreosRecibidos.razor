@@ -2,6 +2,8 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using Propia.Application.Catalogos
 @using Propia.Application.Integraciones
+@using Propia.Application.MiCopropiedad
+@using Propia.Application.Pqrsd
 @using Propia.Domain.Entities
 @using Propia.Web.Components.Shared
 @inject IHttpClientFactory HttpFactory
@@ -265,6 +267,114 @@ else
                     }
                 </div>
 
+                @if (MuestraPqrsd(d))
+                {
+                    var prop = d.PropuestaPqrsd;
+                    <div class="cor-pq @(d.PqrsdExpedienteId is not null ? "is-ok" : "")">
+                        <div class="cor-pq-head">
+                            <span class="cor-pq-ic"><i class="fi fi-rr-comments-question"></i></span>
+                            <span class="cor-pq-tit">PQRSD</span>
+                            @if (d.PqrsdExpedienteId is Guid expId)
+                            {
+                                <span class="cor-chip cor-e-ok">Radicado @d.PqrsdRadicado</span>
+                                <span class="cor-pq-modo">@(d.PqrsdAutomatico == true ? "Se radicó automáticamente" : "Radicado por la administración")</span>
+                                <button type="button" class="propia-btn-ghost cor-pq-ver" @onclick='() => Nav.NavigateTo($"/pqrs?abrir={expId}")'>Ver en PQRSD</button>
+                            }
+                            else
+                            {
+                                <span class="cor-pq-modo">Pendiente de radicar</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(prop?.RemitenteOriginalCorreo))
+                        {
+                            <div class="cor-pq-linea">
+                                <i class="fi fi-rr-share"></i>
+                                <span>Correo reenviado: el solicitante es <strong>@(string.IsNullOrWhiteSpace(prop!.RemitenteOriginalNombre) ? prop.RemitenteOriginalCorreo : $"{prop.RemitenteOriginalNombre} <{prop.RemitenteOriginalCorreo}>")</strong>; lo reenvió @d.RemitenteCorreo.</span>
+                            </div>
+                        }
+                        @if (d.PqrsdExpedienteId is not null && d.AcuseEnviadoAt is DateTimeOffset acuseAt)
+                        {
+                            <div class="cor-pq-linea is-ok">
+                                <i class="fi fi-rr-paper-plane"></i>
+                                <span>Respuesta con el radicado enviada desde este buzón a @d.AcuseDestino (@acuseAt.ToOffset(TimeSpan.FromHours(-5)).ToString("dd/MM/yyyy h:mm tt", new System.Globalization.CultureInfo("es-CO")))</span>
+                            </div>
+                        }
+                        else if (d.PqrsdExpedienteId is not null && !string.IsNullOrWhiteSpace(d.AcuseError))
+                        {
+                            <div class="cor-pq-linea is-err">
+                                <i class="fi fi-rr-exclamation"></i>
+                                <span>No salió la respuesta por el buzón (@d.AcuseError). Se envió la confirmación de la plataforma.</span>
+                            </div>
+                        }
+                        @if (d.PqrsdExpedienteId is null)
+                        {
+                            @if (!string.IsNullOrWhiteSpace(prop?.Pendiente))
+                            {
+                                <div class="cor-pq-nota">@prop!.Pendiente</div>
+                            }
+                            @if (prop is not null && (prop.Confianza is not null || !string.IsNullOrWhiteSpace(prop.Motivo)))
+                            {
+                                <div class="cor-pq-ia">
+                                    <i class="fi fi-rr-robot"></i>
+                                    <span>@PropuestaTexto(prop)</span>
+                                </div>
+                            }
+                            @if (_pqCargando)
+                            {
+                                <div class="text-center py-2"><div class="spinner-border spinner-border-sm" style="color: var(--propia-brand);"></div></div>
+                            }
+                            else
+                            {
+                                <div class="cor-form cor-pq-form">
+                                    <div class="cor-fld">
+                                        <label>Tipo</label>
+                                        <select class="cor-inp" @bind="_pqTipo">
+                                            <option value="">Elige el tipo</option>
+                                            @foreach (var t in _pqTipos) { <option value="@t.Id">@t.Nombre (@t.DiasHabiles días hábiles)</option> }
+                                        </select>
+                                    </div>
+                                    <div class="cor-fld">
+                                        <label>Categoría</label>
+                                        <select class="cor-inp" @bind="_pqCat">
+                                            <option value="">Elige la categoría</option>
+                                            @foreach (var x in _pqCats) { <option value="@x.Id">@x.Nombre</option> }
+                                        </select>
+                                    </div>
+                                    <div class="cor-fld">
+                                        <label>Unidad</label>
+                                        <select class="cor-inp" @bind="_pqUnidad">
+                                            <option value="">Sin unidad</option>
+                                            @foreach (var u in _pqUnidades) { <option value="@u.Id">@u.Numero</option> }
+                                        </select>
+                                        @if (!string.IsNullOrWhiteSpace(prop?.UnidadTexto))
+                                        {
+                                            <span class="cor-help">El remitente escribió: “@prop!.UnidadTexto”</span>
+                                        }
+                                    </div>
+                                    <div class="cor-fld cor-pq-full">
+                                        <label>Descripción del radicado</label>
+                                        <textarea class="cor-inp cor-pq-desc" rows="6" maxlength="2000" @bind="_pqDesc" @bind:event="oninput"></textarea>
+                                        <span class="cor-help">
+                                            Es el texto del correo (sin las citas de correos anteriores). Radicador: @(string.IsNullOrWhiteSpace(d.RemitenteNombre) ? "" : d.RemitenteNombre + " ")&lt;@d.RemitenteCorreo&gt;;
+                                            si no está en el directorio se crea como persona externa. El plazo cuenta desde la fecha del correo (@Fecha(d.FechaCorreo)). El correo original y sus documentos quedan adjuntos.
+                                        </span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(_pqError))
+                                    {
+                                        <div class="cor-pq-err">@_pqError</div>
+                                    }
+                                    <div class="cor-form-acts">
+                                        <button type="button" class="propia-btn-brand" disabled="@(_accion || !PqListo)" title="@(PqListo ? "Radicar la PQRSD" : "Elige tipo y categoría; la descripción debe tener al menos 20 caracteres")"
+                                                @onclick="() => RadicarPqrsdAsync(d.Id)">
+                                            @if (_accion) { <span class="spinner-border spinner-border-sm"></span> } Radicar PQRSD
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+
                 @if (d.Adjuntos.Count > 0)
                 {
                     <div>
@@ -293,6 +403,10 @@ else
                 else
                 {
                     <button type="button" class="propia-btn-ghost" disabled="@_accion" @onclick="() => DescartarAsync(d.Id, true)">Descartar</button>
+                }
+                @if (!MuestraPqrsd(d) && d.Estado != EstadoCorreoRecibido.Descartado)
+                {
+                    <button type="button" class="propia-btn-ghost" disabled="@_accion" @onclick="() => AbrirPqrsdManualAsync(d)">Radicar como PQRSD</button>
                 }
                 <button type="button" class="propia-btn-brand" disabled="@_accion" @onclick="() => ReclasificarAsync(d.Id)">
                     @if (_accion) { <span class="spinner-border spinner-border-sm"></span> } Reclasificar
@@ -493,7 +607,7 @@ else
         "tema" => TemaLabel(c.TemaClave),
         "confianza" => c.Confianza is decimal cf ? $"{cf * 100:0}%" : "",
         "resumen" => c.Error ?? c.Resumen ?? "",
-        "estado" => EstadoLabel(c.Estado),
+        "estado" => string.IsNullOrWhiteSpace(c.PqrsdRadicado) ? EstadoLabel(c.Estado) : "Radicado " + c.PqrsdRadicado,
         _ => "",
     };
 
@@ -525,7 +639,7 @@ else
         "tema" => @<span class="cor-chip cor-chip-t" style="@TemaStyle(c.TemaClave)">@TemaLabel(c.TemaClave)</span>,
         "confianza" => @<span class="cor-conf">@(c.Confianza is decimal cf ? $"{cf * 100:0}%" : "—")</span>,
         "resumen" => @<div class="cor-resumen" title="@(c.Error ?? c.Resumen)">@(c.Error ?? c.Resumen)</div>,
-        "estado" => @<span class="cor-chip @EstadoCss(c.Estado)">@EstadoLabel(c.Estado)</span>,
+        "estado" => @<span class="cor-chip @EstadoCss(c.Estado)" title="@(c.PqrsdRadicado is null ? null : "PQRSD radicada desde este correo")">@TextoCelda(c, "estado")</span>,
         _ => @<span>@TextoCelda(c, k)</span>,
     };
 
@@ -816,12 +930,99 @@ else
             var resp = await EnviarAsync(h => h.GetAsync($"/api/correos-recibidos/{id}"));
             if (resp is null) return;
             resp.EnsureSuccessStatusCode();
+            var cambio = _detalle?.Id != id;
             _detalle = await resp.Content.ReadFromJsonAsync<CorreoRecibidoDetalleDto>();
+            if (cambio) { _pqManual = false; _pqError = null; }
+            if (_detalle is not null && MuestraPqrsd(_detalle) && _detalle.PqrsdExpedienteId is null) await PrepararPqrsdAsync(_detalle);
         }
         catch (Exception ex) { Aviso("No se pudo abrir el correo: " + ex.Message, false); }
     }
 
-    private void CerrarDetalle() => _detalle = null;
+    private void CerrarDetalle() { _detalle = null; _pqManual = false; }
+
+    // ===== PQRSD por correo (Ola P1): bloque del detalle para confirmar o radicar a mano =====
+    private bool _pqManual, _pqCargando;
+    private List<PqrsdTipoDto> _pqTipos = new();
+    private List<PqrsdCategoriaDto> _pqCats = new();
+    private List<UnidadDto> _pqUnidades = new();
+    private string _pqTipo = "", _pqCat = "", _pqUnidad = "", _pqDesc = "";
+    private string? _pqError;
+
+    private bool MuestraPqrsd(CorreoRecibidoDetalleDto d)
+        => d.PqrsdExpedienteId is not null || d.PropuestaPqrsd is not null || _pqManual
+           || string.Equals(d.TemaClave, TemasCorreoBase.Pqrsd, StringComparison.OrdinalIgnoreCase);
+
+    private bool PqListo => Guid.TryParse(_pqTipo, out _) && Guid.TryParse(_pqCat, out _)
+                            && (_pqDesc?.Trim().Length ?? 0) >= RadicadorPqrsdCorreoAgente.MinDescripcion;
+
+    private static string PropuestaTexto(PropuestaPqrsdCorreo p)
+    {
+        var t = "Radicador de PQRSD";
+        if (p.Confianza is decimal c) t += $" · confianza {c * 100:0}%";
+        if (!string.IsNullOrWhiteSpace(p.Urgencia)) t += " · urgencia " + p.Urgencia;
+        if (!string.IsNullOrWhiteSpace(p.Motivo)) t += ": " + p.Motivo;
+        return t;
+    }
+
+    private async Task AbrirPqrsdManualAsync(CorreoRecibidoDetalleDto d)
+    {
+        _pqManual = true;
+        await PrepararPqrsdAsync(d);
+    }
+
+    // Catalogos de la copropiedad + valores de la propuesta del agente (o vacios si se radica a mano).
+    private async Task PrepararPqrsdAsync(CorreoRecibidoDetalleDto d)
+    {
+        _pqCargando = true;
+        StateHasChanged();
+        try
+        {
+            if (_pqTipos.Count == 0)
+            {
+                var rt = await EnviarAsync(h => h.GetAsync("/api/pqrsd/tipos"));
+                if (rt is { IsSuccessStatusCode: true }) _pqTipos = (await rt.Content.ReadFromJsonAsync<List<PqrsdTipoDto>>() ?? new()).Where(t => t.Activo).OrderBy(t => t.Orden).ToList();
+                var rc = await EnviarAsync(h => h.GetAsync("/api/pqrsd/categorias"));
+                if (rc is { IsSuccessStatusCode: true }) _pqCats = (await rc.Content.ReadFromJsonAsync<List<PqrsdCategoriaDto>>() ?? new()).Where(c => c.Activa).OrderBy(c => c.Orden).ToList();
+                var ru = await EnviarAsync(h => h.GetAsync("/api/mi-copropiedad/unidades"));
+                if (ru is { IsSuccessStatusCode: true }) _pqUnidades = (await ru.Content.ReadFromJsonAsync<List<UnidadDto>>() ?? new()).OrderBy(u => u.Numero, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            var p = d.PropuestaPqrsd;
+            _pqTipo = p?.TipoId?.ToString() ?? "";
+            _pqCat = p?.CategoriaId?.ToString() ?? "";
+            _pqUnidad = p?.UnidadPrivadaId?.ToString() ?? "";
+            var encabezado = p?.UnidadPrivadaId is null && !string.IsNullOrWhiteSpace(p?.UnidadTexto)
+                ? "[Radicado por correo] Unidad indicada por el remitente: " + p!.UnidadTexto : null;
+            _pqDesc = RadicadorPqrsdCorreoAgente.ArmarDescripcion(d.Asunto, d.Cuerpo, d.Resumen, encabezado);
+        }
+        catch (Exception ex) { Aviso("No se pudieron cargar los tipos y categorías de PQRSD: " + ex.Message, false); }
+        finally { _pqCargando = false; }
+    }
+
+    private async Task RadicarPqrsdAsync(Guid id)
+    {
+        if (!PqListo) return;
+        _accion = true;
+        _pqError = null;
+        try
+        {
+            var req = new RadicarCorreoPqrsdRequest(Guid.Parse(_pqTipo), Guid.Parse(_pqCat),
+                Guid.TryParse(_pqUnidad, out var u) ? u : null, _pqDesc.Trim());
+            var resp = await EnviarAsync(h => h.PostAsJsonAsync($"/api/correos-recibidos/{id}/radicar-pqrsd", req));
+            if (resp is null) return;
+            if (!resp.IsSuccessStatusCode)
+            {
+                _pqError = resp.StatusCode == System.Net.HttpStatusCode.Forbidden ? "No tienes permiso para radicar PQRSD." : await ErrorAsync(resp);
+                return;
+            }
+            var r = await resp.Content.ReadFromJsonAsync<RadicarCorreoPqrsdResult>();
+            Aviso($"PQRSD radicada: {r?.Numero}.", true);
+            _pqManual = false;
+            await CargarAsync();
+            await AbrirDetalleAsync(id);
+        }
+        catch (Exception ex) { _pqError = "No se pudo radicar: " + ex.Message; }
+        finally { _accion = false; }
+    }
 
     private async Task ReclasificarAsync(Guid id)
     {

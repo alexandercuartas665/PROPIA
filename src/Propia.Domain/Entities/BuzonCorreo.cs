@@ -42,4 +42,18 @@ public class BuzonCorreo : TenantEntity
     /// <summary>Claves de los temas (lista "correo.tema") que atiende este buzon, en JSON ["pqrsd",...]. null = todos.
     /// "otro" e "irrelevante" aplican siempre.</summary>
     public string? TemasJson { get; set; }
+
+    /// <summary>PQRSD por correo: confianza minima (0 a 1) para radicar solo un correo de tema PQRSD. Por debajo queda
+    /// el boton "Radicar PQRSD" para que una persona confirme. null = nunca radicar solo.</summary>
+    public decimal? UmbralAutoPqrsd { get; set; } = UmbralPqrsdPorDefecto;
+
+    public const decimal UmbralPqrsdPorDefecto = 0.90m;
+
+    /// <summary>PQRSD por correo (Ola P2): al radicar un correo de este buzon se le responde al remitente, desde esta misma
+    /// cuenta y en el mismo hilo, con el numero de radicado. false = no se responde (sale la confirmacion de la plataforma).</summary>
+    public bool ResponderRadicado { get; set; } = true;
+
+    /// <summary>Plantilla de documento (categoria pqrsd) de esa respuesta. null = "Acuse de radicado por correo", que se
+    /// siembra en la copropiedad al primer uso y queda editable en Configuracion > Plantillas de documentos.</summary>
+    public Guid? PlantillaAcuseId { get; set; }
 }
