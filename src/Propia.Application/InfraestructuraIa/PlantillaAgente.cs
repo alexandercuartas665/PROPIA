@@ -18,6 +18,8 @@ public static class PlantillaAgente
     public const string ClaveActaAsamblea = "redactor-actas";
     /// <summary>Corrector de redaccion: mejora el texto de las cajas de texto (dictado o escrito) si el usuario lo pide.</summary>
     public const string ClaveCorrectorTexto = "corrector-redaccion";
+    /// <summary>Coordinador de correo (lector de buzon): clasifica cada correo entrante por tema y lo delega.</summary>
+    public const string ClaveCoordinadorCorreo = "coordinador-correo";
 
     /// <summary>{COPROPIEDAD_NOMBRE} y {ORGANIZACION_NOMBRE} (sin organizacion, el de la copropiedad).</summary>
     public static string Render(string? texto, string copropiedadNombre, string? organizacionNombre)

@@ -79,6 +79,11 @@
                                                     }
                                                 </select>
                                                 break;
+                                            case CatalogoListasRegistro.MetaTipo.Texto:
+                                                <textarea class="gol-in gol-in-txt" rows="2" value="@Val(r, f.Clave)"
+                                                          @onchange="e => OnMeta(r, f.Clave, e.Value?.ToString())"
+                                                          placeholder="@f.Label"></textarea>
+                                                break;
                                             case CatalogoListasRegistro.MetaTipo.Bool:
                                                 <input type="checkbox" class="gol-ck" checked="@IsOn(r, f.Clave)"
                                                        @onchange="e => OnMetaBool(r, f.Clave, (bool)e.Value!)" />
@@ -161,6 +166,8 @@
     .gol-in { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--propia-border-card); background: var(--propia-bg-input, var(--propia-bg-card)); color: var(--propia-text-body); font-size: 12.5px; font-family: inherit; }
     .gol-in:focus { outline: none; border-color: var(--propia-brand); }
     .gol-in-num { max-width: 80px; }
+    .gol-in-txt { resize: vertical; min-height: 38px; line-height: 1.4; }
+    .gol-mt-c-meta:has(.gol-in-txt) { flex: 2 1 58%; }
     .gol-ck { width: 16px; height: 16px; accent-color: var(--propia-brand); cursor: pointer; }
     .gol-tag { font-size: 9.5px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border-radius: 5px; padding: 1px 5px; flex-shrink: 0; }
     .gol-add { align-self: flex-start; margin-top: 2px; }
@@ -268,9 +275,17 @@
         }
         foreach (var f in schema)
             if (!d.ContainsKey(f.Clave))
-                d[f.Clave] = f.Tipo == CatalogoListasRegistro.MetaTipo.Bool ? "false" : f.Opciones?.FirstOrDefault()?.Valor ?? "0";
+                d[f.Clave] = DefaultMeta(f);
         return d;
     }
+
+    // Valor inicial de un campo Meta segun su tipo (Texto vacio, Bool false, Seleccion la primera opcion, Entero 0).
+    private static string DefaultMeta(CatalogoListasRegistro.MetaCampoDef f) => f.Tipo switch
+    {
+        CatalogoListasRegistro.MetaTipo.Bool => "false",
+        CatalogoListasRegistro.MetaTipo.Texto => "",
+        _ => f.Opciones?.FirstOrDefault()?.Valor ?? "0",
+    };
 
     private string? Val(MetaRow r, string clave) => r.Meta.TryGetValue(clave, out var v) ? v : null;
     private bool IsOn(MetaRow r, string clave) => string.Equals(Val(r, clave), "true", StringComparison.OrdinalIgnoreCase);
@@ -285,7 +300,7 @@
         var r = new MetaRow { EsBase = false, Label = "" };
         if (_schema is not null)
             foreach (var f in _schema)
-                r.Meta[f.Clave] = f.Tipo == CatalogoListasRegistro.MetaTipo.Bool ? "false" : f.Opciones?.FirstOrDefault()?.Valor ?? "0";
+                r.Meta[f.Clave] = DefaultMeta(f);
         _rows.Add(r);
     }
 
@@ -302,6 +317,7 @@
             {
                 CatalogoListasRegistro.MetaTipo.Bool => string.Equals(v, "true", StringComparison.OrdinalIgnoreCase),
                 CatalogoListasRegistro.MetaTipo.Entero => int.TryParse(v, out var n) ? n : (object?)null,
+                CatalogoListasRegistro.MetaTipo.Texto => string.IsNullOrWhiteSpace(v) ? null : v.Trim(),
                 _ => int.TryParse(v, out var n2) ? n2 : (object?)v,   // Seleccion: numero si parsea, si no string
             };
         }

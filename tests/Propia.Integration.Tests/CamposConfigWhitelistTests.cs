@@ -52,6 +52,8 @@ public class CamposConfigWhitelistTests
     [InlineData("programacion")]
     [InlineData("zona")]
     [InlineData("equipo")]
+    // Correos recibidos: orden/visibilidad/ancho de columnas compartidos por copropiedad.
+    [InlineData("correo")]
     public async Task Config_admite_entidades_de_modulos_admin_y_hace_round_trip(string entidad)
     {
         var tenantId = await SeedTenantAsync($"[cfg] {entidad}");

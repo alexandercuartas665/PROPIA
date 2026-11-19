@@ -98,6 +98,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Common.IEmailSender, Email.SmtpEmailSender>();
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
         services.AddScoped<Application.Integraciones.ITenantEmailConfigService, Integraciones.TenantEmailConfigService>();
+        services.AddScoped<Application.Integraciones.ICorreoEntranteService, Integraciones.CorreoEntranteService>();  // lector de buzon (IMAP)
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
         services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();
@@ -336,6 +337,7 @@ public static class DependencyInjection
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PurgaRegistrosNoConfirmadosJob>();  // S-04b
         services.AddScoped<Jobs.IBackgroundJob, Jobs.MantenimientoPreventivoJob>();  // M-01: preventivo 2.11
         services.AddScoped<Jobs.IBackgroundJob, Jobs.PlantillasWhatsAppSyncJob>();  // plantillas WA: caen solas cada 30 min
+        services.AddScoped<Jobs.IBackgroundJob, Jobs.CorreoEntranteJob>();  // lector de buzon: cada 10 min
 
         // Storage de blobs (logos, fachadas, portadas, futuros adjuntos).
         // Provider seleccionado por config: "R2" en produccion, cualquier otro valor (o ausente)

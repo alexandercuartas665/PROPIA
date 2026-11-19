@@ -944,7 +944,7 @@ public partial class MiCopropiedadService
           "programacion", "zona", "equipo", "usuario", "rol", "comunicacion", "listanegra",
           "asamblea", "lineawhatsapp", "cartera", "intervencion",
           "porteria_visitantes", "porteria_movimientos", "porteria_vehiculos", "porteria_correspondencia",
-          "siniestro" };
+          "siniestro", "correo" };
 
     private static string NormalizarEntidadCampoConfig(string? entidad)
     {

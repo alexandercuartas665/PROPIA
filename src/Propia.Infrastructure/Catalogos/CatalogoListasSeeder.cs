@@ -354,6 +354,14 @@ public static class CatalogoListasSeeder
             new("e:Otro", "Otro", 4, "{\"columnaTablero\":2}"),
         }));
 
+        // correo.tema (lector de buzon): temas del Coordinador de correo. Clave = la que devuelve el agente;
+        // Meta.descripcion = lo que el agente lee para decidir. Paridad con CoordinadorCorreoAgente.TemasBase.
+        reg.Add(("correo.tema",
+            Propia.Application.Integraciones.CoordinadorCorreoAgente.TemasBase
+                .Select((t, i) => new SemillaOpcion(t.Clave, t.Label, i,
+                    System.Text.Json.JsonSerializer.Serialize(new { descripcion = t.Descripcion }), t.Color))
+                .ToList()));
+
         return reg;
     }
 

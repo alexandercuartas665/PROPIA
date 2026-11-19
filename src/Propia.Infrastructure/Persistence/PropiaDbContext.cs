@@ -232,6 +232,8 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
     public DbSet<PqrsdWhatsAppConfig> PqrsdWhatsAppConfigs => Set<PqrsdWhatsAppConfig>();
     // Cuenta de correo saliente (SMTP) por copropiedad. Tenant + RLS.
     public DbSet<TenantEmailConfig> TenantEmailConfigs => Set<TenantEmailConfig>();
+    public DbSet<CorreoRecibido> CorreosRecibidos => Set<CorreoRecibido>();
+    public DbSet<BuzonCorreo> BuzonesCorreo => Set<BuzonCorreo>();
     public DbSet<PqrsdComiteSesion> PqrsdComiteSesiones => Set<PqrsdComiteSesion>();
     public DbSet<PqrsdComiteMiembroSesion> PqrsdComiteMiembros => Set<PqrsdComiteMiembroSesion>();
     public DbSet<PqrsdEstado> PqrsdEstados => Set<PqrsdEstado>();
@@ -457,6 +459,7 @@ public partial class PropiaDbContext : IdentityDbContext<ApplicationUser, Identi
         ConfigureAuditoriaIaBilling(modelBuilder);
         ConfigureListasTenant(modelBuilder);
         ConfigureSiniestros(modelBuilder);
+        ConfigureCorreosRecibidos(modelBuilder);
 
     }
 

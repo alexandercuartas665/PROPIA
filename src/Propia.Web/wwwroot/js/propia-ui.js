@@ -469,22 +469,33 @@
             var prevCursor = document.body.style.cursor, prevSel = document.body.style.userSelect;
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
-            var curW = startWidth;
-            function mv(e) {
-                var minX = clientX - (startWidth - minW);
-                var x = Math.max(e.clientX, minX);
-                curW = startWidth + (x - clientX);
-                line.style.left = x + 'px';
-            }
-            function up() {
+            var curW = startWidth, moved = false;
+            // start() llega desde .NET DESPUES del mousedown (viaje por SignalR). Con un clic rapido o con
+            // latencia, el mouseup ya paso y estos listeners quedarian vivos: el siguiente movimiento
+            // cambiaria el ancho y el siguiente clic lo guardaria. Por eso: si el boton ya no esta
+            // apretado se cancela sin guardar, y un start() nuevo cancela el anterior.
+            if (window.__propiaColResizeAbort) window.__propiaColResizeAbort();
+            function fin(guardar) {
                 document.removeEventListener('mousemove', mv);
                 document.removeEventListener('mouseup', up);
+                if (window.__propiaColResizeAbort === abort) window.__propiaColResizeAbort = null;
                 if (line.parentNode) line.parentNode.removeChild(line);
                 document.body.style.cursor = prevCursor;
                 document.body.style.userSelect = prevSel;
                 if (cell) setTimeout(function () { cell.setAttribute('draggable', 'true'); }, 0);
-                try { dotnetRef.invokeMethodAsync('OnColResize', clave, Math.round(curW)); } catch (e) { }
+                if (guardar) { try { dotnetRef.invokeMethodAsync('OnColResize', clave, Math.round(curW)); } catch (e) { } }
             }
+            function abort() { fin(false); }
+            function mv(e) {
+                if ((e.buttons & 1) === 0) { abort(); return; }
+                var minX = clientX - (startWidth - minW);
+                var x = Math.max(e.clientX, minX);
+                curW = startWidth + (x - clientX);
+                if (Math.abs(e.clientX - clientX) >= 2) moved = true;
+                line.style.left = x + 'px';
+            }
+            function up() { fin(moved); }
+            window.__propiaColResizeAbort = abort;
             document.addEventListener('mousemove', mv);
             document.addEventListener('mouseup', up);
         },
@@ -541,7 +552,22 @@
                 dropline.style.display = 'block';
             }
             function hideDrop() { if (dropline) dropline.style.display = 'none'; }
+            // start() llega desde .NET DESPUES del mousedown (viaje por SignalR). Con un clic rapido o con
+            // latencia, el mouseup ya paso: sin esta guarda los listeners quedaban vivos, el siguiente
+            // movimiento se tomaba como arrastre y el siguiente clic "soltaba" la columna en otro lugar.
+            // Si el boton ya no esta apretado se cancela sin mover nada; un start() nuevo cancela el anterior.
+            if (window.__propiaColReorderAbort) window.__propiaColReorderAbort();
+            function abort() {
+                document.removeEventListener('mousemove', mv);
+                document.removeEventListener('mouseup', up);
+                if (window.__propiaColReorderAbort === abort) window.__propiaColReorderAbort = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                cleanup();
+            }
+            window.__propiaColReorderAbort = abort;
             function mv(e) {
+                if ((e.buttons & 1) === 0) { abort(); return; }
                 if (!dragging) {
                     if (Math.abs(e.clientX - startX) < 5 && Math.abs(e.clientY - startY) < 5) return;
                     dragging = true;
@@ -555,11 +581,7 @@
                 if (cell && dest && dest !== srcClave) showDrop(cell, e.clientX); else hideDrop();
             }
             function up(e) {
-                document.removeEventListener('mousemove', mv);
-                document.removeEventListener('mouseup', up);
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                cleanup();
+                abort();
                 if (dragging) {
                     // traga el click sintetico que sigue al arrastre (no ordenar).
                     var supp = function (ev) { ev.stopPropagation(); ev.preventDefault(); document.removeEventListener('click', supp, true); };
