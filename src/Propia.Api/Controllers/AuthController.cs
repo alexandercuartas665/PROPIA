@@ -92,7 +92,8 @@ public class AuthController : ControllerBase
                 Email: cl.Email,
                 MfaTicket: null,
                 ActiveTenantId: cl.ActiveTenantId,
-                AvailableTenants: cl.AvailableTenants));
+                AvailableTenants: cl.AvailableTenants,
+                DebeCambiarClave: cl.DebeCambiarClave));
         }
 
         return Unauthorized(new { error = "credenciales_invalidas" });
@@ -201,6 +202,39 @@ public class AuthController : ControllerBase
         if (userId is null) return Unauthorized();
 
         var (ok, error) = await _auth.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword, ct);
+        return ok ? NoContent() : BadRequest(new { error });
+    }
+
+    /// <summary>
+    /// "Olvide mi contrasena" (anonimo, rate limit "auth"). Siempre 202: no revela si el correo tiene cuenta.
+    /// </summary>
+    [HttpPost("recuperar-clave")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RecuperarClave([FromBody] SolicitarRecuperacionRequest request, CancellationToken ct)
+    {
+        await _auth.SolicitarRecuperacionAsync(request?.Email ?? "", request?.BaseUrl, ct);
+        return Accepted(new { ok = true });
+    }
+
+    /// <summary>Fija la nueva clave con el token del enlace del correo (anonimo).</summary>
+    [HttpPost("restablecer-clave")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RestablecerClave([FromBody] RestablecerConTokenRequest request, CancellationToken ct)
+    {
+        var (ok, error) = await _auth.RestablecerConTokenAsync(request, ct);
+        return ok ? NoContent() : BadRequest(new { error });
+    }
+
+    /// <summary>Cambio obligatorio tras una clave temporal puesta por el administrador (no pide la actual).</summary>
+    [HttpPost("cambiar-clave-obligatoria")]
+    [Authorize]
+    public async Task<IActionResult> CambiarClaveObligatoria([FromBody] CambiarClaveObligatoriaRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+        // Solo con un JWT emitido tras la clave temporal (claim pwd_chg); el servicio revalida la marca.
+        if (User.FindFirstValue(ClaveTemporal.JwtClaim) != "1") return Forbid();
+        var (ok, error) = await _auth.CambiarClaveObligatoriaAsync(userId.Value, request, ct);
         return ok ? NoContent() : BadRequest(new { error });
     }
 

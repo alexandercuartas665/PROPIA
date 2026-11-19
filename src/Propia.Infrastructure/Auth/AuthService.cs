@@ -2,10 +2,15 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Propia.Application.Auth;
+using Propia.Application.Common;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
 using Propia.Infrastructure.Persistence;
@@ -19,19 +24,41 @@ public class AuthService : IAuthService
     private readonly ITokenService _tokenService;
     private readonly JwtSettings _jwt;
     private readonly Storage.IBlobStorage _blob;
+    private readonly IEmailSender? _email;
+    private readonly IConfiguration? _config;
+    private readonly IHostEnvironment? _env;
+    private readonly ILogger<AuthService>? _log;
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
         PropiaDbContext db,
         ITokenService tokenService,
         IOptions<JwtSettings> jwtOptions,
-        Storage.IBlobStorage blob)
+        Storage.IBlobStorage blob,
+        IEmailSender? email = null,
+        IConfiguration? config = null,
+        IHostEnvironment? env = null,
+        ILogger<AuthService>? log = null)
     {
         _userManager = userManager;
         _db = db;
         _tokenService = tokenService;
         _jwt = jwtOptions.Value;
         _blob = blob;
+        _email = email;
+        _config = config;
+        _env = env;
+        _log = log;
+    }
+
+    /// <summary>True si un administrador le puso una clave temporal que aun no cambia.</summary>
+    private async Task<bool> DebeCambiarClaveAsync(ApplicationUser user)
+        => (await _userManager.GetClaimsAsync(user)).Any(c => c.Type == ClaveTemporal.ClaimTipo);
+
+    private async Task QuitarMarcaClaveTemporalAsync(ApplicationUser user)
+    {
+        var marcas = (await _userManager.GetClaimsAsync(user)).Where(c => c.Type == ClaveTemporal.ClaimTipo).ToList();
+        if (marcas.Count > 0) await _userManager.RemoveClaimsAsync(user, marcas);
     }
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct, string? ip = null, string? userAgent = null)
@@ -73,7 +100,8 @@ public class AuthService : IAuthService
         // Si solo hay una copropiedad vinculada, se selecciona auto. Caso comun para residentes.
         Guid? activeTenant = tenants.Count == 1 ? tenants[0].TenantId : null;
 
-        var (token, expires) = _tokenService.IssueAccessToken(user, activeTenant);
+        var debeCambiar = await DebeCambiarClaveAsync(user);
+        var (token, expires) = _tokenService.IssueAccessToken(user, activeTenant, null, debeCambiar);
 
         // Marcamos ultimo acceso del UsuarioTenant si hay tenant activo
         if (activeTenant.HasValue)
@@ -86,7 +114,7 @@ public class AuthService : IAuthService
         var tenantParaRegistro = activeTenant ?? (tenants.Count > 0 ? tenants[0].TenantId : (Guid?)null);
         await RegistrarIngresoAsync(request.Email, user.Id, user.PersonaId, tenantParaRegistro, true, null, ip, userAgent, ct);
 
-        return new LoginResponse(token, expires, user.Id, user.Email!, activeTenant, tenants);
+        return new LoginResponse(token, expires, user.Id, user.Email!, activeTenant, tenants, DebeCambiarClave: debeCambiar);
     }
 
     // Escribe un evento en el registro de ingresos (auditoria global, sin RLS). No debe tumbar el login
@@ -168,9 +196,10 @@ public class AuthService : IAuthService
         var roles = await LoadRolesEnTenantActivoAsync(user.PersonaId.Value, ct);
         if (!roles.Any(r => r.RolId == rolId)) return null;
 
-        var (token, expires) = _tokenService.IssueAccessToken(user, activeTenantId, rolId);
+        var debeCambiar = await DebeCambiarClaveAsync(user);
+        var (token, expires) = _tokenService.IssueAccessToken(user, activeTenantId, rolId, debeCambiar);
         return new LoginResponse(token, expires, user.Id, user.Email!, activeTenantId,
-            await LoadAvailableTenantsAsync(userId, ct), rolId, roles);
+            await LoadAvailableTenantsAsync(userId, ct), rolId, roles, debeCambiar);
     }
 
     /// <summary>
@@ -210,7 +239,11 @@ public class AuthService : IAuthService
         if (user is null) return (false, "Usuario no encontrado.");
 
         var res = await _userManager.ChangePasswordAsync(user, currentPassword ?? "", newPassword);
-        if (res.Succeeded) return (true, null);
+        if (res.Succeeded)
+        {
+            await QuitarMarcaClaveTemporalAsync(user);
+            return (true, null);
+        }
 
         var err = res.Errors.FirstOrDefault();
         var msg = (err?.Code) switch
@@ -235,10 +268,11 @@ public class AuthService : IAuthService
         var valid = tenants.Any(t => t.TenantId == newTenantId);
         if (!valid) return null;  // El usuario no tiene acceso a ese tenant - rechazar
 
-        var (token, expires) = _tokenService.IssueAccessToken(user, newTenantId);
+        var debeCambiar = await DebeCambiarClaveAsync(user);
+        var (token, expires) = _tokenService.IssueAccessToken(user, newTenantId, null, debeCambiar);
         await UpdateUltimoAccesoAsync(user.PersonaId, newTenantId, ct);
 
-        return new LoginResponse(token, expires, user.Id, user.Email!, newTenantId, tenants);
+        return new LoginResponse(token, expires, user.Id, user.Email!, newTenantId, tenants, DebeCambiarClave: debeCambiar);
     }
 
     public async Task<LoginResponse?> RefreshAsync(string rawJwt, CancellationToken ct)
@@ -309,9 +343,123 @@ public class AuthService : IAuthService
             activeRol = null;  // cambio de copropiedad -> el rol activo ya no aplica
         }
 
-        var (nuevoToken, expires) = _tokenService.IssueAccessToken(user, activeTenant, activeRol);
-        return new LoginResponse(nuevoToken, expires, user.Id, user.Email!, activeTenant, tenants, activeRol);
+        var debeCambiar = await DebeCambiarClaveAsync(user);
+        var (nuevoToken, expires) = _tokenService.IssueAccessToken(user, activeTenant, activeRol, debeCambiar);
+        return new LoginResponse(nuevoToken, expires, user.Id, user.Email!, activeTenant, tenants, activeRol, DebeCambiarClave: debeCambiar);
     }
+
+    // ---------- Restablecimiento de clave ----------
+
+    public async Task SolicitarRecuperacionAsync(string email, string? baseUrl, CancellationToken ct)
+    {
+        var correo = (email ?? "").Trim();
+        if (correo.Length == 0 || _email is null) return;
+        var user = await _userManager.FindByEmailAsync(correo);
+        // Sin cuenta o sin confirmar: no se envia nada, pero el llamador responde igual (no revela si
+        // la cuenta existe).
+        if (user is null || !user.EmailConfirmed || string.IsNullOrWhiteSpace(user.Email)) return;
+        await EnviarEnlaceRestablecerAsync(user, baseUrl, ct);
+    }
+
+    /// <summary>Genera el token de Identity y envia el correo con el enlace. True si salio.</summary>
+    public async Task<bool> EnviarEnlaceRestablecerAsync(ApplicationUser user, string? baseUrl, CancellationToken ct)
+    {
+        if (_email is null || string.IsNullOrWhiteSpace(user.Email)) return false;
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var link = ConstruirEnlaceRestablecer(user.Email!, token, baseUrl);
+        try
+        {
+            var r = await _email.SendAsync(user.Email!, "Restablece tu contraseña de PROPIA", PlantillaCorreoRestablecer(link), ct);
+            if (!r.Success) _log?.LogWarning("Correo de restablecimiento no enviado a {UserId}: {Error}", user.Id, r.Error);
+            return r.Success;
+        }
+        catch (Exception ex)
+        {
+            _log?.LogWarning(ex, "Correo de restablecimiento fallo para {UserId}", user.Id);
+            return false;
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> RestablecerConTokenAsync(RestablecerConTokenRequest req, CancellationToken ct)
+    {
+        const string invalido = "El enlace no es válido o ya venció. Solicita uno nuevo.";
+        if (req.NuevaClave != req.ConfirmarClave) return (false, "Las contraseñas no coinciden.");
+        if (ClaveTemporal.ValidarPolitica(req.NuevaClave) is { } err) return (false, err);
+
+        var user = await _userManager.FindByEmailAsync((req.Email ?? "").Trim());
+        if (user is null || string.IsNullOrWhiteSpace(req.Token)) return (false, invalido);
+
+        string token;
+        try { token = System.Text.Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(req.Token)); }
+        catch { return (false, invalido); }
+
+        var res = await _userManager.ResetPasswordAsync(user, token, req.NuevaClave);
+        if (!res.Succeeded)
+            return (false, res.Errors.Any(e => e.Code == "InvalidToken") ? invalido : MensajeIdentity(res));
+
+        await QuitarMarcaClaveTemporalAsync(user);
+        // Quien demuestra controlar el correo recupera el acceso aunque estuviera bloqueado por intentos.
+        await _userManager.SetLockoutEndDateAsync(user, null);
+        await _userManager.ResetAccessFailedCountAsync(user);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> CambiarClaveObligatoriaAsync(Guid userId, CambiarClaveObligatoriaRequest req, CancellationToken ct)
+    {
+        if (req.NuevaClave != req.ConfirmarClave) return (false, "Las contraseñas no coinciden.");
+        if (ClaveTemporal.ValidarPolitica(req.NuevaClave) is { } err) return (false, err);
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null) return (false, "Usuario no encontrado.");
+        // Solo mientras la marca exista: sin ella, el cambio normal pide la clave actual (Mi perfil).
+        if (!await DebeCambiarClaveAsync(user)) return (false, "Tu contraseña ya fue cambiada. Ingresa de nuevo.");
+        if (await _userManager.CheckPasswordAsync(user, req.NuevaClave))
+            return (false, "La nueva contraseña debe ser distinta de la temporal.");
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var res = await _userManager.ResetPasswordAsync(user, token, req.NuevaClave);
+        if (!res.Succeeded) return (false, MensajeIdentity(res));
+        await QuitarMarcaClaveTemporalAsync(user);
+        return (true, null);
+    }
+
+    private static string MensajeIdentity(IdentityResult res)
+    {
+        var err = res.Errors.FirstOrDefault();
+        return (err?.Code) switch
+        {
+            "PasswordTooShort" => $"La contraseña debe tener al menos {ClaveTemporal.LongitudMinima} caracteres.",
+            "PasswordRequiresDigit" => "La contraseña debe incluir al menos un número.",
+            "PasswordRequiresUpper" => "La contraseña debe incluir al menos una mayúscula.",
+            "PasswordRequiresLower" => "La contraseña debe incluir al menos una minúscula.",
+            _ => "No se pudo cambiar la contraseña."
+        };
+    }
+
+    /// <summary>
+    /// Enlace absoluto a /restablecer-contrasena. El origen sale de App:PublicBaseUrl; el BaseUrl que
+    /// manda el cliente SOLO se acepta en Development y si es localhost (el endpoint es anonimo:
+    /// aceptarlo en prod permitiria mandar a la victima un enlace con su token hacia un dominio ajeno).
+    /// </summary>
+    private string ConstruirEnlaceRestablecer(string email, string token, string? baseUrl)
+    {
+        var origen = (_config?["App:PublicBaseUrl"] ?? "").Trim().TrimEnd('/');
+        if (_env?.IsDevelopment() == true && Uri.TryCreate(baseUrl, UriKind.Absolute, out var u)
+            && (u.Host == "localhost" || u.Host == "127.0.0.1"))
+            origen = u.GetLeftPart(UriPartial.Authority);
+        var t = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(token));
+        return $"{origen}/restablecer-contrasena?email={Uri.EscapeDataString(email)}&token={t}";
+    }
+
+    private static string PlantillaCorreoRestablecer(string link) => $@"
+<div style=""font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1f2937"">
+  <h2 style=""font-size:18px;margin:0 0 12px"">Restablece tu contraseña</h2>
+  <p style=""font-size:14px;line-height:1.5"">Recibimos una solicitud para restablecer la contraseña de tu cuenta en PROPIA. Haz clic en el botón para crear una nueva. El enlace sirve una sola vez y vence en 24 horas.</p>
+  <p style=""margin:22px 0"">
+    <a href=""{link}"" style=""background:#6D4FE3;color:#ffffff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600"">Crear nueva contraseña</a>
+  </p>
+  <p style=""font-size:12px;color:#6b7280"">Si no fuiste tú, ignora este mensaje: tu contraseña no cambia.<br>Si el botón no funciona, copia y pega este enlace en tu navegador:<br>{link}</p>
+</div>";
 
     // ---------- Helpers ----------
 

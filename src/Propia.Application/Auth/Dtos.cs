@@ -13,7 +13,9 @@ public record LoginResponse(
     // elegir si AvailableRoles tiene mas de uno). AvailableRoles solo se llena en contexto con tenant
     // (p.ej. /connect/me), no en el login inicial (RLS no deja leerlos sin tenant activo).
     Guid? ActiveRolId = null,
-    IReadOnlyList<RolInfo>? AvailableRoles = null);
+    IReadOnlyList<RolInfo>? AvailableRoles = null,
+    // Clave temporal puesta por un administrador: el cliente debe llevar al usuario a cambiarla.
+    bool DebeCambiarClave = false);
 
 public record MeResponse(
     Guid UserId,
@@ -60,4 +62,5 @@ public record UnifiedLoginResponse(
     string? Email,
     string? MfaTicket,
     Guid? ActiveTenantId,
-    IReadOnlyList<TenantInfo> AvailableTenants);
+    IReadOnlyList<TenantInfo> AvailableTenants,
+    bool DebeCambiarClave = false);

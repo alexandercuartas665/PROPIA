@@ -673,6 +673,19 @@
                         <div class="usr-sysrow"><span>Fecha de vinculacion</span><b>@FechaCortaU(_editUser!.FechaVinculacion)</b></div>
                         <div class="usr-sysrow"><span>Aceptacion de politica de datos</span><b>@(_editUser!.AceptoTratamientoDatos ? FechaHoraU(_editUser!.FechaAceptacionDatos) : "No registrada")</b></div>
                     </div>
+
+                    @* CONTRASENA: solo usuarios activos con cuenta propia (los pendientes aun no tienen clave). *@
+                    @if (_editUser!.TieneCuentaPropia && _editUser.Estado == EstadoUsuarioTenant.Activo)
+                    {
+                        <div class="usr-gob-sec">
+                            <div class="usr-gob-sec-t">Contraseña</div>
+                            <div class="usr-gob-sec-hint">Si el usuario olvidó su contraseña, asígnale una temporal: deberá cambiarla al ingresar.</div>
+                            <button type="button" class="usr-btn-ghost" @onclick="AbrirRestablecerClave">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                Restablecer contraseña
+                            </button>
+                        </div>
+                    }
                 }
                 else
                 {
@@ -720,6 +733,52 @@
                 <div class="usr-hint" style="margin-top:16px">El registro detallado de acciones (inicios de sesion, cambios de rol) aun no se almacena; aqui se muestran los hitos del acceso disponibles.</div>
             }
             </div>
+        </div>
+    </div>
+}
+
+@* Restablecer contrasena (ficha de 1 usuario). Paso 1: clave temporal (escrita o generada). Paso 2: la
+   muestra UNA vez para entregarla; o, si el usuario tambien esta en otra copropiedad / es de A&D, avisa
+   que se le envio el enlace a su correo (el API no deja poner temporal en ese caso). *@
+@if (_rcAbierto && _editUser is not null)
+{
+    <div class="usr-cfg-back" @onclick="() => { if (!_rcBusy) CerrarRestablecerClave(); }">
+        <div class="usr-confirm" @onclick:stopPropagation="true">
+            @if (_rcResultado is null)
+            {
+                <div class="usr-confirm-t">Restablecer contraseña de @_editUser!.NombreCompleto</div>
+                <div class="usr-confirm-s">Escribe una contraseña temporal o genera una. Al ingresar, el usuario deberá cambiarla por una propia.</div>
+                <label class="usr-label">Contraseña temporal</label>
+                <div class="usr-rc-row">
+                    <input class="usr-input" @bind="_rcClave" @bind:event="oninput" placeholder="Mínimo 10, una mayúscula y un número" autocomplete="off" />
+                    <button type="button" class="usr-btn-ghost" @onclick="GenerarClaveRc" disabled="@_rcBusy">Generar</button>
+                </div>
+                @if (!string.IsNullOrEmpty(_rcError)) { <div class="usr-rc-err">@_rcError</div> }
+                <div class="usr-confirm-acts" style="margin-top:14px">
+                    <button type="button" class="usr-btn-ghost" @onclick="CerrarRestablecerClave" disabled="@_rcBusy">Cancelar</button>
+                    <button type="button" class="usr-btn-primary" @onclick="RestablecerClaveAsync" disabled="@_rcBusy">@(_rcBusy ? "Restableciendo..." : "Restablecer")</button>
+                </div>
+            }
+            else if (_rcResultado.Modo == "temporal")
+            {
+                <div class="usr-confirm-t">Contraseña restablecida</div>
+                <div class="usr-confirm-s">Entrégale esta contraseña temporal a @_editUser!.NombreCompleto por un medio seguro. Al ingresar deberá cambiarla. No se volverá a mostrar.</div>
+                <div class="usr-rc-row">
+                    <div class="usr-rc-clave">@_rcResultado.ClaveTemporal</div>
+                    <button type="button" class="usr-btn-ghost" @onclick="CopiarClaveRc">@(_rcCopiada ? "Copiada" : "Copiar")</button>
+                </div>
+                <div class="usr-confirm-acts" style="margin-top:14px">
+                    <button type="button" class="usr-btn-primary" @onclick="CerrarRestablecerClave">Listo</button>
+                </div>
+            }
+            else
+            {
+                <div class="usr-confirm-t">Le enviamos un enlace</div>
+                <div class="usr-confirm-s">@_editUser!.NombreCompleto @_rcResultado.Motivo. Por seguridad no se le puede asignar una contraseña temporal: le enviamos a <b>@_rcResultado.CorreoEnmascarado</b> un enlace para que cree una nueva (vence en 24 horas).</div>
+                <div class="usr-confirm-acts">
+                    <button type="button" class="usr-btn-primary" @onclick="CerrarRestablecerClave">Listo</button>
+                </div>
+            }
         </div>
     </div>
 }
@@ -2140,6 +2199,60 @@
         _editUser = null;
         await CargarAsync();
     }
+
+    // ---- Restablecer contrasena (admin) ----
+    private bool _rcAbierto;
+    private bool _rcBusy;
+    private bool _rcCopiada;
+    private string _rcClave = "";
+    private string? _rcError;
+    private Propia.Application.Auth.RestablecerClaveUsuarioResponse? _rcResultado;
+
+    private void AbrirRestablecerClave()
+    {
+        _rcAbierto = true; _rcBusy = false; _rcCopiada = false; _rcClave = ""; _rcError = null; _rcResultado = null;
+    }
+
+    private void CerrarRestablecerClave()
+    {
+        _rcAbierto = false; _rcClave = ""; _rcResultado = null; _rcError = null;
+    }
+
+    private void GenerarClaveRc() { _rcClave = Propia.Application.Auth.ClaveTemporal.Generar(); _rcError = null; }
+
+    private async Task RestablecerClaveAsync()
+    {
+        if (_editUser is null) return;
+        _rcError = null;
+        var clave = (_rcClave ?? "").Trim();
+        if (clave.Length == 0) { clave = Propia.Application.Auth.ClaveTemporal.Generar(); _rcClave = clave; }
+        if (Propia.Application.Auth.ClaveTemporal.ValidarPolitica(clave) is { } err) { _rcError = err; return; }
+        _rcBusy = true;
+        try
+        {
+            var resp = await Auth().PostAsJsonAsync($"/api/usuarios/{_editUser.UsuarioTenantId}/restablecer-clave",
+                new Propia.Application.Auth.RestablecerClaveUsuarioRequest(clave, Nav.BaseUri));
+            if (resp.IsSuccessStatusCode)
+            {
+                _rcResultado = await resp.Content.ReadFromJsonAsync<Propia.Application.Auth.RestablecerClaveUsuarioResponse>();
+                if (_rcResultado is null) _rcError = "Respuesta inesperada del servidor.";
+                return;
+            }
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) { _rcError = "No tienes permiso para restablecer contraseñas."; return; }
+            try { _rcError = (await resp.Content.ReadFromJsonAsync<ErrorRc>())?.Error; } catch { }
+            _rcError ??= "No se pudo restablecer la contraseña.";
+        }
+        catch (HttpRequestException) { _rcError = "No se pudo conectar con el servidor."; }
+        finally { _rcBusy = false; }
+    }
+
+    private async Task CopiarClaveRc()
+    {
+        if (_rcResultado?.ClaveTemporal is not { } c) return;
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", c); _rcCopiada = true; } catch { }
+    }
+
+    private sealed record ErrorRc(string? Error);
 
     // Bote del cluster -> abre la confirmacion (no revoca directo).
     private void AbrirConfirmRevocarFicha() { if (_editUser is not null) _confirmRevocarFicha = true; }

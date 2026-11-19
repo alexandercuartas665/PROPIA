@@ -1,0 +1,69 @@
+@page "/recuperar-contrasena"
+@layout AuthLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+
+<PageTitle>Recuperar contraseña - PROPIA</PageTitle>
+
+@* "Olvide mi contrasena": pide el correo y el API envia un enlace de un solo uso (24 h). La respuesta es
+   SIEMPRE la misma, exista o no la cuenta (no revela que correos estan registrados). *@
+
+<h2 class="h4 mb-1 text-center fw-semibold">¿Olvidaste tu contraseña?</h2>
+
+@if (_enviado)
+{
+    <p class="text-muted text-center mb-4">Si <strong>@_email</strong> tiene una cuenta en PROPIA, en unos minutos te llegará un correo con un enlace para crear una contraseña nueva. Revisa también la carpeta de spam.</p>
+    <a href="/login" class="btn btn-auth-primary w-100 mb-3" style="color:var(--propia-text-inverse)">Volver a iniciar sesión</a>
+}
+else
+{
+    <p class="text-muted text-center mb-4">Escribe el correo con el que ingresas y te enviaremos un enlace para crear una contraseña nueva.</p>
+
+    <div class="mb-3">
+        <label for="email" class="form-label">Correo electrónico</label>
+        <input id="email" type="email" class="form-control" placeholder="tu@@correo.com" autocomplete="username"
+               @bind="_email" @bind:event="oninput" @onkeydown="TeclaAsync" />
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2 mb-3">@_error</div> }
+
+    <button type="button" class="btn btn-auth-primary w-100 mb-3" style="color:var(--propia-text-inverse)" disabled="@_enviando" @onclick="EnviarAsync">
+        @if (_enviando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Enviando...</span> }
+        else { <span>Enviar enlace</span> }
+    </button>
+
+    <p class="text-center small mb-0"><a href="/login">Volver a iniciar sesión</a></p>
+}
+
+@code {
+    private string _email = "";
+    private bool _enviando;
+    private bool _enviado;
+    private string? _error;
+
+    private async Task TeclaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await EnviarAsync();
+    }
+
+    private async Task EnviarAsync()
+    {
+        _error = null;
+        var correo = (_email ?? "").Trim();
+        if (correo.Length < 5 || !correo.Contains('@')) { _error = "Escribe un correo válido."; return; }
+        _enviando = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            var resp = await http.PostAsJsonAsync("/connect/recuperar-clave", new { Email = correo, BaseUrl = Nav.BaseUri });
+            if ((int)resp.StatusCode == 429) { _error = "Demasiados intentos. Espera un minuto y vuelve a intentar."; return; }
+            if (!resp.IsSuccessStatusCode) { _error = "No se pudo enviar la solicitud. Intenta de nuevo."; return; }
+            _email = correo;
+            _enviado = true;
+        }
+        catch (HttpRequestException) { _error = "No se pudo conectar con el servidor."; }
+        finally { _enviando = false; }
+    }
+}

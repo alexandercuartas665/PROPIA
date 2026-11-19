@@ -11,5 +11,6 @@ namespace Propia.Application.Auth;
 /// </summary>
 public interface ITokenService
 {
-    (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId, Guid? activeRolId = null);
+    /// <param name="debeCambiarClave">Clave temporal pendiente: agrega el claim pwd_chg (el API solo deja /connect/*).</param>
+    (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId, Guid? activeRolId = null, bool debeCambiarClave = false);
 }

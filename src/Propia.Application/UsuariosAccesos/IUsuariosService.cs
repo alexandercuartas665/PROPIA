@@ -42,6 +42,15 @@ public interface IUsuariosService
     Task<bool> RevocarAccesoAsync(Guid usuarioTenantId, RevocarAccesoRequest req, CancellationToken ct);
     Task<bool> ReactivarUsuarioAsync(Guid usuarioTenantId, CancellationToken ct);
 
+    /// <summary>
+    /// El admin de la copropiedad restablece la clave de un usuario activo con cuenta. Si el usuario
+    /// tambien esta activo en otra copropiedad o es de la consola A&D, NO se pone clave temporal: se
+    /// le envia el enlace al correo (modo "enlace"). Null = el usuario no es de esta copropiedad.
+    /// </summary>
+    Task<Propia.Application.Auth.RestablecerClaveUsuarioResponse?> RestablecerClaveAsync(
+        Guid usuarioTenantId, Propia.Application.Auth.RestablecerClaveUsuarioRequest req,
+        Guid actorPersonaId, bool actorEsAdmin, string? baseUrl, CancellationToken ct);
+
     // --- Auditoria ---
     Task<IReadOnlyList<AuditoriaEntradaDto>> ListarAuditoriaAsync(int limit, CancellationToken ct);
 

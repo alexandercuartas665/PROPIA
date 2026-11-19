@@ -112,6 +112,7 @@ public enum TipoEventoAuditoria
     SesionCerradaRemota = 40,
     BloqueoPorIntentos = 41,
     Desbloqueo = 42,
+    ClaveRestablecida = 43,
     ExportacionUsuarios = 50
 }
 

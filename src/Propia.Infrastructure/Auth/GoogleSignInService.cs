@@ -149,7 +149,9 @@ public sealed class GoogleSignInService : IGoogleSignInService
             }
         }
 
-        var (token, expires) = _tokenService.IssueAccessToken(user, tenantId);
+        // Clave temporal pendiente: tambien por Google el usuario debe cambiarla antes de usar la app.
+        var debeCambiar = (await _userManager.GetClaimsAsync(user)).Any(c => c.Type == ClaveTemporal.ClaimTipo);
+        var (token, expires) = _tokenService.IssueAccessToken(user, tenantId, null, debeCambiar);
         return new GoogleSignInResult(
             Success: true,
             AccessToken: token,

@@ -1,0 +1,79 @@
+@page "/cambiar-contrasena"
+@layout AuthLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Cambia tu contraseña - PROPIA</PageTitle>
+
+@* Cambio OBLIGATORIO tras una clave temporal puesta por el administrador de la copropiedad. El JWT trae
+   pwd_chg: el API bloquea todo lo demas (403 debe_cambiar_clave) hasta que se cambie. Al terminar se
+   cierra la sesion y se vuelve a ingresar con la clave nueva. *@
+
+<h2 class="h4 mb-1 text-center fw-semibold">Cambia tu contraseña</h2>
+<p class="text-muted text-center mb-4">El administrador de tu copropiedad te asignó una contraseña temporal. Crea una propia para continuar: mínimo 10 caracteres, con al menos una mayúscula y un número.</p>
+
+<ClaveNuevaCampos @bind-Nueva="_nueva" @bind-Confirmar="_confirmar" OnEnter="GuardarAsync" />
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger py-2 mb-3">@_error</div> }
+
+<button type="button" class="btn btn-auth-primary w-100 mb-3" style="color:var(--propia-text-inverse)" disabled="@_guardando" @onclick="GuardarAsync">
+    @if (_guardando) { <span class="spinner-border spinner-border-sm me-2"></span><span>Guardando...</span> }
+    else { <span>Guardar y continuar</span> }
+</button>
+<p class="text-center small mb-0"><a href="javascript:void(0)" @onclick="SalirAsync">Cerrar sesión</a></p>
+
+@code {
+    private string _nueva = "";
+    private string _confirmar = "";
+    private bool _guardando;
+    private string? _error;
+
+    private async Task GuardarAsync()
+    {
+        _error = null;
+        if (ClaveNuevaCampos.Validar(_nueva, _confirmar) is { } err) { _error = err; return; }
+        _guardando = true;
+        try
+        {
+            var jwt = await Js.InvokeAsync<string?>("propiaAuth.get", "propia_jwt");
+            if (string.IsNullOrEmpty(jwt)) { Nav.NavigateTo("/login", forceLoad: true); return; }
+            var http = HttpClientFactory.CreateClient("PropiaApi");
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", jwt);
+            var resp = await http.PostAsJsonAsync("/connect/cambiar-clave-obligatoria",
+                new { NuevaClave = _nueva, ConfirmarClave = _confirmar });
+            if (resp.IsSuccessStatusCode)
+            {
+                // La sesion actual lleva la marca pwd_chg: se cierra y se ingresa con la clave nueva.
+                await Js.InvokeVoidAsync("propiaAuth.clear");
+                Nav.NavigateTo("/login?clave=actualizada", forceLoad: true);
+                return;
+            }
+            if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                await Js.InvokeVoidAsync("propiaAuth.clear");
+                Nav.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+            _error = await LeerErrorAsync(resp) ?? "No se pudo guardar la contraseña.";
+        }
+        catch (HttpRequestException) { _error = "No se pudo conectar con el servidor."; }
+        finally { _guardando = false; }
+    }
+
+    private async Task SalirAsync()
+    {
+        await Js.InvokeVoidAsync("propiaAuth.clear");
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private static async Task<string?> LeerErrorAsync(HttpResponseMessage resp)
+    {
+        try { return (await resp.Content.ReadFromJsonAsync<ErrorResp>())?.Error; }
+        catch { return null; }
+    }
+
+    private sealed record ErrorResp(string? Error);
+}

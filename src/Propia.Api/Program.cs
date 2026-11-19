@@ -339,6 +339,8 @@ app.UseCors();
 // (necesita el claim ya validado), despues MapXxx.
 app.UseAuthentication();
 app.UseAuthorization();
+// Clave temporal pendiente (claim pwd_chg): solo /connect/* hasta que el usuario la cambie.
+app.UseMiddleware<Propia.Api.Middleware.ClaveTemporalMiddleware>();
 
 // TenantMiddleware no debe correr en endpoints de health (no requieren DB ni JWT).
 // UseWhen aplica el middleware solo cuando el path NO empieza por /health.

@@ -22,7 +22,7 @@ public class TokenService : ITokenService
         }
     }
 
-    public (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId, Guid? activeRolId = null)
+    public (string Token, DateTimeOffset ExpiresAt) IssueAccessToken(ApplicationUser user, Guid? activeTenantId, Guid? activeRolId = null, bool debeCambiarClave = false)
     {
         var now = DateTimeOffset.UtcNow;
         var expires = now.AddMinutes(_settings.AccessTokenMinutes);
@@ -49,6 +49,11 @@ public class TokenService : ITokenService
         // rol principal del vinculo (compat con tokens viejos y usuarios mono-rol).
         if (activeRolId.HasValue)
             claims.Add(new Claim("rol_id", activeRolId.Value.ToString()));
+
+        // Clave temporal puesta por un administrador: el middleware del API bloquea todo salvo /connect/*
+        // hasta que el usuario la cambie (ClaveTemporalMiddleware).
+        if (debeCambiarClave)
+            claims.Add(new Claim(ClaveTemporal.JwtClaim, "1"));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SigningKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

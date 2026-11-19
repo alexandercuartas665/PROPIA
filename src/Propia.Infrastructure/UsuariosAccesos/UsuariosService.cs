@@ -27,6 +27,7 @@ public class UsuariosService : IUsuariosService
     private readonly IEmailSender _emailSender;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
     private readonly AuditoriaAccesoContexto? _auditoria;
+    private readonly IAuthService? _auth;
 
     public UsuariosService(
         PropiaDbContext db,
@@ -37,8 +38,10 @@ public class UsuariosService : IUsuariosService
         Storage.IBlobStorage blob,
         IEmailSender emailSender,
         Microsoft.Extensions.Configuration.IConfiguration config,
-        AuditoriaAccesoContexto? auditoria = null)
+        AuditoriaAccesoContexto? auditoria = null,
+        IAuthService? auth = null)
     {
+        _auth = auth;
         _db = db;
         _tenantContext = tenantContext;
         _userManager = userManager;
@@ -935,6 +938,91 @@ public class UsuariosService : IUsuariosService
         await _db.SaveChangesAsync(ct);
         await RegistrarAuditoriaAsync(TipoEventoAuditoria.AccesoOtorgado, ut.TenantId, ut.Id, "reactivacion", ct);
         return true;
+    }
+
+    // ===================== Restablecer clave (admin de la copropiedad) =====================
+
+    public async Task<RestablecerClaveUsuarioResponse?> RestablecerClaveAsync(
+        Guid usuarioTenantId, RestablecerClaveUsuarioRequest req, Guid actorPersonaId, bool actorEsAdmin,
+        string? baseUrl, CancellationToken ct)
+    {
+        // Tenant-scoped (RLS + query filter): un usuario de otra copropiedad no se ve -> null (404).
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut is null) return null;
+
+        if (ut.PersonaId == actorPersonaId)
+            throw new InvalidOperationException("Para cambiar tu propia contraseña usa Mi perfil.");
+        if (ut.Estado != EstadoUsuarioTenant.Activo)
+            throw new InvalidOperationException("Solo se puede restablecer la contraseña de un usuario activo.");
+
+        // S-02: una persona = una cuenta. Sin cuenta todavia (no acepto la invitacion) no hay clave que restablecer.
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PersonaId == ut.PersonaId, ct)
+            ?? throw new InvalidOperationException("Este usuario aún no ha creado su cuenta. Reenvíale la invitación.");
+
+        // Un no-Administrador con permiso de editar Usuarios no puede tomar la cuenta de un Administrador.
+        var esAdminObjetivo = string.Equals(ut.Rol, "Administrador", StringComparison.OrdinalIgnoreCase)
+            || await _db.UsuarioTenantRoles.Where(r => r.UsuarioTenantId == ut.Id)
+                .Join(_db.RolesCopropiedad, r => r.RolId, rol => rol.Id, (r, rol) => rol.Nombre)
+                .AnyAsync(n => n == "Administrador", ct);
+        if (esAdminObjetivo && !actorEsAdmin)
+            throw new InvalidOperationException("Solo un Administrador puede restablecer la contraseña de otro Administrador.");
+
+        // La cuenta es global: si tambien entra a otra copropiedad (o es de A&D), una clave temporal
+        // conocida por ESTE admin le abriria esas otras. Solo se permite el enlace a su propio correo.
+        var otrasCopropiedades = await ContarOtrasCopropiedadesAsync(ut.PersonaId, ut.TenantId, ct);
+        var email = (user.Email ?? "").Trim();
+        var esAyD = email.Length > 0 && await _db.SuperAdminUsuarios.AnyAsync(s => s.Email.ToLower() == email.ToLower(), ct);
+        if (otrasCopropiedades > 0 || esAyD)
+        {
+            var motivo = esAyD ? "también tiene cuenta en la consola A&D" : "también accede a otra copropiedad";
+            var enviado = _auth is not null && email.Length > 0 && await _auth.EnviarEnlaceRestablecerAsync(user, baseUrl, ct);
+            if (!enviado)
+                throw new InvalidOperationException(
+                    $"Este usuario {motivo}: por seguridad solo puede recibir un enlace en su correo, y no se pudo enviar. Revisa que su correo esté bien.");
+            await RegistrarAuditoriaAsync(TipoEventoAuditoria.ClaveRestablecida, ut.TenantId, ut.Id,
+                $"enlace de restablecimiento enviado al correo ({motivo})", ct);
+            return new RestablecerClaveUsuarioResponse("enlace", null, ClaveTemporal.EnmascararCorreo(email), motivo);
+        }
+
+        var clave = string.IsNullOrWhiteSpace(req.ClaveTemporal) ? ClaveTemporal.Generar() : req.ClaveTemporal.Trim();
+        if (ClaveTemporal.ValidarPolitica(clave) is { } err) throw new InvalidOperationException(err);
+
+        // ResetPassword cambia el SecurityStamp: los JWT viejos del usuario ya no pueden refrescarse.
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var res = await _userManager.ResetPasswordAsync(user, token, clave);
+        if (!res.Succeeded)
+            throw new InvalidOperationException("No se pudo fijar la contraseña: " + string.Join("; ", res.Errors.Select(e => e.Description)));
+
+        if (!(await _userManager.GetClaimsAsync(user)).Any(c => c.Type == ClaveTemporal.ClaimTipo))
+            await _userManager.AddClaimAsync(user, new System.Security.Claims.Claim(ClaveTemporal.ClaimTipo, "1"));
+        // Si estaba bloqueado por intentos fallidos, la clave nueva debe servir de inmediato.
+        await _userManager.SetLockoutEndDateAsync(user, null);
+        await _userManager.ResetAccessFailedCountAsync(user);
+
+        var sesiones = await _db.UsuarioSesiones.Where(s => s.UsuarioId == user.Id && s.Activa).ToListAsync(ct);
+        foreach (var s in sesiones) s.Activa = false;
+        if (sesiones.Count > 0) await _db.SaveChangesAsync(ct);
+
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.ClaveRestablecida, ut.TenantId, ut.Id,
+            "contraseña temporal fijada por el administrador (debe cambiarla al ingresar)", ct);
+        return new RestablecerClaveUsuarioResponse("temporal", clave, null, null);
+    }
+
+    /// <summary>Copropiedades ACTIVAS de la persona distintas de la actual (SECURITY DEFINER, ve todas).</summary>
+    private async Task<int> ContarOtrasCopropiedadesAsync(Guid personaId, Guid tenantActual, CancellationToken ct)
+    {
+        var conn = _db.Database.GetDbConnection();
+        var abrir = conn.State != System.Data.ConnectionState.Open;
+        if (abrir) await conn.OpenAsync(ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT count(*) FROM get_tenants_for_persona(@p) WHERE tenant_id <> @t";
+            var p = cmd.CreateParameter(); p.ParameterName = "p"; p.Value = personaId; cmd.Parameters.Add(p);
+            var t = cmd.CreateParameter(); t.ParameterName = "t"; t.Value = tenantActual; cmd.Parameters.Add(t);
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+        }
+        finally { if (abrir) await conn.CloseAsync(); }
     }
 
     // ===================== Auditoria =====================
