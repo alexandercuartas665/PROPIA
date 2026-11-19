@@ -187,6 +187,28 @@ public class UsuariosAccesosController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    /// <summary>
+    /// Restablece la clave de un usuario de la copropiedad: clave temporal (debe cambiarla al
+    /// ingresar) o, si el usuario tambien esta en otra copropiedad / es de A&D, enlace a su correo.
+    /// </summary>
+    [RequierePermiso(ModuloCodigo.UsuariosAccesos, AccionPermiso.Editar)]
+    [HttpPost("{id:guid}/restablecer-clave")]
+    public async Task<IActionResult> RestablecerClave(Guid id, [FromBody] Propia.Application.Auth.RestablecerClaveUsuarioRequest req,
+        [FromServices] IRolesService roles, [FromServices] AuditoriaAccesoContexto auditoria, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirst("persona_id")?.Value, out var actorPersonaId)) return Forbid();
+        var rol = await roles.GetRolActorAsync(actorPersonaId, ct, RequiereRolFilter.RolActivo(User));
+        var actorEsAdmin = string.Equals(rol, "Administrador", StringComparison.OrdinalIgnoreCase);
+        if (Guid.TryParse(User.FindFirst("user_id")?.Value, out var actorUserId)) auditoria.ActorUsuarioId = actorUserId;
+        auditoria.Ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        try
+        {
+            var r = await _svc.RestablecerClaveAsync(id, req ?? new(null), actorPersonaId, actorEsAdmin, req?.BaseUrl, ct);
+            return r is null ? NotFound() : Ok(r);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpPost("{id:guid}/reactivar")]
     public async Task<IActionResult> Reactivar(Guid id, CancellationToken ct)
         => await _svc.ReactivarUsuarioAsync(id, ct) ? NoContent() : NotFound();

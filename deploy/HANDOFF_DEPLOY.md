@@ -1,5 +1,18 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **RESTABLECER CONTRASENA (2026-11-19): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - Usuarios > ficha del usuario > "Restablecer contrasena": el admin pone una clave TEMPORAL (o la genera); el usuario
+>   queda marcado (claim `propia:debe_cambiar_clave` en `asp_net_user_claims`, tabla de Identity que ya existe) y al
+>   ingresar va a `/cambiar-contrasena`. Mientras tanto su JWT lleva `pwd_chg` y el API responde 403
+>   `debe_cambiar_clave` en /api, /hubs y /mcp (middleware nuevo `ClaveTemporalMiddleware`, en Api Y Web Program.cs).
+> - Si el usuario tambien esta ACTIVO en otra copropiedad o su correo es de la consola A&D, NO se pone temporal: se le
+>   manda el enlace a su correo. Un no-Administrador con permiso de editar Usuarios no puede con un Administrador.
+> - "Olvidaste tu contrasena?" del login ya funciona: `/recuperar-contrasena` -> correo con enlace de un solo uso (24 h)
+>   -> `/restablecer-contrasena`. Endpoints anonimos `/connect/recuperar-clave` y `/connect/restablecer-clave`
+>   (rate limit "auth"). El enlace usa `App:PublicBaseUrl` (en prod ya esta en appsettings.Production.json del Web =
+>   https://app.propia-ad.com; verificar que el correo llegue con ese dominio). Correo por el SMTP global (EmailConfig).
+> - Web: `propia-auth.js?v=6`, `usuarios.css?v=32`. Verificar en prod: el enlace del login abre la pagina y el correo llega.
+
 > **PQRSD POR CORREO - OLA P2: RESPUESTA DE RADICADO POR EL BUZON + REENVIOS (2026-11-19): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
 > - Va DESPUES de `20261118204320_AddCorreoPqrsd` (bloque de abajo, P1); aplicar ANTES o JUNTO con el deploy.
 > - Migracion `20261119162249_AddRespuestaRadicadoBuzon` (owner `propia`): `buzones_correo` suma `responder_radicado`

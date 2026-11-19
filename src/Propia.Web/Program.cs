@@ -355,6 +355,8 @@ app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
+// Clave temporal pendiente (claim pwd_chg): solo /connect/* hasta que el usuario la cambie.
+app.UseMiddleware<Propia.Api.Middleware.ClaveTemporalMiddleware>();
 
 // Antiforgery (requerido por Blazor). Va tras routing/auth y antes de los endpoints.
 // No bloquea los controllers [ApiController] (no tienen metadata de antiforgery).

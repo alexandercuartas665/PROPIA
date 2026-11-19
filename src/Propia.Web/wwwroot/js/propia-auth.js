@@ -144,7 +144,8 @@
      * se puede refrescar), redirige a /login con returnUrl. Evita que las paginas de Capa 2
      * muestren modulos vacios o el banner "Sesion expirada" cuando la sesion ya no sirve. */
     function rutaEsPublica(path) {
-        var publics = ['/', '/login', '/registro', '/signin-google', '/operador/info', '/_probe', '/dev/login'];
+        var publics = ['/', '/login', '/registro', '/signin-google', '/operador/info', '/_probe', '/dev/login',
+            '/recuperar-contrasena', '/restablecer-contrasena'];
         // /onboarding y /onboarding/continuar requieren JWT temporal del registro: NO publicas.
         if (publics.indexOf(path) !== -1) return true;
         if (path.indexOf('/invitacion/') === 0) return true; // links de invitacion publicos
@@ -161,11 +162,26 @@
         if (!qs || qs === '/') qs = (window.location.pathname || '/').toLowerCase();
         window.location.replace('/login?returnUrl=' + encodeURIComponent(qs));
     }
+    /** True si el JWT trae pwd_chg (clave temporal del administrador pendiente de cambio). */
+    function debeCambiarClave(token) {
+        if (!token) return false;
+        try {
+            var parts = token.split('.');
+            if (parts.length !== 3) return false;
+            var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            return payload.pwd_chg === '1';
+        } catch (e) { return false; }
+    }
     async function guardSession() {
         try {
             var path = (window.location.pathname || '/').toLowerCase();
             if (rutaEsPublica(path)) return;
             var jwt = leerCualquiera('propia_jwt');
+            // Clave temporal pendiente: la unica pagina disponible es /cambiar-contrasena (el API bloquea el resto).
+            if (jwt && debeCambiarClave(jwt) && path !== '/cambiar-contrasena') {
+                window.location.replace('/cambiar-contrasena');
+                return;
+            }
             var adminJwt = leerCualquiera('propia_admin_jwt');
             // Sin ninguna sesion (cliente ni super admin): a login de inmediato.
             if (!jwt && !adminJwt) { redirectLogin(); return; }

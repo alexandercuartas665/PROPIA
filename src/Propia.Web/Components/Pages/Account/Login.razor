@@ -115,6 +115,14 @@ else
 
     private void TogglePwd() => _showPwd = !_showPwd;
 
+    protected override void OnInitialized()
+    {
+        // Vuelta de /cambiar-contrasena (clave temporal ya cambiada).
+        var qs = QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (qs.TryGetValue("clave", out var c) && c.ToString() == "actualizada")
+            _successMessage = "Tu contraseña se actualizó. Ingresa con la nueva.";
+    }
+
     private class LoginModel
     {
         [Required(ErrorMessage = "El correo es obligatorio")]
@@ -194,6 +202,16 @@ else
 
     private async Task EntrarComoClienteAsync(UnifiedLogin login)
     {
+        // Clave temporal puesta por el administrador: antes de cualquier otra cosa, cambiarla. El API
+        // bloquea /api con este JWT (403 debe_cambiar_clave) hasta que lo haga.
+        if (login.DebeCambiarClave)
+        {
+            var t1 = login.ActiveTenantId.HasValue ? login.AvailableTenants.FirstOrDefault(t => t.TenantId == login.ActiveTenantId.Value) : null;
+            await Js.InvokeVoidAsync("propiaAuth.save", login.AccessToken!, t1?.TenantId.ToString(), t1?.Nombre);
+            Nav.NavigateTo("/cambiar-contrasena", forceLoad: true);
+            return;
+        }
+
         // Sin copropiedades: o el usuario tiene wizard 2.1 pendiente (registrado pero no
         // activado) -> redirige al wizard; o de verdad no tiene acceso a ninguna PH.
         if (login.AvailableTenants.Count == 0)
@@ -299,7 +317,8 @@ else
         string? Email,
         string? MfaTicket,
         Guid? ActiveTenantId,
-        List<TenantInfo> AvailableTenants);
+        List<TenantInfo> AvailableTenants,
+        bool DebeCambiarClave = false);
 
     private sealed record TenantInfo(Guid TenantId, string Nombre, string Rol);
 

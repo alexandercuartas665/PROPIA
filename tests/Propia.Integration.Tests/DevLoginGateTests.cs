@@ -38,6 +38,10 @@ public class DevLoginGateTests
         public Task<LoginResponse?> SwitchRolAsync(Guid userId, Guid activeTenantId, Guid rolId, CancellationToken ct) => Task.FromResult<LoginResponse?>(null);
         public Task<LoginResponse?> RefreshAsync(string rawJwt, CancellationToken ct) => Task.FromResult<LoginResponse?>(null);
         public Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct) => Task.FromResult((true, (string?)null));
+        public Task SolicitarRecuperacionAsync(string email, string? baseUrl, CancellationToken ct) => Task.CompletedTask;
+        public Task<bool> EnviarEnlaceRestablecerAsync(Propia.Domain.Entities.ApplicationUser user, string? baseUrl, CancellationToken ct) => Task.FromResult(false);
+        public Task<(bool Ok, string? Error)> RestablecerConTokenAsync(RestablecerConTokenRequest req, CancellationToken ct) => Task.FromResult((false, (string?)null));
+        public Task<(bool Ok, string? Error)> CambiarClaveObligatoriaAsync(Guid userId, CambiarClaveObligatoriaRequest req, CancellationToken ct) => Task.FromResult((false, (string?)null));
     }
 
     private static AuthController Controller(IAuthService auth)

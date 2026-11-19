@@ -30,4 +30,19 @@ public interface IAuthService
     /// Devuelve (ok, error). error trae el motivo legible si ok=false.
     /// </summary>
     Task<(bool Ok, string? Error)> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken ct);
+
+    /// <summary>
+    /// "Olvide mi contrasena": si el correo es de una cuenta confirmada, le envia un enlace de un solo
+    /// uso (token de Identity, 24 h). No revela si la cuenta existe (siempre termina igual).
+    /// </summary>
+    Task SolicitarRecuperacionAsync(string email, string? baseUrl, CancellationToken ct);
+
+    /// <summary>Envia el enlace de restablecimiento a la cuenta dada (lo usa el admin de la copropiedad). True si salio.</summary>
+    Task<bool> EnviarEnlaceRestablecerAsync(Propia.Domain.Entities.ApplicationUser user, string? baseUrl, CancellationToken ct);
+
+    /// <summary>Fija la nueva clave con el token del enlace. Quita la marca de clave temporal y el bloqueo.</summary>
+    Task<(bool Ok, string? Error)> RestablecerConTokenAsync(RestablecerConTokenRequest req, CancellationToken ct);
+
+    /// <summary>Cambio obligatorio tras una clave temporal: solo si el usuario sigue marcado.</summary>
+    Task<(bool Ok, string? Error)> CambiarClaveObligatoriaAsync(Guid userId, CambiarClaveObligatoriaRequest req, CancellationToken ct);
 }
