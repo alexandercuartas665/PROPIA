@@ -145,6 +145,9 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentEnrutamientoService, InfraestructuraIa.AgentEnrutamientoService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
+        // API de Super Admin: usuarios de cualquier copropiedad (admin/tenants/{tenantId}/usuarios).
+        services.AddScoped<Application.UsuariosAccesos.AuditoriaAccesoContexto>();
+        services.AddScoped<Application.SuperAdmin.IAdminTenantUsuariosService, SuperAdmin.AdminTenantUsuariosService>();
         services.AddScoped<Application.InfraestructuraIa.IPlantillasWhatsAppService, InfraestructuraIa.PlantillasWhatsAppService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
