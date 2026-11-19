@@ -52,6 +52,7 @@ public static class PlantillasCatalogo
             ["pqrsd"] = Tk(false,
                 ("radicado.numero", "Numero de radicado", "PQR-2026-0042"), ("radicado.tipo", "Tipo de PQRSD", "Petición"),
                 ("radicado.categoria", "Categoria", "Convivencia"), ("radicado.fecha", "Fecha de radicacion", "3 nov 2026"),
+                ("radicado.vencimiento", "Fecha limite de respuesta (plazo legal)", "24 de noviembre de 2026"),
                 ("radicado.estado", "Estado actual", "En gestión"), ("solicitante.nombre", "Nombre del solicitante", "Laura Restrepo Gómez"),
                 ("solicitante.identificacion", "Identificacion del solicitante", "CC 43100200"), ("solicitante.correo", "Correo del solicitante", "laura.restrepo@correo.co"),
                 ("solicitante.telefono", "Telefono del solicitante", "3001200000"), ("unidad.numero", "Numero de la unidad", "T1-101"),

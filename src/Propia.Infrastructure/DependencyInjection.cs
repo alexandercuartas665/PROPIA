@@ -99,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
         services.AddScoped<Application.Integraciones.ITenantEmailConfigService, Integraciones.TenantEmailConfigService>();
         services.AddScoped<Application.Integraciones.ICorreoEntranteService, Integraciones.CorreoEntranteService>();  // lector de buzon (IMAP)
+        services.AddScoped<Application.Integraciones.ICorreoPqrsdService, Integraciones.CorreoPqrsdService>();  // PQRSD por correo (Ola P1)
+        services.AddScoped<Application.Integraciones.IRespuestaCorreoSender, Integraciones.RespuestaCorreoSender>();  // respuesta de radicado por el buzon (Ola P2)
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();
         services.AddScoped<Application.Integraciones.IOcrServerConfigService, Integraciones.OcrServerConfigService>();
@@ -145,6 +147,9 @@ public static class DependencyInjection
         services.AddScoped<Application.InfraestructuraIa.IAgentReactivacionService, InfraestructuraIa.AgentReactivacionService>();
         services.AddScoped<Application.InfraestructuraIa.IAgentEnrutamientoService, InfraestructuraIa.AgentEnrutamientoService>();
         services.AddScoped<Application.InfraestructuraIa.IAdminAgentService, InfraestructuraIa.AdminAgentService>();
+        // API de Super Admin: usuarios de cualquier copropiedad (admin/tenants/{tenantId}/usuarios).
+        services.AddScoped<Application.UsuariosAccesos.AuditoriaAccesoContexto>();
+        services.AddScoped<Application.SuperAdmin.IAdminTenantUsuariosService, SuperAdmin.AdminTenantUsuariosService>();
         services.AddScoped<Application.InfraestructuraIa.IPlantillasWhatsAppService, InfraestructuraIa.PlantillasWhatsAppService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.

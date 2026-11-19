@@ -251,13 +251,21 @@ public sealed record CorreoRecienteDto(Guid Id, string? Asunto, string? TemaClav
 public sealed record BuzonCorreoDto(
     Guid Id, string Nombre, string Cuenta, bool TienePassword, string ImapHost, int ImapPort, bool Activo,
     DateTimeOffset? LecturaDesde, DateTimeOffset? UltimaRevision, string? UltimoError, IReadOnlyList<string>? Temas,
-    int Hoy, int Total, int Pendientes, IReadOnlyList<CorreoRecienteDto> Recientes);
+    int Hoy, int Total, int Pendientes, IReadOnlyList<CorreoRecienteDto> Recientes,
+    /// <summary>PQRSD por correo: confianza minima para radicar solo (null = nunca).</summary>
+    decimal? UmbralAutoPqrsd = null,
+    /// <summary>Ola P2: responde el radicado desde este buzon, con su plantilla (null = la predeterminada).</summary>
+    bool ResponderRadicado = true, Guid? PlantillaAcuseId = null);
 
 /// <summary>Crear o editar un buzon (MERGE al editar: null = no tocar). <paramref name="TodosLosTemas"/> = true
 /// borra la seleccion de temas (atiende todos); si no, <paramref name="Temas"/> reemplaza la seleccion.</summary>
 public sealed record GuardarBuzonRequest(
     string? Nombre = null, string? Cuenta = null, string? Password = null, string? ImapHost = null, int? ImapPort = null,
-    bool? Activo = null, List<string>? Temas = null, bool? TodosLosTemas = null);
+    bool? Activo = null, List<string>? Temas = null, bool? TodosLosTemas = null,
+    /// <summary>PQRSD por correo: null = no tocar; 0 = nunca radicar solo; 0.5 a 1 = confianza minima.</summary>
+    decimal? UmbralAutoPqrsd = null,
+    /// <summary>Ola P2: null = no tocar. PlantillaAcuseId Guid.Empty = volver a la plantilla predeterminada.</summary>
+    bool? ResponderRadicado = null, Guid? PlantillaAcuseId = null);
 
 /// <summary>Probar la conexion IMAP. Con <paramref name="BuzonId"/> usa lo guardado para lo que no venga en la peticion
 /// (asi se puede probar antes de guardar, o sin volver a escribir la contrasena).</summary>
@@ -269,7 +277,7 @@ public sealed record RevisionBuzonResult(bool Ok, int Nuevos, int Clasificados, 
 public sealed record CorreoRecibidoDto(
     Guid Id, Guid? BuzonId, DateTimeOffset FechaCorreo, string? RemitenteCorreo, string? RemitenteNombre, string? Asunto,
     string? TemaClave, decimal? Confianza, string? Resumen, string? AccionSugerida, EstadoCorreoRecibido Estado,
-    string? Error, int Adjuntos);
+    string? Error, int Adjuntos, Guid? PqrsdExpedienteId = null, string? PqrsdRadicado = null);
 
 public sealed record CorreoAdjuntoDto(string Nombre, string? Mime, long Tamano, string? Url);
 
@@ -277,7 +285,11 @@ public sealed record CorreoRecibidoDetalleDto(
     Guid Id, Guid? BuzonId, string? BuzonNombre, DateTimeOffset FechaCorreo, string? RemitenteCorreo, string? RemitenteNombre,
     string? Para, string? Asunto, string? Cuerpo, IReadOnlyList<CorreoAdjuntoDto> Adjuntos, string? TemaClave,
     decimal? Confianza, string? Resumen, string? AccionSugerida, string? DatosJson, EstadoCorreoRecibido Estado,
-    string? Error, DateTimeOffset? ClasificadoEn);
+    string? Error, DateTimeOffset? ClasificadoEn,
+    PropuestaPqrsdCorreo? PropuestaPqrsd = null, Guid? PqrsdExpedienteId = null, string? PqrsdRadicado = null,
+    bool? PqrsdAutomatico = null,
+    /// <summary>Ola P2: respuesta de radicado por el buzon (cuando salio y a quien) o por que no salio.</summary>
+    DateTimeOffset? AcuseEnviadoAt = null, string? AcuseDestino = null, string? AcuseError = null);
 
 /// <summary>Como se guarda cada adjunto en CorreoRecibido.AdjuntosJson.</summary>
 public sealed record CorreoAdjuntoGuardado(string Nombre, string? Mime, long Tamano, string Ruta);

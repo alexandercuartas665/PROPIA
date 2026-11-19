@@ -26,6 +26,7 @@ public class UsuariosService : IUsuariosService
     private readonly Storage.IBlobStorage _blob;
     private readonly IEmailSender _emailSender;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
+    private readonly AuditoriaAccesoContexto? _auditoria;
 
     public UsuariosService(
         PropiaDbContext db,
@@ -35,7 +36,8 @@ public class UsuariosService : IUsuariosService
         IOptions<JwtSettings> jwt,
         Storage.IBlobStorage blob,
         IEmailSender emailSender,
-        Microsoft.Extensions.Configuration.IConfiguration config)
+        Microsoft.Extensions.Configuration.IConfiguration config,
+        AuditoriaAccesoContexto? auditoria = null)
     {
         _db = db;
         _tenantContext = tenantContext;
@@ -45,6 +47,7 @@ public class UsuariosService : IUsuariosService
         _blob = blob;
         _emailSender = emailSender;
         _config = config;
+        _auditoria = auditoria;
     }
 
     // ===================== Bandeja =====================
@@ -980,8 +983,11 @@ public class UsuariosService : IUsuariosService
             TenantId = tenantId,
             TipoEvento = tipo,
             EntidadAfectadaId = entidadAfectada,
-            Detalle = detalle,
-            Canal = CanalAcceso.Web
+            // API de Super Admin: actor + canal Api + marca "via API" (ver AuditoriaAccesoContexto).
+            ActorUsuarioId = _auditoria?.ActorUsuarioId,
+            Detalle = string.IsNullOrEmpty(_auditoria?.Marca) ? detalle : $"{_auditoria!.Marca} {detalle}".TrimEnd(),
+            IpOrigen = _auditoria?.Ip,
+            Canal = _auditoria?.Canal ?? CanalAcceso.Web
         });
         await _db.SaveChangesAsync(ct);
     }

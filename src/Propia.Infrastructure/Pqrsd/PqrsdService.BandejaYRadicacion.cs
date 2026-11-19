@@ -349,20 +349,33 @@ public partial class PqrsdService
             exp.Tipo == TipoPqrsd.Denuncia ? Domain.Enums.PrioridadNotificacion.Alta : Domain.Enums.PrioridadNotificacion.Normal,
             ct);
 
-        // G-02: confirmacion de radicado al radicador (spec 11 - obligatorio). Por todos sus canales.
-        if (personaId != Guid.Empty)
-        {
-            try
-            {
-                await _noti.EnviarEventoUsuarioAsync(personaId,
-                    $"Radicado recibido: {numero}",
-                    $"Tu solicitud fue radicada con el numero {numero} el {DateTime.UtcNow:dd MMM yyyy}. El plazo legal de respuesta vence el {fechaVencimiento:dd MMM yyyy}. Te avisaremos cuando cambie de estado o tengas respuesta.",
-                    "2.9", exp.Id, _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
-            }
-            catch { /* la confirmacion no debe tumbar la radicacion */ }
-        }
+        // G-02: confirmacion de radicado al radicador (spec 11 - obligatorio). Por todos sus canales. Si el radicado viene
+        // de un correo, el acuse lo manda el buzon en el hilo (Ola P2) y la plataforma no duplica.
+        if (personaId != Guid.Empty && !req.OmitirConfirmacionRadicador)
+            await ConfirmarRadicadoAsync(personaId, numero, DateTime.UtcNow, fechaVencimiento, exp.Id, ct);
 
         return (await GetExpedienteAsync(exp.Id, ct))!;
+    }
+
+    public async Task<bool> EnviarConfirmacionRadicadoAsync(Guid expedienteId, CancellationToken ct)
+    {
+        var exp = await _db.PqrsdExpedientes.AsNoTracking().FirstOrDefaultAsync(e => e.Id == expedienteId, ct);
+        if (exp is null) return false;
+        if (exp.RadicadorPersonaId != Guid.Empty)
+            await ConfirmarRadicadoAsync(exp.RadicadorPersonaId, exp.NumeroRadicado, exp.CreatedAt.UtcDateTime, exp.FechaVencimiento, exp.Id, ct);
+        return true;
+    }
+
+    private async Task ConfirmarRadicadoAsync(Guid personaId, string numero, DateTime radicadoEl, DateOnly vence, Guid expId, CancellationToken ct)
+    {
+        try
+        {
+            await _noti.EnviarEventoUsuarioAsync(personaId,
+                $"Radicado recibido: {numero}",
+                $"Tu solicitud fue radicada con el numero {numero} el {radicadoEl:dd MMM yyyy}. El plazo legal de respuesta vence el {vence:dd MMM yyyy}. Te avisaremos cuando cambie de estado o tengas respuesta.",
+                "2.9", expId, _tenantContext.CurrentTenantId, Domain.Enums.PrioridadNotificacion.Normal, ct);
+        }
+        catch { /* la confirmacion no debe tumbar la radicacion */ }
     }
 
 }

@@ -314,7 +314,10 @@ public record RadicarPqrsdRequest(
     string? Seccional = null,
     string? Administrador = null,
     /// <summary>Fecha real de recibido; si viene, el plazo legal se calcula desde aqui.</summary>
-    DateOnly? FechaRecibido = null);
+    DateOnly? FechaRecibido = null,
+    /// <summary>PQRSD por correo (Ola P2): el acuse lo envia el buzon de la copropiedad en el hilo del correo, asi que
+    /// la plataforma no manda su confirmacion (si el buzon falla se pide aparte con EnviarConfirmacionRadicadoAsync).</summary>
+    bool OmitirConfirmacionRadicador = false);
 
 /// <summary>Actualiza datos editables del expediente desde el modal de detalle (unidad, radicador, campos dinamicos).</summary>
 public record ActualizarExpedienteRequest(
