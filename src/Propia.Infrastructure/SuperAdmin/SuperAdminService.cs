@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Propia.Application.Auth;
 using Propia.Application.SuperAdmin;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
@@ -13,8 +14,15 @@ public class SuperAdminService : ISuperAdminService
     private readonly IPasswordHasher<SuperAdminUsuario> _hasher;
     private readonly UserManager<ApplicationUser> _userManager;
 
-    public SuperAdminService(PropiaDbContext db, IPasswordHasher<SuperAdminUsuario> hasher, UserManager<ApplicationUser> userManager)
+    private readonly Propia.Application.UsuariosAccesos.INotificadorAcceso? _notificador;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration? _config;
+
+    public SuperAdminService(PropiaDbContext db, IPasswordHasher<SuperAdminUsuario> hasher, UserManager<ApplicationUser> userManager,
+        Propia.Application.UsuariosAccesos.INotificadorAcceso? notificador = null,
+        Microsoft.Extensions.Configuration.IConfiguration? config = null)
     {
+        _notificador = notificador;
+        _config = config;
         _db = db;
         _hasher = hasher;
         _userManager = userManager;
@@ -31,9 +39,14 @@ public class SuperAdminService : ISuperAdminService
             .OrderBy(o => o.Nombre)
             .Select(o => new
             {
-                o.Id, o.Nombre, o.Tipo, o.Nit, o.Email,
+                o.Id,
+                o.Nombre,
+                o.Tipo,
+                o.Nit,
+                o.Email,
                 Count = o.Copropiedades.Count,
-                o.CreatedAt, o.Estado,
+                o.CreatedAt,
+                o.Estado,
                 Override = o.LimiteCopropiedades,
                 Sub = _db.Suscripciones
                     .Where(s => s.OrganizacionId == o.Id
@@ -127,50 +140,78 @@ public class SuperAdminService : ISuperAdminService
         var apellidos = (req.Apellidos ?? "").Trim();
         var documento = (req.Documento ?? "").Trim();
         var email = (req.Email ?? "").Trim();
+        var conClave = !string.IsNullOrWhiteSpace(req.Password);
         if (nombres.Length == 0 || apellidos.Length == 0) throw new InvalidOperationException("Nombres y apellidos son obligatorios.");
         if (documento.Length == 0) throw new InvalidOperationException("El documento es obligatorio.");
         if (email.Length == 0 || !email.Contains('@')) throw new InvalidOperationException("Correo invalido.");
-        if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 8) throw new InvalidOperationException("La clave debe tener al menos 8 caracteres.");
+        if (conClave && req.Password!.Length < 8) throw new InvalidOperationException("La clave debe tener al menos 8 caracteres.");
+        var advertencias = new List<string>();
 
-        if (await _db.Users.AnyAsync(u => u.Email == email, ct)) throw new InvalidOperationException($"Ya existe un usuario con el correo {email}.");
-        if (await _db.Personas.AnyAsync(p => p.TipoDocumento == req.TipoDocumento && p.Documento == documento, ct))
-            throw new InvalidOperationException($"Ya existe una persona con el documento {documento}.");
-
-        // 1) Persona (global)
-        var persona = new Persona
+        // 1) Persona (global): se REUTILIZA si ya existe por documento o por correo (no se duplica ni falla).
+        var emailLower = email.ToLower();
+        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.TipoDocumento == req.TipoDocumento && p.Documento == documento, ct)
+            ?? await _db.Personas.FirstOrDefaultAsync(p => p.Email != null && p.Email.ToLower() == emailLower, ct);
+        var personaReutilizada = persona is not null;
+        if (persona is null)
         {
-            TipoDocumento = req.TipoDocumento,
-            Documento = documento,
-            Nombres = nombres,
-            Apellidos = apellidos,
-            Email = email,
-            PerfilIncompleto = false
-        };
-        _db.Personas.Add(persona);
-        await _db.SaveChangesAsync(ct);
-
-        // 2) ApplicationUser (Identity)
-        var user = new ApplicationUser
-        {
-            Id = Guid.NewGuid(),
-            UserName = email,
-            Email = email,
-            EmailConfirmed = true,
-            PersonaId = persona.Id
-        };
-        var created = await _userManager.CreateAsync(user, req.Password);
-        if (!created.Succeeded)
-        {
-            _db.Personas.Remove(persona);
+            persona = new Persona
+            {
+                TipoDocumento = req.TipoDocumento,
+                Documento = documento,
+                Nombres = nombres,
+                Apellidos = apellidos,
+                Email = email,
+                PerfilIncompleto = false
+            };
+            _db.Personas.Add(persona);
             await _db.SaveChangesAsync(ct);
-            throw new InvalidOperationException("No se pudo crear el usuario: " + string.Join("; ", created.Errors.Select(e => e.Description)));
+        }
+        else if (!string.Equals(persona.Email, email, StringComparison.OrdinalIgnoreCase))
+        {
+            advertencias.Add(persona.Email is null
+                ? "La persona ya existía sin correo; el correo enviado no se guardó."
+                : $"El correo enviado difiere del registrado ({ClaveTemporal.EnmascararCorreo(persona.Email)}); se usa el registrado.");
+        }
+        var emailLogin = persona.Email ?? email;
+
+        // 2) ApplicationUser (Identity): una persona = una cuenta. Si ya la tiene, se conserva (y su clave).
+        string? claveTemporal = null;
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PersonaId == persona.Id, ct);
+        var cuentaCreada = false;
+        if (user is null)
+        {
+            if (await _userManager.FindByEmailAsync(emailLogin) is not null)
+                throw new InvalidOperationException($"Ya existe una cuenta con el correo {emailLogin} que no es de esta persona.");
+            user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = emailLogin,
+                Email = emailLogin,
+                EmailConfirmed = true,
+                PersonaId = persona.Id
+            };
+            claveTemporal = conClave ? null : ClaveTemporal.Generar();
+            var created = await _userManager.CreateAsync(user, conClave ? req.Password! : claveTemporal!);
+            if (!created.Succeeded)
+            {
+                if (!personaReutilizada) { _db.Personas.Remove(persona); await _db.SaveChangesAsync(ct); }
+                throw new InvalidOperationException("No se pudo crear el usuario: " + string.Join("; ", created.Errors.Select(e => e.Description)));
+            }
+            if (claveTemporal is not null)
+                await _userManager.AddClaimAsync(user, new System.Security.Claims.Claim(ClaveTemporal.ClaimTipo, "1"));
+            cuentaCreada = true;
+        }
+        else if (conClave)
+        {
+            advertencias.Add("La persona ya tenía cuenta: no se cambió su contraseña (usa restablecer contraseña si la necesita).");
         }
 
         // 3) OrgColaborador con cargo Director (acceso Capa 1). Best-effort: no aborta si falla.
         try
         {
             var directorCargoId = await AsegurarCargoDirectorAsync(orgId, ct);
-            if (directorCargoId is { } cargoId)
+            var yaColaborador = await _db.OrgColaboradores.AnyAsync(c => c.OrganizacionId == orgId && c.PersonaId == persona.Id, ct);
+            if (directorCargoId is { } cargoId && !yaColaborador)
             {
                 _db.OrgColaboradores.Add(new OrgColaborador
                 {
@@ -198,24 +239,53 @@ public class SuperAdminService : ISuperAdminService
                 foreach (var tid in copropiedades)
                 {
                     await using var cmd = conn.CreateCommand();
+                    // Persona existente: si ya es usuario de esa copropiedad no se duplica (unico tenant+persona);
+                    // si estaba Pendiente (sin cuenta) queda Activo, porque ahora ya tiene cuenta. No toca roles.
                     cmd.CommandText = @"
                         SELECT set_config('app.tenant_id', @tid::text, false);
                         INSERT INTO usuarios_tenant (id, tenant_id, persona_id, rol, estado, fecha_activacion, created_at)
-                        VALUES (@id, @tid, @pid, 'Administrador', 1, now(), now());";
+                        VALUES (@id, @tid, @pid, 'Administrador', 1, now(), now())
+                        ON CONFLICT (tenant_id, persona_id) DO UPDATE SET estado = 1, fecha_activacion = now()
+                        WHERE usuarios_tenant.estado = 2;";
                     AddParam(cmd, "@tid", tid);
                     AddParam(cmd, "@id", Guid.NewGuid());
                     AddParam(cmd, "@pid", persona.Id);
-                    await cmd.ExecuteNonQueryAsync(ct);
-                    asignadas++;
+                    if (await cmd.ExecuteNonQueryAsync(ct) > 0) asignadas++;
                 }
             }
             finally { if (opened) await conn.CloseAsync(); }
         }
 
-        _db.SuperAdminLogs.Add(NewLog(actorId, actorEmail, "CREATE_ADMIN_ORGANIZACION", $"Organizacion:{orgId}", $"Email={email}, Copropiedades={asignadas}", ip));
+        // 5) Cuenta nueva sin clave: la temporal se ENTREGA al correo (nunca viaja en la respuesta).
+        Propia.Application.UsuariosAccesos.AccesoEntregadoDto? acceso = null;
+        if (claveTemporal is not null)
+        {
+            var envio = _notificador is null
+                ? Propia.Application.UsuariosAccesos.EnvioCanalesDto.SinNotificador
+                : await _notificador.EnviarAccesoTemporalAsync(new Propia.Application.UsuariosAccesos.AccesoTemporalMensaje(
+                    $"{persona.Nombres} {persona.Apellidos}".Trim(), emailLogin, persona.Telefono, org.Nombre, claveTemporal,
+                    ConstruirLink("/login")), Domain.Enums.CanalEnvioInvitacion.Email, ct);
+            var ok = envio.Correo == Propia.Application.UsuariosAccesos.EstadoEnvioCanal.Enviado;
+            acceso = new Propia.Application.UsuariosAccesos.AccesoEntregadoDto("temporal",
+                ok ? new[] { "correo" } : Array.Empty<string>(), ClaveTemporal.EnmascararCorreo(emailLogin),
+                ok ? Array.Empty<string>() : new[] { $"correo: {envio.DetalleCorreo}" },
+                ok ? null : "No se pudo entregar la contraseña temporal: usa restablecer contraseña o activar-con-clave-temporal.",
+                CuentaCreada: true);
+        }
+
+        _db.SuperAdminLogs.Add(NewLog(actorId, actorEmail, "CREATE_ADMIN_ORGANIZACION", $"Organizacion:{orgId}",
+            $"Email={emailLogin}, Copropiedades={asignadas}, persona {(personaReutilizada ? "reutilizada" : "nueva")}, "
+            + (cuentaCreada ? (claveTemporal is null ? "cuenta con clave dada" : $"cuenta con clave temporal entregada por [{string.Join(",", acceso!.EntregadoPor)}]") : "cuenta existente"), ip));
         await _db.SaveChangesAsync(ct);
 
-        return new AdminOrganizacionDto(user.Id, persona.Id, $"{nombres} {apellidos}".Trim(), email, asignadas);
+        return new AdminOrganizacionDto(user.Id, persona.Id, $"{persona.Nombres} {persona.Apellidos}".Trim(), emailLogin, asignadas,
+            personaReutilizada, acceso, advertencias.Count > 0 ? advertencias : null);
+    }
+
+    private string ConstruirLink(string relativo)
+    {
+        var baseUrl = (_config?["App:PublicBaseUrl"] ?? "").Trim().TrimEnd('/');
+        return string.IsNullOrWhiteSpace(baseUrl) ? relativo : baseUrl + relativo;
     }
 
     // Devuelve el cargo "Director" (admin) de la org; crea el catalogo base o el cargo si faltan.

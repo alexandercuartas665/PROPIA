@@ -12,8 +12,9 @@ namespace Propia.Api.Controllers;
 /// agentes. Acepta el JWT de Super Admin y el token pak_ (policy SuperAdmin; NO es [SoloSesionInteractiva]).
 /// El controller solo fija el actor y delega: el servicio fija el tenant (EF + RLS) y reutiliza
 /// IUsuariosService / IRolesService / IDirectorioService. Nunca recibe ni devuelve contrasenas: el usuario
-/// entra por el link de invitacion. Fail-closed: sin token 401; sin super admin 403; tenant inactivo o
-/// usuario / persona / rol / invitacion de OTRO tenant 404; error de negocio 400 { error }.
+/// entra por el link de invitacion o con la clave temporal que el SERVIDOR genera y le entrega. Fail-closed:
+/// sin token 401; sin super admin 403; tenant inactivo o usuario / persona / rol / invitacion de OTRO tenant
+/// 404; correo ya de otra persona o cuenta 409; error de negocio 400 { error }.
 /// </summary>
 [ApiController]
 [Route("admin/tenants/{tenantId:guid}")]
@@ -45,8 +46,24 @@ public class AdminTenantUsuariosController : ControllerBase
         => Ejecutar(async () =>
         {
             var creado = await _svc.CrearUsuarioAsync(tenantId, req, Actor(), ct);
-            return CreatedAtAction(nameof(Detalle), new { tenantId, usuarioTenantId = creado.UsuarioTenantId }, creado);
+            // Alta repetida sobre el mismo usuario de la copropiedad: 200 + yaExistia.
+            return creado.YaExistia
+                ? Ok(creado)
+                : CreatedAtAction(nameof(Detalle), new { tenantId, usuarioTenantId = creado.UsuarioTenantId }, creado);
         });
+
+    /// <summary>
+    /// Cuenta lista para entrar: clave temporal GENERADA y ENTREGADA por el servidor (correo / WhatsApp segun
+    /// canal). La respuesta nunca trae la clave: { modo, entregadoPor, destino }.
+    /// </summary>
+    [HttpPost("usuarios/{usuarioTenantId:guid}/activar-con-clave-temporal")]
+    public Task<IActionResult> ActivarConClaveTemporal(Guid tenantId, Guid usuarioTenantId, [FromBody] AdminActivarClaveTemporalRequest? req, CancellationToken ct)
+        => Ejecutar(async () => Ok(await _svc.ActivarConClaveTemporalAsync(tenantId, usuarioTenantId, req ?? new AdminActivarClaveTemporalRequest(), Actor(), ct)));
+
+    /// <summary>Corrige nombres / correo / telefono de una persona de la copropiedad (MERGE). 409 si el correo ya es de otra.</summary>
+    [HttpPut("personas/{personaId:guid}")]
+    public Task<IActionResult> ActualizarPersona(Guid tenantId, Guid personaId, [FromBody] AdminActualizarPersonaRequest req, CancellationToken ct)
+        => Ejecutar(async () => Ok(await _svc.ActualizarPersonaAsync(tenantId, personaId, req, Actor(), ct)));
 
     [HttpPut("usuarios/{usuarioTenantId:guid}/roles")]
     public Task<IActionResult> ActualizarRoles(Guid tenantId, Guid usuarioTenantId, [FromBody] ActualizarRolesUsuarioRequest req, CancellationToken ct)
@@ -66,7 +83,7 @@ public class AdminTenantUsuariosController : ControllerBase
 
     [HttpPut("invitaciones/{invitacionId:guid}/reenviar")]
     public Task<IActionResult> ReenviarInvitacion(Guid tenantId, Guid invitacionId, CancellationToken ct)
-        => Ejecutar(async () => { await _svc.ReenviarInvitacionAsync(tenantId, invitacionId, Actor(), ct); return NoContent(); });
+        => Ejecutar(async () => Ok(await _svc.ReenviarInvitacionAsync(tenantId, invitacionId, Actor(), ct)));
 
     [HttpDelete("invitaciones/{invitacionId:guid}")]
     public Task<IActionResult> CancelarInvitacion(Guid tenantId, Guid invitacionId, CancellationToken ct)
@@ -77,6 +94,7 @@ public class AdminTenantUsuariosController : ControllerBase
     {
         try { return await accion(); }
         catch (AdminRecursoNoEncontradoException ex) { return NotFound(new { error = ex.Message }); }
+        catch (AdminConflictoException ex) { return Conflict(new { error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 

@@ -44,9 +44,15 @@ public class EquipoOrgService : IEquipoOrgService
 
     // ===================== Resolucion de organizacion activa =====================
 
-    /// <summary>Resuelve la organizacion activa para la sesion actual via Tenant activo.</summary>
+    // API del Super Admin: la organizacion viene de la ruta, no del JWT (que no trae copropiedad).
+    private Guid? _organizacionFijada;
+
+    public void FijarOrganizacion(Guid organizacionId) => _organizacionFijada = organizacionId;
+
+    /// <summary>Resuelve la organizacion activa para la sesion actual via Tenant activo (o la fijada por la API Super Admin).</summary>
     private async Task<Guid> GetOrganizacionActivaAsync(CancellationToken ct)
     {
+        if (_organizacionFijada is { } fijada) return fijada;
         var tenantId = _tenantContext.CurrentTenantId
             ?? throw new InvalidOperationException("No hay copropiedad activa en la sesion.");
         // El Tenant tiene FK a Organizacion. Bypassamos query filter porque tenant es global.

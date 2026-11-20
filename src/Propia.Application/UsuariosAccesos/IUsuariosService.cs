@@ -24,7 +24,20 @@ public interface IUsuariosService
     // Invita a un externo (por email) a un tablero: crea la persona si no existe y envia correo.
     Task<InvitacionDto> InvitarExternoTableroAsync(InvitarExternoTableroRequest req, CancellationToken ct);
     Task<bool> ReenviarInvitacionAsync(Guid invitacionId, CancellationToken ct);
+    /// <summary>Regenera el token (72 h) y la ENVIA por su canal. Null = no existe o no esta pendiente/expirada.</summary>
+    Task<InvitacionDto?> ReenviarInvitacionConEnvioAsync(Guid invitacionId, CancellationToken ct);
     Task<bool> CancelarInvitacionAsync(Guid invitacionId, CancellationToken ct);
+
+    /// <summary>
+    /// Deja la cuenta del usuario lista para entrar con una clave temporal generada por el servidor y la
+    /// ENTREGA a la persona (correo y/o WhatsApp). Sin cuenta: la crea y activa el usuario. Con cuenta:
+    /// misma regla que <see cref="RestablecerClaveAsync"/> (otra copropiedad o A&amp;D -> solo enlace).
+    /// Nunca devuelve la clave. Null = el usuario no es de esta copropiedad.
+    /// </summary>
+    Task<AccesoEntregadoDto?> ActivarConClaveTemporalAsync(Guid usuarioTenantId, CanalEnvioInvitacion canal, CancellationToken ct);
+
+    /// <summary>Falla (InvalidOperationException) si no hay correo de login o ningun canal entregable para el acceso.</summary>
+    Task ValidarEntregaAccesoAsync(string? email, string? telefono, CanalEnvioInvitacion canal, CancellationToken ct);
     Task<IReadOnlyList<InvitacionDto>> ListarPendientesAsync(CancellationToken ct);
 
     // Publico (sin tenant en JWT - usa token)

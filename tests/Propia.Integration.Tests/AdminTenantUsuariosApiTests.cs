@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Propia.Application.Auth;
 using Propia.Application.Directorio;
 using Propia.Application.SuperAdmin;
@@ -199,9 +201,12 @@ public class AdminTenantUsuariosApiTests : IAsyncLifetime
         Assert.True(c.PersonaReutilizada);
         Assert.Equal(a.PersonaId, c.PersonaId);
 
-        // personaId existente de la copropiedad: tambien sirve.
+        // personaId existente de la copropiedad: tambien sirve; es el mismo usuario -> 200 + yaExistia.
         var tAOtro = await _api.PostAsJsonAsync($"/admin/tenants/{tA}/usuarios", new AdminCrearUsuarioRequest(a.PersonaId, null, null, null, false));
-        Assert.Equal(HttpStatusCode.Created, tAOtro.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, tAOtro.StatusCode);
+        var repetido = (await tAOtro.Content.ReadFromJsonAsync<AdminCrearUsuarioResponse>())!;
+        Assert.True(repetido.YaExistia);
+        Assert.Equal(a.UsuarioTenantId, repetido.UsuarioTenantId);
 
         await using var db = OwnerDb();
         Assert.Equal(1, await db.Personas.CountAsync(p => p.Email == email));
@@ -289,7 +294,7 @@ public class AdminTenantUsuariosApiTests : IAsyncLifetime
         string tokenAntes;
         await using (var db = await TenantDbAsync(tA))
             tokenAntes = (await db.UsuarioInvitaciones.SingleAsync(i => i.Id == c.Invitacion!.Id)).Token;
-        Assert.Equal(HttpStatusCode.NoContent, (await _api.PutAsync($"/admin/tenants/{tA}/invitaciones/{c.Invitacion!.Id}/reenviar", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _api.PutAsync($"/admin/tenants/{tA}/invitaciones/{c.Invitacion!.Id}/reenviar", null)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await _api.DeleteAsync($"/admin/tenants/{tA}/invitaciones/{c.Invitacion.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await _api.PutAsync($"/admin/tenants/{tA}/invitaciones/{c.Invitacion.Id}/reenviar", null)).StatusCode);
         await using (var db = await TenantDbAsync(tA))
@@ -323,7 +328,19 @@ public class AdminTenantUsuariosApiTests : IAsyncLifetime
             base.ConfigureWebHost(builder);
             builder.UseSetting("ConnectionStrings:Propia", _conn);
             builder.UseSetting("Jobs:Enabled", "false");
+            // Las invitaciones ahora se ENVIAN: en pruebas nunca por un SMTP real.
+            builder.ConfigureTestServices(s =>
+            {
+                s.RemoveAll<Propia.Application.Common.IEmailSender>();
+                s.AddSingleton<Propia.Application.Common.IEmailSender, NoopEmailSender>();
+            });
         }
+    }
+
+    private sealed class NoopEmailSender : Propia.Application.Common.IEmailSender
+    {
+        public Task<Propia.Application.Common.EmailSendResult> SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+            => Task.FromResult(new Propia.Application.Common.EmailSendResult(true, null));
     }
 
     private PropiaDbContext OwnerDb()

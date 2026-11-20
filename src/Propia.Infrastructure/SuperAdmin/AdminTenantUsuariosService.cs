@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Propia.Application.Common;
 using Propia.Application.Directorio;
@@ -26,10 +27,13 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
     private readonly IRolesService _roles;
     private readonly IDirectorioService _directorio;
     private readonly AuditoriaAccesoContexto _auditoria;
+    private readonly UserManager<ApplicationUser> _userManager;
 
     public AdminTenantUsuariosService(PropiaDbContext db, ITenantContext tenant, IUsuariosService usuarios,
-        IRolesService roles, IDirectorioService directorio, AuditoriaAccesoContexto auditoria)
+        IRolesService roles, IDirectorioService directorio, AuditoriaAccesoContexto auditoria,
+        UserManager<ApplicationUser> userManager)
     {
+        _userManager = userManager;
         _db = db;
         _tenant = tenant;
         _usuarios = usuarios;
@@ -63,7 +67,12 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
     public async Task<IReadOnlyList<PersonaResumenDto>> BuscarPersonasAsync(Guid tenantId, string? q, CancellationToken ct)
     {
         await FijarTenantAsync(tenantId, ct);
-        return await _directorio.ListarPersonasDelTenantAsync(q, ct);
+        var lista = await _directorio.ListarPersonasDelTenantAsync(q, ct);
+        // Documento escrito con puntos, espacios o guiones ("1.020.304"): se busca tambien solo por digitos.
+        var digitos = Digitos(q);
+        if (digitos.Length >= 4 && digitos != (q ?? "").Trim())
+            lista = lista.Concat(await _directorio.ListarPersonasDelTenantAsync(digitos, ct)).DistinctBy(p => p.Id).ToList();
+        return lista;
     }
 
     // ===================== Alta =====================
@@ -77,24 +86,53 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
             throw new InvalidOperationException("Envia personaId (persona existente) o persona (datos para crearla).");
         if (req.PersonaId is not null && req.Persona is not null)
             throw new InvalidOperationException("Envia personaId o persona, no ambos.");
+        var conClave = ModoAcceso(req.Acceso) == AdminModoAcceso.ClaveTemporal;
 
         // Roles: la alta descarta en silencio los ids que no ve; aqui un rol de otro tenant debe fallar.
         var rolIds = await ValidarRolesAsync(req.RolIds, ct);
 
-        Guid personaId;
-        bool reutilizada;
+        // 1) Resolver la persona SIN crear nada todavia (para validar el acceso antes de tocar datos).
+        Persona? existente;
         if (req.PersonaId is { } pid)
         {
             // Persona existente: debe pertenecer a ESTA copropiedad (vinculo de Directorio o de unidad).
             if (await _directorio.ObtenerPersonaAsync(pid, ct) is null)
                 throw new AdminRecursoNoEncontradoException("La persona no existe en el Directorio de esta copropiedad.");
-            personaId = pid;
-            reutilizada = true;
+            existente = await _db.Personas.IgnoreQueryFilters().AsNoTracking().FirstAsync(p => p.Id == pid, ct);
         }
         else
         {
-            (personaId, reutilizada) = await ResolverOCrearPersonaAsync(req.Persona!, ct);
+            existente = await BuscarPersonaAsync(req.Persona!, ct);
         }
+        var advertencias = existente is not null && req.Persona is not null
+            ? AdvertenciasDatosDistintos(req.Persona, existente)
+            : new List<string>();
+
+        // 2) Si ya es usuario ACTIVO aqui: alta repetida (200), sin tocar roles, cargos ni su clave.
+        var utPrevio = existente is null ? null
+            : await _db.UsuariosTenant.AsNoTracking().FirstOrDefaultAsync(u => u.PersonaId == existente.Id, ct);
+        if (utPrevio is { Estado: EstadoUsuarioTenant.Activo })
+        {
+            advertencias.Add("El usuario ya tenía acceso activo en esta copropiedad: no se cambiaron sus roles, cargos ni su contraseña "
+                + "(usa PUT roles / cargos o activar-con-clave-temporal).");
+            LogSuperAdmin(actor, "TENANT_USUARIO_CREAR", tenantId, utPrevio.Id, $"persona {existente!.Id} ya era usuario activo (sin cambios)");
+            await _db.SaveChangesAsync(ct);
+            return new AdminCrearUsuarioResponse(utPrevio.Id, existente.Id, true, utPrevio.Estado, null,
+                YaExistia: true, Advertencias: advertencias);
+        }
+
+        // 3) Clave temporal: correo de login y canal entregable ANTES de crear la persona o el usuario.
+        if (conClave)
+        {
+            var email = existente is not null ? existente.Email : req.Persona?.Email;
+            var tel = existente is not null ? existente.Telefono : req.Persona?.Telefono;
+            await _usuarios.ValidarEntregaAccesoAsync(email, tel, req.Canal, ct);
+        }
+
+        Guid personaId;
+        bool reutilizada = existente is not null;
+        if (existente is not null) personaId = existente.Id;
+        else personaId = await CrearPersonaAsync(req.Persona!, ct);
         // La invitacion exige vinculo de Directorio (S-02b); idempotente si ya lo tiene.
         await VinculoDirectorio.AsegurarPersonaAsync(_db, _tenant, personaId, ct);
 
@@ -102,14 +140,19 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
         var usuarioTenantId = await _usuarios.CrearUsuarioEnAltaAsync(new CrearUsuarioAltaRequest(personaId, rolIds, cargos), ct);
 
         AdminInvitacionCreadaDto? invitacion = null;
-        if (req.Invitar)
+        AccesoEntregadoDto? acceso = null;
+        if (conClave)
+        {
+            acceso = await _usuarios.ActivarConClaveTemporalAsync(usuarioTenantId, req.Canal, ct);
+        }
+        else if (req.Invitar)
         {
             // Mismo rol que manda la UI: el principal del usuario (primero de la lista o el por defecto).
             var rolPrincipal = await _db.UsuariosTenant.AsNoTracking()
                 .Where(u => u.Id == usuarioTenantId).Select(u => u.RolId).FirstOrDefaultAsync(ct)
                 ?? throw new InvalidOperationException("El usuario quedo sin rol principal; no se puede invitar.");
             var inv = await _usuarios.InvitarAsync(new CrearInvitacionRequest(personaId, rolPrincipal, req.Canal), ct);
-            invitacion = new AdminInvitacionCreadaDto(inv.Id, inv.ExpiraAt, inv.CanalEnvio, inv.LinkAceptacion);
+            invitacion = new AdminInvitacionCreadaDto(inv.Id, inv.ExpiraAt, inv.CanalEnvio, inv.LinkAceptacion, inv.Envio);
         }
 
         var estado = await _db.UsuariosTenant.AsNoTracking()
@@ -117,18 +160,29 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
 
         LogSuperAdmin(actor, "TENANT_USUARIO_CREAR", tenantId, usuarioTenantId,
             $"persona {personaId} ({(reutilizada ? "reutilizada" : "nueva")}), roles [{string.Join(",", rolIds)}]"
-            + (invitacion is null ? "" : $", invitacion {invitacion.Id} por {invitacion.Canal}"));
+            + (invitacion is null ? "" : $", invitacion {invitacion.Id} por {invitacion.Canal}")
+            + (acceso is null ? "" : $", clave temporal modo {acceso.Modo} entregada por [{string.Join(",", acceso.EntregadoPor)}]"));
         await _db.SaveChangesAsync(ct);
 
-        return new AdminCrearUsuarioResponse(usuarioTenantId, personaId, reutilizada, estado, invitacion);
+        return new AdminCrearUsuarioResponse(usuarioTenantId, personaId, reutilizada, estado, invitacion,
+            YaExistia: utPrevio is not null,
+            Advertencias: advertencias.Count > 0 ? advertencias : null,
+            AccesoEntregado: acceso);
+    }
+
+    private static string ModoAcceso(string? acceso)
+    {
+        var a = (acceso ?? "").Trim().ToLowerInvariant();
+        if (a.Length == 0 || a == AdminModoAcceso.Invitacion) return AdminModoAcceso.Invitacion;
+        if (a == AdminModoAcceso.ClaveTemporal) return AdminModoAcceso.ClaveTemporal;
+        throw new InvalidOperationException($"acceso debe ser \"{AdminModoAcceso.Invitacion}\" o \"{AdminModoAcceso.ClaveTemporal}\".");
     }
 
     /// <summary>
-    /// Persona por documento y luego por email (globales: una persona existe una sola vez en la plataforma).
-    /// Si existe se reutiliza (y el llamador asegura su vinculo con esta copropiedad); si no, se crea con el
-    /// mismo servicio que usa SelectorPersona (que ya la deja vinculada al tenant).
+    /// Persona existente por documento y luego por email (globales: una persona existe una sola vez en la
+    /// plataforma). Null si no existe: el llamador la crea despues de validar.
     /// </summary>
-    private async Task<(Guid PersonaId, bool Reutilizada)> ResolverOCrearPersonaAsync(AdminPersonaNuevaRequest p, CancellationToken ct)
+    private async Task<Persona?> BuscarPersonaAsync(AdminPersonaNuevaRequest p, CancellationToken ct)
     {
         var documento = (p.Documento ?? "").Trim();
         var email = string.IsNullOrWhiteSpace(p.Email) ? null : p.Email.Trim();
@@ -136,25 +190,53 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
         if (documento.Length > 0)
         {
             var porDoc = await _directorio.BuscarPersonaPorDocumentoAsync(new BuscarPorDocumentoRequest(p.TipoDocumento, documento), ct);
-            if (porDoc is not null) return (porDoc.Id, true);
+            if (porDoc is not null)
+                return await _db.Personas.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == porDoc.Id, ct);
         }
         if (email is not null)
         {
             var emailLower = email.ToLower();
             // Persona es global (sin tenant): la busqueda por email no depende del tenant fijado.
-            var porEmail = await _db.Personas.AsNoTracking()
-                .Where(x => x.Email != null && x.Email.ToLower() == emailLower)
-                .Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
-            if (porEmail is { } id) return (id, true);
+            return await _db.Personas.IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Email != null && x.Email.ToLower() == emailLower, ct);
         }
+        return null;
+    }
 
+    /// <summary>Crea la persona con el mismo servicio que usa SelectorPersona (la deja vinculada al tenant).</summary>
+    private async Task<Guid> CrearPersonaAsync(AdminPersonaNuevaRequest p, CancellationToken ct)
+    {
+        var documento = (p.Documento ?? "").Trim();
         if (documento.Length == 0)
             throw new InvalidOperationException("Para crear la persona se requiere el documento.");
         var creada = await _directorio.CrearPersonaAsync(new CrearPersonaRequest(
             p.TipoDocumento, documento, p.Nombres?.Trim() ?? "", p.Apellidos?.Trim() ?? "",
-            email, string.IsNullOrWhiteSpace(p.Telefono) ? null : p.Telefono.Trim(), null, null), ct);
-        return (creada.Id, false);
+            string.IsNullOrWhiteSpace(p.Email) ? null : p.Email.Trim(),
+            string.IsNullOrWhiteSpace(p.Telefono) ? null : p.Telefono.Trim(), null, null), ct);
+        return creada.Id;
     }
+
+    /// <summary>
+    /// Persona reutilizada: lo enviado que difiere de lo registrado NO se sobrescribe (la persona es global);
+    /// se avisa para corregirlo explicitamente con PUT personas/{id}.
+    /// </summary>
+    private static List<string> AdvertenciasDatosDistintos(AdminPersonaNuevaRequest enviado, Persona registrada)
+    {
+        var avisos = new List<string>();
+        var email = (enviado.Email ?? "").Trim();
+        if (email.Length > 0 && !string.Equals(email, registrada.Email?.Trim(), StringComparison.OrdinalIgnoreCase))
+            avisos.Add(registrada.Email is null
+                ? "La persona ya existía sin correo registrado; el correo enviado no se guardó (usa PUT personas/{id})."
+                : $"El correo enviado difiere del registrado ({Propia.Application.Auth.ClaveTemporal.EnmascararCorreo(registrada.Email)}); no se cambió (usa PUT personas/{{id}}).");
+        var tel = Digitos(enviado.Telefono);
+        if (tel.Length > 0 && tel != Digitos(registrada.Telefono))
+            avisos.Add(string.IsNullOrWhiteSpace(registrada.Telefono)
+                ? "La persona ya existía sin teléfono registrado; el teléfono enviado no se guardó (usa PUT personas/{id})."
+                : $"El teléfono enviado difiere del registrado (***{Digitos(registrada.Telefono)[^Math.Min(4, Digitos(registrada.Telefono).Length)..]}); no se cambió (usa PUT personas/{{id}}).");
+        return avisos;
+    }
+
+    private static string Digitos(string? s) => new((s ?? "").Where(char.IsDigit).ToArray());
 
     // ===================== Gestion =====================
 
@@ -195,14 +277,116 @@ public sealed class AdminTenantUsuariosService : IAdminTenantUsuariosService
         await LogYGuardarAsync(actor, "TENANT_USUARIO_REACTIVAR", tenantId, usuarioTenantId, null, ct);
     }
 
-    public async Task ReenviarInvitacionAsync(Guid tenantId, Guid invitacionId, AdminActor actor, CancellationToken ct)
+    public async Task<AdminInvitacionCreadaDto> ReenviarInvitacionAsync(Guid tenantId, Guid invitacionId, AdminActor actor, CancellationToken ct)
     {
         await FijarTenantAsync(tenantId, ct);
         MarcarActor(actor);
         await ExigirInvitacionAsync(invitacionId, ct);
-        if (!await _usuarios.ReenviarInvitacionAsync(invitacionId, ct))
-            throw new InvalidOperationException("Solo se reenvia una invitacion pendiente o expirada.");
-        await LogYGuardarAsync(actor, "TENANT_INVITACION_REENVIAR", tenantId, invitacionId, null, ct);
+        var inv = await _usuarios.ReenviarInvitacionConEnvioAsync(invitacionId, ct)
+            ?? throw new InvalidOperationException("Solo se reenvia una invitacion pendiente o expirada.");
+        await LogYGuardarAsync(actor, "TENANT_INVITACION_REENVIAR", tenantId, invitacionId,
+            inv.Envio is { } e ? $"correo {e.Correo}, whatsapp {e.Whatsapp}" : null, ct);
+        return new AdminInvitacionCreadaDto(inv.Id, inv.ExpiraAt, inv.CanalEnvio, inv.LinkAceptacion, inv.Envio);
+    }
+
+    public async Task<AccesoEntregadoDto> ActivarConClaveTemporalAsync(Guid tenantId, Guid usuarioTenantId, AdminActivarClaveTemporalRequest req, AdminActor actor, CancellationToken ct)
+    {
+        await FijarTenantAsync(tenantId, ct);
+        MarcarActor(actor);
+        var r = await _usuarios.ActivarConClaveTemporalAsync(usuarioTenantId, req.Canal, ct)
+            ?? throw new AdminRecursoNoEncontradoException("El usuario no existe en esta copropiedad.");
+        await LogYGuardarAsync(actor, "TENANT_USUARIO_CLAVE_TEMPORAL", tenantId, usuarioTenantId,
+            $"modo {r.Modo}, entregado por [{string.Join(",", r.EntregadoPor)}]"
+            + (r.CuentaCreada ? ", cuenta creada" : "")
+            + (r.Fallidos.Count > 0 ? $", fallidos [{string.Join("; ", r.Fallidos)}]" : ""), ct);
+        return r;
+    }
+
+    public async Task<AdminPersonaActualizadaDto> ActualizarPersonaAsync(Guid tenantId, Guid personaId, AdminActualizarPersonaRequest req, AdminActor actor, CancellationToken ct)
+    {
+        await FijarTenantAsync(tenantId, ct);
+        MarcarActor(actor);
+        // Solo personas de ESTA copropiedad (vinculo de Directorio o de unidad); de otra -> 404.
+        if (await _directorio.ObtenerPersonaAsync(personaId, ct) is null)
+            throw new AdminRecursoNoEncontradoException("La persona no existe en el Directorio de esta copropiedad.");
+        var p = await _db.Personas.IgnoreQueryFilters().FirstAsync(x => x.Id == personaId, ct);
+
+        var cambios = new List<string>();
+        var avisos = new List<string>();
+        if (req.Nombres is not null)
+        {
+            var v = req.Nombres.Trim();
+            if (v.Length == 0) throw new InvalidOperationException("Los nombres no pueden quedar vacios.");
+            if (v != p.Nombres) { cambios.Add("nombres"); p.Nombres = v; }
+        }
+        if (req.Apellidos is not null)
+        {
+            var v = req.Apellidos.Trim();
+            if (v.Length == 0) throw new InvalidOperationException("Los apellidos no pueden quedar vacios.");
+            if (v != p.Apellidos) { cambios.Add("apellidos"); p.Apellidos = v; }
+        }
+        if (req.Telefono is not null)
+        {
+            var v = req.Telefono.Trim();
+            var nuevo = v.Length == 0 ? null : v;   // "" = borrar (nombrado explicito)
+            if (nuevo != p.Telefono) { cambios.Add("telefono"); p.Telefono = nuevo; }
+        }
+
+        var cuentaActualizada = false;
+        if (req.Email is not null)
+        {
+            var nuevo = req.Email.Trim();
+            if (nuevo.Length < 5 || !nuevo.Contains('@') || nuevo.Contains(' '))
+                throw new InvalidOperationException("Correo invalido.");
+            if (!string.Equals(nuevo, p.Email, StringComparison.OrdinalIgnoreCase) || nuevo != p.Email)
+            {
+                var lower = nuevo.ToLower();
+                if (await _db.Personas.IgnoreQueryFilters().AnyAsync(x => x.Id != p.Id && x.Email != null && x.Email.ToLower() == lower, ct))
+                    throw new AdminConflictoException("Ese correo ya es de otra persona en PROPIA.");
+                var cuenta = await _db.Users.FirstOrDefaultAsync(u => u.PersonaId == p.Id, ct);
+                var otraCuenta = await _userManager.FindByEmailAsync(nuevo);
+                if (otraCuenta is not null && otraCuenta.Id != cuenta?.Id)
+                    throw new AdminConflictoException("Ese correo ya es el usuario de otra cuenta de PROPIA.");
+
+                var anterior = p.Email;
+                p.Email = nuevo;
+                cambios.Add($"email {Propia.Application.Auth.ClaveTemporal.EnmascararCorreo(anterior ?? "")} -> {Propia.Application.Auth.ClaveTemporal.EnmascararCorreo(nuevo)}");
+                if (cuenta is not null && !string.Equals(cuenta.Email, nuevo, StringComparison.Ordinal))
+                {
+                    // El correo es el usuario de ingreso: Email y UserName de Identity cambian juntos (SecurityStamp
+                    // nuevo: las sesiones abiertas ya no se pueden refrescar). Lo confirma el Super Admin.
+                    var r1 = await _userManager.SetUserNameAsync(cuenta, nuevo);
+                    var r2 = r1.Succeeded ? await _userManager.SetEmailAsync(cuenta, nuevo) : r1;
+                    if (!r2.Succeeded)
+                        throw new InvalidOperationException("No se pudo cambiar el correo de la cuenta: " + string.Join("; ", r2.Errors.Select(e => e.Description)));
+                    cuenta.EmailConfirmed = true;
+                    await _userManager.UpdateAsync(cuenta);
+                    cuentaActualizada = true;
+                    avisos.Add($"El correo de ingreso de la cuenta cambió: desde ahora entra con {nuevo}.");
+                }
+            }
+        }
+
+        var copropiedades = await ContarCopropiedadesAsync(p.Id, ct);
+        if (copropiedades > 1)
+            avisos.Add($"Esta persona tiene acceso en {copropiedades} copropiedades: el cambio se ve en todas.");
+        if (cambios.Count == 0) avisos.Add("No había nada que cambiar.");
+
+        await LogYGuardarAsync(actor, "TENANT_PERSONA_ACTUALIZAR", tenantId, p.Id,
+            cambios.Count == 0 ? "sin cambios" : string.Join(", ", cambios) + (cuentaActualizada ? " (tambien el usuario de ingreso)" : ""), ct);
+        return new AdminPersonaActualizadaDto(p.Id, p.Nombres, p.Apellidos, p.Email, p.Telefono, copropiedades, cuentaActualizada, avisos);
+    }
+
+    /// <summary>Copropiedades activas donde la persona tiene usuario (SECURITY DEFINER: ve todos los tenants).</summary>
+    private async Task<int> ContarCopropiedadesAsync(Guid personaId, CancellationToken ct)
+    {
+        var conn = _db.Database.GetDbConnection();
+        var abrir = conn.State != System.Data.ConnectionState.Open;
+        if (abrir) await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT count(*) FROM get_tenants_for_persona(@p)";
+        var prm = cmd.CreateParameter(); prm.ParameterName = "p"; prm.Value = personaId; cmd.Parameters.Add(prm);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
     }
 
     public async Task CancelarInvitacionAsync(Guid tenantId, Guid invitacionId, AdminActor actor, CancellationToken ct)

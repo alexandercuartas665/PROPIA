@@ -150,6 +150,7 @@ public static class DependencyInjection
         // API de Super Admin: usuarios de cualquier copropiedad (admin/tenants/{tenantId}/usuarios).
         services.AddScoped<Application.UsuariosAccesos.AuditoriaAccesoContexto>();
         services.AddScoped<Application.SuperAdmin.IAdminTenantUsuariosService, SuperAdmin.AdminTenantUsuariosService>();
+        services.AddScoped<Application.SuperAdmin.IAdminOrgEquipoService, SuperAdmin.AdminOrgEquipoService>();
         services.AddScoped<Application.InfraestructuraIa.IPlantillasWhatsAppService, InfraestructuraIa.PlantillasWhatsAppService>();
 
         // Menu de navegacion configurable (global plataforma). Cache en memoria del menu resuelto.
@@ -216,6 +217,7 @@ public static class DependencyInjection
 
         // Modulo 2.5 Usuarios, Roles y Accesos
         services.AddScoped<Application.UsuariosAccesos.IUsuariosService, UsuariosAccesos.UsuariosService>();
+        services.AddScoped<Application.UsuariosAccesos.INotificadorAcceso, UsuariosAccesos.NotificadorAcceso>();
         services.AddScoped<Application.MiPerfil.IMiPerfilService, MiPerfil.MiPerfilService>();
         services.AddScoped<Application.UsuariosAccesos.IRolesService, UsuariosAccesos.RolesService>();
         services.AddScoped<Application.UsuariosAccesos.ISeedUsuarioRolService, UsuariosAccesos.SeedUsuarioRolService>();

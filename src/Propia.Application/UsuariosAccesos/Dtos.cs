@@ -45,12 +45,12 @@ public record UsuarioListaDto(
     bool EnDirectorio,        // si la Persona ya tiene vinculo activo en el Directorio del tenant (2.5.E)
     IReadOnlyList<EtiquetaUsuarioDto> Etiquetas,
     IReadOnlyList<string> GruposGobierno,  // "Consejo", "Comite: X", "Revisor fiscal", "Equipo: Rol"
-    // 2.5 v2.0 multi-rol/cargo: TODOS los roles asignados (chips) y los cargos (descriptivos).
+                                           // 2.5 v2.0 multi-rol/cargo: TODOS los roles asignados (chips) y los cargos (descriptivos).
     IReadOnlyList<RolChipDto> Roles,
     IReadOnlyList<string> Cargos,
     DateTimeOffset? FechaVinculacion,  // activacion, o invitacion si aun pendiente
-    // 2.5 v2.0 modal "Editar usuario" (datos del sistema): consentimiento de tratamiento de datos de la
-    // Persona (Directorio 2.4). Solo lectura. Aditivos: default para no romper otras construcciones.
+                                       // 2.5 v2.0 modal "Editar usuario" (datos del sistema): consentimiento de tratamiento de datos de la
+                                       // Persona (Directorio 2.4). Solo lectura. Aditivos: default para no romper otras construcciones.
     bool AceptoTratamientoDatos = false,
     DateTimeOffset? FechaAceptacionDatos = null);
 
@@ -116,7 +116,9 @@ public record InvitacionDto(
     // (no se expone el link al invitador; el token viaja solo al destinatario por correo/WhatsApp).
     string? Token, EstadoInvitacion Estado,
     DateTimeOffset ExpiraAt, CanalEnvioInvitacion CanalEnvio,
-    string? LinkAceptacion);
+    string? LinkAceptacion,
+    // Resultado del envio al destinatario (correo / WhatsApp) en el alta o reenvio; null en listados.
+    EnvioCanalesDto? Envio = null);
 
 public record CrearInvitacionRequest(
     Guid PersonaId, Guid RolId, CanalEnvioInvitacion Canal);

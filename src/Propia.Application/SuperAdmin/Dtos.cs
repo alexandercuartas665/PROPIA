@@ -33,11 +33,18 @@ public record CambiarEstadoOrganizacionRequest(EstadoOrganizacion Estado);
 public record CambiarLimiteOrganizacionRequest(int? Limite);
 
 /// <summary>Crea el usuario administrador de una organizacion (login + acceso a sus copropiedades).</summary>
+/// <summary>
+/// Password opcional: sin clave (o por la API con pak_) la cuenta nueva nace con clave temporal generada por
+/// el servidor y ENTREGADA al correo de la persona. Persona existente (por documento o correo) se reutiliza.
+/// </summary>
 public record CrearAdminOrganizacionRequest(
-    string Nombres, string Apellidos, string Documento, string Email, string Password,
+    string Nombres, string Apellidos, string Documento, string Email, string? Password,
     TipoDocumento TipoDocumento = TipoDocumento.CC);
 
-public record AdminOrganizacionDto(Guid UsuarioId, Guid PersonaId, string Nombre, string Email, int CopropiedadesAsignadas);
+public record AdminOrganizacionDto(Guid UsuarioId, Guid PersonaId, string Nombre, string Email, int CopropiedadesAsignadas,
+    bool PersonaReutilizada = false,
+    Propia.Application.UsuariosAccesos.AccesoEntregadoDto? AccesoEntregado = null,
+    IReadOnlyList<string>? Advertencias = null);
 public record CrearOrganizacionRequest(string Nombre, TipoOrganizacion Tipo, string? Nit, string? Email, string? Telefono);
 
 // ----- Tenants (Copropiedades) -----
