@@ -28,6 +28,7 @@ public class UsuariosService : IUsuariosService
     private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
     private readonly AuditoriaAccesoContexto? _auditoria;
     private readonly IAuthService? _auth;
+    private readonly INotificadorAcceso? _notificador;
 
     public UsuariosService(
         PropiaDbContext db,
@@ -39,9 +40,11 @@ public class UsuariosService : IUsuariosService
         IEmailSender emailSender,
         Microsoft.Extensions.Configuration.IConfiguration config,
         AuditoriaAccesoContexto? auditoria = null,
-        IAuthService? auth = null)
+        IAuthService? auth = null,
+        INotificadorAcceso? notificador = null)
     {
         _auth = auth;
+        _notificador = notificador;
         _db = db;
         _tenantContext = tenantContext;
         _userManager = userManager;
@@ -379,10 +382,31 @@ public class UsuariosService : IUsuariosService
         _db.UsuarioInvitaciones.Add(inv);
         await _db.SaveChangesAsync(ct);
 
-        await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, tenantId, inv.Id, persona.Email, ct);
+        // El link le llega al DESTINATARIO por su canal (aunque no se exponga al invitador, S-02b).
+        var envio = await EnviarInvitacionAsync(inv, persona, rol, tenantId, ct);
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, tenantId, inv.Id,
+            $"{persona.Email} ({DetalleEnvio(envio)})", ct);
 
-        return ArmarInvitacionDto(inv, persona, rol, exponerToken: !esMiembroDeOtroTenant);
+        return ArmarInvitacionDto(inv, persona, rol, exponerToken: !esMiembroDeOtroTenant) with { Envio = envio };
     }
+
+    private static string DetalleEnvio(EnvioCanalesDto e) => $"correo {e.Correo}, whatsapp {e.Whatsapp}";
+
+    /// <summary>Envia la invitacion por su canal (best-effort). La invitacion ya quedo creada pase lo que pase.</summary>
+    private async Task<EnvioCanalesDto> EnviarInvitacionAsync(UsuarioInvitacion inv, Persona persona, Rol rol, Guid tenantId, CancellationToken ct)
+    {
+        if (_notificador is null) return EnvioCanalesDto.SinNotificador;
+        var copropiedad = (await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct))?.Nombre ?? "la copropiedad";
+        var msg = new InvitacionMensaje(
+            $"{persona.Nombres} {persona.Apellidos}".Trim(), persona.Email, persona.Telefono, copropiedad, rol.Nombre,
+            ConstruirLinkAbsoluto($"/invitacion/{inv.Token}"));
+        return await _notificador.EnviarInvitacionAsync(msg, inv.CanalEnvio, ct);
+    }
+
+    /// <summary>S-02b: si la persona es miembro de OTRO tenant, el token/link no se expone al invitador.</summary>
+    private Task<bool> EsMiembroDeOtroTenantAsync(Guid personaId, Guid tenantId, CancellationToken ct)
+        => _db.DirectorioVinculos.IgnoreQueryFilters()
+            .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == personaId && v.TenantId != tenantId, ct);
 
     public async Task<InvitacionDto> InvitarExternoTableroAsync(InvitarExternoTableroRequest req, CancellationToken ct)
     {
@@ -503,10 +527,13 @@ public class UsuariosService : IUsuariosService
     }
 
     public async Task<bool> ReenviarInvitacionAsync(Guid invitacionId, CancellationToken ct)
+        => await ReenviarInvitacionConEnvioAsync(invitacionId, ct) is not null;
+
+    public async Task<InvitacionDto?> ReenviarInvitacionConEnvioAsync(Guid invitacionId, CancellationToken ct)
     {
         var inv = await _db.UsuarioInvitaciones.FirstOrDefaultAsync(i => i.Id == invitacionId, ct);
-        if (inv is null) return false;
-        if (inv.Estado != EstadoInvitacion.Pendiente && inv.Estado != EstadoInvitacion.Expirada) return false;
+        if (inv is null) return null;
+        if (inv.Estado != EstadoInvitacion.Pendiente && inv.Estado != EstadoInvitacion.Expirada) return null;
 
         // Regenero el token y la vigencia (RN-11: el admin puede regenerar)
         inv.Token = GenerarTokenSeguro();
@@ -514,8 +541,13 @@ public class UsuariosService : IUsuariosService
         inv.Estado = EstadoInvitacion.Pendiente;
         await _db.SaveChangesAsync(ct);
 
-        await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, _tenantContext.CurrentTenantId, inv.Id, "reenvio", ct);
-        return true;
+        var persona = await _db.Personas.IgnoreQueryFilters().AsNoTracking().FirstAsync(p => p.Id == inv.PersonaId, ct);
+        var rol = await _db.RolesCopropiedad.AsNoTracking().FirstAsync(r => r.Id == inv.RolId, ct);
+        var envio = await EnviarInvitacionAsync(inv, persona, rol, inv.TenantId, ct);
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.InvitacionEnviada, _tenantContext.CurrentTenantId, inv.Id,
+            $"reenvio ({DetalleEnvio(envio)})", ct);
+        var exponer = !await EsMiembroDeOtroTenantAsync(inv.PersonaId, inv.TenantId, ct);
+        return ArmarInvitacionDto(inv, persona, rol, exponerToken: exponer) with { Envio = envio };
     }
 
     public async Task<bool> CancelarInvitacionAsync(Guid invitacionId, CancellationToken ct)
@@ -836,8 +868,11 @@ public class UsuariosService : IUsuariosService
         {
             ut = new UsuarioTenant
             {
-                PersonaId = req.PersonaId, RolId = principal.Id, Rol = principal.Nombre,
-                Estado = EstadoUsuarioTenant.Pendiente, FechaInvitacion = DateTimeOffset.UtcNow
+                PersonaId = req.PersonaId,
+                RolId = principal.Id,
+                Rol = principal.Nombre,
+                Estado = EstadoUsuarioTenant.Pendiente,
+                FechaInvitacion = DateTimeOffset.UtcNow
             };
             _db.UsuariosTenant.Add(ut);
         }
@@ -1016,6 +1051,117 @@ public class UsuariosService : IUsuariosService
         await RegistrarAuditoriaAsync(TipoEventoAuditoria.ClaveRestablecida, ut.TenantId, ut.Id,
             "contraseña temporal fijada por el administrador (debe cambiarla al ingresar)", ct);
         return new RestablecerClaveUsuarioResponse("temporal", clave, null, null);
+    }
+
+    // ===================== Acceso con clave temporal (API Super Admin) =====================
+
+    public async Task ValidarEntregaAccesoAsync(string? email, string? telefono, CanalEnvioInvitacion canal, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new InvalidOperationException("La persona no tiene correo y el correo es su usuario para ingresar. Agrégalo antes de darle acceso.");
+        if (_notificador is null)
+            throw new InvalidOperationException("El envío de accesos no está configurado en este servidor.");
+        var c = await _notificador.CanalesAccesoAsync(email, telefono, canal, ct);
+        if (!c.Alguno)
+            throw new InvalidOperationException("No hay ningún canal para entregar el acceso. "
+                + string.Join(" ", new[] { c.MotivoCorreo, c.MotivoWhatsapp }.Where(m => m is not null)));
+    }
+
+    public async Task<AccesoEntregadoDto?> ActivarConClaveTemporalAsync(Guid usuarioTenantId, CanalEnvioInvitacion canal, CancellationToken ct)
+    {
+        // Tenant-scoped (RLS + query filter): un usuario de otra copropiedad no se ve -> null (404).
+        var ut = await _db.UsuariosTenant.FirstOrDefaultAsync(u => u.Id == usuarioTenantId, ct);
+        if (ut is null) return null;
+        if (ut.Estado == EstadoUsuarioTenant.Inactivo)
+            throw new InvalidOperationException("El usuario está revocado en esta copropiedad. Reactívalo antes de darle acceso.");
+
+        var persona = await _db.Personas.IgnoreQueryFilters().FirstAsync(p => p.Id == ut.PersonaId, ct);
+        var email = persona.Email?.Trim();
+        // Antes de crear cuentas o cambiar claves: correo de login y al menos un canal entregable.
+        await ValidarEntregaAccesoAsync(email, persona.Telefono, canal, ct);
+        var copropiedad = (await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == ut.TenantId, ct))?.Nombre ?? "la copropiedad";
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PersonaId == ut.PersonaId, ct);
+        if (user is null)
+        {
+            // S-02: una persona = una cuenta, y el correo no puede ser ya de la cuenta de OTRA persona.
+            if (await _userManager.FindByEmailAsync(email!) is not null)
+                throw new InvalidOperationException("Ya existe una cuenta con ese correo que no es de esta persona. Corrige el correo de la persona.");
+
+            var clave = ClaveTemporal.Generar();
+            user = new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true, PersonaId = persona.Id };
+            var creado = await _userManager.CreateAsync(user, clave);
+            if (!creado.Succeeded)
+                throw new InvalidOperationException("No se pudo crear la cuenta: " + string.Join("; ", creado.Errors.Select(e => e.Description)));
+            await _userManager.AddClaimAsync(user, new System.Security.Claims.Claim(ClaveTemporal.ClaimTipo, "1"));
+
+            await ActivarUsuarioTenantAsync(ut, ct);
+            await RegistrarAuditoriaAsync(TipoEventoAuditoria.AccesoOtorgado, ut.TenantId, ut.Id,
+                "cuenta creada con contraseña temporal (debe cambiarla al ingresar)", ct);
+            return await EntregarClaveTemporalAsync(ut, persona, email!, clave, canal, copropiedad, cuentaCreada: true, ct);
+        }
+
+        // Ya tiene cuenta: si estaba pendiente en esta copropiedad, su cuenta ya le da acceso.
+        if (ut.Estado == EstadoUsuarioTenant.Pendiente)
+        {
+            await ActivarUsuarioTenantAsync(ut, ct);
+            await RegistrarAuditoriaAsync(TipoEventoAuditoria.AccesoOtorgado, ut.TenantId, ut.Id,
+                "acceso activado con su cuenta existente", ct);
+        }
+
+        // Misma regla que el admin de la copropiedad: otra copropiedad o A&D -> solo enlace a su correo.
+        var r = (await RestablecerClaveAsync(ut.Id, new RestablecerClaveUsuarioRequest(null), Guid.Empty, actorEsAdmin: true, baseUrl: null, ct))!;
+        if (r.Modo == "enlace")
+            return new AccesoEntregadoDto("enlace", new[] { "correo" }, r.CorreoEnmascarado, Array.Empty<string>(), r.Motivo, CuentaCreada: false);
+        return await EntregarClaveTemporalAsync(ut, persona, user.Email ?? email!, r.ClaveTemporal!, canal, copropiedad, cuentaCreada: false, ct);
+    }
+
+    /// <summary>Usuario Activo y sus invitaciones pendientes en esta copropiedad marcadas como aceptadas.</summary>
+    private async Task ActivarUsuarioTenantAsync(UsuarioTenant ut, CancellationToken ct)
+    {
+        var ahora = DateTimeOffset.UtcNow;
+        ut.Estado = EstadoUsuarioTenant.Activo;
+        ut.FechaActivacion = ahora;
+        ut.FechaRevocacion = null;
+        ut.MotivoRevocacion = null;
+        var pendientes = await _db.UsuarioInvitaciones
+            .Where(i => i.PersonaId == ut.PersonaId && i.Estado == EstadoInvitacion.Pendiente)
+            .ToListAsync(ct);
+        foreach (var i in pendientes) { i.Estado = EstadoInvitacion.Aceptada; i.AceptadaAt = ahora; }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Entrega la clave por los canales pedidos. La respuesta nunca la incluye.</summary>
+    private async Task<AccesoEntregadoDto> EntregarClaveTemporalAsync(UsuarioTenant ut, Persona persona, string usuarioLogin,
+        string clave, CanalEnvioInvitacion canal, string copropiedad, bool cuentaCreada, CancellationToken ct)
+    {
+        var msg = new AccesoTemporalMensaje($"{persona.Nombres} {persona.Apellidos}".Trim(), usuarioLogin, persona.Telefono,
+            copropiedad, clave, ConstruirLinkAbsoluto("/login"));
+        var envio = await _notificador!.EnviarAccesoTemporalAsync(msg, canal, ct);
+
+        var entregado = new List<string>();
+        var fallidos = new List<string>();
+        if (envio.Correo == EstadoEnvioCanal.Enviado) entregado.Add("correo");
+        else if (envio.Correo == EstadoEnvioCanal.Fallo) fallidos.Add($"correo: {envio.DetalleCorreo}");
+        if (envio.Whatsapp == EstadoEnvioCanal.Enviado) entregado.Add("whatsapp");
+        else if (envio.Whatsapp == EstadoEnvioCanal.Fallo) fallidos.Add($"whatsapp: {envio.DetalleWhatsapp}");
+
+        var destino = entregado.Contains("correo") || entregado.Count == 0
+            ? ClaveTemporal.EnmascararCorreo(usuarioLogin)
+            : EnmascararTelefono(persona.Telefono);
+        await RegistrarAuditoriaAsync(TipoEventoAuditoria.ClaveRestablecida, ut.TenantId, ut.Id,
+            entregado.Count > 0
+                ? $"contraseña temporal entregada por {string.Join(" y ", entregado)} (debe cambiarla al ingresar)"
+                : $"contraseña temporal NO entregada ({string.Join("; ", fallidos)})", ct);
+        return new AccesoEntregadoDto("temporal", entregado, destino, fallidos,
+            entregado.Count == 0 ? "No se pudo entregar la contraseña temporal. Vuelve a intentarlo: se generará otra." : null,
+            cuentaCreada);
+    }
+
+    private static string? EnmascararTelefono(string? tel)
+    {
+        var d = new string((tel ?? "").Where(char.IsDigit).ToArray());
+        return d.Length < 4 ? null : "***" + d[^4..];
     }
 
     /// <summary>Copropiedades ACTIVAS de la persona distintas de la actual (SECURITY DEFINER, ve todas).</summary>

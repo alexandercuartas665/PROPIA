@@ -18,6 +18,12 @@ namespace Propia.Application.EquipoOrg;
 /// </summary>
 public interface IEquipoOrgService
 {
+    /// <summary>
+    /// Solo API del Super Admin: fija la organizacion de la ruta para este scope (el JWT de Super Admin o el
+    /// token pak_ no traen copropiedad activa). El llamador valida antes que la organizacion existe.
+    /// </summary>
+    void FijarOrganizacion(Guid organizacionId);
+
     // ---------- Cargos (catalogo de la organizacion) ----------
     Task<IReadOnlyList<CargoDto>> ListarCargosAsync(CancellationToken ct);
     Task<CargoDetalleDto?> GetCargoDetalleAsync(Guid cargoId, CancellationToken ct);

@@ -221,6 +221,18 @@ public sealed class PlantillasWhatsAppService : IPlantillasWhatsAppService
         if (!string.IsNullOrWhiteSpace(pqrsd?.PlantillaNombre))
             usos.Add(Evaluar("PQRSD", "Aviso de respuesta al solicitante", pqrsd!.PlantillaNombre!, string.IsNullOrWhiteSpace(pqrsd.PlantillaIdioma) ? "es" : pqrsd.PlantillaIdioma));
 
+        // Usuarios: plantillas de NOMBRE FIJO (invitacion y acceso con clave temporal). Se listan cuando la
+        // copropiedad ya creo una con ese nombre, para ver si esta aprobada.
+        foreach (var (nombre, uso) in new[]
+        {
+            (Application.UsuariosAccesos.PlantillasAcceso.Invitacion, "Invitación de usuario"),
+            (Application.UsuariosAccesos.PlantillasAcceso.Acceso, "Acceso con contraseña temporal")
+        })
+        {
+            if (plantillas.Any(p => string.Equals(p.Name, nombre, StringComparison.OrdinalIgnoreCase)))
+                usos.Add(Evaluar("Usuarios", uso, nombre, "es"));
+        }
+
         return usos;
     }
 

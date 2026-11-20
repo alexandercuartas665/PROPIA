@@ -1,5 +1,19 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **API SUPER ADMIN v2 - USUARIOS LISTOS (2026-11-20): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
+> - CAMBIO DE COMPORTAMIENTO: las invitaciones de usuarios AHORA SE ENVIAN (antes solo creaban el link), tambien desde la
+>   UI de Usuarios. Correo por el SMTP global (EmailConfig) con link absoluto `App:PublicBaseUrl`/invitacion/<token>.
+>   WhatsApp solo si la copropiedad tiene la plantilla APROBADA de nombre fijo `propia_invitacion` (si no: "omitido").
+> - Nuevos (policy SuperAdmin, aceptan `pak_`): `POST /admin/tenants/{t}/usuarios/{id}/activar-con-clave-temporal`,
+>   `PUT /admin/tenants/{t}/personas/{id}`, `GET|POST /api/admin/organizaciones/{org}/equipo`,
+>   `GET /api/admin/organizaciones/{org}/cargos`, `PUT .../equipo/{id}/cargo|desactivar|reactivar`.
+>   Cambian: `PUT /admin/tenants/{t}/invitaciones/{id}/reenviar` 204 -> 200 con resultado del envio; alta repetida 200 +
+>   `yaExistia`; `POST /api/admin/organizaciones/{org}/admin` acepta persona existente y `password` opcional (sin clave:
+>   temporal entregada al correo). La clave temporal NUNCA va en la respuesta: la genera y la entrega el servidor
+>   (correo "Tu acceso a PROPIA - {copropiedad}" y/o WhatsApp plantilla `propia_acceso`).
+> - Verificar en prod: (1) reenviar una invitacion de prueba -> 200 y el correo llega con dominio app.propia-ad.com;
+>   (2) activar-con-clave-temporal sobre un usuario de prueba -> correo con la clave, login -> /cambiar-contrasena.
+
 > **RESTABLECER CONTRASENA (2026-11-19): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - Usuarios > ficha del usuario > "Restablecer contrasena": el admin pone una clave TEMPORAL (o la genera); el usuario
 >   queda marcado (claim `propia:debe_cambiar_clave` en `asp_net_user_claims`, tabla de Identity que ya existe) y al
