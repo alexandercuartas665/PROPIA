@@ -83,10 +83,19 @@ public class UsuariosService : IUsuariosService
             .OrderBy(u => u.Persona!.Apellidos).ThenBy(u => u.Persona!.Nombres)
             .ToListAsync(ct);
 
-        // Para cada uno verifico si tiene ApplicationUser (cuenta real para login)
-        var emails = lista.Where(u => u.Persona?.Email is not null).Select(u => u.Persona!.Email!).Distinct().ToList();
+        // Para cada uno verifico si tiene ApplicationUser (cuenta real para login). Fuente principal: el
+        // vinculo por PersonaId (S-02, una persona = una cuenta; es lo que usan restablecer clave y el
+        // detalle). El correo es respaldo insensible a mayusculas: antes se buscaba SOLO por correo exacto y
+        // las personas sin correo en el Directorio (o con otra capitalizacion) salian "sin cuenta" y la
+        // ficha ocultaba "Restablecer contrasena".
+        var pidsLista = lista.Select(u => u.PersonaId).Distinct().ToList();
+        var personasConCuenta = (await _db.Users
+            .Where(au => au.PersonaId != null && pidsLista.Contains(au.PersonaId.Value))
+            .Select(au => au.PersonaId!.Value)
+            .ToListAsync(ct)).ToHashSet();
+        var emails = lista.Where(u => u.Persona?.Email is not null).Select(u => u.Persona!.Email!.ToLower()).Distinct().ToList();
         var emailsConCuenta = await _db.Users
-            .Where(au => emails.Contains(au.Email!))
+            .Where(au => au.Email != null && emails.Contains(au.Email.ToLower()))
             .Select(au => au.Email!)
             .ToListAsync(ct);
         var setCuentas = new HashSet<string>(emailsConCuenta, StringComparer.OrdinalIgnoreCase);
@@ -159,7 +168,8 @@ public class UsuariosService : IUsuariosService
             u.Persona.Email, u.Persona.Telefono,
             u.RolId, u.RolNavigation?.Nombre ?? u.Rol,
             u.Estado, u.UltimoAcceso, u.FechaInvitacion,
-            u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email),
+            personasConCuenta.Contains(u.PersonaId)
+                || (u.Persona.Email is not null && setCuentas.Contains(u.Persona.Email)),
             _blob.ResolveUrl(u.Persona.FotoUrl),
             enDirectorio.Contains(u.PersonaId),
             etiquetasPorUsuario.TryGetValue(u.Id, out var ets) ? ets : new List<EtiquetaUsuarioDto>(),

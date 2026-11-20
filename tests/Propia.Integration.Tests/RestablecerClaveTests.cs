@@ -62,6 +62,7 @@ public class RestablecerClaveTests : IAsyncLifetime
             foreach (var e in _emails)
             {
                 await ctx.Database.ExecuteSqlRawAsync("DELETE FROM asp_net_user_claims WHERE user_id IN (SELECT id FROM asp_net_users WHERE email = {0})", e);
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM personas WHERE id IN (SELECT persona_id FROM asp_net_users WHERE email = {0})", e);
                 await ctx.Database.ExecuteSqlRawAsync("DELETE FROM asp_net_users WHERE email = {0}", e);
                 await ctx.Database.ExecuteSqlRawAsync("DELETE FROM personas WHERE email = {0}", e);
             }
@@ -234,6 +235,33 @@ public class RestablecerClaveTests : IAsyncLifetime
         }
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync($"/api/usuarios/{residente.UsuarioTenantId}/restablecer-clave",
             new RestablecerClaveUsuarioRequest("Temporal2026X"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Lista_marca_cuenta_propia_por_persona_aunque_el_correo_del_directorio_no_coincida()
+    {
+        // Regresion prod 2026-11-20: TieneCuentaPropia se calculaba SOLO por correo exacto; una persona sin
+        // correo en el Directorio (o con otra capitalizacion) salia "sin cuenta" y la ficha ocultaba
+        // "Restablecer contrasena" aunque el usuario estuviera activo y con cuenta.
+        var tA = await SeedTenantAsync("[TEST] cuenta propia");
+        var admin = await SeedCuentaAsync(tA, "Administrador", "admin");
+        var sinCorreo = await SeedCuentaAsync(tA, "Portal Residente", "sincorreo");
+        var mayus = await SeedCuentaAsync(tA, "Portal Residente", "mayus");
+        await using (var ctx = OwnerDb())
+        {
+            await ctx.Database.ExecuteSqlRawAsync("UPDATE personas SET email = NULL WHERE id = {0}", sinCorreo.PersonaId);
+            await ctx.Database.ExecuteSqlRawAsync("UPDATE personas SET email = upper(email) WHERE id = {0}", mayus.PersonaId);
+        }
+
+        var http = await LoginAsync(admin.Email);
+        var lista = (await http.GetFromJsonAsync<List<Propia.Application.UsuariosAccesos.UsuarioListaDto>>("/api/usuarios"))!;
+        Assert.True(lista.Single(u => u.UsuarioTenantId == sinCorreo.UsuarioTenantId).TieneCuentaPropia);
+        Assert.True(lista.Single(u => u.UsuarioTenantId == mayus.UsuarioTenantId).TieneCuentaPropia);
+
+        // Y el restablecimiento funciona para el que no tiene correo en el Directorio.
+        var r = await http.PostAsJsonAsync($"/api/usuarios/{sinCorreo.UsuarioTenantId}/restablecer-clave",
+            new RestablecerClaveUsuarioRequest("Temporal2026X"));
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
     }
 
     [Fact]
