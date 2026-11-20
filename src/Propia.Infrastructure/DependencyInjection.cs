@@ -95,7 +95,10 @@ public static class DependencyInjection
             .SetApplicationName("Propia")
             .PersistKeysToDbContext<PropiaDbContext>();
         services.AddSingleton<Application.Common.ISecretProtector, Security.SecretProtector>();
-        services.AddScoped<Application.Common.IEmailSender, Email.SmtpEmailSender>();
+        services.AddScoped<Email.PlataformaEmailSender>();
+        services.AddScoped<Application.Common.IEmailSender>(sp => sp.GetRequiredService<Email.PlataformaEmailSender>());
+        services.AddScoped<Application.Common.IEmailDiagnostico>(sp => sp.GetRequiredService<Email.PlataformaEmailSender>());
+        services.AddHttpClient(Email.PlataformaEmailSender.HttpClientSendGrid, c => c.Timeout = TimeSpan.FromSeconds(60));
         services.AddScoped<Application.Integraciones.IEmailConfigService, Integraciones.EmailConfigService>();
         services.AddScoped<Application.Integraciones.ITenantEmailConfigService, Integraciones.TenantEmailConfigService>();
         services.AddScoped<Application.Integraciones.ICorreoEntranteService, Integraciones.CorreoEntranteService>();  // lector de buzon (IMAP)

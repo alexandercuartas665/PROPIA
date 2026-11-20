@@ -9,7 +9,7 @@
 <PageTitle>Servidor de Correo - Plataforma</PageTitle>
 
 <h1 class="h3 mb-1">Servidor de Correo</h1>
-<p class="text-muted mb-4">Configuracion SMTP global de la plataforma. Con ella se envian invitaciones (2.5), OTP de onboarding (2.1) y notificaciones (T.2). La clave se guarda cifrada.</p>
+<p class="text-muted mb-4">Correo saliente global de la plataforma: invitaciones, contraseñas temporales, recuperación de contraseña y notificaciones. La clave o API key se guarda cifrada. Cada envío tiene un límite de 20 segundos.</p>
 
 @if (_jwt is null || _cargando)
 {
@@ -21,7 +21,7 @@ else if (_form is not null)
         <div class="col-md-7">
             <div class="card">
                 <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <strong>Conexión SMTP</strong>
+                    <strong>@(EsApi ? "SendGrid por API (HTTPS)" : "Conexión SMTP")</strong>
                     @if (_form.IsEnabled) { <span class="badge bg-success">Habilitado</span> } else { <span class="badge bg-secondary">Deshabilitado</span> }
                 </div>
                 <div class="card-body">
@@ -29,17 +29,34 @@ else if (_form is not null)
                         @* @bind:event="oninput" sincroniza el modelo en CADA tecla. Sin esto, si el usuario
                            tipea y clickea Guardar sin hacer Tab/blur, el valor se pierde y el backend recibe
                            null. Es trampa especialmente en password (no se ve) y se manifesta como SMTP fallido. *@
-                        <div class="col-8"><label class="form-label">Host SMTP</label><input class="form-control" @bind="_form.SmtpHost" @bind:event="oninput" placeholder="smtp.sendgrid.net" /></div>
-                        <div class="col-4"><label class="form-label">Puerto</label><input type="number" class="form-control" @bind="_form.SmtpPort" @bind:event="oninput" /></div>
-                        <div class="col-12"><label class="form-label">Usuario SMTP</label><input class="form-control" @bind="_form.SmtpUser" @bind:event="oninput" placeholder="apikey (SendGrid) o usuario" /></div>
                         <div class="col-12">
-                            <label class="form-label">Clave SMTP @(_form.HasPassword ? "(guardada - dejar vacio para conservar)" : "")</label>
+                            <label class="form-label">Proveedor</label>
+                            <select class="form-select" @bind="_form.Proveedor">
+                                <option value="smtp">SMTP (host, puerto, usuario y clave)</option>
+                                <option value="sendgrid_api">SendGrid por API (HTTPS, no usa puertos SMTP)</option>
+                            </select>
+                            @if (EsApi)
+                            {
+                                <div class="form-text">Usa la misma API key de SendGrid (permiso Mail Send). Sirve cuando el hosting bloquea los puertos SMTP (Railway sin plan Pro).</div>
+                            }
+                        </div>
+                        @if (!EsApi)
+                        {
+                            <div class="col-8"><label class="form-label">Host SMTP</label><input class="form-control" @bind="_form.SmtpHost" @bind:event="oninput" placeholder="smtp.sendgrid.net" /></div>
+                            <div class="col-4"><label class="form-label">Puerto</label><input type="number" class="form-control" @bind="_form.SmtpPort" @bind:event="oninput" /></div>
+                            <div class="col-12"><label class="form-label">Usuario SMTP</label><input class="form-control" @bind="_form.SmtpUser" @bind:event="oninput" placeholder="apikey (SendGrid) o usuario" /></div>
+                        }
+                        <div class="col-12">
+                            <label class="form-label">@(EsApi ? "API key de SendGrid" : "Clave SMTP") @(_form.HasPassword ? "(guardada - dejar vacío para conservar)" : "")</label>
                             <input type="password" class="form-control" @bind="_form.SmtpPassword" @bind:event="oninput" placeholder="@(_form.HasPassword ? "********" : "clave o API key")" />
                         </div>
                         <div class="col-6"><label class="form-label">Remitente (From)</label><input class="form-control" @bind="_form.FromEmail" @bind:event="oninput" placeholder="no-reply@propia.com.co" /></div>
                         <div class="col-6"><label class="form-label">Nombre remitente</label><input class="form-control" @bind="_form.FromName" @bind:event="oninput" placeholder="PROPIA" /></div>
                         <div class="col-12 d-flex gap-4">
-                            <div class="form-check"><input type="checkbox" class="form-check-input" id="ssl" @bind="_form.UseSsl" /><label class="form-check-label" for="ssl">Usar SSL/TLS</label></div>
+                            @if (!EsApi)
+                            {
+                                <div class="form-check"><input type="checkbox" class="form-check-input" id="ssl" @bind="_form.UseSsl" /><label class="form-check-label" for="ssl">Usar SSL/TLS</label></div>
+                            }
                             <div class="form-check"><input type="checkbox" class="form-check-input" id="en" @bind="_form.IsEnabled" /><label class="form-check-label" for="en">Habilitar envio</label></div>
                         </div>
                     </div>
@@ -78,8 +95,11 @@ else if (_form is not null)
     private string? _testTo;
     private Form? _form;
 
+    private bool EsApi => _form?.Proveedor == "sendgrid_api";
+
     private class Form
     {
+        public string Proveedor { get; set; } = "smtp";
         public string? SmtpHost { get; set; }
         public int SmtpPort { get; set; } = 587;
         public string? SmtpUser { get; set; }
@@ -103,6 +123,7 @@ else if (_form is not null)
             var c = await Auth().GetFromJsonAsync<EmailConfigDto>("/admin/email-config");
             _form = c is null ? new Form() : new Form
             {
+                Proveedor = string.IsNullOrWhiteSpace(c.Proveedor) ? "smtp" : c.Proveedor,
                 SmtpHost = c.SmtpHost, SmtpPort = c.SmtpPort, SmtpUser = c.SmtpUser,
                 UseSsl = c.UseSsl, FromEmail = c.FromEmail, FromName = c.FromName,
                 IsEnabled = c.IsEnabled, HasPassword = c.HasPassword, LastValidatedAt = c.LastValidatedAt
@@ -120,7 +141,7 @@ else if (_form is not null)
         try
         {
             var req = new SaveEmailConfigRequest(_form.SmtpHost, _form.SmtpPort, _form.SmtpUser,
-                _form.SmtpPassword, _form.UseSsl, _form.FromEmail, _form.FromName, _form.IsEnabled);
+                _form.SmtpPassword, _form.UseSsl, _form.FromEmail, _form.FromName, _form.IsEnabled, _form.Proveedor);
             var resp = await Auth().PutAsJsonAsync("/admin/email-config", req);
             if (resp.IsSuccessStatusCode)
             {
@@ -128,6 +149,7 @@ else if (_form is not null)
                 if (dto is not null)
                 {
                     // Refrescar TODO desde el server para evitar mostrar valores stale tras un guardado parcial.
+                    _form.Proveedor = dto.Proveedor;
                     _form.SmtpHost = dto.SmtpHost;
                     _form.SmtpPort = dto.SmtpPort;
                     _form.SmtpUser = dto.SmtpUser;

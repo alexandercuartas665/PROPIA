@@ -75,8 +75,12 @@ public class AdminIntegracionesController : ControllerBase
     public async Task<IActionResult> SaveEmailConfig([FromBody] SaveEmailConfigRequest req, CancellationToken ct)
     {
         var (id, email) = Actor();
-        var dto = await _email.SaveAsync(req, id, email, Ip(), ct);
-        return Ok(dto);
+        try
+        {
+            var dto = await _email.SaveAsync(req, id, email, Ip(), ct);
+            return Ok(dto);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
     [HttpPost("email-config/test")]

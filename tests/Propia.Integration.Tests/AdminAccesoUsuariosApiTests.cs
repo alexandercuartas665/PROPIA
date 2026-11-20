@@ -190,6 +190,43 @@ public class AdminAccesoUsuariosApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Activar_con_envio_fallido_responde_200_con_fallos_y_el_reintento_entrega_otra_clave()
+    {
+        var tA = await SeedTenantAsync("[TEST] acceso envio fallido");
+        var email = Email("fallo");
+        var c = await CrearAsync(tA, new AdminCrearUsuarioRequest(null, Nueva("Fallo", email), null, null, false));
+
+        // El SMTP no contesta (timeout): la cuenta queda creada, la respuesta lo dice y NO hay 502.
+        _factory.FallarCorreos = 1;
+        var r = await _api.PostAsJsonAsync($"/admin/tenants/{tA}/usuarios/{c.UsuarioTenantId}/activar-con-clave-temporal",
+            new AdminActivarClaveTemporalRequest());
+        var cuerpo = await r.Content.ReadAsStringAsync();
+        Assert.True(r.StatusCode == HttpStatusCode.OK, cuerpo);
+        var fallido = System.Text.Json.JsonSerializer.Deserialize<AccesoEntregadoDto>(cuerpo, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        Assert.Equal("temporal", fallido.Modo);
+        Assert.True(fallido.CuentaCreada);
+        Assert.Empty(fallido.EntregadoPor);
+        Assert.Contains(fallido.Fallidos, f => f.StartsWith("correo: SMTP timeout"));
+        Assert.NotNull(fallido.Motivo);
+
+        // Reintento: cuenta existente -> clave temporal NUEVA y envio nuevo; con ella se puede entrar.
+        var antes = _factory.Correos.Count;
+        var r2 = await _api.PostAsJsonAsync($"/admin/tenants/{tA}/usuarios/{c.UsuarioTenantId}/activar-con-clave-temporal",
+            new AdminActivarClaveTemporalRequest());
+        Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
+        var ok = (await r2.Content.ReadFromJsonAsync<AccesoEntregadoDto>())!;
+        Assert.Equal(new[] { "correo" }, ok.EntregadoPor);
+        Assert.False(ok.CuentaCreada);
+        var correo = _factory.Correos.Skip(antes).Single(x => x.Para == email);
+        var clave = Regex.Match(correo.Html, "monospace;font-size:15px\"><strong>([^<]+)</strong>").Groups[1].Value;
+        var login = (await (await _factory.CreateClient().PostAsJsonAsync("/connect/login", new LoginRequest(email, clave))).Content.ReadFromJsonAsync<UnifiedLoginResponse>())!;
+        Assert.True(login.DebeCambiarClave);
+
+        // Ningun envio ocurrio con una transaccion de BD abierta.
+        Assert.Equal(0, _factory.EnviosEnTransaccion);
+    }
+
+    [Fact]
     public async Task Cuenta_que_tambien_esta_en_otra_copropiedad_recibe_solo_enlace()
     {
         var tA = await SeedTenantAsync("[TEST] acceso multi A");
@@ -356,6 +393,12 @@ public class AdminAccesoUsuariosApiTests : IAsyncLifetime
         // Con la cuenta lista (clave temporal en la copropiedad) el colaborador queda con acceso real.
         Assert.Equal(HttpStatusCode.OK, (await _api.PostAsJsonAsync($"/admin/tenants/{tA}/usuarios/{asig.UsuarioTenantId}/activar-con-clave-temporal",
             new AdminActivarClaveTemporalRequest())).StatusCode);
+        // Al activarse la cuenta, el colaborador deja de estar Pendiente en el equipo de la organizacion.
+        await using (var db = OwnerDb())
+        {
+            Assert.Equal(EstadoColaborador.Activo, (await db.OrgColaboradores.SingleAsync(x => x.Id == res.Colaborador.Id)).Estado);
+            Assert.True(await db.OrgColaboradorHistorial.AnyAsync(h => h.ColaboradorId == res.Colaborador.Id && h.TipoEvento == TipoEventoEquipo.EstadoCambiado));
+        }
 
         var colab = res.Colaborador.Id;
         var otroCargo = cargos.First(x => x.Id != cargo.Id);
@@ -404,13 +447,20 @@ public class AdminAccesoUsuariosApiTests : IAsyncLifetime
 
     public sealed record CorreoEnviado(string Para, string Asunto, string Html);
 
+    /// <summary>Correo falso (scoped, ve el DbContext del request): registra lo enviado, puede simular un
+    /// timeout de SMTP y cuenta los envios hechos con una transaccion de BD abierta.</summary>
     private sealed class FakeEmailSender : IEmailSender
     {
-        private readonly ConcurrentQueue<CorreoEnviado> _cola;
-        public FakeEmailSender(ConcurrentQueue<CorreoEnviado> cola) => _cola = cola;
+        private readonly Factory _f;
+        private readonly PropiaDbContext _db;
+        public FakeEmailSender(Factory f, PropiaDbContext db) { _f = f; _db = db; }
         public Task<EmailSendResult> SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
         {
-            _cola.Enqueue(new CorreoEnviado(toEmail, subject, htmlBody));
+            if (_db.Database.CurrentTransaction is not null) Interlocked.Increment(ref _f.EnviosEnTransaccion);
+            if (Interlocked.Decrement(ref _f.FallarCorreos) >= 0)
+                return Task.FromResult(new EmailSendResult(false, "SMTP timeout (smtp.test:587) tras 20 s"));
+            Interlocked.Exchange(ref _f.FallarCorreos, 0);
+            _f.Correos.Enqueue(new CorreoEnviado(toEmail, subject, htmlBody));
             return Task.FromResult(new EmailSendResult(true, null));
         }
     }
@@ -419,6 +469,8 @@ public class AdminAccesoUsuariosApiTests : IAsyncLifetime
     {
         private readonly string _conn;
         public ConcurrentQueue<CorreoEnviado> Correos { get; } = new();
+        public int FallarCorreos;
+        public int EnviosEnTransaccion;
         public Factory(string conn) : base(conn) => _conn = conn;
 
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
@@ -430,7 +482,7 @@ public class AdminAccesoUsuariosApiTests : IAsyncLifetime
             builder.ConfigureTestServices(s =>
             {
                 s.RemoveAll<IEmailSender>();
-                s.AddSingleton<IEmailSender>(new FakeEmailSender(Correos));
+                s.AddScoped<IEmailSender>(sp => new FakeEmailSender(this, sp.GetRequiredService<PropiaDbContext>()));
             });
         }
     }

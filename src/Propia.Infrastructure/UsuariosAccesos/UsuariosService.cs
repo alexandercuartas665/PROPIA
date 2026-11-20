@@ -738,6 +738,7 @@ public class UsuariosService : IUsuariosService
         inv.Estado = EstadoInvitacion.Aceptada;
         inv.AceptadaAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await ActivarColaboradorOrgPendienteAsync(inv.PersonaId, appUser.Id, ct);
 
         // Genera JWT para login inmediato
         var (token, _) = _tokenService.IssueAccessToken(appUser, inv.TenantId);
@@ -1128,6 +1129,36 @@ public class UsuariosService : IUsuariosService
             .Where(i => i.PersonaId == ut.PersonaId && i.Estado == EstadoInvitacion.Pendiente)
             .ToListAsync(ct);
         foreach (var i in pendientes) { i.Estado = EstadoInvitacion.Aceptada; i.AceptadaAt = ahora; }
+        await _db.SaveChangesAsync(ct);
+        await ActivarColaboradorOrgPendienteAsync(ut.PersonaId, _auditoria?.ActorUsuarioId ?? Guid.Empty, ct);
+    }
+
+    /// <summary>
+    /// Si la persona es colaboradora de una organizacion (Capa 1) en estado Pendiente, al quedar con cuenta
+    /// y acceso pasa a Activo (con su evento en el historial). Las tablas org_* son globales (sin RLS).
+    /// </summary>
+    private async Task ActivarColaboradorOrgPendienteAsync(Guid personaId, Guid realizadoPor, CancellationToken ct)
+    {
+        var tieneCuenta = await _db.Users.AnyAsync(u => u.PersonaId == personaId, ct);
+        if (!tieneCuenta) return;
+        var pendientes = await _db.OrgColaboradores
+            .Where(c => c.PersonaId == personaId && c.Estado == EstadoColaborador.Pendiente)
+            .ToListAsync(ct);
+        if (pendientes.Count == 0) return;
+        foreach (var c in pendientes)
+        {
+            c.Estado = EstadoColaborador.Activo;
+            _db.OrgColaboradorHistorial.Add(new OrgColaboradorHistorial
+            {
+                ColaboradorId = c.Id,
+                TipoEvento = TipoEventoEquipo.EstadoCambiado,
+                Descripcion = "Cuenta activada: el colaborador pasa de Pendiente a Activo.",
+                ValorAnterior = "{\"estado\":\"Pendiente\"}",
+                ValorNuevo = "{\"estado\":\"Activo\"}",
+                RealizadoPor = realizadoPor,
+                OcurridoAt = DateTimeOffset.UtcNow
+            });
+        }
         await _db.SaveChangesAsync(ct);
     }
 

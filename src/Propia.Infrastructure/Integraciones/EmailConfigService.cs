@@ -43,6 +43,13 @@ public sealed class EmailConfigService : IEmailConfigService
             cfg.UpdatedBy = actorId;
         }
 
+        if (request.Proveedor is not null)
+        {
+            var prov = request.Proveedor.Trim().ToLowerInvariant();
+            if (!ProveedorCorreo.EsValido(prov))
+                throw new ArgumentException("Proveedor de correo no valido (smtp | sendgrid_api).");
+            cfg.Proveedor = prov;
+        }
         cfg.SmtpHost = request.SmtpHost?.Trim();
         cfg.SmtpPort = request.SmtpPort <= 0 ? 587 : request.SmtpPort;
         cfg.SmtpUser = request.SmtpUser?.Trim();
@@ -75,5 +82,6 @@ public sealed class EmailConfigService : IEmailConfigService
     private static EmailConfigDto Map(EmailConfig c) => new(
         c.SmtpHost, c.SmtpPort, c.SmtpUser,
         !string.IsNullOrEmpty(c.SmtpPasswordEncrypted),
-        c.UseSsl, c.FromEmail, c.FromName, c.IsEnabled, c.LastValidatedAt);
+        c.UseSsl, c.FromEmail, c.FromName, c.IsEnabled, c.LastValidatedAt,
+        string.IsNullOrWhiteSpace(c.Proveedor) ? ProveedorCorreo.Smtp : c.Proveedor);
 }
