@@ -869,9 +869,23 @@ public partial class TareasService
         if (t is null) return false;
         t.Eliminada = true;
         t.UpdatedAt = DateTimeOffset.UtcNow;
-        // Soft-delete en cascada de las tareas hijas (sub-cards).
-        var hijos = await _db.Tareas.Where(x => x.PadreId == id && !x.Eliminada).ToListAsync(ct);
-        foreach (var h in hijos) { h.Eliminada = true; h.UpdatedAt = DateTimeOffset.UtcNow; }
+        // Soft-delete en cascada de TODA la descendencia (hijas, nietas, ...). Antes bajaba un solo nivel y las
+        // nietas quedaban activas colgando de una hija eliminada: invisibles en el tablero pero vivas.
+        var visitadas = new HashSet<Guid> { id };
+        var nivel = new List<Guid> { id };
+        while (nivel.Count > 0)
+        {
+            var padres = nivel;
+            var hijos = await _db.Tareas.Where(x => x.PadreId != null && padres.Contains(x.PadreId.Value) && !x.Eliminada).ToListAsync(ct);
+            nivel = new List<Guid>();
+            foreach (var h in hijos)
+            {
+                if (!visitadas.Add(h.Id)) continue;   // defensa ante un ciclo de PadreId
+                h.Eliminada = true;
+                h.UpdatedAt = DateTimeOffset.UtcNow;
+                nivel.Add(h.Id);
+            }
+        }
         await RegistrarHistorial(id, TipoEventoTarea.Eliminada, "Tarjeta eliminada", null, null, ct);
         await _db.SaveChangesAsync(ct);
         await RecomputarProgresoAncestrosAsync(t.PadreId, ct);

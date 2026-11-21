@@ -142,6 +142,41 @@ public class TareasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    /// <summary>
+    /// Eliminar una tarea borra (soft) TODA su descendencia, no solo las hijas directas: antes las nietas
+    /// quedaban activas colgando de una hija eliminada (invisibles en el tablero pero vivas).
+    /// </summary>
+    [Fact]
+    public async Task Eliminar_tarea_borra_en_cascada_hijas_y_nietas_sin_tocar_otras()
+    {
+        var tenantId = await SeedTenantAsync("Tareas Cascada");
+        var (svc, db, _) = Build(tenantId);
+        var ct = CancellationToken.None;
+
+        CrearTareaRequest Req(string titulo, Guid? padre) =>
+            new(titulo, null, PrioridadTarea.Normal, null, null, null, null, padre, null);
+        var padre = await svc.CrearTareaAsync(Req("Padre", null), ct);
+        var hija = await svc.CrearTareaAsync(Req("Hija", padre.Id), ct);
+        var nieta = await svc.CrearTareaAsync(Req("Nieta", hija.Id), ct);
+        var bisnieta = await svc.CrearTareaAsync(Req("Bisnieta", nieta.Id), ct);
+        var otra = await svc.CrearTareaAsync(Req("Otra raiz", null), ct);
+        var hijaDeOtra = await svc.CrearTareaAsync(Req("Hija de otra", otra.Id), ct);
+
+        Assert.True(await svc.EliminarTareaAsync(padre.Id, ct));
+
+        var estado = await db.Tareas.AsNoTracking()
+            .Where(t => new[] { padre.Id, hija.Id, nieta.Id, bisnieta.Id, otra.Id, hijaDeOtra.Id }.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Eliminada, ct);
+        Assert.True(estado[padre.Id]);
+        Assert.True(estado[hija.Id]);
+        Assert.True(estado[nieta.Id]);
+        Assert.True(estado[bisnieta.Id]);
+        Assert.False(estado[otra.Id]);
+        Assert.False(estado[hijaDeOtra.Id]);
+
+        await CleanTenant(tenantId);
+    }
+
     [Fact]
     public async Task Cancelar_requiere_motivo_explicito()
     {
