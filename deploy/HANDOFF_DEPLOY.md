@@ -1,5 +1,20 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **MATRIZ DE ROLES OLA 1 + OLA 2 EXPORTAR (2026-11-21): 1 MIGRACION NUEVA, SOLO DATOS (sin esquema). API y Web.**
+> - Ola 1 (solo Web): la matriz de Roles deja marcar acciones que la API YA exigia y solo el Administrador podia hacer
+>   (cerrar PQRSD, enviar comunicaciones, cerrar intervenciones, borrar unidades, configurar tableros de Tareas, etc.).
+>   Nadie gana permisos solo: las casillas nuevas empiezan sin marcar. Cada casilla tiene texto de ayuda (title).
+> - Ola 2 (Exportar real): el boton "Descargar" (Excel/CSV) de las 22 tablas solo aparece si el rol tiene Exportar en el
+>   modulo de esa tabla (Administrador siempre). `POST /api/reportes/contratos-por-vencer/excel` exige Exportar (antes
+>   Crear). Endpoint nuevo `GET /api/mis-permisos` (solo [Authorize]: lo que puede el usuario actual).
+> - Migracion `20261121114411_ExportarIgualAVer` (owner `propia`, `dotnet ef database update`): copia Ver -> Exportar
+>   por rol y modulo exportable en `rol_permisos` (catalogo + roles personalizados) y en `rol_permisos_tenant` (overrides;
+>   `NO FORCE` solo durante el INSERT y vuelve a `FORCE`). Idempotente, no pisa celdas Exportar existentes. Sin ella, al
+>   desplegar el codigo todos los roles que no son Administrador PIERDEN el boton Descargar.
+> - Verificar en prod: (1) `select count(*) from rol_permisos where accion=6` sube; (2) con un usuario no administrador
+>   el boton Descargar se ve en Directorio/Unidades; (3) en Roles > ficha de un rol, quitarle Exportar en Directorio ->
+>   al recargar, ese usuario ya no ve Descargar en Directorio (volver a marcarlo despues).
+
 > **CORREO SALIENTE CON LIMITE DE TIEMPO + SENDGRID POR API (2026-11-20): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
 > - Bug prod v0.0.310: activar-con-clave-temporal se colgaba ~5 min en el SMTP (System.Net.Mail sin timeout en async),
 >   el proxy devolvia 502 y la cuenta quedaba con una clave que nadie recibio. Ahora TODO envio de correo (invitaciones,

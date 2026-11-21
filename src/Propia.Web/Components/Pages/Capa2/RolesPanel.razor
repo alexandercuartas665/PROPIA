@@ -126,7 +126,7 @@ else
                                 var hab = celda?.Habilitado ?? false;
                                 var modC = mod; var accC = accion;
                                 <div class="usr-cell">
-                                    <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
+                                    <button class="usr-chk @(hab ? "on" : "")" title="@AyudaAccion(modC, accC)" @onclick="() => TogglePermiso(modC, accC, !hab)">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
                                     </button>
                                 </div>
@@ -162,7 +162,7 @@ else
             <TablaAgruparMenu Columnas="ColsAgrupables()" Grupos="_grupos" GruposChanged="OnGruposChanged" />
             @* Descargar la vista tabla tal como se ve (Excel con colores de la marca o CSV). Roles no tiene
                menu Columnas ni vista Tarjetas: va al final de la barra. *@
-            <TablaExportar Vista="VistaExport" />
+            <TablaExportar Modulo="@Propia.Domain.Enums.ModuloCodigo.UsuariosAccesos" Vista="VistaExport" />
         </div>
         <TablaColMenu @ref="_colMenu" OnAccion="OnColAccion" ModoAgregado="AggOfertaRol" />
         @* "Editar campo" de CUALQUIER columna de sistema de roles: UN solo modal canonico focalizado.
@@ -783,32 +783,67 @@ else
     // MP-04 / MP-06: acciones VALIDAS por modulo. La matriz muestra solo las acciones que aplican a cada
     // modulo; el resto se pinta como "." (no aplica), nunca como checkbox. Fuente: Maqueta1 P.modAcciones
     // (modulos.js v2.0) + spec 2.5 (Dashboard solo Ver). Un modulo sin entrada muestra todas las acciones.
+    // 2026-11-21 (Ola 1, OK de Alex): se agregan las acciones que la API YA exige con [RequierePermiso] y que la
+    // matriz apagaba (solo el Administrador podia hacerlas). Ver AccionesAyuda para lo que da cada una.
+    // Ola 2 (2026-11-21): Exportar = boton Descargar de las tablas (TablaExportar Modulo=...) + Excel de Reportes;
+    // solo en los modulos que tienen algo que exportar.
     private static readonly IReadOnlyDictionary<string, AccionPermiso[]> AccionesPorModulo =
         new Dictionary<string, AccionPermiso[]>
         {
             [ModuloCodigo.Dashboard] = new[] { AccionPermiso.Ver },
-            [ModuloCodigo.MiCopropiedad] = new[] { AccionPermiso.Ver, AccionPermiso.Editar },
-            [ModuloCodigo.Directorio] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
-            [ModuloCodigo.UsuariosAccesos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
-            [ModuloCodigo.Presupuesto] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Aprobar },
-            [ModuloCodigo.Cartera] = new[] { AccionPermiso.Ver, AccionPermiso.Editar, AccionPermiso.Exportar },
-            [ModuloCodigo.Asambleas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar },
-            [ModuloCodigo.Pqrs] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar },
-            [ModuloCodigo.Tareas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
-            [ModuloCodigo.Mantenimiento] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            [ModuloCodigo.MiCopropiedad] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Directorio] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.UsuariosAccesos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Exportar },
+            [ModuloCodigo.Presupuesto] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar },
+            [ModuloCodigo.Cartera] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Aprobar },
+            [ModuloCodigo.Asambleas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Pqrs] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Tareas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Mantenimiento] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
             // Porteria no esta en la maqueta: acciones tomadas del contrato real del PorteriaController
             // (RequierePermiso Crear/Editar/Eliminar/Aprobar) + Ver baseline. Tiene flujo de aprobacion.
             [ModuloCodigo.Porteria] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar },
-            [ModuloCodigo.Reservas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Aprobar },
-            [ModuloCodigo.Comunicaciones] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar },
-            [ModuloCodigo.Documentos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Eliminar, AccionPermiso.Exportar },
-            [ModuloCodigo.Reportes] = new[] { AccionPermiso.Ver, AccionPermiso.Exportar },
-            [ModuloCodigo.Plantillas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
-            [ModuloCodigo.Siniestros] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar },
+            [ModuloCodigo.Reservas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Comunicaciones] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Aprobar, AccionPermiso.Exportar },
+            [ModuloCodigo.Documentos] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Exportar },
+            [ModuloCodigo.Reportes] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Exportar },
+            [ModuloCodigo.Plantillas] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Exportar },
+            [ModuloCodigo.Siniestros] = new[] { AccionPermiso.Ver, AccionPermiso.Crear, AccionPermiso.Editar, AccionPermiso.Eliminar, AccionPermiso.Exportar },
         };
 
     private static bool AccionAplica(string modulo, AccionPermiso accion)
         => !AccionesPorModulo.TryGetValue(modulo, out var validas) || validas.Contains(accion);
+
+    // Texto de ayuda (title) de la casilla cuando el nombre de la accion no dice lo que otorga. Fuente: los
+    // endpoints con [RequierePermiso(modulo, accion)] de cada controller.
+    private static readonly IReadOnlyDictionary<(string, AccionPermiso), string> AccionesAyuda =
+        new Dictionary<(string, AccionPermiso), string>
+        {
+            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)] = "Crear unidades, zonas, equipos, contratos y campos propios; vincular personas",
+            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)] = "Borrar unidades, zonas, equipos, contratos y campos propios; desvincular personas",
+            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Aprobar)] = "Desactivar miembros del consejo y de los comités",
+            [(ModuloCodigo.Directorio, AccionPermiso.Aprobar)] = "Inactivar el vínculo de una persona",
+            [(ModuloCodigo.Presupuesto, AccionPermiso.Eliminar)] = "Borrar presupuestos, rubros y gastos",
+            [(ModuloCodigo.Cartera, AccionPermiso.Crear)] = "Crear acuerdos de pago y paz y salvos",
+            [(ModuloCodigo.Cartera, AccionPermiso.Aprobar)] = "Aprobar condonaciones",
+            [(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)] = "Borrar adjuntos, y estados, tipos, categorías y campos propios",
+            [(ModuloCodigo.Pqrs, AccionPermiso.Aprobar)] = "Cerrar una PQRSD",
+            [(ModuloCodigo.Tareas, AccionPermiso.Aprobar)] = "Administrar tableros: crearlos, sus campos, miembros, estados, prioridades y etiquetas",
+            [(ModuloCodigo.Mantenimiento, AccionPermiso.Aprobar)] = "Cerrar intervenciones y reactivar planes",
+            [(ModuloCodigo.Reservas, AccionPermiso.Editar)] = "Cambiar la configuración de reservas",
+            [(ModuloCodigo.Reservas, AccionPermiso.Eliminar)] = "Quitar bloqueos de reservas",
+            [(ModuloCodigo.Comunicaciones, AccionPermiso.Eliminar)] = "Borrar plantillas, adjuntos y segmentos",
+            [(ModuloCodigo.Comunicaciones, AccionPermiso.Aprobar)] = "Enviar, cancelar y reenviar comunicaciones",
+            [(ModuloCodigo.Documentos, AccionPermiso.Editar)] = "Editar documentos, carpetas, categorías y etiquetas; archivar",
+            [(ModuloCodigo.Reportes, AccionPermiso.Crear)] = "Generar y programar reportes",
+            [(ModuloCodigo.Reportes, AccionPermiso.Editar)] = "Editar programaciones, compartir reportes y ajustar semáforos",
+            [(ModuloCodigo.Reportes, AccionPermiso.Eliminar)] = "Borrar programaciones de reportes",
+            [(ModuloCodigo.Reportes, AccionPermiso.Exportar)] = "Descargar reportes en Excel",
+        };
+
+    private static string? AyudaAccion(string modulo, AccionPermiso accion)
+        => AccionesAyuda.TryGetValue((modulo, accion), out var t) ? t
+         : accion == AccionPermiso.Exportar ? "Descargar las tablas del módulo en Excel o CSV (botón Descargar)" : null;
 
     // ===== FAB flotante + scroll infinito (patron Unidades) =====
     private bool _ctaVisible = true;
