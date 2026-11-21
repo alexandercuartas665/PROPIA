@@ -1,0 +1,173 @@
+@* Lista con busqueda estilo Airtable (reemplaza al <select> nativo donde se diligencia rapido con teclado).
+   - El disparador es un boton enfocable: con Tab se ve el foco; Enter/Espacio/flecha abajo o empezar a escribir
+     abre la caja.
+   - La caja es mas grande que la celda, flota con position:fixed anclada al disparador (propiaUI.anchorFloatMenu)
+     para no recortarse en tablas con overflow, y trae un buscador: se escribe para filtrar (sin tildes ni
+     mayusculas), flechas para moverse, Enter elige, Esc cancela, Tab elige lo resaltado si se escribio algo.
+   - Solo deja elegir entre las opciones (no texto libre). Estilos en css/modules/tareas.css (prefijo lbx-). *@
+@inject IJSRuntime Js
+
+<span class="lbx-wrap">
+    <button type="button" id="@_trgId" class="lbx-trg @TriggerClass @(_open ? "lbx-trg--open" : "")" style="@TriggerStyle"
+            @ref="_trg" @onclick="() => Abrir(null)" @onkeydown="TrgKeyAsync" disabled="@Disabled" aria-haspopup="listbox" aria-expanded="@(_open ? "true" : "false")">
+        <span class="lbx-trg-tx">@(string.IsNullOrEmpty(Valor) && TextoVacio is not null ? TextoVacio : (Actual?.Texto ?? Placeholder))</span>
+        @if (Chevron)
+        {
+            <svg class="lbx-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        }
+    </button>
+    @if (_open)
+    {
+        var vis = Filtradas();
+        <div class="lbx-pop" id="@_popId" role="listbox" @onmousedown:preventDefault="true" @onclick:stopPropagation="true">
+            <input class="lbx-q" @ref="_qRef" placeholder="Buscar..." autocomplete="off"
+                   @bind="_q" @bind:event="oninput" @bind:after="AlFiltrar"
+                   @onkeydown="QKeyAsync" @onblur="AlSalir" />
+            <div class="lbx-list">
+                @if (vis.Count == 0)
+                {
+                    <div class="lbx-empty">Sin coincidencias</div>
+                }
+                @for (var i = 0; i < vis.Count; i++)
+                {
+                    var o = vis[i]; var idx = i;
+                    <button type="button" tabindex="-1" class="lbx-it @(idx == _hi ? "hi" : "") @(o.Valor == (Valor ?? "") ? "sel" : "")"
+                            @onmouseenter="() => _hi = idx" @onclick="() => ElegirAsync(o, true)">
+                        @if (!string.IsNullOrWhiteSpace(o.Color)) { <span class="lbx-dot" style="background:@o.Color"></span> }
+                        <span class="lbx-it-tx">@o.Texto</span>
+                        @if (o.Valor == (Valor ?? ""))
+                        {
+                            <svg class="lbx-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</span>
+
+@code {
+    /// <summary>Opcion de la lista. Valor = lo que se guarda ("" = vacio); Texto = lo que se ve; Color = punto opcional.</summary>
+    public record Opcion(string Valor, string Texto, string? Color = null);
+
+    [Parameter] public IReadOnlyList<Opcion> Opciones { get; set; } = Array.Empty<Opcion>();
+    [Parameter] public string? Valor { get; set; }
+    [Parameter] public EventCallback<string?> ValorChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Elegir...";
+    /// <summary>Texto del disparador cuando no hay valor (p.ej. "-" en celdas de tabla); null = usa la opcion vacia.</summary>
+    [Parameter] public string? TextoVacio { get; set; }
+    [Parameter] public string TriggerClass { get; set; } = "";
+    [Parameter] public string? TriggerStyle { get; set; }
+    [Parameter] public bool Chevron { get; set; } = true;
+    [Parameter] public bool Disabled { get; set; }
+
+    private readonly string _trgId = "lbx-t-" + Guid.NewGuid().ToString("N")[..10];
+    private readonly string _popId = "lbx-p-" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _trg, _qRef;
+    private bool _open, _anclar, _focoTrg;
+    private string _q = "";
+    private int _hi;
+
+    private Opcion? Actual => Opciones.FirstOrDefault(o => o.Valor == (Valor ?? ""));
+
+    private List<Opcion> Filtradas()
+    {
+        var q = Norm(_q);
+        if (q.Length == 0) return Opciones.ToList();
+        // Buscando: sin la opcion vacia ("Sin valor" no debe ganarle a lo buscado) y primero lo que EMPIEZA por lo
+        // escrito, luego una palabra que empieza por ello, luego el resto que lo contiene (orden estable).
+        return Opciones.Where(o => o.Valor.Length > 0)
+            .Select(o => (o, n: Norm(o.Texto)))
+            .Where(x => x.n.Contains(q))
+            .OrderBy(x => x.n.StartsWith(q) ? 0 : (" " + x.n).Contains(" " + q) ? 1 : 2)
+            .Select(x => x.o).ToList();
+    }
+
+    private void Abrir(string? semilla)
+    {
+        if (Disabled) return;
+        _q = semilla ?? "";
+        var vis = Filtradas();
+        var i = semilla is null ? vis.FindIndex(o => o.Valor == (Valor ?? "")) : 0;
+        _hi = i < 0 ? 0 : i;
+        _open = true;
+        _anclar = true;
+    }
+
+    private void AlFiltrar() => _hi = 0;
+
+    private async Task TrgKeyAsync(KeyboardEventArgs e)
+    {
+        if (Disabled) return;
+        var imprimible = e.Key.Length == 1 && e.Key != " " && !e.CtrlKey && !e.AltKey && !e.MetaKey;
+        if (_open)
+        {
+            // Letras que llegan al disparador mientras el buscador aun no tiene el foco (latencia del circuito):
+            // se acumulan en la busqueda en vez de perderse.
+            if (imprimible) { _q += e.Key; _hi = 0; }
+            return;
+        }
+        if (e.Key == "ArrowDown") { Abrir(null); return; }
+        // Empezar a escribir sobre la celda abre el buscador con esa letra (como Airtable).
+        if (imprimible) Abrir(e.Key);
+        await Task.CompletedTask;
+    }
+
+    private async Task QKeyAsync(KeyboardEventArgs e)
+    {
+        if (!_open) return;   // tecla que llego con la lista ya cerrada (p.ej. Esc y Tab muy seguidos): no elegir nada
+        var vis = Filtradas();
+        switch (e.Key)
+        {
+            case "ArrowDown": if (vis.Count > 0) _hi = Math.Min(_hi + 1, vis.Count - 1); break;
+            case "ArrowUp": _hi = Math.Max(_hi - 1, 0); break;
+            case "Enter": if (vis.Count > 0) await ElegirAsync(vis[Math.Clamp(_hi, 0, vis.Count - 1)], true); break;
+            case "Escape": _open = false; _focoTrg = true; break;
+            case "Tab":
+                // Tab con algo escrito elige lo resaltado; sin escribir, solo sale (deja el valor como estaba).
+                if (_q.Length > 0 && vis.Count > 0) await ElegirAsync(vis[Math.Clamp(_hi, 0, vis.Count - 1)], false);
+                else _open = false;
+                break;
+        }
+    }
+
+    private void AlSalir() => _open = false;
+
+    private async Task ElegirAsync(Opcion o, bool volverAlDisparador)
+    {
+        _open = false;
+        _focoTrg = volverAlDisparador;
+        if (o.Valor != (Valor ?? "")) await ValorChanged.InvokeAsync(o.Valor.Length == 0 ? null : o.Valor);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open && _anclar)
+        {
+            _anclar = false;
+            try
+            {
+                await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", "#" + _trgId, "#" + _popId);
+                await Js.InvokeVoidAsync("propiaUI.focoAlFinal", _qRef);   // foco con el cursor al final de lo ya escrito
+            }
+            catch { }
+        }
+        else if (_focoTrg)
+        {
+            _focoTrg = false;
+            try { await _trg.FocusAsync(); } catch { }
+        }
+    }
+
+    /// <summary>minusculas + sin tildes, para filtrar de forma tolerante.</summary>
+    private static string Norm(string? s)
+    {
+        s = (s ?? "").Trim().ToLowerInvariant();
+        if (s.Length == 0) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s.Normalize(System.Text.NormalizationForm.FormD))
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
+    }
+}
