@@ -33,7 +33,8 @@ public class ReportesController : ControllerBase
     public async Task<IActionResult> ContratosPorVencer([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
         => Ok(await _contratosPorVencer.GetAsync(filtro?.TenantIds, ct));
 
-    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Crear)]
+    // Descargar el Excel es EXPORTAR (2026-11-21, Ola 2 de la matriz de roles), no Crear.
+    [RequierePermiso(ModuloCodigo.Reportes, AccionPermiso.Exportar)]
     [HttpPost("contratos-por-vencer/excel")]
     public async Task<IActionResult> ContratosPorVencerExcel([FromBody] ContratosPorVencerFiltro filtro, CancellationToken ct)
     {

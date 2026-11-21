@@ -20,6 +20,14 @@ public record RolDetalleDto(
 public record PermisoMatrizDto(
     string ModuloCodigo, AccionPermiso Accion, bool Habilitado, NivelDato NivelDato);
 
+/// <summary>Lo que puede hacer el usuario actual en la copropiedad activa (GET /api/mis-permisos).
+/// EsAdministrador = bypass: puede todo aunque Permisos no lo liste.</summary>
+public record MisPermisosDto(bool EsAdministrador, IReadOnlyList<PermisoMatrizDto> Permisos)
+{
+    public bool Puede(string modulo, AccionPermiso accion)
+        => EsAdministrador || Permisos.Any(p => p.ModuloCodigo == modulo && p.Accion == accion && p.Habilitado);
+}
+
 public record CrearRolRequest(
     string Nombre, string? Descripcion, CategoriaRol Categoria, Guid? CopiarDeRolId);
 

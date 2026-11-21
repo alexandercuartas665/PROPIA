@@ -86,6 +86,9 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<Propia.Web.Components.Shared.Modals.IModalService,
                           Propia.Web.Components.Shared.Modals.ModalService>();
 
+// Permisos del usuario actual (cache por circuito) para ocultar en la UI lo que no puede hacer.
+builder.Services.AddScoped<Propia.Web.Services.MisPermisos>();
+
 // Diagnostico (temporal) del circuito Blazor: loguea open/up/down/closed para cazar el caso
 // "UI pensando pero server 200". Barato; se puede dejar o subir su categoria de log a Warning.
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler,

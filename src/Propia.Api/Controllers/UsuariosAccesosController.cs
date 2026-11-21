@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Propia.Api.Authorization;
@@ -241,6 +242,34 @@ public class InvitacionesPublicasController : ControllerBase
     {
         try { return Ok(await _svc.AceptarInvitacionAsync(req, ct)); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+}
+
+/// <summary>
+/// Permisos del usuario ACTUAL en la copropiedad activa. La UI lo usa para no ofrecer lo que el usuario no
+/// puede hacer (p.ej. el boton Descargar de las tablas exige Exportar). Mismo criterio que
+/// RequierePermisoFilter (rol activo por sesion + bypass del Administrador). Sin RequierePermiso a proposito:
+/// preguntar "que puedo hacer yo" no expone datos de nadie mas.
+/// </summary>
+[ApiController]
+[Route("api/mis-permisos")]
+[Authorize]
+public class MisPermisosController : ControllerBase
+{
+    private readonly IRolesService _roles;
+
+    public MisPermisosController(IRolesService roles) => _roles = roles;
+
+    [HttpGet]
+    public async Task<IActionResult> Get(CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue("persona_id"), out var personaId))
+            return Ok(new MisPermisosDto(false, Array.Empty<PermisoMatrizDto>()));
+        var rolActivo = RequiereRolFilter.RolActivo(User);
+        var rol = await _roles.GetRolActorAsync(personaId, ct, rolActivo);
+        var esAdmin = string.Equals(rol, "Administrador", StringComparison.OrdinalIgnoreCase);
+        var permisos = esAdmin ? Array.Empty<PermisoMatrizDto>() : await _roles.GetPermisosEfectivosAsync(personaId, ct, rolActivo);
+        return Ok(new MisPermisosDto(esAdmin, permisos));
     }
 }
 

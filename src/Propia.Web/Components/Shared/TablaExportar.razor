@@ -2,7 +2,12 @@
    vista TAL COMO SE VE (columnas visibles en su orden, filas filtradas/ordenadas, grupos) en Excel con los
    colores de la marca o en CSV. El modulo arma la vista al hacer clic (Vista); aqui solo se genera y descarga. *@
 @inject IJSRuntime Js
+@inject Propia.Web.Services.MisPermisos Permisos
 
+@* Exportar (matriz de roles, Ola 2 2026-11-21): sin el permiso Exportar del modulo el boton no se muestra.
+   Mientras se consulta tampoco (no aparece y desaparece). El Administrador siempre lo ve. *@
+@if (_puede)
+{
 <div class="texp-wrap">
     <button type="button" class="texp-btn @(_open ? "on" : "")" title="Descargar la vista (Excel o CSV)" @onclick="() => _open = !_open" disabled="@_busy">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16"/></svg>
@@ -18,6 +23,7 @@
         </div>
     }
 </div>
+}
 
 <style>
     /* Boton sutil de la barra: mismo marco que Ordenar/Agrupar (.tord-btn), solo icono. */
@@ -41,12 +47,23 @@
     /// <summary>Opcional: se espera ANTES de armar la vista (p.ej. PQRSD trae el texto completo que la tabla
     /// muestra resumido). Si falla, la descarga sigue con lo que ya tiene la pantalla.</summary>
     [Parameter] public Func<Task>? Preparar { get; set; }
+    /// <summary>Codigo del modulo (ModuloCodigo.*) cuyo permiso Exportar habilita el boton.</summary>
+    [Parameter, EditorRequired] public string Modulo { get; set; } = default!;
 
-    private bool _open, _busy;
+    private bool _open, _busy, _puede;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _puede = await Permisos.PuedeAsync(Modulo, Propia.Domain.Enums.AccionPermiso.Exportar);
+        if (_puede) StateHasChanged();
+    }
 
     private async Task DescargarAsync(bool excel)
     {
         _open = false;
+        // Defensa: el permiso pudo cambiar desde que se pinto el boton.
+        if (!await Permisos.PuedeAsync(Modulo, Propia.Domain.Enums.AccionPermiso.Exportar)) { _puede = false; return; }
         _busy = true;
         try
         {
