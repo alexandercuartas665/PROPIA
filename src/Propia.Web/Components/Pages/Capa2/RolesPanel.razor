@@ -102,6 +102,7 @@ else
                     {
                         <div class="usr-matrix-col">@a.ToString().ToUpper()</div>
                     }
+                    <div class="usr-matrix-col rol-ay-col"></div>
                     <div style="width:140px;flex-shrink:0;text-align:center;font-size:11px;letter-spacing:.3px;font-weight:700;color:var(--propia-text-faint)">NIVEL DE DATO</div>
                 </div>
                 @* Filas de modulo DINAMICAS (MP-03): iteran los modulos activos; un modulo nuevo aparece solo. *@
@@ -118,7 +119,7 @@ else
                             {
                                 @* Simetria: en vez de un punto, una casilla DESHABILITADA (esta accion no se puede
                                    otorgar en este modulo). Misma forma que la activa, pero apagada e inerte. *@
-                                <div class="usr-cell"><button class="usr-chk usr-chk--na" disabled title="Esta accion no se puede otorgar en este modulo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg></button></div>
+                                <div class="usr-cell"><button class="usr-chk usr-chk--na" disabled aria-label="No aplica en este modulo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg></button></div>
                             }
                             else
                             {
@@ -126,12 +127,22 @@ else
                                 var hab = celda?.Habilitado ?? false;
                                 var modC = mod; var accC = accion;
                                 <div class="usr-cell">
-                                    <button class="usr-chk @(hab ? "on" : "")" title="@AyudaAccion(modC, accC)" @onclick="() => TogglePermiso(modC, accC, !hab)">
+                                    <button class="usr-chk @(hab ? "on" : "")" @onclick="() => TogglePermiso(modC, accC, !hab)">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-11"/></svg>
                                     </button>
                                 </div>
                             }
                         }
+                        @* Ayuda: la explicacion de los permisos del modulo vive SOLO aqui (tooltip propio, no title). *@
+                        <div class="usr-cell rol-ay-col">
+                            <button type="button" class="rol-ay-btn @(_ayudaMod == modCodigo ? "on" : "")" id="rol-ay-@modCodigo"
+                                    aria-label="Qué permite cada permiso en @LabelModulo(modCodigo)"
+                                    @onmouseenter="() => MostrarAyuda(modCodigo)" @onmouseleave="OcultarAyuda"
+                                    @onfocus="() => MostrarAyuda(modCodigo)" @onblur="OcultarAyuda"
+                                    @onclick="() => MostrarAyuda(modCodigo)">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.6-2.8 2.6"/><path d="M12 16.8h.01"/></svg>
+                            </button>
+                        </div>
                         <div style="width:140px;flex-shrink:0;display:flex;justify-content:center">
                             <select class="usr-select" style="font-size:12px;padding:5px 8px" @onchange="(e) => CambiarNivel(modCodigo, Enum.Parse<NivelDato>(e.Value!.ToString()!))">
                                 <option value="@NivelDato.SinAcceso" selected="@(nivelActual == NivelDato.SinAcceso)">Sin acceso</option>
@@ -142,6 +153,22 @@ else
                     </div>
                 }
             </div>
+            @if (_ayudaMod is not null && AyudaPermisos.TryGetValue(_ayudaMod, out var ayuda))
+            {
+                @* Tooltip propio, anclado con position:fixed (propiaUI.anchorFloatMenu) para no recortarse en el modal. *@
+                <div class="rol-ay-pop" role="tooltip">
+                    <div class="rol-ay-tit">@LabelModulo(_ayudaMod)</div>
+                    <div class="rol-ay-sub">Qué permite cada permiso</div>
+                    @foreach (var acc in Enum.GetValues<AccionPermiso>())
+                    {
+                        if (!AccionAplica(_ayudaMod, acc) || !ayuda.TryGetValue(acc, out var txt)) continue;
+                        <div class="rol-ay-it">
+                            <span class="rol-ay-acc">@acc</span>
+                            <span class="rol-ay-txt">@txt</span>
+                        </div>
+                    }
+                </div>
+            }
                     <div class="usr-hint mt-3">Los cambios de la matriz se guardan al instante y aplican SOLO a esta copropiedad (RP-04). "Administrador conserva acceso a Usuarios y Accesos" se aplica automaticamente.</div>
                 </div>
             </div>
@@ -424,6 +451,19 @@ else
        aplica en ese modulo). Da simetria a la tabla en vez del punto suelto. */
     .usr-chk--na { opacity: .45; cursor: default; background: var(--propia-bg-app); border-style: dashed; }
     .usr-chk--na:hover { border-color: var(--propia-border-card); }
+
+    /* Columna de ayuda de la matriz: boton "?" por modulo + tooltip propio con la explicacion de cada permiso. */
+    .rol-ay-col { width: 40px; }
+    .rol-ay-btn { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--propia-text-muted); display: inline-flex; align-items: center; justify-content: center; cursor: help; transition: background .12s, color .12s; }
+    .rol-ay-btn:hover, .rol-ay-btn:focus-visible, .rol-ay-btn.on { color: var(--propia-brand); background: var(--propia-brand-soft); outline: none; }
+    .rol-ay-pop { position: fixed; top: -9999px; left: -9999px; z-index: 4000; width: 380px; max-width: calc(100vw - 16px); pointer-events: none;
+                  background: var(--propia-bg-card); border: 1px solid var(--propia-border-card); border-radius: 12px;
+                  box-shadow: 0 14px 34px rgba(30, 40, 60, .20); padding: 12px 14px 8px; }
+    .rol-ay-tit { font-size: 13.5px; font-weight: 800; color: var(--propia-text-strong, var(--propia-text-body)); }
+    .rol-ay-sub { font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-text-faint); margin: 2px 0 8px; }
+    .rol-ay-it { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--propia-border-divider); }
+    .rol-ay-acc { flex: 0 0 64px; font-size: 11px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-brand); }
+    .rol-ay-txt { flex: 1; font-size: 12.5px; line-height: 1.45; color: var(--propia-text-body); }
 </style>
 
 @code {
@@ -784,7 +824,7 @@ else
     // modulo; el resto se pinta como "." (no aplica), nunca como checkbox. Fuente: Maqueta1 P.modAcciones
     // (modulos.js v2.0) + spec 2.5 (Dashboard solo Ver). Un modulo sin entrada muestra todas las acciones.
     // 2026-11-21 (Ola 1, OK de Alex): se agregan las acciones que la API YA exige con [RequierePermiso] y que la
-    // matriz apagaba (solo el Administrador podia hacerlas). Ver AccionesAyuda para lo que da cada una.
+    // matriz apagaba (solo el Administrador podia hacerlas). Ver AyudaPermisos (columna "?" de la matriz).
     // Ola 2 (2026-11-21): Exportar = boton Descargar de las tablas (TablaExportar Modulo=...) + Excel de Reportes;
     // solo en los modulos que tienen algo que exportar.
     private static readonly IReadOnlyDictionary<string, AccionPermiso[]> AccionesPorModulo =
@@ -814,36 +854,164 @@ else
     private static bool AccionAplica(string modulo, AccionPermiso accion)
         => !AccionesPorModulo.TryGetValue(modulo, out var validas) || validas.Contains(accion);
 
-    // Texto de ayuda (title) de la casilla cuando el nombre de la accion no dice lo que otorga. Fuente: los
-    // endpoints con [RequierePermiso(modulo, accion)] de cada controller.
-    private static readonly IReadOnlyDictionary<(string, AccionPermiso), string> AccionesAyuda =
-        new Dictionary<(string, AccionPermiso), string>
+    // Ayuda de la matriz (columna "?" de cada modulo): que permite cada permiso, en lenguaje de usuario.
+    // Fuente: los endpoints con [RequierePermiso(modulo, accion)] de cada controller (2026-11-21). Si cambia lo
+    // que exige un endpoint, actualizar el texto aqui. Solo se muestran las acciones que aplican al modulo.
+    private static readonly IReadOnlyDictionary<string, Dictionary<AccionPermiso, string>> AyudaPermisos =
+        new Dictionary<string, Dictionary<AccionPermiso, string>>
         {
-            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)] = "Crear unidades, zonas, equipos, contratos y campos propios; vincular personas",
-            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Eliminar)] = "Borrar unidades, zonas, equipos, contratos y campos propios; desvincular personas",
-            [(ModuloCodigo.MiCopropiedad, AccionPermiso.Aprobar)] = "Desactivar miembros del consejo y de los comités",
-            [(ModuloCodigo.Directorio, AccionPermiso.Aprobar)] = "Inactivar el vínculo de una persona",
-            [(ModuloCodigo.Presupuesto, AccionPermiso.Eliminar)] = "Borrar presupuestos, rubros y gastos",
-            [(ModuloCodigo.Cartera, AccionPermiso.Crear)] = "Crear acuerdos de pago y paz y salvos",
-            [(ModuloCodigo.Cartera, AccionPermiso.Aprobar)] = "Aprobar condonaciones",
-            [(ModuloCodigo.Pqrs, AccionPermiso.Eliminar)] = "Borrar adjuntos, y estados, tipos, categorías y campos propios",
-            [(ModuloCodigo.Pqrs, AccionPermiso.Aprobar)] = "Cerrar una PQRSD",
-            [(ModuloCodigo.Tareas, AccionPermiso.Aprobar)] = "Administrar tableros: crearlos, sus campos, miembros, estados, prioridades y etiquetas",
-            [(ModuloCodigo.Mantenimiento, AccionPermiso.Aprobar)] = "Cerrar intervenciones y reactivar planes",
-            [(ModuloCodigo.Reservas, AccionPermiso.Editar)] = "Cambiar la configuración de reservas",
-            [(ModuloCodigo.Reservas, AccionPermiso.Eliminar)] = "Quitar bloqueos de reservas",
-            [(ModuloCodigo.Comunicaciones, AccionPermiso.Eliminar)] = "Borrar plantillas, adjuntos y segmentos",
-            [(ModuloCodigo.Comunicaciones, AccionPermiso.Aprobar)] = "Enviar, cancelar y reenviar comunicaciones",
-            [(ModuloCodigo.Documentos, AccionPermiso.Editar)] = "Editar documentos, carpetas, categorías y etiquetas; archivar",
-            [(ModuloCodigo.Reportes, AccionPermiso.Crear)] = "Generar y programar reportes",
-            [(ModuloCodigo.Reportes, AccionPermiso.Editar)] = "Editar programaciones, compartir reportes y ajustar semáforos",
-            [(ModuloCodigo.Reportes, AccionPermiso.Eliminar)] = "Borrar programaciones de reportes",
-            [(ModuloCodigo.Reportes, AccionPermiso.Exportar)] = "Descargar reportes en Excel",
+            [ModuloCodigo.Dashboard] = new()
+            {
+                [AccionPermiso.Ver] = "Entrar al tablero de inicio y ver sus indicadores.",
+            },
+            [ModuloCodigo.MiCopropiedad] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar la información de la copropiedad: unidades, residentes, zonas, equipos, contratos y pólizas.",
+                [AccionPermiso.Crear] = "Agregar unidades, zonas, equipos, contratos, residentes, mascotas y vehículos, y vincular personas a una unidad.",
+                [AccionPermiso.Editar] = "Cambiar los datos de esos registros y la información general de la copropiedad.",
+                [AccionPermiso.Eliminar] = "Borrar unidades, zonas, equipos, contratos y campos propios, y quitar personas de una unidad.",
+                [AccionPermiso.Aprobar] = "Desactivar miembros del consejo de administración y de los comités.",
+                [AccionPermiso.Exportar] = "Descargar en Excel o CSV las tablas de unidades, zonas, equipos, residentes, mascotas, vehículos, contratos y pólizas.",
+            },
+            [ModuloCodigo.Directorio] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar las personas y empresas del directorio.",
+                [AccionPermiso.Crear] = "Agregar personas y empresas (también desde Excel), subir fotos y adjuntos y vincularlas a la copropiedad.",
+                [AccionPermiso.Editar] = "Cambiar los datos de personas y empresas.",
+                [AccionPermiso.Eliminar] = "Borrar contactos, adjuntos y etiquetas del directorio.",
+                [AccionPermiso.Aprobar] = "Inactivar el vínculo de una persona con la copropiedad.",
+                [AccionPermiso.Exportar] = "Descargar la tabla del directorio en Excel o CSV.",
+            },
+            [ModuloCodigo.UsuariosAccesos] = new()
+            {
+                [AccionPermiso.Ver] = "Entrar a Usuarios y a Roles y permisos. Hoy este permiso también deja invitar usuarios, cambiarles el rol y editar los roles: dalo solo a personas de total confianza.",
+                [AccionPermiso.Crear] = "Cargar usuarios desde la plantilla de Excel.",
+                [AccionPermiso.Editar] = "Restablecer la contraseña de un usuario.",
+                [AccionPermiso.Eliminar] = "Por ahora no habilita ninguna acción adicional.",
+                [AccionPermiso.Exportar] = "Descargar en Excel o CSV las tablas de usuarios y de roles.",
+            },
+            [ModuloCodigo.Presupuesto] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar presupuestos, rubros, cuotas y pagos.",
+                [AccionPermiso.Crear] = "Crear presupuestos, rubros, gastos, cuotas extraordinarias y liquidaciones, y registrar pagos manuales.",
+                [AccionPermiso.Editar] = "Cambiar rubros y enviar un presupuesto a aprobación.",
+                [AccionPermiso.Eliminar] = "Borrar presupuestos, rubros y gastos.",
+                [AccionPermiso.Aprobar] = "Aprobar, activar y cerrar presupuestos, y aprobar cuotas extraordinarias.",
+            },
+            [ModuloCodigo.Cartera] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar la cartera, el estado de cuenta de cada unidad, los acuerdos de pago y los paz y salvos.",
+                [AccionPermiso.Crear] = "Crear acuerdos de pago, registrar sus pagos y emitir paz y salvos.",
+                [AccionPermiso.Editar] = "Enviar, aceptar o cancelar acuerdos, anular paz y salvos, cambiar el estado de una unidad y ajustar la configuración.",
+                [AccionPermiso.Aprobar] = "Aprobar condonaciones (perdonar intereses o deudas).",
+            },
+            [ModuloCodigo.Asambleas] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar las asambleas, su orden del día, votaciones y actas.",
+                [AccionPermiso.Crear] = "Crear asambleas, votaciones, actas, poderes y segunda convocatoria; subir documentos y registrar votos.",
+                [AccionPermiso.Editar] = "Preparar y conducir la asamblea: orden del día, enlaces para los residentes, sala virtual, transcripción, borrador del acta y decidir poderes.",
+                [AccionPermiso.Eliminar] = "Borrar una asamblea y sus documentos.",
+                [AccionPermiso.Aprobar] = "Cerrar la asamblea y sus votaciones, y publicar el acta.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de asambleas en Excel o CSV.",
+            },
+            [ModuloCodigo.Pqrs] = new()
+            {
+                [AccionPermiso.Ver] = "Entrar a la bandeja de PQRSD y consultar cada caso con sus respuestas.",
+                [AccionPermiso.Crear] = "Radicar PQRSD (también desde un correo), responder, adjuntar, compartir, generar tareas y crear estados, tipos, categorías y campos.",
+                [AccionPermiso.Editar] = "Cambiar los casos y configurar el módulo: estados, categorías, campos, plazos, consecutivos, formulario público, correo y WhatsApp.",
+                [AccionPermiso.Eliminar] = "Borrar adjuntos, y estados, tipos, categorías y campos propios.",
+                [AccionPermiso.Aprobar] = "Cerrar definitivamente una PQRSD.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de PQRSD en Excel o CSV.",
+            },
+            [ModuloCodigo.Tareas] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los tableros y sus tareas.",
+                [AccionPermiso.Crear] = "Crear tareas y subtareas, comentar, adjuntar archivos, agregar colaboradores, etiquetas y dependencias, y duplicar tareas.",
+                [AccionPermiso.Editar] = "Cambiar tareas (estado, responsable, prioridad, avance y campos) y moverlas entre tableros, también varias a la vez.",
+                [AccionPermiso.Eliminar] = "Borrar tareas y quitarles adjuntos, colaboradores, etiquetas y dependencias.",
+                [AccionPermiso.Aprobar] = "Administrar los tableros: crearlos o borrarlos, sus campos y columnas, quién trabaja en ellos, y sus estados, prioridades y etiquetas.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de tareas en Excel o CSV.",
+            },
+            [ModuloCodigo.Mantenimiento] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los planes de mantenimiento y las intervenciones.",
+                [AccionPermiso.Crear] = "Crear planes e intervenciones, registrar ejecuciones y bitácora, cambiar el estado de un equipo y cancelar intervenciones.",
+                [AccionPermiso.Editar] = "Cambiar los datos de planes e intervenciones.",
+                [AccionPermiso.Eliminar] = "Borrar planes de mantenimiento.",
+                [AccionPermiso.Aprobar] = "Cerrar intervenciones y reactivar planes.",
+                [AccionPermiso.Exportar] = "Descargar las tablas de programaciones e intervenciones en Excel o CSV.",
+            },
+            [ModuloCodigo.Porteria] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar la portería: turnos, visitas, vehículos, correspondencia y autorizaciones.",
+                [AccionPermiso.Crear] = "Abrir turnos y registrar visitas, vehículos, correspondencia, novedades, alertas y autorizaciones de ingreso.",
+                [AccionPermiso.Editar] = "Entregar o devolver correspondencia, avisar al residente, cambiar vehículos y la configuración de portería.",
+                [AccionPermiso.Eliminar] = "Borrar autorizaciones, vehículos y campos propios.",
+                [AccionPermiso.Aprobar] = "Cerrar turnos de portería.",
+            },
+            [ModuloCodigo.Reservas] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar las reservas de zonas comunes.",
+                [AccionPermiso.Crear] = "Hacer, reprogramar, cancelar, entregar y recibir reservas, y bloquear fechas.",
+                [AccionPermiso.Editar] = "Cambiar la configuración de reservas de cada zona.",
+                [AccionPermiso.Eliminar] = "Quitar bloqueos de fechas.",
+                [AccionPermiso.Aprobar] = "Aprobar las reservas que necesitan visto bueno.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de reservas en Excel o CSV.",
+            },
+            [ModuloCodigo.Comunicaciones] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los comunicados y los correos recibidos.",
+                [AccionPermiso.Crear] = "Redactar comunicados y plantillas, adjuntar archivos y elegir destinatarios.",
+                [AccionPermiso.Editar] = "Cambiar comunicados y plantillas, y administrar los buzones y los correos recibidos.",
+                [AccionPermiso.Eliminar] = "Borrar plantillas, adjuntos y grupos de destinatarios.",
+                [AccionPermiso.Aprobar] = "Enviar, cancelar y reenviar comunicados.",
+                [AccionPermiso.Exportar] = "Descargar las tablas de comunicados y correos recibidos en Excel o CSV.",
+            },
+            [ModuloCodigo.Documentos] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los documentos del archivo.",
+                [AccionPermiso.Crear] = "Subir documentos y nuevas versiones, y crear carpetas, categorías, etiquetas y campos.",
+                [AccionPermiso.Editar] = "Cambiar documentos, carpetas, categorías y etiquetas; destacar, archivar y restaurar.",
+                [AccionPermiso.Eliminar] = "Borrar documentos, carpetas, categorías, etiquetas y campos.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de documentos en Excel o CSV.",
+            },
+            [ModuloCodigo.Reportes] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los reportes e indicadores.",
+                [AccionPermiso.Crear] = "Generar reportes y programar su envío.",
+                [AccionPermiso.Editar] = "Cambiar o pausar programaciones, compartir reportes y ajustar los semáforos.",
+                [AccionPermiso.Eliminar] = "Borrar programaciones de reportes.",
+                [AccionPermiso.Exportar] = "Descargar reportes en Excel.",
+            },
+            [ModuloCodigo.Plantillas] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar las plantillas de documentos y los membretes.",
+                [AccionPermiso.Crear] = "Crear plantillas y membretes (encabezados y pies de página).",
+                [AccionPermiso.Editar] = "Cambiar plantillas, membretes y sus campos.",
+                [AccionPermiso.Eliminar] = "Borrar plantillas y membretes.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de plantillas en Excel o CSV.",
+            },
+            [ModuloCodigo.Siniestros] = new()
+            {
+                [AccionPermiso.Ver] = "Consultar los siniestros y su seguimiento.",
+                [AccionPermiso.Crear] = "Reportar un siniestro nuevo.",
+                [AccionPermiso.Editar] = "Hacer el seguimiento: datos, estado, documentos, comentarios, tarea de reparación y configuración de estados y campos.",
+                [AccionPermiso.Eliminar] = "Borrar un siniestro.",
+                [AccionPermiso.Exportar] = "Descargar la tabla de siniestros en Excel o CSV.",
+            },
         };
 
-    private static string? AyudaAccion(string modulo, AccionPermiso accion)
-        => AccionesAyuda.TryGetValue((modulo, accion), out var t) ? t
-         : accion == AccionPermiso.Exportar ? "Descargar las tablas del módulo en Excel o CSV (botón Descargar)" : null;
+    private string? _ayudaMod;
+    private bool _anclarAyuda;
+
+    private void MostrarAyuda(string modulo)
+    {
+        if (_ayudaMod == modulo) return;
+        _ayudaMod = modulo;
+        _anclarAyuda = true;
+    }
+
+    private void OcultarAyuda() => _ayudaMod = null;
 
     // ===== FAB flotante + scroll infinito (patron Unidades) =====
     private bool _ctaVisible = true;
@@ -858,6 +1026,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Tooltip de ayuda de la matriz: se ancla al boton "?" una vez pintado (position:fixed, flip/clamp).
+        if (_anclarAyuda && _ayudaMod is not null)
+        {
+            _anclarAyuda = false;
+            try { await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", "#rol-ay-" + _ayudaMod, ".rol-ay-pop"); } catch { }
+        }
+
         // FAB flotante + scroll infinito (patron Unidades): observa el scroll de la bandeja.
         if (_roles is not null && _rolEditando is null)
         {

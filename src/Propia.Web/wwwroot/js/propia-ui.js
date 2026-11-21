@@ -948,3 +948,72 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         });
     } catch (e) { }
 };
+
+// ---------- Fila de alta de Tareas: foco visible + caja grande de texto (2026-11-21) ----------
+// Delegado a nivel documento (los nodos los pinta Blazor y se recrean):
+// 1) Al enfocar una casilla de una fila de alta (.tb-newrow), desplaza SOLO el contenedor horizontal de la
+//    tabla para que la casilla quede a la vista (sin scrollIntoView: ese mueve tambien el documento) y sin
+//    quedar debajo de la columna Titulo fijada.
+// 2) textarea.tb-nf-area (Descripcion y campos de parrafo): al enfocar flota como una caja mas grande sobre la
+//    celda (position:fixed, clamp al viewport); al salir vuelve a su tamano. Enter (sin Shift) no escribe salto
+//    de linea: Blazor crea la tarea con ese Enter; Shift+Enter si hace salto de linea.
+(function () {
+    function contenedorX(el) {
+        var p = el.parentElement;
+        while (p && p !== document.body) {
+            var ox = getComputedStyle(p).overflowX;
+            if ((ox === 'auto' || ox === 'scroll') && p.scrollWidth > p.clientWidth + 1) return p;
+            p = p.parentElement;
+        }
+        return null;
+    }
+    function traerALaVista(el) {
+        try {
+            var row = el.closest('.tb-newrow'); if (!row) return;
+            var sc = contenedorX(row); if (!sc) return;
+            var cell = el.closest('[class*="tb-row-"]') || el;
+            var c = cell.getBoundingClientRect(), s = sc.getBoundingClientRect();
+            var pin = row.querySelector('.tb-pin');
+            var izq = s.left;
+            if (pin && !pin.contains(el)) izq = Math.max(izq, pin.getBoundingClientRect().right);
+            if (c.left < izq) sc.scrollLeft -= (izq - c.left + 8);
+            else if (c.right > s.right) sc.scrollLeft += (c.right - s.right + 8);
+        } catch (e) { }
+    }
+    function abrirArea(ta) {
+        try {
+            var cell = ta.parentElement || ta;
+            var r = cell.getBoundingClientRect();
+            var w = Math.max(r.width, 360), h = 140;
+            var left = r.left, top = r.top;
+            if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+            if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+            ta.style.position = 'fixed'; ta.style.left = left + 'px'; ta.style.top = top + 'px';
+            ta.style.width = w + 'px'; ta.style.height = h + 'px'; ta.style.zIndex = '4000';
+            ta.classList.add('tb-nf-area--open');
+        } catch (e) { }
+    }
+    function cerrarArea(ta) {
+        ['position', 'left', 'top', 'width', 'height', 'zIndex'].forEach(function (k) { ta.style[k] = ''; });
+        ta.classList.remove('tb-nf-area--open');
+        ta.scrollTop = 0;
+    }
+    document.addEventListener('focusin', function (e) {
+        var el = e.target;
+        if (!el || !el.closest || el.closest('.lbx-pop')) return;
+        traerALaVista(el);
+        if (el.matches && el.matches('textarea.tb-nf-area')) abrirArea(el);
+    });
+    document.addEventListener('focusout', function (e) {
+        var el = e.target;
+        if (el && el.matches && el.matches('textarea.tb-nf-area')) cerrarArea(el);
+    });
+    document.addEventListener('keydown', function (e) {
+        var el = e.target;
+        if (e.key === 'Enter' && !e.shiftKey && el && el.matches && el.matches('textarea.tb-nf-area')) e.preventDefault();
+    });
+    // Lista con busqueda (ListaBuscable): enfoca el buscador con el cursor al final de lo ya escrito.
+    window.propiaUI.focoAlFinal = function (el) {
+        try { if (!el) return; el.focus(); var n = (el.value || '').length; el.setSelectionRange(n, n); } catch (e) { }
+    };
+})();
