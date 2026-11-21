@@ -10,6 +10,10 @@ namespace Propia.Domain.Entities;
 /// </summary>
 public class EmailConfig : BaseEntity
 {
+    /// <summary>Como sale el correo: "smtp" (host/puerto/usuario/clave) o "sendgrid_api" (Web API v3 por
+    /// HTTPS, la API key va en SmtpPasswordEncrypted). Railway bloquea SMTP saliente en planes sin Pro.</summary>
+    public string Proveedor { get; set; } = "smtp";
+
     /// <summary>Host SMTP (p.ej. smtp.sendgrid.net, smtp.gmail.com).</summary>
     public string? SmtpHost { get; set; }
 

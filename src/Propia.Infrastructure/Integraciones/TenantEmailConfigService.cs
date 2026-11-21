@@ -1,9 +1,9 @@
-using System.Net;
-using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Propia.Application.Common;
 using Propia.Application.Integraciones;
 using Propia.Domain.Entities;
+using Propia.Infrastructure.Email;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.Integraciones;
@@ -16,11 +16,13 @@ public sealed class TenantEmailConfigService : ITenantEmailConfigService
 {
     private readonly PropiaDbContext _db;
     private readonly ISecretProtector _secret;
+    private readonly IConfiguration? _config;
 
-    public TenantEmailConfigService(PropiaDbContext db, ISecretProtector secret)
+    public TenantEmailConfigService(PropiaDbContext db, ISecretProtector secret, IConfiguration? config = null)
     {
         _db = db;
         _secret = secret;
+        _config = config;
     }
 
     public async Task<TenantEmailConfigDto> GetAsync(CancellationToken ct)
@@ -73,27 +75,18 @@ public sealed class TenantEmailConfigService : ITenantEmailConfigService
 
         try
         {
-            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
-            {
-                EnableSsl = cfg.UseSsl,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Credentials = new NetworkCredential(cfg.SmtpUser, password)
-            };
-            using var msg = new MailMessage
-            {
-                From = new MailAddress(cfg.FromEmail!, cfg.FromName ?? cfg.FromEmail!),
-                Subject = "Prueba de correo - PROPIA",
-                Body = "Este es un correo de prueba enviado desde la configuracion de correo de tu copropiedad en PROPIA. Si lo recibes, la cuenta quedo bien configurada.",
-                IsBodyHtml = false
-            };
-            msg.To.Add(toEmail.Trim());
-            await client.SendMailAsync(msg, ct);
+            // Mismo limite duro que el correo de la plataforma: un puerto bloqueado no cuelga el request.
+            var msg = EnvioSmtp.Mensaje(cfg.FromEmail!, cfg.FromName, toEmail, "Prueba de correo - PROPIA",
+                "Este es un correo de prueba enviado desde la configuración de correo de tu copropiedad en PROPIA. Si lo recibes, la cuenta quedó bien configurada.",
+                html: false);
+            await EnvioSmtp.EnviarAsync(cfg.SmtpHost!, cfg.SmtpPort, cfg.UseSsl, cfg.SmtpUser, password, msg, EnvioSmtp.Limite(_config), ct);
 
             // Marca la ultima validacion exitosa.
             var live = await _db.TenantEmailConfigs.FirstOrDefaultAsync(ct);
             if (live is not null) { live.LastValidatedAt = DateTimeOffset.UtcNow; await _db.SaveChangesAsync(ct); }
             return (true, null);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             return (false, "No se pudo enviar: " + ex.Message);

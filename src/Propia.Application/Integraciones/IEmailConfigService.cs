@@ -10,7 +10,8 @@ public sealed record EmailConfigDto(
     string? FromEmail,
     string? FromName,
     bool IsEnabled,
-    DateTimeOffset? LastValidatedAt);
+    DateTimeOffset? LastValidatedAt,
+    string Proveedor = "smtp");
 
 public sealed record SaveEmailConfigRequest(
     string? SmtpHost,
@@ -20,7 +21,9 @@ public sealed record SaveEmailConfigRequest(
     bool UseSsl,
     string? FromEmail,
     string? FromName,
-    bool IsEnabled);
+    bool IsEnabled,
+    // "smtp" | "sendgrid_api". Null conserva el actual (PUT MERGE).
+    string? Proveedor = null);
 
 public sealed record TestEmailRequest(string ToEmail);
 

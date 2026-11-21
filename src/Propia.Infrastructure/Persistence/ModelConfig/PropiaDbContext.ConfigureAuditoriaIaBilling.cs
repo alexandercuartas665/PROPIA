@@ -192,6 +192,7 @@ public partial class PropiaDbContext
         modelBuilder.Entity<EmailConfig>(b =>
         {
             b.Property(x => x.SmtpHost).HasMaxLength(255);
+            b.Property(x => x.Proveedor).HasMaxLength(30).HasDefaultValue("smtp");
             b.Property(x => x.SmtpUser).HasMaxLength(255);
             b.Property(x => x.SmtpPasswordEncrypted).HasMaxLength(1024);
             b.Property(x => x.FromEmail).HasMaxLength(255);

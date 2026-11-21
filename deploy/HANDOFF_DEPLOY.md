@@ -1,5 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **CORREO SALIENTE CON LIMITE DE TIEMPO + SENDGRID POR API (2026-11-20): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
+> - Bug prod v0.0.310: activar-con-clave-temporal se colgaba ~5 min en el SMTP (System.Net.Mail sin timeout en async),
+>   el proxy devolvia 502 y la cuenta quedaba con una clave que nadie recibio. Ahora TODO envio de correo (invitaciones,
+>   clave temporal, olvide mi contrasena, OTP, asambleas, prueba por copropiedad) corta a los 20 s (`Email:TimeoutSegundos`,
+>   opcional) con error "SMTP timeout (host:puerto)" y Warning en el log; activar responde 200 con `fallidos` y se reintenta.
+> - Migracion `20261120153639_AddEmailConfigProveedor`: columna `email_configs.proveedor` varchar(30) NOT NULL default
+>   'smtp' (tabla global, sin RLS). Con default 'smtp' prod sigue igual hasta cambiarlo.
+> - Proveedor nuevo `sendgrid_api` (SendGrid Web API v3 por HTTPS 443): Super Admin > Servidor de correo > Proveedor =
+>   "SendGrid por API" y pegar la API key de SendGrid (la misma del SMTP, con permiso Mail Send) en "API key de SendGrid".
+>   Railway bloquea SMTP saliente (25/465/587) en Free/Trial/Hobby: si el diagnostico da "SMTP timeout", usar este.
+> - Nuevo diagnostico (policy SuperAdmin, acepta `pak_`): `POST /api/admin/email/probar {"to":"..."}` ->
+>   `{ ok, proveedor, host, puerto, ms, error }` con el mismo limite. Verificar en prod: (1) probar con SMTP -> si da
+>   timeout a los ~20 s, el puerto esta bloqueado; (2) cambiar a SendGrid por API, guardar la key, probar -> ok=true y el
+>   correo llega; (3) activar-con-clave-temporal de un usuario de prueba -> correo con la clave.
+> - Al activarse la cuenta (clave temporal o invitacion aceptada) el colaborador de la org pasa de Pendiente a Activo.
+
 > **API SUPER ADMIN v2 - USUARIOS LISTOS (2026-11-20): SIN MIGRACION, SIN CONFIG NUEVA. API y Web.**
 > - CAMBIO DE COMPORTAMIENTO: las invitaciones de usuarios AHORA SE ENVIAN (antes solo creaban el link), tambien desde la
 >   UI de Usuarios. Correo por el SMTP global (EmailConfig) con link absoluto `App:PublicBaseUrl`/invitacion/<token>.

@@ -357,7 +357,7 @@ else
                                         if (_composerReveal >= fidx)
                                         {
                                             <input class="tb-composer-sel tb-composer-appear" placeholder="@campo.Label"
-                                                   @bind:get="_composerDraft.Campos.GetValueOrDefault(campo.Id)"@bind:set="v => _composerDraft.Campos[campo.Id] = v" @bind:event="oninput"
+                                                   @bind:get="_composerDraft.Campos.GetValueOrDefault(campo.Id)" @bind:set="v => _composerDraft.Campos[campo.Id] = v" @bind:event="oninput"
                                                    @onfocus="@(() => RevealComposerNext(fidx))" @onkeydown="@(e => ComposerKeydown(e, estado.Id, fidx))" />
                                         }
                                     }
@@ -2137,7 +2137,7 @@ else
             </div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
-                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." @bind="sf.Titulo"@bind:event="oninput"
+                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." @bind="sf.Titulo" @bind:event="oninput"
                        @onkeydown="e => SubfilaKeydown(e, padre)" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><input class="tb-nf-inp" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))" /></div> }
@@ -2179,11 +2179,22 @@ else
         if (e.Key == "Enter") await CrearSubfila(padre);
         else if (e.Key == "Escape") _nuevaSubfilas[padre.Id] = new NuevaFilaDraft { EstadoId = padre.EstadoId, PrioridadId = padre.PrioridadId };
     }
+    // Candado de alta: mientras un POST /api/tareas esta en vuelo, otro Enter / blur / clic NO crea una
+    // segunda tarea (el borrador conserva el titulo hasta que vuelve la API; sin esto, dos Enter seguidos
+    // = dos tareas iguales). Lo comparten todos los caminos de alta inline del componente.
+    private bool _creandoTarea;
     private async Task CrearSubfila(TareaListaDto padre, bool abrir = false)
     {
-        if (EsBoardForaneo || _board is null) return;
+        if (EsBoardForaneo || _board is null || _creandoTarea) return;
         var sf = SubfilaDe(padre);
         if (string.IsNullOrWhiteSpace(sf.Titulo)) return;
+        _creandoTarea = true;
+        try { await CrearSubfilaCoreAsync(padre, sf, abrir); }
+        finally { _creandoTarea = false; }
+    }
+    private async Task CrearSubfilaCoreAsync(TareaListaDto padre, NuevaFilaDraft sf, bool abrir)
+    {
+        if (_board is null) return;
         var camposValores = sf.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(sf.OrigenTipo) ? null : sf.OrigenTipo;
@@ -3244,7 +3255,7 @@ else
     // Al recargar el board, la hija aparece anidada en modo lista y suma al chip "N sub" en tarjetas.
     private async Task CrearSubtareaRapida()
     {
-        if (_cardDraft?.Id is not Guid padreId || _board is null) return;
+        if (_cardDraft?.Id is not Guid padreId || _board is null || _busy) return;
         var titulo = _subtareaNew?.Trim();
         if (string.IsNullOrWhiteSpace(titulo)) return;
         _busy = true;
@@ -4311,7 +4322,7 @@ else
            asi una tarea SIN hijas tambien puede abrir la linea de alta (clic en el + del titulo). *@
         @if (_expandidas.Contains(t.Id) && depth < 3)
         {
-            var kids = Hijos(t.Id).ToList();
+            var kids = OrdenarHijas(Hijos(t.Id));
             @* Subtareas = sub-registros: filas hijas completas con codigo .N (padre + indice). *@
             for (int i = 0; i < kids.Count; i++)
             {
@@ -4321,6 +4332,39 @@ else
             @if (!EsBoardForaneo) { @FilaNuevaSubtarea(t, depth + 1) }
         }
     };
+
+    // Orden de las subtareas en la vista Tabla: si el usuario ordeno por una columna se respeta ese orden;
+    // si no, por CREACION (la nueva queda abajo, junto a la fila "+ Agregar subtarea", y los codigos .N de
+    // las demas no cambian al crear). La API trae prioridad/vencimiento/mas-nueva-primero, que subia la
+    // recien creada al tope y corria los .N (se percibia como "se duplico"). NumeroTarea es consecutivo
+    // (T-AAAA-NNNN): se comparan sus grupos de digitos como numeros.
+    private List<TareaListaDto> OrdenarHijas(List<TareaListaDto> hijas)
+        => _sorts.Count > 0 ? AplicarSort(hijas).ToList() : hijas.OrderBy(h => h, OrdenCreacion.Instancia).ToList();
+
+    private sealed class OrdenCreacion : IComparer<TareaListaDto>
+    {
+        public static readonly OrdenCreacion Instancia = new();
+        public int Compare(TareaListaDto? a, TareaListaDto? b)
+        {
+            var na = Digitos(a?.NumeroTarea);
+            var nb = Digitos(b?.NumeroTarea);
+            for (var i = 0; i < Math.Min(na.Count, nb.Count); i++)
+            {
+                var c = na[i].CompareTo(nb[i]);
+                if (c != 0) return c;
+            }
+            var len = na.Count.CompareTo(nb.Count);
+            return len != 0 ? len : string.CompareOrdinal(a?.NumeroTarea, b?.NumeroTarea);
+        }
+        private static List<long> Digitos(string? s)
+        {
+            var r = new List<long>();
+            if (string.IsNullOrEmpty(s)) return r;
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(s, "[0-9]+"))
+                if (long.TryParse(m.Value, out var n)) r.Add(n);
+            return r;
+        }
+    }
 
     private string? CampoValor(TareaListaDto t, Guid campoId) => t.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor;
 
@@ -4779,7 +4823,14 @@ else
     private async Task EliminarFila(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
-        if (resp.IsSuccessStatusCode) _tareas.RemoveAll(t => t.Id == id);
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; StateHasChanged(); return; }
+        _tareas.RemoveAll(t => t.Id == id);
+        // Recargar: el padre trae su contador de subtareas y su progreso del servidor, y las hijas de la
+        // tarea eliminada (borradas en cascada) dejan de existir. Sin esto el chip "N" del padre quedaba viejo.
+        await RecargarBoard();
+        // Se invoca desde el menu contextual (TablaCtxMenu ejecuta un Func<Task>, no un EventCallback): tras
+        // el await solo se repinta el menu, no este componente. Sin esto la fila borrada seguia visible.
+        StateHasChanged();
     }
 
     // ===== Seleccion multiple + accion masiva de tareas (canon): Eliminar =====
@@ -4910,8 +4961,16 @@ else
     private async Task CrearDesdeNuevaFila(Guid estadoId)
     {
         if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
+        if (_creandoTarea) return;
         var d = NuevaFilaDe(estadoId);
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        _creandoTarea = true;
+        try { await CrearDesdeNuevaFilaCoreAsync(estadoId, d); }
+        finally { _creandoTarea = false; }
+    }
+    private async Task CrearDesdeNuevaFilaCoreAsync(Guid estadoId, NuevaFilaDraft d)
+    {
+        if (_board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
@@ -4931,8 +4990,16 @@ else
     /// </summary>
     private async Task CrearDesdeNuevaFilaYAbrir(Guid estadoId)
     {
+        if (_creandoTarea) return;
         var d = NuevaFilaDe(estadoId);
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        _creandoTarea = true;
+        try { await CrearDesdeNuevaFilaYAbrirCoreAsync(estadoId, d); }
+        finally { _creandoTarea = false; }
+    }
+    private async Task CrearDesdeNuevaFilaYAbrirCoreAsync(Guid estadoId, NuevaFilaDraft d)
+    {
+        if (_board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
@@ -5069,8 +5136,16 @@ else
     }
     private async Task CrearDesdeComposer(Guid estadoId)
     {
+        if (_creandoTarea) return;
         var d = _composerDraft;
         if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        _creandoTarea = true;
+        try { await CrearDesdeComposerCoreAsync(estadoId, d); }
+        finally { _creandoTarea = false; }
+    }
+    private async Task CrearDesdeComposerCoreAsync(Guid estadoId, NuevaFilaDraft d)
+    {
+        if (_board is null) return;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
@@ -6157,7 +6232,7 @@ else
 
     private async Task GuardarCard()
     {
-        if (_cardDraft is null || _board is null || string.IsNullOrWhiteSpace(_cardDraft.Titulo)) return;
+        if (_cardDraft is null || _board is null || string.IsNullOrWhiteSpace(_cardDraft.Titulo) || _busy) return;
         _cardMsg = null;
         // Campos requeridos: bloquea guardar si falta alguno (Separador/Total no capturan valor).
         var faltan = (_board.Tablero.Campos ?? new List<TableroCampoDto>())

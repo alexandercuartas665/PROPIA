@@ -5894,6 +5894,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_validated_at");
 
+                    b.Property<string>("Proveedor")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("smtp")
+                        .HasColumnName("proveedor");
+
                     b.Property<string>("SmtpHost")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
