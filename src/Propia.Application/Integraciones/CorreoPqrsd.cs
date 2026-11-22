@@ -436,3 +436,17 @@ public static class RadicadorPqrsdCorreoAgente
         return t.Length <= max ? t : t[..max];
     }
 }
+
+/// <summary>Resultado de enviar una respuesta de PQRSD por un buzon. <paramref name="HayBuzon"/> = false: PQRSD no tiene
+/// buzones para responder (o el pedido no responde PQRSD) y el llamador sigue con el canal anterior (conexion Gmail).</summary>
+public sealed record EnvioBuzonResultado(bool HayBuzon, bool Ok, Guid? BuzonId, string? Remitente, string? Error);
+
+/// <summary>
+/// Modulo Buzones (2026-11-22): envia las respuestas de PQRSD desde un buzon de la copropiedad que PQRSD eligio en sus
+/// opciones (RespondePqrsd). Con <c>buzonId</c> usa ese (debe responder PQRSD); sin el, el predeterminado o el primero.
+/// </summary>
+public interface IBuzonEnvioService
+{
+    Task<EnvioBuzonResultado> EnviarRespuestaPqrsdAsync(Guid? buzonId, IReadOnlyList<string> para, string asunto,
+        string html, IReadOnlyList<Common.CorreoAdjunto> adjuntos, CancellationToken ct = default);
+}

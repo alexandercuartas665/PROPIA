@@ -1,5 +1,21 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **MODULO BUZONES DE CORREO (2026-11-22): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
+> - Pagina nueva `/buzones` (menu Configuracion > "Buzones de correo"): crear/editar/probar/eliminar las cuentas de correo
+>   de la copropiedad. Gestion de correos (boton "Buzones" de /correos) ahora solo elige QUE buzones lee y como (temas,
+>   radicar PQRSD, respuesta de radicado); ya no crea ni borra cuentas.
+> - PQRSD > Configurar > Respuestas > pestana "Buzones" (antes "Correo", un SMTP propio que NO se usaba): marca desde que
+>   buzones salen las respuestas y cual es el predeterminado. `PUT /api/correos-recibidos/buzones/pqrsd` (permiso Pqrs.Editar).
+> - Enviar respuesta de PQRSD: si PQRSD tiene buzones, sale por SMTP de esa cuenta (misma contrasena de aplicacion,
+>   smtp.gmail.com:587) con el PDF adjunto; con varios, "Enviar desde" en el modal. Sin buzones marcados: igual que antes
+>   (conexion Gmail). `POST .../respuestas/{id}/enviar` acepta `buzonId` opcional.
+> - Migracion `20261122212851_AddModuloBuzones` (owner `propia`): columnas `responde_pqrsd` y `pqrsd_predeterminado`
+>   (boolean, default false) en `buzones_correo` + item de menu `cfg-buzones` en la seccion "Configuracion" de
+>   menu_overrides (idempotente). La tabla `tenant_email_configs` no se toca (solo deja de mostrarse).
+> - Verificar en prod: (1) Configuracion > Buzones de correo lista los buzones; (2) /correos > Buzones muestra "Buzones que lee
+>   Gestion de correos" sin boton de agregar; (3) PQRSD > Configurar > Respuestas > Buzones: marcar uno y guardar; (4) enviar
+>   una respuesta de PQRSD de prueba a un correo propio y ver que llega desde esa cuenta (y queda en "Enviados" de Gmail).
+
 > **CONDICIONES DE USO CON ARCHIVO (PDF/IMAGEN) EN ZONAS Y ACTIVOS RESERVABLES (2026-11-22): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
 > - Ficha de la zona y ficha del activo reservable: debajo del texto "Condiciones de uso" se adjunta UN archivo (PDF, JPG,
 >   PNG o WEBP, max 10 MB), aparte de la pestana Documentos. Se guarda al instante (no depende de "Guardar cambios").

@@ -103,6 +103,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Integraciones.ITenantEmailConfigService, Integraciones.TenantEmailConfigService>();
         services.AddScoped<Application.Integraciones.ICorreoEntranteService, Integraciones.CorreoEntranteService>();  // lector de buzon (IMAP)
         services.AddScoped<Application.Integraciones.ICorreoPqrsdService, Integraciones.CorreoPqrsdService>();  // PQRSD por correo (Ola P1)
+        services.AddScoped<Application.Integraciones.IBuzonEnvioService, Integraciones.BuzonEnvioService>();  // respuestas de PQRSD por buzon (modulo Buzones)
         services.AddScoped<Application.Integraciones.IRespuestaCorreoSender, Integraciones.RespuestaCorreoSender>();  // respuesta de radicado por el buzon (Ola P2)
         services.AddScoped<Application.Integraciones.IPlatformBrandingService, Integraciones.PlatformBrandingService>();
         services.AddScoped<Application.Integraciones.IAiServerConfigService, Integraciones.AiServerConfigService>();

@@ -2217,6 +2217,14 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("plantilla_acuse_id");
 
+                    b.Property<bool>("PqrsdPredeterminado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("pqrsd_predeterminado");
+
+                    b.Property<bool>("RespondePqrsd")
+                        .HasColumnType("boolean")
+                        .HasColumnName("responde_pqrsd");
+
                     b.Property<bool>("ResponderRadicado")
                         .HasColumnType("boolean")
                         .HasColumnName("responder_radicado");

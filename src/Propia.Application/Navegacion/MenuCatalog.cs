@@ -44,6 +44,10 @@ public static class MenuCatalog
         // Catalogo central de plantillas de documentos. Donde exista la seccion "Configuracion" del Super Admin,
         // la migracion AddPlantillasDocumento lo ubica ahi, despues de "Copropiedad" (override en menu_overrides).
         new MenuItemDef("cfg-plantillas", "tabMiPH", "Plantillas de documentos", "/configuracion/plantillas", "fi-rr-document", 1),
+        // Modulo Buzones de correo (2026-11-22): las cuentas de correo de la copropiedad. Gestion de correos (lectura) y
+        // PQRSD (respuestas) eligen en sus opciones cuales usan. La migracion AddModuloBuzones lo ubica en la
+        // seccion "Configuracion" del Super Admin, junto a Plantillas de documentos.
+        new MenuItemDef("cfg-buzones", "tabMiPH", "Buzones de correo", "/buzones", "fi-rr-envelopes", 1),
         new MenuItemDef("mi-copropiedad", "tabMiPH", "Mi copropiedad", "/mi-copropiedad", "fi-rr-building", 2),
         new MenuItemDef("mi-distribucion", "tabMiPH", "Unidades Privadas", "/distribucion", "fi-rr-apps", 3),
         new MenuItemDef("mi-residentes", "tabMiPH", "Residentes", "/residentes-hub", "fi-rr-users", 4),

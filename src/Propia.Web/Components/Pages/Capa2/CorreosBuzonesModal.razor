@@ -7,14 +7,18 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 
-@* Lector de buzon: configuracion de los buzones de la copropiedad (uno o varios). Cada buzon es una tarjeta con su
-   estado, su actividad y una cinta con los asuntos de los ultimos correos que el Coordinador proceso (se refresca
-   sola mientras el modal esta abierto). Clic en la tarjeta = editar. "Temas" abre el editor de la lista por
-   copropiedad "correo.tema" (descripcion que lee el coordinador). Estilos cor-bz-* en css/modules/correos.css. *@
+@* Buzones de correo de la copropiedad (uno o varios). Cada buzon es una tarjeta con su estado, su actividad y una cinta
+   con los asuntos de los ultimos correos que el Coordinador proceso (se refresca sola). Clic en la tarjeta = editar.
+   Dos modos (modulo Buzones, 2026-11-22):
+   - Modo "cuentas" (pagina /buzones, Embebido): crear, editar la cuenta (correo, contrasena, servidor), probar y eliminar.
+   - Modo "lectura" (opciones de Gestion de correos): que buzones lee el Coordinador y como (temas, radicar PQRSD,
+     respuesta de radicado). No crea ni borra buzones: eso vive en el modulo Buzones de correo.
+   "Temas" abre el editor de la lista por copropiedad "correo.tema". Estilos cor-bz-* en css/modules/correos.css. *@
 
-<div class="cor-ov" @onclick="CerrarAsync">
-    <div class="cor-dlg cor-bz-dlg" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Buzones de correo">
-        <div class="cor-dlg-head">
+<div class="@(Embebido ? "cor-bz-page" : "cor-ov")" @onclick="ClicFondoAsync">
+    <div class="cor-dlg cor-bz-dlg @(Embebido ? "cor-bz-dlg--page" : "")" @onclick:stopPropagation="true" role="@(Embebido ? "region" : "dialog")" aria-modal="@(Embebido ? "false" : "true")" aria-label="Buzones de correo">
+        @* En la pagina (Embebido) la lista no repite el titulo: ya lo tiene la pagina. *@
+        <div class="cor-dlg-head" hidden="@(Embebido && _edit is null)">
             @if (_edit is not null)
             {
                 <button type="button" class="cor-bz-back" title="Volver a los buzones" @onclick="CancelarEdicion">
@@ -23,27 +27,37 @@
             }
             <span class="cor-bz-hico"><i class="fi fi-rr-envelopes"></i></span>
             <div class="cor-dlg-tit">
-                <h3>@(_edit is null ? "Buzones de correo" : (_edit.Id is null ? "Nuevo buzón" : _edit.Nombre))</h3>
+                <h3>@(_edit is null ? (EsLectura ? "Buzones que lee Gestión de correos" : "Buzones de correo") : (_edit.Id is null ? "Nuevo buzón" : _edit.Nombre))</h3>
                 <div class="cor-dlg-meta">
                     @if (_edit is null)
                     {
-                        <span>Conecta uno o varios buzones (uno por área). El Coordinador los lee en solo lectura (no marca leídos ni borra nada) y clasifica los correos por tema.</span>
+                        @if (EsLectura)
+                        {
+                            <span>Elige qué buzones lee el Coordinador y cómo clasifica sus correos. Los lee en solo lectura (no marca leídos ni borra nada). Las cuentas se crean en <a href="/buzones">Buzones de correo</a>.</span>
+                        }
+                        else
+                        {
+                            <span>Las cuentas de correo de la copropiedad (una por área). Gestión de correos y PQRSD eligen en sus opciones cuáles usan.</span>
+                        }
                     }
                     else
                     {
-                        <span>Buzones › @(_edit.Id is null ? "Nuevo" : "Editar") · Cuenta de Gmail (u otro servidor IMAP) con contraseña de aplicación.</span>
+                        <span>Buzones › @(_edit.Id is null ? "Nuevo" : "Editar") · @(EsLectura ? "Lectura y clasificación de sus correos." : "Cuenta de Gmail (u otro servidor IMAP) con contraseña de aplicación.")</span>
                     }
                 </div>
             </div>
-            @if (_edit is null)
+            @if (_edit is null && EsLectura)
             {
                 <button type="button" class="propia-btn-ghost cor-bz-temasbtn" @onclick="() => _gestTemas = true" title="Temas que puede asignar el Coordinador">
                     <i class="fi fi-rr-tags"></i> <span class="cor-bz-temasbtn-t">Temas</span>
                 </button>
             }
-            <button type="button" class="cor-x" title="Cerrar" @onclick="CerrarAsync">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
+            @if (!Embebido)
+            {
+                <button type="button" class="cor-x" title="Cerrar" @onclick="CerrarAsync">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            }
         </div>
 
         <div class="cor-dlg-body">
@@ -59,7 +73,7 @@
                     @foreach (var b in _buzones)
                     {
                         var bz = b;
-                        var st = Estado(bz);
+                        var st = EsLectura ? Estado(bz) : EstadoCuenta(bz);
                         <div class="cor-bz-card @st.Css" role="button" tabindex="0" @onclick="() => Editar(bz)"
                              @onkeydown="e => TeclaCard(e, bz)">
                             <div class="cor-bz-top">
@@ -86,6 +100,17 @@
                                 @if (bz.Activo && bz.LecturaDesde is not null) { <span>· lee desde @Fecha(bz.LecturaDesde)</span> }
                             </div>
 
+                            @if (!EsLectura)
+                            {
+                                <div class="cor-bz-temas">
+                                    <span class="cor-bz-uso-l">Lo usan:</span>
+                                    @if (bz.Activo) { <span class="cor-bz-uso">Gestión de correos</span> }
+                                    @if (bz.RespondePqrsd) { <span class="cor-bz-uso">PQRSD@(bz.PqrsdPredeterminado ? " (predeterminado)" : "")</span> }
+                                    @if (!bz.Activo && !bz.RespondePqrsd) { <span class="cor-bz-todos">Ningún módulo todavía</span> }
+                                </div>
+                            }
+                            else
+                            {
                             <div class="cor-bz-temas">
                                 @if (bz.Temas is null || bz.Temas.Count == 0)
                                 {
@@ -99,6 +124,7 @@
                                     }
                                 }
                             </div>
+                            }
 
                             @if (bz.Activo && !string.IsNullOrWhiteSpace(bz.UltimoError))
                             {
@@ -144,13 +170,26 @@
                         </div>
                     }
 
-                    <button type="button" class="cor-bz-card cor-bz-add" @onclick="Nuevo">
-                        <span class="cor-bz-add-ic"><i class="fi fi-rr-plus"></i></span>
-                        <span class="cor-bz-add-t">@(_buzones.Count == 0 ? "Agregar el primer buzón" : "Agregar otro buzón")</span>
-                        <span class="cor-bz-add-s">Administración, contabilidad, portería... cada uno con su propia cuenta.</span>
-                    </button>
+                    @if (EsLectura)
+                    {
+                        <a class="cor-bz-card cor-bz-add" href="/buzones">
+                            <span class="cor-bz-add-ic"><i class="fi fi-rr-envelopes"></i></span>
+                            <span class="cor-bz-add-t">@(_buzones.Count == 0 ? "Crear el primer buzón" : "Administrar buzones")</span>
+                            <span class="cor-bz-add-s">Las cuentas se crean y editan en Configuración › Buzones de correo.</span>
+                        </a>
+                    }
+                    else
+                    {
+                        <button type="button" class="cor-bz-card cor-bz-add" @onclick="Nuevo">
+                            <span class="cor-bz-add-ic"><i class="fi fi-rr-plus"></i></span>
+                            <span class="cor-bz-add-t">@(_buzones.Count == 0 ? "Agregar el primer buzón" : "Agregar otro buzón")</span>
+                            <span class="cor-bz-add-s">Administración, contabilidad, portería... cada uno con su propia cuenta.</span>
+                        </button>
+                    }
                 </div>
 
+                @if (EsLectura)
+                {
                 <div class="cor-bz-temasbar">
                     <span class="cor-bz-temasbar-l">Temas del Coordinador</span>
                     @foreach (var t in _temas.Where(t => t.Activo))
@@ -159,10 +198,13 @@
                     }
                     <button type="button" class="cor-bz-link" @onclick="() => _gestTemas = true">Editar temas</button>
                 </div>
+                }
             }
             else
             {
                 <div class="cor-form cor-bz-form">
+                    @if (!EsLectura)
+                    {
                     @* Manual paso a paso (abierto al agregar una cuenta; plegado al editar). *@
                     <div class="cor-bz-guia @(_verGuia ? "is-open" : "")">
                         <button type="button" class="cor-bz-guia-head" aria-expanded="@(_verGuia ? "true" : "false")" @onclick="() => _verGuia = !_verGuia">
@@ -250,6 +292,27 @@
                         <label>Puerto</label>
                         <input class="cor-inp" type="number" min="1" @bind="_edit.Port" @bind:event="oninput" />
                     </div>
+                    @if (EsMicrosoft(_edit.Cuenta))
+                    {
+                        <div class="cor-bz-ms" role="alert">
+                            <i class="fi fi-rr-exclamation"></i>
+                            <span>
+                                Esta es una cuenta de Microsoft. Microsoft no permite leer el correo con contraseña de aplicación
+                                (exige iniciar sesión con Microsoft), así que la conexión va a fallar. Por ahora usa una cuenta de Gmail.
+                            </span>
+                        </div>
+                    }
+                    <div class="cor-help">
+                        La misma contraseña de aplicación sirve para leer (Gestión de correos) y para enviar (respuestas de PQRSD).
+                        Qué módulo usa cada buzón se elige en las opciones de ese módulo.
+                    </div>
+                    }
+                    else
+                    {
+                    <div class="cor-bz-cuenta">
+                        <i class="fi fi-rr-envelope"></i> <b>@_edit.Cuenta</b>
+                        @if (!_edit.TienePassword) { <span class="cor-bz-cuenta-w">Falta la contraseña: complétala en <a href="/buzones">Buzones de correo</a>.</span> }
+                    </div>
                     <div class="cor-fld cor-bz-switchfld">
                         <label>Lectura</label>
                         <label class="cor-switch" title="Leer este buzón cada 10 minutos">
@@ -312,20 +375,10 @@
                         </div>
                     }
 
-                    @if (EsMicrosoft(_edit.Cuenta))
-                    {
-                        <div class="cor-bz-ms" role="alert">
-                            <i class="fi fi-rr-exclamation"></i>
-                            <span>
-                                Esta es una cuenta de Microsoft. Microsoft no permite leer el correo con contraseña de aplicación
-                                (exige iniciar sesión con Microsoft), así que la conexión va a fallar. Por ahora usa una cuenta de Gmail.
-                            </span>
-                        </div>
-                    }
-
                     <div class="cor-help">
                         Al activar la lectura solo se toman los correos que lleguen desde ese momento, no el histórico.
                     </div>
+                    }
                 </div>
             }
         </div>
@@ -333,16 +386,19 @@
         @if (_edit is not null)
         {
             <div class="cor-dlg-foot">
-                @if (_edit.Id is Guid idEdit)
+                @if (!EsLectura && _edit.Id is Guid idEdit)
                 {
                     <button type="button" class="propia-btn-ghost cor-bz-del" disabled="@_busy" @onclick="() => EliminarAsync(idEdit)">
                         @(_confirmarEliminar ? "¿Eliminar? Clic de nuevo" : "Eliminar")
                     </button>
                 }
                 <span class="cor-bz-spacer"></span>
-                <button type="button" class="propia-btn-ghost" disabled="@(_busy || _probando)" @onclick="ProbarAsync">
-                    @if (_probando) { <span class="spinner-border spinner-border-sm"></span> } Probar conexión
-                </button>
+                @if (!EsLectura)
+                {
+                    <button type="button" class="propia-btn-ghost" disabled="@(_busy || _probando)" @onclick="ProbarAsync">
+                        @if (_probando) { <span class="spinner-border spinner-border-sm"></span> } Probar conexión
+                    </button>
+                }
                 <button type="button" class="propia-btn-ghost" disabled="@_busy" @onclick="CancelarEdicion">Cancelar</button>
                 <button type="button" class="propia-btn-brand" disabled="@_busy" @onclick="GuardarAsync">
                     @if (_busy) { <span class="spinner-border spinner-border-sm"></span> } Guardar
@@ -363,6 +419,11 @@
     [Parameter] public EventCallback Cerrado { get; set; }
     /// <summary>Se invoca al cerrar si hubo cambios (buzones o temas), para que la bandeja recargue.</summary>
     [Parameter] public EventCallback Cambio { get; set; }
+    /// <summary>"cuentas" (modulo Buzones de correo) o "lectura" (opciones de Gestion de correos).</summary>
+    [Parameter] public string Modo { get; set; } = "lectura";
+    /// <summary>Se pinta dentro de la pagina (sin velo ni boton cerrar).</summary>
+    [Parameter] public bool Embebido { get; set; }
+    private bool EsLectura => Modo != "cuentas";
 
     private List<BuzonCorreoDto>? _buzones;
     private List<OpcionEfectivaDto> _temas = new();
@@ -544,14 +605,18 @@
         try
         {
             var todos = _edit.Todos || _edit.Temas.Count == 0;
-            var req = new GuardarBuzonRequest(
-                Nombre: _edit.Nombre, Cuenta: _edit.Cuenta ?? "",
-                Password: string.IsNullOrWhiteSpace(_edit.Password) ? null : _edit.Password,
-                ImapHost: _edit.Host, ImapPort: _edit.Port, Activo: _edit.Activo,
-                Temas: todos ? null : _edit.Temas.ToList(), TodosLosTemas: todos,
-                UmbralAutoPqrsd: decimal.TryParse(_edit.Umbral, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var um) ? um : 0m,
-                ResponderRadicado: _edit.Respuesta != "no",
-                PlantillaAcuseId: Guid.TryParse(_edit.Respuesta, out var pl) ? pl : Guid.Empty);
+            // PUT es MERGE: cada modo manda solo lo suyo (la cuenta en "cuentas"; la lectura en "lectura").
+            var req = EsLectura
+                ? new GuardarBuzonRequest(
+                    Activo: _edit.Activo,
+                    Temas: todos ? null : _edit.Temas.ToList(), TodosLosTemas: todos,
+                    UmbralAutoPqrsd: decimal.TryParse(_edit.Umbral, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var um) ? um : 0m,
+                    ResponderRadicado: _edit.Respuesta != "no",
+                    PlantillaAcuseId: Guid.TryParse(_edit.Respuesta, out var pl) ? pl : Guid.Empty)
+                : new GuardarBuzonRequest(
+                    Nombre: _edit.Nombre, Cuenta: _edit.Cuenta ?? "",
+                    Password: string.IsNullOrWhiteSpace(_edit.Password) ? null : _edit.Password,
+                    ImapHost: _edit.Host, ImapPort: _edit.Port);
             var id = _edit.Id;
             var resp = await EnviarAsync(h => id is Guid g
                 ? h.PutAsJsonAsync($"/api/correos-recibidos/buzones/{g}", req)
@@ -603,6 +668,9 @@
         finally { _busy = false; }
     }
 
+    // En la pagina (Embebido) no hay velo: un clic fuera de la tarjeta no cierra nada.
+    private Task ClicFondoAsync() => Embebido ? Task.CompletedTask : CerrarAsync();
+
     private async Task CerrarAsync()
     {
         _timer?.Dispose();
@@ -612,6 +680,14 @@
     }
 
     private sealed record EstadoBuzon(string Label, string Css);
+
+    // Modo cuentas: estado de la CUENTA (no de la lectura, que decide Gestion de correos).
+    private static EstadoBuzon EstadoCuenta(BuzonCorreoDto b)
+    {
+        if (!b.TienePassword) return new("Falta contraseña", "is-warn");
+        if (b.Activo && !string.IsNullOrWhiteSpace(b.UltimoError)) return new("Con error", "is-err");
+        return b.Activo || b.RespondePqrsd ? new("En uso", "is-on") : new("Lista", "is-off");
+    }
 
     private static EstadoBuzon Estado(BuzonCorreoDto b)
     {
