@@ -1,5 +1,20 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **CONDICIONES DE USO CON ARCHIVO (PDF/IMAGEN) EN ZONAS Y ACTIVOS RESERVABLES (2026-11-22): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
+> - Ficha de la zona y ficha del activo reservable: debajo del texto "Condiciones de uso" se adjunta UN archivo (PDF, JPG,
+>   PNG o WEBP, max 10 MB), aparte de la pestana Documentos. Se guarda al instante (no depende de "Guardar cambios").
+> - Endpoints nuevos (permiso MiCopropiedad.Editar): `POST|DELETE /api/mi-copropiedad/zonas/{id}/condiciones-archivo` y
+>   `POST|DELETE /api/mi-copropiedad/equipos/{id}/condiciones-archivo`. Blob en `tenants/{t}/{zonas|equipos}/{id}/condiciones/`.
+> - Reservas > Nueva reserva: enlace "Ver condiciones de uso" (texto + archivo en visor) bajo la casilla del reglamento
+>   (la casilla sigue opcional). `GET /api/reservas/galeria` trae `condicionesTexto/condicionesArchivoUrl/condicionesArchivoNombre`.
+>   El prestamo del activo (ficha > Nuevo prestamo) muestra el mismo enlace.
+> - Migracion `20261122154751_CondicionesArchivoZonaEquipo` (owner `propia`, `dotnet ef database update`): 4 columnas
+>   nullable `condiciones_archivo_url` varchar(1000) y `condiciones_archivo_nombre` varchar(300) en `zonas_comunes` y
+>   `equipos_activos` (tablas que ya tienen RLS). No toca datos.
+> - Verificar en prod: (1) ficha de una zona reservable > Adjuntar PDF o imagen -> queda el archivo con Reemplazar/Quitar;
+>   (2) Reservas > Nueva reserva con esa zona -> "Ver condiciones de uso" abre el texto y el PDF; (3) Quitar el archivo
+>   de prueba al terminar.
+
 > **MATRIZ DE ROLES OLA 1 + OLA 2 EXPORTAR (2026-11-21): 1 MIGRACION NUEVA, SOLO DATOS (sin esquema). API y Web.**
 > - Ola 1 (solo Web): la matriz de Roles deja marcar acciones que la API YA exigia y solo el Administrador podia hacer
 >   (cerrar PQRSD, enviar comunicaciones, cerrar intervenciones, borrar unidades, configurar tableros de Tareas, etc.).

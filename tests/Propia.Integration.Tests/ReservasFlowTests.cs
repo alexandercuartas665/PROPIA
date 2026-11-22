@@ -53,6 +53,7 @@ public class ReservasFlowTests : IAsyncLifetime
             opts.UseNpgsql(_fx.AppConnectionString).AddInterceptors(sp.GetRequiredService<TenantConnectionInterceptor>()));
         sc.AddIdentityCore<ApplicationUser>().AddRoles<IdentityRole<Guid>>().AddEntityFrameworkStores<PropiaDbContext>().AddDefaultTokenProviders();
         sc.AddSingleton<Propia.Application.Notificaciones.INotificacionDispatcher, FakeNotificacionDispatcher>();
+        sc.AddSingleton<Propia.Infrastructure.Storage.IBlobStorage, NoopBlobStorage>();
         sc.AddScoped<IReservasService, ReservasService>();
         _services = sc.BuildServiceProvider();
         return Task.CompletedTask;
@@ -75,6 +76,37 @@ public class ReservasFlowTests : IAsyncLifetime
         Assert.DoesNotContain(g, z => z.ZonaComunId == zonaNoResId);
 
         await CleanTenant(tenantId);
+    }
+
+    [Fact]
+    public async Task Galeria_trae_condiciones_de_uso_texto_y_archivo_de_la_zona()
+    {
+        var tenantId = await SeedTenantAsync("Res Cond");
+        var (zonaId, _) = await SeedZonaAsync(tenantId, "Salon Social", reservable: true);
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using (var ctx = new PropiaDbContext(opts, new TenantContext()))
+        {
+            await ctx.Database.ExecuteSqlAsync($@"UPDATE zonas_comunes SET reglas_uso = 'Prohibido licor',
+                condiciones_archivo_url = '/uploads/cond.pdf', condiciones_archivo_nombre = 'Reglamento.pdf' WHERE id = {zonaId}");
+        }
+
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        var z = Assert.Single(await svc.ListarGaleriaAsync(false, CancellationToken.None));
+        Assert.Equal("Prohibido licor", z.CondicionesTexto);
+        Assert.Equal("/uploads/cond.pdf", z.CondicionesArchivoUrl);
+        Assert.Equal("Reglamento.pdf", z.CondicionesArchivoNombre);
+
+        await CleanTenant(tenantId);
+    }
+
+    private sealed class NoopBlobStorage : Propia.Infrastructure.Storage.IBlobStorage
+    {
+        public Task<string> UploadAsync(string key, Stream content, string contentType, CancellationToken ct) => Task.FromResult($"/mem/{key}");
+        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+        public string GetPublicUrl(string key) => $"/mem/{key}";
+        public string? ResolveUrl(string? storedValueOrKey) => storedValueOrKey;
+        public Task<byte[]?> DownloadAsync(string key, CancellationToken ct) => Task.FromResult<byte[]?>(null);
     }
 
     [Fact]

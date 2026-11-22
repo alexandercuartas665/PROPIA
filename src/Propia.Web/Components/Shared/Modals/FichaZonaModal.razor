@@ -89,6 +89,9 @@ else
             <input class="fz-in fz-cond-hint" @bind="_iaHint" @bind:event="oninput"
                    placeholder="Puntos clave para la IA (ej: prohibido licor, no mascotas, aseo)" />
             @if (_iaError is not null) { <div class="fz-ia-err">@_iaError</div> }
+            @* Archivo (PDF/imagen) de las condiciones, aparte de Documentos: lo muestra Reservas. *@
+            <CondicionesArchivoAdjunto Jwt="@Jwt" BasePath="zonas" EntidadId="@ZonaId"
+                                       Url="@_condArchUrl" Nombre="@_condArchNombre" OnCambio="OnCondArchivo" />
         </div>
 
         @* Facturas, documentos y campos dinamicos viven ahora en la pestana "Editar datos":
@@ -147,7 +150,10 @@ else if (_tab == "ficha" && _editMode)
         </div>
         <div><label class="fz-lbl">Tarifa de reserva</label><input class="fz-in" type="number" min="0" step="any" @bind="_form.TarifaReserva" placeholder="$ 0" /></div>
         <div class="fz-col-2"><label class="fz-lbl">Descripción</label><textarea class="fz-in fz-ta" rows="2" @bind="_form.Descripcion"></textarea></div>
-        <div class="fz-col-2"><label class="fz-lbl">Condiciones de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea></div>
+        <div class="fz-col-2"><label class="fz-lbl">Condiciones de uso</label><textarea class="fz-in fz-ta" rows="3" @bind="_form.ReglasUso"></textarea>
+            <CondicionesArchivoAdjunto Jwt="@Jwt" BasePath="zonas" EntidadId="@ZonaId"
+                                       Url="@_condArchUrl" Nombre="@_condArchNombre" OnCambio="OnCondArchivo" />
+        </div>
     </div>
 
     @* Campos dinamicos tipados (columnas de la vista tabla) como campos naturales, 2 columnas, sin titulo. *@
@@ -478,6 +484,12 @@ else if (_tab == "historial")
     private bool _reservable;
     private int? _aforo;
     private string? _condiciones;   // condiciones de uso de la zona (reutiliza ReglasUso)
+    // Archivo de condiciones (PDF/imagen): se guarda al instante con su endpoint propio.
+    private string? _condArchUrl, _condArchNombre;
+    private void OnCondArchivo(CondicionesArchivoDto? a)
+    {
+        _condArchUrl = a?.Url; _condArchNombre = a?.Nombre; _dirty = true;
+    }
     private string _iaHint = "";
     private bool _iaBusy;
     private string? _iaError;
@@ -543,6 +555,8 @@ else if (_tab == "historial")
                 _reservable = _ficha.Zona.EsReservable;
                 _aforo = _ficha.Zona.CapacidadPersonas;
                 _condiciones = _ficha.Zona.ReglasUso;
+                _condArchUrl = _ficha.CondicionesArchivoUrl;
+                _condArchNombre = _ficha.CondicionesArchivoNombre;
             }
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized && !reintento)

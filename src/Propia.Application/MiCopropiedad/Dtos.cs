@@ -554,7 +554,9 @@ public record EquipoFichaDto(
     IReadOnlyList<EquipoRefDto> ActivosDisponibles,
     IReadOnlyList<MantenimientoRefDto> Mantenimientos,
     IReadOnlyList<TareaRefDto> Tareas,
-    IReadOnlyList<EquipoDocumentoDto> Documentos);
+    IReadOnlyList<EquipoDocumentoDto> Documentos,
+    string? CondicionesArchivoUrl = null,
+    string? CondicionesArchivoNombre = null);
 
 public record AgregarMejoraRequest(string Descripcion, decimal Valor, DateOnly Fecha);
 public record ToggleVinculoRequest(Guid Id, bool Vincular);
@@ -709,7 +711,12 @@ public record ZonaFichaDto(
     IReadOnlyList<ZonaDocumentoDto> Documentos,
     IReadOnlyList<ZonaCampoDto> Campos,
     IReadOnlyList<VentanaDisponibilidadDto> Horarios,
-    IReadOnlyList<ZonaContratoRefDto> ContratosDisponibles);
+    IReadOnlyList<ZonaContratoRefDto> ContratosDisponibles,
+    string? CondicionesArchivoUrl = null,
+    string? CondicionesArchivoNombre = null);
+
+/// <summary>Archivo (PDF o imagen) de las condiciones de uso de una zona o activo reservable.</summary>
+public record CondicionesArchivoDto(string Url, string Nombre);
 
 /// <summary>Guarda la config de la ficha (imagen + mantenimiento + reservable + aforo).</summary>
 public record GuardarZonaFichaRequest(

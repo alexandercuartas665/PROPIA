@@ -552,7 +552,39 @@ public partial class MiCopropiedadService
             .Select(c => new ZonaContratoRefDto(c.Id, c.Tipo + " - " + c.Proveedor)).ToListAsync(ct);
 
         return new ZonaFichaDto(zonaDto, _blob.ResolveUrl(z.ImagenUrl), z.MantenimientoTipo, z.MantenimientoContrato,
-            z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos);
+            z.MantenimientoFrecuencia, z.MantenimientoDiaMes, facturas, docs, campos, horarios, contratos,
+            _blob.ResolveUrl(z.CondicionesArchivoUrl), z.CondicionesArchivoNombre);
+    }
+
+    // Archivo de condiciones de uso (aparte de Documentos). Endpoint propio: el PUT de la ficha no lo toca.
+    public async Task<(bool Existe, CondicionesArchivoDto? Archivo)> SetZonaCondicionesArchivoAsync(
+        Guid zonaId, string? url, string? nombre, CancellationToken ct)
+    {
+        var z = await _db.ZonasComunes.FirstOrDefaultAsync(x => x.Id == zonaId, ct);
+        if (z is null) return (false, null);
+        z.CondicionesArchivoUrl = string.IsNullOrWhiteSpace(url) ? null : url;
+        z.CondicionesArchivoNombre = z.CondicionesArchivoUrl is null ? null : RecortarNombre(nombre);
+        await _db.SaveChangesAsync(ct);
+        return (true, z.CondicionesArchivoUrl is null ? null
+            : new CondicionesArchivoDto(_blob.ResolveUrl(z.CondicionesArchivoUrl) ?? z.CondicionesArchivoUrl, z.CondicionesArchivoNombre!));
+    }
+
+    public async Task<(bool Existe, CondicionesArchivoDto? Archivo)> SetEquipoCondicionesArchivoAsync(
+        Guid equipoId, string? url, string? nombre, CancellationToken ct)
+    {
+        var e = await _db.EquiposActivos.FirstOrDefaultAsync(x => x.Id == equipoId, ct);
+        if (e is null) return (false, null);
+        e.CondicionesArchivoUrl = string.IsNullOrWhiteSpace(url) ? null : url;
+        e.CondicionesArchivoNombre = e.CondicionesArchivoUrl is null ? null : RecortarNombre(nombre);
+        await _db.SaveChangesAsync(ct);
+        return (true, e.CondicionesArchivoUrl is null ? null
+            : new CondicionesArchivoDto(_blob.ResolveUrl(e.CondicionesArchivoUrl) ?? e.CondicionesArchivoUrl, e.CondicionesArchivoNombre!));
+    }
+
+    private static string RecortarNombre(string? nombre)
+    {
+        var n = string.IsNullOrWhiteSpace(nombre) ? "Condiciones de uso" : nombre.Trim();
+        return n.Length > 300 ? n[..300] : n;
     }
 
     public async Task<bool> GuardarZonaFichaAsync(Guid zonaId, GuardarZonaFichaRequest req, CancellationToken ct)

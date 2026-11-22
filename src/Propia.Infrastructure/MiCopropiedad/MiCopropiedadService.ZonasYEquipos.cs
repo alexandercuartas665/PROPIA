@@ -304,7 +304,8 @@ public partial class MiCopropiedadService
             ToEquipoActivoDto(e), depreciacion, fotos, mejoras, facturas, campos,
             contratosVinculados, contratosDisponibles,
             activosVinculados, activosDisponibles,
-            mantenimientos, tareas, documentos);
+            mantenimientos, tareas, documentos,
+            _blob.ResolveUrl(e.CondicionesArchivoUrl), e.CondicionesArchivoNombre);
     }
 
     // ----- Facturas de compra del equipo (espejo de las de zona; no afectan depreciacion) -----

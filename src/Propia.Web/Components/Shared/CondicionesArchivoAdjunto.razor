@@ -1,0 +1,139 @@
+@* Archivo de condiciones de uso (PDF o imagen) de una zona comun o un activo reservable.
+   Vive debajo del texto "Condiciones de uso" de la ficha, APARTE de la pestana Documentos: es la
+   documentacion que Reservas (y el prestamo del activo) muestra al reservar. Se guarda al instante
+   con su endpoint propio (POST/DELETE /api/mi-copropiedad/{zonas|equipos}/{id}/condiciones-archivo);
+   no depende de "Guardar cambios". Estilos en css/modules/condiciones-uso.css (prefijo cua-). *@
+@using Propia.Application.MiCopropiedad
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+
+<div class="cua">
+    @if (!string.IsNullOrWhiteSpace(_url))
+    {
+        <div class="cua-chip">
+            <span class="cua-ic @(EsPdf(_url, _nombre) ? "cua-ic--pdf" : "cua-ic--img")">
+                @if (EsPdf(_url, _nombre))
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+                }
+                else
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 7"/></svg>
+                }
+            </span>
+            <a class="cua-nom" href="@_url" target="_blank" rel="noopener" title="Abrir @_nombre">@_nombre</a>
+            <label class="cua-act @(_busy ? "is-busy" : "")" title="Reemplazar archivo">
+                <InputFile OnChange="SeleccionarAsync" accept="@Accept" class="cua-file" disabled="@_busy" />
+                @(_busy ? "Subiendo..." : "Reemplazar")
+            </label>
+            <button type="button" class="cua-act cua-act--del" @onclick="QuitarAsync" disabled="@_busy" title="Quitar archivo">Quitar</button>
+        </div>
+    }
+    else
+    {
+        <label class="cua-add @(_busy ? "is-busy" : "")">
+            <InputFile OnChange="SeleccionarAsync" accept="@Accept" class="cua-file" disabled="@_busy" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            @(_busy ? "Subiendo..." : "Adjuntar PDF o imagen")
+        </label>
+        <span class="cua-hint">PDF, JPG o PNG &middot; máx. 10 MB</span>
+    }
+    @if (!string.IsNullOrEmpty(_error)) { <div class="cua-err">@_error</div> }
+</div>
+
+@code {
+    private const string Accept = "application/pdf,image/jpeg,image/png,image/webp";
+
+    [Parameter] public string Jwt { get; set; } = "";
+    /// <summary>"zonas" o "equipos".</summary>
+    [Parameter, EditorRequired] public string BasePath { get; set; } = "";
+    [Parameter] public Guid EntidadId { get; set; }
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public string? Nombre { get; set; }
+    /// <summary>Se dispara al subir (con el archivo) o quitar (null), para que la ficha refresque lo suyo.</summary>
+    [Parameter] public EventCallback<CondicionesArchivoDto?> OnCambio { get; set; }
+
+    private string? _url, _nombre, _error;
+    private string? _urlParam;
+    private bool _busy;
+
+    protected override void OnParametersSet()
+    {
+        // Solo adopta el valor del padre cuando cambia (no pisa lo recien subido en este componente).
+        if (Url != _urlParam) { _urlParam = Url; _url = Url; _nombre = Nombre; }
+    }
+
+    private HttpClient Auth()
+    {
+        var http = HttpFactory.CreateClient("PropiaApi");
+        if (!string.IsNullOrEmpty(Jwt))
+            http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Jwt);
+        return http;
+    }
+
+    private string Ruta => $"/api/mi-copropiedad/{BasePath}/{EntidadId}/condiciones-archivo";
+
+    private async Task SeleccionarAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _error = null;
+        if (file.Size > 10_000_000) { _error = "El archivo supera 10 MB."; return; }
+        _busy = true;
+        try
+        {
+            // Bufferizar a bytes al seleccionar (el InputFile puede desmontarse durante la subida).
+            using var ms = new System.IO.MemoryStream();
+            await file.OpenReadStream(10_000_000).CopyToAsync(ms);
+            using var content = new MultipartFormDataContent();
+            var bc = new ByteArrayContent(ms.ToArray());
+            bc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(bc, "file", file.Name);
+            var resp = await Auth().PostAsync(Ruta, content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var dto = await resp.Content.ReadFromJsonAsync<CondicionesArchivoDto>();
+                _url = dto?.Url; _nombre = dto?.Nombre;
+                await OnCambio.InvokeAsync(dto);
+            }
+            else _error = MensajeError(await resp.Content.ReadAsStringAsync());
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task QuitarAsync()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync(Ruta);
+            if (resp.IsSuccessStatusCode)
+            {
+                _url = null; _nombre = null;
+                await OnCambio.InvokeAsync(null);
+            }
+            else _error = "No se pudo quitar el archivo.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private static string MensajeError(string body)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var err)) return err.GetString() ?? "No se pudo subir el archivo.";
+        }
+        catch { }
+        return "No se pudo subir el archivo.";
+    }
+
+    public static bool EsPdf(string? url, string? nombre)
+    {
+        static bool Pdf(string? s) => s is not null && s.Split('?')[0].EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+        return Pdf(nombre) || Pdf(url);
+    }
+}

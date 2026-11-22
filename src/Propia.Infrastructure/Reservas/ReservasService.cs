@@ -19,17 +19,20 @@ public class ReservasService : IReservasService
     private readonly ITenantContext _tenantContext;
     private readonly IHttpContextAccessor _http;
     private readonly Propia.Application.Notificaciones.INotificacionDispatcher _noti;
+    private readonly Storage.IBlobStorage _blob;
 
     public ReservasService(
         PropiaDbContext db,
         ITenantContext tenantContext,
         IHttpContextAccessor http,
-        Propia.Application.Notificaciones.INotificacionDispatcher noti)
+        Propia.Application.Notificaciones.INotificacionDispatcher noti,
+        Storage.IBlobStorage blob)
     {
         _db = db;
         _tenantContext = tenantContext;
         _http = http;
         _noti = noti;
+        _blob = blob;
     }
 
     private async Task NotificarResidenteAsync(
@@ -181,6 +184,9 @@ public class ReservasService : IReservasService
                 z.ImagenUrl,
                 z.CapacidadPersonas,
                 z.EsReservable,
+                z.ReglasUso,
+                z.CondicionesArchivoUrl,
+                z.CondicionesArchivoNombre,
                 Estado = z.Estado.ToString(),
                 Cfg = _db.ZonaConfigReservas.Where(c => c.ZonaComunId == z.Id).Select(c => new
                 {
@@ -197,7 +203,8 @@ public class ReservasService : IReservasService
             z.Id, z.Nombre, z.Descripcion, z.ImagenUrl, z.CapacidadPersonas, z.EsReservable, z.Estado,
             z.Cfg?.TieneTarifa ?? false,
             z.Cfg?.TieneTarifa == true ? z.Cfg.ValorTarifa : null,
-            z.Cfg?.TieneTarifa == true ? z.Cfg.ModalidadCobro : null)).ToList();
+            z.Cfg?.TieneTarifa == true ? z.Cfg.ModalidadCobro : null,
+            z.ReglasUso, _blob.ResolveUrl(z.CondicionesArchivoUrl), z.CondicionesArchivoNombre)).ToList();
     }
 
     public async Task<DisponibilidadDto> CalcularDisponibilidadAsync(Guid zonaComunId, DateOnly desde, DateOnly hasta, CancellationToken ct)

@@ -142,6 +142,60 @@ public class MiCopropiedadFlowTests
     }
 
     [Fact]
+    public async Task Archivo_condiciones_de_uso_zona_y_equipo_se_guarda_aparte_y_aisla_por_tenant()
+    {
+        var tA = await SeedTenantAsync("CP Condiciones A");
+        var tB = await SeedTenantAsync("CP Condiciones B");
+        var (svcA, _, _) = BuildService(tA);
+        var (svcB, _, _) = BuildService(tB);
+        var ct = CancellationToken.None;
+
+        var zona = await svcA.CrearZonaComunAsync(new CrearZonaComunRequest(
+            "Salon", CategoriaZonaComun.Social, null, true, null, 80, null, null), ct);
+        var equipo = await svcA.CrearEquipoAsync(new CrearEquipoActivoRequest(
+            "Carpa", CategoriaEquipo.Recreacion, TipoElemento.Activo, 2, true), ct);
+
+        // Zona: se fija el archivo y la ficha lo devuelve.
+        var (existe, arch) = await svcA.SetZonaCondicionesArchivoAsync(zona.Id, "/mem/cond.pdf", "Reglamento salon.pdf", ct);
+        Assert.True(existe);
+        Assert.Equal("Reglamento salon.pdf", arch!.Nombre);
+        var ficha = await svcA.GetZonaFichaAsync(zona.Id, null, ct);
+        Assert.Equal("/mem/cond.pdf", ficha!.CondicionesArchivoUrl);
+
+        // Guardar la ficha (PUT) NO borra el archivo: va por su endpoint propio.
+        await svcA.GuardarZonaFichaAsync(zona.Id, new GuardarZonaFichaRequest(
+            null, "Interno", null, "Mensual", null, true, 80, "Texto de condiciones"), ct);
+        ficha = await svcA.GetZonaFichaAsync(zona.Id, null, ct);
+        Assert.Equal("/mem/cond.pdf", ficha!.CondicionesArchivoUrl);
+        Assert.Equal("Reglamento salon.pdf", ficha.CondicionesArchivoNombre);
+
+        // Otra copropiedad no puede tocarlo (RLS: la zona no existe para B).
+        var (existeB, _) = await svcB.SetZonaCondicionesArchivoAsync(zona.Id, null, null, ct);
+        Assert.False(existeB);
+        ficha = await svcA.GetZonaFichaAsync(zona.Id, null, ct);
+        Assert.Equal("/mem/cond.pdf", ficha!.CondicionesArchivoUrl);
+
+        // Quitar lo deja vacio (url y nombre).
+        var (_, quitado) = await svcA.SetZonaCondicionesArchivoAsync(zona.Id, null, null, ct);
+        Assert.Null(quitado);
+        ficha = await svcA.GetZonaFichaAsync(zona.Id, null, ct);
+        Assert.Null(ficha!.CondicionesArchivoUrl);
+        Assert.Null(ficha.CondicionesArchivoNombre);
+
+        // Equipo reservable: mismo comportamiento.
+        var (existeE, archE) = await svcA.SetEquipoCondicionesArchivoAsync(equipo.Id, "/mem/carpa.png", "Uso carpa.png", ct);
+        Assert.True(existeE);
+        Assert.Equal("/mem/carpa.png", archE!.Url);
+        var fichaE = await svcA.GetEquipoFichaAsync(equipo.Id, ct);
+        Assert.Equal("Uso carpa.png", fichaE!.CondicionesArchivoNombre);
+        var (existeEB, _) = await svcB.SetEquipoCondicionesArchivoAsync(equipo.Id, null, null, ct);
+        Assert.False(existeEB);
+
+        await CleanupTenantAsync(tA);
+        await CleanupTenantAsync(tB);
+    }
+
+    [Fact]
     public async Task Agregar_miembros_consejo_marca_gobierno_completo_con_3_o_mas()
     {
         var tenantId = await SeedTenantAsync("CP Gobierno");

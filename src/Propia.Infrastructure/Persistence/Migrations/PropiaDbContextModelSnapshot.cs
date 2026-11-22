@@ -6121,6 +6121,16 @@ namespace Propia.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("codigo_barra");
 
+                    b.Property<string>("CondicionesArchivoNombre")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("condiciones_archivo_nombre");
+
+                    b.Property<string>("CondicionesArchivoUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("condiciones_archivo_url");
+
                     b.Property<string>("CondicionesUso")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -22454,6 +22464,16 @@ namespace Propia.Infrastructure.Persistence.Migrations
                     b.Property<int>("Categoria")
                         .HasColumnType("integer")
                         .HasColumnName("categoria");
+
+                    b.Property<string>("CondicionesArchivoNombre")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("condiciones_archivo_nombre");
+
+                    b.Property<string>("CondicionesArchivoUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("condiciones_archivo_url");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
