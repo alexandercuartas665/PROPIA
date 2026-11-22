@@ -795,7 +795,10 @@ window.propiaUI.rowBlurSave = function (dotnetRef, rowSel, method) {
 //   - mousedown: clic fuera de la fila ("al salir").
 // En ambos se IGNORA el foco/clic hacia paneles flotantes lanzados desde la fila (floatSel, ej. .sp-pop del
 // selector de persona) y hacia menus de columna. Idempotente: altaAutoSaveOff() quita los listeners previos.
-window.propiaUI.altaAutoSave = function (dotnetRef, rowSel, method, floatSel) {
+// tabMethod (opcional, Tareas 2026-11-22): Tab SIN Shift desde el ULTIMO campo de la fila no deja que el foco caiga
+// en el siguiente control de la pagina (menu, selectores): se cancela y se llama tabMethod (guarda, cierra y enfoca
+// "Agregar tarea"). Si el foco esta en el buscador de una ListaBuscable (.lbx-pop), cuenta su disparador.
+window.propiaUI.altaAutoSave = function (dotnetRef, rowSel, method, floatSel, tabMethod) {
     try {
         window.propiaUI.altaAutoSaveOff();
         var esFlotante = function (el) {
@@ -820,17 +823,41 @@ window.propiaUI.altaAutoSave = function (dotnetRef, rowSel, method, floatSel) {
                 if (!row.contains(e.target) && !esFlotante(e.target)) { dotnetRef.invokeMethodAsync(method); }
             } catch (x) { }
         };
+        var onKeyDown = function (e) {
+            try {
+                if (!tabMethod || e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+                var row = document.querySelector(rowSel);
+                var act = document.activeElement;
+                if (!row || !act || !row.contains(act)) return;
+                var pop = act.closest('.lbx-pop');
+                if (pop) { var w = pop.closest('.lbx-wrap'); act = w ? w.querySelector('.lbx-trg') : act; }
+                var focos = Array.prototype.filter.call(
+                    row.querySelectorAll('input, textarea, select, button, [tabindex]'),
+                    function (el) {
+                        return !el.disabled && el.tabIndex >= 0 && el.offsetParent !== null
+                            && !el.closest('.lbx-pop') && el.type !== 'hidden';
+                    });
+                if (!focos.length || focos[focos.length - 1] !== act) return;
+                e.preventDefault();
+                // Con un pequeno margen: deja que Blazor procese antes el keydown propio del campo (p.ej. la
+                // ListaBuscable elige lo resaltado con Tab) para que la tarea se cree con ese valor.
+                setTimeout(function () { try { dotnetRef.invokeMethodAsync(tabMethod); } catch (x) { } }, 60);
+            } catch (x) { }
+        };
         window.__altaFocusIn = onFocusIn;
         window.__altaMouseDown = onMouseDown;
+        window.__altaKeyDown = onKeyDown;
         document.addEventListener('focusin', onFocusIn, true);
         document.addEventListener('mousedown', onMouseDown, true);
+        document.addEventListener('keydown', onKeyDown, true);
     } catch (e) { }
 };
 window.propiaUI.altaAutoSaveOff = function () {
     try {
         if (window.__altaFocusIn) document.removeEventListener('focusin', window.__altaFocusIn, true);
         if (window.__altaMouseDown) document.removeEventListener('mousedown', window.__altaMouseDown, true);
-        window.__altaFocusIn = null; window.__altaMouseDown = null;
+        if (window.__altaKeyDown) document.removeEventListener('keydown', window.__altaKeyDown, true);
+        window.__altaFocusIn = null; window.__altaMouseDown = null; window.__altaKeyDown = null;
     } catch (e) { }
 };
 

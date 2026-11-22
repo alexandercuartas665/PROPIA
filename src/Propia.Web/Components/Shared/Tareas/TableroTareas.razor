@@ -3454,6 +3454,12 @@ else
             _nfFocusEstado = null;
             try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-nf-tit='{nfe}']"); } catch { }
         }
+        // Fila de alta cerrada con Enter o con Tab desde el ultimo campo: el foco va a "Agregar tarea".
+        if (_focoCtaPend && !_altaTblOpen)
+        {
+            _focoCtaPend = false;
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".tb-cta-row .row-add--sm"); } catch { }
+        }
         // Barra de scroll superior espejo (vista Lista): enlazarla con el scroll real de la tabla.
         if (_boardMode == "lista")
         {
@@ -3479,7 +3485,7 @@ else
             if (altaPresenteTbl && !_altaAutoSaveOnTbl)
             {
                 _altaAutoSaveOnTbl = true;
-                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfTbl, ".tb-newrow--alta", "AltaBlurGuardar", ".sp-pop"); } catch { }
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfTbl, ".tb-newrow--alta", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { }
             }
             else if (!altaPresenteTbl && _altaAutoSaveOnTbl)
             {
@@ -4522,23 +4528,14 @@ else
                             }
                         </span>
                     }
-                    <button type="button" class="tb-etq-add" title="Agregar etiqueta" @onclick:stopPropagation="true" @onclick="(e) => ToggleEtqPicker(tarea.Id, false, e)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-                    @if (_etqPickKey == tarea.Id && !_etqPickAlta)
-                    {
-                        <div class="tb-tagpop-bd" @onclick="() => _etqPickKey = null"></div>
-                        <div class="tb-etqpop" style="left:min(@(_etqPickX)px, calc(100vw - 230px));top:min(@(_etqPickY)px, calc(100vh - 290px))" @onclick:stopPropagation="true">
-                            @foreach (var etq in EtiquetasActivas())
-                            {
-                                var col = string.IsNullOrWhiteSpace(etq.Color) ? "#6D4FE3" : etq.Color!;
-                                var sel = t.Etiquetas.Any(x => x.Id == etq.Id);
-                                <button type="button" class="tb-etqopt @(sel ? "on" : "")" @onclick="() => ToggleEtqTarea(tarea, etq.Id)">
-                                    <span class="tb-etqopt-dot" style="background:@col"></span><span class="tb-etqopt-tx">@etq.Nombre</span>
-                                    @if (sel) { <svg class="tb-etqopt-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> }
-                                </button>
-                            }
-                            @if (!EtiquetasActivas().Any()) { <div class="tb-etqpop-empty">No hay etiquetas. Crea en Configurar.</div> }
-                        </div>
-                    }
+                    @* "+" abre la lista con busqueda y casillas (Alex 2026-11-22): marcar/desmarcar guarda al instante. *@
+                    <span @onclick:stopPropagation="true">
+                        <ListaBuscable Multiple="true" WrapClass="lbx-wrap--inline" TriggerClass="tb-etq-add" Chevron="false" Title="Agregar etiqueta"
+                                       Opciones="@OpcEtiquetas" Valores="@(t.Etiquetas.Select(x => x.Id.ToString()))" TextoVacio="No hay etiquetas. Crea en Configurar."
+                                       OnToggle="@(v => { if (Guid.TryParse(v, out var g)) return ToggleEtqTarea(tarea, g); return Task.CompletedTask; })">
+                            <TriggerContent><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></TriggerContent>
+                        </ListaBuscable>
+                    </span>
                 </div>
             }
             @* ---- PRIORIDAD (inline select) ---- *@
@@ -4897,19 +4894,11 @@ else
         => d.Asignados = Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? new List<Guid> { g } : new List<Guid>();
 
     // ===== Ola C: etiquetas asignables inline (alta y filas existentes) =====
-    // _etqPickKey = key del picker abierto (id de tarea para filas, o del borrador para el alta);
-    // _etqPickAlta distingue alta (borrador) de tarea existente para que no colisionen por el mismo Guid.
-    private Guid? _etqPickKey;
-    private bool _etqPickAlta;
-    private int _etqPickX, _etqPickY;   // ancla del popover (coords del clic); el popover es position:fixed para
-                                        // escapar el overflow de la lista (si no, lo recorta .tb-list/.tb-listbox).
     private IEnumerable<EtiquetaTareaDto> EtiquetasActivas()
         => _etiquetasCat.Where(e => e.Activo && (e.TableroId is null || _board is null || e.TableroId == _board.Tablero.Id));
-    private void ToggleEtqPicker(Guid key, bool alta, MouseEventArgs e)
-    {
-        if (_etqPickKey == key && _etqPickAlta == alta) { _etqPickKey = null; return; }
-        _etqPickKey = key; _etqPickAlta = alta; _etqPickX = (int)e.ClientX; _etqPickY = (int)e.ClientY;
-    }
+    private IReadOnlyList<ListaBuscable.Opcion> OpcEtiquetas =>
+        EtiquetasActivas().Select(e => new ListaBuscable.Opcion(e.Id.ToString(), e.Nombre,
+            string.IsNullOrWhiteSpace(e.Color) ? "var(--propia-brand)" : e.Color)).ToList();
     private void ToggleEtqAlta(NuevaFilaDraft d, Guid etqId)
     {
         if (!d.Etiquetas.Remove(etqId)) d.Etiquetas.Add(etqId);
@@ -4924,36 +4913,62 @@ else
         if (resp.IsSuccessStatusCode) await RecargarBoard();
         else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
     }
-    // Celda de etiquetas de la fila de alta: chips seleccionados + boton "+" que abre el picker (toggle local).
+    // Celda de etiquetas de la fila de alta: la celda entera es el disparador (chips o "Etiquetas") de una lista con
+    // busqueda y casillas para marcar varias (Alex 2026-11-22). Se alcanza con Tab como los demas campos.
     private RenderFragment AltaEtqCell(NuevaFilaDraft d, Guid key) => __builder =>
     {
         <div class="tb-row-etiq tb-etq-cell">
-            @foreach (var id in d.Etiquetas)
-            {
-                var et = _etiquetasCat.FirstOrDefault(x => x.Id == id);
-                if (et is null) { continue; }
-                var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
-                <span class="tb-tag tb-tag-sm" style="background:@col;border-color:@col;color:@TagTextColor(col)">@et.Nombre</span>
-            }
-            <button type="button" class="tb-etq-add" title="Agregar etiqueta" @onclick="(e) => ToggleEtqPicker(key, true, e)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-            @if (_etqPickKey == key && _etqPickAlta)
-            {
-                <div class="tb-tagpop-bd" @onclick="() => _etqPickKey = null"></div>
-                <div class="tb-etqpop" style="left:min(@(_etqPickX)px, calc(100vw - 230px));top:min(@(_etqPickY)px, calc(100vh - 290px))" @onclick:stopPropagation="true">
-                    @foreach (var et in EtiquetasActivas())
+            <ListaBuscable Multiple="true" TriggerClass="tb-nf-inp lbx-etq" Chevron="false" Title="Etiquetas"
+                           Opciones="@OpcEtiquetas" Valores="@(d.Etiquetas.Select(x => x.ToString()))"
+                           OnToggle="@(v => { if (Guid.TryParse(v, out var g)) ToggleEtqAlta(d, g); })">
+                <TriggerContent>
+                    @if (d.Etiquetas.Count == 0)
                     {
-                        var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
-                        var sel = d.Etiquetas.Contains(et.Id);
-                        <button type="button" class="tb-etqopt @(sel ? "on" : "")" @onclick="() => ToggleEtqAlta(d, et.Id)">
-                            <span class="tb-etqopt-dot" style="background:@col"></span><span class="tb-etqopt-tx">@et.Nombre</span>
-                            @if (sel) { <svg class="tb-etqopt-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> }
-                        </button>
+                        <span class="lbx-etq-ph">Etiquetas</span>
                     }
-                    @if (!EtiquetasActivas().Any()) { <div class="tb-etqpop-empty">No hay etiquetas. Crea en Configurar.</div> }
-                </div>
-            }
+                    @foreach (var id in d.Etiquetas)
+                    {
+                        var et = _etiquetasCat.FirstOrDefault(x => x.Id == id);
+                        if (et is null) { continue; }
+                        var col = string.IsNullOrWhiteSpace(et.Color) ? "var(--propia-brand)" : et.Color!;
+                        <span class="tb-tag tb-tag-sm" style="background:@col;border-color:@col;color:@TagTextColor(col)">@et.Nombre</span>
+                    }
+                </TriggerContent>
+            </ListaBuscable>
         </div>
     };
+
+    // Fila de alta de la vista Tabla (Alex 2026-11-22): Enter guarda, CIERRA la fila y deja el foco en "Agregar
+    // tarea" (otro Enter abre la siguiente). Igual que Tab desde el ultimo campo (AltaTabFinal). Sin titulo no hace nada.
+    private async Task AltaFlatKeydown(KeyboardEventArgs e, Guid estadoId)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            if (string.IsNullOrWhiteSpace(NuevaFilaDe(estadoId).Titulo)) return;
+            await CerrarAltaTblAsync(guardar: true, focoCta: true);
+        }
+        else if (e.Key == "Escape") { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _altaTblOpen = false; }
+    }
+    // Tab desde el ULTIMO campo de la fila de alta (lo detecta propiaUI.altaAutoSave): guarda si hay titulo, cierra
+    // la fila y pasa el foco a "Agregar tarea" en vez de dejarlo caer en el menu u otro control de la pagina.
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        if (!_altaTblOpen) return;
+        await CerrarAltaTblAsync(guardar: true, focoCta: true);
+        StateHasChanged();
+    }
+    private async Task CerrarAltaTblAsync(bool guardar, bool focoCta)
+    {
+        if (_board?.Estados.FirstOrDefault()?.Id is Guid eid && guardar)
+        {
+            var d = NuevaFilaDe(eid);
+            if (!string.IsNullOrWhiteSpace(d.Titulo)) await CrearDesdeNuevaFila(eid);
+        }
+        _nfFocusEstado = null;   // la fila se cierra: no reenfocar su titulo
+        _altaTblOpen = false;
+        _focoCtaPend = focoCta;
+    }
+    private bool _focoCtaPend;
 
     private async Task NuevaFilaKeydown(KeyboardEventArgs e, Guid estadoId)
     {
@@ -5048,9 +5063,9 @@ else
                 </button>
             </div>
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
-                <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))" />
+                <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))" />
             </div>
-            @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => NuevaFilaKeydown(e, estadoId))"></textarea></div> }
+            @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))"></textarea></div> }
             @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
             <div class="tb-row-cell-est">
                 <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@FondoDe(EstadoColorDe(nf.EstadoId))" Opciones="@OpcEstados" Valor="@nf.EstadoId.ToString()"
@@ -5076,7 +5091,7 @@ else
             @if (_colDue) { <div class="tb-row-due"><input type="date" class="tb-nf-inp" @bind="nf.FechaVencimiento" /></div> }
             @if (_colValor) { <div class="tb-row-valor tb-num"><input type="number" step="1000" class="tb-nf-inp" placeholder="$" @bind="nf.Valor" @bind:event="oninput" /></div> }
             @if (_colOrigen) { @AltaOrigenCell(nf) }
-            @foreach (var c in CamposVisibles) { @(AltaCampoCell(nf, c, e => NuevaFilaKeydown(e, estadoId))) }
+            @foreach (var c in CamposVisibles) { @(AltaCampoCell(nf, c, e => AltaFlatKeydown(e, estadoId))) }
             @* Sin boton +/x (A4): la fila de alta se guarda al salir de la fila (blur) o con Enter; Esc cancela. *@
             <div class="tb-row-acc"></div>
         </div>
