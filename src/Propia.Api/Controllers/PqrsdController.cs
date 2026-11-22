@@ -26,10 +26,12 @@ public class PqrsdController : ControllerBase
     private readonly Propia.Application.Documents.IHtmlToPdfService _htmlToPdf;
     private readonly Propia.Application.Common.IGmailSender _gmail;
     private readonly Propia.Application.InfraestructuraIa.IWhatsAppConnectorService _whatsapp;
+    private readonly Propia.Application.Integraciones.IBuzonEnvioService _buzonEnvio;
     public PqrsdController(IPqrsdService svc, PropiaDbContext db, IBlobStorage storage, IPqrsdRespuestaPdfService respuestaPdf,
         Propia.Application.Documents.IHtmlToPdfService htmlToPdf, Propia.Application.Common.IGmailSender gmail,
-        Propia.Application.InfraestructuraIa.IWhatsAppConnectorService whatsapp)
-    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; _htmlToPdf = htmlToPdf; _gmail = gmail; _whatsapp = whatsapp; }
+        Propia.Application.InfraestructuraIa.IWhatsAppConnectorService whatsapp,
+        Propia.Application.Integraciones.IBuzonEnvioService buzonEnvio)
+    { _svc = svc; _db = db; _storage = storage; _respuestaPdf = respuestaPdf; _htmlToPdf = htmlToPdf; _gmail = gmail; _whatsapp = whatsapp; _buzonEnvio = buzonEnvio; }
 
     private Guid? GetTenantId()
     {
@@ -743,7 +745,16 @@ public class PqrsdController : ControllerBase
         return Ok(new { url, nombre });
     }
 
-    public record EnviarRespuestaRequest(string? SeguimientoBaseUrl);
+    /// <param name="BuzonId">Modulo Buzones: buzon desde el que sale el correo (de los que PQRSD tiene para responder);
+    /// null = el predeterminado. Si PQRSD no tiene buzones, sale por la conexion Gmail como antes.</param>
+    public record EnviarRespuestaRequest(string? SeguimientoBaseUrl, Guid? BuzonId = null);
+
+    private async Task<(bool Success, string? Error)> EnviarPorGmailAsync(Guid tenantId, List<string> emails, string asunto,
+        string cuerpo, Propia.Application.Common.CorreoAdjunto adj, CancellationToken ct)
+    {
+        var r = await _gmail.SendAsync(tenantId, emails, asunto, cuerpo, new[] { adj }, ct);
+        return (r.Success, r.Error);
+    }
 
     // Envia la respuesta a sus destinatarios segun el CANAL de cada uno:
     //  - Correo: compone el documento, genera el PDF (Chromium), lo adjunta al correo (Gmail) y al expediente.
@@ -790,7 +801,11 @@ public class PqrsdController : ControllerBase
                          + "</body></html>";
             var adjPdf = new Propia.Application.Common.CorreoAdjunto($"respuesta-{radicado}.pdf", "application/pdf", pdf);
 
-            var envio = await _gmail.SendAsync(tenantId.Value, emails, asunto, cuerpo, new[] { adjPdf }, ct);
+            // Modulo Buzones: si PQRSD eligio buzones para responder, sale por el buzon (SMTP de esa cuenta); si no, Gmail.
+            var porBuzon = await _buzonEnvio.EnviarRespuestaPqrsdAsync(req?.BuzonId, emails, asunto, cuerpo, new[] { adjPdf }, ct);
+            var envio = porBuzon.HayBuzon
+                ? (Success: porBuzon.Ok, Error: porBuzon.Error)
+                : await EnviarPorGmailAsync(tenantId.Value, emails, asunto, cuerpo, adjPdf, ct);
             if (envio.Success)
             {
                 enviadosCorreo = emails.Count;

@@ -49,6 +49,16 @@ public class CorreosRecibidosController : ControllerBase
         return error is null ? NotFound() : BadRequest(new { error });
     }
 
+    /// <summary>Opciones de PQRSD (modulo Buzones): buzones desde los que se envian las respuestas y el predeterminado.
+    /// Gateado por PQRSD (lo decide quien configura PQRSD), no por Comunicaciones.</summary>
+    [RequierePermiso(ModuloCodigo.Pqrs, AccionPermiso.Editar)]
+    [HttpPut("buzones/pqrsd")]
+    public async Task<IActionResult> GuardarBuzonesPqrsd([FromBody] BuzonesPqrsdRequest req, CancellationToken ct)
+    {
+        var error = await _svc.GuardarBuzonesPqrsdAsync(req, ct);
+        return error is null ? NoContent() : BadRequest(new { error });
+    }
+
     [RequierePermiso(ModuloCodigo.Comunicaciones, AccionPermiso.Editar)]
     [HttpDelete("buzones/{id:guid}")]
     public async Task<IActionResult> EliminarBuzon(Guid id, CancellationToken ct)

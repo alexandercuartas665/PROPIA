@@ -540,7 +540,7 @@
                     else
                     {
                         <button type="button" class="pk-cfg-tab @(_cfgTab == "plantillas" ? "on" : "")" @onclick='CambiarATabPlantillas'>Plantillas</button>
-                        <button type="button" class="pk-cfg-tab @(_cfgTab == "correo" ? "on" : "")" @onclick='CambiarATabCorreo'>Correo</button>
+                        <button type="button" class="pk-cfg-tab @(_cfgTab == "correo" ? "on" : "")" @onclick='CambiarATabCorreo'>Buzones</button>
                         <button type="button" class="pk-cfg-tab @(_cfgTab == "whatsapp" ? "on" : "")" @onclick='CambiarATabWhatsApp'>WhatsApp</button>
                     }
                 </div>
@@ -811,41 +811,42 @@
 
                   @if (_cfgTab == "correo")
                   {
-                    <div class="pk-cfg-sec-hint">Cuenta de correo saliente de la copropiedad para enviar las respuestas de PQRSD. Por ahora <b>Gmail con contrasena de aplicacion</b>: en tu cuenta Google activa la verificación en 2 pasos y genera una <b>contrasena de aplicacion</b> (16 caracteres); úsala aquí, no tu clave normal.</div>
-                    <div class="pk-cfg-grid3" style="margin-top:10px;">
-                        <div><label class="pk-cfg-formlbl">Host SMTP</label>
-                            <input class="pk-cfg-name" style="width:100%;" @bind="_correo.SmtpHost" placeholder="smtp.gmail.com" /></div>
-                        <div><label class="pk-cfg-formlbl">Puerto</label>
-                            <input class="pk-cfg-name" style="width:100%;" type="number" @bind="_correo.SmtpPort" placeholder="587" /></div>
-                        <div><label class="pk-cfg-formlbl">Correo (usuario)</label>
-                            <input class="pk-cfg-name" style="width:100%;" @bind="_correo.SmtpUser" placeholder="copropiedad@gmail.com" autocomplete="off" /></div>
-                    </div>
-                    <div class="pk-cfg-grid3" style="margin-top:10px;">
-                        <div><label class="pk-cfg-formlbl">Contrasena de aplicacion</label>
-                            <input class="pk-cfg-name" style="width:100%;" type="password" @bind="_correoPassword" placeholder="@(_correo.TienePassword ? "•••••••• (guardada; escribe para cambiar)" : "16 caracteres de Google")" autocomplete="new-password" />
-                            @if (_correo.TienePassword && string.IsNullOrEmpty(_correoPassword))
+                    @* Modulo Buzones (2026-11-22): PQRSD elige de que buzones de la copropiedad salen sus respuestas. Las cuentas se
+                       crean en Configuracion > Buzones de correo (la cuenta SMTP propia de esta pestana se retiro: no se usaba). *@
+                    <div class="pk-cfg-sec-hint">Buzones desde los que se envían las respuestas de PQRSD. Marca uno o varios y elige el predeterminado; al enviar una respuesta, si hay varios, se puede escoger desde cuál sale. Si no marcas ninguno, las respuestas salen por la conexión de Gmail como hasta ahora. Las cuentas se crean en <a href="/buzones">Configuración › Buzones de correo</a>.</div>
+                    @if (_bzPqrsd is null)
+                    {
+                        <div class="text-center py-3"><div class="spinner-border spinner-border-sm" style="color:var(--propia-brand)"></div></div>
+                    }
+                    else if (_bzPqrsd.Count == 0)
+                    {
+                        <div class="pk-bz-vacio">La copropiedad aún no tiene buzones. <a href="/buzones">Crear un buzón</a></div>
+                    }
+                    else
+                    {
+                        <div class="pk-bz-list">
+                            @foreach (var b in _bzPqrsd)
                             {
-                                <span class="pk-cfg-ok" style="display:inline-block;margin-top:6px;">Contrasena guardada@(_correo.LastValidatedAt is { } lvp ? $" · validada {lvp.ToLocalTime():dd MMM yyyy}" : "")</span>
+                                var bz = b;
+                                var marcado = _bzSel.Contains(bz.Id);
+                                <div class="pk-bz-row @(marcado ? "on" : "")">
+                                    <label class="pk-bz-ck">
+                                        <input type="checkbox" checked="@marcado" @onchange="e => MarcarBzPqrsd(bz.Id, (bool)(e.Value ?? false))" />
+                                        <span class="pk-bz-nom">@bz.Nombre</span>
+                                        <span class="pk-bz-mail">@bz.Cuenta</span>
+                                    </label>
+                                    @if (!bz.TienePassword) { <span class="pk-bz-warn">Falta la contraseña</span> }
+                                    <label class="pk-bz-pred @(marcado ? "" : "is-dis")" title="Buzón que se usa por defecto al enviar">
+                                        <input type="radio" name="pk-bz-pred" checked="@(_bzPred == bz.Id)" disabled="@(!marcado)" @onchange="() => _bzPred = bz.Id" />
+                                        Predeterminado
+                                    </label>
+                                </div>
                             }
                         </div>
-                        <div><label class="pk-cfg-formlbl">Nombre remitente</label>
-                            <input class="pk-cfg-name" style="width:100%;" @bind="_correo.FromName" placeholder="Conjunto Altos del Bosque" /></div>
-                        <div><label class="pk-cfg-formlbl">Correo remitente (From)</label>
-                            <input class="pk-cfg-name" style="width:100%;" @bind="_correo.FromEmail" placeholder="(igual al usuario si se deja vacio)" /></div>
-                    </div>
-                    <div style="display:flex;gap:18px;align-items:center;margin-top:12px;flex-wrap:wrap;">
-                        <label class="pk-cfg-chk pk-cfg-chk--row" style="border:0;"><input type="checkbox" @bind="_correo.UseSsl" />Usar SSL/TLS</label>
-                        <label class="pk-cfg-chk pk-cfg-chk--row" style="border:0;"><input type="checkbox" @bind="_correo.IsEnabled" />Habilitar envio por esta cuenta</label>
-                        <button type="button" class="pk-cfg-plt-manage" @onclick="GuardarCorreo" disabled="@_correoBusy">@(_correoBusy ? "Guardando..." : "Guardar cuenta")</button>
-                    </div>
-                    <div style="margin-top:16px;border-top:1px solid var(--propia-border-divider);padding-top:12px;">
-                        <label class="pk-cfg-formlbl">Enviar correo de prueba a</label>
-                        <div style="display:flex;gap:8px;align-items:center;max-width:520px;">
-                            <input class="pk-cfg-name" style="flex:1;" @bind="_correoPruebaTo" placeholder="tucorreo@ejemplo.com" />
-                            <button type="button" class="pk-cfg-plt-manage" @onclick="ProbarCorreo" disabled="@_correoBusy">Probar</button>
+                        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+                            <button type="button" class="pk-cfg-plt-manage" @onclick="GuardarBzPqrsdAsync" disabled="@_correoBusy">@(_correoBusy ? "Guardando..." : "Guardar buzones")</button>
                         </div>
-                        @if (_correo.LastValidatedAt is { } lv) { <div class="pk-cfg-sec-hint" style="margin-top:6px;">Ultima prueba exitosa: @lv.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div> }
-                    </div>
+                    }
                     @if (!string.IsNullOrEmpty(_correoMsg)) { <div class="pk-cfg-cmsg @(_correoErr ? "err" : "ok")">@_correoMsg</div> }
                   }
 
@@ -2621,22 +2622,10 @@
         await CargarCfgPlantillasAsync();
     }
 
-    // ---- Tab Correo: cuenta de correo saliente (SMTP) de la copropiedad ----
-    private sealed class CorreoForm
-    {
-        public string? SmtpHost { get; set; } = "smtp.gmail.com";
-        public int SmtpPort { get; set; } = 587;
-        public string? SmtpUser { get; set; }
-        public bool UseSsl { get; set; } = true;
-        public string? FromEmail { get; set; }
-        public string? FromName { get; set; }
-        public bool IsEnabled { get; set; }
-        public bool TienePassword { get; set; }
-        public DateTimeOffset? LastValidatedAt { get; set; }
-    }
-    private CorreoForm _correo = new();
-    private string _correoPassword = "";
-    private string _correoPruebaTo = "";
+    // ---- Tab Correo (modulo Buzones): buzones desde los que PQRSD envia sus respuestas ----
+    private List<Propia.Application.Integraciones.BuzonCorreoDto>? _bzPqrsd;
+    private HashSet<Guid> _bzSel = new();
+    private Guid? _bzPred;
     private bool _correoBusy;
     private string? _correoMsg;
     private bool _correoErr;
@@ -2645,50 +2634,44 @@
     private async Task CambiarATabCorreo()
     {
         _cfgTab = "correo"; _correoMsg = null; _correoErr = false;
-        await CargarCorreoAsync();
+        await CargarBzPqrsdAsync();
     }
 
-    private async Task CargarCorreoAsync()
+    private async Task CargarBzPqrsdAsync()
     {
         try
         {
-            var dto = await Auth().GetFromJsonAsync<TenantEmailConfigDto>("/api/config/correo");
-            if (dto is not null)
-                _correo = new CorreoForm
-                {
-                    SmtpHost = dto.SmtpHost, SmtpPort = dto.SmtpPort, SmtpUser = dto.SmtpUser, UseSsl = dto.UseSsl,
-                    FromEmail = dto.FromEmail, FromName = dto.FromName, IsEnabled = dto.IsEnabled,
-                    TienePassword = dto.TienePassword, LastValidatedAt = dto.LastValidatedAt
-                };
-            _correoPassword = "";
+            _bzPqrsd = await Auth().GetFromJsonAsync<List<Propia.Application.Integraciones.BuzonCorreoDto>>("/api/correos-recibidos/buzones") ?? new();
+            _bzSel = _bzPqrsd.Where(b => b.RespondePqrsd).Select(b => b.Id).ToHashSet();
+            _bzPred = _bzPqrsd.FirstOrDefault(b => b.RespondePqrsd && b.PqrsdPredeterminado)?.Id;
         }
-        catch { }
+        catch (Exception ex) { _bzPqrsd ??= new(); _correoErr = true; _correoMsg = "No se pudieron cargar los buzones: " + ex.Message; }
     }
 
-    private async Task GuardarCorreo()
+    private void MarcarBzPqrsd(Guid id, bool on)
+    {
+        if (on) { _bzSel.Add(id); _bzPred ??= id; }
+        else
+        {
+            _bzSel.Remove(id);
+            if (_bzPred == id) _bzPred = _bzSel.Count > 0 ? _bzSel.First() : null;
+        }
+    }
+
+    private async Task GuardarBzPqrsdAsync()
     {
         _correoBusy = true; _correoMsg = null; _correoErr = false;
         try
         {
-            var req = new GuardarTenantEmailConfigRequest(_correo.SmtpHost, _correo.SmtpPort, _correo.SmtpUser,
-                string.IsNullOrWhiteSpace(_correoPassword) ? null : _correoPassword, _correo.UseSsl,
-                _correo.FromEmail, _correo.FromName, _correo.IsEnabled);
-            var resp = await Auth().PutAsJsonAsync("/api/config/correo", req);
-            if (resp.IsSuccessStatusCode) { await CargarCorreoAsync(); _correoMsg = "Cuenta guardada."; }
-            else { _correoErr = true; _correoMsg = "No se pudo guardar (permiso o datos)."; }
-        }
-        catch (Exception ex) { _correoErr = true; _correoMsg = ex.Message; }
-        finally { _correoBusy = false; }
-    }
-
-    private async Task ProbarCorreo()
-    {
-        _correoBusy = true; _correoMsg = null; _correoErr = false;
-        try
-        {
-            var resp = await Auth().PostAsJsonAsync("/api/config/correo/probar", new { ToEmail = _correoPruebaTo });
-            if (resp.IsSuccessStatusCode) { await CargarCorreoAsync(); _correoMsg = "Correo de prueba enviado. Revisa la bandeja de entrada."; }
-            else { _correoErr = true; var body = await resp.Content.ReadFromJsonAsync<CorreoErrResp>(); _correoMsg = body?.error ?? "No se pudo enviar."; }
+            var req = new Propia.Application.Integraciones.BuzonesPqrsdRequest(_bzSel.ToList(), _bzSel.Count > 0 ? _bzPred : null);
+            var resp = await Auth().PutAsJsonAsync("/api/correos-recibidos/buzones/pqrsd", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                await CargarBzPqrsdAsync();
+                _correoMsg = _bzSel.Count == 0 ? "Guardado: las respuestas saldrán por la conexión de Gmail." : "Buzones guardados.";
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden) { _correoErr = true; _correoMsg = "No tienes permiso para editar PQRSD."; }
+            else { _correoErr = true; var body = await resp.Content.ReadFromJsonAsync<CorreoErrResp>(); _correoMsg = body?.error ?? "No se pudo guardar."; }
         }
         catch (Exception ex) { _correoErr = true; _correoMsg = ex.Message; }
         finally { _correoBusy = false; }

@@ -358,6 +358,93 @@ public class CorreoPqrsdFlowTests : IAsyncLifetime
 
     // ----------------------------- infraestructura -----------------------------
 
+    // ---------------------------------------------------------------- modulo Buzones (2026-11-22)
+
+    [Fact]
+    public async Task Opciones_de_PQRSD_eligen_buzones_para_responder_con_un_predeterminado_y_aislan_por_tenant()
+    {
+        var tA = await SeedTenantAsync("[BZ] A");
+        var tB = await SeedTenantAsync("[BZ] B");
+        try
+        {
+            var a = await SeedBuzonAsync(tA, null, conClave: true);
+            var b = await SeedBuzonAsync(tA, null, conClave: true);
+            var ia = new IaRuteada(0.9m, 0.9m);
+
+            await using (var scope = Scope(tA))
+            {
+                var svc = Entrante(scope, ia);
+                Assert.Null(await svc.GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid> { a, b }, b), Ct));
+                var l = await svc.ListarBuzonesAsync(Ct);
+                Assert.True(l.All(x => x.RespondePqrsd));
+                Assert.Equal(b, l.Single(x => x.PqrsdPredeterminado).Id);
+
+                // Se quita el predeterminado sin elegir otro: queda el que sigue marcado.
+                Assert.Null(await svc.GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid> { a }), Ct));
+                l = await svc.ListarBuzonesAsync(Ct);
+                Assert.True(l.Single(x => x.Id == a) is { RespondePqrsd: true, PqrsdPredeterminado: true });
+                Assert.True(l.Single(x => x.Id == b) is { RespondePqrsd: false, PqrsdPredeterminado: false });
+
+                // El predeterminado debe estar entre los marcados.
+                Assert.NotNull(await svc.GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid> { a }, b), Ct));
+            }
+
+            // Otra copropiedad no puede marcar (ni ver) los buzones de A.
+            await using (var scope = Scope(tB))
+            {
+                var svc = Entrante(scope, ia);
+                Assert.NotNull(await svc.GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid> { a }), Ct));
+                Assert.Empty(await svc.ListarBuzonesAsync(Ct));
+            }
+
+            // Ninguno marcado: PQRSD vuelve a la conexion Gmail.
+            await using (var scope = Scope(tA))
+            {
+                var svc = Entrante(scope, ia);
+                Assert.Null(await svc.GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid>()), Ct));
+                Assert.DoesNotContain(await svc.ListarBuzonesAsync(Ct), x => x.RespondePqrsd || x.PqrsdPredeterminado);
+            }
+        }
+        finally { await CleanupAsync(tA, "-"); await CleanupAsync(tB, "-"); }
+    }
+
+    [Fact]
+    public async Task Envio_de_respuesta_PQRSD_elige_el_buzon_y_sin_buzones_cae_a_Gmail()
+    {
+        var t = await SeedTenantAsync("[BZ] envio");
+        try
+        {
+            var conClave = await SeedBuzonAsync(t, null, conClave: true);
+            var sinClave = await SeedBuzonAsync(t, null, conClave: false);
+            var adj = new[] { new CorreoAdjunto("r.pdf", "application/pdf", new byte[] { 1 }) };
+            var para = new[] { "vecino@ejemplo.com" };
+
+            await using (var scope = Scope(t))
+            {
+                var envio = new BuzonEnvioService(scope.ServiceProvider.GetRequiredService<PropiaDbContext>(), new FakeSecret());
+                // Sin buzones para responder: el llamador sigue con Gmail.
+                var r0 = await envio.EnviarRespuestaPqrsdAsync(null, para, "Respuesta", "<p>x</p>", adj, Ct);
+                Assert.False(r0.HayBuzon);
+
+                // Solo el buzon sin clave responde PQRSD: no intenta conectar y avisa la causa.
+                Assert.Null(await Entrante(scope, new IaRuteada(0.9m, 0.9m))
+                    .GuardarBuzonesPqrsdAsync(new BuzonesPqrsdRequest(new List<Guid> { sinClave }), Ct));
+                var r1 = await envio.EnviarRespuestaPqrsdAsync(null, para, "Respuesta", "<p>x</p>", adj, Ct);
+                Assert.True(r1.HayBuzon);
+                Assert.False(r1.Ok);
+                Assert.Equal(sinClave, r1.BuzonId);
+                Assert.Contains("contrase", r1.Error);
+
+                // Pedir un buzon que no responde PQRSD: error, no se usa otro en silencio.
+                var r2 = await envio.EnviarRespuestaPqrsdAsync(conClave, para, "Respuesta", "<p>x</p>", adj, Ct);
+                Assert.True(r2.HayBuzon);
+                Assert.False(r2.Ok);
+                Assert.Contains("habilitado", r2.Error);
+            }
+        }
+        finally { await CleanupAsync(t, "-"); }
+    }
+
     private sealed class ScopeT : IAsyncDisposable
     {
         private readonly IServiceScope _s;

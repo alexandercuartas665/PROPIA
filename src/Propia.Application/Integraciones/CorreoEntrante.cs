@@ -255,7 +255,13 @@ public sealed record BuzonCorreoDto(
     /// <summary>PQRSD por correo: confianza minima para radicar solo (null = nunca).</summary>
     decimal? UmbralAutoPqrsd = null,
     /// <summary>Ola P2: responde el radicado desde este buzon, con su plantilla (null = la predeterminada).</summary>
-    bool ResponderRadicado = true, Guid? PlantillaAcuseId = null);
+    bool ResponderRadicado = true, Guid? PlantillaAcuseId = null,
+    /// <summary>Modulo Buzones: PQRSD responde desde este buzon / es su predeterminado.</summary>
+    bool RespondePqrsd = false, bool PqrsdPredeterminado = false);
+
+/// <summary>Opciones de PQRSD: buzones desde los que se envian las respuestas (Ids) y el predeterminado. Reemplaza la
+/// seleccion completa: los que no vienen dejan de responder PQRSD.</summary>
+public sealed record BuzonesPqrsdRequest(List<Guid> Ids, Guid? PredeterminadoId = null);
 
 /// <summary>Crear o editar un buzon (MERGE al editar: null = no tocar). <paramref name="TodosLosTemas"/> = true
 /// borra la seleccion de temas (atiende todos); si no, <paramref name="Temas"/> reemplaza la seleccion.</summary>
@@ -304,6 +310,8 @@ public interface ICorreoEntranteService
     Task<(BuzonCorreoDto? Buzon, string? Error)> GuardarBuzonAsync(Guid id, GuardarBuzonRequest req, CancellationToken ct = default);
     /// <summary>Elimina el buzon; sus correos quedan en la bandeja (sin buzon). False si no existe.</summary>
     Task<bool> EliminarBuzonAsync(Guid id, CancellationToken ct = default);
+    /// <summary>Opciones de PQRSD: fija que buzones responden PQRSD y cual es el predeterminado. Error legible o null.</summary>
+    Task<string?> GuardarBuzonesPqrsdAsync(BuzonesPqrsdRequest req, CancellationToken ct = default);
     /// <summary>Conecta por IMAP y abre la bandeja en solo lectura.</summary>
     Task<(bool Ok, string? Error)> ProbarConexionAsync(ProbarBuzonRequest req, CancellationToken ct = default);
 

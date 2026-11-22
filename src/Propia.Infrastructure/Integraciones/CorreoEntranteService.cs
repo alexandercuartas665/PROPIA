@@ -82,7 +82,26 @@ public sealed class CorreoEntranteService : ICorreoEntranteService
         return new BuzonCorreoDto(b.Id, b.Nombre, b.Cuenta, !string.IsNullOrEmpty(b.PasswordCifrada),
             string.IsNullOrWhiteSpace(b.ImapHost) ? "imap.gmail.com" : b.ImapHost, b.ImapPort <= 0 ? 993 : b.ImapPort, b.Activo,
             b.LecturaDesde, b.UltimaRevision, b.UltimoError, LeerTemas(b.TemasJson), hoy, total, pendientes, recientes,
-            b.UmbralAutoPqrsd, b.ResponderRadicado, b.PlantillaAcuseId);
+            b.UmbralAutoPqrsd, b.ResponderRadicado, b.PlantillaAcuseId, b.RespondePqrsd, b.PqrsdPredeterminado);
+    }
+
+    public async Task<string?> GuardarBuzonesPqrsdAsync(BuzonesPqrsdRequest req, CancellationToken ct = default)
+    {
+        var ids = (req.Ids ?? new List<Guid>()).Distinct().ToHashSet();
+        var buzones = await _db.BuzonesCorreo.ToListAsync(ct);
+        if (ids.Any(id => buzones.All(b => b.Id != id))) return "Uno de los buzones no existe en esta copropiedad.";
+        if (req.PredeterminadoId is Guid pd && !ids.Contains(pd)) return "El buz\u00f3n predeterminado debe estar marcado para responder.";
+        // Sin predeterminado explicito: se conserva el que ya lo era si sigue marcado; si no, el primero creado.
+        var pred = req.PredeterminadoId
+                   ?? buzones.FirstOrDefault(b => b.PqrsdPredeterminado && ids.Contains(b.Id))?.Id
+                   ?? buzones.Where(b => ids.Contains(b.Id)).OrderBy(b => b.CreatedAt).Select(b => (Guid?)b.Id).FirstOrDefault();
+        foreach (var b in buzones)
+        {
+            b.RespondePqrsd = ids.Contains(b.Id);
+            b.PqrsdPredeterminado = pred == b.Id;
+        }
+        await _db.SaveChangesAsync(ct);
+        return null;
     }
 
     public async Task<(BuzonCorreoDto? Buzon, string? Error)> CrearBuzonAsync(GuardarBuzonRequest req, CancellationToken ct = default)

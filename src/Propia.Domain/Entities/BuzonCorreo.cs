@@ -56,4 +56,11 @@ public class BuzonCorreo : TenantEntity
     /// <summary>Plantilla de documento (categoria pqrsd) de esa respuesta. null = "Acuse de radicado por correo", que se
     /// siembra en la copropiedad al primer uso y queda editable en Configuracion > Plantillas de documentos.</summary>
     public Guid? PlantillaAcuseId { get; set; }
+
+    /// <summary>Modulo Buzones (2026-11-22): PQRSD lo eligio en sus opciones para ENVIAR las respuestas desde esta cuenta
+    /// (SMTP con la misma contrasena de aplicacion). La lectura la decide Gestion de correos con <see cref="Activo"/>.</summary>
+    public bool RespondePqrsd { get; set; }
+
+    /// <summary>Buzon que PQRSD usa por defecto para responder cuando tiene varios (solo uno por copropiedad).</summary>
+    public bool PqrsdPredeterminado { get; set; }
 }
