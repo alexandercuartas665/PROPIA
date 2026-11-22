@@ -369,6 +369,8 @@ public partial class PropiaDbContext
             b.Property(x => x.Descripcion).HasMaxLength(500);
             b.Property(x => x.HorariosUso).HasMaxLength(200);
             b.Property(x => x.ReglasUso).HasMaxLength(2000);
+            b.Property(x => x.CondicionesArchivoUrl).HasMaxLength(1000);
+            b.Property(x => x.CondicionesArchivoNombre).HasMaxLength(300);
             b.Property(x => x.TarifaReserva).HasPrecision(12, 2);
             b.HasIndex(x => x.TenantId);
             b.HasQueryFilter(x => _tenantContext.CurrentTenantId == null || x.TenantId == _tenantContext.CurrentTenantId);
@@ -382,6 +384,8 @@ public partial class PropiaDbContext
             b.Property(x => x.NumeroSerie).HasMaxLength(100);
             b.Property(x => x.CodigoBarra).HasMaxLength(100);
             b.Property(x => x.CondicionesUso).HasMaxLength(2000);
+            b.Property(x => x.CondicionesArchivoUrl).HasMaxLength(1000);
+            b.Property(x => x.CondicionesArchivoNombre).HasMaxLength(300);
             b.Property(x => x.Ubicacion).HasMaxLength(200);
             b.Property(x => x.Observaciones).HasMaxLength(1000);
             b.HasIndex(x => x.TenantId);

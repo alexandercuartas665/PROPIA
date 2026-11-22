@@ -21,6 +21,11 @@ public class ZonaComun : TenantEntity
     public string? HorariosUso { get; set; }
     public string? ReglasUso { get; set; }
 
+    /// <summary>Archivo (PDF o imagen) de las condiciones de uso de la zona, aparte de la pestana Documentos.
+    /// Se carga en la ficha y Reservas lo muestra al crear la reserva. Binario en IBlobStorage.</summary>
+    public string? CondicionesArchivoUrl { get; set; }
+    public string? CondicionesArchivoNombre { get; set; }
+
     /// <summary>Imagen principal de la zona (ficha). Binario en IBlobStorage.</summary>
     public string? ImagenUrl { get; set; }
 

@@ -24,6 +24,11 @@ public class EquipoActivo : TenantEntity
     /// <summary>Condiciones de uso del activo cuando es reservable (reglas para el usuario que lo toma en prestamo).</summary>
     public string? CondicionesUso { get; set; }
 
+    /// <summary>Archivo (PDF o imagen) de las condiciones de uso del activo reservable, aparte de la pestana
+    /// Documentos. Se carga en la ficha y el prestamo lo muestra. Binario en IBlobStorage.</summary>
+    public string? CondicionesArchivoUrl { get; set; }
+    public string? CondicionesArchivoNombre { get; set; }
+
     public string? Marca { get; set; }
     public string? Modelo { get; set; }
     public string? NumeroSerie { get; set; }

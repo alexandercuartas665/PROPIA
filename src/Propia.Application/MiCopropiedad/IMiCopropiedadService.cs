@@ -210,6 +210,10 @@ public interface IMiCopropiedadService
     // Ficha completa de zona comun (seccion 4, prototipo zonaDet).
     Task<ZonaFichaDto?> GetZonaFichaAsync(Guid zonaId, Guid? personaId, CancellationToken ct);
     Task<bool> GuardarZonaFichaAsync(Guid zonaId, GuardarZonaFichaRequest req, CancellationToken ct);
+    /// <summary>Fija (url+nombre) o quita (null) el archivo de condiciones de uso de la zona. Devuelve el DTO resuelto o null si no existe la zona.</summary>
+    Task<(bool Existe, CondicionesArchivoDto? Archivo)> SetZonaCondicionesArchivoAsync(Guid zonaId, string? url, string? nombre, CancellationToken ct);
+    /// <summary>Igual que SetZonaCondicionesArchivoAsync, para un equipo/activo reservable.</summary>
+    Task<(bool Existe, CondicionesArchivoDto? Archivo)> SetEquipoCondicionesArchivoAsync(Guid equipoId, string? url, string? nombre, CancellationToken ct);
     Task<string?> SetZonaImagenAsync(Guid zonaId, string url, CancellationToken ct);
     Task<ZonaFacturaDto?> AgregarZonaFacturaAsync(Guid zonaId, AgregarZonaFacturaRequest req, CancellationToken ct);
     Task<bool> EliminarZonaFacturaAsync(Guid facturaId, CancellationToken ct);

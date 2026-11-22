@@ -1239,6 +1239,52 @@ public class MiCopropiedadController : ControllerBase
         return saved is null ? NotFound() : Ok(new { url = saved });
     }
 
+    // ----- Archivo de condiciones de uso (PDF o imagen), aparte de la pestana Documentos. Zonas y equipos. -----
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPost("zonas/{id:guid}/condiciones-archivo")]
+    [RequestSizeLimit(11_000_000)]
+    public Task<IActionResult> SubirZonaCondicionesArchivo(Guid id, IFormFile file, CancellationToken ct)
+        => SubirCondicionesArchivoAsync("zonas", id, file, (u, n) => _svc.SetZonaCondicionesArchivoAsync(id, u, n, ct), ct);
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpDelete("zonas/{id:guid}/condiciones-archivo")]
+    public async Task<IActionResult> QuitarZonaCondicionesArchivo(Guid id, CancellationToken ct)
+        => (await _svc.SetZonaCondicionesArchivoAsync(id, null, null, ct)).Existe ? NoContent() : NotFound();
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpPost("equipos/{id:guid}/condiciones-archivo")]
+    [RequestSizeLimit(11_000_000)]
+    public Task<IActionResult> SubirEquipoCondicionesArchivo(Guid id, IFormFile file, CancellationToken ct)
+        => SubirCondicionesArchivoAsync("equipos", id, file, (u, n) => _svc.SetEquipoCondicionesArchivoAsync(id, u, n, ct), ct);
+
+    [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Editar)]
+    [HttpDelete("equipos/{id:guid}/condiciones-archivo")]
+    public async Task<IActionResult> QuitarEquipoCondicionesArchivo(Guid id, CancellationToken ct)
+        => (await _svc.SetEquipoCondicionesArchivoAsync(id, null, null, ct)).Existe ? NoContent() : NotFound();
+
+    private async Task<IActionResult> SubirCondicionesArchivoAsync(string carpeta, Guid id, IFormFile file,
+        Func<string, string, Task<(bool Existe, CondicionesArchivoDto? Archivo)>> guardar, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return BadRequest(new { error = "no_active_tenant" });
+        if (file is null || file.Length == 0) return BadRequest(new { error = "Archivo vacio." });
+        if (file.Length > 10_000_000) return BadRequest(new { error = "Maximo 10 MB." });
+        var ext = file.ContentType switch
+        {
+            "application/pdf" => ".pdf",
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => ""
+        };
+        if (ext == "") return BadRequest(new { error = "Formato no soportado. Usa PDF, JPG, PNG o WEBP." });
+        var key = $"tenants/{tenantId:N}/{carpeta}/{id:N}/condiciones/{Guid.NewGuid():N}{ext}";
+        await using var stream = file.OpenReadStream();
+        var url = Absolutizar(await _storage.UploadAsync(key, stream, file.ContentType, ct));
+        var (existe, archivo) = await guardar(url, file.FileName);
+        return existe ? Ok(archivo) : NotFound();
+    }
+
     [RequierePermiso(ModuloCodigo.MiCopropiedad, AccionPermiso.Crear)]
     [HttpPost("zonas/{id:guid}/facturas")]
     public async Task<IActionResult> AgregarZonaFactura(Guid id, [FromBody] AgregarZonaFacturaRequest req, CancellationToken ct)

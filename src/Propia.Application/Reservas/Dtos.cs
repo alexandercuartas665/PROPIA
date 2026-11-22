@@ -62,6 +62,8 @@ public record FranjaInput(DiaSemanaReserva DiaSemana, TimeOnly HoraApertura, Tim
 // Galeria y disponibilidad
 // ===========================================================================
 
+/// <summary>Zona reservable para la galeria/agenda. CondicionesTexto/Archivo* = condiciones de uso cargadas en la
+/// ficha de la zona (texto + archivo PDF/imagen opcional), que Nueva reserva muestra en "Ver condiciones de uso".</summary>
 public record ZonaGaleriaDto(
     Guid ZonaComunId,
     string Nombre,
@@ -72,7 +74,10 @@ public record ZonaGaleriaDto(
     string Estado,
     bool TieneTarifa,
     decimal? ValorTarifa,
-    ModalidadCobroReserva? ModalidadCobro);
+    ModalidadCobroReserva? ModalidadCobro,
+    string? CondicionesTexto = null,
+    string? CondicionesArchivoUrl = null,
+    string? CondicionesArchivoNombre = null);
 
 public record DisponibilidadDto(
     Guid ZonaComunId,

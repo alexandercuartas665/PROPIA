@@ -91,7 +91,9 @@ else
                 @if (eq.EsReservable)
                 {
                     <div class="fem-sectlbl fem-sectlbl--sep">PRESTAMOS Y TRAZABILIDAD</div>
-                    <PrestamosEquipoPanel Jwt="@Jwt" EquipoId="@EqId" />
+                    <PrestamosEquipoPanel Jwt="@Jwt" EquipoId="@EqId" EquipoNombre="@eq.Nombre"
+                                          CondicionesTexto="@eq.CondicionesUso"
+                                          CondicionesArchivoUrl="@_condArchUrl" CondicionesArchivoNombre="@_condArchNombre" />
                 }
 
                 @* Condiciones de uso: aparece cuando el activo es reservable, igual que en zonas
@@ -110,6 +112,9 @@ else
                         </button>
                         <button class="fem-btn-brand" type="button" @onclick="GuardarCondicionesAsync" disabled="@_busy">Guardar condiciones</button>
                     </div>
+                    @* Archivo (PDF/imagen) de las condiciones, aparte de Documentos; se guarda al instante. *@
+                    <CondicionesArchivoAdjunto Jwt="@Jwt" BasePath="equipos" EntidadId="@EqId"
+                                               Url="@_condArchUrl" Nombre="@_condArchNombre" OnCambio="OnCondArchivo" />
                 }
 
                 @if (eq.EsReservable)
@@ -800,6 +805,12 @@ else
 
     // Condiciones de uso (solo activos reservables): texto + generacion con IA.
     private string? _condiciones;
+    // Archivo de condiciones (PDF/imagen): endpoint propio, no depende de "Guardar condiciones".
+    private string? _condArchUrl, _condArchNombre;
+    private void OnCondArchivo(Propia.Application.MiCopropiedad.CondicionesArchivoDto? a)
+    {
+        _condArchUrl = a?.Url; _condArchNombre = a?.Nombre;
+    }
     private string _iaHint = "";
     private bool _iaBusy;
     private string? _iaError;
@@ -864,7 +875,12 @@ else
         try
         {
             _ficha = await Auth().GetFromJsonAsync<EquipoFichaDto>($"/api/mi-copropiedad/equipos/{EqId}/ficha");
-            if (_ficha is not null) _condiciones = _ficha.Equipo.CondicionesUso;
+            if (_ficha is not null)
+            {
+                _condiciones = _ficha.Equipo.CondicionesUso;
+                _condArchUrl = _ficha.CondicionesArchivoUrl;
+                _condArchNombre = _ficha.CondicionesArchivoNombre;
+            }
             if (_ficha is not null && _ficha.Equipo.EsReservable && _ventanasIniciales is null)
             {
                 try { _ventanasIniciales = await Auth().GetFromJsonAsync<List<VentanaDisponibilidadDto>>($"/api/mi-copropiedad/disponibilidad?tipo=EquipoActivo&entidadId={EqId}"); }
