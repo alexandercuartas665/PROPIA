@@ -713,7 +713,7 @@ else
                     <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
                         <td class="tbl-sel"></td>
                         <td class="tbl-exp">
-                            <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearUnidadDesdeAltaAsync(true)" disabled="@_creandoUnidad">
+                            <button type="button" class="tbl-exp-btn" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" style="opacity:1" @onclick="ExpandirAltaUnidadAsync" disabled="@_creandoUnidad">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                             </button>
                         </td>
@@ -981,6 +981,43 @@ else
    (sin esto el modal se registra pero no se pinta hasta navegar a otra pagina). *@
 <ModalHost />
 
+@* Nueva unidad (Alex 2026-11-23): el expander del alta SIN codigo abre este formulario, precargado con lo escrito en
+   la fila. No crea nada hasta "Crear unidad"; al crear abre la ficha, donde se completa el resto de campos. *@
+@if (_nuevaUnidad)
+{
+    <div class="tbl-nv-back" @onclick="CerrarNuevaUnidad">
+        <div class="tbl-nv-card" @onclick:stopPropagation="true" role="dialog" aria-modal="true" @onkeydown="OnNuevaUnidadKeydown">
+            <div class="tbl-nv-t">Nueva unidad</div>
+            <div class="tbl-nv-s">Escribe el código y guarda; el resto de datos (propietario, anexos, campos propios) se completa en la ficha.</div>
+            <div class="tbl-nv-grid">
+                <label class="tbl-nv-lbl"><span>Código *</span>
+                    <input class="tbl-nv-inp" placeholder="A1-202" @bind="_nuNum" @bind:event="oninput" autofocus /></label>
+                <label class="tbl-nv-lbl"><span>Tipo</span>
+                    <select class="tbl-nv-inp" @bind="_nuTipoKey">
+                        @foreach (var t in TiposBaseVisibles) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
+                        @if (TiposCustomVisibles.Count > 0)
+                        {
+                            <optgroup label="Tipos propios">
+                                @foreach (var tc in TiposCustomVisibles) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
+                            </optgroup>
+                        }
+                    </select></label>
+                <label class="tbl-nv-lbl"><span>Piso</span>
+                    <input class="tbl-nv-inp" type="number" placeholder="-" @bind="_nuPiso" @bind:event="oninput" /></label>
+                <label class="tbl-nv-lbl"><span>Área (m²)</span>
+                    <input class="tbl-nv-inp" type="number" step="@PasoDe("area")" placeholder="-" @bind="_nuArea" @bind:event="oninput" /></label>
+                <label class="tbl-nv-lbl"><span>Coeficiente</span>
+                    <input class="tbl-nv-inp" type="number" step="@PasoDe("coef")" placeholder="0" @bind="_nuCoef" @bind:event="oninput" /></label>
+            </div>
+            @if (!string.IsNullOrEmpty(_nuevaUnidadErr)) { <div class="tbl-nv-err">@_nuevaUnidadErr</div> }
+            <div class="tbl-nv-acts">
+                <button type="button" class="propia-btn-ghost" @onclick="CerrarNuevaUnidad" disabled="@_creandoUnidad">Cancelar</button>
+                <button type="button" class="propia-btn-brand" @onclick="GuardarNuevaUnidadAsync" disabled="@_creandoUnidad">@(_creandoUnidad ? "Creando..." : "Crear unidad")</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     // Embebido en el hub de Configuracion: oculta su page-head/PageTitle (conserva las acciones).
     [Parameter] public bool Embedded { get; set; }
@@ -1164,6 +1201,37 @@ else
     private bool _altaAbierta;
     private void AbrirAlta() => _altaAbierta = true;
     private void CerrarAlta() => _altaAbierta = false;
+
+    // ===== Formulario "Nueva unidad" (expander del alta sin codigo; Alex 2026-11-23) =====
+    private bool _nuevaUnidad;
+    private string? _nuevaUnidadErr;
+    private async Task ExpandirAltaUnidadAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_nuNum)) { await CrearUnidadDesdeAltaAsync(true); return; }   // con codigo: crea y abre
+        _nuevaUnidadErr = null; _altaAbierta = false; _nuevaUnidad = true;                          // conserva lo escrito
+    }
+    private void CerrarNuevaUnidad() { _nuevaUnidad = false; _nuevaUnidadErr = null; }   // no se creo nada
+    private async Task GuardarNuevaUnidadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuNum)) { _nuevaUnidadErr = "Escribe el código de la unidad."; return; }
+        var antes = _uniRecienCreados.ToHashSet();
+        _inlineMsgU = null;
+        // Se crea SIN abrir: la ficha (modal) se espera hasta cerrarse, y este formulario debe cerrarse antes.
+        await CrearUnidadDesdeAltaAsync(false);
+        var nueva = _uniRecienCreados.Except(antes).Cast<Guid?>().FirstOrDefault();
+        if (nueva is Guid id)
+        {
+            _nuevaUnidad = false; _nuevaUnidadErr = null;
+            StateHasChanged();
+            await AbrirModalAsync(id);
+        }
+        else { _nuevaUnidadErr = _inlineMsgU ?? "No se pudo crear la unidad."; _inlineMsgU = null; }
+    }
+    private async Task OnNuevaUnidadKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await GuardarNuevaUnidadAsync();
+        else if (e.Key == "Escape") CerrarNuevaUnidad();
+    }
 
     // FAB "+ Agregar registro": carga TODO el listado (para que el final sea alcanzable con el scroll
     // infinito), abre la fila de alta y marca que hay que bajar al fondo tras el render (OnAfterRenderAsync).

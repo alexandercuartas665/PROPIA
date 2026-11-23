@@ -195,7 +195,7 @@ else
                     <div class="veh-col-exp">
                         @* Canon Unidades/skill 8: el expander del alta va SIEMPRE habilitado; CREA el vehiculo con lo
                            escrito y ABRE su ficha. Valida los minimos (unidad + placa) al clic con toast (AgregarAsync). *@
-                        <button type="button" class="veh-exp-fijo" title="Crear y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@_busy">
+                        <button type="button" class="veh-exp-fijo" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" @onclick="ExpandirAltaAsync" disabled="@_busy">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
@@ -203,45 +203,7 @@ else
                     {
                         if (CampoCustom(k) is CampoDinDef def)
                         {
-                            var d = def;
-                            var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
-                            if (def.Tipo == TipoCampoTablero.Seleccion)
-                            {
-                                <select class="veh-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
-                                    <option value="">@def.Label</option>
-                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
-                                </select>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Formula)
-                            {
-                                <div class="veh-cell veh-auto">(se calcula)</div>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Usuario)
-                            {
-                                <select class="veh-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
-                                    <option value="">@def.Label</option>
-                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
-                                </select>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Directorio)
-                            {
-                                <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
-                                                 SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
-                            {
-                                <input class="veh-row-inp" type="number" step="any" placeholder="@def.Label" value="@dv"
-                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Fecha)
-                            {
-                                <input class="veh-row-inp" type="date" value="@dv"
-                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
-                            }
-                            else
-                            {
-                                <input class="veh-row-inp" placeholder="@def.Label" @bind:get="dv" @bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
-                            }
+                            @EditorDinNuevo(def)
                             continue;
                         }
                         switch (k)
@@ -392,6 +354,46 @@ else
                                      TituloSingular="vehiculo" TituloPlural="Vehiculos"
                                      Ejemplo="Ej. Color, Numero de SOAT" Jwt="@_jwt"
                                      Cambiado="RecargarCamposYConfigAsync" />
+            </div>
+        </div>
+    </div>
+}
+
+@* Nuevo vehículo (Alex 2026-11-23): el expander del alta con la fila vacia o incompleta abre este formulario,
+   precargado con lo escrito. No crea nada hasta "Crear vehículo"; al crear abre la ficha. Cerrar = no se crea nada. *@
+@if (_nuevoVeh)
+{
+    <div class="veh-cg-back" @onclick="CerrarNuevoVeh">
+        <div class="veh-cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="veh-cg-head">
+                <div>
+                    <div class="veh-cg-title">Nuevo vehículo</div>
+                    <div class="veh-cg-sub">Completa los datos y guarda para crearlo.</div>
+                </div>
+                <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false" MostrarCancelar="false"
+                                    Guardando="_busy" TituloGuardar="Crear vehículo"
+                                    OnGuardar="GuardarNuevoVehAsync" OnCerrar="CerrarNuevoVeh" />
+            </div>
+            <div class="veh-cg-body">
+                @if (!string.IsNullOrEmpty(_msg) && _msgError) { <div class="veh-msg err">@_msg</div> }
+                <div class="veh-nv-grid">
+                    <label class="veh-nv-lbl"><span>Unidad *</span>
+                        <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_nuUnidadId" UnidadIdChanged="OnUnidadSel"
+                                              Class="veh-row-inp" Placeholder="Unidad (ej. A1-101)" /></label>
+                    <label class="veh-nv-lbl"><span>Placa *</span>
+                        <input class="veh-row-inp" placeholder="Placa" @bind="_nuPlaca" @bind:event="oninput" /></label>
+                    <label class="veh-nv-lbl"><span>Tipo</span>
+                        <select class="veh-row-inp" @bind="_nuTipo">
+                            @foreach (var t in TiposVehiculo.Where(t => !OcultaTipoVeh(TipoLabel(t)))) { <option value="@t">@TipoLabel(t)</option> }
+                        </select></label>
+                    <label class="veh-nv-lbl"><span>Propietario</span>
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="_propSelNuevo" SeleccionadaChanged="OnPropietarioNuevo"
+                                         PermiteEmpresa="false" Placeholder="Opcional: si se deja vacío, el de la unidad" /></label>
+                    @foreach (var def in _defs.Where(x => x.Tipo != TipoCampoTablero.Separador && x.Tipo != TipoCampoTablero.Formula))
+                    {
+                        <label class="veh-nv-lbl"><span>@def.Label</span>@EditorDinNuevo(def)</label>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -1195,17 +1197,70 @@ else
         StateHasChanged();
     }
 
-    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha del vehiculo para completarlo.
-    private async Task AgregarAsync(bool abrir = false)
+    // ===== Formulario "Nuevo" (expander del alta con la fila vacia o incompleta; Alex 2026-11-23) =====
+    private bool _nuevoVeh;
+    private async Task ExpandirAltaAsync()
     {
-        if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad del vehiculo.", true); return; }
-        if (string.IsNullOrWhiteSpace(_nuPlaca)) { Mensaje("Escribe la placa.", true); return; }
+        if (_nuUnidadId is not null && !string.IsNullOrWhiteSpace(_nuPlaca)) { await AgregarAsync(true); return; }   // fila con lo minimo: crea y abre la ficha
+        _msg = null; _msgError = false; _altaAbierta = false; _nuevoVeh = true;   // conserva lo escrito como precarga
+    }
+    private void CerrarNuevoVeh() { _nuevoVeh = false; _msg = null; }   // no se creo nada
+    // Editor de un campo propio en el alta: lo usan la fila de alta y el formulario "Nuevo" (expander con la
+    // fila vacia, Alex 2026-11-23). Escribe en _nuDinamicos. display:contents: en la fila es la celda del grid.
+    private RenderFragment EditorDinNuevo(CampoDinDef def) => @<div class="veh-dyn-ed">
+                    @{ var d = def; var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : ""; }
+                    @if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="veh-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="veh-cell veh-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="veh-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                    {
+                        <input class="veh-row-inp" type="number" step="any" placeholder="@def.Label" value="@dv"
+                               @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Fecha)
+                    {
+                        <input class="veh-row-inp" type="date" value="@dv"
+                               @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                    }
+                    else
+                    {
+                        <input class="veh-row-inp" placeholder="@def.Label" @bind:get="dv" @bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
+                    }
+                </div>;
+
+    private async Task GuardarNuevoVehAsync() { if (await AgregarAsync(true)) _nuevoVeh = false; }
+
+    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha del vehiculo para completarlo.
+    private async Task<bool> AgregarAsync(bool abrir = false)
+    {
+        if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad del vehiculo.", true); return false; }
+        if (string.IsNullOrWhiteSpace(_nuPlaca)) { Mensaje("Escribe la placa.", true); return false; }
         _busy = true;
         try
         {
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{uid}/placas",
                 new CrearUnidadPlacaRequest(_nuPlaca.Trim(), _nuTipo, _nuPropietarioId));
-            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return false; }
 
             var creada = await resp.Content.ReadFromJsonAsync<UnidadPlacaDto>();
             // Los campos dinamicos se guardan despues del alta: necesitan el id del registro.
@@ -1223,9 +1278,11 @@ else
             Mensaje("Vehiculo agregado.", false);
             // Canon Unidades: crear + abrir la ficha para completar el registro.
             if (abrir && creada is not null) { var fv = _vehiculos.FirstOrDefault(x => x.PlacaId == creada.Id); if (fv is not null) AbrirFichaV(fv); }
+            return true;
         }
         catch (Exception ex) { Mensaje("No se pudo agregar: " + ex.Message, true); }
         finally { _busy = false; }
+        return false;
     }
 
     // ===== Ficha del vehiculo (modal simple): campos fijos + propios, con los mismos endpoints de la edicion
@@ -1899,6 +1956,12 @@ else
     /* Canon: el expander tambien es visible en la fila de alta (hover o foco dentro de la fila). */
     .veh-newrow--edit:hover .veh-exp-fijo, .veh-newrow--edit:focus-within .veh-exp-fijo { opacity: 1; }
     .veh-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .veh-dyn-ed { display: contents; }
+    .veh-nv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+    .veh-nv-lbl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--propia-text-secondary); }
+    .veh-nv-lbl .veh-dyn-ed { display: block; }
+    /* En el formulario los campos llevan borde visible (en la fila de alta son "fantasma"). */
+    .veh-nv-grid .veh-row-inp { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); }
     /* Propietario override (ficha): valor actual + fuente + quitar, encima del buscador del Directorio. */
     .veh-prop-cur { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--propia-text-body); margin-bottom: 6px; }
     .veh-prop-src { font-size: 10.5px; font-weight: 700; color: var(--propia-text-faint); background: var(--propia-bg-card-soft); border: 1px solid var(--propia-border-card); border-radius: 6px; padding: 1px 6px; }

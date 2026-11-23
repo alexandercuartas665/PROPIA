@@ -192,7 +192,7 @@ else
                     <div class="mas-col-exp">
                         @* Canon Unidades/skill 8: el expander del alta va SIEMPRE habilitado; CREA la mascota con lo
                            escrito y ABRE su ficha. Valida los minimos (unidad + nombre) al clic con toast (AgregarAsync). *@
-                        <button type="button" class="mas-exp-fijo" title="Crear y abrir la ficha" @onclick="() => AgregarAsync(true)" disabled="@_busy">
+                        <button type="button" class="mas-exp-fijo" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" @onclick="ExpandirAltaAsync" disabled="@_busy">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                         </button>
                     </div>
@@ -200,45 +200,7 @@ else
                     {
                         if (CampoCustom(k) is CampoDinDef def)
                         {
-                            var d = def;
-                            var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : "";
-                            if (def.Tipo == TipoCampoTablero.Seleccion)
-                            {
-                                <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
-                                    <option value="">@def.Label</option>
-                                    @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
-                                </select>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Formula)
-                            {
-                                <div class="mas-cell mas-auto">(se calcula)</div>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Usuario)
-                            {
-                                <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
-                                    <option value="">@def.Label</option>
-                                    @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
-                                </select>
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Directorio)
-                            {
-                                <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
-                                                 SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
-                            {
-                                <input class="mas-row-inp" type="number" step="any" placeholder="@def.Label" value="@dv"
-                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
-                            }
-                            else if (def.Tipo == TipoCampoTablero.Fecha)
-                            {
-                                <input class="mas-row-inp" type="date" value="@dv"
-                                       @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
-                            }
-                            else
-                            {
-                                <input class="mas-row-inp" placeholder="@def.Label" @bind:get="dv" @bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
-                            }
+                            @EditorDinNuevo(def)
                             continue;
                         }
                         switch (k)
@@ -397,6 +359,48 @@ else
                                      TituloSingular="mascota" TituloPlural="Mascotas"
                                      Ejemplo="Ej. Numero de chip, Vacunas al dia" Jwt="@_jwt"
                                      Cambiado="RecargarCamposYConfigAsync" />
+            </div>
+        </div>
+    </div>
+}
+
+@* Nuevo mascota (Alex 2026-11-23): el expander del alta con la fila vacia o incompleta abre este formulario,
+   precargado con lo escrito. No crea nada hasta "Crear mascota"; al crear abre la ficha. Cerrar = no se crea nada. *@
+@if (_nuevoMas)
+{
+    <div class="mas-cg-back" @onclick="CerrarNuevoMas">
+        <div class="mas-cg-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="mas-cg-head">
+                <div>
+                    <div class="mas-cg-title">Nueva mascota</div>
+                    <div class="mas-cg-sub">Completa los datos y guarda para crearlo.</div>
+                </div>
+                <ModalHeaderActions EnEdicion="true" MostrarEditar="false" MostrarEliminar="false" MostrarCancelar="false"
+                                    Guardando="_busy" TituloGuardar="Crear mascota"
+                                    OnGuardar="GuardarNuevoMasAsync" OnCerrar="CerrarNuevoMas" />
+            </div>
+            <div class="mas-cg-body">
+                @if (!string.IsNullOrEmpty(_msg) && _msgError) { <div class="mas-msg err">@_msg</div> }
+                <div class="mas-nv-grid">
+                    <label class="mas-nv-lbl"><span>Unidad *</span>
+                        <SelectorUnidadCodigo Unidades="_unidades" UnidadId="_nuUnidadId" UnidadIdChanged="OnUnidadSel"
+                                              Class="mas-row-inp" Placeholder="Unidad (ej. A1-101)" /></label>
+                    <label class="mas-nv-lbl"><span>Nombre *</span>
+                        <input class="mas-row-inp" placeholder="Nombre" @bind="_nuNombre" @bind:event="oninput" /></label>
+                    <label class="mas-nv-lbl"><span>Tipo</span>
+                        <select class="mas-row-inp" @bind="_nuTipoSel">
+                            @foreach (var o in _tipoOpciones) { <option value="@o">@o</option> }
+                        </select></label>
+                    <label class="mas-nv-lbl"><span>Raza</span>
+                        <input class="mas-row-inp" placeholder="Raza" @bind="_nuRaza" @bind:event="oninput" /></label>
+                    <label class="mas-nv-lbl"><span>Propietario</span>
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Seleccionada="_propSelNuevo" SeleccionadaChanged="OnPropietarioNuevo"
+                                         PermiteEmpresa="false" Placeholder="Opcional: si se deja vacío, el de la unidad" /></label>
+                    @foreach (var def in _defs.Where(x => x.Tipo != TipoCampoTablero.Separador && x.Tipo != TipoCampoTablero.Formula))
+                    {
+                        <label class="mas-nv-lbl"><span>@def.Label</span>@EditorDinNuevo(def)</label>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -1240,18 +1244,71 @@ else
         StateHasChanged();
     }
 
-    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha de la mascota para completarla.
-    private async Task AgregarAsync(bool abrir = false)
+    // ===== Formulario "Nuevo" (expander del alta con la fila vacia o incompleta; Alex 2026-11-23) =====
+    private bool _nuevoMas;
+    private async Task ExpandirAltaAsync()
     {
-        if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad de la mascota.", true); return; }
-        if (string.IsNullOrWhiteSpace(_nuNombre)) { Mensaje("Escribe el nombre de la mascota.", true); return; }
+        if (_nuUnidadId is not null && !string.IsNullOrWhiteSpace(_nuNombre)) { await AgregarAsync(true); return; }   // fila con lo minimo: crea y abre la ficha
+        _msg = null; _msgError = false; _altaAbierta = false; _nuevoMas = true;   // conserva lo escrito como precarga
+    }
+    private void CerrarNuevoMas() { _nuevoMas = false; _msg = null; }   // no se creo nada
+    // Editor de un campo propio en el alta: lo usan la fila de alta y el formulario "Nuevo" (expander con la
+    // fila vacia, Alex 2026-11-23). Escribe en _nuDinamicos. display:contents: en la fila es la celda del grid.
+    private RenderFragment EditorDinNuevo(CampoDinDef def) => @<div class="mas-dyn-ed">
+                    @{ var d = def; var dv = _nuDinamicos.TryGetValue(def.Id, out var _dv) ? _dv : ""; }
+                    @if (def.Tipo == TipoCampoTablero.Seleccion)
+                    {
+                        <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var op in def.OpcionesArray()) { <option value="@op" selected="@(op == dv)">@op</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Formula)
+                    {
+                        <div class="mas-cell mas-auto">(se calcula)</div>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Usuario)
+                    {
+                        <select class="mas-row-inp" value="@dv" @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())">
+                            <option value="">@def.Label</option>
+                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId" selected="@(u.PersonaId.ToString() == dv)">@u.NombreCompleto</option> }
+                        </select>
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        <SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="@def.Label"
+                                         SeleccionadaChanged="c => OnDirectorioNuevo(d.Id, c)" />
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Numero || def.Tipo == TipoCampoTablero.Moneda)
+                    {
+                        <input class="mas-row-inp" type="number" step="any" placeholder="@def.Label" value="@dv"
+                               @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                    }
+                    else if (def.Tipo == TipoCampoTablero.Fecha)
+                    {
+                        <input class="mas-row-inp" type="date" value="@dv"
+                               @onchange="e => SetDinamicoNuevo(d.Id, e.Value?.ToString())" />
+                    }
+                    else
+                    {
+                        <input class="mas-row-inp" placeholder="@def.Label" @bind:get="dv" @bind:set="v => SetDinamicoNuevo(d.Id, v)" @bind:event="oninput" />
+                    }
+                </div>;
+
+    private async Task GuardarNuevoMasAsync() { if (await AgregarAsync(true)) _nuevoMas = false; }
+
+    // abrir=true (gesto del expander, canon Unidades): tras crear, abre la ficha de la mascota para completarla.
+    private async Task<bool> AgregarAsync(bool abrir = false)
+    {
+        if (_nuUnidadId is not Guid uid) { Mensaje("Elige la unidad de la mascota.", true); return false; }
+        if (string.IsNullOrWhiteSpace(_nuNombre)) { Mensaje("Escribe el nombre de la mascota.", true); return false; }
         _busy = true;
         try
         {
             var (tn, tc) = DesdeSelTipo(_nuTipoSel);
             var resp = await Auth().PostAsJsonAsync($"/api/mi-copropiedad/unidades/{uid}/mascotas",
                 new CrearUnidadMascotaRequest(_nuNombre.Trim(), tn, string.IsNullOrWhiteSpace(_nuRaza) ? null : _nuRaza.Trim(), tc, _nuPropietarioId));
-            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return; }
+            if (!resp.IsSuccessStatusCode) { Mensaje(await MotivoAsync(resp), true); return false; }
 
             var creada = await resp.Content.ReadFromJsonAsync<UnidadMascotaDto>();
             // Los campos dinamicos se guardan despues del alta: necesitan el id del registro.
@@ -1269,9 +1326,11 @@ else
             Mensaje("Mascota agregada.", false);
             // Canon Unidades: crear + abrir la ficha para completar el registro.
             if (abrir && creada is not null) { var fm = _mascotas.FirstOrDefault(x => x.MascotaId == creada.Id); if (fm is not null) AbrirFichaM(fm); }
+            return true;
         }
         catch (Exception ex) { Mensaje("No se pudo agregar: " + ex.Message, true); }
         finally { _busy = false; }
+        return false;
     }
 
     // ===== Ficha de la mascota (modal simple): campos fijos + propios, con los endpoints de la edicion inline.
@@ -1960,6 +2019,12 @@ else
     .mas-prop-clear { border: 0; background: transparent; color: var(--propia-brand); font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; }
     .mas-prop-clear:hover { text-decoration: underline; }
     .mas-exp-fijo:hover { color: var(--propia-brand); background: var(--propia-brand-soft); }
+    .mas-dyn-ed { display: contents; }
+    .mas-nv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+    .mas-nv-lbl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--propia-text-secondary); }
+    .mas-nv-lbl .mas-dyn-ed { display: block; }
+    /* En el formulario los campos llevan borde visible (en la fila de alta son "fantasma"). */
+    .mas-nv-grid .mas-row-inp { border: 1px solid var(--propia-border-card); background: var(--propia-bg-card); }
     .mas-exp-mut { opacity: 1; color: var(--propia-text-faint); cursor: default; display: inline-flex; align-items: center; justify-content: center; }
     .mas-addcol-h { display: flex; align-items: center; justify-content: center; }
     .mas-addcol-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px dashed var(--propia-border-card-2); background: transparent; color: var(--propia-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }

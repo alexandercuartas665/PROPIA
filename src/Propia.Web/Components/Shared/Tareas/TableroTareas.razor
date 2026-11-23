@@ -2143,7 +2143,7 @@ else
         <div class="tb-newrow tb-subadd-row" @key="sf">
             <div class="tb-row-selc"></div>
             <div class="tb-row-exp">
-                <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la subtarea" @onclick="() => CrearSubfila(padre, true)" disabled="@string.IsNullOrWhiteSpace(sf.Titulo)">
+                <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la subtarea" @onclick="() => CrearSubfila(padre, true)" disabled="@_creandoTarea">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </button>
             </div>
@@ -2195,7 +2195,9 @@ else
     {
         if (EsBoardForaneo || _board is null || _creandoTarea) return;
         var sf = SubfilaDe(padre);
-        if (string.IsNullOrWhiteSpace(sf.Titulo)) return;
+        // Sin titulo solo desde el expander (abrir): se crea "Nueva subtarea" (mismo patron que la tarea). Enter/Tab
+        // con la fila vacia siguen sin crear nada.
+        if (string.IsNullOrWhiteSpace(sf.Titulo) && !abrir) return;
         _creandoTarea = true;
         try { await CrearSubfilaCoreAsync(padre, sf, abrir); }
         finally { _creandoTarea = false; }
@@ -2207,7 +2209,11 @@ else
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(sf.OrigenTipo) ? null : sf.OrigenTipo;
         var oRef = oTipo is null || string.IsNullOrWhiteSpace(sf.OrigenReferencia) ? null : sf.OrigenReferencia;
-        var req = new CrearTareaRequest(sf.Titulo.Trim(), string.IsNullOrWhiteSpace(sf.Descripcion) ? null : sf.Descripcion.Trim(),
+        // Expandir sin titulo (Alex 2026-11-23): "Nueva subtarea"; si la fila estaba TOTALMENTE vacia se borra sola al
+        // cerrar la ficha sin guardar ni agregar nada (BorrarSiSigueVaciaAsync), igual que la tarea.
+        var filaVacia = FilaAltaVacia(sf);
+        var tituloSf = string.IsNullOrWhiteSpace(sf.Titulo) ? TituloSubtareaVacia : sf.Titulo.Trim();
+        var req = new CrearTareaRequest(tituloSf, string.IsNullOrWhiteSpace(sf.Descripcion) ? null : sf.Descripcion.Trim(),
             sf.Prioridad, sf.EstadoId, null, null, sf.FechaVencimiento, padre.Id, sf.Etiquetas.ToList(), _board.Tablero.Id,
             null, false, sf.Valor, null, null, oTipo, oRef, sf.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: sf.PrioridadId ?? PrioridadBaseId);
@@ -2222,7 +2228,11 @@ else
             {
                 var det = await resp.Content.ReadFromJsonAsync<TareaDetalleDto>();
                 var t = det is null ? null : _tareas.FirstOrDefault(x => x.Id == det.Id);
-                if (t is not null) await AbrirCardDraft(t, null);
+                if (t is not null)
+                {
+                    await AbrirCardDraft(t, null);
+                    _tareaVaciaId = filaVacia ? t.Id : null;
+                }
             }
             catch { }
         }
@@ -6740,6 +6750,7 @@ else
 
     // Expandir la fila de alta sin datos (Alex 2026-11-21): crear "Nueva tarea" y borrarla si no se toca.
     private const string TituloTareaVacia = "Nueva tarea";
+    private const string TituloSubtareaVacia = "Nueva subtarea";
     private Guid? _tareaVaciaId;
     private static bool FilaAltaVacia(NuevaFilaDraft d) =>
         string.IsNullOrWhiteSpace(d.Titulo) && string.IsNullOrWhiteSpace(d.Descripcion) && d.FechaVencimiento is null
@@ -6753,7 +6764,7 @@ else
         {
             var det = await Auth().GetFromJsonAsync<TareaDetalleDto>($"/api/tareas/{id}");
             if (det is null) return;
-            if (det.Titulo != TituloTareaVacia || det.Comentarios.Count > 0 || (det.Adjuntos?.Count ?? 0) > 0 || Hijos(id).Count > 0) return;
+            if ((det.Titulo != TituloTareaVacia && det.Titulo != TituloSubtareaVacia) || det.Comentarios.Count > 0 || (det.Adjuntos?.Count ?? 0) > 0 || Hijos(id).Count > 0) return;
             var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
             if (resp.IsSuccessStatusCode) await RecargarBoard();
         }

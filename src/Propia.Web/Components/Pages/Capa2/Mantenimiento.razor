@@ -269,7 +269,7 @@
             <div class="mtp-newrow mtp-newrow--prog mtp-newrow--edit" style="@ProgGrid" @onkeydown="OnAltaProgKey">
                 <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col">
-                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="AltaProgAsync">
+                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="ExpandirAltaProgAsync">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
@@ -1104,6 +1104,40 @@ else if (_tab == "prog" && _vistaProg == "calendario")
 }
 
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
+@* Nueva programacion, paso 1 (Alex 2026-11-23): el expander del alta SIN activo abre este paso para elegir el equipo
+   o la zona; "Continuar" abre el formulario completo de programacion (el mismo de siempre). No crea nada aqui. *@
+@if (_nuevaProg)
+{
+    <div class="tbl-nv-back" @onclick="CerrarNuevaProg">
+        <div class="tbl-nv-card" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="tbl-nv-t">Nueva programación</div>
+            <div class="tbl-nv-s">Elige el equipo o la zona común a la que aplica; luego se abre el formulario completo.</div>
+            <div class="tbl-nv-grid">
+                <label class="tbl-nv-lbl"><span>Tipo</span>
+                    <select class="tbl-nv-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
+                        <option value="Equipo">Equipo</option>
+                        <option value="ZonaComun">Zona común</option>
+                    </select></label>
+                <label class="tbl-nv-lbl"><span>@(_altaTipo == "ZonaComun" ? "Zona común *" : "Equipo *")</span>
+                    <select class="tbl-nv-inp" @bind="_altaActivoId">
+                        <option value="">@(_altaTipo == "ZonaComun" ? "Elegir zona..." : "Elegir equipo...")</option>
+                        @foreach (var a in (_activos ?? new()).Where(x => x.ActivoTipo.ToString() == _altaTipo))
+                        {
+                            <option value="@a.ActivoId">@a.Nombre</option>
+                        }
+                    </select></label>
+                <label class="tbl-nv-lbl tbl-nv-full"><span>Título</span>
+                    <input class="tbl-nv-inp" placeholder="Opcional: si se deja vacío, Mantenimiento + nombre del activo" @bind="_altaTitulo" @bind:event="oninput" /></label>
+            </div>
+            @if (!string.IsNullOrEmpty(_nuevaProgErr)) { <div class="tbl-nv-err">@_nuevaProgErr</div> }
+            <div class="tbl-nv-acts">
+                <button type="button" class="propia-btn-ghost" @onclick="CerrarNuevaProg">Cancelar</button>
+                <button type="button" class="propia-btn-brand" @onclick="ContinuarNuevaProgAsync">Continuar</button>
+            </div>
+        </div>
+    </div>
+}
+
 <ModalHost />
 
 @* Handle de redimensionar columnas (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. El th
@@ -2238,6 +2272,22 @@ else if (_tab == "prog" && _vistaProg == "calendario")
     // flags la abren al pulsar la CTA/FAB. El alta se guarda al SALIR de la fila (clic fuera / Tab), nunca
     // con un boton de confirmar; al guardar la fila se cierra (vuelve a mostrar la CTA).
     private bool _altaProgAbierta;
+
+    // ===== Nueva programacion, paso 1 (expander del alta sin activo; Alex 2026-11-23) =====
+    private bool _nuevaProg;
+    private string? _nuevaProgErr;
+    private async Task ExpandirAltaProgAsync()
+    {
+        if (Guid.TryParse(_altaActivoId, out _)) { await AltaProgAsync(); return; }   // con activo: formulario completo
+        _nuevaProgErr = null; _nuevaProg = true;                                         // conserva lo escrito en la fila
+    }
+    private void CerrarNuevaProg() { _nuevaProg = false; _nuevaProgErr = null; }
+    private async Task ContinuarNuevaProgAsync()
+    {
+        if (!Guid.TryParse(_altaActivoId, out _)) { _nuevaProgErr = _altaTipo == "ZonaComun" ? "Elige la zona común." : "Elige el equipo."; return; }
+        _nuevaProg = false; _nuevaProgErr = null;
+        await AltaProgAsync();
+    }
     private bool _focusProgPending;
     private bool _altaIntervAbierta;
     private bool _focusIntervPending;
