@@ -205,6 +205,21 @@ tarjeta con sombra. Solo pasar el parametro.
 Dar `min-width` a columnas que cortan el dato (ref PQRSD: Radicado 140, Asunto 280/resumen 380, Tipo 120,
 Estado 155, Unidad 170, Persona 240). Medir en Chrome que no se corte.
 
+**Piso por tipo de dato (2026-11-23):**
+- **Fecha = 150px** (lo que ocupa el `input type=date` "dd/mm/aaaa" + icono con el padding canon 10px 12px).
+  Aplica a columnas fijas y a campos propios de tipo Fecha, en el grid (`minmax(150px,1fr)` o `150px`) y en el
+  header (`data-minw="150"`). Con 100-120px la fila de alta mostraba "dd/mm/a" (caso Tareas Vence).
+- Identificacion / NIT: `minmax(120px,...)` (con 1fr la cedula salia cortada).
+- Redimensionar (`propiaTablaResize`): el piso sale de `data-minw` del header; si no lo tiene, se detecta un
+  input de fecha en la franja de la columna (150px); el resto, 70px. Al crear una columna de fecha, ponerle
+  `data-minw="150"` en el header.
+- **Titulo completo por defecto (Alex, 2026-11-23):** el ancho por defecto de cada pista pasa por
+  `TablaAnchos.ConTitulo(pista, etiqueta)` (Components/Shared/TablaAnchos.cs): piso = ancho del titulo en
+  mayusculas (tabla de anchos Lexend 11.5/700/.4) + 48px de cabecera (padding, chevron, handle, flecha). Un ancho
+  fijado arrastrando se respeta (doble clic lo devuelve al defecto). Grid nuevo = usar ConTitulo en su GridStyle.
+- Verificacion: medir el ancho natural del input de fecha (mismo font/padding, width:auto) contra su ancho real
+  en la fila de alta y al editar; "falta" debe ser <= 0.
+
 ## 14. Footer / paginador de la tabla (referencia: Unidades `.dst-pager`)
 
 Barra inferior FIJA al pie de la tabla, con el conteo a la izquierda y los controles a la derecha.

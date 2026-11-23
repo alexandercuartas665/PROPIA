@@ -232,7 +232,7 @@
                     <div class="seg-head seg-grid" style="@GridStyle()">
                         <div class="seg-sel"><input type="checkbox" class="seg-chk" title="Seleccionar todo" checked="@TodosSel" @onchange="e => ToggleSelAll((bool)(e.Value ?? false))" /></div>
                         <div></div>
-                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th" data-clave="@ck" title="Arrastra: mover columna" @onmousedown="e => IniciarReorder(e, ck)"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))<span class="seg-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(ck, 0)" @ondblclick:stopPropagation="true"></span></div> }
+                        @foreach (var clave in ColsVisibles()) { var ck = clave; <div class="seg-th" data-clave="@ck" data-minw="@(ColEsFecha(ck) ? "150" : null)" title="Arrastra: mover columna" @onmousedown="e => IniciarReorder(e, ck)"><span class="seg-th-lbl">@ColLabel(ck).ToUpperInvariant()</span>@ChevCol(ck, ColLabel(ck), ck.StartsWith("cd:", StringComparison.Ordinal))<span class="seg-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, ck)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => OnColResize(ck, 0)" @ondblclick:stopPropagation="true"></span></div> }
                         <div class="seg-addcol-h"><button type="button" class="seg-addcol-btn" title="Crear campo nuevo (columna)" @onclick="() => _crearCampoAbierto = true"><i class="fi fi-rr-plus"></i></button></div>
                     </div>
                     @foreach (var item in FilasRender())
@@ -1267,12 +1267,17 @@
     private string GridStyle()
     {
         var visibles = ColsVisibles().ToList();
-        var cols = "38px 34px" + string.Concat(visibles.Select(k => " " + (_colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k)))) + " 44px";
-        var min = 282 + visibles.Count * 130;
+        // Por defecto el titulo se ve completo (TablaAnchos); un ancho fijado arrastrando se respeta.
+        var pistas = visibles.Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : TablaAnchos.ConTitulo(ColWidth(k), ColLabel(k))).ToList();
+        var cols = "38px 34px" + string.Concat(pistas.Select(t => " " + t)) + " 44px";
+        var min = 282 + pistas.Sum(t => Math.Max(130, TablaAnchos.MinimoPx(t)));
         return $"grid-template-columns:{cols};min-width:{min}px";
     }
-    private static string ColWidth(string clave) => clave switch
+    // Fechas: piso de 150px (input "dd/mm/aaaa" + icono de la fila de alta). Con 1fr se cortaba a ~111px.
+    private bool ColEsFecha(string clave) => clave is "fechaocurrencia" or "fechareporte" or "fechapago" || CampoDin(clave)?.Tipo == TipoCampoTablero.Fecha;
+    private string ColWidth(string clave) => clave switch
     {
+        _ when ColEsFecha(clave) => "minmax(150px,1fr)",
         "titulo" => "1.7fr",
         "elemento" => "1.5fr",
         "estado" => "1.3fr",

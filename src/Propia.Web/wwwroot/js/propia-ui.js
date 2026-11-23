@@ -454,6 +454,29 @@
     // fija grid-template-columns de TODAS las filas. Doble clic = autoajustar (ancho 0 -> default).
     // -------------------------------------------------------------------------
     window.propiaTablaResize = {
+        // Ancho minimo de una columna al arrastrar (piso por tipo de dato, 2026-11-23). Antes era 70px para
+        // todas: una columna de fecha quedaba ilegible ("dd/mm/a"). Orden: data-minw del header (lo pone el
+        // modulo cuando conoce el tipo) y, si no, se detecta un input de fecha en la misma franja horizontal
+        // de la tabla (fila de alta abierta o celdas editables) -> 150px, lo que ocupa "dd/mm/aaaa" + icono.
+        PISO_FECHA: 150,
+        pisoDe: function (cell, base) {
+            if (!cell) return base;
+            var dm = parseInt(cell.getAttribute('data-minw') || '', 10);
+            if (dm > 0) return Math.max(base, dm);
+            var r = cell.getBoundingClientRect();
+            var root = cell.parentElement;
+            for (var i = 0; root && i < 8; i++, root = root.parentElement) {
+                if (root.getBoundingClientRect().height > r.height * 2.5) break;
+            }
+            if (!root) return base;
+            var fechas = root.querySelectorAll('input[type="date"],input[type="datetime-local"]');
+            for (var j = 0; j < fechas.length; j++) {
+                var fr = fechas[j].getBoundingClientRect();
+                var cx = fr.left + fr.width / 2;
+                if (fr.width && cx >= r.left && cx <= r.right) return Math.max(base, window.propiaTablaResize.PISO_FECHA);
+            }
+            return base;
+        },
         start: function (dotnetRef, clave, clientX) {
             var minW = 70;
             // Busca la celda de cabecera por data-clave (agnostico al prefijo de cada tabla). Solo las
@@ -461,6 +484,7 @@
             var cell = [...document.querySelectorAll('[data-clave="' + CSS.escape(clave) + '"]')]
                 .sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0] || null;
             var startWidth = cell ? cell.getBoundingClientRect().width : 160;
+            minW = window.propiaTablaResize.pisoDe(cell, minW);
             if (cell) cell.setAttribute('draggable', 'false');   // evita que arranque el drag de reordenar
             var line = document.createElement('div');
             line.style.cssText = 'position:fixed;top:0;bottom:0;width:2px;background:var(--propia-brand,#6D4FE3);z-index:6000;pointer-events:none;opacity:.8;';
@@ -1035,9 +1059,28 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         var el = e.target;
         if (el && el.matches && el.matches('textarea.tb-nf-area')) cerrarArea(el);
     });
+    // Focos de una fila de alta, en orden (sin los de una lista abierta).
+    function focosDe(row) {
+        return Array.prototype.filter.call(row.querySelectorAll('input, textarea, select, button, [tabindex]'), function (x) {
+            return !x.disabled && x.tabIndex >= 0 && x.offsetParent !== null && !x.closest('.lbx-pop') && x.type !== 'hidden';
+        });
+    }
     document.addEventListener('keydown', function (e) {
         var el = e.target;
         if (e.key === 'Enter' && !e.shiftKey && el && el.matches && el.matches('textarea.tb-nf-area')) e.preventDefault();
+        // 3) Fecha (2026-11-22): el input date del navegador tiene varias paradas de Tab (dia, mes, anio y el icono
+        //    del calendario). En la fila de alta, Tab salta al SIGUIENTE campo y Shift+Tab al anterior. Al escribir
+        //    la fecha el navegador pasa solo de dia a mes y a anio. Si la fecha es el ultimo campo, el Tab lo maneja
+        //    altaAutoSave (guarda y enfoca "Agregar tarea"): por eso se respeta defaultPrevented.
+        if (e.key === 'Tab' && !e.defaultPrevented && !e.altKey && !e.ctrlKey && !e.metaKey
+            && el && el.matches && el.matches('input[type="date"]')) {
+            var row = el.closest('.tb-newrow'); if (!row) return;
+            var f = focosDe(row), i = f.indexOf(el);
+            var dest = e.shiftKey ? f[i - 1] : f[i + 1];
+            if (i < 0 || !dest) return;
+            e.preventDefault();
+            dest.focus();
+        }
     });
     // Lista con busqueda (ListaBuscable): enfoca el buscador con el cursor al final de lo ya escrito.
     window.propiaUI.focoAlFinal = function (el) {
