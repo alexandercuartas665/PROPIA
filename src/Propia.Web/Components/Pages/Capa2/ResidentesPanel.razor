@@ -270,7 +270,7 @@ else
                 <div class="res-sel-cell"></div>
                 <div class="res-col-exp">
                     @* Expander del alta (como Unidades): crea el residente con lo escrito y abre su ficha para completar. *@
-                    <button type="button" class="res-exp res-exp-fijo" tabindex="-1" title="Crear y abrir la ficha para completar" @onclick="() => AgregarAsync(true)" disabled="@_busy">
+                    <button type="button" class="res-exp res-exp-fijo" tabindex="-1" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" @onclick="ExpandirAltaResAsync" disabled="@_busy">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
@@ -461,6 +461,50 @@ else
     <div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--propia-text-h1);color:var(--propia-text-inverse);padding:8px 16px;border-radius:9px;z-index:5000;font-size:12.5px;cursor:pointer;box-shadow:0 6px 18px rgba(27,42,58,.28);" @onclick="() => _colToast = null">@_colToast</div>
 }
 
+@* Nuevo residente (Alex 2026-11-23): el expander del alta sin unidad o sin persona abre este formulario, precargado con
+   lo escrito en la fila. No crea nada hasta "Crear residente"; al crear abre la ficha de la persona. *@
+@if (_nuevoRes)
+{
+    <div class="tbl-nv-back" @onclick="CerrarNuevoRes">
+        <div class="tbl-nv-card" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="tbl-nv-t">Nuevo residente</div>
+            <div class="tbl-nv-s">Elige la unidad y la persona (búscala en el Directorio o créala) y guarda.</div>
+            <div class="tbl-nv-grid">
+                <label class="tbl-nv-lbl"><span>Unidad *</span>
+                    <SelectorUnidadCodigo Unidades="_unidades" UnidadId="@UnidadElegida?.Id" UnidadIdChanged="ElegirUnidadNuevoRes"
+                                          Class="tbl-nv-inp" Placeholder="Ej. A1-101" /></label>
+                <label class="tbl-nv-lbl"><span>Relación</span>
+                    <select class="tbl-nv-inp" @bind="_rolNuevo">
+                        @foreach (var rr in Enum.GetValues<RolUnidadPersona>()) { <option value="@rr">@RolLabel(rr)</option> }
+                    </select></label>
+                <div class="tbl-nv-lbl tbl-nv-full"><span>Persona *</span>
+                    @if (_personaSel is null)
+                    {
+                        <SelectorPersona Seleccionada="_personaSel" SeleccionadaChanged="OnPersonaSel" Jwt="@_jwt" PermiteEmpresa="true" Flotante="true" Placeholder="Buscar o crear..." EmailInicial="@_ptEmail" TelefonoInicial="@_ptTel" />
+                    }
+                    else
+                    {
+                        <div class="res-nf-selname" title="@_personaSel.NombreCompleto">
+                            <span>@_personaSel.NombreCompleto</span>
+                            <button type="button" class="res-nf-selx" title="Cambiar persona" @onclick="LimpiarPersonaSel">&times;</button>
+                        </div>
+                    }
+                </div>
+                <label class="tbl-nv-lbl"><span>Teléfono</span>
+                    <input class="tbl-nv-inp" placeholder="Teléfono" @bind="_ptTel" @bind:event="oninput" /></label>
+                <label class="tbl-nv-lbl"><span>Email</span>
+                    <input class="tbl-nv-inp" placeholder="Email" @bind="_ptEmail" @bind:event="oninput" /></label>
+                <label class="tbl-nv-chk"><input type="checkbox" @bind="_habitaNuevo" /> <span>Habita en la unidad</span></label>
+            </div>
+            @if (!string.IsNullOrEmpty(_nuevoResErr)) { <div class="tbl-nv-err">@_nuevoResErr</div> }
+            <div class="tbl-nv-acts">
+                <button type="button" class="propia-btn-ghost" @onclick="CerrarNuevoRes" disabled="@_busy">Cancelar</button>
+                <button type="button" class="propia-btn-brand" @onclick="GuardarNuevoResAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear residente")</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* IModalService es scoped por circuito: el host debe declararse en la pagina para renderizar el modal. *@
 <ModalHost />
 
@@ -622,7 +666,7 @@ else
         _ => "150px"   // campos propios
     };
     private string PerGridStyle => "grid-template-columns: 38px 34px "
-        + string.Join(" ", ColsVisibles().Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : ColWidth(k)))
+        + string.Join(" ", ColsVisibles().Select(k => _colW.TryGetValue(k, out var w) ? w + "px" : TablaAnchos.ConTitulo(ColWidth(k), ColLabel(k))))
         + " 60px 40px";
 
     // ---------- Menu "Columnas" inline (orden/visibilidad + borrar DIN). Persistencia identica a
@@ -1020,6 +1064,35 @@ else
         _focusPending = true;
     }
     private void CerrarAltaR() { _altaAbierta = false; }
+
+    // ===== Formulario "Nuevo residente" (expander del alta sin unidad o persona; Alex 2026-11-23) =====
+    private bool _nuevoRes;
+    private string? _nuevoResErr;
+    private async Task ExpandirAltaResAsync()
+    {
+        if (AltaValida) { await AgregarAsync(true); return; }   // fila con unidad + persona: crea y abre la ficha
+        _nuevoResErr = null; _msg = ""; _msgError = false; _unidadDrop = false; _altaAbierta = false; _nuevoRes = true;   // conserva lo escrito
+    }
+    private void ElegirUnidadNuevoRes(Guid? id)
+    {
+        var u = id is Guid g ? _unidades.FirstOrDefault(x => x.Id == g) : null;
+        _unidadQuery = u is null ? "" : CodigoUnidad(u);
+    }
+    private void CerrarNuevoRes() { _nuevoRes = false; _nuevoResErr = null; }   // no se creo nada
+    private async Task GuardarNuevoResAsync()
+    {
+        var antes = _resRecienCreados.ToHashSet();
+        // Se crea SIN abrir: la ficha (modal) se espera hasta cerrarse, y este formulario debe cerrarse antes.
+        await AgregarAsync(false);
+        var nueva = _resRecienCreados.Except(antes).Cast<Guid?>().FirstOrDefault();
+        if (nueva is Guid id)
+        {
+            _nuevoRes = false; _nuevoResErr = null;
+            StateHasChanged();
+            if (_residentes.FirstOrDefault(x => x.UnidadPersonaId == id) is { } fila) await AbrirFicha(fila);
+        }
+        else { _nuevoResErr = string.IsNullOrWhiteSpace(_msg) ? "No se pudo crear el residente." : _msg; _msg = ""; _msgError = false; }
+    }
     private async Task OnAltaKeydownR(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAltaR();

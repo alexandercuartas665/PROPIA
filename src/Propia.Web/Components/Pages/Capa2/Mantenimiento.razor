@@ -190,7 +190,7 @@
             <div class="mtp-head" style="@ProgGrid">
                 <div class="mtp-sel-col"><label class="mtp-chk" title="Seleccionar todo"><input type="checkbox" checked="@TodasProgSel" @onchange="ToggleSelAllProg" /></label></div>
                 <div></div>
-                @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label@ChevColProg(ck, c.Label, EsCustomProg(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
+                @foreach (var c in ProgColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="prog:@ck" data-minw="@(ColEsFechaProg(ck) ? "150" : null)" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "prog", ck)'>@c.Label@ChevColProg(ck, c.Label, EsCustomProg(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "prog", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("prog", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @* Agrupacion multi-nivel (motor compartido TablaAgrupador): el arbol se aplana a encabezados de
@@ -269,7 +269,7 @@
             <div class="mtp-newrow mtp-newrow--prog mtp-newrow--edit" style="@ProgGrid" @onkeydown="OnAltaProgKey">
                 <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col">
-                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="AltaProgAsync">
+                    <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="ExpandirAltaProgAsync">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                     </button>
                 </div>
@@ -519,7 +519,7 @@
         <div class="mtp-table mtp-table--wide">
             <div class="mtp-head" style="@IntervGrid">
                 <div></div>
-                @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label@ChevColInterv(ck, c.Label, EsCustomInterv(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
+                @foreach (var c in IntervColsVis) { var ck = c.Key; <div class="mtp-th" data-clave="interv:@ck" data-minw="@(ColEsFechaInterv(ck) ? "150" : null)" title="Arrastra: mover columna" @onmousedown='e => IniReorderM(e, "interv", ck)'>@c.Label@ChevColInterv(ck, c.Label, EsCustomInterv(ck))<span class="mtp-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown='e => IniResizeM(e, "interv", ck)' @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick='() => ResetResizeM("interv", ck)' @ondblclick:stopPropagation="true"></span></div> }
                 <div></div>
             </div>
             @* Agrupacion multi-nivel (motor compartido TablaAgrupador), igual que Programacion. *@
@@ -1104,6 +1104,40 @@ else if (_tab == "prog" && _vistaProg == "calendario")
 }
 
 @* ModalHost DEBE vivir en la pagina (no en MainLayout): comparte instancia Scoped del IModalService. *@
+@* Nueva programacion, paso 1 (Alex 2026-11-23): el expander del alta SIN activo abre este paso para elegir el equipo
+   o la zona; "Continuar" abre el formulario completo de programacion (el mismo de siempre). No crea nada aqui. *@
+@if (_nuevaProg)
+{
+    <div class="tbl-nv-back" @onclick="CerrarNuevaProg">
+        <div class="tbl-nv-card" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="tbl-nv-t">Nueva programación</div>
+            <div class="tbl-nv-s">Elige el equipo o la zona común a la que aplica; luego se abre el formulario completo.</div>
+            <div class="tbl-nv-grid">
+                <label class="tbl-nv-lbl"><span>Tipo</span>
+                    <select class="tbl-nv-inp" @bind="_altaTipo" @bind:after="OnAltaTipoChanged">
+                        <option value="Equipo">Equipo</option>
+                        <option value="ZonaComun">Zona común</option>
+                    </select></label>
+                <label class="tbl-nv-lbl"><span>@(_altaTipo == "ZonaComun" ? "Zona común *" : "Equipo *")</span>
+                    <select class="tbl-nv-inp" @bind="_altaActivoId">
+                        <option value="">@(_altaTipo == "ZonaComun" ? "Elegir zona..." : "Elegir equipo...")</option>
+                        @foreach (var a in (_activos ?? new()).Where(x => x.ActivoTipo.ToString() == _altaTipo))
+                        {
+                            <option value="@a.ActivoId">@a.Nombre</option>
+                        }
+                    </select></label>
+                <label class="tbl-nv-lbl tbl-nv-full"><span>Título</span>
+                    <input class="tbl-nv-inp" placeholder="Opcional: si se deja vacío, Mantenimiento + nombre del activo" @bind="_altaTitulo" @bind:event="oninput" /></label>
+            </div>
+            @if (!string.IsNullOrEmpty(_nuevaProgErr)) { <div class="tbl-nv-err">@_nuevaProgErr</div> }
+            <div class="tbl-nv-acts">
+                <button type="button" class="propia-btn-ghost" @onclick="CerrarNuevaProg">Cancelar</button>
+                <button type="button" class="propia-btn-brand" @onclick="ContinuarNuevaProgAsync">Continuar</button>
+            </div>
+        </div>
+    </div>
+}
+
 <ModalHost />
 
 @* Handle de redimensionar columnas (= .mas-col-rz del canon); la guia la pinta propiaTablaResize. El th
@@ -1544,6 +1578,10 @@ else if (_tab == "prog" && _vistaProg == "calendario")
         StateHasChanged();
     }
 
+    // Columnas de fecha (fijas o campos propios Fecha/FechaHora): piso de 150px en el grid y al redimensionar.
+    private bool ColEsFechaProg(string k) => k == "proxima" || CampoCustomProg(k)?.Tipo is TipoCampoTablero.Fecha or TipoCampoTablero.FechaHora;
+    private bool ColEsFechaInterv(string k) => k is "programada" or "cierre" || CampoCustomInterv(k)?.Tipo is TipoCampoTablero.Fecha or TipoCampoTablero.FechaHora;
+
     private string ProgGrid
     {
         get
@@ -1551,8 +1589,9 @@ else if (_tab == "prog" && _vistaProg == "calendario")
             var cols = new List<string> { "38px", "34px" };
             foreach (var c in ProgColsVis)
             {
-                cols.Add(_colWProg.TryGetValue(c.Key, out var wP) ? $"{wP}px" : c.Key switch
+                cols.Add(_colWProg.TryGetValue(c.Key, out var wP) ? $"{wP}px" : TablaAnchos.ConTitulo(c.Key switch
                 {
+                    _ when ColEsFechaProg(c.Key) => "minmax(150px,1fr)",   // piso fecha: input "dd/mm/aaaa" + icono
                     "tipo" => "minmax(96px,.8fr)",
                     "activo" => "minmax(150px,1.4fr)",
                     "titulo" => "minmax(160px,1.5fr)",
@@ -1561,11 +1600,10 @@ else if (_tab == "prog" && _vistaProg == "calendario")
                     "tablero" => "minmax(110px,1fr)",
                     "prioridad" => "minmax(90px,.8fr)",
                     "periodicidad" => "minmax(120px,1.1fr)",
-                    "proxima" => "minmax(120px,1fr)",
                     "responsables" => "minmax(90px,.8fr)",
                     "activa" => "70px",
                     _ => "minmax(130px,1fr)"   // columnas de campos propios (cd:{id})
-                });
+                }, c.Label));
             }
             cols.Add("60px");
             return $"grid-template-columns: {string.Join(' ', cols)}; gap: 10px; align-items: center;";
@@ -1822,13 +1860,14 @@ else if (_tab == "prog" && _vistaProg == "calendario")
         {
             var cols = new List<string> { "34px" };
             foreach (var c in IntervColsVis)
-                cols.Add(_colWInterv.TryGetValue(c.Key, out var wI) ? $"{wI}px" : c.Key switch
+                cols.Add(_colWInterv.TryGetValue(c.Key, out var wI) ? $"{wI}px" : TablaAnchos.ConTitulo(c.Key switch
                 {
+                    _ when ColEsFechaInterv(c.Key) => "minmax(150px,1fr)",   // piso fecha: input "dd/mm/aaaa" + icono
                     "codigo" => "minmax(110px,.9fr)", "activo" => "minmax(140px,1.3fr)", "tipo" => "minmax(100px,.8fr)",
                     "titulo" => "minmax(160px,1.5fr)", "estado" => "minmax(120px,1fr)", "prioridad" => "minmax(95px,.8fr)",
-                    "proveedor" => "minmax(130px,1.1fr)", "programada" => "minmax(110px,1fr)", "cierre" => "minmax(110px,1fr)",
+                    "proveedor" => "minmax(130px,1.1fr)",
                     "tarea" => "minmax(90px,.8fr)", _ => "minmax(130px,1fr)"
-                });
+                }, c.Label));
             cols.Add("60px");
             return $"grid-template-columns: {string.Join(' ', cols)}; gap: 10px; align-items: center;";
         }
@@ -2233,6 +2272,22 @@ else if (_tab == "prog" && _vistaProg == "calendario")
     // flags la abren al pulsar la CTA/FAB. El alta se guarda al SALIR de la fila (clic fuera / Tab), nunca
     // con un boton de confirmar; al guardar la fila se cierra (vuelve a mostrar la CTA).
     private bool _altaProgAbierta;
+
+    // ===== Nueva programacion, paso 1 (expander del alta sin activo; Alex 2026-11-23) =====
+    private bool _nuevaProg;
+    private string? _nuevaProgErr;
+    private async Task ExpandirAltaProgAsync()
+    {
+        if (Guid.TryParse(_altaActivoId, out _)) { await AltaProgAsync(); return; }   // con activo: formulario completo
+        _nuevaProgErr = null; _nuevaProg = true;                                         // conserva lo escrito en la fila
+    }
+    private void CerrarNuevaProg() { _nuevaProg = false; _nuevaProgErr = null; }
+    private async Task ContinuarNuevaProgAsync()
+    {
+        if (!Guid.TryParse(_altaActivoId, out _)) { _nuevaProgErr = _altaTipo == "ZonaComun" ? "Elige la zona común." : "Elige el equipo."; return; }
+        _nuevaProg = false; _nuevaProgErr = null;
+        await AltaProgAsync();
+    }
     private bool _focusProgPending;
     private bool _altaIntervAbierta;
     private bool _focusIntervPending;

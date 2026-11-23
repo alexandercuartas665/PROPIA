@@ -339,7 +339,7 @@ else
                             @* Canon Unidades: el expander del alta CREA el rol con lo escrito y ABRE su ficha
                                (la matriz de permisos). Minimo: el nombre. *@
                             <td class="tbl-exp">
-                                <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha" @onclick="CrearRol" disabled="@(_busy || string.IsNullOrWhiteSpace(_nuevoNombre))">
+                                <button type="button" class="tbl-exp-btn" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" @onclick="ExpandirAltaRol" disabled="@_busy">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                                 </button>
                             </td>
@@ -414,6 +414,36 @@ else
 
     <TablaCtxMenu Abierto="_ctxOpen" X="_ctxX" Y="_ctxY" Items="_ctxItems" Cerrado="() => _ctxOpen = false" />
 
+    @* Nuevo rol (Alex 2026-11-23): el expander del alta SIN nombre abre este formulario (precargado con lo elegido en
+       la fila). No crea nada hasta "Crear rol"; al crear abre la ficha del rol (matriz de permisos). *@
+    @if (_nuevoRolModal)
+    {
+        <div class="usr-cfg-back" @onclick="CerrarNuevoRol">
+            <div class="usr-confirm" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+                <div class="usr-confirm-t">Nuevo rol</div>
+                <div class="usr-confirm-s">Ponle nombre y guarda; los permisos se configuran luego en la ficha del rol.</div>
+                <div class="rol-nv-grid">
+                    <label class="rol-nv-lbl"><span>Nombre *</span>
+                        <input class="rol-inp" placeholder="Nombre del rol" @bind="_nuevoNombre" @bind:event="oninput" @onkeydown="OnNuevoRolKeydown" autofocus /></label>
+                    <label class="rol-nv-lbl"><span>Categoría</span>
+                        <select class="rol-inp" @bind="_nuevoCategoria">
+                            @foreach (var c in Enum.GetValues<CategoriaRol>()) { <option value="@c">@LabelCategoria(c)</option> }
+                        </select></label>
+                    <label class="rol-nv-lbl"><span>Permisos base</span>
+                        <select class="rol-inp" @bind="_copiarDe">
+                            <option value="">(Empezar vacío)</option>
+                            @foreach (var r in (_roles ?? new()).Where(r => r.Tipo != TipoRol.Sistema)) { <option value="@r.Id">Copiar de @r.Nombre</option> }
+                        </select></label>
+                </div>
+                @if (!string.IsNullOrEmpty(_nuevoRolErr)) { <div class="rol-nv-err">@_nuevoRolErr</div> }
+                <div class="usr-confirm-acts">
+                    <button type="button" class="usr-btn-ghost" @onclick="CerrarNuevoRol" disabled="@_busy">Cancelar</button>
+                    <button type="button" class="usr-btn-primary" @onclick="GuardarNuevoRolAsync" disabled="@_busy">@(_busy ? "Creando..." : "Crear rol")</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @* RL-1: confirmacion de borrado de rol personalizado (reusa .usr-confirm global). *@
     @if (_confirmDelRol is { } rolDel)
     {
@@ -447,6 +477,10 @@ else
 }
 
 <style>
+    /* Formulario "Nuevo rol" (expander del alta sin nombre). */
+    .rol-nv-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+    .rol-nv-lbl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--propia-text-secondary); }
+    .rol-nv-err { font-size: 12.5px; color: var(--propia-danger); margin: -6px 0 12px; }
     /* Casilla DESHABILITADA de la matriz: misma forma que .usr-chk pero apagada e inerte (accion que no
        aplica en ese modulo). Da simetria a la tabla en vez del punto suelto. */
     .usr-chk--na { opacity: .45; cursor: default; background: var(--propia-bg-app); border-style: dashed; }
@@ -1242,21 +1276,44 @@ else
         await CargarRolesAsync();
     }
 
-    private async Task CrearRol()
+    // ===== Formulario "Nuevo rol" (expander del alta sin nombre; Alex 2026-11-23) =====
+    private bool _nuevoRolModal;
+    private string? _nuevoRolErr;
+    private async Task ExpandirAltaRol()
     {
-        if (string.IsNullOrWhiteSpace(_nuevoNombre)) return;
+        if (!string.IsNullOrWhiteSpace(_nuevoNombre)) { await CrearRol(); return; }   // con nombre: crea y abre la ficha
+        _nuevoRolErr = null; _creandoRol = false; _nuevoRolModal = true;              // conserva categoria/base elegidas
+    }
+    private void CerrarNuevoRol() { _nuevoRolModal = false; _nuevoRolErr = null; _nuevoNombre = ""; _copiarDe = ""; }   // no se creo nada
+    private async Task GuardarNuevoRolAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre)) { _nuevoRolErr = "Escribe el nombre del rol."; return; }
+        _nuevoRolErr = null;
+        if (await CrearRol()) _nuevoRolModal = false;
+        else _nuevoRolErr = _msg ?? "No se pudo crear el rol.";
+    }
+    private async Task OnNuevoRolKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await GuardarNuevoRolAsync();
+        else if (e.Key == "Escape") CerrarNuevoRol();
+    }
+
+    private async Task<bool> CrearRol()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNombre)) return false;
         _busy = true; _msg = null;
         try
         {
             Guid? copiar = Guid.TryParse(_copiarDe, out var g) ? g : null;
             var resp = await Auth().PostAsJsonAsync("/api/roles",
                 new CrearRolRequest(_nuevoNombre.Trim(), null, _nuevoCategoria, copiar));
-            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await resp.Content.ReadAsStringAsync(); _msgClass = "alert-danger"; return false; }
             var creado = await resp.Content.ReadFromJsonAsync<RolDto>();
             _msg = $"Rol '{_nuevoNombre}' creado."; _msgClass = "alert-success";
             _nuevoNombre = ""; _copiarDe = ""; _creandoRol = false;
             await CargarRolesAsync();
             if (creado is not null) await EditarRol(creado.Id); // abre su ficha
+            return true;
         }
         finally { _busy = false; }
     }
