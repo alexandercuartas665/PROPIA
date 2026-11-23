@@ -529,7 +529,7 @@ else
                         <div class="tb-row-selc"></div>
                         <div class="tb-row-exp"></div>
                         <div class="tb-row-tit">
-                            <button type="button" class="row-add--sm" @onclick="FabAgregarTarea">
+                            <button type="button" class="row-add--sm" data-tbu="@_uid" @onclick="FabAgregarTarea">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                 @(PadreTareaId is null ? "Agregar tarea" : "Agregar subtarea")
                             </button>
@@ -2098,7 +2098,28 @@ else
         _altaTblOpen = false;
         StateHasChanged();
     }
-    public void Dispose() { _selfTbl?.Dispose(); }
+    public void Dispose()
+    {
+        try { _ = Js.InvokeVoidAsync("propiaUI.subfilaTabOff", _uid); } catch { }
+        _selfTbl?.Dispose();
+    }
+    // Id de esta instancia (Alex 2026-11-23): la pestana Sub-tareas del modal es OTRO TableroTareas en la misma
+    // pagina; los focos por selector (CTA, titulo de alta, fila de subtarea) se acotan a la propia instancia para
+    // no caer en el "Agregar tarea" de la tabla que queda detras del modal.
+    private readonly string _uid = "tbu" + Guid.NewGuid().ToString("N")[..10];
+    private bool _subfilaTabOn;
+    private Guid? _focoSubfilaPend;
+    // Tab desde el ULTIMO campo de la fila "+ Agregar subtarea" (propiaUI.subfilaTab): crea la subtarea y deja el
+    // foco en el titulo de esa misma fila para escribir la siguiente.
+    [JSInvokable] public async Task SubfilaTabFinal(string padreId)
+    {
+        if (!Guid.TryParse(padreId, out var pid)) return;
+        var padre = _tareas.FirstOrDefault(x => x.Id == pid);
+        if (padre is null) return;
+        await CrearSubfila(padre);
+        _focoSubfilaPend = pid;
+        StateHasChanged();
+    }
 
     // ===== Acciones de fila: SOLO en el menu contextual (clic derecho). Nada de botones en la grilla (A4). =====
     private bool _ctxOpen;
@@ -2140,7 +2161,7 @@ else
     {
         if (_board is null) { return; }
         var sf = SubfilaDe(padre);
-        <div class="tb-newrow tb-subadd-row" @key="sf">
+        <div class="tb-newrow tb-subadd-row" data-tbu="@_uid" data-padre="@padre.Id" @key="sf">
             <div class="tb-row-selc"></div>
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la subtarea" @onclick="() => CrearSubfila(padre, true)" disabled="@_creandoTarea">
@@ -2149,7 +2170,7 @@ else
             </div>
             <div class="tb-row-tit" style="padding-left:@(depth * 22)px">
                 <span class="tb-row-kidmark tb-subadd-mark" title="Subtarea">&#x2514;</span>
-                <input class="tb-nf-inp tb-subadd-inp" placeholder="+ Agregar subtarea..." @bind="sf.Titulo" @bind:event="oninput"
+                <input class="tb-nf-inp tb-subadd-inp" data-tbu="@_uid" data-subadd="@padre.Id" placeholder="+ Agregar subtarea..." @bind="sf.Titulo" @bind:event="oninput"
                        @onkeydown="e => SubfilaKeydown(e, padre)" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))"></textarea></div> }
@@ -3480,13 +3501,18 @@ else
         if (_nfFocusEstado is Guid nfe)
         {
             _nfFocusEstado = null;
-            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-nf-tit='{nfe}']"); } catch { }
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-tbu='{_uid}'][data-nf-tit='{nfe}']"); } catch { }
         }
         // Fila de alta cerrada con Enter o con Tab desde el ultimo campo: el foco va a "Agregar tarea".
         if (_focoCtaPend && !_altaTblOpen)
         {
             _focoCtaPend = false;
-            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".tb-cta-row .row-add--sm"); } catch { }
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $".row-add--sm[data-tbu='{_uid}']"); } catch { }
+        }
+        if (_focoSubfilaPend is Guid sfp)
+        {
+            _focoSubfilaPend = null;
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", $"[data-tbu='{_uid}'][data-subadd='{sfp}']"); } catch { }
         }
         // Barra de scroll superior espejo (vista Lista): enlazarla con el scroll real de la tabla.
         if (_boardMode == "lista")
@@ -3510,10 +3536,15 @@ else
             // SIEMPRE presente en vista Tabla; .tb-newrow a secas la comparten la fila CTA y la de subtarea,
             // de ahi el selector especifico. Ignora el pop del selector de persona (.sp-pop).
             var altaPresenteTbl = _board is not null && _board.Estados.Count > 0 && _altaTblOpen;
+            if (!_subfilaTabOn)
+            {
+                _subfilaTabOn = true;
+                try { await Js.InvokeVoidAsync("propiaUI.subfilaTab", _selfTbl, _uid, "SubfilaTabFinal"); } catch { }
+            }
             if (altaPresenteTbl && !_altaAutoSaveOnTbl)
             {
                 _altaAutoSaveOnTbl = true;
-                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfTbl, ".tb-newrow--alta", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { }
+                try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfTbl, $".tb-newrow--alta[data-tbu='{_uid}']", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { }
             }
             else if (!altaPresenteTbl && _altaAutoSaveOnTbl)
             {
@@ -5088,7 +5119,7 @@ else
         var nf = NuevaFilaDe(estadoId);
         @* .tb-newrow--alta: clase propia para que altaAutoSave observe SOLO esta fila de alta real.
            La base .tb-newrow la comparten la fila CTA (tb-cta-row) y la de subtarea (tb-subadd-row). *@
-        <div class="tb-newrow tb-newrow--alta" @key="nf">
+        <div class="tb-newrow tb-newrow--alta" data-tbu="@_uid" @key="nf">
             <div class="tb-row-selc"></div>
             <div class="tb-row-exp">
                 <button type="button" class="tb-exp-fijo" tabindex="-1" title="Crear y abrir la tarea" @onclick="() => CrearDesdeNuevaFilaYAbrir(estadoId)">
@@ -5096,7 +5127,7 @@ else
                 </button>
             </div>
             <div class="tb-row-tit @(_pinTitulo ? "tb-pin" : "")">
-                <input class="tb-nf-inp tb-nf-tit" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))" />
+                <input class="tb-nf-inp tb-nf-tit" data-tbu="@_uid" data-nf-tit="@estadoId" placeholder="Nueva tarea..." @oninput="@(e => nf.Titulo = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))" />
             </div>
             @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))"></textarea></div> }
             @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }

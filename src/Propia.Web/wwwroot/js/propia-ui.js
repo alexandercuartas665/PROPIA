@@ -1062,7 +1062,9 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
     // Focos de una fila de alta, en orden (sin los de una lista abierta).
     function focosDe(row) {
         return Array.prototype.filter.call(row.querySelectorAll('input, textarea, select, button, [tabindex]'), function (x) {
-            return !x.disabled && x.tabIndex >= 0 && x.offsetParent !== null && !x.closest('.lbx-pop') && x.type !== 'hidden';
+            // La descripcion abierta (tb-nf-area--open) es position:fixed -> offsetParent null, pero sigue en la fila.
+            return !x.disabled && x.tabIndex >= 0 && (x.offsetParent !== null || x.classList.contains('tb-nf-area--open'))
+                && !x.closest('.lbx-pop') && x.type !== 'hidden';
         });
     }
     document.addEventListener('keydown', function (e) {
@@ -1081,7 +1083,85 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             e.preventDefault();
             dest.focus();
         }
+        // 4) Flechas izquierda/derecha (Alex 2026-11-23): en una fila de alta (tarea o subtarea) pasan a la columna
+        //    anterior/siguiente. En campos de texto solo cuando el cursor ya esta al inicio/fin (sin seleccion), para no
+        //    quitarle la flecha a quien corrige lo escrito; en listas, fecha y numero siempre. Con una lista abierta las
+        //    flechas son de la lista (.lbx-pop).
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.defaultPrevented && !e.altKey && !e.ctrlKey
+            && !e.metaKey && !e.shiftKey && el && el.closest && !el.closest('.lbx-pop')) {
+            var fila = el.closest('.tb-newrow');
+            if (!fila || fila.classList.contains('tb-cta-row')) return;
+            var izq = e.key === 'ArrowLeft';
+            var esTexto = el.tagName === 'TEXTAREA'
+                || (el.tagName === 'INPUT' && /^(text|search|email|tel|url)$/.test(el.type || 'text'));
+            if (esTexto) {
+                var a = el.selectionStart, b = el.selectionEnd, n = (el.value || '').length;
+                if (a !== b) return;
+                if (izq ? a !== 0 : a !== n) return;
+            }
+            var fs = focosDe(fila), k = fs.indexOf(el);
+            var d = k < 0 ? null : (izq ? fs[k - 1] : fs[k + 1]);
+            if (!d) return;
+            e.preventDefault();
+            d.focus();
+            // Al llegar a un texto, el cursor queda en el borde por el que se sigue avanzando (otra flecha = otra columna).
+            try {
+                if (d.tagName === 'TEXTAREA' || (d.tagName === 'INPUT' && /^(text|search|email|tel|url)$/.test(d.type || 'text'))) {
+                    var m = izq ? 0 : (d.value || '').length; d.setSelectionRange(m, m);
+                }
+            } catch (x) { }
+        }
     });
+    // Fila "+ Agregar subtarea" (Tareas, Alex 2026-11-23): Tab SIN Shift desde su ULTIMO campo, con titulo escrito, crea
+    // la subtarea (method del componente, con el id del padre) y el componente devuelve el foco al titulo de esa fila.
+    // Una escucha por instancia (uid): el tablero de Sub-tareas del modal es otra instancia en la misma pagina.
+    window.__subfilaTab = window.__subfilaTab || {};
+    window.propiaUI.subfilaTab = function (dotnetRef, uid, method) {
+        try {
+            window.propiaUI.subfilaTabOff(uid);
+            var h = function (e) {
+                try {
+                    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
+                    var act = document.activeElement;
+                    if (!act || !act.closest) return;
+                    var pop = act.closest('.lbx-pop');
+                    if (pop) { var w = pop.closest('.lbx-wrap'); act = w ? w.querySelector('.lbx-trg') : act; }
+                    var row = act && act.closest ? act.closest('.tb-subadd-row') : null;
+                    if (!row || row.getAttribute('data-tbu') !== uid) return;
+                    var tit = row.querySelector('.tb-subadd-inp');
+                    if (!tit || !(tit.value || '').trim()) return;   // sin titulo: Tab normal
+                    var fs = focosDe(row);
+                    if (!fs.length || fs[fs.length - 1] !== act) return;
+                    e.preventDefault();
+                    var padre = row.getAttribute('data-padre');
+                    // Margen para que Blazor procese antes el keydown del campo (p.ej. la lista elige lo resaltado).
+                    setTimeout(function () { try { dotnetRef.invokeMethodAsync(method, padre); } catch (x) { } }, 60);
+                } catch (x) { }
+            };
+            window.__subfilaTab[uid] = h;
+            document.addEventListener('keydown', h, true);
+        } catch (e) { }
+    };
+    window.propiaUI.subfilaTabOff = function (uid) {
+        try {
+            var h = window.__subfilaTab[uid];
+            if (h) document.removeEventListener('keydown', h, true);
+            delete window.__subfilaTab[uid];
+        } catch (e) { }
+    };
+    // Lista con busqueda (ListaBuscable): devuelve el foco a la lista (buscador o disparador) SOLO si el usuario sigue
+    // en ella (o el foco quedo en el body porque se quito el buscador). Si ya se fue con Tab/flecha mientras el
+    // servidor respondia (latencia de prod), no lo trae de vuelta (el "salta y rebota") y devuelve false.
+    window.propiaUI.focoSiSigue = function (wrap, el, alFinal) {
+        try {
+            var a = document.activeElement;
+            if (a && a !== document.body && wrap && !wrap.contains(a)) return false;
+            if (!el) return true;
+            el.focus();
+            if (alFinal) { var n = (el.value || '').length; try { el.setSelectionRange(n, n); } catch (x) { } }
+            return true;
+        } catch (e) { return true; }
+    };
     // Lista con busqueda (ListaBuscable): enfoca el buscador con el cursor al final de lo ya escrito.
     window.propiaUI.focoAlFinal = function (el) {
         try { if (!el) return; el.focus(); var n = (el.value || '').length; el.setSelectionRange(n, n); } catch (e) { }
