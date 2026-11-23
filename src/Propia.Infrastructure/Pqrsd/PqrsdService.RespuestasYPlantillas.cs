@@ -362,26 +362,50 @@ public partial class PqrsdService
     private static readonly string[] CamposFijosDefault =
         { "tipo", "categoria", "torre", "unidad", "tipoDoc", "documento", "nombres", "apellidos", "correo", "telefono", "descripcion" };
 
-    private static IReadOnlyList<string> ParseOrdenCamposFijos(string? json)
+    // Campos FIJOS que la copropiedad puede ocultar en el formulario publico (Alex 2026-11-23). Torre/correo/
+    // telefono se guardan en sus columnas Mostrar*; apellidos y tipoDoc en el JSON ("ocultos"). Tipo, categoria,
+    // unidad, documento, nombres y descripcion siempre se piden (los exige RadicarPublicoAsync).
+    private static readonly string[] CamposFijosOcultablesJson = { "apellidos", "tipoDoc" };
+
+    private sealed record FormularioPublicoJson(List<string>? Orden, List<string>? Ocultos);
+
+    // Clave valida del orden: un campo fijo o "c:<guid>" (campo propio, intercalado con los fijos).
+    private static bool EsClaveFormularioValida(string k)
+        => CamposFijosDefault.Contains(k) || (k.StartsWith("c:", StringComparison.Ordinal) && Guid.TryParse(k.AsSpan(2), out _));
+
+    // OrdenCamposFijosJson admite el formato viejo (lista de claves fijas) y el nuevo {"orden":[...],"ocultos":[...]}.
+    // Devuelve el orden mezclado (fijos + "c:<guid>") con los fijos que falten al final, y los fijos ocultos.
+    private static (List<string> Orden, List<string> Ocultos) ParseFormularioPublicoJson(string? json)
     {
-        List<string>? guardado = null;
+        List<string>? orden = null, ocultos = null;
         if (!string.IsNullOrWhiteSpace(json))
         {
-            try { guardado = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json!); } catch { }
+            try
+            {
+                if (json.TrimStart().StartsWith('['))
+                    orden = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                else
+                {
+                    var o = System.Text.Json.JsonSerializer.Deserialize<FormularioPublicoJson>(json,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    orden = o?.Orden; ocultos = o?.Ocultos;
+                }
+            }
+            catch { }
         }
-        if (guardado is null || guardado.Count == 0) return CamposFijosDefault;
-        // Solo claves conocidas, en el orden guardado; anexar las que falten (robustez ante nuevas claves).
-        var res = guardado.Where(CamposFijosDefault.Contains).Distinct().ToList();
+        var res = (orden ?? new List<string>()).Where(EsClaveFormularioValida).Distinct().ToList();
         foreach (var k in CamposFijosDefault) if (!res.Contains(k)) res.Add(k);
-        return res;
+        var oc = (ocultos ?? new List<string>()).Where(CamposFijosOcultablesJson.Contains).Distinct().ToList();
+        return (res, oc);
     }
 
     public async Task<PqrsdFormularioPublicoConfigDto> GetFormularioPublicoConfigAsync(CancellationToken ct)
     {
         var c = await _db.PqrsdFormularioPublicoConfigs.AsNoTracking().FirstOrDefaultAsync(ct);
+        var (orden, ocultos) = ParseFormularioPublicoJson(c?.OrdenCamposFijosJson);
         return new PqrsdFormularioPublicoConfigDto(
             c?.MostrarTorre ?? true, c?.MostrarCorreo ?? true, c?.MostrarTelefono ?? true,
-            c?.EncabezadoTexto, c?.PieTexto, ParseOrdenCamposFijos(c?.OrdenCamposFijosJson));
+            c?.EncabezadoTexto, c?.PieTexto, orden, ocultos);
     }
 
     public async Task<bool> GuardarFormularioPublicoConfigAsync(PqrsdFormularioPublicoConfigDto req, CancellationToken ct)
@@ -398,10 +422,14 @@ public partial class PqrsdService
         c.MostrarTelefono = req.MostrarTelefono;
         c.EncabezadoTexto = string.IsNullOrWhiteSpace(req.EncabezadoTexto) ? null : req.EncabezadoTexto.Trim();
         c.PieTexto = string.IsNullOrWhiteSpace(req.PieTexto) ? null : req.PieTexto.Trim();
-        // Orden de campos fijos: guardar solo claves conocidas; null si es el orden por defecto.
-        var orden = (req.OrdenCamposFijos ?? new List<string>()).Where(CamposFijosDefault.Contains).Distinct().ToList();
-        c.OrdenCamposFijosJson = (orden.Count > 0 && !orden.SequenceEqual(CamposFijosDefault))
-            ? System.Text.Json.JsonSerializer.Serialize(orden) : null;
+        // Orden mezclado (fijos + campos propios "c:<guid>") y fijos ocultos: solo claves conocidas; null si
+        // todo esta por defecto (orden de fabrica, sin campos propios intercalados, nada oculto).
+        var orden = (req.OrdenCamposFijos ?? new List<string>()).Where(EsClaveFormularioValida).Distinct().ToList();
+        var ocultos = (req.CamposOcultos ?? new List<string>()).Where(CamposFijosOcultablesJson.Contains).Distinct().ToList();
+        var ordenDefault = orden.Count == 0 || orden.SequenceEqual(CamposFijosDefault);
+        c.OrdenCamposFijosJson = (ordenDefault && ocultos.Count == 0)
+            ? null
+            : System.Text.Json.JsonSerializer.Serialize(new { orden = ordenDefault ? CamposFijosDefault.ToList() : orden, ocultos });
         await _db.SaveChangesAsync(ct);
         return true;
     }

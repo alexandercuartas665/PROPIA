@@ -187,7 +187,10 @@ public record PqrsdCampoPublicoDto(Guid Id, string Label, TipoCampoTablero Tipo,
 public record PqrsdFormularioPublicoConfigDto(
     bool MostrarTorre, bool MostrarCorreo, bool MostrarTelefono,
     string? EncabezadoTexto = null, string? PieTexto = null,
-    IReadOnlyList<string>? OrdenCamposFijos = null);
+    /// <summary>Orden del formulario: claves de campos fijos y "c:&lt;guid&gt;" de campos propios intercalados.</summary>
+    IReadOnlyList<string>? OrdenCamposFijos = null,
+    /// <summary>Campos fijos ocultos guardados en el JSON (apellidos, tipoDoc).</summary>
+    IReadOnlyList<string>? CamposOcultos = null);
 
 public record PqrsdTipoPublicoDto(Guid Id, string Nombre, int DiasHabiles);
 public record PqrsdCategoriaPublicaDto(Guid Id, string Nombre);
