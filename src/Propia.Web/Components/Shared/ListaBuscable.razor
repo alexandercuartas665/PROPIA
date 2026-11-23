@@ -10,7 +10,7 @@
      y pinta el disparador con TriggerContent (p.ej. los chips). *@
 @inject IJSRuntime Js
 
-<span class="lbx-wrap @WrapClass">
+<span class="lbx-wrap @WrapClass" @ref="_wrap">
     <button type="button" id="@_trgId" class="lbx-trg @TriggerClass @(_open ? "lbx-trg--open" : "")" style="@TriggerStyle"
             @ref="_trg" @onclick="() => Abrir(null)" @onkeydown="TrgKeyAsync" disabled="@Disabled" title="@Title" aria-haspopup="listbox" aria-expanded="@(_open ? "true" : "false")">
         @if (TriggerContent is not null)
@@ -95,7 +95,7 @@
 
     private readonly string _trgId = "lbx-t-" + Guid.NewGuid().ToString("N")[..10];
     private readonly string _popId = "lbx-p-" + Guid.NewGuid().ToString("N")[..10];
-    private ElementReference _trg, _qRef;
+    private ElementReference _trg, _qRef, _wrap;
     private bool _open, _anclar, _focoTrg, _refocoQ;
     private string _q = "";
     private int _hi;
@@ -189,6 +189,9 @@
         if (o.Valor != (Valor ?? "")) await ValorChanged.InvokeAsync(o.Valor.Length == 0 ? null : o.Valor);
     }
 
+    // El foco se devuelve a la lista SOLO si el usuario sigue en ella (propiaUI.focoSiSigue). Con la latencia de prod,
+    // un Tab dado antes de que vuelva el render ya movio el foco a la columna siguiente: antes se lo traia de vuelta
+    // ("salta a la fecha y rebota a Etiquetas", Alex 2026-11-23). Si ya se fue, la caja se cierra.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_open && _anclar)
@@ -197,19 +200,20 @@
             try
             {
                 await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", "#" + _trgId, "#" + _popId);
-                await Js.InvokeVoidAsync("propiaUI.focoAlFinal", _qRef);   // foco con el cursor al final de lo ya escrito
+                // foco en el buscador con el cursor al final de lo ya escrito
+                if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _qRef, true)) { _open = false; StateHasChanged(); }
             }
             catch { }
         }
         else if (_open && _refocoQ)
         {
             _refocoQ = false;
-            try { await _qRef.FocusAsync(); } catch { }
+            try { if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _qRef, false)) { _open = false; StateHasChanged(); } } catch { }
         }
         else if (_focoTrg)
         {
             _focoTrg = false;
-            try { await _trg.FocusAsync(); } catch { }
+            try { await Js.InvokeVoidAsync("propiaUI.focoSiSigue", _wrap, _trg, false); } catch { }
         }
     }
 
