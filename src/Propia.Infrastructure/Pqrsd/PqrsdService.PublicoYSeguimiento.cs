@@ -54,11 +54,17 @@ public partial class PqrsdService
             .Select(c => new PqrsdCampoPublicoDto(c.Id, c.Label, c.Tipo, c.Opciones, c.Requerido, c.Descripcion))
             .ToListAsync(ct);
 
+        // Orden del formulario: fijos + campos propios ("c:<guid>") intercalados; sin los fijos ocultos
+        // (apellidos/tipoDoc; torre/correo/telefono van por sus Mostrar*). Los campos propios publicos que no
+        // esten en el orden los pinta la pagina al final.
+        var (ordenForm, ocultosForm) = ParseFormularioPublicoJson(fcfg?.OrdenCamposFijosJson);
+        var ordenPublico = ordenForm.Where(k => !ocultosForm.Contains(k)).ToList();
+
         // LogoUrl se guarda RELATIVA al mismo origen (convencion host unificado): la pagina publica la usa tal cual.
         return new PqrsdPublicoConfigDto(tenant.Nombre, tenant.LogoUrl, tipos, cats,
             fcfg?.MostrarTorre ?? true, fcfg?.MostrarCorreo ?? true, fcfg?.MostrarTelefono ?? true,
             fcfg?.EncabezadoTexto, fcfg?.PieTexto, camposPub,
-            ParseOrdenCamposFijos(fcfg?.OrdenCamposFijosJson));
+            ordenPublico);
     }
 
     // ===================== Seguimiento publico (link compartible con el radicador) =====================

@@ -62,6 +62,11 @@ else if (_cfg is not null)
             @* Campos FIJOS renderizados en el orden configurado por la copropiedad (form-builder). *@
             @foreach (var campo in OrdenFijos())
             {
+                @if (campo.StartsWith("c:") && _cfg.Campos?.FirstOrDefault(c => "c:" + c.Id == campo) is { } cpo)
+                {
+                    @CampoDinPub(cpo)
+                    continue;
+                }
                 switch (campo)
                 {
                     case "tipo":
@@ -163,33 +168,12 @@ else if (_cfg is not null)
                 }
             }
 
-            @* Campos personalizados que la copropiedad decidio pedir en el formulario publico *@
+            @* Campos propios publicos que no estan en el orden configurado: van al final *@
             @if (_cfg.Campos is { Count: > 0 })
             {
-                @foreach (var cp in _cfg.Campos)
+                @foreach (var cp in _cfg.Campos.Where(c => !OrdenFijos().Contains("c:" + c.Id)))
                 {
-                    <div class="pqrpub-field @(cp.Tipo == TipoCampoTablero.AreaTexto ? "pqrpub-full" : "")">
-                        <label>@cp.Label @if (cp.Requerido) { <span class="req">*</span> }</label>
-                        @if (cp.Tipo == TipoCampoTablero.Seleccion)
-                        {
-                            <select class="pqrpub-input" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())">
-                                <option value="">Selecciona...</option>
-                                @foreach (var op in OpcionCampo.VisiblesK(cp.Opciones))
-                                {
-                                    <option value="@op">@op</option>
-                                }
-                            </select>
-                        }
-                        else if (cp.Tipo == TipoCampoTablero.AreaTexto)
-                        {
-                            <textarea data-dictado data-dictado-contexto="Campo adicional de una PQRSD" class="pqrpub-input" rows="2" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())"></textarea>
-                        }
-                        else
-                        {
-                            <input class="pqrpub-input" type="@PubCampoType(cp.Tipo)" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())" />
-                        }
-                        @if (!string.IsNullOrWhiteSpace(cp.Descripcion)) { <span class="pqrpub-help">@cp.Descripcion</span> }
-                    </div>
+                    @CampoDinPub(cp)
                 }
             }
 
@@ -298,6 +282,31 @@ else if (_cfg is not null)
         _cfg?.OrdenCamposFijos is { Count: > 0 } o ? o : OrdenFijosDefault;
 
     private void SetCampoDin(Guid id, string? v) => _camposDin[id] = v ?? "";
+
+    // Campo propio del formulario publico: se pinta en su lugar del orden ("c:<guid>") o al final si no
+    // esta en el orden (Alex 2026-11-23: campos propios intercalados con los fijos).
+    private RenderFragment CampoDinPub(PqrsdCampoPublicoDto cp) => @<div class="pqrpub-field @(cp.Tipo == TipoCampoTablero.AreaTexto ? "pqrpub-full" : "")">
+        <label>@cp.Label @if (cp.Requerido) { <span class="req">*</span> }</label>
+        @if (cp.Tipo == TipoCampoTablero.Seleccion)
+        {
+            <select class="pqrpub-input" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())">
+                <option value="">Selecciona...</option>
+                @foreach (var op in OpcionCampo.VisiblesK(cp.Opciones))
+                {
+                    <option value="@op">@op</option>
+                }
+            </select>
+        }
+        else if (cp.Tipo == TipoCampoTablero.AreaTexto)
+        {
+            <textarea data-dictado data-dictado-contexto="Campo adicional de una PQRSD" class="pqrpub-input" rows="2" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())"></textarea>
+        }
+        else
+        {
+            <input class="pqrpub-input" type="@PubCampoType(cp.Tipo)" value="@_camposDin.GetValueOrDefault(cp.Id, "")" @onchange="(e) => SetCampoDin(cp.Id, e.Value?.ToString())" />
+        }
+        @if (!string.IsNullOrWhiteSpace(cp.Descripcion)) { <span class="pqrpub-help">@cp.Descripcion</span> }
+    </div>;
     private static string PubCampoType(TipoCampoTablero t) => t switch
     {
         TipoCampoTablero.Numero or TipoCampoTablero.Moneda => "number",

@@ -73,7 +73,7 @@ public static class MenuCatalog
 
         // Gobierno y convivencia
         new MenuItemDef("gob-asambleas", "tabGobierno", "Asambleas y organos", "/asambleas", "fi-rr-podium-star", 1),
-        new MenuItemDef("gob-pqrs", "tabGobierno", "PQRSD y convivencia", "/pqrs", "fi-rr-comments-question", 2),
+        new MenuItemDef("gob-pqrs", "tabGobierno", "PQRSD", "/pqrs", "fi-rr-comments-question", 2),
 
         // Operacion
         new MenuItemDef("op-tareas", "tabOperacion", "Tareas", "/tareas", "fi-rr-list-check", 1),
