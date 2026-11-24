@@ -538,7 +538,6 @@
                     }
                     else
                     {
-                        <button type="button" class="pk-cfg-tab @(_cfgTab == "plantillas" ? "on" : "")" @onclick='CambiarATabPlantillas'>Plantillas</button>
                         <button type="button" class="pk-cfg-tab @(_cfgTab == "correo" ? "on" : "")" @onclick='CambiarATabCorreo'>Buzones</button>
                         <button type="button" class="pk-cfg-tab @(_cfgTab == "whatsapp" ? "on" : "")" @onclick='CambiarATabWhatsApp'>WhatsApp</button>
                     }
@@ -769,27 +768,6 @@
                     <div class="pk-cfg-sec-hint">Las tareas creadas desde un PQR caen automaticamente en el tablero <b>General</b> del módulo Tareas, con la columna <b>Origen = PQRSD</b>. No hay que elegir tablero.</div>
                   }
 
-                  @if (_cfgTab == "plantillas")
-                  {
-                    <div class="pk-cfg-plt-top">
-                        <div class="pk-cfg-sec-hint">Plantillas de respuesta al ciudadano. Al usarlas en una respuesta, los datos ({unidad}, {copropiedad}, {radicado.numero}...) se reemplazan por los reales.</div>
-                        <button type="button" class="pk-cfg-plt-manage" @onclick="GestionarPlantillasCfg">Crear / editar plantillas</button>
-                    </div>
-                    <div class="pk-cfg-plt-grid">
-                        @foreach (var p in _cfgPlantillas)
-                        {
-                            var pp = p;
-                            <div class="pk-cfg-plt-card" title="@p.Nombre" style="cursor:pointer" @onclick="() => EditarPlantillaCfg(pp)">
-                                <div class="pk-cfg-plt-thumb" aria-hidden="true">
-                                    <div class="pk-cfg-plt-page">@((MarkupString)p.CuerpoHtml)</div>
-                                </div>
-                                <div class="pk-cfg-plt-nm">@p.Nombre</div>
-                            </div>
-                        }
-                        @if (_cfgPlantillas.Count == 0) { <div class="pk-cfg-sec-hint">Aun no hay plantillas. Crea la primera con "Crear / editar plantillas".</div> }
-                    </div>
-                  }
-
                   @if (_cfgTab == "correo")
                   {
                     @* Modulo Buzones (2026-11-22): PQRSD elige de que buzones de la copropiedad salen sus respuestas. Las cuentas se
@@ -957,7 +935,7 @@
         {
             case "flujo": _cfgTab = "columnas"; break;
             case "radicacion": await CambiarATabFormulario(); break;   // Campos dinamicos se quito (se crean con el "+" de la tabla)
-            case "respuestas": await CambiarATabPlantillas(); break;   // fija _cfgTab=plantillas y carga
+            case "respuestas": await CambiarATabCorreo(); break;   // Plantillas se quito: viven solo en Configuracion > Plantillas de documentos
         }
     }
     private string _cfgMsg = "";
@@ -2555,32 +2533,6 @@
     // ===== Tab Formulario publico (toggles de campos opcionales) =====
     // Nota: la seleccion de "tablero destino" desde PQRSD se elimino; las tareas creadas desde un PQR
     // caen siempre en el tablero General con Origen = PQRSD.
-
-    // Tab Plantillas de la configuracion PQRSD: mini tarjetas de las plantillas de categoria "pqrsd" del
-    // catalogo central (Configuracion > Plantillas de documentos). Crear/editar = pagina central; clic en
-    // una tarjeta = editor de esa plantilla.
-    private List<Propia.Application.Plantillas.PlantillaDocumentoDto> _cfgPlantillas = new();
-
-    private async Task CambiarATabPlantillas()
-    {
-        _cfgTab = "plantillas";
-        await CargarCfgPlantillasAsync();
-    }
-
-    private async Task CargarCfgPlantillasAsync()
-    {
-        try { _cfgPlantillas = await Auth().GetFromJsonAsync<List<Propia.Application.Plantillas.PlantillaDocumentoDto>>("/api/plantillas?categoria=pqrsd") ?? new(); }
-        catch { _cfgPlantillas = new(); }
-    }
-
-    private void GestionarPlantillasCfg() => Nav.NavigateTo("/configuracion/plantillas");
-
-    private async Task EditarPlantillaCfg(Propia.Application.Plantillas.PlantillaDocumentoDto p)
-    {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Plantilla", p);
-        await Modals.OpenAsync<EditorPlantillaDocumentoModal, bool>(parameters, new ModalOptions { Width = "1056px" });
-        await CargarCfgPlantillasAsync();
-    }
 
     // ---- Tab Correo (modulo Buzones): buzones desde los que PQRSD envia sus respuestas ----
     private List<Propia.Application.Integraciones.BuzonCorreoDto>? _bzPqrsd;
