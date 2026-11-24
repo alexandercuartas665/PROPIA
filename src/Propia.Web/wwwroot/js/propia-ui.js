@@ -1016,6 +1016,18 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         var r = el.closest('.tb-newrow, [data-alta-fila]');
         return r && !r.classList.contains('tb-cta-row') ? r : null;
     }
+    // Enter / Tab en un texto de la fila de alta: los @bind por defecto (onchange) solo toman el valor al salir del
+    // campo, pero Enter guarda la fila sin salir y el Tab final la guarda sin dejar salir el foco. Se emite 'change'
+    // ANTES de que Blazor procese la tecla (captura en window), asi la fila se crea con lo ultimo escrito.
+    window.addEventListener('keydown', function (e) {
+        try {
+            if ((e.key !== 'Enter' && e.key !== 'Tab') || e.altKey || e.ctrlKey || e.metaKey) return;
+            var el = e.target;
+            if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') || !filaAlta(el)) return;
+            if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'button') return;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (x) { }
+    }, true);
     // Celda de la fila que contiene el elemento (hijo directo de la fila).
     function celdaDe(row, el) {
         var c = el;
@@ -1114,7 +1126,8 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             var izq = e.key === 'ArrowLeft';
             var esTexto = el.tagName === 'TEXTAREA'
                 || (el.tagName === 'INPUT' && /^(text|search|email|tel|url)$/.test(el.type || 'text'));
-            if (esTexto) {
+            // type=email no expone selectionStart (null): ahi la flecha siempre pasa de columna.
+            if (esTexto && el.selectionStart != null) {
                 var a = el.selectionStart, b = el.selectionEnd, n = (el.value || '').length;
                 if (a !== b) return;
                 if (izq ? a !== 0 : a !== n) return;

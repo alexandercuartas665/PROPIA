@@ -292,7 +292,7 @@
                     }
                     @if (_altaAbierta)
                     {
-                        <div class="seg-row seg-newrow seg-newrow--edit seg-grid" style="@GridStyle()" @onkeydown="OnAltaKeydown">
+                        <div class="seg-row seg-newrow seg-newrow--edit seg-grid" data-alta-fila style="@GridStyle()" @onkeydown="OnAltaKeydown">
                             <div class="seg-sel"></div>
                             <div class="seg-exp-col">
                                 <button type="button" class="seg-exp seg-exp-fijo" tabindex="-1" title="Abrir el formulario completo con lo escrito" @onclick="AbrirModalDesdeAltaAsync" disabled="@_creandoInline">
@@ -363,7 +363,7 @@
                             <div class="seg-sel"></div>
                             <div class="seg-exp-col"></div>
                             <div class="seg-nf-ctacell" style="grid-column: 3 / -1;">
-                                <button type="button" class="row-add--sm" @onclick="FabNuevo">
+                                <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="FabNuevo">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                     Agregar siniestro
                                 </button>
@@ -794,7 +794,7 @@
     private DotNetObjectReference<Siniestros>? _self;
     [JSInvokable] public Task CargarMas() => Task.CompletedTask;
     [JSInvokable] public void SetCtaVisible(bool visible) { if (_ctaVisible != visible) { _ctaVisible = visible; StateHasChanged(); } }
-    private async Task FabNuevo() { _altaAbierta = true; LimpiarAlta(); _scrollCtaPend = true; await CargarApoyoAsync(); }
+    private async Task FabNuevo() { _altaAbierta = true; LimpiarAlta(); _scrollCtaPend = true; _focoPrimerCampo = true; await CargarApoyoAsync(); }
     public void Dispose() { _self?.Dispose(); }
 
     // ===== Alta inline (guardado invisible) =====
@@ -816,8 +816,23 @@
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAlta();
-        else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_nTitulo)) await CrearDesdeAltaAsync();
+        else if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_nTitulo) && !_creandoInline)
+        {
+            await CrearDesdeAltaAsync();
+            _focoCtaAlta = !_altaAbierta;   // como Tareas: guarda, cierra y foco en "Agregar registro"
+        }
     }
+    // Tab desde el ULTIMO campo de la fila (propiaUI.altaAutoSave, Alex 2026-11-24, igual que Tareas): guarda si
+    // tiene lo minimo, cierra la fila y deja el foco en "Agregar registro" (otro Enter abre la siguiente).
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbierta;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta, _focoPrimerCampo;
+
     [JSInvokable] public async Task AltaBlurGuardar()
     {
         if (!_altaAbierta || _creandoInline) return;
@@ -1675,12 +1690,14 @@
             {
                 _fabSig = sig;
                 if (_grupos.Count == 0) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".seg-scroll"); } catch { } }
-                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".seg-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".seg-newrow--edit", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
         else { _fabSig = null; try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".seg-scroll"); } catch { } }
+        if (_focoPrimerCampo && _altaAbierta) { _focoPrimerCampo = false; try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".seg-newrow--edit .seg-nf-inp"); } catch { } }
+        if (_focoCtaAlta && !_altaAbierta) { _focoCtaAlta = false; try { await _ctaAlta.FocusAsync(); } catch { } }
 
         if (!firstRender || _jwt is not null) return;
         try

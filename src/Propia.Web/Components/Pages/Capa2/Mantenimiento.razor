@@ -266,7 +266,7 @@
                al guardar. El expansor de la fila abre el formulario completo (cron, responsables, correo). *@
             @if (_altaProgAbierta)
             {
-            <div class="mtp-newrow mtp-newrow--prog mtp-newrow--edit" style="@ProgGrid" @onkeydown="OnAltaProgKey">
+            <div class="mtp-newrow mtp-newrow--prog mtp-newrow--edit" data-alta-fila style="@ProgGrid" @onkeydown="OnAltaProgKey">
                 <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col">
                     <button type="button" class="mtp-exp mtp-exp-fijo" title="Abrir el formulario completo para crear la programación" @onclick="ExpandirAltaProgAsync">
@@ -396,7 +396,7 @@
                 <div class="mtp-sel-col"></div>
                 <div class="mtp-exp-col"></div>
                 <div class="mtp-nf-ctacell" style="grid-column: 3 / -1;">
-                    <button type="button" class="row-add--sm" @onclick="AbrirAltaProg">
+                    <button type="button" class="row-add--sm" @ref="_ctaProg" @onclick="AbrirAltaProg">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                         Agregar programación
                     </button>
@@ -587,7 +587,7 @@
                Crea la intervencion (+ tarea vinculada). *@
             @if (_altaIntervAbierta)
             {
-            <div class="mtp-newrow mtp-newrow--interv mtp-newrow--edit" style="@IntervGrid" @onkeydown="OnAltaIntervKey">
+            <div class="mtp-newrow mtp-newrow--interv mtp-newrow--edit" data-alta-fila style="@IntervGrid" @onkeydown="OnAltaIntervKey">
                 <div class="mtp-exp-col"></div>
                 @foreach (var c in IntervColsVis)
                 {
@@ -663,7 +663,7 @@
             <div class="mtp-newrow mtp-cta-row" style="@IntervGrid">
                 <div class="mtp-exp-col"></div>
                 <div class="mtp-nf-ctacell" style="grid-column: 2 / -1;">
-                    <button type="button" class="row-add--sm" @onclick="AbrirAltaInterv">
+                    <button type="button" class="row-add--sm" @ref="_ctaInterv" @onclick="AbrirAltaInterv">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                         Agregar intervención
                     </button>
@@ -2294,8 +2294,34 @@ else if (_tab == "prog" && _vistaProg == "calendario")
     private void AbrirAltaProg() { _altaProgAbierta = true; _focusProgPending = true; }
     private void AbrirAltaInterv() { _altaIntervAbierta = true; _focusIntervPending = true; }
     // Esc en la fila de alta la cierra (vuelve al CTA) sin crear nada (canon: "Esc para cancelar").
-    private void OnAltaProgKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) { if (e.Key == "Escape") _altaProgAbierta = false; }
-    private void OnAltaIntervKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) { if (e.Key == "Escape") _altaIntervAbierta = false; }
+    // Teclado de las filas de alta (Alex 2026-11-24, como Tareas): Enter guarda si tiene lo minimo, cierra la fila y deja
+    // el foco en su "Agregar..."; Tab desde el ultimo campo igual (si falta el minimo, cierra sin crear); Esc cancela.
+    private async Task OnAltaProgKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _altaProgAbierta = false;
+        else if (e.Key == "Enter" && !e.ShiftKey && !_busy) { await AltaBlurGuardar(); _focoCtaProg = !_altaProgAbierta; }
+    }
+    private async Task OnAltaIntervKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _altaIntervAbierta = false;
+        else if (e.Key == "Enter" && !e.ShiftKey && !_busy) { await AltaIntervBlurGuardar(); _focoCtaInterv = !_altaIntervAbierta; }
+    }
+    [JSInvokable] public async Task AltaTabFinalProg()
+    {
+        if (_busy) return;
+        await AltaBlurGuardar();
+        _altaProgAbierta = false; _focoCtaProg = true;
+        StateHasChanged();
+    }
+    [JSInvokable] public async Task AltaTabFinalInterv()
+    {
+        if (_busy) return;
+        await AltaIntervBlurGuardar();
+        _altaIntervAbierta = false; _focoCtaInterv = true;
+        StateHasChanged();
+    }
+    private ElementReference _ctaProg, _ctaInterv;
+    private bool _focoCtaProg, _focoCtaInterv;
     private async Task FocusAltaPlanAsync()
     {
         try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", "#mtpAltaPlanFirst"); } catch { }
@@ -2634,9 +2660,9 @@ else if (_tab == "prog" && _vistaProg == "calendario")
             try
             {
                 if (altaSig == "prog-on")
-                    await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--prog", "AltaBlurGuardar", ".sp-pop");
+                    await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--prog", "AltaBlurGuardar", ".sp-pop", "AltaTabFinalProg");
                 else if (altaSig == "interv-on")
-                    await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--interv", "AltaIntervBlurGuardar", ".sp-pop");
+                    await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".mtp-newrow--interv", "AltaIntervBlurGuardar", ".sp-pop", "AltaTabFinalInterv");
                 else
                     await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff");
             }
@@ -2654,6 +2680,8 @@ else if (_tab == "prog" && _vistaProg == "calendario")
             _focusIntervPending = false;
             try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", "#mtpAltaIntervFirst"); } catch { }
         }
+        if (_focoCtaProg && !_altaProgAbierta) { _focoCtaProg = false; try { await _ctaProg.FocusAsync(); } catch { } }
+        if (_focoCtaInterv && !_altaIntervAbierta) { _focoCtaInterv = false; try { await _ctaInterv.FocusAsync(); } catch { } }
     }
 
     private async Task SwitchTab(string tab)
