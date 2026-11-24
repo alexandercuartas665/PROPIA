@@ -663,6 +663,7 @@
                                 @if (cp is not null)
                                 {
                                     <label class="pk-fld-req" title="Obligatorio al radicar"><input type="checkbox" checked="@cp.Requerido" @onchange="(ev) => ToggleReqCampoCfg(cp, ev)" />Requerido</label>
+                                    <button type="button" class="pk-fld-arrow pk-fld-del" title="Eliminar campo" @onclick="() => EliminarCampoForm(cp)"><i class="fi fi-rr-trash"></i></button>
                                 }
                                 @if (FormOcultable(k))
                                 {
@@ -2778,6 +2779,18 @@
             default: return;
         }
         await GuardarFormCfg();
+    }
+
+    // Eliminar un campo propio desde "Formulario publico" (Alex 2026-11-24): mismo DELETE que el menu de columna
+    // (borra el campo y sus valores); se confirma y se saca su "c:<guid>" del orden guardado.
+    private async Task EliminarCampoForm(PqrsdCampoDto cp)
+    {
+        if (!await Modals.ConfirmEliminarCampoAsync(cp.Label)) return;
+        var r = await Auth().DeleteAsync($"/api/pqrsd/campos/{cp.Id}");
+        if (!r.IsSuccessStatusCode) { _cfgMsg = await LeerError(r); return; }
+        await RecargarCamposAsync();
+        if (_formOrden.Remove("c:" + cp.Id)) await GuardarFormCfg();
+        else _formGuardado = true;
     }
 
     // Reordenar un campo (fijo o propio) del formulario publico y guardar el orden mezclado.

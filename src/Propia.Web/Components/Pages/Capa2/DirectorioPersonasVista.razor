@@ -281,7 +281,7 @@ else
             @* Ola C (canon Unidades): por defecto CTA colapsada; al pulsarla o el FAB se abre la fila de edicion. *@
             @if (_altaAbierta)
             {
-            <div class="dtab-newrow dvp-grid" @key="_nonce" style="grid-template-columns:@GridCols">
+            <div class="dtab-newrow dvp-grid" data-alta-fila @key="_nonce" style="grid-template-columns:@GridCols">
                 <div class="dtab-sel-cell"></div>
                 <div class="dtab-exp-col">
                     <button type="button" class="dtab-exp" tabindex="-1" title="Abrir el modal para crear" @onclick="CrearPersonaAbrirInline" disabled="@_busy">
@@ -364,7 +364,7 @@ else
                     <div class="dtab-sel-cell"></div>
                     <div class="dtab-exp-col"></div>
                     <div class="dtab-cta-btncell">
-                        <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                        <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="AbrirAlta">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
                             Agregar registro
                         </button>
@@ -641,6 +641,7 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_focusPending) { _focusPending = false; try { await _firstRef.FocusAsync(); } catch { } }
+        if (_focoCtaAlta && !_altaAbierta) { _focoCtaAlta = false; try { await _ctaAlta.FocusAsync(); } catch { } }
         {
             // El guardado invisible del alta corre SIEMPRE (agrupado o no); solo el scroll infinito se gatea
             // a sin-agrupar. El estado de agrupacion va en la firma para re-enganchar al togglear.
@@ -650,7 +651,7 @@ else
                 _wiredSig = sig;
                 if (Grupos is null) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", Self, ".dtab-scroll"); } catch { } }
                 // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y el flotante .sp-pop).
-                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".dtab-newrow", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", Self, ".dtab-newrow", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
@@ -680,12 +681,27 @@ else
 
     private async Task RowKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && DraftValido) await CrearPersonaInline();
+        if (e.Key == "Enter" && !e.ShiftKey && DraftValido && !_busy)
+        {
+            await CrearPersonaInline();
+            _focoCtaAlta = !_altaAbierta;   // como Tareas: guarda, cierra y foco en "Agregar registro"
+        }
         else if (e.Key == "Escape") CerrarAlta();
     }
 
     // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
     // ultimo campo). Con borrador valido crea; incompleto descarta sin error.
+    // Tab desde el ULTIMO campo de la fila (propiaUI.altaAutoSave, Alex 2026-11-24, igual que Tareas): guarda si
+    // tiene lo minimo, cierra la fila y deja el foco en "Agregar registro" (otro Enter abre la siguiente).
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbierta;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta;
+
     [JSInvokable] public async Task AltaBlurGuardar()
     {
         if (!_altaAbierta || _busy) return;

@@ -190,7 +190,7 @@ else
                Enter guarda, Esc cancela. La primera columna estructural (unidad) usa el selector. *@
             @if (_altaAbierta)
             {
-                <div class="veh-newrow veh-newrow--edit veh-grid" style="grid-template-columns:@GridCols" @key="_nonce" @onkeydown="OnAltaKeydown">
+                <div class="veh-newrow veh-newrow--edit veh-grid" style="grid-template-columns:@GridCols" @key="_nonce" data-alta-fila @onkeydown="OnAltaKeydown">
                     <div class="veh-sel-cell"></div>
                     <div class="veh-col-exp">
                         @* Canon Unidades/skill 8: el expander del alta va SIEMPRE habilitado; CREA el vehiculo con lo
@@ -255,7 +255,7 @@ else
                     <div class="veh-sel-cell"></div>
                     <div class="veh-col-exp"></div>
                     <div class="veh-nf-ctacell" style="grid-column: 3 / -1;">
-                        <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                        <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="AbrirAlta">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                             Agregar registro
                         </button>
@@ -1051,6 +1051,11 @@ else
             StateHasChanged();
             return;
         }
+        if (_focoCtaAlta && !_altaAbierta)
+        {
+            _focoCtaAlta = false;
+            try { await _ctaAlta.FocusAsync(); } catch { }
+        }
         if (_focusPending)
         {
             _focusPending = false;
@@ -1068,7 +1073,7 @@ else
                 _wiredSigV = sig;
                 if (!_agrupadoV) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".veh-scroll"); } catch { } }
                 // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
-                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".veh-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".veh-newrow--edit", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
@@ -1184,11 +1189,26 @@ else
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAlta();
-        else if (e.Key == "Enter") await AgregarAsync();
+        else if (e.Key == "Enter" && !e.ShiftKey && !_busy)
+        {
+            await AgregarAsync();
+            _focoCtaAlta = !_altaAbierta;   // como Tareas: guarda, cierra y foco en "Agregar registro"
+        }
     }
 
     // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
     // ultimo campo). Con unidad y placa crea; incompleta descarta sin error.
+    // Tab desde el ULTIMO campo de la fila (propiaUI.altaAutoSave, Alex 2026-11-24, igual que Tareas): guarda si
+    // tiene lo minimo, cierra la fila y deja el foco en "Agregar registro" (otro Enter abre la siguiente).
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbierta;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta;
+
     [JSInvokable] public async Task AltaBlurGuardar()
     {
         if (!_altaAbierta || _busy) return;

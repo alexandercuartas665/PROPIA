@@ -297,7 +297,7 @@ else
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
             @if (_altaAbiertaZ)
             {
-            <div class="zc-list-newrow zc-newrow--edit zc-grid" style="@ZcGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownZ">
+            <div class="zc-list-newrow zc-newrow--edit zc-grid" data-alta-fila style="@ZcGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownZ">
                 <div class="zc-sel-cell"></div>
                 <div class="zc-col-exp">
                     @* Expander del alta (como Unidades): crea la zona con lo escrito y abre su ficha para completar. *@
@@ -341,7 +341,7 @@ else
                     {
                         case "nombre":
                             <input class="zc-row-inp" @ref="_nombreRef" placeholder="Nueva zona común..."
-                                   @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" @onkeydown="Keydown" />
+                                   @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" />
                             break;
                         case "categoria":
                             <select class="zc-row-inp" @bind="_draft.Categoria">
@@ -390,7 +390,7 @@ else
                 <div class="zc-sel-cell"></div>
                 <div class="zc-col-exp"></div>
                 <div class="zc-nf-ctacell" style="grid-column: 3 / -1;">
-                    <button type="button" class="row-add--sm" @onclick="AbrirAltaZ">
+                    <button type="button" class="row-add--sm" @ref="_ctaZ" @onclick="AbrirAltaZ">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                         Agregar registro
                     </button>
@@ -961,11 +961,30 @@ else
     private bool _altaAbiertaZ;
     private void AbrirAltaZ() { _altaAbiertaZ = true; _draft.Reset(); _focusPending = true; }
     private void CerrarAltaZ() { _altaAbiertaZ = false; }
+    // Teclado de la fila de alta = el de Tareas (Alex 2026-11-24): Enter guarda, cierra la fila y deja el foco en
+    // "Agregar registro" (otro Enter abre la siguiente); Esc cancela. Las flechas y la fecha las maneja propia-ui.js
+    // (data-alta-fila).
     private async Task OnAltaKeydownZ(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAltaZ();
-        else if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draft.Nombre)) await CrearDesdeDraftAsync();
+        else if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_draft.Nombre) && !_busy)
+        {
+            await CrearDesdeDraftAsync();
+            _focoCtaZ = !_altaAbiertaZ;
+        }
     }
+    // Tab desde el ULTIMO campo de la fila (lo detecta propiaUI.altaAutoSave): guarda si hay nombre, cierra la fila y
+    // pasa el foco a "Agregar registro" en vez de dejarlo caer en otro control de la pagina.
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        if (!_altaAbiertaZ || _busy) return;
+        if (string.IsNullOrWhiteSpace(_draft.Nombre)) CerrarAltaZ();
+        else await CrearDesdeDraftAsync();
+        _focoCtaZ = !_altaAbiertaZ;
+        StateHasChanged();
+    }
+    private ElementReference _ctaZ;
+    private bool _focoCtaZ;
 
     // Guardado invisible: lo invoca propiaUI.altaAutoSave al SALIR de la fila (clic fuera o Tab tras el
     // ultimo campo). Con nombre crea; vacia descarta sin error.
@@ -1439,6 +1458,11 @@ else
             catch { /* prerender */ }
             return;
         }
+        if (_focoCtaZ && !_altaAbiertaZ)
+        {
+            _focoCtaZ = false; _focusPending = false;
+            try { await _ctaZ.FocusAsync(); } catch { }
+        }
         if (_focusPending)
         {
             _focusPending = false;
@@ -1456,7 +1480,7 @@ else
                 _wiredSigZ = sig;
                 if (!_agrupadoZ) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _selfZ, ".zc-scroll"); } catch { } }
                 // Guardado invisible de la fila de alta (clic fuera + Tab; ignora pickers y flotantes).
-                if (_altaAbiertaZ) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfZ, ".zc-newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbiertaZ) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _selfZ, ".zc-newrow--edit", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }

@@ -624,7 +624,7 @@ else
                                AltaBlurGuardar -sin boton de confirmar-, se cierra al guardar y Esc cancela. *@
                             @if (_altaAbiertaC)
                             {
-                            <tr class="ctr-row ctr-newrow ctr-newrow--edit" @onkeydown="OnAltaKeydownC">
+                            <tr class="ctr-row ctr-newrow ctr-newrow--edit" data-alta-fila @onkeydown="OnAltaKeydownC">
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col">
                                     @* Expander del alta (como Seguros/Mantenimiento): abre el modal "Nuevo contrato" con lo ya
@@ -642,7 +642,7 @@ else
                                         {
                                             case "tercero":
                                                 <div class="ctr-terc-sel">
-                                                    <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" @bind-Seleccionada="_ncProveedor" Placeholder="Contratista (buscar o crear)..." Flotante="true" />
+                                                    <SelectorPersona Jwt="@_jwt" PermiteEmpresa="true" @bind-Seleccionada="_ncProveedor" @bind-Seleccionada:after="MarcarProveedorElegido" Placeholder="Contratista (buscar o crear)..." Flotante="true" />
                                                 </div>
                                                 break;
                                             case "tipocontrato":
@@ -779,7 +779,7 @@ else
                                 <td class="ctr-sel"></td>
                                 <td class="ctr-exp-col"></td>
                                 <td colspan="@(ColsVisibles().Count() + 1)">
-                                    <button type="button" class="row-add--sm" @onclick="FabNuevoContrato">
+                                    <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="FabNuevoContrato">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                         Agregar contrato
                                     </button>
@@ -1905,7 +1905,7 @@ else
             _self ??= DotNetObjectReference.Create(this);
             try
             {
-                if (altaSig == "on") await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".ctr-newrow", "AltaBlurGuardar", ".sp-pop");
+                if (altaSig == "on") await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".ctr-newrow", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal");
                 else await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff");
             }
             catch { }
@@ -1913,6 +1913,7 @@ else
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", "#ctrTableWrap"); } catch { } }
         // Foco a la primera celda al abrir la fila de alta (canon clic-para-abrir).
         if (_focusAltaCPend) { _focusAltaCPend = false; try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".ctr-newrow .ctr-terc-sel input, .ctr-newrow .ctr-inp"); } catch { } }
+        if (_focoCtaAlta && !_altaAbiertaC) { _focoCtaAlta = false; try { await _ctaAlta.FocusAsync(); } catch { } }
     }
 
     private async Task CargarAsync()
@@ -3129,12 +3130,30 @@ else
         StateHasChanged();
     }
 
-    // Esc en la fila de alta: cancela (limpia los campos). Enter sigue el flujo natural de cada control
-    // (no se fuerza aqui para no chocar con la seleccion de persona del SelectorPersona flotante).
-    private void OnAltaKeydownC(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    // Esc en la fila de alta: cancela (limpia los campos). Enter (Alex 2026-11-24, como Tareas) guarda, cierra la
+    // fila y deja el foco en "Agregar registro"; NO cuando ese Enter acaba de elegir el contratista en el
+    // SelectorPersona flotante (el Enter es de la lista).
+    private async Task OnAltaKeydownC(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (e.Key == "Escape") { LimpiarAlta(); StateHasChanged(); }
+        else if (e.Key == "Enter" && !e.ShiftKey && !_busy && _ncProveedor is not null
+                 && (DateTime.UtcNow - _proveedorElegidoEn).TotalMilliseconds > 400)
+        {
+            await CrearDesdeAltaAsync();
+            _focoCtaAlta = !_altaAbiertaC;
+        }
     }
+    private DateTime _proveedorElegidoEn = DateTime.MinValue;
+    private void MarcarProveedorElegido() => _proveedorElegidoEn = DateTime.UtcNow;
+    // Tab desde el ULTIMO campo (propiaUI.altaAutoSave): guarda si hay contratista, cierra y foco en la CTA.
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbiertaC;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta;
 
     private async Task AbrirModal(ContratoServicioDto? c)
     {

@@ -1009,6 +1009,31 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
 //    celda (position:fixed, clamp al viewport); al salir vuelve a su tamano. Enter (sin Shift) no escribe salto
 //    de linea: Blazor crea la tarea con ese Enter; Shift+Enter si hace salto de linea.
 (function () {
+    // Fila de alta (Alex 2026-11-24: el teclado de Tareas se replica en las demas tablas): la de Tareas (.tb-newrow,
+    // salvo la fila CTA) o cualquier fila marcada con data-alta-fila en el modulo.
+    function filaAlta(el) {
+        if (!el || !el.closest) return null;
+        var r = el.closest('.tb-newrow, [data-alta-fila]');
+        return r && !r.classList.contains('tb-cta-row') ? r : null;
+    }
+    // Enter / Tab en un texto de la fila de alta: los @bind por defecto (onchange) solo toman el valor al salir del
+    // campo, pero Enter guarda la fila sin salir y el Tab final la guarda sin dejar salir el foco. Se emite 'change'
+    // ANTES de que Blazor procese la tecla (captura en window), asi la fila se crea con lo ultimo escrito.
+    window.addEventListener('keydown', function (e) {
+        try {
+            if ((e.key !== 'Enter' && e.key !== 'Tab') || e.altKey || e.ctrlKey || e.metaKey) return;
+            var el = e.target;
+            if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') || !filaAlta(el)) return;
+            if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'button') return;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (x) { }
+    }, true);
+    // Celda de la fila que contiene el elemento (hijo directo de la fila).
+    function celdaDe(row, el) {
+        var c = el;
+        while (c && c.parentElement && c.parentElement !== row) c = c.parentElement;
+        return c && c.parentElement === row ? c : el;
+    }
     function contenedorX(el) {
         var p = el.parentElement;
         while (p && p !== document.body) {
@@ -1020,13 +1045,20 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
     }
     function traerALaVista(el) {
         try {
-            var row = el.closest('.tb-newrow'); if (!row) return;
+            var row = filaAlta(el); if (!row) return;
             var sc = contenedorX(row); if (!sc) return;
-            var cell = el.closest('[class*="tb-row-"]') || el;
+            var cell = el.closest('[class*="tb-row-"]') || celdaDe(row, el);
             var c = cell.getBoundingClientRect(), s = sc.getBoundingClientRect();
-            var pin = row.querySelector('.tb-pin');
             var izq = s.left;
-            if (pin && !pin.contains(el)) izq = Math.max(izq, pin.getBoundingClientRect().right);
+            // Columnas fijadas a la izquierda (Titulo de Tareas .tb-pin, o celdas sticky de otros modulos): la casilla
+            // no debe quedar debajo de ellas.
+            Array.prototype.forEach.call(row.children, function (ch) {
+                if (ch.contains(el)) return;
+                if (ch.classList.contains('tb-pin') || getComputedStyle(ch).position === 'sticky') {
+                    var rr = ch.getBoundingClientRect();
+                    if (rr.left <= c.left) izq = Math.max(izq, rr.right);
+                }
+            });
             if (c.left < izq) sc.scrollLeft -= (izq - c.left + 8);
             else if (c.right > s.right) sc.scrollLeft += (c.right - s.right + 8);
         } catch (e) { }
@@ -1076,7 +1108,7 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         //    altaAutoSave (guarda y enfoca "Agregar tarea"): por eso se respeta defaultPrevented.
         if (e.key === 'Tab' && !e.defaultPrevented && !e.altKey && !e.ctrlKey && !e.metaKey
             && el && el.matches && el.matches('input[type="date"]')) {
-            var row = el.closest('.tb-newrow'); if (!row) return;
+            var row = filaAlta(el); if (!row) return;
             var f = focosDe(row), i = f.indexOf(el);
             var dest = e.shiftKey ? f[i - 1] : f[i + 1];
             if (i < 0 || !dest) return;
@@ -1089,12 +1121,13 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         //    flechas son de la lista (.lbx-pop).
         if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.defaultPrevented && !e.altKey && !e.ctrlKey
             && !e.metaKey && !e.shiftKey && el && el.closest && !el.closest('.lbx-pop')) {
-            var fila = el.closest('.tb-newrow');
-            if (!fila || fila.classList.contains('tb-cta-row')) return;
+            var fila = filaAlta(el);
+            if (!fila) return;
             var izq = e.key === 'ArrowLeft';
             var esTexto = el.tagName === 'TEXTAREA'
                 || (el.tagName === 'INPUT' && /^(text|search|email|tel|url)$/.test(el.type || 'text'));
-            if (esTexto) {
+            // type=email no expone selectionStart (null): ahi la flecha siempre pasa de columna.
+            if (esTexto && el.selectionStart != null) {
                 var a = el.selectionStart, b = el.selectionEnd, n = (el.value || '').length;
                 if (a !== b) return;
                 if (izq ? a !== 0 : a !== n) return;

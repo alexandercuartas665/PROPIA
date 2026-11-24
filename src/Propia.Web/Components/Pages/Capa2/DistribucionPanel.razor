@@ -710,7 +710,7 @@ else
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
                     @if (_altaAbierta)
                     {
-                    <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                    <tr class="newrow newrow--edit" data-alta-fila @onkeydown="OnAltaKeydown">
                         <td class="tbl-sel"></td>
                         <td class="tbl-exp">
                             <button type="button" class="tbl-exp-btn" title="Abrir la ficha (con la fila vacía abre el formulario para crear)" style="opacity:1" @onclick="ExpandirAltaUnidadAsync" disabled="@_creandoUnidad">
@@ -867,7 +867,7 @@ else
                         <td class="tbl-sel"></td>
                         <td class="tbl-exp"></td>
                         <td colspan="@(ColSpanTotal - 2)">
-                            <button type="button" class="row-add--sm" @onclick="AbrirAlta">
+                            <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="AbrirAlta">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                 Agregar registro
                             </button>
@@ -1199,7 +1199,9 @@ else
 
     // ===== Alta inline "nace fila" (estandar): boton CTA -> fila nueva editable con Confirmar/Cancelar =====
     private bool _altaAbierta;
-    private void AbrirAlta() => _altaAbierta = true;
+    // Al abrir la fila (clic o Enter en "Agregar registro"), el cursor cae en su primer campo, como en Tareas.
+    private void AbrirAlta() { _altaAbierta = true; _focoPrimerCampo = true; }
+    private bool _focoPrimerCampo;
     private void CerrarAlta() => _altaAbierta = false;
 
     // ===== Formulario "Nueva unidad" (expander del alta sin codigo; Alex 2026-11-23) =====
@@ -1240,18 +1242,33 @@ else
     private void FabAgregarAsync()
     {
         _shown = Filtradas.Count;   // muestra todas: el fondo deja de alejarse
-        _altaAbierta = true;
+        _altaAbierta = true; _focoPrimerCampo = true;
         _scrollBottomPending = true;   // el scroll real se hace en OnAfterRenderAsync (post-render)
         StateHasChanged();
     }
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAlta();
-        else if (e.Key == "Enter") await CrearUnidadDesdeAltaAsync(false);
+        else if (e.Key == "Enter" && !e.ShiftKey && !_creandoUnidad)
+        {
+            await CrearUnidadDesdeAltaAsync(false);
+            _focoCtaAlta = !_altaAbierta;   // como Tareas: guarda, cierra y foco en "Agregar registro"
+        }
     }
 
     // Guardado invisible: lo invoca propiaUI.altaAutoSave cuando el foco/clic SALE de la fila de alta
     // (Tab tras el ultimo campo o clic fuera). Con codigo -> crea; vacia -> descarta sin error.
+    // Tab desde el ULTIMO campo de la fila (propiaUI.altaAutoSave, Alex 2026-11-24, igual que Tareas): guarda si
+    // tiene lo minimo, cierra la fila y deja el foco en "Agregar registro" (otro Enter abre la siguiente).
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbierta;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta;
+
     [JSInvokable] public async Task AltaBlurGuardar()
     {
         if (!_altaAbierta || _creandoUnidad) return;
@@ -2275,11 +2292,21 @@ else
                 if (_gruposU.Count == 0) { try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { } }
                 // Guardado invisible de la fila de alta (clic fuera + Tab fuera; ignora pickers nativos y el
                 // panel flotante del selector de persona). SIEMPRE, con o sin agrupacion/ordenamiento.
-                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
 
+        if (_focoPrimerCampo && _altaAbierta)
+        {
+            _focoPrimerCampo = false;
+            try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".newrow--edit .nf-in"); } catch { }
+        }
+        if (_focoCtaAlta && !_altaAbierta)
+        {
+            _focoCtaAlta = false;
+            try { await _ctaAlta.FocusAsync(); } catch { }
+        }
         // Scroll al fondo pendiente (FAB "+ Agregar registro"): ya se pintaron todas las filas + la fila
         // de alta, asi que ahora si el fondo es alcanzable.
         if (_scrollBottomPending)
