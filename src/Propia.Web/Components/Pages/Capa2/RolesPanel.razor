@@ -334,7 +334,7 @@ else
                     }
                     @if (_creandoRol)
                     {
-                        <tr class="rol-tr rol-newrow rol-newrow--edit">
+                        <tr class="rol-tr rol-newrow rol-newrow--edit" data-alta-fila>
                             <td class="tbl-sel"></td>
                             @* Canon Unidades: el expander del alta CREA el rol con lo escrito y ABRE su ficha
                                (la matriz de permisos). Minimo: el nombre. *@
@@ -393,7 +393,7 @@ else
                             <td class="tbl-sel"></td>
                             <td class="tbl-exp"></td>
                             <td colspan="5">
-                                <button type="button" class="row-add--sm" @onclick="() => { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; }">
+                                <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="() => { _creandoRol = true; _nuevoCategoria = CategoriaRol.Administrativo; _focoPrimerRol = true; }">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                     Agregar registro
                                 </button>
@@ -1077,6 +1077,8 @@ else
         else { _fabSig = null; }
         if (_scrollCtaPend) { _scrollCtaPend = false; try { await Js.InvokeVoidAsync("propiaUI.dstScrollToCta", ".rol-scroll"); } catch { } }
 
+        if (_focoPrimerRol && _creandoRol) { _focoPrimerRol = false; try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".rol-newrow--edit .rol-inp"); } catch { } }
+        if (_focoCtaAlta && !_creandoRol) { _focoCtaAlta = false; try { await _ctaAlta.FocusAsync(); } catch { } }
         // Guardado invisible del alta (canon vista-tabla): engancha/desengancha segun _creandoRol.
         var altaSig = _creandoRol ? "on" : "off";
         if (altaSig != _altaSig)
@@ -1085,7 +1087,7 @@ else
             _self ??= DotNetObjectReference.Create(this);
             try
             {
-                if (_creandoRol) await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".rol-newrow--edit", "AltaBlurGuardar", null);
+                if (_creandoRol) await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".rol-newrow--edit", "AltaBlurGuardar", null, "AltaTabFinal");
                 else await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff");
             }
             catch { }
@@ -1320,6 +1322,18 @@ else
 
     // Guardado invisible del alta (canon vista-tabla): se invoca desde JS al salir de la fila (Tab/clic
     // fuera). Con nombre -> crea (y abre la ficha para configurar permisos); sin nombre -> descarta en silencio.
+    // Tab desde el ULTIMO campo (propiaUI.altaAutoSave, Alex 2026-11-24): con nombre crea y abre la ficha (como
+    // siempre); vacia, cierra la fila y deja el foco en "Agregar registro".
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        var vacia = string.IsNullOrWhiteSpace(_nuevoNombre);
+        await AltaBlurGuardar();
+        _focoCtaAlta = vacia && !_creandoRol;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta, _focoPrimerRol;
+
     [JSInvokable]
     public async Task AltaBlurGuardar()
     {
@@ -1337,7 +1351,7 @@ else
     // Enter en el nombre guarda; Esc cancela el alta.
     private async Task OnAltaKeydownRol(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") { await CrearRol(); }
+        if (e.Key == "Enter" && !e.ShiftKey && !_busy) { await CrearRol(); }
         else if (e.Key == "Escape") { _creandoRol = false; _nuevoNombre = ""; _copiarDe = ""; }
     }
 

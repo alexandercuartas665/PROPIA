@@ -219,7 +219,7 @@ else
                     }
                     @if (_altaAbierta)
                     {
-                        <tr class="newrow newrow--edit" @onkeydown="OnAltaKeydown">
+                        <tr class="newrow newrow--edit" data-alta-fila @onkeydown="OnAltaKeydown">
                             <td class="tbl-sel"></td>
                             <td class="tbl-exp">
                                 <button type="button" class="tbl-exp-btn" title="Crear y abrir la ficha con lo escrito" style="opacity:1" @onclick="() => CrearDesdeAltaAsync(true)">
@@ -265,7 +265,7 @@ else
                             <td class="tbl-sel"></td>
                             <td class="tbl-exp"></td>
                             <td colspan="@(ColSpanTotal - 2)">
-                                <button type="button" class="row-add--sm" @onclick="() => _altaAbierta = true">
+                                <button type="button" class="row-add--sm" @ref="_ctaAlta" @onclick="AbrirAlta">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                     Agregar plantilla
                                 </button>
@@ -809,12 +809,30 @@ else
     private string _nuNombre = "", _nuCategoria = "";
     private readonly HashSet<Guid> _recien = new();
     private void CerrarAlta() { _altaAbierta = false; _nuNombre = ""; _nuCategoria = ""; }
-    private void FabAgregar() { _altaAbierta = true; _scrollBottomPending = true; }
+    private void FabAgregar() { _altaAbierta = true; _scrollBottomPending = true; _focoPrimerCampo = true; }
+    // Al abrir la fila (clic o Enter en "Agregar registro"), el cursor cae en su primer campo, como en Tareas.
+    private void AbrirAlta() { _altaAbierta = true; _focoPrimerCampo = true; }
+    private bool _focoPrimerCampo;
     private async Task OnAltaKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CerrarAlta();
-        else if (e.Key == "Enter") await CrearDesdeAltaAsync(false);
+        else if (e.Key == "Enter" && !e.ShiftKey && !_creando)
+        {
+            await CrearDesdeAltaAsync(false);
+            _focoCtaAlta = !_altaAbierta;   // como Tareas: guarda, cierra y foco en "Agregar registro"
+        }
     }
+    // Tab desde el ULTIMO campo de la fila (propiaUI.altaAutoSave, Alex 2026-11-24, igual que Tareas): guarda si
+    // tiene lo minimo, cierra la fila y deja el foco en "Agregar registro" (otro Enter abre la siguiente).
+    [JSInvokable] public async Task AltaTabFinal()
+    {
+        await AltaBlurGuardar();
+        _focoCtaAlta = !_altaAbierta;
+        StateHasChanged();
+    }
+    private ElementReference _ctaAlta;
+    private bool _focoCtaAlta;
+
     [JSInvokable]
     public async Task AltaBlurGuardar()
     {
@@ -1030,6 +1048,8 @@ else
             return;
         }
 
+        if (_focoPrimerCampo && _altaAbierta) { _focoPrimerCampo = false; try { await Js.InvokeVoidAsync("propiaUI.focusBySelector", ".newrow--edit .nf-in"); } catch { } }
+        if (_focoCtaAlta && !_altaAbierta) { _focoCtaAlta = false; try { await _ctaAlta.FocusAsync(); } catch { } }
         if (_jwt is not null && _vista == "tabla" && _plantillas is not null)
         {
             var sig = $"{_altaAbierta}|{Filtradas().Count}|{Niveles.Count}|{ColsVis.Count}";
@@ -1038,7 +1058,7 @@ else
                 _wiredSig = sig;
                 _self ??= DotNetObjectReference.Create(this);
                 try { await Js.InvokeVoidAsync("propiaUI.dstInfinite", _self, ".dst-scroll.tblscroll"); } catch { }
-                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop"); } catch { } }
+                if (_altaAbierta) { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSave", _self, ".newrow--edit", "AltaBlurGuardar", ".sp-pop", "AltaTabFinal"); } catch { } }
                 else { try { await Js.InvokeVoidAsync("propiaUI.altaAutoSaveOff"); } catch { } }
             }
         }
