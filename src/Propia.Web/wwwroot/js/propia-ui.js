@@ -1195,6 +1195,34 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             return true;
         } catch (e) { return true; }
     };
+    // Mini modal con foco atrapado (Alex 2026-11-24, Origen de la fila de alta: Shared/Tareas/SelectorOrigenAlta):
+    // dentro de un [data-trampa-foco], Tab / Shift+Tab recorren SOLO sus [data-foco] visibles y dan la vuelta. Se
+    // registra al cargar (antes que altaAutoSave / subfilaTab) y corta la propagacion: esos handlers NO deben tomar ese
+    // Tab como "fin de la fila" (guardar). Para salir del mini modal: Esc.
+    document.addEventListener('keydown', function (e) {
+        try {
+            if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+            var el = e.target, box = el && el.closest ? el.closest('[data-trampa-foco]') : null;
+            if (!box) return;
+            var f = Array.prototype.filter.call(box.querySelectorAll('[data-foco]'), function (x) {
+                return !x.disabled && x.offsetParent !== null;
+            });
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (!f.length) return;
+            var i = f.indexOf(el);
+            var n = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i < 0 || i >= f.length - 1 ? 0 : i + 1);
+            f[n].focus();
+        } catch (x) { }
+    }, true);
+    // Trae a la vista (dentro de su lista con scroll) el elemento con ese id, sin mover la pagina.
+    window.propiaUI.scrollIntoViewById = function (id) {
+        try { var el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'nearest' }); } catch (e) { }
+    };
+    // true si el foco sigue dentro del contenedor (para cerrar un mini modal solo cuando el foco se va de el).
+    window.propiaUI.focoDentro = function (box) {
+        try { var a = document.activeElement; return !!(box && a && box.contains(a)); } catch (e) { return true; }
+    };
     // Lista con busqueda (ListaBuscable): enfoca el buscador con el cursor al final de lo ya escrito.
     window.propiaUI.focoAlFinal = function (el) {
         try { if (!el) return; el.focus(); var n = (el.value || '').length; el.setSelectionRange(n, n); } catch (e) { }
