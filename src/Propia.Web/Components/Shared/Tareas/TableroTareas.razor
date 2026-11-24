@@ -3810,7 +3810,7 @@ else
     private static string OrigenPlaceholder(string? tipo) => tipo switch
     {
         "inmueble" => "Buscar apartamento o personas relacionadas",
-        "zona" => "Buscar zona comun...",
+        "zona" => "Buscar zona común...",
         "equipo" => "Buscar equipo o activo...",
         _ => "Buscar / elegir..."
     };
@@ -5993,18 +5993,15 @@ else
     private bool CampoBoolAlta(NuevaFilaDraft d, Guid id) => string.Equals(d.Campos.GetValueOrDefault(id), "true", StringComparison.OrdinalIgnoreCase);
     private void SetCampoBoolAlta(NuevaFilaDraft d, Guid id, ChangeEventArgs e) => d.Campos[id] = (e.Value is bool b && b) ? "true" : "false";
     // ===== Ola C-3: Origen ("Relacionado con") editable en la fila de alta =====
-    // Usa <select> NATIVOS (el navegador los pinta fuera del overflow de la tabla, sin clip); el de referencia
-    // lista OrigenBusquedaDe (unidades/zonas/equipos). Guarda OrigenTipo + OrigenReferencia en el borrador.
+    // Alex 2026-11-24: UN disparador que abre un mini modal (tipo + buscador + lista) en vez de dos listas
+    // encadenadas en la celda (se sentia "atrapado" al tabular). Lista OrigenBusquedaDe (unidades/zonas/equipos).
+    // Guarda OrigenTipo + OrigenReferencia en el borrador.
     private RenderFragment AltaOrigenCell(NuevaFilaDraft d) => __builder =>
     {
         <div class="tb-row-orig tb-orig-cell">
-            <ListaBuscable TriggerClass="tb-nf-inp" Opciones="@OpcOrigenTipo" Valor="@(d.OrigenTipo ?? "")"
-                           ValorChanged="@(v => { d.OrigenTipo = string.IsNullOrEmpty(v) ? null : v; d.OrigenReferencia = null; })" />
-            @if (!string.IsNullOrEmpty(d.OrigenTipo))
-            {
-                <ListaBuscable TriggerClass="tb-nf-inp" Placeholder="@OrigenPlaceholder(d.OrigenTipo)" Opciones="@OpcOrigenRef(d.OrigenTipo)" Valor="@(d.OrigenReferencia ?? "")"
-                               ValorChanged="@(v => d.OrigenReferencia = string.IsNullOrEmpty(v) ? null : v)" />
-            }
+            <SelectorOrigenAlta Tipo="@d.OrigenTipo" Referencia="@d.OrigenReferencia"
+                                OpcionesDe="OrigenBusquedaDe" PlaceholderDe="OrigenPlaceholder"
+                                OnCambio="@(v => { d.OrigenTipo = v.Tipo; d.OrigenReferencia = v.Referencia; })" />
         </div>
     };
     // Celda de un campo dinamico en la fila de alta: input por tipo, bindeado al borrador. Los calculados
@@ -6742,9 +6739,6 @@ else
         new ListaBuscable.Opcion("", "Sin relación"), new ListaBuscable.Opcion("inmueble", "Inmueble / unidad"),
         new ListaBuscable.Opcion("zona", "Zona común"), new ListaBuscable.Opcion("equipo", "Equipo / activo"),
     };
-    private IReadOnlyList<ListaBuscable.Opcion> OpcOrigenRef(string? tipo) =>
-        new[] { new ListaBuscable.Opcion("", "Sin referencia") }
-            .Concat(OrigenBusquedaDe(tipo).Select(o => new ListaBuscable.Opcion(o.Value, o.Display))).ToList();
     private string EstadoColorDe(Guid estadoId) =>
         _board?.Estados.FirstOrDefault(e => e.Id == estadoId)?.Color is { Length: > 0 } c ? c : "var(--propia-brand)";
     private static string FondoDe(string color) => "background:" + color;

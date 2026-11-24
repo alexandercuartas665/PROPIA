@@ -1,0 +1,288 @@
+@* Origen ("Relacionar con") de la fila de alta de Tareas/Tableros (Alex 2026-11-24): reemplaza las DOS listas
+   encadenadas (tipo y luego referencia) por UN disparador que abre un mini modal flotante:
+   - pestanas de tipo (Inmueble / Zona comun / Equipo): clic, Enter/Espacio sobre la pestana, o flechas
+     izquierda/derecha con el buscador vacio;
+   - buscador (sin tildes ni mayusculas) + lista: flechas arriba/abajo, Enter elige y cierra, Esc cierra.
+   - Foco ATRAPADO como un modal (Alex 2026-11-24): Tab / Shift+Tab recorren tipos -> buscador -> lista ->
+     "Quitar relacion" y dan la vuelta (propiaUI, [data-trampa-foco] / [data-foco]). Para salir: Esc y luego Tab.
+     La lista es UNA parada: flechas mueven lo resaltado, Enter elige, escribir vuelve al buscador.
+   - Se abre SOLO al llegar al disparador (Tab / Shift+Tab / clic), con el cursor en el buscador. Cuando el foco
+     vuelve al disparador por el propio selector (eligio, Esc) NO se reabre.
+     Supr/Retroceso sobre el disparador quita la relacion.
+   Usa las clases lbx-* (lbx-wrap / lbx-trg / lbx-pop) a proposito: propiaUI.altaAutoSave y la navegacion de la
+   fila de alta ya tratan .lbx-pop como panel propio del disparador (Tab final, flechas, guardado al salir). *@
+@inject IJSRuntime Js
+
+<span class="lbx-wrap sora-wrap" @ref="_wrap">
+    <button type="button" id="@_trgId" class="lbx-trg tb-nf-inp sora-trg @(_open ? "lbx-trg--open" : "")" @ref="_trg"
+            @onclick="AlClic" @onfocus="AlEnfocar" @onkeydown="TrgKeyAsync" title="Relacionar la tarea con un inmueble, zona o equipo"
+            aria-haspopup="dialog" aria-expanded="@(_open ? "true" : "false")">
+        @if (string.IsNullOrEmpty(Tipo))
+        {
+            <span class="lbx-trg-tx sora-ph">Sin relación</span>
+        }
+        else
+        {
+            <span class="lbx-trg-tx"><span class="sora-tipo">@TipoCorto(Tipo)</span>@if (!string.IsNullOrEmpty(Referencia)) {<span class="sora-sep">&rsaquo;</span><span class="sora-ref">@Referencia</span>}</span>
+        }
+        <svg class="lbx-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    @if (_open)
+    {
+        var vis = Filtradas();
+        <div class="lbx-pop sora-pop" id="@_popId" role="dialog" aria-modal="true" aria-label="Relacionar con" data-trampa-foco
+             @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @onfocusout="AlSalirAsync">
+            <div class="sora-head">Relacionar con</div>
+            <div class="sora-tabs" role="tablist">
+                @foreach (var t in Tipos)
+                {
+                    var tt = t;
+                    <button type="button" data-foco role="tab" class="sora-tab @(tt.Valor == _tab ? "on" : "")"
+                            aria-selected="@(tt.Valor == _tab ? "true" : "false")" @onclick="() => CambiarTab(tt.Valor)">@tt.Texto</button>
+                }
+            </div>
+            <input class="lbx-q" data-foco @ref="_qRef" placeholder="@(PlaceholderDe?.Invoke(_tab) ?? "Buscar...")" autocomplete="off"
+                   @bind="_q" @bind:event="oninput" @bind:after="AlFiltrar"
+                   @onkeydown="QKeyAsync" />
+            @* La lista es UNA parada del Tab (tabindex 0): flechas/Enter sobre lo resaltado. *@
+            <div class="lbx-list sora-lista" data-foco tabindex="0" @ref="_listaRef" role="listbox" aria-label="Opciones"
+                 @onkeydown="ListaKeyAsync" @onkeydown:preventDefault="true">
+                @if (vis.Count == 0)
+                {
+                    <div class="lbx-empty">Sin coincidencias</div>
+                }
+                @for (var i = 0; i < vis.Count; i++)
+                {
+                    var o = vis[i]; var idx = i;
+                    var marcada = _tab == (Tipo ?? "") && o.Valor == (Referencia ?? "") && (o.Valor.Length > 0 || !string.IsNullOrEmpty(Tipo));
+                    <button type="button" tabindex="-1" id="@(_popId + "-" + idx)" class="lbx-it sora-it @(idx == _hi ? "hi" : "") @(marcada ? "sel" : "") @(o.Valor.Length == 0 ? "sora-it--solo" : "")"
+                            @onmouseenter="() => _hi = idx" @onclick="() => ElegirAsync(o, true)">
+                        <span class="lbx-it-tx">@o.Texto</span>
+                        @if (!string.IsNullOrEmpty(o.Sub)) { <span class="sora-it-sub">@o.Sub</span> }
+                        @if (marcada)
+                        {
+                            <svg class="lbx-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                        }
+                    </button>
+                }
+            </div>
+            <div class="sora-foot">
+                <span class="sora-hint">Tab recorre &middot; Enter elige &middot; Esc cierra</span>
+                @if (!string.IsNullOrEmpty(Tipo))
+                {
+                    <button type="button" data-foco class="sora-quitar" @onclick="() => QuitarAsync(true)">Quitar relación</button>
+                }
+            </div>
+        </div>
+    }
+</span>
+
+@code {
+    /// <summary>Valor elegido: Tipo ("inmueble"/"zona"/"equipo" o null) y Referencia (o null).</summary>
+    public record Eleccion(string? Tipo, string? Referencia);
+    private record Item(string Valor, string Texto, string? Sub, string Search);
+
+    [Parameter] public string? Tipo { get; set; }
+    [Parameter] public string? Referencia { get; set; }
+    [Parameter] public EventCallback<Eleccion> OnCambio { get; set; }
+    /// <summary>Opciones de referencia por tipo (las mismas del resto de Tareas: unidad + propietario, zona, equipo).</summary>
+    [Parameter] public Func<string?, IReadOnlyList<SelectorOrigenReferencia.OpcionBusqueda>>? OpcionesDe { get; set; }
+    [Parameter] public Func<string?, string>? PlaceholderDe { get; set; }
+
+    private static readonly (string Valor, string Texto)[] Tipos =
+        { ("inmueble", "Inmueble"), ("zona", "Zona común"), ("equipo", "Equipo") };
+    private static string TipoCorto(string? t) => Tipos.FirstOrDefault(x => x.Valor == t).Texto ?? "";
+
+    private readonly string _trgId = "sora-t-" + Guid.NewGuid().ToString("N")[..10];
+    private readonly string _popId = "sora-p-" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _trg, _qRef, _wrap, _listaRef;
+    private bool _verHi;   // tras mover lo resaltado con flechas: traerlo a la vista dentro de la lista
+    private bool _open, _anclar, _focoTrg, _refocoQ;
+    // El proximo foco del disparador lo provoca el propio selector (devolver el foco tras elegir/Esc/Shift+Tab):
+    // ese foco NO debe reabrir la caja.
+    private bool _noAutoAbrir;
+    private string _q = "";
+    private string _tab = "inmueble";
+    private int _hi;
+
+    private List<Item> Filtradas()
+    {
+        var src = OpcionesDe?.Invoke(_tab) ?? Array.Empty<SelectorOrigenReferencia.OpcionBusqueda>();
+        var q = Norm(_q);
+        if (q.Length == 0)
+        {
+            // Sin buscar: primero "solo el tipo" (relacion sin referencia puntual), luego todas.
+            var solo = new Item("", "Solo " + TipoCorto(_tab).ToLowerInvariant() + ", sin referencia", null, "");
+            return new[] { solo }.Concat(src.Select(o => new Item(o.Value, o.Display, o.Sub, o.Search))).ToList();
+        }
+        return src.Select(o => (o, n: Norm(o.Search)))
+            .Where(x => x.n.Contains(q))
+            .OrderBy(x => Norm(x.o.Display).StartsWith(q) ? 0 : (" " + x.n).Contains(" " + q) ? 1 : 2)
+            .Select(x => new Item(x.o.Value, x.o.Display, x.o.Sub, x.o.Search)).ToList();
+    }
+
+    private void Abrir(string? semilla)
+    {
+        _tab = string.IsNullOrEmpty(Tipo) ? "inmueble" : Tipo!;
+        _q = semilla ?? "";
+        var vis = Filtradas();
+        var i = semilla is null ? vis.FindIndex(o => _tab == (Tipo ?? "") && o.Valor == (Referencia ?? "")) : 0;
+        _hi = i < 0 ? 0 : i;
+        _open = true;
+        _anclar = true;
+    }
+
+    private void AlEnfocar()
+    {
+        if (_noAutoAbrir) { _noAutoAbrir = false; return; }
+        if (!_open) Abrir(null);
+    }
+
+    // El clic ya enfoca (y abre via AlEnfocar); solo reabrir si estaba cerrado con el foco puesto.
+    private void AlClic()
+    {
+        _noAutoAbrir = false;
+        if (!_open) Abrir(null);
+    }
+
+    private void CambiarTab(string t)
+    {
+        if (t == _tab) return;
+        _tab = t; _hi = 0;
+        _refocoQ = true;
+    }
+
+    private void AlFiltrar() => _hi = 0;
+
+    private async Task TrgKeyAsync(KeyboardEventArgs e)
+    {
+        var imprimible = e.Key.Length == 1 && e.Key != " " && !e.CtrlKey && !e.AltKey && !e.MetaKey;
+        if (_open)
+        {
+            // Letras que llegan al disparador antes de que el buscador tenga el foco (latencia del circuito).
+            if (imprimible) { _q += e.Key; _hi = 0; }
+            return;
+        }
+        if (e.Key == "ArrowDown") { Abrir(null); return; }
+        if ((e.Key == "Delete" || e.Key == "Backspace") && !string.IsNullOrEmpty(Tipo)) { await QuitarAsync(false); return; }
+        if (imprimible) Abrir(e.Key);
+    }
+
+    private async Task QKeyAsync(KeyboardEventArgs e)
+    {
+        if (!_open) return;
+        var vis = Filtradas();
+        switch (e.Key)
+        {
+            case "ArrowDown": if (vis.Count > 0) _hi = Math.Min(_hi + 1, vis.Count - 1); break;
+            case "ArrowUp": _hi = Math.Max(_hi - 1, 0); break;
+            case "ArrowLeft":
+            case "ArrowRight":
+                // Con el buscador vacio las flechas laterales cambian de tipo; escribiendo, mueven el cursor.
+                if (_q.Length == 0)
+                {
+                    var i = Array.FindIndex(Tipos, x => x.Valor == _tab);
+                    i = e.Key == "ArrowLeft" ? Math.Max(0, i - 1) : Math.Min(Tipos.Length - 1, i + 1);
+                    _tab = Tipos[i].Valor; _hi = 0;
+                }
+                break;
+            case "Enter":
+                if (vis.Count > 0) await ElegirAsync(vis[Math.Clamp(_hi, 0, vis.Count - 1)], true);
+                break;
+            case "Escape": _open = false; _focoTrg = true; _noAutoAbrir = true; break;
+            // Tab / Shift+Tab: los maneja la trampa de foco (propiaUI), no llegan aqui.
+        }
+        if (e.Key is "ArrowDown" or "ArrowUp") _verHi = true;
+    }
+
+    // Teclas sobre la lista (parada propia del Tab).
+    private async Task ListaKeyAsync(KeyboardEventArgs e)
+    {
+        if (!_open) return;
+        var vis = Filtradas();
+        var imprimible = e.Key.Length == 1 && !e.CtrlKey && !e.AltKey && !e.MetaKey;
+        switch (e.Key)
+        {
+            case "ArrowDown": if (vis.Count > 0) _hi = Math.Min(_hi + 1, vis.Count - 1); _verHi = true; break;
+            case "ArrowUp": _hi = Math.Max(_hi - 1, 0); _verHi = true; break;
+            case "Home": _hi = 0; _verHi = true; break;
+            case "End": _hi = Math.Max(vis.Count - 1, 0); _verHi = true; break;
+            case "Enter":
+            case " ":
+                if (vis.Count > 0) await ElegirAsync(vis[Math.Clamp(_hi, 0, vis.Count - 1)], true);
+                break;
+            case "Escape": _open = false; _focoTrg = true; _noAutoAbrir = true; break;
+            default:
+                // Escribir estando en la lista: vuelve al buscador con esa letra.
+                if (imprimible) { _q += e.Key; _hi = 0; _refocoQ = true; }
+                break;
+        }
+    }
+
+    // El foco salio de un elemento del mini modal: cerrarlo solo si se fue FUERA de el (no al pasar entre sus paradas).
+    private async Task AlSalirAsync()
+    {
+        if (!_open) return;
+        await Task.Delay(30);
+        try { if (!await Js.InvokeAsync<bool>("propiaUI.focoDentro", _wrap)) { _open = false; StateHasChanged(); } } catch { }
+    }
+
+    private async Task ElegirAsync(Item o, bool volverAlDisparador)
+    {
+        _open = false;
+        _focoTrg = volverAlDisparador;
+        if (volverAlDisparador) _noAutoAbrir = true;
+        var r = o.Valor.Length == 0 ? null : o.Valor;
+        if (_tab != (Tipo ?? "") || r != Referencia) await OnCambio.InvokeAsync(new Eleccion(_tab, r));
+    }
+
+    // desdeCaja: el boton "Quitar relacion" de la caja (devuelve el foco al disparador sin reabrir). Desde el
+    // disparador (Supr) el foco ya esta ahi: no se toca.
+    private async Task QuitarAsync(bool desdeCaja = true)
+    {
+        _open = false;
+        if (desdeCaja) { _focoTrg = true; _noAutoAbrir = true; }
+        await OnCambio.InvokeAsync(new Eleccion(null, null));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open && _anclar)
+        {
+            _anclar = false;
+            try
+            {
+                await Js.InvokeVoidAsync("propiaUI.anchorFloatMenu", "#" + _trgId, "#" + _popId);
+                if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _qRef, true)) { _open = false; StateHasChanged(); }
+            }
+            catch { }
+        }
+        else if (_open && _refocoQ)
+        {
+            _refocoQ = false;
+            try { if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _qRef, true)) { _open = false; StateHasChanged(); } } catch { }
+        }
+        else if (_open && _verHi)
+        {
+            _verHi = false;
+            try { await Js.InvokeVoidAsync("propiaUI.scrollIntoViewById", _popId + "-" + _hi); } catch { }
+        }
+        else if (_focoTrg)
+        {
+            _focoTrg = false;
+            // Si el usuario ya se fue a otro lado, el foco no vuelve: entonces no queda pendiente la supresion.
+            try { if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _trg, false)) _noAutoAbrir = false; } catch { _noAutoAbrir = false; }
+        }
+    }
+
+    private static string Norm(string? s)
+    {
+        s = (s ?? "").Trim().ToLowerInvariant();
+        if (s.Length == 0) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s.Normalize(System.Text.NormalizationForm.FormD))
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        return sb.ToString();
+    }
+}
