@@ -55,6 +55,11 @@ public partial class TareasService : ITareasService
         var vinculada = await _db.DirectorioVinculos
             .AsNoTracking()
             .AnyAsync(v => v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == pid, ct);
+        // Auditoria UX T-01 (2026-11-25, decision de Alex): un USUARIO activo de la copropiedad tambien vale aunque no
+        // este en el Directorio (p.ej. el administrador). UsuariosTenant tambien tiene query filter por tenant.
+        if (!vinculada)
+            vinculada = await _db.UsuariosTenant.AsNoTracking()
+                .AnyAsync(u => u.PersonaId == pid && u.Estado == EstadoUsuarioTenant.Activo, ct);
         if (!vinculada)
             throw new InvalidOperationException(
                 $"La persona indicada en '{campo}' no pertenece a esta copropiedad. " +
