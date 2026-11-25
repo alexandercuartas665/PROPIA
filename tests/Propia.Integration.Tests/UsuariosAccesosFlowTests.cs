@@ -113,6 +113,28 @@ public class UsuariosAccesosFlowTests : IAsyncLifetime
         Assert.True(detalle!.Permisos.Count(p => p.Habilitado) >= 80); // copia ~todos
     }
 
+    // Auditoria UX M-13/U-02 (2026-11-25): el listado informa los permisos habilitados de los roles PERSONALIZADOS
+    // (las fichas ocultan los que tienen 0); en los roles globales viene null.
+    [Fact]
+    public async Task Listar_roles_informa_permisos_habilitados_de_los_personalizados()
+    {
+        var (svc, _, _, _) = BuildRoles(await SeedTenantAsync("CP Permisos Conteo"));
+        var admin = (await svc.ListarRolesAsync(CancellationToken.None)).First(r => r.Nombre == "Administrador");
+
+        var vacio = await svc.CrearRolAsync(new CrearRolRequest("Rol Vacio", null, CategoriaRol.Administrativo, null), CancellationToken.None);
+        var copia = await svc.CrearRolAsync(new CrearRolRequest("Rol Copia", null, CategoriaRol.Administrativo, admin.Id), CancellationToken.None);
+
+        var roles = await svc.ListarRolesAsync(CancellationToken.None);
+        Assert.Null(roles.First(r => r.Id == admin.Id).PermisosHabilitados);
+        Assert.Equal(0, roles.First(r => r.Id == vacio.Id).PermisosHabilitados);
+        Assert.True(roles.First(r => r.Id == copia.Id).PermisosHabilitados >= 80);
+
+        await svc.ActualizarPermisoAsync(vacio.Id,
+            new ActualizarPermisoRequest(ModuloCodigo.Tareas, AccionPermiso.Ver, true, NivelDato.Copropiedad), CancellationToken.None);
+        roles = await svc.ListarRolesAsync(CancellationToken.None);
+        Assert.Equal(1, roles.First(r => r.Id == vacio.Id).PermisosHabilitados);
+    }
+
     // ===== Aislamiento de la matriz por copropiedad (spec 2.5 v2.0 RP-04/RN-07) =====
     // Es el bug critico que tapa la Ola A: hoy rol_permisos es global y editar un rol base mutaba la
     // matriz para TODAS las copropiedades. Con rol_permisos_tenant (override por tenant) + overlay,

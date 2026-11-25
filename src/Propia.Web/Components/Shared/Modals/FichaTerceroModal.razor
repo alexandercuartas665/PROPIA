@@ -786,9 +786,24 @@ else
     }
 
     // ----- Acceso / roles -----
-    private List<RolDto> RolesDisponibles() => _roles.Where(r => r.Activo && !_rolIdsAsignados.Contains(r.Id)).ToList();
     private string RolNombre(Guid id) => _roles.FirstOrDefault(r => r.Id == id)?.Nombre ?? "Rol";
-    private void AgregarRol(Guid id) { if (!_rolIdsAsignados.Contains(id)) _rolIdsAsignados.Add(id); }
+    // Auditoria UX M-13/U-02 (2026-11-25): no ofrecer roles PERSONALIZADOS sin ningun permiso (rol vacio); si ya
+    // estan asignados se siguen viendo como chip. Asignar Administrador (acceso total) pide confirmacion.
+    private List<RolDto> RolesDisponibles() => _roles.Where(r => r.Activo && !_rolIdsAsignados.Contains(r.Id)
+        && !(r.Tipo == TipoRol.Personalizado && r.PermisosHabilitados == 0)).ToList();
+    private bool EsRolAdministrador(Guid id) =>
+        string.Equals(_roles.FirstOrDefault(r => r.Id == id)?.Nombre, "Administrador", StringComparison.OrdinalIgnoreCase);
+    private async Task AgregarRol(Guid id)
+    {
+        if (_rolIdsAsignados.Contains(id)) return;
+        if (EsRolAdministrador(id))
+        {
+            var quien = string.IsNullOrWhiteSpace(_titulo) ? "esta persona" : _titulo.Trim();
+            if (!await Modals.ConfirmAsync($"Vas a dar acceso total a {quien}. \u00bfContinuar?", "Asignar Administrador")) return;
+            if (_rolIdsAsignados.Contains(id)) return;
+        }
+        _rolIdsAsignados.Add(id);
+    }
     private void QuitarRol(Guid id) => _rolIdsAsignados.Remove(id);
 
     private async Task GuardarAccesoAsync()

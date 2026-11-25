@@ -359,9 +359,15 @@ else
             <div class="dst-kpi-n">@_unidades.Count(u => u.TipoCustomId is null && u.Tipo == TipoUnidad.Apartamento)</div>
             <div class="dst-kpi-l">Apartamentos</div>
         </div>
-        <div class="dst-kpi">
-            <div class="dst-kpi-n">@(_unidades.Sum(u => u.CoeficientePropiedad).ToString("0.#####"))%</div>
+        @* Auditoria UX M-07 (2026-11-25): la suma debe ser 100 % (tolerancia 0,01). Rojo + cuanto sobra/falta
+           cuando no cuadra; verde cuando cuadra. Sin unidades queda neutro. *@
+        <div class="dst-kpi @KpiCoefClase">
+            <div class="dst-kpi-n">@(SumaCoef.ToString("0.#####"))%</div>
             <div class="dst-kpi-l">Suma de coeficientes</div>
+            @if (_unidades.Count > 0 && !CoefCuadra)
+            {
+                <div class="dst-kpi-s">Debe ser 100 % (hoy @((SumaCoef - 100m).ToString("+0.#####;-0.#####")))</div>
+            }
         </div>
     </div>
 
@@ -892,6 +898,11 @@ else
                 {
                     <div class="tbl-foot">@Filtradas.Count registros &middot; mostrando @Mostradas</div>
                 }
+                @if (!string.IsNullOrEmpty(_avisoCoef))
+                {
+                    @* Aviso NO bloqueante (M-07): el coeficiente se guardo, pero la suma desborda 100 %. *@
+                    <div class="dst-aviso-coef" role="status" title="Clic para cerrar" @onclick="() => _avisoCoef = null">@_avisoCoef</div>
+                }
                 @if (!string.IsNullOrEmpty(_inlineMsgU)) { <div class="dst-toast" @onclick="() => _inlineMsgU = null">@_inlineMsgU</div> }
             }
             else
@@ -1164,6 +1175,21 @@ else
     private async Task OnExpandNuevaFila() => await AbrirModalAsync(null);
     private bool _creandoUnidad;
     private string? _inlineMsgU;
+
+    // ===== Suma de coeficientes (auditoria UX M-07, 2026-11-25) =====
+    private const decimal ToleranciaCoef = 0.01m;
+    private decimal SumaCoef => _unidades.Sum(u => u.CoeficientePropiedad);
+    private bool CoefCuadra => Math.Abs(SumaCoef - 100m) <= ToleranciaCoef;
+    private string KpiCoefClase => _unidades.Count == 0 ? "" : (CoefCuadra ? "dst-kpi--ok" : "dst-kpi--mal");
+    private string? _avisoCoef;
+    // Tras guardar un coeficiente (alta o inline): aviso si la suma DESBORDA 100 %. No bloquea (cargas por etapas).
+    private void AvisarSumaCoef()
+    {
+        var suma = SumaCoef;
+        _avisoCoef = suma > 100m + ToleranciaCoef
+            ? $"La suma de coeficientes queda en {suma.ToString("0.#####")} % (debe ser 100 %)."
+            : null;
+    }
     private readonly HashSet<Guid> _uniRecienCreados = new();
 
     // ===== Seleccion multiple + borrado masivo (estandar vista tabla) =====
@@ -2149,6 +2175,7 @@ else
                 var nombreCustom = tipoCustom is { } cg ? _tiposCustom.FirstOrDefault(x => x.Id == cg)?.Nombre : null;
                 var i = _unidades.FindIndex(x => x.Id == u.Id);
                 if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago, ModuloContributivo1 = mc1, ModuloContributivo2 = mc2, ModuloContributivo3 = mc3, ModuloContributivo4 = mc4, ModuloContributivo5 = mc5 };
+                if (campo == "coef") AvisarSumaCoef();
             }
         }
         catch { }
@@ -2232,6 +2259,7 @@ else
                     _unidades.Add(creada);
                     _uniRecienCreados.Add(creada.Id);
                     _inlineMsgU = $"Unidad {creada.Numero} creada.";
+                    if (creada.CoeficientePropiedad != 0m) AvisarSumaCoef();
                     _nuNum = ""; _nuPiso = ""; _nuArea = ""; _nuCoef = ""; _nuTipoKey = "e:Apartamento"; _nuMatricula = ""; _nuRefPago = ""; _nuCampos.Clear();
                     _nuEstado = ""; _nuHab = ""; _nuBanos = ""; _nuParq = ""; _nuPagaAdmin = "true"; _nuCuota = ""; _nuObs = ""; _nuMod.Clear();
                     _altaAbierta = false;  // la fila nueva se cierra al guardar (vuelve al CTA "Agregar registro")
@@ -3347,6 +3375,13 @@ else
     .dst-kpi { flex: 0 1 auto; min-width: 150px; padding: 12px 16px; border: 1px solid var(--propia-border-card); border-radius: 12px; background: var(--propia-bg-card); }
     .dst-kpi-n { font-size: 22px; font-weight: 800; color: var(--propia-text-h1); line-height: 1.1; }
     .dst-kpi-l { font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--propia-text-faint); margin-top: 3px; }
+    /* M-07: suma de coeficientes que cuadra (verde) o no (rojo + cuanto sobra/falta). Solo tokens. */
+    .dst-kpi--ok { border-color: var(--propia-ok); background: var(--propia-ok-soft); }
+    .dst-kpi--ok .dst-kpi-n { color: var(--propia-ok); }
+    .dst-kpi--mal { border-color: var(--propia-danger); background: var(--propia-danger-soft); }
+    .dst-kpi--mal .dst-kpi-n { color: var(--propia-danger); }
+    .dst-kpi-s { font-size: 11.5px; font-weight: 600; color: var(--propia-danger); margin-top: 2px; }
+    .dst-aviso-coef { margin: 10px 16px 0; padding: 8px 12px; border: 1px solid var(--propia-warning-border); background: var(--propia-warning-bg); color: var(--propia-text-body); border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .dst-loading { display: flex; justify-content: center; padding: 60px 0; }
 
     /* Cabecera: acciones de plantilla (estandar Zonas/Equipos). */

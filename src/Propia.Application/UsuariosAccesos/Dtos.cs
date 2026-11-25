@@ -8,7 +8,10 @@ public record RolDto(
     Guid Id, Guid? TenantId, string Nombre, string? Descripcion,
     TipoRol Tipo, CategoriaRol Categoria, bool EsEliminable, bool Activo,
     int CantidadUsuariosActivos,
-    string? FacetasSemilla = null, bool SoloDirectorio = false);
+    string? FacetasSemilla = null, bool SoloDirectorio = false,
+    // Auditoria UX M-13/U-02 (2026-11-25): permisos habilitados de un rol PERSONALIZADO (null en roles globales).
+    // Las fichas no ofrecen para asignar un rol personalizado con 0 permisos (rol vacio = acceso sin nada).
+    int? PermisosHabilitados = null);
 
 public record RolDetalleDto(
     Guid Id, Guid? TenantId, string Nombre, string? Descripcion,
