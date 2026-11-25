@@ -32,19 +32,22 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
     public async Task<DashboardResumenDto> GetResumenAsync(CancellationToken ct)
     {
         // 1. Alertas activas
-        var alertas = await _db.AlertasCopropiedad.AsNoTracking()
+        var alertas = (await _db.AlertasCopropiedad.AsNoTracking()
             .Where(a => a.Activa).OrderByDescending(a => a.CreatedAt).Take(20)
             .Select(a => new AlertaDashboardDto(a.Id, a.Tipo, a.Severidad, a.Titulo, a.Descripcion, a.UrlAccion, a.CreatedAt))
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            // D-05: alertas de consumo guardadas con la cifra cruda ("subio 420952,6%") se muestran con el tope de 999 %.
+            .Select(a => a with { Descripcion = Propia.Application.ServiciosPublicos.ReglasServicioPublico.NormalizarDescripcionAlertaConsumo(a.Descripcion) })
+            .ToList();
 
         // 2. Bloque operativo - tareas
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var tareasActivas = await _db.Tareas.AsNoTracking().Where(t => !t.Estado!.EsTerminal).CountAsync(ct);
+        var hoy = HoyColombia();   // hora Colombia (antes UTC)
+        var tareasActivas = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && !t.Estado!.EsTerminal).CountAsync(ct);
         var tareasVencidas = await _db.Tareas.AsNoTracking()
-            .Where(t => !t.Estado!.EsTerminal && t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy)
+            .Where(t => !t.Eliminada && !t.Estado!.EsTerminal && t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy)
             .CountAsync(ct);
         var tareasUrgentes = await (
-            from t in _db.Tareas.AsNoTracking().Where(t => !t.Estado!.EsTerminal)
+            from t in _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && !t.Estado!.EsTerminal)
             join e in _db.TareasEstados on t.EstadoId equals e.Id
             join pr in _db.TareasPrioridades on t.PrioridadId equals pr.Id into prj
             from pr in prj.DefaultIfEmpty()
@@ -54,6 +57,17 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
                 t.FechaVencimiento,
                 t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy)
         ).Take(5).ToListAsync(ct);
+
+        // 2b. Auditoria UX D-02 (2026-11-25): "Proximas a vencer" listaba tareas ya vencidas. Dos bloques separados,
+        //     "hoy" en hora Colombia: Vencidas (fecha < hoy) y Proximos 7 dias (hoy..hoy+7), fecha ascendente, max 5.
+        var hoyCo = HoyColombia();
+        var limiteTareas = hoyCo.AddDays(7);
+        var tareasVencidasBloque = new BloqueVencimientoDto<TareaResumenDto>(
+            await TareasResumenAsync(t => t.FechaVencimiento < hoyCo, hoyCo, ct),
+            await _db.Tareas.AsNoTracking().CountAsync(t => !t.Eliminada && !t.Estado!.EsTerminal && t.FechaVencimiento < hoyCo, ct));
+        var tareasProximasBloque = new BloqueVencimientoDto<TareaResumenDto>(
+            await TareasResumenAsync(t => t.FechaVencimiento >= hoyCo && t.FechaVencimiento <= limiteTareas, hoyCo, ct),
+            await _db.Tareas.AsNoTracking().CountAsync(t => !t.Eliminada && !t.Estado!.EsTerminal && t.FechaVencimiento >= hoyCo && t.FechaVencimiento <= limiteTareas, ct));
 
         // 3. Bloque financiero - recaudo del mes (consulta directa al modulo 2.6)
         var periodoActual = new DateOnly(hoy.Year, hoy.Month, 1);
@@ -121,11 +135,25 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             .Select(x => new ContratoPorVencerDto(x.Id, x.Aseguradora, x.FechaFin, x.Dias, x.Sem))
             .ToList();
 
+        // 6b. Auditoria UX D-03 (2026-11-25): contratos y polizas en dos bloques - Vencidos (fecha < hoy) y Proximos 60 dias
+        //     (decision de Alex: 60, no 30), juntos y por fecha ascendente, max 5 por bloque + total real.
+        var venc = (await _db.ContratosServicio.AsNoTracking().Where(c => c.FechaFin != null)
+                .Select(c => new { c.Id, Nombre = c.Proveedor, FechaFin = c.FechaFin!.Value }).ToListAsync(ct))
+            .Select(c => new VencimientoDto(c.Id, "Contrato", c.Nombre, c.FechaFin, c.FechaFin.DayNumber - hoyCo.DayNumber, "/contratos"))
+            .Concat((await _db.Polizas.AsNoTracking().Where(p => p.FechaFin != null)
+                .Select(p => new { p.Id, Nombre = p.Aseguradora, FechaFin = p.FechaFin!.Value }).ToListAsync(ct))
+            .Select(p => new VencimientoDto(p.Id, "Poliza", p.Nombre, p.FechaFin, p.FechaFin.DayNumber - hoyCo.DayNumber, "/seguros")))
+            .OrderBy(v => v.FechaFin).ToList();
+        var vencidosL = venc.Where(v => v.Dias < 0).ToList();
+        var proximosL = venc.Where(v => v.Dias >= 0 && v.Dias <= DiasVentanaContratos).ToList();
+        var vencimientosVencidos = new BloqueVencimientoDto<VencimientoDto>(vencidosL.Take(5).ToList(), vencidosL.Count);
+        var vencimientosProximos = new BloqueVencimientoDto<VencimientoDto>(proximosL.Take(5).ToList(), proximosL.Count);
+
         // 7. Dashboard v2 - distribucion de tareas activas por etapa (para la grafica de barras).
         //    Se agrupa por NOMBRE de etapa (los tableros repiten nombres tipo "Pendiente"): la vista
         //    es un panorama global de la copropiedad, no de un tablero puntual.
         var tareasPorEtapa = (await (
-                from t in _db.Tareas.AsNoTracking().Where(t => !t.Estado!.EsTerminal)
+                from t in _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && !t.Estado!.EsTerminal)
                 join e in _db.TareasEstados on t.EstadoId equals e.Id
                 group e by e.Nombre into g
                 select new { Nombre = g.Key, Color = g.Min(x => x.Color), Cantidad = g.Count() }
@@ -179,7 +207,7 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
         // 10. Dashboard v3 - graficas. Volumenes acotados (6 meses / 8 semanas): se traen solo las
         //     fechas y se agrupa en memoria para no depender de traducciones EF de Year/Month/Date.
         var inicioSerie = new DateTimeOffset(new DateTime(hoy.Year, hoy.Month, 1, 0, 0, 0, DateTimeKind.Utc)).AddMonths(-5);
-        var fTareas = await _db.Tareas.AsNoTracking().Where(t => t.CreatedAt >= inicioSerie).Select(t => t.CreatedAt).ToListAsync(ct);
+        var fTareas = await _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && t.CreatedAt >= inicioSerie).Select(t => t.CreatedAt).ToListAsync(ct);
         var fPqrs = await _db.PqrsdExpedientes.AsNoTracking().Where(p => p.CreatedAt >= inicioSerie).Select(p => p.CreatedAt).ToListAsync(ct);
         var fNovs = await _db.NovedadesTurno.AsNoTracking().Where(n => n.CreatedAt >= inicioSerie).Select(n => n.CreatedAt).ToListAsync(ct);
 
@@ -227,8 +255,31 @@ public class DashboardCopropiedadService : IDashboardCopropiedadService
             tareasPorEtapa,
             pqrsAbiertas, pqrsPorVencer, pqrsVencidas, pqrsProximas,
             novedadesHoy, novedadesPorteria,
-            serieMensual, pqrsPorTipo, actividadDiaria);
+            serieMensual, pqrsPorTipo, actividadDiaria,
+            tareasVencidasBloque, tareasProximasBloque, vencimientosVencidos, vencimientosProximos);
     }
+
+    /// <summary>Ventana de "Proximos" en la tarjeta de contratos y polizas (decision de Alex 2026-11-25: 60 dias).</summary>
+    public const int DiasVentanaContratos = 60;
+
+    // "Hoy" en hora Colombia (mismo criterio que Mantenimiento / Porteria): con UtcNow, de 19:00 a 23:59 ya era manana.
+    private static readonly TimeZoneInfo _zonaCo = Propia.Infrastructure.Programaciones.CronHelper.Zona(null);
+    private static DateOnly HoyColombia() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zonaCo));
+
+    // Tareas activas (no terminales) que cumplen el filtro de fecha, por fecha ascendente y prioridad; max 5.
+    private async Task<IReadOnlyList<TareaResumenDto>> TareasResumenAsync(
+        System.Linq.Expressions.Expression<Func<Tarea, bool>> filtro, DateOnly hoy, CancellationToken ct)
+        => await (
+            from t in _db.Tareas.AsNoTracking().Where(t => !t.Eliminada && !t.Estado!.EsTerminal).Where(filtro)
+            join e in _db.TareasEstados on t.EstadoId equals e.Id
+            join pr in _db.TareasPrioridades on t.PrioridadId equals pr.Id into prj
+            from pr in prj.DefaultIfEmpty()
+            orderby t.FechaVencimiento, (pr != null ? pr.Orden : 999), t.CreatedAt
+            select new TareaResumenDto(
+                t.Id, t.NumeroTarea, t.Titulo, e.Nombre, pr != null ? pr.Nombre : "Sin prioridad",
+                t.FechaVencimiento,
+                t.FechaVencimiento.HasValue && t.FechaVencimiento.Value < hoy)
+        ).Take(5).ToListAsync(ct);
 
     public async Task<IReadOnlyList<AlertaDashboardDto>> ListarAlertasAsync(CancellationToken ct)
         => await _db.AlertasCopropiedad.AsNoTracking()

@@ -15,6 +15,15 @@ public record TareaResumenDto(Guid Id, string NumeroTarea, string Titulo, string
 /// <summary>Contrato/poliza proximo a vencer para el widget del Dashboard (Ola 3).</summary>
 public record ContratoPorVencerDto(Guid Id, string Nombre, DateOnly? FechaFin, int? DiasParaVencer, SemaforoContrato Semaforo);
 
+/// <summary>
+/// Auditoria UX D-02/D-03 (2026-11-25): bloques "Vencidas" y "Proximos N dias" de las tarjetas del Dashboard. Lista
+/// (max 5, fecha ascendente) + total real para "Ver todas". Tareas: proximos 7 dias; contratos y polizas: 60 dias.
+/// </summary>
+public record BloqueVencimientoDto<T>(IReadOnlyList<T> Items, int Total);
+
+/// <summary>Contrato o poliza en un bloque de vencimientos (Tipo = "Contrato" | "Poliza"; Url = modulo de origen).</summary>
+public record VencimientoDto(Guid Id, string Tipo, string Nombre, DateOnly FechaFin, int Dias, string Url);
+
 /// <summary>Distribucion de tareas activas por etapa (grafica de barras del Dashboard).</summary>
 public record TareasPorEtapaDto(string Nombre, string? Color, int Cantidad);
 
@@ -66,7 +75,12 @@ public record DashboardResumenDto(
     // ----- Dashboard v3: graficas (linea mensual, dona por tipo, heatmap diario) -----
     IReadOnlyList<SerieMensualDto>? SerieMensual = null,
     IReadOnlyList<PqrsPorTipoDto>? PqrsPorTipo = null,
-    IReadOnlyList<ActividadDiaDto>? ActividadDiaria = null);
+    IReadOnlyList<ActividadDiaDto>? ActividadDiaria = null,
+    // ----- Auditoria UX D-02/D-03: vencidas y proximas separadas (hoy en hora Colombia) -----
+    BloqueVencimientoDto<TareaResumenDto>? TareasVencidasBloque = null,
+    BloqueVencimientoDto<TareaResumenDto>? TareasProximasBloque = null,
+    BloqueVencimientoDto<VencimientoDto>? VencimientosVencidos = null,
+    BloqueVencimientoDto<VencimientoDto>? VencimientosProximos = null);
 
 public record CrearAlertaRequest(TipoAlertaDashboard Tipo, SeveridadAlerta Severidad, string Titulo, string Descripcion, string? UrlAccion);
 public record CrearEventoFeedRequest(TipoEventoActividad Tipo, string Descripcion, string? ModuloCodigo, string? UrlItem);

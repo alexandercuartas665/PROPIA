@@ -198,4 +198,26 @@ public class ReglasServicioPublicoTests
     [InlineData(1234.5, "1.234,5")]
     [InlineData(180, "180")]
     public void Cantidad_con_decimales(double v, string esperado) => Assert.Equal(esperado, ReglasServicioPublico.Cant((decimal)v));
+
+    // Auditoria UX D-05 (2026-11-25): la variacion de consumo tiene tope de presentacion y redaccion clara.
+    [Fact]
+    public void Variacion_de_consumo_con_tope_y_sin_periodo_comparable()
+    {
+        Assert.Equal("sin periodo comparable (primer recibo)", ReglasServicioPublico.TextoVariacion(null));
+        Assert.Equal("subi\u00f3 30 % frente al periodo anterior", ReglasServicioPublico.TextoVariacion(30m));
+        Assert.Equal("subi\u00f3 999 % frente al periodo anterior", ReglasServicioPublico.TextoVariacion(999m));
+        Assert.Equal("subi\u00f3 m\u00e1s de 999 % frente al periodo anterior", ReglasServicioPublico.TextoVariacion(420952.6m));
+    }
+
+    [Fact]
+    public void Alerta_guardada_con_cifra_cruda_se_muestra_con_tope()
+    {
+        // Texto real de la alerta del demo (2026-11-13).
+        var guardada = "El consumo de oct 2026 subio 420952,6% frente al periodo anterior (umbral 25%).";
+        Assert.Equal("El consumo de oct 2026 subi\u00f3 m\u00e1s de 999 % frente al periodo anterior (umbral 25%).",
+            ReglasServicioPublico.NormalizarDescripcionAlertaConsumo(guardada));
+        Assert.Equal("El consumo de sep 2026 subi\u00f3 40,5 % frente al periodo anterior (umbral 25%).",
+            ReglasServicioPublico.NormalizarDescripcionAlertaConsumo("El consumo de sep 2026 subio 40.5% frente al periodo anterior (umbral 25%)."));
+        Assert.Equal("Recibo fuera de tope", ReglasServicioPublico.NormalizarDescripcionAlertaConsumo("Recibo fuera de tope"));
+    }
 }

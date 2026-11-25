@@ -1985,6 +1985,25 @@ else
         }
         catch { return false; }
     }
+    /// <summary>
+    /// ?nueva=1 (auditoria UX D-01/T-14): abre el modal "Nueva tarea" del tablero abierto, como el boton del encabezado.
+    /// Limpia el query para que recargar o volver atras no lo reabra.
+    /// </summary>
+    private async Task AbrirNuevaDesdeQueryAsync()
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var nueva = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Split('=', 2))
+                .Any(kv => kv.Length == 2 && kv[0].Equals("nueva", StringComparison.OrdinalIgnoreCase) && kv[1] == "1");
+            if (!nueva) return;
+            Nav.NavigateTo(uri.GetLeftPart(UriPartial.Path), replace: true);
+            if (_board is null || _verCerradas || EsBoardForaneo || !PuedeCrear) return;
+            await AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id);
+        }
+        catch { }
+    }
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
 
@@ -3591,10 +3610,14 @@ else
                 await CargarAsync();
                 // ?abrir={tareaId}: llega desde otros modulos (ej. tab Tareas de un PQR) para
                 // abrir directamente el modal completo de esa tarea (en su tablero).
-                if (SoloGeneral)
+                // Auditoria UX (2026-11-25): en el modulo Tareas (SoloGeneral) el ?abrir se ignoraba: los enlaces del
+                // Dashboard y de la campana abrian el tablero General sin la tarea. Ahora se atiende en ambos modulos.
+                if (await AbrirTareaDesdeQueryAsync()) { }
+                else if (SoloGeneral)
                     await AbrirTableroGeneralAsync();   // modulo Tareas: abre directo el tablero General
-                else if (!await AbrirTareaDesdeQueryAsync())
+                else
                     await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
+                await AbrirNuevaDesdeQueryAsync();     // ?nueva=1 (boton "Nueva tarea" del Dashboard, D-01)
                 StateHasChanged();
             }
         }
