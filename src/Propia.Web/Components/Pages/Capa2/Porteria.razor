@@ -91,7 +91,7 @@
         <div class="po-stats">
             <div class="po-stat">
                 <div class="po-stat-l">Adentro ahora (personas)</div>
-                <div class="po-stat-n" style="color:var(--propia-brand)">@(_panel?.Hoy.VisitantesActuales ?? 0)</div>
+                <div class="po-stat-n" style="color:var(--propia-brand)">@_adentro.Count</div>
             </div>
             <div class="po-stat">
                 <div class="po-stat-l">Paquetes pendientes</div>
@@ -134,7 +134,7 @@
                                         </div>
                                         <div class="po-pcard-id">
                                             <div class="po-pcard-name">@reg.Nombre</div>
-                                            <div class="po-pcard-meta">@(reg.DestinoNombre ?? LblTipoVis(reg.TipoVisitanteClave, reg.TipoVisitante)) &middot; entro @reg.Timestamp.LocalDateTime.ToString("HH:mm")</div>
+                                            <div class="po-pcard-meta">@(reg.DestinoNombre ?? LblTipoVis(reg.TipoVisitanteClave, reg.TipoVisitante)) &middot; entro @reg.Timestamp.ToCo().ToString("HH:mm")</div>
                                         </div>
                                         <button class="po-salir" title="Marcar salida" @onclick="() => RegistrarEgreso(reg)">Salida</button>
                                     </div>
@@ -200,7 +200,7 @@
                             <div class="po-row-name">@TipoNovedadLabel(nv.Tipo)@(string.IsNullOrEmpty(nv.DestinoNombre) ? "" : " - " + nv.DestinoNombre)</div>
                             <div class="po-row-meta">@nv.Descripcion</div>
                         </div>
-                        <span class="po-row-hora">@nv.CreadoAt.LocalDateTime.ToString("HH:mm")</span>
+                        <span class="po-row-hora">@nv.CreadoAt.ToCo().ToString("HH:mm")</span>
                         @if (nv.GeneraTarea) { <span class="po-estado dentro">Tarea</span> }
                     </div>
                 }
@@ -231,7 +231,7 @@
                             <div class="po-row-name">@reg.Nombre</div>
                             <div class="po-row-meta">@LblTipoVis(reg.TipoVisitanteClave, reg.TipoVisitante)@if (!string.IsNullOrEmpty(reg.DestinoNombre)) { <text> &middot; @reg.DestinoNombre</text> }@if (!string.IsNullOrEmpty(reg.Documento)) { <text> &middot; @reg.Documento</text> }@foreach (var cv in (reg.CamposValores ?? new List<PorteriaCampoValorDto>())) { if (!string.IsNullOrWhiteSpace(cv.Valor)) { <text> &middot; @CampoLabel(cv.CampoId): @cv.Valor</text> } }</div>
                         </div>
-                        <span class="po-row-hora">@reg.Timestamp.LocalDateTime.ToString("HH:mm")</span>
+                        <span class="po-row-hora">@reg.Timestamp.ToCo().ToString("HH:mm")</span>
                         @if (dentro)
                         {
                             <span class="po-estado dentro">Dentro</span>
@@ -559,10 +559,13 @@
                     </div>
                     <div>
                         <label class="po-lbl">Unidad destino *</label>
+                        @* G-02: sin unidad elegida, el campo se marca en rojo con el motivo DENTRO del modal (antes se
+                           vaciaba en silencio y el API respondia JSON crudo fuera del modal). *@
                         <SelectorUnidadCodigo Unidades="_unidades"
                                                UnidadId="@(_viDestino == Guid.Empty ? (Guid?)null : _viDestino)"
-                                               UnidadIdChanged="@(v => _viDestino = v ?? Guid.Empty)"
-                                               Class="po-input" Placeholder="Código de unidad (ej. 101, A-203)..." />
+                                               UnidadIdChanged="@(v => { _viDestino = v ?? Guid.Empty; if (v is not null) _viDestinoErr = false; })"
+                                               Class="@(_viDestinoErr ? "po-input po-input--err" : "po-input")" Placeholder="Código de unidad (ej. 101, A-203)..." />
+                        @if (_viDestinoErr) { <div class="po-fld-err">Elige la unidad de la lista.</div> }
                     </div>
                     <div>
                         <label class="po-lbl">Motivo <span style="font-weight:600;color:var(--propia-text-faint)">(opcional)</span></label>
@@ -617,10 +620,15 @@
                         </div>
                         <div>Al solicitar el permiso, el agente toma el contacto del residente y <b>gestiona la autorización por WhatsApp</b>. El portero no necesita llamar.</div>
                     </div>
-                    <button class="po-btn-wa" disabled="@(_busy || string.IsNullOrWhiteSpace(_viNombre) || _viDestino == Guid.Empty || _viAwait || _viOk)" @onclick="SolicitarPermiso">
+                    @if (!string.IsNullOrEmpty(_viErr)) { <div class="po-modal-err">@_viErr</div> }
+                    @* G-03: el boton deshabilitado explica por que (el title va en el envoltorio: un boton disabled no
+                       recibe el hover en todos los navegadores). *@
+                    <span class="po-btn-wrap" title="@MotivoSolicitarDeshabilitado">
+                    <button class="po-btn-wa" title="@MotivoSolicitarDeshabilitado" disabled="@(_busy || string.IsNullOrWhiteSpace(_viNombre) || _viDestino == Guid.Empty || _viAwait || _viOk)" @onclick="SolicitarPermiso">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.9-1.4A10 10 0 1 0 12 2z"></path></svg>
                         Solicitar permiso de ingreso
                     </button>
+                    </span>
                     <button class="po-btn-ghost" disabled="@(_busy || string.IsNullOrWhiteSpace(_viNombre))" @onclick="RegistrarDirecto">Registrar directo (sin solicitar permiso)</button>
                     <div class="po-rn09">Aviso de tratamiento de datos informado al visitante (RN-09).</div>
                 </div>
@@ -1182,7 +1190,7 @@
     private RenderFragment CellAut(AutorizacionPreviaDto a, string k) =>@<text>
         @if (k == "vis") { <strong>@a.NombreVisitante</strong><div class="po-cell-sub">@LblTipoVis(a.TipoVisitanteClave, a.TipoVisitante)</div> }
         else if (k == "uni") { <span class="u-cod">@a.UnidadNumero</span> }
-        else if (k == "vig") { <span class="po-cell-sub">@a.VigenciaInicio.LocalDateTime.ToString("yyyy-MM-dd HH:mm")<br>@a.VigenciaFin.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span> }
+        else if (k == "vig") { <span class="po-cell-sub">@a.VigenciaInicio.ToCo().ToString("yyyy-MM-dd HH:mm")<br>@a.VigenciaFin.ToCo().ToString("yyyy-MM-dd HH:mm")</span> }
         else if (k == "est") { @RenderEstadoAut(a.Estado) }
         else if (k == "cod") { @(string.IsNullOrEmpty(a.CodigoNumerico) ? "-" : a.CodigoNumerico) }
         else if (k == "usos") { @($"{a.UsosRealizados} / {a.UsosMaximos}") }
@@ -1207,7 +1215,7 @@
         else if (k == "uni") { <span class="u-cod">@p.UnidadNumero</span> }
         else if (k == "tipo") { @LblCorr(p.Tipo) }
         else if (k == "rem") { @(string.IsNullOrEmpty(p.Remitente) ? "-" : p.Remitente) }
-        else if (k == "rec") { <span class="po-cell-sub">@p.RecibidoAt.LocalDateTime.ToString("MM-dd HH:mm")</span> }
+        else if (k == "rec") { <span class="po-cell-sub">@p.RecibidoAt.ToCo().ToString("MM-dd HH:mm")</span> }
     </text>;
 
     private string? _jwt;
@@ -1221,7 +1229,8 @@
 
     private PanelMonitoreoDto? _panel;
     private TurnoDto? _turno;
-    private List<RegistroVisitaDto> _visitasHoy = new();
+    private List<RegistroVisitaDto> _visitasHoy = new();          // minuta: dia calendario de Colombia
+    private List<RegistroVisitaDto> _visitasRecientes = new();    // "Adentro ahora": ultimas 24 h (no se pierde a medianoche)
     private List<AdentroItem> _adentro = new();
     private List<AutorizacionPreviaDto>? _autorizaciones;
     private List<VehiculoAutorizadoDto>? _vehiculos;
@@ -1240,6 +1249,12 @@
     private string _viDoc = "";
     private string _viClave = "e:VisitaPersonal";   // Ola 4c: clave del tipo seleccionado (base o propia)
     private Guid _viDestino = Guid.Empty;
+    private bool _viDestinoErr;      // G-02: intento de registrar sin unidad elegida
+    private string? _viErr;          // G-02: error del API mostrado DENTRO del modal (nunca JSON)
+    private string? MotivoSolicitarDeshabilitado =>
+        string.IsNullOrWhiteSpace(_viNombre) ? "Escribe el nombre del visitante para solicitar el permiso"
+        : _viDestino == Guid.Empty ? "Elige la unidad para solicitar el permiso"
+        : null;
     private string _viMotivo = "";
     private List<AutorizacionPreviaDto> _viSugs = new();
     private List<ChatMsg> _viChat = new();
@@ -1353,15 +1368,16 @@
             var http = Auth();
             _panel = await http.GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
             _turno = _panel?.TurnoActivo;
-            var today = DateOnly.FromDateTime(DateTime.Today);
-            _visitasHoy = await http.GetFromJsonAsync<List<RegistroVisitaDto>>($"/api/porteria/visitas?fecha={today:yyyy-MM-dd}") ?? new();
+            // G-01: "hoy" = dia de Colombia lo decide el API (hoy=true), no el reloj del servidor web.
+            _visitasHoy = await http.GetFromJsonAsync<List<RegistroVisitaDto>>("/api/porteria/visitas?hoy=true") ?? new();
+            _visitasRecientes = await http.GetFromJsonAsync<List<RegistroVisitaDto>>("/api/porteria/visitas/recientes") ?? new();
             _autorizaciones = await http.GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones?estado=1") ?? new();
             _vehiculos = await http.GetFromJsonAsync<List<VehiculoAutorizadoDto>>("/api/porteria/vehiculos") ?? new();
             _unidades = await http.GetFromJsonAsync<List<UnidadDto>>("/api/mi-copropiedad/unidades") ?? new();
             await CargarColsPorteriaAsync();   // orden/ancho de columnas de las 4 tablas, por copropiedad
             _personas = await http.GetFromJsonAsync<List<PersonaMini>>("/api/directorio/personas") ?? new();
             _campos = await http.GetFromJsonAsync<List<PorteriaCampoDto>>("/api/porteria/campos") ?? new();
-            _novedades = await http.GetFromJsonAsync<List<NovedadDto>>($"/api/porteria/novedades?fecha={today:yyyy-MM-dd}") ?? new();
+            _novedades = await http.GetFromJsonAsync<List<NovedadDto>>("/api/porteria/novedades?hoy=true") ?? new();
             try { _zonas = await http.GetFromJsonAsync<List<ZonaMini>>("/api/mi-copropiedad/zonas") ?? new(); } catch { _zonas = new(); }
             try { _equipos = await http.GetFromJsonAsync<List<EquipoMini>>("/api/mi-copropiedad/equipos") ?? new(); } catch { _equipos = new(); }
             try { _listaNovedad = await http.GetFromJsonAsync<List<Propia.Application.Catalogos.OpcionEfectivaDto>>("/api/campos/opciones?lista=porteria.tiponovedad&incluirOcultas=true") ?? new(); } catch { _listaNovedad = new(); }
@@ -1381,29 +1397,20 @@
     private void RecomputarAdentro()
     {
         _now = DateTimeOffset.Now;
-        var inside = new Dictionary<string, AdentroItem>();
-        foreach (var v in _visitasHoy.OrderBy(x => x.Timestamp))
-        {
-            var key = (v.Nombre + "|" + (v.Documento ?? "")).ToLowerInvariant();
-            if (v.TipoEvento == TipoEventoAccesoPorteria.Ingreso)
+        // Mismo calculo que el contador del panel (PorteriaFechas.Adentro): ingresos sin salida de las ultimas 24 h.
+        _adentro = PorteriaFechas.Adentro(_visitasRecientes,
+                v => PorteriaFechas.ClaveVisitante(v.Nombre, v.Documento),
+                v => v.TipoEvento == TipoEventoAccesoPorteria.Ingreso, v => v.Timestamp)
+            .Select(v => new AdentroItem
             {
-                inside[key] = new AdentroItem
-                {
-                    Nombre = v.Nombre,
-                    Documento = v.Documento,
-                    TipoVisitante = v.TipoVisitante,
-                    TipoVisitanteClave = v.TipoVisitanteClave,
-                    DestinoNombre = v.DestinoNombre,
-                    Observacion = v.Observacion,
-                    Timestamp = v.Timestamp
-                };
-            }
-            else
-            {
-                inside.Remove(key);
-            }
-        }
-        _adentro = inside.Values.OrderByDescending(x => x.Timestamp).ToList();
+                Nombre = v.Nombre,
+                Documento = v.Documento,
+                TipoVisitante = v.TipoVisitante,
+                TipoVisitanteClave = v.TipoVisitanteClave,
+                DestinoNombre = v.DestinoNombre,
+                Observacion = v.Observacion,
+                Timestamp = v.Timestamp
+            }).ToList();
     }
 
     private async Task RefrescarOperacionAsync()
@@ -1411,8 +1418,8 @@
         var http = Auth();
         _panel = await http.GetFromJsonAsync<PanelMonitoreoDto>("/api/porteria/panel");
         _turno = _panel?.TurnoActivo;
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        _visitasHoy = await http.GetFromJsonAsync<List<RegistroVisitaDto>>($"/api/porteria/visitas?fecha={today:yyyy-MM-dd}") ?? new();
+        _visitasHoy = await http.GetFromJsonAsync<List<RegistroVisitaDto>>("/api/porteria/visitas?hoy=true") ?? new();
+        _visitasRecientes = await http.GetFromJsonAsync<List<RegistroVisitaDto>>("/api/porteria/visitas/recientes") ?? new();
         RecomputarAdentro();
     }
 
@@ -1448,7 +1455,7 @@
         try
         {
             var resp = await Auth().PostAsJsonAsync("/api/porteria/turnos/abrir", new AbrirTurnoRequest(_abrirGuardaId, _abrirPunto));
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
             _turno = await resp.Content.ReadFromJsonAsync<TurnoDto>();
             Flash("Turno abierto.", true);
         }
@@ -1468,6 +1475,7 @@
         _showRegistrar = true;
         _viNombre = ""; _viDoc = ""; _viMotivo = ""; _viClave = "e:VisitaPersonal";
         _viDestino = Guid.Empty; _viSugs = new(); _viChat = new();
+        _viDestinoErr = false; _viErr = null;
         _viTyping = _viAwait = _viOk = _viNo = false;
         _waResName = "Residente"; _waResTel = "+57 3xx xxx xxxx";
         _viCampos.Clear();
@@ -1508,7 +1516,7 @@
     {
         if (_turno is null) { Flash("Abre un turno (vista Operacion) antes de registrar.", false); return; }
         SetResidenteFromDestino();
-        var hora = DateTime.Now.ToString("HH:mm");
+        var hora = DateTimeOffset.UtcNow.ToCo().ToString("HH:mm");
         _viChat.Add(new ChatMsg("sys", "El agente IA inicio la conversacion con el residente.", hora));
         var motivo = string.IsNullOrWhiteSpace(_viMotivo) ? LblDeClave(_viClave).ToLowerInvariant() : _viMotivo;
         _viChat.Add(new ChatMsg("agent", $"Hola, soy el asistente de {(_coName == "" ? "la copropiedad" : _coName)}. {_viNombre} esta en porteria ({motivo}). Autorizas su ingreso?", hora));
@@ -1520,11 +1528,11 @@
     private async Task SimSi()
     {
         _viAwait = false;
-        _viChat.Add(new ChatMsg("res", "Si, lo autorizo.", DateTime.Now.ToString("HH:mm")));
+        _viChat.Add(new ChatMsg("res", "Si, lo autorizo.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         _viTyping = true; StateHasChanged();
         await Task.Delay(700);
         _viTyping = false;
-        _viChat.Add(new ChatMsg("agent", "Gracias. Registro el ingreso en la minuta.", DateTime.Now.ToString("HH:mm")));
+        _viChat.Add(new ChatMsg("agent", "Gracias. Registro el ingreso en la minuta.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         StateHasChanged();
         var ok = await RegistrarVisitaBackend($"Aprobado por WhatsApp por {_waResName}");
         if (ok) { _viOk = true; await RefrescarOperacionAsync(); }
@@ -1534,11 +1542,11 @@
     private async Task SimNo()
     {
         _viAwait = false;
-        _viChat.Add(new ChatMsg("res", "No, no lo autorizo.", DateTime.Now.ToString("HH:mm")));
+        _viChat.Add(new ChatMsg("res", "No, no lo autorizo.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         _viTyping = true; StateHasChanged();
         await Task.Delay(700);
         _viTyping = false;
-        _viChat.Add(new ChatMsg("agent", "Entendido. Dejo registro de la solicitud denegada.", DateTime.Now.ToString("HH:mm")));
+        _viChat.Add(new ChatMsg("agent", "Entendido. Dejo registro de la solicitud denegada.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         if (_turno is not null)
         {
             try { await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/novedades", new CrearNovedadRequest($"Ingreso denegado por residente: {_viNombre}", false)); }
@@ -1549,7 +1557,9 @@
 
     private async Task RegistrarDirecto()
     {
-        if (_turno is null) { Flash("Abre un turno (vista Operacion) antes de registrar.", false); return; }
+        if (_turno is null) { _viErr = "Abre un turno (vista Operación) antes de registrar."; return; }
+        // RN-07: el destino es obligatorio. Se valida aqui, dentro del modal, sin llamar al API.
+        if (_viDestino == Guid.Empty) { _viDestinoErr = true; _viErr = null; return; }
         var ok = await RegistrarVisitaBackend(string.IsNullOrWhiteSpace(_viMotivo) ? null : _viMotivo);
         if (ok) { _showRegistrar = false; await RefrescarOperacionAsync(); Flash("Ingreso registrado en la minuta.", true); }
     }
@@ -1565,7 +1575,8 @@
             var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Ingreso, EnumDeClave(_viClave), _viNombre,
                 string.IsNullOrWhiteSpace(_viDoc) ? null : _viDoc, null, destinoTipo, destinoId, null, null, observacion, true, campos, _viClave);
             var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno!.Id}/visitas", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return false; }
+            if (!resp.IsSuccessStatusCode) { _viErr = await ErrorDeAsync(resp); return false; }
+            _viErr = null;
             return true;
         }
         finally { _busy = false; }
@@ -1588,7 +1599,7 @@
         var req = new RegistrarVisitaRequest(TipoEventoAccesoPorteria.Egreso, tipo, nombre, doc, null, dt, did, null, null, null, true, null, clave);
         var resp = await Auth().PostAsJsonAsync($"/api/porteria/turnos/{_turno.Id}/visitas", req);
         if (resp.IsSuccessStatusCode) { await RefrescarOperacionAsync(); Flash($"Salida registrada: {nombre}.", true); }
-        else Flash(await resp.Content.ReadAsStringAsync(), false);
+        else Flash(await ErrorDeAsync(resp), false);
     }
 
     // ----- Verificacion permanencia (modal) -----
@@ -1600,7 +1611,7 @@
         _vfTyping = _vfAwait = _vfSigue = _vfSalio = false;
         var u = _adentro.FirstOrDefault();
         _waResName = a.DestinoNombre ?? "Residente";
-        var hora = DateTime.Now.ToString("HH:mm");
+        var hora = DateTimeOffset.UtcNow.ToCo().ToString("HH:mm");
         _vfChat.Add(new ChatMsg("sys", "Control de permanencia automatico (+3h).", hora));
         _vfChat.Add(new ChatMsg("agent", $"Hola, {a.Nombre} ingreso hace mas de 3 horas hacia {a.DestinoNombre ?? "su unidad"}. Sigue contigo?", hora));
         _vfTyping = true; StateHasChanged();
@@ -1613,18 +1624,18 @@
     private async Task VfSi()
     {
         _vfAwait = false;
-        _vfChat.Add(new ChatMsg("res", "Si, sigue aqui conmigo.", DateTime.Now.ToString("HH:mm")));
+        _vfChat.Add(new ChatMsg("res", "Si, sigue aqui conmigo.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         _vfTyping = true; StateHasChanged();
         await Task.Delay(600);
         _vfTyping = false;
-        _vfChat.Add(new ChatMsg("agent", "Perfecto, mantengo el registro activo.", DateTime.Now.ToString("HH:mm")));
+        _vfChat.Add(new ChatMsg("agent", "Perfecto, mantengo el registro activo.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         _vfSigue = true; StateHasChanged();
     }
 
     private async Task VfNo()
     {
         _vfAwait = false;
-        _vfChat.Add(new ChatMsg("res", "Ya salio.", DateTime.Now.ToString("HH:mm")));
+        _vfChat.Add(new ChatMsg("res", "Ya salio.", DateTimeOffset.UtcNow.ToCo().ToString("HH:mm")));
         _vfTyping = true; StateHasChanged();
         await Task.Delay(600);
         _vfTyping = false;
@@ -1647,7 +1658,7 @@
                 new DateTimeOffset(_authIni, TimeSpan.Zero), new DateTimeOffset(_authFin, TimeSpan.Zero),
                 string.IsNullOrWhiteSpace(_authNota) ? null : _authNota, 1, OrigenAutorizacion.Administrador, _authClave);
             var resp = await Auth().PostAsJsonAsync("/api/porteria/autorizaciones", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
             _showCrearAuth = false;
             _authNombre = _authDoc = _authNota = "";
             _autorizaciones = await Auth().GetFromJsonAsync<List<AutorizacionPreviaDto>>("/api/porteria/autorizaciones?estado=1") ?? new();
@@ -1790,17 +1801,13 @@
         finally { _busy = false; }
     }
 
-    /// <summary>Mensaje de error del API ({ error }) en vez del JSON crudo.</summary>
+    // Mensaje claro del API (helper compartido: error/detail/title/texto plano; 401/403 legibles), sin el codigo de
+    // regla de la spec al inicio ("RN-07: ..."): el portero ve solo la explicacion. Nunca JSON crudo (G-02).
     private static async Task<string> ErrorDeAsync(HttpResponseMessage resp)
     {
-        var txt = await resp.Content.ReadAsStringAsync();
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(txt);
-            if (doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m) return m;
-        }
-        catch (System.Text.Json.JsonException) { }
-        return string.IsNullOrWhiteSpace(txt) ? $"Error {(int)resp.StatusCode}." : txt;
+        var m = await Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(resp);
+        m = System.Text.RegularExpressions.Regex.Replace(m, @"^RN-\d+\s*:\s*", "");
+        return m.Length > 0 ? char.ToUpperInvariant(m[0]) + m[1..] : m;
     }
 
 
@@ -1812,7 +1819,7 @@
         {
             var req = new ActualizarConfiguracionRequest(_cfgDestinoObl, _cfgCanal, _cfgAmarillo, _cfgRojo, _cfgAutoQr, _cfgNovedadTarea, _cfgRetencion);
             var resp = await Auth().PutAsJsonAsync("/api/porteria/configuracion", req);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
             _config = await resp.Content.ReadFromJsonAsync<ConfiguracionDto>();
             Flash("Configuracion guardada.", true);
         }
@@ -1840,7 +1847,7 @@
             var resp = _campoDraft.Id is { } cid
                 ? await Auth().PutAsJsonAsync($"/api/porteria/campos/{cid}", body)
                 : await Auth().PostAsJsonAsync("/api/porteria/campos", body);
-            if (!resp.IsSuccessStatusCode) { Flash(await resp.Content.ReadAsStringAsync(), false); return; }
+            if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
             _campoDraft = new CampoDraft();
             _campos = await Auth().GetFromJsonAsync<List<PorteriaCampoDto>>("/api/porteria/campos") ?? new();
             Flash("Campo guardado.", true);
@@ -1912,8 +1919,7 @@
             if (!resp.IsSuccessStatusCode) { Flash(await ErrorDeAsync(resp), false); return; }
             var nv = await resp.Content.ReadFromJsonAsync<NovedadDto>();
             _showNovedad = false;
-            var today = DateOnly.FromDateTime(DateTime.Today);
-            _novedades = await Auth().GetFromJsonAsync<List<NovedadDto>>($"/api/porteria/novedades?fecha={today:yyyy-MM-dd}") ?? new();
+            _novedades = await Auth().GetFromJsonAsync<List<NovedadDto>>("/api/porteria/novedades?hoy=true") ?? new();
             // Mensaje con a quien se aviso (administracion, vigilancia, el residente) y la tarea generada.
             var avisos = nv?.Avisados is { Count: > 0 } a ? " Se avisó a " + string.Join(", ", a.Take(a.Count - 1)) + (a.Count > 1 ? " y a " : "") + a[^1] + "." : "";
             var tarea = nv?.TareaGenerada is { } tg ? $" Se generó la tarea en {tg}." : "";

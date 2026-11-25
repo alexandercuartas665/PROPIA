@@ -99,9 +99,14 @@ public class PorteriaController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // hoy=true: el dia calendario de COLOMBIA lo decide el servidor (G-01), no el reloj de quien llama.
     [HttpGet("visitas")]
-    public async Task<IActionResult> ListarVisitas([FromQuery] Guid? turnoId, [FromQuery] DateOnly? fecha, CancellationToken ct)
-        => Ok(await _svc.ListarVisitasAsync(turnoId, fecha, ct));
+    public async Task<IActionResult> ListarVisitas([FromQuery] Guid? turnoId, [FromQuery] DateOnly? fecha, [FromQuery] bool hoy, CancellationToken ct)
+        => Ok(await _svc.ListarVisitasAsync(turnoId, hoy ? PorteriaFechas.HoyColombia() : fecha, ct));
+
+    [HttpGet("visitas/recientes")]
+    public async Task<IActionResult> ListarVisitasRecientes(CancellationToken ct)
+        => Ok(await _svc.ListarVisitasRecientesAsync(ct));
 
     // ----- Vehiculos -----
 
@@ -200,8 +205,8 @@ public class PorteriaController : ControllerBase
     }
 
     [HttpGet("novedades")]
-    public async Task<IActionResult> ListarNovedades([FromQuery] Guid? turnoId, [FromQuery] DateOnly? fecha, CancellationToken ct)
-        => Ok(await _svc.ListarNovedadesAsync(turnoId, fecha, ct));
+    public async Task<IActionResult> ListarNovedades([FromQuery] Guid? turnoId, [FromQuery] DateOnly? fecha, [FromQuery] bool hoy, CancellationToken ct)
+        => Ok(await _svc.ListarNovedadesAsync(turnoId, hoy ? PorteriaFechas.HoyColombia() : fecha, ct));
 
     // ----- Panel + configuracion -----
 
