@@ -1055,15 +1055,14 @@ else
                                 }
                             </div>
                         }
+                        @* Auditoria UX T-01 (2026-11-25): antes un <select> nativo con cientos de residentes ordenados por el
+                           segundo nombre. Ahora lista con busqueda: el equipo (usuarios no residentes + equipo de trabajo)
+                           con su rol en gris; los residentes solo al escribir 2 letras. Elegir agrega el responsable. *@
                         <div class="tbc-resp-add">
-                            <select @bind="_respPick">
-                                <option value="">Agregar responsable...</option>
-                                @if (_personas is not null)
-                                {
-                                    @foreach (var p in _personas.Where(x => !d.Responsables.Contains(x.Id))) { <option value="@p.Id">@p.Nombre</option> }
-                                }
-                            </select>
-                            <button class="tbc-add-sq" @onclick="CardAddResp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+                            <ListaBuscable TriggerClass="tbc-resp-trg" Placeholder="Agregar responsable..." TextoVacio="Agregar responsable..."
+                                           Opciones="@OpcResponsables(d.Responsables, false)" Valor=""
+                                           TextoOcultas="Escribe 2 letras para buscar entre los residentes."
+                                           ValorChanged="@(v => CardAddRespId(v))" />
                         </div>
                     </div>
                     <div class="tbc-row4">
@@ -1984,6 +1983,25 @@ else
             return true;
         }
         catch { return false; }
+    }
+    /// <summary>
+    /// ?nueva=1 (auditoria UX D-01/T-14): abre el modal "Nueva tarea" del tablero abierto, como el boton del encabezado.
+    /// Limpia el query para que recargar o volver atras no lo reabra.
+    /// </summary>
+    private async Task AbrirNuevaDesdeQueryAsync()
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var nueva = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Split('=', 2))
+                .Any(kv => kv.Length == 2 && kv[0].Equals("nueva", StringComparison.OrdinalIgnoreCase) && kv[1] == "1");
+            if (!nueva) return;
+            Nav.NavigateTo(uri.GetLeftPart(UriPartial.Path), replace: true);
+            if (_board is null || _verCerradas || EsBoardForaneo || !PuedeCrear) return;
+            await AbrirCardDraft(null, _board.Estados.FirstOrDefault()?.Id);
+        }
+        catch { }
     }
     private List<PersonaMini>? _personas;
     private readonly HashSet<Guid> _expandidas = new();
@@ -3591,10 +3609,14 @@ else
                 await CargarAsync();
                 // ?abrir={tareaId}: llega desde otros modulos (ej. tab Tareas de un PQR) para
                 // abrir directamente el modal completo de esa tarea (en su tablero).
-                if (SoloGeneral)
+                // Auditoria UX (2026-11-25): en el modulo Tareas (SoloGeneral) el ?abrir se ignoraba: los enlaces del
+                // Dashboard y de la campana abrian el tablero General sin la tarea. Ahora se atiende en ambos modulos.
+                if (await AbrirTareaDesdeQueryAsync()) { }
+                else if (SoloGeneral)
                     await AbrirTableroGeneralAsync();   // modulo Tareas: abre directo el tablero General
-                else if (!await AbrirTareaDesdeQueryAsync())
+                else
                     await AbrirUltimoTableroAsync();   // por usuario: reabrir el ultimo tablero en su ultimo modo
+                await AbrirNuevaDesdeQueryAsync();     // ?nueva=1 (boton "Nueva tarea" del Dashboard, D-01)
                 StateHasChanged();
             }
         }
@@ -3790,6 +3812,7 @@ else
             catch { _personas = new(); }
         }
         await CargarNombresDirectorioAsync();   // solo si el tablero tiene campos tipo Directorio
+        await CargarEquipoRespAsync();          // responsables: equipo primero (T-01)
         if (_unidades is null || _zonas is null || _equipos is null) await CargarContextoAsync();
     }
 
@@ -6501,6 +6524,82 @@ else
         _respPick = "";
     }
     private void CardRemoveResp(Guid pid) { _cardDraft?.Responsables.Remove(pid); }
+    private void CardAddRespId(string? v)
+    {
+        if (_cardDraft is null || !Guid.TryParse(v, out var pid) || pid == Guid.Empty) return;
+        if (!_cardDraft.Responsables.Contains(pid)) _cardDraft.Responsables.Add(pid);
+    }
+
+    // ===== Responsables (auditoria UX T-01, 2026-11-25) =====
+    // Equipo = usuarios activos con algun rol NO residente (categoria del rol) + equipo de trabajo activo; con su rol o
+    // cargo en gris. El resto del Directorio (residentes, terceros) solo al buscar. Orden por nombre completo.
+    private sealed record RolChipMini(Guid Id, string Nombre);
+    private sealed record UsuarioRespMini(Guid PersonaId, string NombreCompleto, Guid? RolId, string? RolNombre,
+        EstadoUsuarioTenant Estado, List<RolChipMini>? Roles, List<string>? Cargos);
+    private sealed record RolCatMini(Guid Id, string Nombre, CategoriaRol Categoria);
+    private sealed record EquipoRespMini(Guid PersonaId, string PersonaNombre, RolEquipo Rol, string? RolPersonalizado, bool Activo);
+    private Dictionary<Guid, (string Nombre, string? Sub)>? _equipoResp;
+    private async Task CargarEquipoRespAsync()
+    {
+        if (_equipoResp is not null) return;
+        var eq = new Dictionary<Guid, (string Nombre, string? Sub)>();
+        try
+        {
+            var roles = (await Auth().GetFromJsonAsync<List<RolCatMini>>("/api/roles") ?? new()).ToDictionary(r => r.Id, r => r);
+            var usuarios = await Auth().GetFromJsonAsync<List<UsuarioRespMini>>("/api/usuarios") ?? new();
+            foreach (var u in usuarios.Where(u => u.Estado == EstadoUsuarioTenant.Activo))
+            {
+                var ids = (u.Roles ?? new()).Select(r => r.Id).Concat(u.RolId is { } rid ? new[] { rid } : Array.Empty<Guid>()).Distinct().ToList();
+                var noResidente = ids.Where(id => roles.TryGetValue(id, out var r) && r.Categoria != CategoriaRol.PortalResidente)
+                    .Select(id => roles[id].Nombre).Distinct().ToList();
+                if (noResidente.Count == 0) continue;   // residente (Portal Residente): solo al buscar
+                var sub = string.Join(" \u00b7 ", noResidente.Concat(u.Cargos ?? new()).Distinct());
+                eq[u.PersonaId] = (u.NombreCompleto, sub);
+            }
+        }
+        catch { }
+        try
+        {
+            var equipo = await Auth().GetFromJsonAsync<List<EquipoRespMini>>("/api/mi-copropiedad/equipo") ?? new();
+            foreach (var m in equipo.Where(m => m.Activo))
+            {
+                var rol = !string.IsNullOrWhiteSpace(m.RolPersonalizado) ? m.RolPersonalizado! : RolEquipoTexto(m.Rol);
+                eq[m.PersonaId] = eq.TryGetValue(m.PersonaId, out var ya)
+                    ? (ya.Nombre, string.IsNullOrWhiteSpace(ya.Sub) ? rol : ya.Sub + " \u00b7 " + rol)
+                    : (m.PersonaNombre, rol);
+            }
+        }
+        catch { }
+        _equipoResp = eq;
+    }
+    private static string RolEquipoTexto(RolEquipo r) => r switch
+    {
+        RolEquipo.AdministradorDelegado => "Administrador delegado",
+        RolEquipo.Contador => "Contador",
+        RolEquipo.AuxiliarCartera => "Auxiliar de cartera",
+        RolEquipo.CoordinadorOperativo => "Coordinador operativo",
+        RolEquipo.SupervisorVigilancia => "Supervisor de vigilancia",
+        RolEquipo.PersonalAseo => "Personal de aseo",
+        RolEquipo.Mantenimiento => "Mantenimiento",
+        RolEquipo.Recepcion => "Recepci\u00f3n",
+        _ => "Equipo de trabajo"
+    };
+    private static string NormNombre(string? s) => (s ?? "").Trim().ToLowerInvariant();
+    // Opciones de responsable: el equipo primero (visible sin escribir), luego el resto del Directorio solo al buscar.
+    // conSinAsignar: la fila de alta permite "Sin asignar"; la ficha agrega uno a uno (excluye los ya elegidos).
+    private IReadOnlyList<ListaBuscable.Opcion> OpcResponsables(IEnumerable<Guid>? excluir, bool conSinAsignar)
+    {
+        var ex = (excluir ?? Array.Empty<Guid>()).ToHashSet();
+        var eq = _equipoResp ?? new();
+        var equipo = eq.Where(kv => !ex.Contains(kv.Key))
+            .OrderBy(kv => NormNombre(kv.Value.Nombre), StringComparer.CurrentCulture)
+            .Select(kv => new ListaBuscable.Opcion(kv.Key.ToString(), kv.Value.Nombre, null, kv.Value.Sub));
+        var resto = (_personas ?? new List<PersonaMini>()).Where(p => !ex.Contains(p.Id) && !eq.ContainsKey(p.Id))
+            .OrderBy(p => NormNombre(p.Nombre), StringComparer.CurrentCulture)
+            .Select(p => new ListaBuscable.Opcion(p.Id.ToString(), p.Nombre, null, null, SoloAlBuscar: true));
+        var inicio = conSinAsignar ? new[] { new ListaBuscable.Opcion("", "Sin asignar") } : Array.Empty<ListaBuscable.Opcion>();
+        return inicio.Concat(equipo).Concat(resto).ToList();
+    }
 
     // ----- Etiquetas (tags) de la tarjeta -----
     private void ToggleEtiquetaDraft(Guid id)
@@ -6603,7 +6702,8 @@ else
         finally { _busy = false; }
     }
 
-    private string PersonaNombre(Guid id) => _personas?.FirstOrDefault(p => p.Id == id)?.Nombre ?? "Persona";
+    private string PersonaNombre(Guid id) => _personas?.FirstOrDefault(p => p.Id == id)?.Nombre
+        ?? (_equipoResp is not null && _equipoResp.TryGetValue(id, out var e) ? e.Nombre : "Persona");
     private static string RespColor(int idx) => _avaColors[idx % _avaColors.Length];
 
     // El clip solo SELECCIONA el archivo; se sube al enviar el mensaje (archivo + caption juntos).
@@ -6793,9 +6893,8 @@ else
             .Select(e => new ListaBuscable.Opcion(e.Id.ToString(), e.Nombre, e.Color)).ToList();
     private IReadOnlyList<ListaBuscable.Opcion> OpcPrioridades =>
         PrioridadesDelBoard.Select(p => new ListaBuscable.Opcion(p.Id.ToString(), p.Nombre, p.Color)).ToList();
-    private IReadOnlyList<ListaBuscable.Opcion> OpcPersonas =>
-        new[] { new ListaBuscable.Opcion("", "Sin asignar") }
-            .Concat((_personas ?? new List<PersonaMini>()).Select(p => new ListaBuscable.Opcion(p.Id.ToString(), p.Nombre))).ToList();
+    // Fila de alta (tarea y subtarea): misma lista que la ficha (equipo primero, residentes al buscar). T-01.
+    private IReadOnlyList<ListaBuscable.Opcion> OpcPersonas => OpcResponsables(null, true);
     private static IReadOnlyList<ListaBuscable.Opcion> OpcCampo(TableroCampoDto c) =>
         new[] { new ListaBuscable.Opcion("", "Sin valor") }.Concat(CampoOpciones(c).Select(o => new ListaBuscable.Opcion(o, o))).ToList();
     private static readonly IReadOnlyList<ListaBuscable.Opcion> OpcOrigenTipo = new[]

@@ -801,6 +801,74 @@ public class TareasFlowTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Responsable_acepta_usuario_activo_sin_directorio_y_rechaza_persona_ajena()
+    {
+        // Auditoria UX T-01 (2026-11-25, decision de Alex): un usuario ACTIVO de la copropiedad puede ser responsable
+        // aunque no este en el Directorio (p.ej. el administrador). Una persona de otra copropiedad sigue rechazada.
+        var tenantId = await SeedTenantAsync("Tareas Resp usuario");
+        var (svc, _, _) = Build(tenantId);
+        var usuario = await SeedPersonaGlobalSinVinculoAsync();
+        var ajena = await SeedPersonaGlobalSinVinculoAsync();
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using (var ctx = new PropiaDbContext(opts, new TenantContext()))
+        {
+            ctx.UsuariosTenant.Add(new UsuarioTenant { TenantId = tenantId, PersonaId = usuario, Rol = "Administrador", Estado = EstadoUsuarioTenant.Activo });
+            await ctx.SaveChangesAsync();
+        }
+        try
+        {
+            var tab = await svc.CrearTableroAsync(new GuardarTableroRequest("Tab resp", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+            var t = await svc.CrearTareaAsync(new CrearTareaRequest("Con usuario", null, PrioridadTarea.Normal, null, usuario,
+                null, null, null, null, TableroId: tab.Id, ResponsablePersonaIds: new[] { usuario }), CancellationToken.None);
+            Assert.NotNull(t);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(new CrearTareaRequest("Con ajena", null,
+                PrioridadTarea.Normal, null, ajena, null, null, null, null, TableroId: tab.Id, ResponsablePersonaIds: new[] { ajena }), CancellationToken.None));
+        }
+        finally
+        {
+            await using (var ctx = new PropiaDbContext(opts, new TenantContext()))
+                await ctx.Database.ExecuteSqlAsync($"DELETE FROM usuarios_tenant WHERE tenant_id = {tenantId}");
+            await CleanTenant(tenantId);
+            await BorrarPersonaGlobalAsync(usuario);
+            await BorrarPersonaGlobalAsync(ajena);
+        }
+    }
+
+    [Fact]
+    public async Task Dashboard_separa_vencidas_y_proximas_7_dias_y_excluye_eliminadas()
+    {
+        // Auditoria UX D-02 (2026-11-25): "Proximas a vencer" mostraba tareas ya vencidas; y el Dashboard contaba las
+        // tareas eliminadas. Ahora: Vencidas (< hoy) y Proximos 7 dias (hoy..hoy+7) separados, sin eliminadas.
+        var tenantId = await SeedTenantAsync("Tareas Dashboard D-02");
+        var (svc, db, scope) = Build(tenantId);
+        var hoy = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow,
+            Propia.Infrastructure.Programaciones.CronHelper.Zona(null)));
+        try
+        {
+            var tab = await svc.CrearTableroAsync(new GuardarTableroRequest("Tab dash", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+            async Task<Guid> Crear(string titulo, DateOnly vence) => (await svc.CrearTareaAsync(new CrearTareaRequest(
+                titulo, null, PrioridadTarea.Normal, null, null, null, vence, null, null, TableroId: tab.Id), CancellationToken.None)).Id;
+            await Crear("Vencida", hoy.AddDays(-3));
+            await Crear("Proxima", hoy.AddDays(2));
+            await Crear("Lejana", hoy.AddDays(20));
+            var borrada = await Crear("Proxima eliminada", hoy.AddDays(1));
+            Assert.True(await svc.EliminarTareaAsync(borrada, CancellationToken.None));
+
+            var dash = new Propia.Infrastructure.DashboardCopropiedad.DashboardCopropiedadService(
+                db, scope.ServiceProvider.GetRequiredService<ITenantContext>(), new HttpContextAccessor());
+            var r = await dash.GetResumenAsync(CancellationToken.None);
+
+            Assert.Equal(1, r.TareasVencidasBloque!.Total);
+            Assert.Equal("Vencida", r.TareasVencidasBloque.Items.Single().Titulo);
+            Assert.Equal(1, r.TareasProximasBloque!.Total);
+            Assert.Equal("Proxima", r.TareasProximasBloque.Items.Single().Titulo);   // ni la lejana ni la eliminada
+            Assert.Equal(3, r.TareasTotalActivas);                                    // la eliminada no cuenta
+            Assert.Equal(1, r.TareasVencidas);
+        }
+        finally { await CleanTenant(tenantId); }
+    }
+
     private static async Task<string?> ValorCampoAsync(PropiaDbContext db, Guid tareaId, Guid campoId)
         => await db.TareaCampoValores.AsNoTracking().Where(v => v.TareaId == tareaId && v.TableroCampoId == campoId)
             .Select(v => v.Valor).FirstOrDefaultAsync();

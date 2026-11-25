@@ -136,8 +136,17 @@
         if (UnidadId is not null) { UnidadId = null; await UnidadIdChanged.InvokeAsync(null); }
     }
 
-    private void OnBlur()
+    private async Task OnBlur()
     {
+        // Auditoria UX G-02 (2026-11-25): si lo escrito es EXACTAMENTE el codigo de una unidad (sin mayusculas ni
+        // espacios de mas), se toma como elegida aunque no se haya hecho clic en la lista. Antes se vaciaba en silencio.
+        var q = _query.Trim();
+        if (_editando && q.Length > 0 && !string.Equals(q, _seleccionada?.Numero, StringComparison.OrdinalIgnoreCase))
+        {
+            var exactas = (Unidades ?? new List<UnidadDto>())
+                .Where(u => string.Equals(u.Numero.Trim(), q, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (exactas.Count == 1) { await Elegir(exactas[0]); return; }
+        }
         // Al salir del componente: cierra el dropdown y vuelve a mostrar el codigo seleccionado.
         _open = false;
         _editando = false;

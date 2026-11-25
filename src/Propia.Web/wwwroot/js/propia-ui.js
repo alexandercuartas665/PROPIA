@@ -1248,6 +1248,81 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             f[n].focus();
         } catch (x) { }
     }, true);
+    // Escape cierra TODO (auditoria UX S-06 y relacionados, 2026-11-25; decision de Alex: siempre cierra, sin confirmar).
+    // Regla UNICA: Escape cierra la capa flotante MAS RECIENTE (la ultima visible en el documento: un popover dentro de
+    // un modal va despues del modal) haciendo lo mismo que el clic fuera = clic sobre su fondo. Capas = fondos que cierran
+    // al clic (clases *-bd / *-backdrop / *-overlay / *-modal-bg, el ModalHost, o [data-capa]). Si la capa trae un
+    // [data-esc-cerrar] propio (ModalHost: cierra aunque el modal no cierre al clic fuera) se pulsa ese.
+    // No interviene cuando el foco esta en un control que ya maneja su propio Escape (listas, filas de alta, edicion de
+    // celda, mini modales) ni con un dropdown de Bootstrap abierto (Bootstrap ya lo cierra).
+    var RX_CAPA = /(^|\s)([a-z0-9]+-)*(bd|backdrop|overlay|modal-bg|mback|lightbox|clickaway)(\s|$)|(^|\s)modal-backdrop-propia(\s|$)/;
+    // Sufijos ambiguos (-back, -ov, -lb: "mtm-back", "po-ov", "rs-lb"...): solo cuentan si son fixed y cubren al menos
+    // media pantalla (un fondo de modal), para no confundirlos con otros elementos.
+    var RX_CAPA_DEBIL = /(^|\s)([a-z0-9]+-)+(back|ov|lb)(\s|$)/;
+    var SEL_CANDIDATAS = '[class*="-bd"], [class*="backdrop"], [class*="overlay"], [class*="-modal-bg"], [class*="mback"], '
+        + '[class*="lightbox"], [class*="clickaway"], [class*="-back"], [class*="-ov"], [class*="-lb"], [data-capa]';
+    var SEL_ESC_PROPIO = '.lbx-pop, .lbx-trg--open, .cdir-pop, .sora-pop, .sp-modal, .sp-pop, .tb-newrow, .tb-subadd-row, '
+        + '[data-alta-fila], .tb-cell-inp, .tb-cell-area, .dropdown-menu, [data-esc-propio]';
+    function esCapa(el) {
+        if (!el || !el.classList) return false;
+        if (el.hasAttribute('data-capa')) return true;
+        var c = el.className && el.className.baseVal === undefined ? el.className : '';
+        if (RX_CAPA.test(c)) return true;
+        if (!RX_CAPA_DEBIL.test(c)) return false;
+        var r = el.getBoundingClientRect();
+        return getComputedStyle(el).position === 'fixed' && r.width >= window.innerWidth / 2 && r.height >= window.innerHeight / 2;
+    }
+    // Visible y flotante: un fondo de capa es position fixed/absolute (descarta p.ej. ".mtp-card-bd", el cuerpo de una
+    // tarjeta de Mantenimiento, que comparte el sufijo -bd).
+    function visible(el) {
+        if (!el.getClientRects().length) return false;
+        var cs = getComputedStyle(el);
+        return cs.visibility !== 'hidden' && cs.display !== 'none' && (cs.position === 'fixed' || cs.position === 'absolute');
+    }
+    // Popovers SIN fondo que se cierran con su propia "x" (p.ej. .gpq-pop de la ficha PQRSD): tambien son capa; Escape
+    // pulsa esa "x". Si el popover no tiene boton de cerrar, no cuenta (no se cierra el modal de abajo por error).
+    var RX_POP = /(^|\s)[a-z0-9-]+-pop(\s|$)/;
+    var RX_X = /(^|\s)[a-z0-9-]*-(x|close|cerrar)(\s|$)/;
+    function clase(el) { return el.className && el.className.baseVal === undefined ? el.className : ''; }
+    function botonCerrarDe(pop) {
+        return Array.prototype.find.call(pop.querySelectorAll('button'), function (b) {
+            var c = b.parentElement; while (c && c !== pop && !RX_POP.test(clase(c))) c = c.parentElement;
+            if (c !== pop) return false;
+            var lbl = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+            return RX_X.test(clase(b)) || lbl === 'cerrar';
+        }) || null;
+    }
+    // Que pulsar para cerrar la capa (null = la capa no se puede cerrar por Escape).
+    function cierreDe(capa) {
+        var propio = Array.prototype.find.call(capa.querySelectorAll('[data-esc-cerrar]'), function (b) {
+            var c = b.parentElement; while (c && !esCapa(c)) c = c.parentElement;
+            return c === capa;
+        });
+        if (propio) return propio;
+        if (esCapa(capa)) return capa;
+        return botonCerrarDe(capa);
+    }
+    window.propiaUI.capaSuperior = function () {
+        var cands = Array.prototype.filter.call(document.querySelectorAll(SEL_CANDIDATAS + ', [class*="-pop"]'), function (el) {
+            return (esCapa(el) || RX_POP.test(clase(el))) && visible(el);
+        });
+        for (var i = cands.length - 1; i >= 0; i--) { if (cierreDe(cands[i])) return cands[i]; }
+        return null;
+    };
+    window.addEventListener('keydown', function (e) {
+        try {
+            if (e.key !== 'Escape' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            var t = e.target;
+            if (t && t.closest && t.closest(SEL_ESC_PROPIO)) return;
+            if (document.querySelector('.dropdown-menu.show')) return;   // Bootstrap lo cierra
+            var capa = window.propiaUI.capaSuperior();
+            var cierre = capa ? cierreDe(capa) : null;
+            if (!cierre) return;
+            e.preventDefault();
+            cierre.click();
+        } catch (x) { }
+    });
+
     // Trae a la vista (dentro de su lista con scroll) el elemento con ese id, sin mover la pagina.
     window.propiaUI.scrollIntoViewById = function (id) {
         try { var el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'nearest' }); } catch (e) { }

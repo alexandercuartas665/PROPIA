@@ -46,6 +46,17 @@ public class RolesService : IRolesService
         var overrides = await _db.RolesSemillaTenant.AsNoTracking()
             .ToDictionaryAsync(x => x.RolId, x => x, ct);
 
+        // Permisos habilitados de los roles PERSONALIZADOS de la copropiedad (sus permisos viven en rol_permisos,
+        // sin override por tenant). Los ids salen de RolesCopropiedad, que ya viene acotado al tenant.
+        var idsPersonalizados = roles.Where(r => r.Tipo == TipoRol.Personalizado).Select(r => r.Id).ToList();
+        var permisosPers = idsPersonalizados.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await _db.RolPermisos.AsNoTracking()
+                .Where(p => idsPersonalizados.Contains(p.RolId) && p.Habilitado)
+                .GroupBy(p => p.RolId)
+                .Select(g => new { RolId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.RolId, x => x.Count, ct);
+
         return roles.Select(r =>
         {
             overrides.TryGetValue(r.Id, out var ov);
@@ -53,7 +64,8 @@ public class RolesService : IRolesService
                 r.Id, r.TenantId, r.Nombre, r.Descripcion,
                 r.Tipo, r.Categoria, r.EsEliminable, r.Activo,
                 conteos.GetValueOrDefault(r.Id, 0),
-                ov?.FacetasSemilla, ov?.SoloDirectorio ?? false);
+                ov?.FacetasSemilla, ov?.SoloDirectorio ?? false,
+                r.Tipo == TipoRol.Personalizado ? permisosPers.GetValueOrDefault(r.Id, 0) : null);
         }).ToList();
     }
 

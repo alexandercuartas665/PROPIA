@@ -370,7 +370,7 @@ public class ServiciosPublicosService : IServiciosPublicosService
                 ? Math.Round((r.Consumo - previo.Consumo) / previo.Consumo * 100, 1) : null;
             if (varPct is not { } vp || vp <= c.UmbralAlertaPct) return;
             titulo = $"Consumo elevado: {c.Alias}";
-            descripcion = $"El consumo de {periodoTxt} subio {vp}% frente al periodo anterior (umbral {c.UmbralAlertaPct}%).";
+            descripcion = $"El consumo de {periodoTxt} {ReglasServicioPublico.TextoVariacion(vp)} (umbral {c.UmbralAlertaPct}%).";   // D-05: tope 999 %
             sev = vp >= c.UmbralAlertaPct * 2 ? SeveridadAlerta.Critica : SeveridadAlerta.Advertencia;
         }
         var yaExiste = await _db.AlertasCopropiedad.AnyAsync(

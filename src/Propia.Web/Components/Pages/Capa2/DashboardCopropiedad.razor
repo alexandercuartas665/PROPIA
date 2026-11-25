@@ -44,8 +44,8 @@
             </div>
         </div>
         <div class="dsh-hero-acts">
-            <a class="dsh-btn dsh-btn-brand" href="/tareas"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Nueva tarea</a>
-            <a class="dsh-btn" href="/pqrs">Radicar PQRSD</a>
+            <a class="dsh-btn dsh-btn-brand" href="/tareas?nueva=1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>Nueva tarea</a>
+            <a class="dsh-btn" href="/pqrs?nueva=1">Radicar PQRSD</a>
             <a class="dsh-btn" href="/porteria">Portería</a>
         </div>
     </div>
@@ -94,8 +94,8 @@
 
         <a class="dsh-kpi" href="/contratos">
             <span class="dsh-kpi-ic dsh-ic-ambar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
-            <span class="dsh-kpi-n">@VencimientosTotal</span>
-            <span class="dsh-kpi-l">Vencimientos próximos</span>
+            <span class="dsh-kpi-n">@(_d.VencimientosProximos?.Total ?? VencimientosTotal)</span>
+            <span class="dsh-kpi-l">Vencimientos próximos (60 d)@((_d.VencimientosVencidos?.Total ?? 0) > 0 ? $" · {_d.VencimientosVencidos!.Total} vencidos" : "")</span>
         </a>
 
         <a class="dsh-kpi" href="/porteria">
@@ -219,23 +219,10 @@
                     }
                 </div>
             }
-            @if (_d.TareasUrgentes.Count > 0)
-            {
-                <div class="dsh-sec-t">Próximas a vencer</div>
-                <div class="dsh-list">
-                    @foreach (var t in _d.TareasUrgentes)
-                    {
-                        <a class="dsh-item" href="/tareas?abrir=@t.Id">
-                            <span class="dsh-num">@t.NumeroTarea</span>
-                            <span class="dsh-item-t">@t.Titulo</span>
-                            @if (t.FechaVencimiento is { } fv)
-                            {
-                                <span class="dsh-due @(t.Vencida ? "dsh-due--r" : "")">@fv.ToString("dd MMM")</span>
-                            }
-                        </a>
-                    }
-                </div>
-            }
+            @* D-02: "Proximas a vencer" mostraba tareas ya vencidas. Dos bloques: Vencidas y Proximos 7 dias (hora Colombia),
+               fecha ascendente, max 5 + "Ver todas". *@
+            @BloqueTareas("Vencidas", _d.TareasVencidasBloque)
+            @BloqueTareas("Próximos 7 días", _d.TareasProximasBloque)
         </div>
 
         <div class="dsh-card">
@@ -316,30 +303,16 @@
                 <div class="dsh-card-t">Contratos y pólizas por vencer</div>
                 <a class="dsh-link" href="/contratos">Ver todos</a>
             </div>
-            @if (VencimientosTotal == 0)
+            @* D-03: vencidos y por vencer separados (antes 11 vencidos primero y el unico por vencer al final). Contratos y
+               polizas juntos por fecha ascendente; ventana de 60 dias (decision de Alex), max 5 por bloque. *@
+            @if ((_d.VencimientosVencidos?.Total ?? 0) == 0 && (_d.VencimientosProximos?.Total ?? 0) == 0)
             {
-                <div class="dsh-empty">Nada próximo a vencer.</div>
+                <div class="dsh-empty">Nada vencido ni por vencer en los próximos 60 días.</div>
             }
             else
             {
-                <div class="dsh-list">
-                    @foreach (var c in _d.ContratosPorVencer ?? new List<ContratoPorVencerDto>())
-                    {
-                        <a class="dsh-item" href="/contratos">
-                            <span class="dsh-mini-tag">Contrato</span>
-                            <span class="dsh-item-t">@c.Nombre</span>
-                            <span class="dsh-due @(c.Semaforo == SemaforoContrato.Rojo ? "dsh-due--r" : "dsh-due--a")">@(c.DiasParaVencer is { } d1 && d1 >= 0 ? $"{d1} d" : "Vencido")</span>
-                        </a>
-                    }
-                    @foreach (var c in _d.PolizasPorVencer ?? new List<ContratoPorVencerDto>())
-                    {
-                        <a class="dsh-item" href="/seguros">
-                            <span class="dsh-mini-tag dsh-mini-tag--pol">Póliza</span>
-                            <span class="dsh-item-t">@c.Nombre</span>
-                            <span class="dsh-due @(c.Semaforo == SemaforoContrato.Rojo ? "dsh-due--r" : "dsh-due--a")">@(c.DiasParaVencer is { } d2 && d2 >= 0 ? $"{d2} d" : "Vencida")</span>
-                        </a>
-                    }
-                </div>
+                @BloqueVencimientos("Vencidos", _d.VencimientosVencidos)
+                @BloqueVencimientos("Próximos 60 días", _d.VencimientosProximos)
             }
         </div>
 
@@ -392,7 +365,7 @@
                     <div class="dsh-alerta">
                         <span class="dsh-alerta-tag">@a.Tipo</span>
                         <span class="dsh-alerta-tx"><strong>@a.Titulo</strong> — @a.Descripcion</span>
-                        <button class="dsh-alerta-ok" @onclick="() => Resolver(aid)">Resolver</button>
+                        <button class="dsh-alerta-ok" title="Quita la alerta del tablero" @onclick="() => Resolver(aid)">Marcar como atendida</button>
                     </div>
                 }
                 @if (_d.Alertas.Count > 4)
@@ -443,6 +416,45 @@
     private string? _msg; private string _msgClass = "alert-info";
     private DashboardResumenDto? _d;
     private bool _alertasExp;   // banda de alertas: colapsada (3 visibles) por defecto
+
+    // D-02: bloque de tareas (Vencidas / Proximos 7 dias) con contador y "Ver todas".
+    private RenderFragment BloqueTareas(string titulo, BloqueVencimientoDto<TareaResumenDto>? b) => __builder =>
+    {
+        if (b is null || b.Total == 0) return;
+        <div class="dsh-sec-t">@titulo (@b.Total)</div>
+        <div class="dsh-list">
+            @foreach (var t in b.Items)
+            {
+                <a class="dsh-item" href="/tareas?abrir=@t.Id">
+                    <span class="dsh-num">@t.NumeroTarea</span>
+                    <span class="dsh-item-t">@t.Titulo</span>
+                    @if (t.FechaVencimiento is { } fv)
+                    {
+                        <span class="dsh-due @(t.Vencida ? "dsh-due--r" : "dsh-due--a")">@fv.ToString("dd MMM")</span>
+                    }
+                </a>
+            }
+            @if (b.Total > b.Items.Count) { <a class="dsh-link dsh-vertodas" href="/tareas">Ver todas (@b.Total)</a> }
+        </div>
+    };
+
+    // D-03: bloque de contratos y polizas (Vencidos / Proximos 60 dias).
+    private RenderFragment BloqueVencimientos(string titulo, BloqueVencimientoDto<VencimientoDto>? b) => __builder =>
+    {
+        if (b is null || b.Total == 0) return;
+        <div class="dsh-sec-t">@titulo (@b.Total)</div>
+        <div class="dsh-list">
+            @foreach (var v in b.Items)
+            {
+                <a class="dsh-item" href="@v.Url">
+                    <span class="dsh-mini-tag @(v.Tipo == "Poliza" ? "dsh-mini-tag--pol" : "")">@(v.Tipo == "Poliza" ? "Póliza" : "Contrato")</span>
+                    <span class="dsh-item-t">@v.Nombre</span>
+                    <span class="dsh-due @(v.Dias < 0 ? "dsh-due--r" : "dsh-due--a")">@(v.Dias < 0 ? v.FechaFin.ToString("dd MMM yyyy") : $"{v.Dias} d")</span>
+                </a>
+            }
+            @if (b.Total > b.Items.Count) { <a class="dsh-link dsh-vertodas" href="/contratos">Ver todas (@b.Total)</a> }
+        </div>
+    };
 
     private int VencimientosTotal => (_d?.ContratosPorVencer?.Count ?? 0) + (_d?.PolizasPorVencer?.Count ?? 0);
 
@@ -626,6 +638,7 @@
     .dsh-card-t { font-size: .95rem; font-weight: 800; color: var(--propia-text-h1); }
     .dsh-link { font-size: .78rem; font-weight: 700; color: var(--propia-brand); text-decoration: none; }
     .dsh-link:hover { text-decoration: underline; }
+    .dsh-vertodas { display: inline-block; margin: 6px 0 0 2px; }
     .dsh-empty { color: var(--propia-text-muted); font-size: .84rem; padding: 14px 0; }
     .dsh-empty a { color: var(--propia-brand); }
     .dsh-sec-t { font-size: .7rem; font-weight: 800; letter-spacing: .05em; color: var(--propia-text-muted); text-transform: uppercase; margin: 14px 0 6px; }

@@ -7,7 +7,10 @@
    - Solo deja elegir entre las opciones (no texto libre). Estilos en css/modules/tareas.css (prefijo lbx-).
    - Multiple="true" (etiquetas): casillas para marcar varias; la caja queda abierta mientras se marca
      (clic o Enter sobre lo resaltado), Esc o Tab la cierran. El padre recibe cada cambio por OnToggle(valor)
-     y pinta el disparador con TriggerContent (p.ej. los chips). *@
+     y pinta el disparador con TriggerContent (p.ej. los chips).
+   - Opcion.Sub (auditoria UX T-01, 2026-11-25): texto secundario en gris (rol, cargo); tambien se busca por el.
+   - Opcion.SoloAlBuscar: la opcion no se lista hasta escribir MinLetrasBuscar letras (p.ej. cientos de residentes
+     detras del equipo de trabajo); con opciones ocultas se muestra TextoOcultas al pie. *@
 @inject IJSRuntime Js
 
 <span class="lbx-wrap @WrapClass" @ref="_wrap">
@@ -57,6 +60,7 @@
                         }
                         @if (!string.IsNullOrWhiteSpace(o.Color)) { <span class="lbx-dot" style="background:@o.Color"></span> }
                         <span class="lbx-it-tx">@o.Texto</span>
+                        @if (!string.IsNullOrWhiteSpace(o.Sub)) { <span class="lbx-it-sub">@o.Sub</span> }
                         @if (!Multiple && marcada)
                         {
                             <svg class="lbx-ck" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -64,13 +68,23 @@
                     </button>
                 }
             </div>
+            @if (HayOcultas && Norm(_q).Length < MinLetrasBuscar)
+            {
+                <div class="lbx-hint">@TextoOcultas</div>
+            }
         </div>
     }
 </span>
 
 @code {
     /// <summary>Opcion de la lista. Valor = lo que se guarda ("" = vacio); Texto = lo que se ve; Color = punto opcional.</summary>
-    public record Opcion(string Valor, string Texto, string? Color = null);
+    public record Opcion(string Valor, string Texto, string? Color = null, string? Sub = null, bool SoloAlBuscar = false);
+
+    /// <summary>Letras minimas para mostrar las opciones SoloAlBuscar.</summary>
+    [Parameter] public int MinLetrasBuscar { get; set; } = 2;
+    /// <summary>Pie de la caja cuando hay opciones que solo aparecen al buscar.</summary>
+    [Parameter] public string TextoOcultas { get; set; } = "Escribe 2 letras para ver más opciones.";
+    private bool HayOcultas => Opciones.Any(o => o.SoloAlBuscar);
 
     [Parameter] public IReadOnlyList<Opcion> Opciones { get; set; } = Array.Empty<Opcion>();
     [Parameter] public string? Valor { get; set; }
@@ -117,13 +131,16 @@
     private List<Opcion> Filtradas()
     {
         var q = Norm(_q);
-        if (q.Length == 0) return Opciones.ToList();
+        // Opciones SoloAlBuscar: ocultas hasta escribir MinLetrasBuscar letras.
+        var fuente = q.Length >= MinLetrasBuscar ? Opciones : Opciones.Where(o => !o.SoloAlBuscar);
+        if (q.Length == 0) return fuente.ToList();
         // Buscando: sin la opcion vacia ("Sin valor" no debe ganarle a lo buscado) y primero lo que EMPIEZA por lo
-        // escrito, luego una palabra que empieza por ello, luego el resto que lo contiene (orden estable).
-        return Opciones.Where(o => o.Valor.Length > 0)
-            .Select(o => (o, n: Norm(o.Texto)))
-            .Where(x => x.n.Contains(q))
-            .OrderBy(x => x.n.StartsWith(q) ? 0 : (" " + x.n).Contains(" " + q) ? 1 : 2)
+        // escrito, luego una palabra que empieza por ello, luego el resto que lo contiene (orden estable). Tambien
+        // encuentra por el texto secundario (Sub: rol, cargo), al final.
+        return fuente.Where(o => o.Valor.Length > 0)
+            .Select(o => (o, n: Norm(o.Texto), sub: Norm(o.Sub)))
+            .Where(x => x.n.Contains(q) || x.sub.Contains(q))
+            .OrderBy(x => x.n.StartsWith(q) ? 0 : (" " + x.n).Contains(" " + q) ? 1 : x.n.Contains(q) ? 2 : 3)
             .Select(x => x.o).ToList();
     }
 

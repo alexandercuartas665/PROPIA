@@ -53,6 +53,31 @@ public static class ReglasServicioPublico
     };
 
     /// <summary>"oct 2026".</summary>
+    /// <summary>Tope de presentacion de la variacion de consumo (auditoria UX D-05): mas de esto se muestra "mas de 999 %".</summary>
+    public const decimal TopeVariacionPct = 999m;
+
+    /// <summary>
+    /// Texto de la variacion de consumo contra el periodo anterior (auditoria UX D-05, 2026-11-25). Antes salia la cifra
+    /// cruda ("subio 420952,6 %") cuando el periodo anterior era casi 0. Sin periodo comparable (no hay o es 0):
+    /// "sin periodo comparable (primer recibo)"; por encima del tope: "mas de 999 %". Texto de UI con escapes Unicode.
+    /// </summary>
+    public static string TextoVariacion(decimal? variacionPct)
+    {
+        if (variacionPct is not { } v) return "sin periodo comparable (primer recibo)";
+        if (v > TopeVariacionPct) return "subi\u00f3 m\u00e1s de 999 % frente al periodo anterior";
+        return $"subi\u00f3 {v.ToString("0.#", Es)} % frente al periodo anterior";
+    }
+
+    /// <summary>
+    /// Normaliza al MOSTRAR una descripcion de alerta de consumo ya guardada con el texto viejo ("subio 420952,6% frente
+    /// al periodo anterior"): aplica el tope y la redaccion nueva sin tocar los datos.
+    /// </summary>
+    public static string NormalizarDescripcionAlertaConsumo(string descripcion)
+        => System.Text.RegularExpressions.Regex.Replace(descripcion ?? "",
+            @"subi(o|\u00f3) (-?\d+(?:[.,]\d+)?) ?% frente al periodo anterior",
+            m => decimal.TryParse(m.Groups[2].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var v)
+                ? TextoVariacion(v) : m.Value);
+
     public static string PeriodoLabel(int anio, int mes) => $"{(mes is >= 1 and <= 12 ? Mes3[mes - 1] : mes.ToString())} {anio}";
 
     /// <summary>"15 nov 2026" (como fCorta de la replica).</summary>

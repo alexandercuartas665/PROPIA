@@ -47,6 +47,8 @@ public interface IPorteriaService
     // ----- Registro visitas -----
     Task<RegistroVisitaDto> RegistrarVisitaAsync(Guid turnoId, RegistrarVisitaRequest req, CancellationToken ct);
     Task<IReadOnlyList<RegistroVisitaDto>> ListarVisitasAsync(Guid? turnoId, DateOnly? fecha, CancellationToken ct);
+    /// <summary>Eventos de visita de las ultimas 24 h: base de "Adentro ahora" (G-01).</summary>
+    Task<IReadOnlyList<RegistroVisitaDto>> ListarVisitasRecientesAsync(CancellationToken ct);
 
     // ----- Vehiculos -----
     Task<IReadOnlyList<VehiculoAutorizadoDto>> ListarVehiculosAutorizadosAsync(Guid? unidadId, CancellationToken ct);

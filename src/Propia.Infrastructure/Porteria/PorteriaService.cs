@@ -632,14 +632,29 @@ public class PorteriaService : IPorteriaService
         if (turnoId is { } t) q = q.Where(r => r.TurnoId == t);
         if (fecha is { } f)
         {
-            var ini = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc));
-            var fin = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
-            q = q.Where(r => r.Timestamp >= ini && r.Timestamp <= fin);
+            var (ini, fin) = PorteriaFechas.RangoDia(f);   // dia calendario de Colombia (G-01), [ini, fin)
+            q = q.Where(r => r.Timestamp >= ini && r.Timestamp < fin);
         }
         var list = await q.OrderByDescending(r => r.Timestamp).Take(200).ToListAsync(ct);
         var result = new List<RegistroVisitaDto>(list.Count);
         foreach (var r in list) result.Add(await MapVisitaAsync(r, ct));
         return result;
+    }
+
+    /// <summary>Eventos de visita de las ultimas <see cref="PorteriaFechas.HorasAdentro"/> horas (base de "Adentro ahora").</summary>
+    public async Task<IReadOnlyList<RegistroVisitaDto>> ListarVisitasRecientesAsync(CancellationToken ct)
+    {
+        var list = await VisitasRecientesAsync(ct);
+        var result = new List<RegistroVisitaDto>(list.Count);
+        foreach (var r in list.OrderByDescending(r => r.Timestamp)) result.Add(await MapVisitaAsync(r, ct));
+        return result;
+    }
+
+    private async Task<List<RegistroVisita>> VisitasRecientesAsync(CancellationToken ct)
+    {
+        var desde = DateTimeOffset.UtcNow.AddHours(-PorteriaFechas.HorasAdentro);
+        return await _db.RegistrosVisita.AsNoTracking().Where(r => r.Timestamp >= desde)
+            .OrderByDescending(r => r.Timestamp).Take(500).ToListAsync(ct);
     }
 
     // ===========================================================================
@@ -787,9 +802,8 @@ public class PorteriaService : IPorteriaService
         if (turnoId is { } t) q = q.Where(r => r.TurnoId == t);
         if (fecha is { } f)
         {
-            var ini = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc));
-            var fin = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
-            q = q.Where(r => r.Timestamp >= ini && r.Timestamp <= fin);
+            var (ini, fin) = PorteriaFechas.RangoDia(f);   // dia calendario de Colombia (G-01), [ini, fin)
+            q = q.Where(r => r.Timestamp >= ini && r.Timestamp < fin);
         }
         var list = await q.OrderByDescending(r => r.Timestamp).Take(200).ToListAsync(ct);
         var result = new List<RegistroVehiculoDto>(list.Count);
@@ -1066,9 +1080,8 @@ public class PorteriaService : IPorteriaService
         if (turnoId is { } t) q = q.Where(n => n.TurnoId == t);
         if (fecha is { } f)
         {
-            var ini = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc));
-            var fin = new DateTimeOffset(DateTime.SpecifyKind(f.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
-            q = q.Where(n => n.CreatedAt >= ini && n.CreatedAt <= fin);
+            var (ini, fin) = PorteriaFechas.RangoDia(f);   // dia calendario de Colombia (G-01), [ini, fin)
+            q = q.Where(n => n.CreatedAt >= ini && n.CreatedAt < fin);
         }
         var rows = await q.OrderByDescending(n => n.CreatedAt).Take(100).ToListAsync(ct);
 
@@ -1096,9 +1109,8 @@ public class PorteriaService : IPorteriaService
 
     public async Task<PanelMonitoreoDto> GetPanelMonitoreoAsync(CancellationToken ct)
     {
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
-        var iniHoy = new DateTimeOffset(DateTime.SpecifyKind(hoy.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc));
-        var finHoy = new DateTimeOffset(DateTime.SpecifyKind(hoy.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
+        // G-01: "hoy" = dia calendario de Colombia (antes UTC: de 19:00 a 23:59 ya era manana).
+        var (iniHoy, finHoy) = PorteriaFechas.RangoDia(PorteriaFechas.HoyColombia());
 
         var turnoAct = await _db.TurnosPorteria.AsNoTracking()
             .Where(t => t.Estado == EstadoTurnoPorteria.Activo)
@@ -1107,24 +1119,29 @@ public class PorteriaService : IPorteriaService
         TurnoDto? turnoDto = turnoAct is null ? null : await MapTurnoAsync(turnoAct, ct);
 
         var ingresosHoy = await _db.RegistrosVisita.AsNoTracking()
-            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Ingreso, ct);
+            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Ingreso, ct);
         var egresosHoy = await _db.RegistrosVisita.AsNoTracking()
-            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Egreso, ct);
+            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Egreso, ct);
         var vehInHoy = await _db.RegistrosVehiculo.AsNoTracking()
-            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Ingreso, ct);
+            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Ingreso, ct);
         var vehOutHoy = await _db.RegistrosVehiculo.AsNoTracking()
-            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Egreso, ct);
+            .CountAsync(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy && r.TipoEvento == TipoEventoAccesoPorteria.Egreso, ct);
         var paqRecHoy = await _db.Correspondencias.AsNoTracking()
-            .CountAsync(c => c.RecibidoAt >= iniHoy && c.RecibidoAt <= finHoy, ct);
+            .CountAsync(c => c.RecibidoAt >= iniHoy && c.RecibidoAt < finHoy, ct);
         var paqEntHoy = await _db.Correspondencias.AsNoTracking()
-            .CountAsync(c => c.EntregadoAt >= iniHoy && c.EntregadoAt <= finHoy, ct);
+            .CountAsync(c => c.EntregadoAt >= iniHoy && c.EntregadoAt < finHoy, ct);
         var paqPend = await _db.Correspondencias.AsNoTracking()
             .CountAsync(c => c.Estado == EstadoCorrespondencia.Recibido || c.Estado == EstadoCorrespondencia.Notificado, ct);
         var novedHoy = await _db.NovedadesTurno.AsNoTracking()
-            .CountAsync(n => n.CreatedAt >= iniHoy && n.CreatedAt <= finHoy, ct);
+            .CountAsync(n => n.CreatedAt >= iniHoy && n.CreatedAt < finHoy, ct);
 
+        // "Adentro ahora" = mismo calculo que las tarjetas: ingresos sin salida de las ultimas 24 h (no se pierden a
+        // medianoche). Antes era ingresosHoy - egresosHoy del dia UTC.
+        var adentro = PorteriaFechas.Adentro(await VisitasRecientesAsync(ct),
+            v => PorteriaFechas.ClaveVisitante(v.Nombre, v.Documento),
+            v => v.TipoEvento == TipoEventoAccesoPorteria.Ingreso, v => v.Timestamp).Count;
         var resumen = new ResumenTurnoDto(ingresosHoy, egresosHoy,
-            Math.Max(0, ingresosHoy - egresosHoy), Math.Max(0, vehInHoy - vehOutHoy),
+            adentro, Math.Max(0, vehInHoy - vehOutHoy),
             paqRecHoy, paqEntHoy, paqPend, novedHoy);
 
         var paqPendList = await ListarCorrespondenciaAsync(EstadoCorrespondencia.Notificado, null, ct);
@@ -1133,12 +1150,12 @@ public class PorteriaService : IPorteriaService
 
         var ultimas = new List<EventoRecienteDto>();
         var visitas = await _db.RegistrosVisita.AsNoTracking()
-            .Where(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy)
+            .Where(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy)
             .OrderByDescending(r => r.Timestamp).Take(5).ToListAsync(ct);
         foreach (var v in visitas)
             ultimas.Add(new EventoRecienteDto("VISITA", $"{v.Nombre} - {v.TipoEvento}", v.Timestamp));
         var vehs = await _db.RegistrosVehiculo.AsNoTracking()
-            .Where(r => r.Timestamp >= iniHoy && r.Timestamp <= finHoy)
+            .Where(r => r.Timestamp >= iniHoy && r.Timestamp < finHoy)
             .OrderByDescending(r => r.Timestamp).Take(5).ToListAsync(ct);
         foreach (var v in vehs)
             ultimas.Add(new EventoRecienteDto("VEHICULO", $"{v.Placa} - {v.TipoEvento}", v.Timestamp));
