@@ -36,11 +36,13 @@ public static class CamposAvanzados
         }
         else if (tipo == TipoCampoTablero.Directorio)
         {
+            // 2026-11-24: un tercero del Directorio = persona natural O empresa con vinculo activo en el tenant.
             if (!Guid.TryParse(valor, out var entidadId))
-                throw new InvalidOperationException("El valor de un campo Directorio debe ser el id de una persona del directorio.");
+                throw new InvalidOperationException("El valor de un campo Directorio debe ser el id de un tercero del directorio.");
             if (!await db.DirectorioVinculos.AnyAsync(v =>
-                    v.EntidadTipo == EntidadDirectorio.Persona && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct))
-                throw new InvalidOperationException("La persona seleccionada no esta en el directorio de esta copropiedad.");
+                    (v.EntidadTipo == EntidadDirectorio.Persona || v.EntidadTipo == EntidadDirectorio.Empresa)
+                    && v.EntidadId == entidadId && v.Estado == EstadoVinculo.Activo, ct))
+                throw new InvalidOperationException("El tercero seleccionado no esta en el directorio de esta copropiedad.");
         }
     }
 }

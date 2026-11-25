@@ -1,0 +1,193 @@
+@* CampoDirectorio - celda/valor de un campo personalizado tipo "Directorio" (Alex 2026-11-24).
+   El campo guarda el Guid de un tercero del Directorio (persona natural o empresa). Antes, en Tareas, se capturaba
+   como texto libre. Ahora es una herramienta de VINCULACION y CREACION de terceros:
+   - Disparador con el nombre del tercero (o "-"). Clic, Tab, Enter o flecha abajo abren un mini modal.
+   - El mini modal envuelve SelectorPersona (PermiteEmpresa): busca en todas las copropiedades de la organizacion,
+     trae a esta copropiedad al que esta en otra ("Traer") y crea un contacto nuevo (persona o empresa) sin salir.
+   - Foco atrapado como modal (propiaUI [data-trampa-foco]): Tab / Shift+Tab recorren buscador -> resultados ->
+     "Crear contacto nuevo" -> "Quitar"; flechas arriba/abajo + Enter eligen; Esc cierra.
+   - Supr/Retroceso sobre el disparador quita el tercero.
+   Usa las clases lbx-* (lbx-wrap / lbx-trg / lbx-pop) a proposito, como SelectorOrigenAlta: la fila de alta de
+   Tareas (altaAutoSave, flechas, Tab final) trata .lbx-pop como panel propio del disparador.
+   El contenedor resuelve el nombre (Nombre) y guarda el valor en OnCambio (null = quitar). *@
+@using Propia.Application.Directorio
+@inject IJSRuntime Js
+
+<span class="lbx-wrap cdir-wrap" @ref="_wrap" @onclick:stopPropagation="true">
+    <button type="button" id="@_trgId" class="lbx-trg @TriggerClass cdir-trg @(_open ? "lbx-trg--open" : "")" @ref="_trg"
+            @onclick="AlClic" @onfocus="AlEnfocar" @onkeydown="TrgKeyAsync" title="@(TieneValor ? NombreVisible + " - clic para cambiar" : "Vincular un tercero del Directorio")"
+            aria-haspopup="dialog" aria-expanded="@(_open ? "true" : "false")">
+        @if (TieneValor)
+        {
+            <span class="lbx-trg-tx cdir-val">
+                <span class="cdir-ava">@Iniciales(NombreVisible)</span>
+                <span class="cdir-nom">@NombreVisible</span>
+            </span>
+        }
+        else
+        {
+            <span class="lbx-trg-tx cdir-ph">@TextoVacio</span>
+        }
+        <svg class="lbx-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    @if (_open)
+    {
+        @* tabindex -1: un clic en una zona sin controles deja el foco DENTRO (si no, se iria al body y cerraria). *@
+        <div class="lbx-pop cdir-pop" id="@_popId" tabindex="-1" role="dialog" aria-modal="true" aria-label="Vincular tercero del Directorio"
+             data-trampa-foco @onkeydown="PopKeyAsync" @onfocusout="AlSalirAsync">
+            <div class="cdir-head">@(string.IsNullOrWhiteSpace(Titulo) ? "Tercero del Directorio" : Titulo)</div>
+            @if (TieneValor)
+            {
+                <div class="cdir-actual">
+                    <span class="cdir-ava">@Iniciales(NombreVisible)</span>
+                    <span class="cdir-nom">@NombreVisible</span>
+                </div>
+            }
+            <SelectorPersona Jwt="@Jwt" PermiteEmpresa="true" Placeholder="Buscar por nombre, NIT o documento..."
+                             SeleccionadaChanged="ElegirAsync" />
+            <div class="cdir-foot">
+                <span class="cdir-hint">3 letras para buscar &middot; &uarr;&darr; Enter elige &middot; Esc cierra</span>
+                @if (TieneValor)
+                {
+                    <button type="button" class="cdir-quitar" @onclick="() => QuitarAsync(true)">Quitar</button>
+                }
+            </div>
+        </div>
+    }
+</span>
+
+@code {
+    /// <summary>Valor guardado: Guid (texto) del tercero. Un texto que no es Guid (dato viejo, de cuando el campo
+    /// era texto libre) se muestra tal cual y se reemplaza al elegir un tercero.</summary>
+    [Parameter] public string? Valor { get; set; }
+    /// <summary>Nombre visible del tercero (lo resuelve el contenedor). Si es null se muestra el Valor.</summary>
+    [Parameter] public string? Nombre { get; set; }
+    [Parameter] public string? Jwt { get; set; }
+    /// <summary>Elegido (null = quitar). El contenedor guarda c.PersonaId y cachea c.NombreCompleto.</summary>
+    [Parameter] public EventCallback<PersonaCandidatoDto?> OnCambio { get; set; }
+    /// <summary>Clase extra del disparador (p.ej. tb-nf-inp en la fila de alta, lbx-plain en una celda).</summary>
+    [Parameter] public string? TriggerClass { get; set; }
+    [Parameter] public string TextoVacio { get; set; } = "-";
+    /// <summary>Titulo del mini modal (p.ej. el nombre de la columna).</summary>
+    [Parameter] public string? Titulo { get; set; }
+    /// <summary>Solo lectura: muestra el nombre, no abre el mini modal.</summary>
+    [Parameter] public bool Deshabilitado { get; set; }
+
+    private bool TieneValor => !string.IsNullOrWhiteSpace(Valor);
+    private string NombreVisible => !string.IsNullOrWhiteSpace(Nombre) ? Nombre! : (Valor ?? "");
+
+    private readonly string _trgId = "cdir-t-" + Guid.NewGuid().ToString("N")[..10];
+    private readonly string _popId = "cdir-p-" + Guid.NewGuid().ToString("N")[..10];
+    private ElementReference _trg, _wrap;
+    private bool _open, _anclar, _focoTrg;
+    // El proximo foco del disparador lo provoca el propio componente (eligio / Esc): ese foco NO reabre la caja.
+    private bool _noAutoAbrir;
+    private DateTime _cerradoEn = DateTime.MinValue;
+    private string? _semilla;   // letra que abrio la caja desde el disparador (pasa al buscador)
+
+    private void Abrir()
+    {
+        if (Deshabilitado) return;
+        _open = true;
+        _anclar = true;
+    }
+
+    private void AlEnfocar()
+    {
+        if (_noAutoAbrir) { _noAutoAbrir = false; return; }
+        if (!_open) Abrir();
+    }
+
+    private void AlClic(MouseEventArgs e)
+    {
+        // Un "clic" de teclado (Enter que llega al disparador justo despues de elegir) no reabre la caja.
+        if (e.Detail == 0 && DateTime.UtcNow - _cerradoEn < TimeSpan.FromMilliseconds(400)) return;
+        _noAutoAbrir = false;
+        if (!_open) Abrir();
+    }
+
+    private async Task TrgKeyAsync(KeyboardEventArgs e)
+    {
+        if (Deshabilitado) return;
+        var imprimible = e.Key.Length == 1 && e.Key != " " && !e.CtrlKey && !e.AltKey && !e.MetaKey;
+        if (_open)
+        {
+            // Letras que llegan al disparador antes de que el buscador tenga el foco (latencia del circuito):
+            // se pasan al buscador, no se pierden.
+            if (imprimible) { try { await Js.InvokeVoidAsync("propiaUI.semillaEn", _wrap, ".cdir-pop .sp-search-inp", e.Key); } catch { } }
+            return;
+        }
+        if (e.Key is "ArrowDown" or "Enter") { Abrir(); return; }
+        if ((e.Key == "Delete" || e.Key == "Backspace") && TieneValor) { await QuitarAsync(false); return; }
+        if (imprimible) { _semilla = e.Key; Abrir(); }
+    }
+
+    // Esc desde cualquier control del mini modal (el modal de alta de SelectorPersona corta su propio Esc).
+    private void PopKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Cerrar(true);
+    }
+
+    private void Cerrar(bool volverAlDisparador)
+    {
+        _open = false;
+        _cerradoEn = DateTime.UtcNow;
+        _focoTrg = volverAlDisparador;
+        if (volverAlDisparador) _noAutoAbrir = true;
+    }
+
+    // El foco salio de un elemento del mini modal: cerrarlo solo si se fue FUERA de el.
+    private async Task AlSalirAsync()
+    {
+        if (!_open) return;
+        await Task.Delay(30);
+        try { if (_open && !await Js.InvokeAsync<bool>("propiaUI.focoDentro", _wrap)) { _open = false; StateHasChanged(); } } catch { }
+    }
+
+    private async Task ElegirAsync(PersonaCandidatoDto? c)
+    {
+        if (c is null) return;   // SelectorPersona "Cambiar" (no aplica: aqui siempre esta en modo busqueda)
+        Cerrar(true);
+        if (!string.Equals(c.PersonaId.ToString(), Valor, StringComparison.OrdinalIgnoreCase))
+            await OnCambio.InvokeAsync(c);
+    }
+
+    // desdeCaja: el boton "Quitar" (devuelve el foco al disparador sin reabrir). Desde el disparador (Supr) el foco ya esta ahi.
+    private async Task QuitarAsync(bool desdeCaja)
+    {
+        _open = false;
+        _cerradoEn = DateTime.UtcNow;
+        if (desdeCaja) { _focoTrg = true; _noAutoAbrir = true; }
+        await OnCambio.InvokeAsync(null);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open && _anclar)
+        {
+            _anclar = false;
+            try
+            {
+                await Js.InvokeVoidAsync("propiaUI.anchorFloatMenuCrece", "#" + _trgId, "#" + _popId, 420);
+                if (!await Js.InvokeAsync<bool>("propiaUI.focoSelSiSigue", _wrap, ".cdir-pop .sp-search-inp")) { _open = false; StateHasChanged(); }
+                else if (_semilla is not null) await Js.InvokeVoidAsync("propiaUI.semillaEn", _wrap, ".cdir-pop .sp-search-inp", _semilla);
+                _semilla = null;
+            }
+            catch { }
+        }
+        else if (_focoTrg)
+        {
+            _focoTrg = false;
+            // Si el usuario ya se fue a otro lado, el foco no vuelve: entonces no queda pendiente la supresion.
+            try { if (!await Js.InvokeAsync<bool>("propiaUI.focoSiSigue", _wrap, _trg, false)) _noAutoAbrir = false; } catch { _noAutoAbrir = false; }
+        }
+    }
+
+    private static string Iniciales(string? nombre)
+    {
+        var parts = (nombre ?? "").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return ("" + parts[0][0] + parts[1][0]).ToUpperInvariant();
+    }
+}

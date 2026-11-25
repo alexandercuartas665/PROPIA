@@ -41,7 +41,7 @@ public sealed class RequiereRolFilter : IAsyncAuthorizationFilter
         var personaRaw = context.HttpContext.User.FindFirstValue("persona_id");
         if (!Guid.TryParse(personaRaw, out var personaId))
         {
-            context.Result = Forbidden("sin_persona");
+            context.Result = PermisoDenegado.Respuesta("sin_persona");
             return;
         }
 
@@ -49,7 +49,7 @@ public sealed class RequiereRolFilter : IAsyncAuthorizationFilter
         var rol = await _roles.GetRolActorAsync(personaId, context.HttpContext.RequestAborted, rolActivo);
         if (rol is null || !_rolesPermitidos.Contains(rol, StringComparer.OrdinalIgnoreCase))
         {
-            context.Result = Forbidden("rol_insuficiente");
+            context.Result = PermisoDenegado.Respuesta("rol_insuficiente");
         }
     }
 
@@ -57,8 +57,6 @@ public sealed class RequiereRolFilter : IAsyncAuthorizationFilter
     internal static Guid? RolActivo(System.Security.Claims.ClaimsPrincipal user)
         => Guid.TryParse(user.FindFirstValue("rol_id"), out var id) ? id : (Guid?)null;
 
-    private static ObjectResult Forbidden(string reason) =>
-        new(new { error = "forbidden", reason }) { StatusCode = StatusCodes.Status403Forbidden };
 }
 
 /// <summary>
@@ -93,7 +91,7 @@ public sealed class RequierePermisoFilter : IAsyncAuthorizationFilter
         var personaRaw = context.HttpContext.User.FindFirstValue("persona_id");
         if (!Guid.TryParse(personaRaw, out var personaId))
         {
-            context.Result = Deny("sin_persona"); return;
+            context.Result = PermisoDenegado.Respuesta("sin_persona", _modulo, _accion); return;
         }
 
         var ct = context.HttpContext.RequestAborted;
@@ -107,9 +105,6 @@ public sealed class RequierePermisoFilter : IAsyncAuthorizationFilter
 
         var permisos = await _roles.GetPermisosEfectivosAsync(personaId, ct, rolActivo);
         var ok = permisos.Any(p => p.ModuloCodigo == _modulo && p.Accion == _accion && p.Habilitado);
-        if (!ok) context.Result = Deny("permiso_insuficiente");
+        if (!ok) context.Result = PermisoDenegado.Respuesta("permiso_insuficiente", _modulo, _accion);
     }
-
-    private static ObjectResult Deny(string reason) =>
-        new(new { error = "forbidden", reason }) { StatusCode = StatusCodes.Status403Forbidden };
 }

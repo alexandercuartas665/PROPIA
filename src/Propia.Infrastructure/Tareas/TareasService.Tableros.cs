@@ -7,6 +7,7 @@ using Propia.Application.MiCopropiedad;   // contrato de config de columnas reus
 using Propia.Application.Tareas;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.MiCopropiedad;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.Tareas;
@@ -256,13 +257,17 @@ public partial class TareasService
     {
         if (valores is null) return;
         var tableroId = await _db.Tareas.Where(t => t.Id == tareaId).Select(t => t.TableroId).FirstOrDefaultAsync(ct);
-        var validos = (await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => c.Id).ToListAsync(ct)).ToHashSet();
+        var tipos = await _db.TableroCampos.Where(c => c.TableroId == tableroId).Select(c => new { c.Id, c.Tipo }).ToDictionaryAsync(c => c.Id, c => c.Tipo, ct);
         var existentes = await _db.TareaCampoValores.Where(v => v.TareaId == tareaId).ToListAsync(ct);
         foreach (var v in valores)
         {
-            if (!validos.Contains(v.CampoId)) continue;
+            if (!tipos.TryGetValue(v.CampoId, out var tipo)) continue;
             var val = string.IsNullOrWhiteSpace(v.Valor) ? null : v.Valor.Trim();
             var ex = existentes.FirstOrDefault(x => x.TableroCampoId == v.CampoId);
+            // Directorio (2026-11-24): el valor es un tercero del directorio de ESTE tenant. Solo se valida si cambia
+            // (un texto viejo, de cuando el campo era texto libre, no bloquea guardar el resto de la tarea).
+            if (tipo == TipoCampoTablero.Directorio && val is not null && val != ex?.Valor)
+                await CamposAvanzados.ValidarValorAsync(_db, tipo, val, ct);
             if (ex is null)
             {
                 if (val is not null)

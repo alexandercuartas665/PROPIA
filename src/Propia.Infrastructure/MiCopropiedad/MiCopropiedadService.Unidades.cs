@@ -878,12 +878,29 @@ public partial class MiCopropiedadService
             .Where(v => v.EntidadTipo == EntidadDirectorio.Persona && v.Estado == EstadoVinculo.Activo)
             .Select(v => v.EntidadId).ToListAsync(ct);
         var ids = idsUsuarios.Concat(idsDir).Distinct().ToList();
-        if (ids.Count == 0) return Array.Empty<PersonaVinculadaDto>();
-        var personas = await _db.Personas.AsNoTracking()
-            .Where(p => ids.Contains(p.Id))
-            .Select(p => new { p.Id, p.Nombres, p.Apellidos })
-            .ToListAsync(ct);
-        return personas.Select(p => new PersonaVinculadaDto(p.Id, $"{p.Nombres} {p.Apellidos}".Trim())).ToList();
+        var res = new List<PersonaVinculadaDto>();
+        if (ids.Count > 0)
+        {
+            var personas = await _db.Personas.AsNoTracking()
+                .Where(p => ids.Contains(p.Id))
+                .Select(p => new { p.Id, p.Nombres, p.Apellidos })
+                .ToListAsync(ct);
+            res.AddRange(personas.Select(p => new PersonaVinculadaDto(p.Id, $"{p.Nombres} {p.Apellidos}".Trim())));
+        }
+        // 2026-11-24: el campo Directorio vincula terceros = personas O EMPRESAS. Las empresas con vinculo activo en
+        // el tenant tambien se resuelven (razon social). Mismo contrato (PersonaId = id del tercero).
+        var idsEmp = await _db.DirectorioVinculos.AsNoTracking()
+            .Where(v => v.EntidadTipo == EntidadDirectorio.Empresa && v.Estado == EstadoVinculo.Activo)
+            .Select(v => v.EntidadId).Distinct().ToListAsync(ct);
+        if (idsEmp.Count > 0)
+        {
+            var empresas = await _db.Empresas.AsNoTracking()
+                .Where(e => idsEmp.Contains(e.Id))
+                .Select(e => new { e.Id, e.RazonSocial })
+                .ToListAsync(ct);
+            res.AddRange(empresas.Select(e => new PersonaVinculadaDto(e.Id, e.RazonSocial)));
+        }
+        return res;
     }
 
     // Computa el texto de un campo Formula para una unidad. Fuentes: campos PROPIOS Numero/Moneda

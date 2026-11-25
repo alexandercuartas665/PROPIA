@@ -756,6 +756,82 @@ public class TareasFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Campo_Directorio_acepta_persona_y_empresa_del_tenant_y_rechaza_ajenos_y_texto()
+    {
+        // 2026-11-24: el campo Directorio de Tareas vincula un TERCERO (persona o empresa) del directorio de la
+        // copropiedad. Antes se guardaba texto libre. Un texto viejo ya guardado no bloquea reenviar el mismo valor.
+        var tenantId = await SeedTenantAsync("Tareas CampoDirectorio");
+        var (svc, db, _) = Build(tenantId);
+        var persona = await SeedPersonaVinculadaAsync(tenantId);
+        var empresa = await SeedEmpresaVinculadaAsync(tenantId);
+        var ajena = await SeedPersonaGlobalSinVinculoAsync();
+        try
+        {
+            var tab = await svc.CrearTableroAsync(
+                new GuardarTableroRequest("Tab dir", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+            var campo = await svc.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Contratista", TipoCampoTablero.Directorio), CancellationToken.None);
+            var t = await svc.CrearTareaAsync(new CrearTareaRequest("Con tercero", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+                TableroId: tab.Id, CamposValores: new[] { new TareaCampoValorDto(campo.Id, persona.ToString()) }), CancellationToken.None);
+            Assert.Equal(persona.ToString(), await ValorCampoAsync(db, t.Id, campo.Id));
+
+            // Empresa del tenant: OK.
+            Assert.True(await svc.SetCampoValorAsync(t.Id, campo.Id, empresa.ToString(), CancellationToken.None));
+            Assert.Equal(empresa.ToString(), await ValorCampoAsync(db, t.Id, campo.Id));
+
+            // Persona de otra copropiedad (sin vinculo aqui) y texto libre: rechazados.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.SetCampoValorAsync(t.Id, campo.Id, ajena.ToString(), CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.SetCampoValorAsync(t.Id, campo.Id, "Juan Perez", CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CrearTareaAsync(new CrearTareaRequest("Ajena", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+                TableroId: tab.Id, CamposValores: new[] { new TareaCampoValorDto(campo.Id, ajena.ToString()) }), CancellationToken.None));
+
+            // Dato viejo (texto libre de antes): reenviar el MISMO valor no falla.
+            var fila = await db.TareaCampoValores.FirstAsync(v => v.TareaId == t.Id && v.TableroCampoId == campo.Id);
+            fila.Valor = "Texto viejo";
+            await db.SaveChangesAsync(CancellationToken.None);
+            Assert.True(await svc.SetCampoValorAsync(t.Id, campo.Id, "Texto viejo", CancellationToken.None));
+            // Quitar (vacio) siempre se permite.
+            Assert.True(await svc.SetCampoValorAsync(t.Id, campo.Id, null, CancellationToken.None));
+            Assert.Null(await ValorCampoAsync(db, t.Id, campo.Id));
+        }
+        finally
+        {
+            await CleanTenant(tenantId);
+            await BorrarPersonaGlobalAsync(ajena);
+            await BorrarEmpresaGlobalAsync(empresa);
+        }
+    }
+
+    private static async Task<string?> ValorCampoAsync(PropiaDbContext db, Guid tareaId, Guid campoId)
+        => await db.TareaCampoValores.AsNoTracking().Where(v => v.TareaId == tareaId && v.TableroCampoId == campoId)
+            .Select(v => v.Valor).FirstOrDefaultAsync();
+
+    // Empresa GLOBAL + vinculo activo con la copropiedad (tercero juridico del directorio).
+    private async Task<Guid> SeedEmpresaVinculadaAsync(Guid tenantId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        var e = new Empresa { Nit = "9" + Guid.NewGuid().ToString("N")[..9], RazonSocial = "Tercero SAS Test" };
+        ctx.Empresas.Add(e);
+        ctx.DirectorioVinculos.Add(new DirectorioVinculo
+        {
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Empresa,
+            EntidadId = e.Id,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+            Estado = EstadoVinculo.Activo
+        });
+        await ctx.SaveChangesAsync();
+        return e.Id;
+    }
+
+    private async Task BorrarEmpresaGlobalAsync(Guid empresaId)
+    {
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using var ctx = new PropiaDbContext(opts, new TenantContext());
+        await ctx.Database.ExecuteSqlAsync($"DELETE FROM empresas WHERE id = {empresaId}");
+    }
+
+    [Fact]
     public async Task Config_de_columnas_del_tablero_persiste_por_tablero_y_respeta_tenant()
     {
         // Adopcion Selector (opcion A): la config de presentacion de columnas (alias/oculto/orden) se guarda
