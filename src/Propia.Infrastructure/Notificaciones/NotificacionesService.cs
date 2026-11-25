@@ -38,20 +38,28 @@ public class NotificacionesService : INotificacionesService
         return Guid.TryParse(sub, out var id) ? id : Guid.Empty;
     }
 
+    private Guid? GetPersonaActualId()
+        => Guid.TryParse(_http.HttpContext?.User?.FindFirstValue("persona_id"), out var id) ? id : null;
+
+    // Auditoria UX S-05 (2026-11-25, decision de Alex: "solo las propias"): cada usuario ve SOLO las notificaciones
+    // dirigidas a el (por usuario o por persona). Antes el filtro era "mias O de mi copropiedad": la campana le mostraba
+    // a cualquiera las de todos (63 "copias" = el mismo aviso enviado a 63 personas) y "Marcar todas leidas" fallaba en
+    // silencio con las ajenas. Fuga de privacidad corregida tambien en el detalle y el resumen.
+    private IQueryable<Domain.Entities.Notificacion> Propias()
+    {
+        var userId = GetUsuarioActualId();
+        var personaId = GetPersonaActualId();
+        if (userId == Guid.Empty && personaId is null) return _db.Notificaciones.AsNoTracking().Where(n => false);
+        return _db.Notificaciones.AsNoTracking()
+            .Where(n => (userId != Guid.Empty && n.UsuarioDestinatarioId == userId)
+                        || (personaId != null && n.PersonaDestinatariaId == personaId));
+    }
+
     public async Task<IReadOnlyList<NotificacionDto>> ListarAsync(
         FiltroNotificacionesRequest filtro, CancellationToken ct)
     {
-        var userId = GetUsuarioActualId();
-        var tenantId = _tenantContext.CurrentTenantId;
-
-        var q = _db.Notificaciones.AsNoTracking().AsQueryable();
-
-        // Aislamiento: el usuario solo ve sus propias notificaciones InApp + las
-        // del tenant actual para canales globales (email/whatsapp) para admin.
-        // En MVP simplificamos: el usuario solo ve donde es destinatario directo
-        // O notificaciones del tenant actual sin destinatario especifico.
-        q = q.Where(n => n.UsuarioDestinatarioId == userId
-                         || (tenantId != null && n.TenantId == tenantId));
+        // Aislamiento: SOLO las notificaciones dirigidas al usuario actual (ver Propias()).
+        var q = Propias();
 
         if (filtro.Estado is { } estado) q = q.Where(n => n.Estado == estado);
         if (filtro.Canal is { } canal) q = q.Where(n => n.Canal == canal);
@@ -67,7 +75,7 @@ public class NotificacionesService : INotificacionesService
 
     public async Task<NotificacionDto?> GetAsync(Guid id, CancellationToken ct)
     {
-        var n = await _db.Notificaciones.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var n = await Propias().FirstOrDefaultAsync(x => x.Id == id, ct);
         return n is null ? null : Map(n);
     }
 
@@ -120,11 +128,7 @@ public class NotificacionesService : INotificacionesService
     public async Task<ResumenNotificacionesDto> GetResumenAsync(CancellationToken ct)
     {
         var userId = GetUsuarioActualId();
-        var tenantId = _tenantContext.CurrentTenantId;
-
-        var baseQ = _db.Notificaciones.AsNoTracking()
-            .Where(n => n.UsuarioDestinatarioId == userId
-                        || (tenantId != null && n.TenantId == tenantId));
+        var baseQ = Propias();
 
         var encoladas = await baseQ.CountAsync(n => n.Estado == EstadoNotificacion.Encolada, ct);
         var enviadas = await baseQ.CountAsync(n => n.Estado == EstadoNotificacion.Enviado, ct);

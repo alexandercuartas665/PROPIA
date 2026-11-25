@@ -247,6 +247,45 @@ public class NotificacionesFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Campana_solo_muestra_las_propias_y_no_duplica_el_mismo_aviso_sin_leer()
+    {
+        // Auditoria UX S-05 (2026-11-25): antes el inbox listaba "mias O de mi copropiedad" (la campana mostraba las
+        // notificaciones de TODOS). Ahora solo las propias, tambien en detalle y resumen. Y el mismo aviso (entidad +
+        // modulo + destinatario) sin leer no se duplica.
+        var tenantId = await SeedTenantAsync("Noti Propias");
+        await SeedPersonaConApplicationUser();
+
+        using var scope = _services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetTenant(tenantId);
+        var dispatcher = scope.ServiceProvider.GetRequiredService<INotificacionDispatcher>();
+        var svc = scope.ServiceProvider.GetRequiredService<INotificacionesService>();
+
+        var entidad = Guid.NewGuid();
+        var mia = await dispatcher.EnviarAsync(new EnviarNotificacionRequest(
+            Canal: CanalNotificacion.InApp, Cuerpo: "Para mi", UsuarioDestinatarioId: _userId, Asunto: "Mia",
+            ModuloOrigenCodigo: "2.11", EntidadOrigenId: entidad), CancellationToken.None);
+        var otroUsuario = Guid.NewGuid();
+        var ajena = await dispatcher.EnviarAsync(new EnviarNotificacionRequest(
+            Canal: CanalNotificacion.InApp, Cuerpo: "Para otro", UsuarioDestinatarioId: otroUsuario, Asunto: "Ajena",
+            ModuloOrigenCodigo: "2.11", EntidadOrigenId: entidad), CancellationToken.None);
+
+        var inbox = await svc.ListarAsync(new FiltroNotificacionesRequest(null, CanalNotificacion.InApp, null, 100), CancellationToken.None);
+        Assert.Contains(inbox, n => n.Id == mia.NotificacionId);
+        Assert.DoesNotContain(inbox, n => n.Id == ajena.NotificacionId);
+        Assert.Null(await svc.GetAsync(ajena.NotificacionId, CancellationToken.None));
+        Assert.NotNull(await svc.GetAsync(mia.NotificacionId, CancellationToken.None));
+
+        // Mismo aviso, mismo destinatario, sin leer: no se crea otro.
+        var repetida = await dispatcher.EnviarAsync(new EnviarNotificacionRequest(
+            Canal: CanalNotificacion.InApp, Cuerpo: "Para mi", UsuarioDestinatarioId: _userId, Asunto: "Mia",
+            ModuloOrigenCodigo: "2.11", EntidadOrigenId: entidad), CancellationToken.None);
+        Assert.Equal(mia.NotificacionId, repetida.NotificacionId);
+        var db = scope.ServiceProvider.GetRequiredService<PropiaDbContext>();
+        Assert.Equal(1, await db.Notificaciones.AsNoTracking()
+            .CountAsync(n => n.EntidadOrigenId == entidad && n.UsuarioDestinatarioId == _userId));
+    }
+
+    [Fact]
     public async Task Resumen_cuenta_correctamente_por_estado()
     {
         var tenantId = await SeedTenantAsync("Noti Resumen");

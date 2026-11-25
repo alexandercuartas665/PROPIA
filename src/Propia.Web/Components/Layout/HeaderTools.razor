@@ -36,16 +36,23 @@
                     else if (_items.Count == 0) { <div class="ht-empty">No tienes notificaciones.</div> }
                     else
                     {
-                        @foreach (var n in _items)
+                        @* S-05: avisos iguales (mismo asunto + modulo + elemento) en UNA fila con contador "xN"; cada fila
+                           abre el elemento (enlace visible "Ver") y marca leidas todas las del grupo. *@
+                        @foreach (var g in Grupos())
                         {
-                            var nn = n;
-                            var leida = n.FechaLeido is not null;
-                            <button type="button" class="ht-item @(leida ? "" : "unread")" @onclick="() => AbrirAsync(nn)">
+                            var gg = g;
+                            var n = g[0];
+                            var leida = g.All(x => x.FechaLeido is not null);
+                            var href = HrefDe(n);
+                            <button type="button" class="ht-item @(leida ? "" : "unread")" @onclick="() => AbrirGrupoAsync(gg)">
                                 @if (!leida) { <span class="ht-item-dot"></span> }
                                 <span class="ht-item-body">
-                                    @if (!string.IsNullOrWhiteSpace(n.Asunto)) { <span class="ht-item-title">@n.Asunto</span> }
+                                    @if (!string.IsNullOrWhiteSpace(n.Asunto))
+                                    {
+                                        <span class="ht-item-title">@n.Asunto @if (g.Count > 1) { <span class="ht-item-cnt" title="@($"{g.Count} avisos iguales")">&times;@g.Count</span> }</span>
+                                    }
                                     <span class="ht-item-txt">@n.Cuerpo</span>
-                                    <span class="ht-item-time">@Relativo(n.CreadoAt)</span>
+                                    <span class="ht-item-time">@Relativo(n.CreadoAt)@if (href is not null) { <span class="ht-item-link">Ver &rsaquo;</span> }</span>
                                 </span>
                             </button>
                         }
@@ -117,23 +124,36 @@
         finally { _cargando = false; StateHasChanged(); }
     }
 
-    // Marca la notificacion leida y navega a la referencia (por ahora PQRSD modulo 2.9).
-    private async Task AbrirAsync(NotificacionDto n)
+    // Grupos de avisos iguales (asunto + modulo + elemento), el mas reciente primero dentro y entre grupos.
+    private List<List<NotificacionDto>> Grupos() => _items
+        .GroupBy(n => (n.Asunto ?? "", n.ModuloOrigenCodigo ?? "", n.EntidadOrigenId))
+        .Select(g => g.OrderByDescending(x => x.CreadoAt).ToList())
+        .OrderByDescending(g => g[0].CreadoAt)
+        .ToList();
+
+    // Enlace al elemento de origen segun el modulo (S-05: antes solo PQRSD).
+    private static string? HrefDe(NotificacionDto n)
     {
-        try { await Auth().PostAsync($"/api/notificaciones/{n.Id}/leido", null); } catch { }
+        var modulo = n.ModuloOrigenCodigo ?? "";
+        var id = n.EntidadOrigenId;
+        if (modulo.StartsWith("2.9")) return id is null ? "/pqrs" : $"/pqrs?abrir={id}";
+        if (modulo.StartsWith("2.10")) return id is null ? "/tareas" : $"/tareas?abrir={id}";
+        if (modulo.StartsWith("2.11")) return id is null ? "/mantenimiento" : $"/mantenimiento?abrir={id}";
+        if (modulo.StartsWith("2.12")) return "/porteria";
+        if (modulo.StartsWith("2.13")) return "/reservas";
+        return null;
+    }
+
+    // Marca leidas las del grupo y navega al elemento.
+    private async Task AbrirGrupoAsync(List<NotificacionDto> grupo)
+    {
+        foreach (var n in grupo.Where(x => x.FechaLeido is null))
+        {
+            try { await Auth().PostAsync($"/api/notificaciones/{n.Id}/leido", null); } catch { }
+        }
         _abierto = false;
         await RefrescarResumenAsync();
-
-        if (n.EntidadOrigenId is { } entidad)
-        {
-            var modulo = n.ModuloOrigenCodigo ?? "";
-            if (modulo.StartsWith("2.9"))
-            {
-                Nav.NavigateTo($"/pqrs?abrir={entidad}");
-                return;
-            }
-            // Otros modulos se cablean a medida que se agreguen sus deep-links.
-        }
+        if (HrefDe(grupo[0]) is { } href) Nav.NavigateTo(href);
     }
 
     private async Task MarcarTodasAsync()
@@ -153,13 +173,16 @@
         if (d.TotalMinutes < 60) return $"hace {(int)d.TotalMinutes} min";
         if (d.TotalHours < 24) return $"hace {(int)d.TotalHours} h";
         if (d.TotalDays < 7) return $"hace {(int)d.TotalDays} d";
-        return t.ToLocalTime().ToString("dd MMM");
+        return t.ToCo().ToString("dd MMM");
     }
 
     public void Dispose() => _timer?.Dispose();
 }
 
 <style>
+    .ht-item-cnt { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 800;
+                   background: var(--propia-brand-soft); color: var(--propia-brand-text); vertical-align: 1px; }
+    .ht-item-link { margin-left: 8px; font-weight: 700; color: var(--propia-brand); }
     .ht-wrap { display: flex; align-items: center; gap: 8px; position: relative; }
 
     /* Boton de icono (notificaciones) */

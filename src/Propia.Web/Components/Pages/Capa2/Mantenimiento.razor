@@ -2642,6 +2642,7 @@ else if (_tab == "prog" && _vistaProg == "calendario")
                 {
                     _jwt = stored;
                     await CargarAsync();
+                    await AbrirDesdeQueryAsync();   // ?abrir={intervencionId} (desde la campana de notificaciones)
                     StateHasChanged();
                 }
             }
@@ -2682,6 +2683,24 @@ else if (_tab == "prog" && _vistaProg == "calendario")
         }
         if (_focoCtaProg && !_altaProgAbierta) { _focoCtaProg = false; try { await _ctaProg.FocusAsync(); } catch { } }
         if (_focoCtaInterv && !_altaIntervAbierta) { _focoCtaInterv = false; try { await _ctaInterv.FocusAsync(); } catch { } }
+    }
+
+    // Deep-link (auditoria UX S-05): /mantenimiento?abrir={intervencionId} abre la ficha de la intervencion en la
+    // pestana Intervenciones. Mismo patron que /pqrs?abrir y /tareas?abrir.
+    private async Task AbrirDesdeQueryAsync()
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+            if (q.TryGetValue("abrir", out var v) && Guid.TryParse(v, out var id))
+            {
+                Nav.NavigateTo(uri.GetLeftPart(UriPartial.Path), replace: true);   // limpia el query
+                if (_tab != "intervenciones") await SwitchTab("intervenciones");
+                await MostrarFicha(id);
+            }
+        }
+        catch { }
     }
 
     private async Task SwitchTab(string tab)
