@@ -30,8 +30,21 @@ else
             <h1 class="ca-title">Cartera y estado de cuenta</h1>
             <p class="ca-sub">Motor de gestión de mora — del primer impago al cobro jurídico.</p>
         </div>
-        <button class="ca-btn ca-btn-soft" @onclick="Sincronizar" disabled="@_busy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>Sincronizar desde presupuesto</button>
+        @* Auditoria UX F-08 (2026-11-25): sin vigencia En ejecucion no hay de donde sincronizar. El motivo va en el
+           title del contenedor (un boton deshabilitado no siempre muestra tooltip). *@
+        <span class="ca-btn-wrap" title="@(_hayVigenciaActiva ? "Genera o actualiza los saldos de cada unidad a partir de la vigencia activa." : "Genera o actualiza los saldos de cada unidad a partir de la vigencia activa. Hoy no hay presupuesto activo.")">
+            <button class="ca-btn ca-btn-soft" @onclick="Sincronizar" disabled="@(_busy || !_hayVigenciaActiva)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>Sincronizar desde presupuesto</button>
+        </span>
     </div>
+
+    @if (!_loading && !_hayVigenciaActiva)
+    {
+        <div class="ca-sinvig">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div class="ca-sinvig-t"><b>Aún no hay presupuesto activo.</b> Créalo o actívalo para liquidar cuotas.</div>
+            <a class="ca-btn ca-btn-soft" href="/presupuesto">Ir a Presupuesto</a>
+        </div>
+    }
 
     @if (_loading)
     {
@@ -90,7 +103,7 @@ else
             @{ var filtradas = FiltrarUnidades(); }
             @if (filtradas.Count == 0)
             {
-                <div class="ca-empty">Sin unidades en esta vista. Recaudo al día.</div>
+                <div class="ca-empty">@(_hayVigenciaActiva ? "Sin unidades en esta vista. Recaudo al día." : "Sin unidades en esta vista.")</div>
             }
             else
             {
@@ -318,6 +331,12 @@ else
     .ca-ficha-btn { font-size: 11px; font-weight: 700; color: var(--propia-brand); background: var(--propia-brand-soft); border: 1px solid var(--propia-brand-border); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
     .ca-ficha-btn:hover { background: #E6DEFA; }
     .ca-empty { padding: 26px; text-align: center; font-size: 13px; color: var(--propia-text-faint); }
+    /* F-08: aviso sin vigencia activa + tooltip del boton deshabilitado. Solo tokens. */
+    .ca-btn-wrap { display: inline-flex; }
+    .ca-btn:disabled { opacity: .55; cursor: default; }
+    .ca-sinvig { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border-radius: 12px; border: 1px solid var(--propia-warning-border); background: var(--propia-warning-bg); color: var(--propia-text-body); font-size: 13px; }
+    .ca-sinvig svg { flex-shrink: 0; color: var(--propia-warning); }
+    .ca-sinvig-t { flex: 1; min-width: 200px; }
     .ca-empty-cta { background: var(--propia-bg-card); border: 1.5px dashed var(--propia-border-input); border-radius: 16px; padding: 44px 24px; text-align: center; }
     .ca-empty-t { font-size: 17px; font-weight: 800; color: var(--propia-text-h1); }
     .ca-empty-s { font-size: 13px; color: var(--propia-text-muted); margin-top: 5px; }
@@ -552,11 +571,20 @@ else
         {
             var http = Auth();
             _tablero = await http.GetFromJsonAsync<CarteraTableroDto>("/api/cartera/tablero");
+            // F-08: hay vigencia En ejecucion? (mismo listado que usa Finanzas; si falla no se bloquea el boton).
+            try
+            {
+                var pres = await http.GetFromJsonAsync<List<Propia.Application.Presupuesto.PresupuestoDto>>("/api/presupuesto") ?? new();
+                _hayVigenciaActiva = pres.Any(p => p.Estado == EstadoPresupuesto.EnEjecucion);
+            }
+            catch { _hayVigenciaActiva = true; }
             try { _estados = await http.GetFromJsonAsync<List<EstadoCarteraDto>>("/api/cartera/estados") ?? new(); } catch { }
             await CargarConfigAsync();   // orden/ancho de columnas por copropiedad
         }
         catch (Exception ex) { _msg = ex.Message; _msgClass = "alert-danger"; }
     }
+
+    private bool _hayVigenciaActiva = true;
 
     private async Task Sincronizar()
     {

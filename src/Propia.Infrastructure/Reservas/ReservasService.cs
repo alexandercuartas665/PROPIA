@@ -79,7 +79,7 @@ public class ReservasService : IReservasService
             .Select(z => new { z.Id, z.Nombre })
             .ToListAsync(ct);
         var nombrePorZona = zonas.ToDictionary(z => z.Id, z => z.Nombre);
-        return configs.Select(c => MapConfig(c, nombrePorZona.TryGetValue(c.ZonaComunId, out var n) ? n : "(zona)")).ToList();
+        return configs.Select(c => MapConfig(c, nombrePorZona.TryGetValue(c.ZonaComunId, out var n) ? n : ZonaEliminada)).ToList();
     }
 
     public async Task<ZonaConfigDto?> GetConfigAsync(Guid zonaComunId, CancellationToken ct)
@@ -87,7 +87,7 @@ public class ReservasService : IReservasService
         var c = await _db.ZonaConfigReservas.AsNoTracking().Include(x => x.Franjas)
             .FirstOrDefaultAsync(x => x.ZonaComunId == zonaComunId, ct);
         if (c is null) return null;
-        var n = await _db.ZonasComunes.AsNoTracking().Where(z => z.Id == zonaComunId).Select(z => z.Nombre).FirstOrDefaultAsync(ct) ?? "(zona)";
+        var n = await _db.ZonasComunes.AsNoTracking().Where(z => z.Id == zonaComunId).Select(z => z.Nombre).FirstOrDefaultAsync(ct) ?? ZonaEliminada;
         return MapConfig(c, n);
     }
 
@@ -328,9 +328,13 @@ public class ReservasService : IReservasService
         return r is null ? null : await MapReservaAsync(r, ct);
     }
 
+    // Auditoria UX V-02 (2026-11-25): si la zona ya no existe (registros antiguos borrados por fuera de la app; hoy
+    // EliminarZonaComunAsync no deja borrar una zona con reservas) se muestra "Zona eliminada", no "(zona)".
+    public const string ZonaEliminada = "Zona eliminada";
+
     private async Task<ReservaDto> MapReservaAsync(Reserva r, CancellationToken ct)
     {
-        var zona = await _db.ZonasComunes.AsNoTracking().Where(z => z.Id == r.ZonaComunId).Select(z => z.Nombre).FirstOrDefaultAsync(ct) ?? "(zona)";
+        var zona = await _db.ZonasComunes.AsNoTracking().Where(z => z.Id == r.ZonaComunId).Select(z => z.Nombre).FirstOrDefaultAsync(ct) ?? ZonaEliminada;
         var per = await _db.Personas.AsNoTracking().Where(p => p.Id == r.PersonaId).Select(p => p.Nombres + " " + p.Apellidos).FirstOrDefaultAsync(ct) ?? "";
         var unid = await _db.UnidadesPrivadas.AsNoTracking().Where(u => u.Id == r.UnidadPrivadaId).Select(u => u.Numero).FirstOrDefaultAsync(ct) ?? "";
         ReservaPago? pago = r.ReservaPagoId is null ? null : await _db.ReservaPagos.AsNoTracking().FirstOrDefaultAsync(p => p.Id == r.ReservaPagoId, ct);
