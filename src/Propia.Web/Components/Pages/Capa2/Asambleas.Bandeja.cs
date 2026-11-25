@@ -71,7 +71,7 @@ public partial class Asambleas
         try
         {
             var resp = await EnviarAsync(h => h.GetAsync("/api/asambleas"));
-            resp.EnsureSuccessStatusCode();
+            await Propia.Web.Services.HttpRespuestas.AsegurarOkAsync(resp);
             _b = await resp.Content.ReadFromJsonAsync<SesionBandejaDto>();
             await CargarConfigColsAsync();
             _sel.RemoveWhere(id => Items.All(s => s.Id != id));
@@ -158,7 +158,7 @@ public partial class Asambleas
         try
         {
             var rc = await EnviarAsync(h => h.GetAsync("/api/asambleas/config"));
-            rc.EnsureSuccessStatusCode();
+            await Propia.Web.Services.HttpRespuestas.AsegurarOkAsync(rc);
             var c = await rc.Content.ReadFromJsonAsync<AsambleaConfigDto>();
             if (c is null) return;
             _asmCfg = new ConfigVm
@@ -241,7 +241,7 @@ public partial class Asambleas
         try
         {
             var rl = await EnviarAsync(h => h.GetAsync($"/api/mi-copropiedad/unidades-config?entidad={EntCfg}"));
-            rl.EnsureSuccessStatusCode();
+            await Propia.Web.Services.HttpRespuestas.AsegurarOkAsync(rl);
             var lista = await rl.Content.ReadFromJsonAsync<List<UnidadCampoConfigDto>>() ?? new();
             _cfg = lista.ToDictionary(c => c.CampoClave, StringComparer.Ordinal);
         }

@@ -56,7 +56,9 @@ public class CamposFormulaUsuarioDirectorioTests
             var req = NuevaUnidad("T1-202") with
             {
                 CoeficientePropiedad = 1.5m,
-                ModuloContributivo1 = 2m, ModuloContributivo2 = 3m, ModuloContributivo3 = 5m,
+                ModuloContributivo1 = 2m,
+                ModuloContributivo2 = 3m,
+                ModuloContributivo3 = 5m,
             };
             var uId = (await svc.CrearUnidadAsync(req, CancellationToken.None)).Id;
             // Fuentes de SISTEMA (sin crear campos propios): los 3 modulos con valor + coeficiente.
@@ -162,6 +164,53 @@ public class CamposFormulaUsuarioDirectorioTests
     }
 
     [Fact]
+    public async Task Directorio_acepta_empresa_del_tenant_y_resuelve_su_razon_social()
+    {
+        // 2026-11-24: Directorio = tercero (persona O empresa). La empresa vinculada al tenant se acepta y
+        // personas-vinculadas la devuelve con su razon social; en otro tenant se rechaza y no aparece.
+        var tA = await SeedTenantAsync("F2 DirEmp A");
+        var tB = await SeedTenantAsync("F2 DirEmp B");
+        Guid empresaId;
+        await using (var ctx = OwnerCtx())
+        {
+            var e = new Empresa { Nit = "8" + Guid.NewGuid().ToString("N")[..9], RazonSocial = "Constructora Test SAS" };
+            ctx.Empresas.Add(e);
+            ctx.DirectorioVinculos.Add(new DirectorioVinculo
+            {
+                TenantId = tA,
+                EntidadTipo = EntidadDirectorio.Empresa,
+                EntidadId = e.Id,
+                FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+                Estado = EstadoVinculo.Activo
+            });
+            await ctx.SaveChangesAsync();
+            empresaId = e.Id;
+        }
+        try
+        {
+            var svcA = BuildService(tA);
+            var uA = (await svcA.CrearUnidadAsync(NuevaUnidad("T1-208"), CancellationToken.None)).Id;
+            var campoA = await CrearCampoAsync(svcA, "Contratista", TipoCampoTablero.Directorio);
+            await svcA.SetCampoValorUnidadAsync(uA, campoA, new SetCampoValorRequest(empresaId.ToString()), CancellationToken.None);
+            var nombres = await BuildService(tA).ListPersonasVinculadasAsync(CancellationToken.None);
+            Assert.Contains(nombres, n => n.PersonaId == empresaId && n.NombreCompleto == "Constructora Test SAS");
+
+            var svcB = BuildService(tB);
+            var uB = (await svcB.CrearUnidadAsync(NuevaUnidad("T1-208"), CancellationToken.None)).Id;
+            var campoB = await CrearCampoAsync(svcB, "Contratista", TipoCampoTablero.Directorio);
+            await Assert.ThrowsAnyAsync<Exception>(() => svcB.SetCampoValorUnidadAsync(
+                uB, campoB, new SetCampoValorRequest(empresaId.ToString()), CancellationToken.None));
+            Assert.DoesNotContain(await BuildService(tB).ListPersonasVinculadasAsync(CancellationToken.None), n => n.PersonaId == empresaId);
+        }
+        finally
+        {
+            await CleanupAsync(tA); await CleanupAsync(tB);
+            await using var ctx = OwnerCtx();
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM empresas WHERE id = {empresaId}");
+        }
+    }
+
+    [Fact]
     public async Task Usuario_persiste_el_id_y_se_relee_en_un_contexto_nuevo()
     {
         var t = await SeedTenantAsync("F2 Persistencia");
@@ -246,8 +295,11 @@ public class CamposFormulaUsuarioDirectorioTests
         await using var ctx = OwnerCtx();
         ctx.DirectorioVinculos.Add(new DirectorioVinculo
         {
-            TenantId = tenantId, EntidadTipo = EntidadDirectorio.Persona, EntidadId = personaId,
-            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow), Estado = EstadoVinculo.Activo
+            TenantId = tenantId,
+            EntidadTipo = EntidadDirectorio.Persona,
+            EntidadId = personaId,
+            FechaDesde = DateOnly.FromDateTime(DateTime.UtcNow),
+            Estado = EstadoVinculo.Activo
         });
         await ctx.SaveChangesAsync();
     }

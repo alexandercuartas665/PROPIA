@@ -157,4 +157,43 @@ public static class ModuloCodigo
         Presupuesto, Cartera, Asambleas, Pqrs, Tareas, Mantenimiento,
         Porteria, Reservas, Comunicaciones, Documentos, Reportes, Plantillas, Siniestros
     };
+
+    /// <summary>Nombre visible del modulo (mensajes al usuario, p.ej. "sin permiso"). Mismo texto que la matriz
+    /// de Roles y permisos. Texto de UI con tildes via escapes Unicode (el codigo es ASCII).</summary>
+    public static string Nombre(string? codigo) => codigo switch
+    {
+        Dashboard => "Dashboard",
+        MiCopropiedad => "Mi Copropiedad",
+        Directorio => "Directorio",
+        UsuariosAccesos => "Usuarios y Accesos",
+        Presupuesto => "Presupuesto y Pagos",
+        Cartera => "Cartera",
+        Asambleas => "Asambleas",
+        Pqrs => "PQRSD",
+        Tareas => "Tareas y Proyectos",
+        Mantenimiento => "Mantenimiento",
+        Porteria => "Porter\u00eda",
+        Reservas => "Reservas",
+        Comunicaciones => "Comunicaciones",
+        Documentos => "Documentos",
+        Reportes => "Reportes",
+        Plantillas => "Plantillas de documentos",
+        Siniestros => "Siniestros",
+        _ => codigo ?? ""
+    };
+}
+
+/// <summary>Verbo en infinitivo de cada accion de permiso (mensajes al usuario).</summary>
+public static class AccionPermisoTexto
+{
+    public static string Verbo(AccionPermiso a) => a switch
+    {
+        AccionPermiso.Ver => "ver",
+        AccionPermiso.Crear => "crear",
+        AccionPermiso.Editar => "editar",
+        AccionPermiso.Eliminar => "eliminar",
+        AccionPermiso.Aprobar => "aprobar",
+        AccionPermiso.Exportar => "exportar",
+        _ => a.ToString().ToLowerInvariant()
+    };
 }

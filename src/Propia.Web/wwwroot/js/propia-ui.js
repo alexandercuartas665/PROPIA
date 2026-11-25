@@ -160,6 +160,32 @@
         } catch (e) { }
     };
 
+    // Variante para un panel que CRECE despues de abrir (p.ej. CampoDirectorio: buscador y luego resultados): decide
+    // arriba/abajo por el alto maximo esperado (altoMax), ancla por bottom cuando abre hacia arriba (crece hacia
+    // arriba sin taparse) y limita max-height al espacio disponible.
+    window.propiaUI.anchorFloatMenuCrece = function (btnSel, menuSel, altoMax) {
+        try {
+            var btn = document.querySelector(btnSel), menu = document.querySelector(menuSel);
+            if (!btn || !menu) return;
+            var b = btn.getBoundingClientRect(), vh = window.innerHeight, vw = window.innerWidth;
+            var mw = menu.offsetWidth || 340, abajo = vh - b.bottom - 12, arriba = b.top - 12;
+            menu.style.position = 'fixed';
+            var left = b.left;
+            if (left + mw > vw - 8) left = Math.max(8, vw - mw - 8);
+            menu.style.left = left + 'px';
+            if (abajo >= (altoMax || 380) || abajo >= arriba) {
+                menu.style.bottom = 'auto';
+                menu.style.top = (b.bottom + 4) + 'px';
+                menu.style.maxHeight = Math.max(160, abajo) + 'px';
+            } else {
+                menu.style.top = 'auto';
+                menu.style.bottom = (vh - b.top + 4) + 'px';
+                menu.style.maxHeight = Math.max(160, arriba) + 'px';
+            }
+            menu.style.overflowY = 'auto';
+        } catch (e) { }
+    };
+
     // ---------- Sidebar toggle (mobile/responsive) ----------
 
     // Aplica el "hueco" que el contenido y el header dejan para el sidebar de columna unica.
@@ -1204,8 +1230,15 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
             var el = e.target, box = el && el.closest ? el.closest('[data-trampa-foco]') : null;
             if (!box) return;
-            var f = Array.prototype.filter.call(box.querySelectorAll('[data-foco]'), function (x) {
-                return !x.disabled && x.offsetParent !== null;
+            // Sin [data-foco] marcados (p.ej. el modal de alta de SelectorPersona, o CampoDirectorio que lo envuelve):
+            // se recorren los controles enfocables visibles de la caja.
+            var sel = box.querySelector('[data-foco]') ? '[data-foco]'
+                : 'input, select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])';
+            var f = Array.prototype.filter.call(box.querySelectorAll(sel), function (x) {
+                if (x.disabled || x.offsetParent === null || x.type === 'hidden') return false;
+                // Un modal anidado (otra trampa dentro de esta caja) no entra en el recorrido de la de afuera.
+                var dueno = x.closest('[data-trampa-foco]');
+                return dueno === box && (sel === '[data-foco]' || x.tabIndex >= 0);
             });
             e.preventDefault();
             e.stopImmediatePropagation();
@@ -1218,6 +1251,28 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
     // Trae a la vista (dentro de su lista con scroll) el elemento con ese id, sin mover la pagina.
     window.propiaUI.scrollIntoViewById = function (id) {
         try { var el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'nearest' }); } catch (e) { }
+    };
+    // Como focoSiSigue, pero el destino es un selector dentro de la caja (un input de un componente hijo sin ref).
+    window.propiaUI.focoSelSiSigue = function (wrap, sel) {
+        try {
+            var a = document.activeElement;
+            if (a && a !== document.body && wrap && !wrap.contains(a)) return false;
+            var el = wrap ? wrap.querySelector(sel) : null;
+            if (el) el.focus();
+            return true;
+        } catch (e) { return true; }
+    };
+    // Agrega texto al final de un input de la caja, lo enfoca y dispara 'input' (Blazor @oninput lo toma): letras
+    // tecleadas antes de que el buscador de un mini modal tuviera el foco.
+    window.propiaUI.semillaEn = function (wrap, sel, texto) {
+        try {
+            var el = wrap ? wrap.querySelector(sel) : null;
+            if (!el || !texto) return;
+            el.focus();
+            el.value = (el.value || '') + texto;
+            var n = el.value.length; try { el.setSelectionRange(n, n); } catch (x) { }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) { }
     };
     // true si el foco sigue dentro del contenedor (para cerrar un mini modal solo cuando el foco se va de el).
     window.propiaUI.focoDentro = function (box) {

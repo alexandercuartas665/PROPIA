@@ -1183,6 +1183,12 @@ else
                                                     case TipoCampoTablero.Booleano:
                                                         <label class="tbc-campo-bool"><input type="checkbox" checked="@CampoBool(campo.Id)" @onchange="(e) => SetCampoBool(campo.Id, e)" /> Si</label>
                                                         break;
+                                                    case TipoCampoTablero.Directorio:
+                                                        var dvf = CampoVal(campo.Id);
+                                                        <CampoDirectorio TriggerClass="tbc-cdir" TextoVacio="Buscar o crear un tercero" Jwt="@_jwt" Titulo="@c.Label"
+                                                                         Valor="@dvf" Nombre="@NombreDirectorio(dvf)"
+                                                                         OnCambio="@(p => { if (_cardDraft is not null) ElegirDirectorioDraft(_cardDraft.Campos, campo.Id, p); })" />
+                                                        break;
                                                     default:
                                                         <input type="text" value="@CampoVal(campo.Id)" @onchange="(e) => SetCampoVal(campo.Id, e)" placeholder="@c.Descripcion" />
                                                         break;
@@ -1907,19 +1913,8 @@ else
 
     // T-2: el API responde {"error":"..."} en los 400 de validacion. Sin esto el banner mostraba el JSON
     // crudo. Extrae el texto del campo 'error'; si el cuerpo no es ese JSON, devuelve el cuerpo tal cual.
-    private static async Task<string> ErrTxtAsync(HttpResponseMessage resp)
-    {
-        var cuerpo = await resp.Content.ReadAsStringAsync();
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(cuerpo);
-            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("error", out var e) && e.GetString() is { Length: > 0 } m)
-                return m;
-        }
-        catch { }
-        return string.IsNullOrWhiteSpace(cuerpo) ? "Ocurrio un error." : cuerpo;
-    }
+    // Mensaje del API ("error") o uno claro por codigo (401 sesion, 403 permiso): helper compartido.
+    private static Task<string> ErrTxtAsync(HttpResponseMessage resp) => Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(resp);
 
     private List<TableroDto>? _tableros;
     private List<TenantInfoDto> _tenants = new();   // copropiedades a las que tiene acceso el usuario
@@ -2034,7 +2029,7 @@ else
         "vence" => t => t.FechaVencimiento ?? DateOnly.MaxValue,
         "valor" => t => t.Valor ?? 0m,
         "origen" => t => t.OrigenReferencia ?? "",
-        _ => t => Guid.TryParse(col, out var cid) ? CampoDeTarea(t, cid) : ""
+        _ => t => Guid.TryParse(col, out var cid) ? CampoTextoTarea(t, cid) : ""
     };
     // Filas recien creadas en la fila de alta (Alex 2026-11-22): quedan AL FINAL de la lista, en el orden en que se
     // crearon y resaltadas en verde palido, hasta el proximo refresco (recargar la pagina o cambiar de tablero), para
@@ -2093,7 +2088,8 @@ else
         if (_board?.Estados.FirstOrDefault()?.Id is Guid eid)
         {
             var d = NuevaFilaDe(eid);
-            if (!string.IsNullOrWhiteSpace(d.Titulo)) await CrearDesdeNuevaFila(eid);
+            // No se pudo crear: la fila queda abierta con lo escrito (el aviso ya salio como toast).
+            if (!string.IsNullOrWhiteSpace(d.Titulo) && !await CrearDesdeNuevaFila(eid)) { StateHasChanged(); return; }
         }
         _altaTblOpen = false;
         StateHasChanged();
@@ -2239,7 +2235,7 @@ else
             null, false, sf.Valor, null, null, oTipo, oRef, sf.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: sf.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
-        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
         _nuevaSubfilas[padre.Id] = new NuevaFilaDraft { EstadoId = padre.EstadoId, PrioridadId = padre.PrioridadId };
         _expandidas.Add(padre.Id);
         await RecargarBoard();
@@ -2393,6 +2389,13 @@ else
         _ => null
     };
     private void ColToast(string m) { _colToast = m; }
+    // Fallo de una llamada al API (Alex 2026-11-24): aviso claro (p.ej. "No tienes permiso para editar en Tareas y
+    // Proyectos...") en vez de revertir en silencio. Toast abajo (se ve desde la tabla) + mensaje arriba.
+    private async Task AvisarFalloAsync(HttpResponseMessage r)
+    {
+        var m = await Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(r);
+        _msg = m; _msgClass = "alert-danger"; ColToast(m);
+    }
     // Flecha del header de columna (abre el menu de columna). Se inserta en cada celda del header.
     private RenderFragment ChevCol(string clave, string label, bool dyn) =>@<button type="button" class="tb-lc-ed" title="Opciones de columna" @onclick:stopPropagation="true" @onclick="(e) => AbrirColMenu(e, clave, label, dyn)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg></button>;
     private IEnumerable<(string Key, string Label)> OpcionesOrden()
@@ -2654,7 +2657,7 @@ else
     {
         // Agrupar por campo propio (dinamico): "cd:{id}", por el valor del campo en cada tarea.
         if (clave.StartsWith("cd:", StringComparison.Ordinal) && CampoDinamico(clave[3..]) is { } gdef)
-            return t => { var v = CampoValor(t, gdef.Id); return string.IsNullOrWhiteSpace(v) ? "Sin dato" : v!; };
+            return t => { var v = CampoTextoTarea(t, gdef.Id); return string.IsNullOrWhiteSpace(v) ? "Sin dato" : v; };
         return clave switch
         {
             "prioridad" => t => PrioNombreOf(t),
@@ -3323,7 +3326,7 @@ else
                 if (_boardMode == "tablero") _expandidas.Add(padreId);
                 await RecargarBoard();   // refresca _board.Tareas -> Hijos(padreId) + chip del padre
             }
-            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
         }
         finally { _busy = false; }
     }
@@ -3786,6 +3789,7 @@ else
             try { var raw = await Auth().GetFromJsonAsync<List<PersonaRaw>>("/api/directorio/personas") ?? new(); _personas = raw.Select(p => new PersonaMini(p.Id, ($"{p.Nombres} {p.Apellidos}").Trim())).ToList(); }
             catch { _personas = new(); }
         }
+        await CargarNombresDirectorioAsync();   // solo si el tablero tiene campos tipo Directorio
         if (_unidades is null || _zonas is null || _equipos is null) await CargarContextoAsync();
     }
 
@@ -3857,6 +3861,7 @@ else
         _board = await Auth().GetFromJsonAsync<TableroBoardDto>($"/api/tareas/tableros/{_board.Tablero.Id}/board?verCerradas={(_verCerradas ? "true" : "false")}{OrigenQs()}");
         SyncTareas();
         ReconciliarOrden();
+        await CargarNombresDirectorioAsync();   // un campo Directorio recien creado en el tablero
         if (OnCambio.HasDelegate) await OnCambio.InvokeAsync();   // el host (ej. avance del PQRSD) se refresca
     }
 
@@ -4098,7 +4103,7 @@ else
         "descripcion" => t.Descripcion ?? "",
         "valor" => t.Valor?.ToString(CultureInfo.InvariantCulture) ?? "",
         "vence" => t.FechaVencimiento?.ToString("yyyy-MM-dd") ?? "",
-        _ => CampoDeTarea(t, Guid.TryParse(campo, out var g) ? g : Guid.Empty)
+        _ => CampoTextoTarea(t, Guid.TryParse(campo, out var g) ? g : Guid.Empty)
     };
     private DateOnly? FechaFiltro(TareaListaDto t, string campo)
     {
@@ -4672,6 +4677,13 @@ else
                         @* Campo calculado: solo lectura (se computa en el servidor desde otros campos). *@
                         <div class="tb-editable" title="Campo calculado" style="cursor:default">@(string.IsNullOrWhiteSpace(CampoValor(t, campo.Id)) ? "-" : CampoValor(t, campo.Id))</div>
                     }
+                    else if (campo.Tipo == TipoCampoTablero.Directorio)
+                    {
+                        @* Tercero del Directorio: mini modal para buscar / traer / crear; elegir guarda de una vez. *@
+                        var dv = CampoValor(t, campo.Id);
+                        <CampoDirectorio TriggerClass="lbx-plain" Jwt="@_jwt" Titulo="@campo.Label" Valor="@dv" Nombre="@NombreDirectorio(dv)"
+                                         OnCambio="@(c => ElegirDirectorioFilaAsync(tarea.Id, campo.Id, c))" />
+                    }
                     else if (campo.Tipo == TipoCampoTablero.Seleccion)
                     {
                         @* Lista con busqueda (Airtable): elegir guarda de una vez. *@
@@ -4739,7 +4751,7 @@ else
         PatchLocal(tareaId, t => t with { EstadoId = estadoId, EstadoNombre = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Nombre ?? t.EstadoNombre, EstadoColor = _board?.Estados.FirstOrDefault(x => x.Id == estadoId)?.Color ?? t.EstadoColor });
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; await RecargarBoard(); }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); await RecargarBoard(); }
     }
 
     // ================= Edicion inline tipo Excel (vista tabla) =================
@@ -4797,7 +4809,7 @@ else
             if (body is not null)
             {
                 var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", body);
-                if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; await RecargarBoard(); }
+                if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); await RecargarBoard(); }
             }
         }
         finally { _editBusy = false; }
@@ -4817,7 +4829,7 @@ else
         if (op is null) return;
         PatchLocal(id, t => t with { PrioridadId = op.Id, PrioridadNombre = op.Nombre, PrioridadColor = op.Color, PrioridadOrden = op.Orden });
         var resp = await Auth().PatchAsJsonAsync($"/api/tareas/{id}/inline", new { Campo = "prioridad", Guids = new[] { opId } });
-        if (!resp.IsSuccessStatusCode) await RecargarBoard();
+        if (!resp.IsSuccessStatusCode) { await AvisarFalloAsync(resp); await RecargarBoard(); }
     }
 
     // ---- Valor de un campo personalizado inline ----
@@ -4836,7 +4848,7 @@ else
             });
             CancelarEd();
             var resp = await Auth().PutAsJsonAsync($"/api/tareas/{id}/campo-valor/{campoId}", new { Valor = val });
-            if (!resp.IsSuccessStatusCode) await RecargarBoard();
+            if (!resp.IsSuccessStatusCode) { await AvisarFalloAsync(resp); await RecargarBoard(); }
         }
         finally { _editBusy = false; }
     }
@@ -4875,14 +4887,14 @@ else
             return t with { Responsables = resp, AsignadoPersonaId = ids.Count > 0 ? ids[0] : (Guid?)null, AsignadoNombre = ids.Count > 0 ? NombreMiembro(ids[0]) : null };
         });
         var r = await Auth().PatchAsJsonAsync($"/api/tareas/{tareaId}/inline", new { Campo = "asignados", Guids = ids });
-        if (!r.IsSuccessStatusCode) await RecargarBoard();
+        if (!r.IsSuccessStatusCode) { await AvisarFalloAsync(r); await RecargarBoard(); }
     }
 
     // ---- Duplicar / eliminar fila ----
     private async Task EliminarFila(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
-        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; StateHasChanged(); return; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); StateHasChanged(); return; }
         _tareas.RemoveAll(t => t.Id == id);
         // Recargar: el padre trae su contador de subtareas y su progreso del servidor, y las hijas de la
         // tarea eliminada (borradas en cascada) dejan de existir. Sin esto el chip "N" del padre quedaba viejo.
@@ -4971,7 +4983,7 @@ else
             ? await Auth().DeleteAsync($"/api/tareas/{t.Id}/etiquetas/{etqId}")
             : await Auth().PostAsJsonAsync($"/api/tareas/{t.Id}/etiquetas", new Propia.Application.Tareas.AsignarEtiquetaRequest(etqId));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     // Celda de etiquetas de la fila de alta: la celda entera es el disparador (chips o "Etiquetas") de una lista con
     // busqueda y casillas para marcar varias (Alex 2026-11-22). Se alcanza con Tab como los demas campos.
@@ -5022,7 +5034,8 @@ else
         if (_board?.Estados.FirstOrDefault()?.Id is Guid eid && guardar)
         {
             var d = NuevaFilaDe(eid);
-            if (!string.IsNullOrWhiteSpace(d.Titulo)) await CrearDesdeNuevaFila(eid);
+            // No se pudo crear (sin permiso, validacion): la fila queda abierta con lo escrito y el aviso a la vista.
+            if (!string.IsNullOrWhiteSpace(d.Titulo) && !await CrearDesdeNuevaFila(eid)) return;
         }
         _nfFocusEstado = null;   // la fila se cierra: no reenfocar su titulo
         _altaTblOpen = false;
@@ -5035,19 +5048,21 @@ else
         if (e.Key == "Enter" && !e.ShiftKey) await CrearDesdeNuevaFila(estadoId);
         else if (e.Key == "Escape") { _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _altaTblOpen = false; }
     }
-    private async Task CrearDesdeNuevaFila(Guid estadoId)
+    // false = NO se creo (p.ej. 403 sin permiso de Crear): quien llama deja la fila ABIERTA con lo escrito
+    // (Alex 2026-11-24: antes la fila se cerraba y la tarea "desaparecia" sin explicacion).
+    private async Task<bool> CrearDesdeNuevaFila(Guid estadoId)
     {
-        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return; }
-        if (_creandoTarea) return;
+        if (EsBoardForaneo) { AvisoSoloLecturaCompartido(); return false; }
+        if (_creandoTarea) return true;
         var d = NuevaFilaDe(estadoId);
-        if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return;
+        if (string.IsNullOrWhiteSpace(d.Titulo) || _board is null) return true;
         _creandoTarea = true;
-        try { await CrearDesdeNuevaFilaCoreAsync(estadoId, d); }
+        try { return await CrearDesdeNuevaFilaCoreAsync(estadoId, d); }
         finally { _creandoTarea = false; }
     }
-    private async Task CrearDesdeNuevaFilaCoreAsync(Guid estadoId, NuevaFilaDraft d)
+    private async Task<bool> CrearDesdeNuevaFilaCoreAsync(Guid estadoId, NuevaFilaDraft d)
     {
-        if (_board is null) return;
+        if (_board is null) return false;
         var camposValores = d.Campos.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => new TareaCampoValorDto(kv.Key, kv.Value)).ToList();
         var oTipo = string.IsNullOrWhiteSpace(d.OrigenTipo) ? null : d.OrigenTipo;
@@ -5061,8 +5076,12 @@ else
         {
             try { if (await resp.Content.ReadFromJsonAsync<TareaDetalleDto>() is { } det) _recienCreadas.Add(det.Id); } catch { }
             _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId }; _nfFocusEstado = estadoId; await RecargarBoard();
+            return true;
         }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        // El aviso va tambien abajo (toast): el _msg vive arriba del tablero y no se ve desde la fila de alta.
+        var err = await Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(resp);
+        _msg = err; _msgClass = "alert-danger"; ColToast(err);
+        return false;
     }
 
     /// <summary>
@@ -5094,7 +5113,7 @@ else
             null, false, d.Valor, null, null, oTipo, oRef, d.Asignados.ToList(), new List<SubtareaCheckItem>(), camposValores,
             PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
-        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+        if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
         _nuevaFilas[estadoId] = new NuevaFilaDraft { EstadoId = estadoId };
         await RecargarBoard();
         try
@@ -5241,7 +5260,7 @@ else
             PrioridadId: d.PrioridadId ?? PrioridadBaseId);
         var resp = await Auth().PostAsJsonAsync("/api/tareas", ConOrigen(req));
         if (resp.IsSuccessStatusCode) { _composerDraft = new NuevaFilaDraft { EstadoId = estadoId }; _composerReveal = 0; _composerNonce++; _composerFocusPending = true; await RecargarBoard(); }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
 
     // ---- Drag & drop de tarjetas entre columnas del Kanban ----
@@ -5288,7 +5307,7 @@ else
     {
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{tareaId}/estado", new CambiarEstadoRequest(estadoId, null, motivoId));
         if (resp.IsSuccessStatusCode) await RecargarBoard();
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     // Reabre una tarea cerrada moviendola al primer estado NO terminal (vuelve al tablero activo y sale de "Cerrados").
     private async Task ReabrirTareaCerrada(Guid tareaId)
@@ -5604,7 +5623,7 @@ else
             var resp = _tableroDraft.Id is null
                 ? await Auth().PostAsJsonAsync("/api/tareas/tableros", req)
                 : await Auth().PutAsJsonAsync($"/api/tareas/tableros/{_tableroDraft.Id}", req);
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
             _tableroDraft = null;
             await CargarAsync();
             await RecargarBoard();
@@ -5724,7 +5743,7 @@ else
     {
         if (_board is null || string.IsNullOrWhiteSpace(_nuevaPrioridad)) return;
         var resp = await Auth().PostAsJsonAsync("/api/tareas/prioridades", new { Nombre = _nuevaPrioridad.Trim(), Color = (string?)null, Orden = 0, TableroId = _board.Tablero.Id });
-        if (resp.IsSuccessStatusCode) { _nuevaPrioridad = ""; await RecargarBoard(); } else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        if (resp.IsSuccessStatusCode) { _nuevaPrioridad = ""; await RecargarBoard(); } else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     private async Task GuardarPrioNombre(PrioridadTareaDto p)
     {
@@ -5732,14 +5751,14 @@ else
         var nom = (_prioEditVal ?? "").Trim();
         if (string.IsNullOrWhiteSpace(nom) || nom == p.Nombre) return;
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{p.Id}", new { Nombre = nom, p.Color, p.Orden, p.Activo });
-        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     private void PrioKeydown(KeyboardEventArgs e, PrioridadTareaDto p) { if (e.Key == "Enter") _ = GuardarPrioNombre(p); else if (e.Key == "Escape") _prioEditId = null; }
     private async Task GuardarPrioColor(PrioridadTareaDto p, string color)
     {
         _prioColorId = null;
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/prioridades/{p.Id}", new { p.Nombre, Color = color, p.Orden, p.Activo });
-        if (resp.IsSuccessStatusCode) await RecargarBoard();
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else await AvisarFalloAsync(resp);
     }
     private async Task MoverPrioridad(int idx, int dir)
     {
@@ -5755,7 +5774,7 @@ else
     private async Task EliminarPrioridadCfg(Guid id)
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/prioridades/{id}");
-        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     private int CountPrioridad(Guid id) => _tareas.Count(t => t.PrioridadId == id && t.PadreId == null);
 
@@ -5803,7 +5822,7 @@ else
         try
         {
             var resp = await Auth().PostAsJsonAsync("/api/tareas/estados", new CrearEstadoRequest(_cfgEstadoNew.Trim(), null, 0, _board.Tablero.Id));
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
             _cfgEstadoNew = "";
             await RecargarBoard();
         }
@@ -5929,7 +5948,7 @@ else
                     _campoDraft.Label.Trim(), _campoDraft.Tipo, opciones, _campoDraft.MostrarEnFiltro, _campoDraft.Columna,
                     descripcion, _campoDraft.Requerido, valorDef, _campoDraft.PermiteVarios, camposSuma));
             }
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
             _campoDraft = new CampoDraft();
             await RecargarBoard();
         }
@@ -5946,7 +5965,7 @@ else
     {
         if (_board is null) return;
         var resp = await Auth().PutAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}/orden?direccion={direccion}", null);
-        if (resp.IsSuccessStatusCode) await RecargarBoard();
+        if (resp.IsSuccessStatusCode) await RecargarBoard(); else await AvisarFalloAsync(resp);
     }
 
     // ----- Archivar / restaurar campos (retirar sin perder datos) -----
@@ -5968,14 +5987,14 @@ else
             await RecargarBoard();
             await CargarCamposArchivados();
         }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
     private async Task RestaurarCampo(Guid campoId)
     {
         if (_board is null) return;
         var resp = await Auth().PutAsync($"/api/tareas/tableros/{_board.Tablero.Id}/campos/{campoId}/archivar?archivar=false", null);
         if (resp.IsSuccessStatusCode) { await RecargarBoard(); await CargarCamposArchivados(); }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
 
     // ----- Helpers de campos personalizados -----
@@ -6005,7 +6024,8 @@ else
         </div>
     };
     // Celda de un campo dinamico en la fila de alta: input por tipo, bindeado al borrador. Los calculados
-    // (Separador/Total/Formula) y los relacionales (Usuario/Directorio) salen como "-" (se llenan en la ficha).
+    // (Separador/Total/Formula) y Usuario salen como "-" (se llenan en la ficha). Directorio (2026-11-24): mini
+    // modal CampoDirectorio (buscar / traer / crear tercero), se abre al llegar con Tab.
     private RenderFragment AltaCampoCell(NuevaFilaDraft d, TableroCampoDto c, Func<KeyboardEventArgs, Task>? alTeclear = null) => __builder =>
     {
         var campo = c;
@@ -6016,8 +6036,13 @@ else
                 case TipoCampoTablero.Total:
                 case TipoCampoTablero.Formula:
                 case TipoCampoTablero.Usuario:
-                case TipoCampoTablero.Directorio:
                     <span class="tb-nf-mut" title="Se diligencia en la ficha">&mdash;</span>
+                    break;
+                case TipoCampoTablero.Directorio:
+                    var dva = CampoValAlta(d, campo.Id);
+                    <CampoDirectorio TriggerClass="tb-nf-inp" TextoVacio="Buscar tercero" Jwt="@_jwt" Titulo="@campo.Label"
+                                     Valor="@dva" Nombre="@NombreDirectorio(dva)"
+                                     OnCambio="@(c => ElegirDirectorioDraft(d.Campos, campo.Id, c))" />
                     break;
                 case TipoCampoTablero.AreaTexto:
                     <textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="@campo.Descripcion"
@@ -6094,6 +6119,44 @@ else
 
     private string CampoDeTarea(TareaListaDto t, Guid campoId) => t.CamposValores?.FirstOrDefault(v => v.CampoId == campoId)?.Valor ?? "";
 
+    // ===== Campo tipo Directorio (Alex 2026-11-24): guarda el Guid de un tercero (persona o empresa) del Directorio.
+    // id -> nombre de los terceros vinculados a la copropiedad (personas + empresas). Se completa al elegir/crear.
+    private Dictionary<Guid, string>? _dirNombre;
+    private sealed record TerceroNombreMini(Guid PersonaId, string NombreCompleto);
+    private async Task CargarNombresDirectorioAsync()
+    {
+        if (_dirNombre is not null || !CamposDelTablero.Any(c => c.Tipo == TipoCampoTablero.Directorio)) return;
+        try
+        {
+            var l = await Auth().GetFromJsonAsync<List<TerceroNombreMini>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _dirNombre = l.GroupBy(x => x.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _dirNombre = new(); }
+    }
+    // Nombre visible: el tercero si se resuelve; un texto viejo (de cuando el campo era texto libre) tal cual.
+    private string NombreDirectorio(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return "";
+        if (!Guid.TryParse(v, out var g)) return v;
+        return _dirNombre is not null && _dirNombre.TryGetValue(g, out var n) ? n : "Tercero vinculado";
+    }
+    // Texto comparable de un campo propio (ordenar, filtrar, agrupar): el Directorio por nombre, no por Guid.
+    private string CampoTextoTarea(TareaListaDto t, Guid campoId)
+    {
+        var v = CampoDeTarea(t, campoId);
+        return CamposDelTablero.FirstOrDefault(c => c.Id == campoId)?.Tipo == TipoCampoTablero.Directorio ? NombreDirectorio(v) : v;
+    }
+    private async Task ElegirDirectorioFilaAsync(Guid tareaId, Guid campoId, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is not null) (_dirNombre ??= new())[c.PersonaId] = c.NombreCompleto;
+        await GuardarCampoValorDirecto(tareaId, campoId, c?.PersonaId.ToString());
+    }
+    private void ElegirDirectorioDraft(Dictionary<Guid, string?> campos, Guid campoId, Propia.Application.Directorio.PersonaCandidatoDto? c)
+    {
+        if (c is not null) (_dirNombre ??= new())[c.PersonaId] = c.NombreCompleto;
+        campos[campoId] = c?.PersonaId.ToString();
+    }
+
     // ----- Campos avanzados (Total / multivalor / suma) -----
     private static HashSet<Guid> ParseCamposSuma(string? csv) =>
         string.IsNullOrWhiteSpace(csv) ? new()
@@ -6121,6 +6184,7 @@ else
         if (c.PermiteVarios) return string.Join(", ", v.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         return c.Tipo switch
         {
+            TipoCampoTablero.Directorio => NombreDirectorio(v),
             TipoCampoTablero.Booleano => string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) ? "Si" : "No",
             TipoCampoTablero.Moneda => decimal.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? "$ " + Math.Round(d).ToString("N0", Es) : v,
             _ => v
@@ -6222,7 +6286,7 @@ else
                     if (t2 is not null) await AbrirCardDraft(t2, null);
                 }
             }
-            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
         }
         finally { _copiaBusy = false; }
     }
@@ -6354,7 +6418,7 @@ else
                     PrioridadId: d.PrioridadId ?? PrioridadBaseId);
                 resp = await Auth().PutAsJsonAsync($"/api/tareas/{d.Id}", req);
             }
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
             if (d.Id is Guid guardadaId && _tareaVaciaId == guardadaId) _tareaVaciaId = null;   // se guardo: ya no es "vacia"
 
             // Etiquetas: en tarjeta existente, sincronizar (asignar nuevas / quitar removidas) via endpoints.
@@ -6397,7 +6461,7 @@ else
         try
         {
             var resp = await Auth().DeleteAsync($"/api/tareas/{_cardDraft.Id}");
-            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; return; }
+            if (!resp.IsSuccessStatusCode) { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); return; }
             CerrarCard();
             await RecargarBoard();
         }
@@ -6466,7 +6530,7 @@ else
                 var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
                 if (nueva is not null) { _etiquetasCat.Add(nueva); _nuevaEtiqueta = ""; }
             }
-            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
         }
         finally { _busy = false; }
     }
@@ -6475,7 +6539,7 @@ else
     {
         var resp = await Auth().DeleteAsync($"/api/tareas/etiquetas/{id}");
         if (resp.IsSuccessStatusCode) { _etiquetasCat.RemoveAll(x => x.Id == id); await RecargarBoard(); }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
 
     // ----- Edicion inline de etiquetas desde la vista tabla (chips) -----
@@ -6514,7 +6578,7 @@ else
             if (i >= 0) _etiquetasCat[i] = et;
             await RecargarBoard();
         }
-        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+        else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
     }
 
     private async Task CrearEtiquetaInline()
@@ -6534,7 +6598,7 @@ else
                 var nueva = await resp.Content.ReadFromJsonAsync<EtiquetaTareaDto>();
                 if (nueva is not null) { _etiquetasCat.Add(nueva); _cardDraft.EtiquetaIds.Add(nueva.Id); _nuevaEtiqueta = ""; }
             }
-            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; }
+            else { _msg = await ErrTxtAsync(resp); _msgClass = "alert-danger"; ColToast(_msg); }
         }
         finally { _busy = false; }
     }
@@ -6754,7 +6818,7 @@ else
             return t with { CamposValores = lista };
         });
         var resp = await Auth().PutAsJsonAsync($"/api/tareas/{id}/campo-valor/{campoId}", new { Valor = val });
-        if (!resp.IsSuccessStatusCode) await RecargarBoard();
+        if (!resp.IsSuccessStatusCode) { await AvisarFalloAsync(resp); await RecargarBoard(); }
     }
 
     // Buscador del dropdown de Asignados.
@@ -6791,7 +6855,7 @@ else
             if (det is null) return;
             if ((det.Titulo != TituloTareaVacia && det.Titulo != TituloSubtareaVacia) || det.Comentarios.Count > 0 || (det.Adjuntos?.Count ?? 0) > 0 || Hijos(id).Count > 0) return;
             var resp = await Auth().DeleteAsync($"/api/tareas/{id}");
-            if (resp.IsSuccessStatusCode) await RecargarBoard();
+            if (resp.IsSuccessStatusCode) await RecargarBoard(); else await AvisarFalloAsync(resp);
         }
         catch { }
     }

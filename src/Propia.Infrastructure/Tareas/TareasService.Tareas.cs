@@ -6,6 +6,7 @@ using Propia.Application.Common;
 using Propia.Application.Tareas;
 using Propia.Domain.Entities;
 using Propia.Domain.Enums;
+using Propia.Infrastructure.MiCopropiedad;
 using Propia.Infrastructure.Persistence;
 
 namespace Propia.Infrastructure.Tareas;
@@ -703,10 +704,12 @@ public partial class TareasService
     {
         var t = await _db.Tareas.Where(x => x.Id == tareaId && !x.Eliminada).Select(x => new { x.TableroId }).FirstOrDefaultAsync(ct);
         if (t is null) return false;
-        var campoValido = await _db.TableroCampos.AnyAsync(c => c.Id == campoId && c.TableroId == t.TableroId, ct);
-        if (!campoValido) throw new InvalidOperationException("El campo no pertenece al tablero de la tarea.");
+        var campo = await _db.TableroCampos.Where(c => c.Id == campoId && c.TableroId == t.TableroId).Select(c => new { c.Tipo }).FirstOrDefaultAsync(ct);
+        if (campo is null) throw new InvalidOperationException("El campo no pertenece al tablero de la tarea.");
         var val = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
         var ex = await _db.TareaCampoValores.FirstOrDefaultAsync(v => v.TareaId == tareaId && v.TableroCampoId == campoId, ct);
+        if (campo.Tipo == TipoCampoTablero.Directorio && val is not null && val != ex?.Valor)
+            await CamposAvanzados.ValidarValorAsync(_db, campo.Tipo, val, ct);   // tercero del directorio de ESTE tenant
         if (ex is null)
         {
             if (val is not null)

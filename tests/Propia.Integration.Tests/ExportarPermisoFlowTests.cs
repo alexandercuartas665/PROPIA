@@ -78,6 +78,14 @@ public class ExportarPermisoFlowTests : IAsyncLifetime
 
         var excel2 = await cons.PostAsJsonAsync("/api/reportes/contratos-por-vencer/excel", new { tenantIds = (Guid[]?)null });
         Assert.Equal(HttpStatusCode.Forbidden, excel2.StatusCode);
+        // 2026-11-24: el 403 trae un mensaje claro (modulo + accion + a quien pedirlo), no "forbidden" pelado.
+        var cuerpo403 = await excel2.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.NotNull(cuerpo403);
+        Assert.Equal("forbidden", cuerpo403!["codigo"]);
+        Assert.Equal("permiso_insuficiente", cuerpo403["reason"]);
+        Assert.Equal(ModuloCodigo.Reportes, cuerpo403["modulo"]);
+        Assert.Equal("No tienes permiso para exportar en Reportes. P\u00eddele a un Administrador que lo habilite en "
+            + "Usuarios y Accesos > Roles y permisos.", cuerpo403["error"]);
 
         // 3) Administrador: bypass, puede todo.
         var (admEmail, admPersona) = await CrearUsuarioAsync(userManager, db, "Admin", "Exportar");
