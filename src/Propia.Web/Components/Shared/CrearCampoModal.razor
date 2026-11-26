@@ -50,10 +50,18 @@
                             @foreach (var t in tipos)
                             {
                                 var tt = t;
-                                <button type="button" class="ccm-type @(_tipo == tt ? "on" : "")" @onclick="() => ElegirTipo(tt)">
+                                <button type="button" class="ccm-type @(_tipo == tt && !(_multiple && tt == TipoCampoTablero.Seleccion) ? "on" : "")" @onclick="() => ElegirTipo(tt)">
                                     <span class="ccm-type-ic"><i class="fi @TipoIcon(tt)"></i></span>
                                     <span class="ccm-type-tt"><b>@TipoLabel(tt)</b><span>@TipoDescripcion(tt)</span></span>
                                 </button>
+                                @if (tt == TipoCampoTablero.Seleccion && OfreceListaMultiple && !EsEdicion)
+                                {
+                                    @* Lista multiple (Alex 2026-11-26): misma Lista con "permitir varios". Solo donde el modulo la soporta. *@
+                                    <button type="button" class="ccm-type @(_tipo == TipoCampoTablero.Seleccion && _multiple ? "on" : "")" @onclick="ElegirListaMultiple">
+                                        <span class="ccm-type-ic"><i class="fi fi-rr-ballot-check"></i></span>
+                                        <span class="ccm-type-tt"><b>Lista múltiple</b><span>Varias opciones a la vez</span></span>
+                                    </button>
+                                }
                             }
                         </div>
                     }
@@ -63,7 +71,7 @@
                 <div class="ccm-cfg">
                     @if (_tipo == TipoCampoTablero.Seleccion)
                     {
-                        <OpcionesLista Opciones="_opcs" OpcionesChanged="StateHasChanged" />
+                        <OpcionesLista Opciones="_opcs" OpcionesChanged="StateHasChanged" Paleta="Paleta" />
                     }
                     else if (_tipo == TipoCampoTablero.Formula)
                     {
@@ -149,6 +157,11 @@
     /// con TiposAvanzados=true ya la ofrecen por esa via; esto la habilita donde el "+" NO ofrece relaciones
     /// (p.ej. Vehiculos, Mascotas). El computo de la Funcion ya esta soportado en backend.</summary>
     [Parameter] public bool OfreceFuncion { get; set; }
+    /// <summary>true = ofrece la tarjeta "Lista multiple" al CREAR (Lista con PermiteVarios). Solo modulos cuyo
+    /// catalogo de campos guarda PermiteVarios (hoy Tareas). Alex 2026-11-26.</summary>
+    [Parameter] public bool OfreceListaMultiple { get; set; }
+    /// <summary>Colores de las opciones de lista (null = pasteles). Tareas pasa la paleta unica.</summary>
+    [Parameter] public IReadOnlyList<string>? Paleta { get; set; }
     [Parameter] public EventCallback Guardado { get; set; }
     [Parameter] public EventCallback Cerrado { get; set; }
     /// <summary>Abrir el gestor avanzado (para Formula u otros ajustes que no cubre este modal).</summary>
@@ -247,7 +260,9 @@
         try { _defs = await Auth().GetFromJsonAsync<List<CampoDinDef>>(CatUrl) ?? new(); } catch { _defs = new(); }
     }
 
-    private void ElegirTipo(TipoCampoTablero t) { _tipo = t; _msg = null; }
+    private void ElegirTipo(TipoCampoTablero t) { _tipo = t; _multiple = false; _msg = null; }
+    private bool _multiple;
+    private void ElegirListaMultiple() { _tipo = TipoCampoTablero.Seleccion; _multiple = true; _msg = null; }
 
     // ===== Catalogo de tipos como TARJETAS agrupadas (mismo orden/agrupacion que la maqueta) =====
     // Adaptado al enum real TipoCampoTablero (la maqueta tiene tipos-maqueta extra que no existen en BD).
@@ -374,7 +389,10 @@
             if (EsEdicion)
                 r = await Auth().PutAsJsonAsync($"{CatUrl}/{Editar!.Id}", new ActualizarCampoDefinicionRequest(label, _tipo, opciones, Editar!.Orden, descripcion));
             else
-                r = await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones, descripcion));
+                r = _multiple && _tipo == TipoCampoTablero.Seleccion
+                    // Lista multiple: el catalogo (Tareas: GuardarCampoRequest) recibe PermiteVarios en el alta.
+                    ? await Auth().PostAsJsonAsync(CatUrl, new { Label = label, Tipo = _tipo, Opciones = opciones, Descripcion = descripcion, PermiteVarios = true })
+                    : await Auth().PostAsJsonAsync(CatUrl, new CrearCampoDefinicionRequest(label, _tipo, opciones, descripcion));
 
             if (r.IsSuccessStatusCode)
             {

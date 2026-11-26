@@ -707,7 +707,12 @@ public partial class TareasService
         var campo = await _db.TableroCampos.Where(c => c.Id == campoId && c.TableroId == t.TableroId).Select(c => new { c.Tipo }).FirstOrDefaultAsync(ct);
         if (campo is null) throw new InvalidOperationException("El campo no pertenece al tablero de la tarea.");
         var val = string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
-        var ex = await _db.TareaCampoValores.FirstOrDefaultAsync(v => v.TareaId == tareaId && v.TableroCampoId == campoId, ct);
+        // 2026-11-26: tarea_campo_valores no tiene indice unico (tarea, campo); dos guardados simultaneos podian dejar
+        // filas repetidas y la lectura de la lista fallaba (500). Se conserva la mas reciente y se borran las demas.
+        var filas = await _db.TareaCampoValores.Where(v => v.TareaId == tareaId && v.TableroCampoId == campoId)
+            .OrderByDescending(v => v.UpdatedAt ?? v.CreatedAt).ToListAsync(ct);
+        var ex = filas.FirstOrDefault();
+        if (filas.Count > 1) _db.TareaCampoValores.RemoveRange(filas.Skip(1));
         if (campo.Tipo == TipoCampoTablero.Directorio && val is not null && val != ex?.Valor)
             await CamposAvanzados.ValidarValorAsync(_db, campo.Tipo, val, ct);   // tercero del directorio de ESTE tenant
         if (ex is null)
