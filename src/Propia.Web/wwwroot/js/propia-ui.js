@@ -1137,6 +1137,22 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         return orden.map(function (r) { return r.el; });
     }
     window.propiaUI.focosFilaAlta = focosDe;
+    // 6) Fila de alta de TAREAS (Alex 2026-11-26): al LLEGAR con Tab / Shift+Tab a una lista (Etapa, Responsable,
+    //    Etiquetas, Prioridad, campos de lista) se abre sola, como ya hacia Origen. Se abre con la misma tecla que la
+    //    lista ya entiende (flecha abajo). Solo si el foco llego por Tab hace un instante: al volver al disparador por
+    //    Enter/Esc de la propia lista no se reabre. Origen (.sora-trg) se abre solo al enfocarse.
+    var tabTs = 0;
+    document.addEventListener('keydown', function (e) { if (e.key === 'Tab') tabTs = Date.now(); }, true);
+    document.addEventListener('focusin', function (e) {
+        try {
+            var el = e.target;
+            if (!el || !el.matches || !el.matches('.lbx-trg') || el.matches('.sora-trg') || el.disabled) return;
+            if (Date.now() - tabTs > 500) return;
+            var row = el.closest('.tb-newrow, .tb-subadd-row');
+            if (!row || row.classList.contains('tb-cta-row')) return;
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        } catch (x) { }
+    });
     // 5) Tab / Shift+Tab en una fila de alta: pasan al campo siguiente/anterior en el orden VISUAL (focosDe). Si el foco
     //    esta en el buscador de una lista abierta (.lbx-pop) cuenta su disparador (la lista elige/cierra con su propio
     //    keydown). Desde el ultimo campo (Tab) o el primero (Shift+Tab) no se toca: el Tab final lo maneja
@@ -1275,10 +1291,15 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
                 var dueno = x.closest('[data-trampa-foco]');
                 return dueno === box && (sel === '[data-foco]' || x.tabIndex >= 0);
             });
+            var i = f.indexOf(el);
+            // Dentro de la fila de alta de Tareas (Origen, Alex 2026-11-26: "rebotaba"): Tab desde la ULTIMA parada o
+            // Shift+Tab desde la PRIMERA no da la vuelta: sale al campo vecino de la fila (o, si era el ultimo campo,
+            // al Tab final que guarda). Lo hacen altaAutoSave y el Tab de la fila (5), que tratan .lbx-pop como su disparador.
+            if (f.length && i >= 0 && box.closest('.tb-newrow, .tb-subadd-row')
+                && (e.shiftKey ? i === 0 : i === f.length - 1)) return;
             e.preventDefault();
             e.stopImmediatePropagation();
             if (!f.length) return;
-            var i = f.indexOf(el);
             var n = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i < 0 || i >= f.length - 1 ? 0 : i + 1);
             f[n].focus();
         } catch (x) { }
