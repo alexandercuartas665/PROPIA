@@ -132,6 +132,40 @@ public class ReservasFlowTests : IAsyncLifetime
         await CleanTenant(tenantId);
     }
 
+    // Auditoria UX V-02 (2026-11-25): una reserva cuya zona ya no existe (borrada por fuera de la app, con los
+    // triggers de FK apagados) muestra "Zona eliminada" en vez de "(zona)".
+    [Fact]
+    public async Task Reserva_con_zona_borrada_muestra_Zona_eliminada()
+    {
+        var tenantId = await SeedTenantAsync("Res ZonaBorrada");
+        await SeedPersonaConApplicationUser();
+        var unidadId = await SeedUnidadAsync(tenantId);
+        var (zonaId, _) = await SeedZonaAsync(tenantId, "Salon Perdido", reservable: true);
+        var (svc, _, scope) = Build(tenantId);
+        using var _ = scope;
+        await ConfigurarZonaConFranjasAsync(svc, zonaId);
+
+        var manana = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        var r = await svc.CrearReservaAsync(new CrearReservaRequest(
+            zonaId, _personaId, unidadId, manana,
+            new TimeOnly(10, 0), new TimeOnly(12, 0), true), CancellationToken.None);
+        Assert.Equal("Salon Perdido", r.ZonaNombre);
+
+        var opts = new DbContextOptionsBuilder<PropiaDbContext>().UseNpgsql(_fx.OwnerConnectionString).Options;
+        await using (var ctx = new PropiaDbContext(opts, new TenantContext()))
+        {
+            await ctx.Database.OpenConnectionAsync();
+            await ctx.Database.ExecuteSqlRawAsync("SET session_replication_role = replica");
+            await ctx.Database.ExecuteSqlAsync($"DELETE FROM zonas_comunes WHERE id = {zonaId}");
+            await ctx.Database.ExecuteSqlRawAsync("SET session_replication_role = DEFAULT");
+        }
+
+        var leida = await svc.GetReservaAsync(r.Id, CancellationToken.None);
+        Assert.Equal(ReservasService.ZonaEliminada, leida!.ZonaNombre);
+
+        await CleanTenant(tenantId);
+    }
+
     [Fact]
     public async Task RN05_no_doble_reserva_en_misma_franja()
     {
