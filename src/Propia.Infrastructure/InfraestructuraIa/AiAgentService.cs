@@ -30,7 +30,8 @@ public sealed class AiAgentService : IAiAgentService
             .GroupBy(r => r.AgentId)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-        return agents.Select(a => Map(a, counts.TryGetValue(a.Id, out var c) ? c : 0)).ToList();
+        var claves = await ClavesSistemaAsync(ct);
+        return agents.Select(a => Map(a, counts.TryGetValue(a.Id, out var c) ? c : 0, ClaveDe(a, claves))).ToList();
     }
 
     public async Task<AiAgentDetailDto?> GetAsync(Guid id, CancellationToken ct = default)
@@ -43,7 +44,7 @@ public sealed class AiAgentService : IAiAgentService
         var prompts = await _db.AiAgentPrompts.AsNoTracking()
             .Where(p => p.AgentId == id).OrderBy(p => p.SortOrder)
             .Select(p => MapPrompt(p)).ToListAsync(ct);
-        return new AiAgentDetailDto(Map(agent, resources.Count), resources, prompts);
+        return new AiAgentDetailDto(Map(agent, resources.Count, ClaveDe(agent, await ClavesSistemaAsync(ct))), resources, prompts);
     }
 
     public async Task<AiAgentDto?> CreateAsync(CreateAiAgentRequest request, CancellationToken ct = default)
@@ -95,7 +96,7 @@ public sealed class AiAgentService : IAiAgentService
 
         await _db.SaveChangesAsync(ct);
         var count = await _db.AiAgentResources.CountAsync(r => r.AgentId == id, ct);
-        return Map(agent, count);
+        return Map(agent, count, ClaveDe(agent, await ClavesSistemaAsync(ct)));
     }
 
     public async Task<AiAgentDto?> SetActiveAsync(Guid id, bool active, CancellationToken ct = default)
@@ -105,13 +106,17 @@ public sealed class AiAgentService : IAiAgentService
         agent.IsActive = active;
         await _db.SaveChangesAsync(ct);
         var count = await _db.AiAgentResources.CountAsync(r => r.AgentId == id, ct);
-        return Map(agent, count);
+        return Map(agent, count, ClaveDe(agent, await ClavesSistemaAsync(ct)));
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var agent = await _db.AiAgents.FirstOrDefaultAsync(a => a.Id == id, ct);
         if (agent is null) { return false; }
+        // Auditoria UX X-04 (2026-11-25): los agentes del sistema (plantilla con clave) los busca el codigo por su
+        // clave; no se eliminan, se apagan.
+        if (ClaveDe(agent, await ClavesSistemaAsync(ct)) is not null)
+            throw new InvalidOperationException("Los agentes del sistema no se eliminan: ap\u00e1galo si no lo usas.");
         _db.AiAgents.Remove(agent);
         await _db.SaveChangesAsync(ct);
         return true;
@@ -240,9 +245,18 @@ public sealed class AiAgentService : IAiAgentService
         return true;
     }
 
-    private static AiAgentDto Map(AiAgent a, int resourceCount) =>
+    private static AiAgentDto Map(AiAgent a, int resourceCount, string? claveSistema = null) =>
         new(a.Id, a.Name, a.Role, a.Provider, a.Model, a.SystemPrompt, a.IsActive, a.SortOrder, resourceCount,
-            a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis, a.SaludarConLogo);
+            a.ReactionsEnabled, a.ReactionRatioN, a.ReactionRatioM, a.ReactionEmojis, a.SaludarConLogo, claveSistema);
+
+    // Plantillas del Super Admin que son agentes del sistema (tabla global, sin tenant): Id -> Clave.
+    private Task<Dictionary<Guid, string>> ClavesSistemaAsync(CancellationToken ct) =>
+        _db.AiAgentTemplates.AsNoTracking()
+            .Where(t => t.Clave != null && t.Clave != "")
+            .ToDictionaryAsync(t => t.Id, t => t.Clave!, ct);
+
+    private static string? ClaveDe(AiAgent a, Dictionary<Guid, string> claves) =>
+        a.TemplateId is Guid tid && claves.TryGetValue(tid, out var k) ? k : null;
 
     private static AiAgentResourceDto MapResource(AiAgentResource r) =>
         new(r.Id, r.AgentId, r.Name, r.ResourceType, r.Detail, r.FileUrl, r.FileName, r.SortOrder);

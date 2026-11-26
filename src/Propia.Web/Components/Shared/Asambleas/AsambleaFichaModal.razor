@@ -51,7 +51,17 @@
             @if (_s.SegundaConvocatoria) { <span class="badge bg-warning text-dark">2da convocatoria</span> }
         </div>
         <div class="asm-head-s">
-            @TipoTexto(_s.Tipo) &middot; @_s.Modalidad &middot; @Local(_s.FechaSesion).ToString("yyyy-MM-dd HH:mm")
+            @TipoTexto(_s.Tipo) &middot; @_s.Modalidad &middot;
+            @if (MotivoNoCitar() is { } motivoFecha)
+            {
+                @* Auditoria UX B-01 (2026-11-25): la fecha que impide citar sale en rojo con su atajo para cambiarla. *@
+                <span class="asm-fecha-mal" title="@motivoFecha">@Local(_s.FechaSesion).ToString("yyyy-MM-dd HH:mm")</span>
+                <button type="button" class="asm-link-fecha" @onclick="AbrirCambiarFecha" disabled="@_busy">Cambiar fecha</button>
+            }
+            else
+            {
+                @Local(_s.FechaSesion).ToString("yyyy-MM-dd HH:mm")
+            }
             @if (!string.IsNullOrEmpty(_s.LugarFisico)) { <text> &middot; @_s.LugarFisico</text> }
             @if (!string.IsNullOrEmpty(_s.EnlaceVideo) && !_s.SalaPropia) { <text> &middot; <a href="@_s.EnlaceVideo" target="_blank" rel="noopener">Enlace video</a></text> }
         </div>
@@ -80,7 +90,10 @@
         }
         @if (_s.Estado == EstadoSesion.Borrador)
         {
-            <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="() => CitarAsync(false)" disabled="@_busy" title="Registra a las unidades como participantes y genera la Convocatoria en Documentos. No envía mensajes: para eso está «Enviar enlaces de voto».">Citar (genera la convocatoria)</button>
+            var motivoNoCitar = MotivoNoCitar();
+            <span class="asm-btn-wrap" title="@(motivoNoCitar ?? "Registra a las unidades como participantes y genera la Convocatoria en Documentos. No envía mensajes: para eso está «Enviar enlaces de voto».")">
+                <button class="btn btn-sm" style="background: var(--propia-primary); color: var(--propia-text-inverse);" @onclick="() => CitarAsync(false)" disabled="@(_busy || motivoNoCitar is not null)">Citar (genera la convocatoria)</button>
+            </span>
         }
         @if (_s.Estado == EstadoSesion.Citada)
         {
@@ -221,6 +234,23 @@
         </div></div>
     </div>
 }
+@if (_dlg == Dlg.Fecha)
+{
+    <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Cambiar fecha de la sesión</h5><button type="button" class="btn-close" @onclick="() => _dlg = Dlg.Ninguno"></button></div>
+            <div class="modal-body">
+                <p class="small">Fecha y hora de Colombia. @(_s.Tipo == TipoSesion.AsambleaOrdinaria && !_s.SegundaConvocatoria ? $"La asamblea ordinaria se cita con al menos {PlazoCitacion} días de anticipación." : "")</p>
+                <label class="form-label small">Nueva fecha y hora *</label>
+                <input type="datetime-local" class="form-control form-control-sm" @bind="_nuevaFecha" @bind:format="yyyy-MM-ddTHH:mm" />
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm btn-outline-dark" @onclick="() => _dlg = Dlg.Ninguno">Volver</button>
+                <button class="btn btn-sm btn-primary" @onclick="GuardarFechaAsync" disabled="@_busy">Guardar fecha</button>
+            </div>
+        </div></div>
+    </div>
+}
 @if (_dlg == Dlg.Cancelar)
 {
     <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,0.5);">
@@ -350,7 +380,7 @@
         if (AlCambiar is { } f) _ = InvokeAsync(async () => { try { await f(); } catch { } });
     }
 
-    private enum Dlg { Ninguno, Cerrar, Enlaces, Firmar, Votar, Cancelar, Bloque }
+    private enum Dlg { Ninguno, Cerrar, Enlaces, Firmar, Votar, Cancelar, Bloque, Fecha }
 
     private Guid _id;
     private SesionDetalleDto? _s;
@@ -516,6 +546,35 @@
         if (!m.Success) return api;
         var n = m.Groups[1].Value;
         return $"Falta{(n == "1" ? "" : "n")} {n} día{(n == "1" ? "" : "s")} para la sesión y el plazo de citación configurado es de {m.Groups[2].Value} días.";
+    }
+
+    // Auditoria UX B-01 (2026-11-25): mismas reglas que EnviarCitacionAsync en el API. La fecha pasada y la ordinaria
+    // dentro del plazo no se pueden citar; la extraordinaria dentro del plazo sigue con confirmacion (409).
+    private int PlazoCitacion => _cfg?.PlazoCitacionDias ?? _s?.PlazoCitacionDias ?? 0;
+    private string? MotivoNoCitar()
+    {
+        if (_s is null || _s.Estado != EstadoSesion.Borrador) return null;
+        if (_s.FechaSesion < DateTimeOffset.UtcNow) return "La fecha de la sesi\u00f3n ya pas\u00f3: c\u00e1mbiala antes de citar.";
+        var dias = (int)Math.Floor((_s.FechaSesion - DateTimeOffset.UtcNow).TotalDays);
+        if (!_s.SegundaConvocatoria && _s.Tipo == TipoSesion.AsambleaOrdinaria && dias < PlazoCitacion)
+            return $"La asamblea ordinaria se cita con al menos {PlazoCitacion} d\u00edas de anticipaci\u00f3n (Ley 675, art. 39): faltan {Math.Max(0, dias)}. Cambia la fecha.";
+        return null;
+    }
+
+    private DateTime _nuevaFecha;
+    private void AbrirCambiarFecha()
+    {
+        // Sugerida: la actual si sirve; si no, hoy + plazo + 2 dias a las 7:00 p. m. (como al crear la sesion).
+        var hoy = Local(DateTimeOffset.UtcNow);
+        _nuevaFecha = MotivoNoCitar() is null ? Local(_s!.FechaSesion) : hoy.Date.AddDays(PlazoCitacion + 2).AddHours(19);
+        _dlg = Dlg.Fecha;
+    }
+    private async Task GuardarFechaAsync()
+    {
+        var nueva = new DateTimeOffset(DateTime.SpecifyKind(_nuevaFecha, DateTimeKind.Unspecified), Colombia);
+        if (nueva <= DateTimeOffset.UtcNow) { _msg = "La nueva fecha debe ser futura."; _msgClass = "alert-danger"; _dlg = Dlg.Ninguno; return; }
+        _dlg = Dlg.Ninguno;
+        await EjecutarAsync(h => h.PutAsJsonAsync($"/api/asambleas/{_id}", new ActualizarSesionRequest(FechaSesion: nueva)), "Fecha de la sesi\u00f3n actualizada.");
     }
 
     private async Task PedirAbrirSalaAsync()
@@ -1033,7 +1092,8 @@
         var dias = (int)Math.Floor((_s.FechaSesion - DateTimeOffset.UtcNow).TotalDays);
         var fuera = !_s.SegundaConvocatoria && dias < plazo;
         var bloquea = fuera && _s.Tipo == TipoSesion.AsambleaOrdinaria;
-        return @<div class="asm-nota">Puedes editar el orden del día hasta citar: la citación sale con este orden.@if (fuera) {<text>&#32;<b>Ojo:</b> faltan @Math.Max(0, dias) días para la sesión y el plazo de citación es de @plazo@(bloquea ? " (la asamblea ordinaria no se puede citar así: cambia la fecha)." : ".")</text>}</div>;
+        var pasada = _s.FechaSesion < DateTimeOffset.UtcNow;
+        return @<div class="asm-nota">Puedes editar el orden del día hasta citar: la citación sale con este orden.@if (pasada) {<text>&#32;<b>Ojo:</b> la fecha de la sesión ya pasó: cámbiala para poder citar.</text>} else if (fuera) {<text>&#32;<b>Ojo:</b> faltan @Math.Max(0, dias) días para la sesión y el plazo de citación es de @plazo@(bloquea ? " (la asamblea ordinaria no se puede citar así: cambia la fecha)." : ".")</text>}</div>;
     }
 
     private RenderFragment Orden() => @<div>

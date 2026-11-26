@@ -148,7 +148,47 @@ public class AgentesPlantillaFlowTests
         await CleanupTenantAsync(tB);
     }
 
+    // Auditoria UX X-04 (2026-11-25): el listado marca los agentes del sistema y no se dejan eliminar (solo apagar);
+    // una copia (Duplicar) es un agente propio y si se elimina.
+    [Fact]
+    public async Task Agente_del_sistema_no_se_elimina_y_su_copia_si()
+    {
+        var t = await SeedTenantAsync("[AGT] no eliminar");
+        var (admin, _) = Build(null);
+        await EnsurePlantillaDocumentalAsync(admin);
+        var (_, sistema) = Build(t);
+        var sis = await sistema.AsegurarAsync(PlantillaAgente.ClaveDocumental);
+
+        var agentes = AgentService(t);
+        var lista = await agentes.ListAsync();
+        Assert.Equal(PlantillaAgente.ClaveDocumental, lista.Single(a => a.Id == sis!.Id).ClaveSistema);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => agentes.DeleteAsync(sis!.Id));
+        Assert.Contains("sistema", ex.Message);
+        Assert.NotNull(await agentes.SetActiveAsync(sis!.Id, false));   // apagar si se puede
+        Assert.True((await AgentService(t).GetAsync(sis.Id)) is { Agent.IsActive: false });
+
+        var copia = await AgentService(t).DuplicateAsync(sis.Id);
+        Assert.NotNull(copia);
+        Assert.Null(copia!.ClaveSistema);
+        Assert.True(await AgentService(t).DeleteAsync(copia.Id));
+        Assert.Null(await AgentService(t).GetAsync(copia.Id));
+
+        await CleanupTenantAsync(t);
+    }
+
     // ---------- helpers ----------
+    private AiAgentService AgentService(Guid tenantId)
+    {
+        var tenantCtx = new TenantContext();
+        tenantCtx.SetTenant(tenantId);
+        var options = new DbContextOptionsBuilder<PropiaDbContext>()
+            .UseNpgsql(_fx.AppConnectionString)
+            .AddInterceptors(new TenantConnectionInterceptor(tenantCtx))
+            .Options;
+        return new AiAgentService(new PropiaDbContext(options, tenantCtx), tenantCtx);
+    }
+
     private async Task<AiAgentTemplateDto> EnsurePlantillaDocumentalAsync(IAiAgentTemplateService admin)
     {
         await using (var owner = OwnerDb())

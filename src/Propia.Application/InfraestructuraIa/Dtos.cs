@@ -100,7 +100,10 @@ public sealed record AiAgentDto(
     int ReactionRatioN = 3,
     int ReactionRatioM = 4,
     string? ReactionEmojis = null,
-    bool SaludarConLogo = false);
+    bool SaludarConLogo = false,
+    // Clave de AGENTE DEL SISTEMA (PlantillaAgente.Clave*) de su plantilla; null = agente propio de la copropiedad.
+    // Los del sistema no se eliminan (solo se apagan): auditoria UX X-04 (2026-11-25).
+    string? ClaveSistema = null);
 
 /// <summary>Snapshot de un prompt enrutado en una version historica.</summary>
 public sealed record AgentPromptSnapshotDto(string Name, string? Rule, string Body, int SortOrder);
