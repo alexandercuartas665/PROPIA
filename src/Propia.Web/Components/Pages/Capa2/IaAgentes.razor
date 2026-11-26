@@ -6,6 +6,7 @@
 @inject IJSRuntime Js
 @inject NavigationManager Nav
 @inject ILogger<IaAgentes> Log
+@inject IModalService Modals
 
 <PageTitle>Agentes de IA - PROPIA</PageTitle>
 
@@ -112,7 +113,12 @@ else
                     <button class="ai-btn-primary sm" @onclick="() => AbrirDetalle(agent.Id)">Configurar</button>
                     <button class="ai-btn-ghost sm" @onclick="() => ToggleActivoAsync(agent)">@(agent.IsActive ? "Apagar" : "Encender")</button>
                     <button class="ai-btn-ghost sm" @onclick="() => DuplicarAsync(agent.Id)" disabled="@_busy" title="Duplica el agente con su prompt y recursos. La copia queda apagada.">Duplicar</button>
-                    <button class="ai-btn-danger sm ms-auto" @onclick="() => EliminarAsync(agent.Id)" disabled="@_busy">Eliminar</button>
+                    @* Auditoria UX X-04 (2026-11-25): Eliminar sale de la tarjeta; vive en la ficha (Configurar) con
+                       confirmacion y no existe para los agentes del sistema (solo se apagan). *@
+                    @if (agent.ClaveSistema is not null)
+                    {
+                        <span class="ai-chip ghost ms-auto" title="Agente del sistema: lo usa PROPIA por su clave. Se puede apagar, no eliminar.">Del sistema</span>
+                    }
                 </div>
             </div>
         }
@@ -187,6 +193,14 @@ else
                             <input class="form-check-input" type="checkbox" id="enprod" checked="@_detalle.Agent.IsActive" @onchange="ToggleActivoModalAsync" />
                             <label class="form-check-label small" for="enprod">@(_detalle.Agent.IsActive ? "En produccion" : "Apagado")</label>
                         </div>
+                        @if (_detalle.Agent.ClaveSistema is null)
+                        {
+                            <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="EliminarDesdeFichaAsync" disabled="@_busy">Eliminar agente</button>
+                        }
+                        else
+                        {
+                            <span class="small text-muted ms-auto" title="Lo usa PROPIA por su clave: se puede apagar, no eliminar.">Agente del sistema</span>
+                        }
                     }
                 </div>
 
@@ -1021,6 +1035,8 @@ else
     .mcp-tool-desc { font-size: 11.5px; color: var(--propia-text-muted); line-height: 1.35; }
 </style>
 
+<ModalHost />
+
 @code {
     private string? _jwt;
     private bool _authChecked;
@@ -1291,11 +1307,29 @@ else
         finally { _busy = false; }
     }
 
-    private async Task EliminarAsync(Guid id)
+    // Auditoria UX X-04 (2026-11-25): eliminar desde la ficha, con confirmacion que nombra al agente. El API rechaza
+    // (409) los agentes del sistema.
+    private async Task EliminarDesdeFichaAsync()
     {
-        _busy = true;
-        try { await Auth().DeleteAsync($"/api/ia/agentes/{id}"); await CargarAsync(); }
-        catch (Exception ex) { _loadError = ex.Message; }
+        if (_detalle is null) return;
+        var nombre = _detalle.Agent.Name;
+        if (!await Modals.ConfirmAsync($"Vas a eliminar el agente \u00ab{nombre}\u00bb con sus prompts y recursos. No se puede deshacer. \u00bfContinuar?", "Eliminar agente", confirmar: "Eliminar", peligro: true))
+            return;
+        _busy = true; _editError = null;
+        try
+        {
+            var resp = await Auth().DeleteAsync($"/api/ia/agentes/{_detalle.Agent.Id}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                string? err = null;
+                try { err = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync()).RootElement.GetProperty("error").GetString(); } catch { }
+                _editError = err ?? $"HTTP {(int)resp.StatusCode}";
+                return;
+            }
+            await Cerrar();
+            await CargarAsync();
+        }
+        catch (Exception ex) { _editError = ex.Message; }
         finally { _busy = false; }
     }
 

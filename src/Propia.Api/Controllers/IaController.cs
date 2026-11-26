@@ -358,7 +358,10 @@ public class IaController : ControllerBase
 
     [HttpDelete("agentes/{id:guid}")]
     public async Task<IActionResult> EliminarAgente(Guid id, CancellationToken ct)
-        => await _agents.DeleteAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try { return await _agents.DeleteAsync(id, ct) ? NoContent() : NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+    }
 
     // ---------- Duplicar + versionado (portado de CUBOT.travels) ----------
     [HttpPost("agentes/{id:guid}/duplicar")]
