@@ -881,7 +881,8 @@ window.propiaUI.altaAutoSave = function (dotnetRef, rowSel, method, floatSel, ta
                 if (!row || !act || !row.contains(act)) return;
                 var pop = act.closest('.lbx-pop');
                 if (pop) { var w = pop.closest('.lbx-wrap'); act = w ? w.querySelector('.lbx-trg') : act; }
-                var focos = Array.prototype.filter.call(
+                // Orden VISUAL de las columnas (propiaUI.focosFilaAlta); respaldo: orden del DOM.
+                var focos = window.propiaUI.focosFilaAlta ? window.propiaUI.focosFilaAlta(row) : Array.prototype.filter.call(
                     row.querySelectorAll('input, textarea, select, button, [tabindex]'),
                     function (el) {
                         return !el.disabled && el.tabIndex >= 0 && el.offsetParent !== null
@@ -1117,14 +1118,48 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         var el = e.target;
         if (el && el.matches && el.matches('textarea.tb-nf-area')) cerrarArea(el);
     });
-    // Focos de una fila de alta, en orden (sin los de una lista abierta).
+    // Focos de una fila de alta, en el ORDEN VISUAL de las columnas (sin los de una lista abierta). Tareas reordena
+    // las columnas con `order` de flexbox (solo visual): el orden del DOM no cambia, asi que se ordena por el `order`
+    // de la celda (hijo directo de la fila) y, a igual `order`, por el DOM (sort estable). En tablas sin `order`
+    // (td, grids) todo vale 0 y queda el orden del DOM (Alex 2026-11-26: "que el Tab salte como estan las columnas").
     function focosDe(row) {
-        return Array.prototype.filter.call(row.querySelectorAll('input, textarea, select, button, [tabindex]'), function (x) {
+        var fs = Array.prototype.filter.call(row.querySelectorAll('input, textarea, select, button, [tabindex]'), function (x) {
             // La descripcion abierta (tb-nf-area--open) es position:fixed -> offsetParent null, pero sigue en la fila.
             return !x.disabled && x.tabIndex >= 0 && (x.offsetParent !== null || x.classList.contains('tb-nf-area--open'))
                 && !x.closest('.lbx-pop') && x.type !== 'hidden';
         });
+        var orden = fs.map(function (x, i) {
+            var o = 0;
+            try { o = parseInt(getComputedStyle(celdaDe(row, x)).order, 10) || 0; } catch (z) { }
+            return { el: x, o: o, i: i };
+        });
+        orden.sort(function (a, b) { return a.o - b.o || a.i - b.i; });
+        return orden.map(function (r) { return r.el; });
     }
+    window.propiaUI.focosFilaAlta = focosDe;
+    // 5) Tab / Shift+Tab en una fila de alta: pasan al campo siguiente/anterior en el orden VISUAL (focosDe). Si el foco
+    //    esta en el buscador de una lista abierta (.lbx-pop) cuenta su disparador (la lista elige/cierra con su propio
+    //    keydown). Desde el ultimo campo (Tab) o el primero (Shift+Tab) no se toca: el Tab final lo maneja
+    //    altaAutoSave/subfilaTab (guardar) y si no, el navegador. Respeta defaultPrevented (fecha, Tab final, trampas).
+    document.addEventListener('keydown', function (e) {
+        try {
+            if (e.key !== 'Tab' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+            var el = e.target;
+            if (!el || !el.closest) return;
+            var pop = el.closest('.lbx-pop');
+            if (pop) { var w = pop.closest('.lbx-wrap'); el = w ? w.querySelector('.lbx-trg') : el; }
+            var row = filaAlta(el); if (!row) return;
+            var f = focosDe(row), i = f.indexOf(el);
+            if (i < 0) return;
+            var dest = e.shiftKey ? f[i - 1] : f[i + 1];
+            if (!dest) return;
+            e.preventDefault();
+            // Desde el buscador de una lista abierta, el foco se mueve DESPUES de que Blazor tome el keydown (la lista
+            // elige lo resaltado con Tab); moverlo ya dispararia antes el focusout que cierra la lista sin elegir.
+            if (pop) setTimeout(function () { try { dest.focus(); } catch (z) { } }, 0);
+            else dest.focus();
+        } catch (x) { }
+    });
     document.addEventListener('keydown', function (e) {
         var el = e.target;
         if (e.key === 'Enter' && !e.shiftKey && el && el.matches && el.matches('textarea.tb-nf-area')) e.preventDefault();
