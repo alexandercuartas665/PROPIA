@@ -756,6 +756,48 @@ public class TareasFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Lista_multiple_del_modal_guarda_opciones_json_y_varios_valores()
+    {
+        // Alex 2026-11-26: el modal "Crear campo" crea la "Lista multiple" como Seleccion + PermiteVarios con las
+        // opciones en el formato compartido JSON [{K,Oculta,Color}]. El valor de la tarea guarda una opcion por linea.
+        var tenantId = await SeedTenantAsync("Tareas Lista multiple");
+        var (svc, db, _) = Build(tenantId);
+        try
+        {
+            var tab = await svc.CrearTableroAsync(
+                new GuardarTableroRequest("Tab multi", null, "#6D4FE3", Array.Empty<Guid>()), CancellationToken.None);
+            const string opciones = "[{\"K\":\"Alta\",\"Oculta\":false,\"Color\":null},{\"K\":\"Baja\",\"Oculta\":false,\"Color\":\"#2563EB\"}]";
+            var campo = await svc.AgregarCampoAsync(tab.Id, new GuardarCampoRequest(
+                "Zonas afectadas", TipoCampoTablero.Seleccion, opciones, PermiteVarios: true), CancellationToken.None);
+
+            var def = (await svc.ListarCamposActivosAsync(tab.Id, CancellationToken.None)).Single(x => x.Id == campo.Id);
+            Assert.True(def.PermiteVarios);
+            Assert.Equal(opciones, def.Opciones);   // el JSON se guarda tal cual (lo lee OpcionCampo en la UI)
+
+            var t = await svc.CrearTareaAsync(new CrearTareaRequest("Con varias", null, PrioridadTarea.Normal, null, null, null, null, null, null,
+                TableroId: tab.Id), CancellationToken.None);
+            Assert.True(await svc.SetCampoValorAsync(t.Id, campo.Id, "Alta\nBaja", CancellationToken.None));
+            Assert.Equal("Alta\nBaja", await ValorCampoAsync(db, t.Id, campo.Id));
+
+            // Dos guardados simultaneos podian dejar la MISMA (tarea, campo) repetida (no hay indice unico) y la lista
+            // respondia 500 si el tablero tiene una Formula. Ahora la lista lo tolera y el siguiente guardado deja una fila.
+            await svc.AgregarCampoAsync(tab.Id, new GuardarCampoRequest("Doble valor", TipoCampoTablero.Formula,
+                "{\"pasos\":[{\"op\":\"Multiplicacion\",\"ops\":[{\"t\":\"campo\",\"k\":\"valor\"},{\"t\":\"const\",\"v\":2}]}]}"), CancellationToken.None);
+            db.TareaCampoValores.Add(new TareaCampoValor { TareaId = t.Id, TableroCampoId = campo.Id, Valor = "Alta" });
+            await db.SaveChangesAsync(CancellationToken.None);
+            var lista = await svc.ListarTareasAsync(null, null, null, null, null, null, CancellationToken.None, tableroId: tab.Id);
+            Assert.Contains(lista, x => x.Id == t.Id);
+            Assert.True(await svc.SetCampoValorAsync(t.Id, campo.Id, "Baja", CancellationToken.None));
+            Assert.Equal(1, await db.TareaCampoValores.CountAsync(v => v.TareaId == t.Id && v.TableroCampoId == campo.Id));
+            Assert.Equal("Baja", await ValorCampoAsync(db, t.Id, campo.Id));
+        }
+        finally
+        {
+            await CleanTenant(tenantId);
+        }
+    }
+
+    [Fact]
     public async Task Campo_Directorio_acepta_persona_y_empresa_del_tenant_y_rechaza_ajenos_y_texto()
     {
         // 2026-11-24: el campo Directorio de Tareas vincula un TERCERO (persona o empresa) del directorio de la

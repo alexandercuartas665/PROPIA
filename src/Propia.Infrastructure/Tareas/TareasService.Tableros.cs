@@ -171,7 +171,9 @@ public partial class TareasService
     {
         var baseList = valores ?? Array.Empty<TareaCampoValorDto>();
         if (formulaDefs.Count == 0) return baseList;
-        var cd = (IReadOnlyDictionary<Guid, string?>)baseList.ToDictionary(v => v.CampoId, v => v.Valor);
+        // GroupBy: tolera filas repetidas del mismo campo (sin indice unico); antes ToDictionary lanzaba y la lista
+        // de tareas respondia 500 (2026-11-26).
+        var cd = (IReadOnlyDictionary<Guid, string?>)baseList.GroupBy(v => v.CampoId).ToDictionary(g => g.Key, g => g.Last().Valor);
         var res = baseList.ToList();
         foreach (var fd in formulaDefs)
         {

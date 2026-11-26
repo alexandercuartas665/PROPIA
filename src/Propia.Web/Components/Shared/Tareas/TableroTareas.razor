@@ -225,8 +225,8 @@ else
                                 <tr class="tb-cerr-row" @onclick="() => AbrirCardDraft(tarea, null)" title="Abrir">
                                     <td class="tb-cerr-num">@t.NumeroTarea</td>
                                     <td class="tb-cerr-tit">@t.Titulo</td>
-                                    <td><span class="tb-cerr-prio" style="color:@PrioFgOf(t);background:@PrioBgOf(t)">@PrioNombreOf(t)</span></td>
-                                    <td><span class="tb-cerr-est" style="background:@(t.EstadoColor ?? "#64748b")">@t.EstadoNombre</span></td>
+                                    <td><span class="tb-cerr-prio" style="@Chip(PrioFgOf(t))">@PrioNombreOf(t)</span></td>
+                                    <td><span class="tb-cerr-est" style="@Chip(t.EstadoColor)">@t.EstadoNombre</span></td>
                                     <td class="tb-cerr-mot">@(string.IsNullOrWhiteSpace(t.MotivoCierre) ? "-" : t.MotivoCierre)</td>
                                     <td class="tb-cerr-dt">@(t.CerradaAt is DateTimeOffset ca ? FechaHora(ca) : "-")</td>
                                     <td class="tb-cerr-act">
@@ -268,7 +268,7 @@ else
                          ondragover="event.preventDefault()"
                          @ondrop="() => SoltarEnEstado(estado.Id)">
                         <div class="tb-col-head">
-                            <span class="tb-col-dot" style="background:@(est.Color ?? EstadoColorDefault)"></span>
+                            <span class="tb-col-dot" style="background:@PaletaChips.Cercano(est.Color ?? EstadoColorDefault)"></span>
                             <span class="tb-col-nom">@est.Nombre</span>
                             <span class="tb-col-count">@cards.Count</span>
                         </div>
@@ -681,7 +681,7 @@ else
                                         </button>
                                     }
                                     else { <span class="tg-exp-sp"></span> }
-                                    <span class="tg-dot" style="background:@(t.EstadoColor ?? EstadoColorDefault)"></span>
+                                    <span class="tg-dot" style="background:@PaletaChips.Cercano(t.EstadoColor ?? EstadoColorDefault)"></span>
                                     <button class="tg-task-btn" @onclick="() => AbrirCardDraft(tarea, null)" title="@TooltipEstado(t)"><span class="tg-task-t" style="font-weight:@(depth == 0 ? 700 : 500)">@t.Titulo</span></button>
                                 </div>
                                 <div class="tg-time tg-lane">
@@ -742,10 +742,10 @@ else
                 <div class="tb-fld">
                     <label>Color</label>
                     <div class="tb-colors">
-                        @foreach (var c in _colores)
+                        @foreach (var c in PaletaChips.Unica)
                         {
-                            var col = c;
-                            <button class="tb-color @(_tableroDraft.Color == col ? "on" : "")" style="background:@col" @onclick="() => _tableroDraft.Color = col"></button>
+                            var col = c.Hex;
+                            <button class="tb-color @(PaletaChips.Cercano(_tableroDraft.Color) == col ? "on" : "")" style="background:@col" title="@c.Nombre" @onclick="() => _tableroDraft.Color = col"></button>
                         }
                     </div>
                 </div>
@@ -957,23 +957,20 @@ else
 
                     <div class="tbc-row2">
                         <div class="tbc-fld tbc-grow">
-                            <label>Estado</label>
-                            <select class="tbc-estado-sel" value="@d.EstadoId" @onchange="OnCardEstadoChange">
-                                @* Inactivos no se ofrecen, salvo que la tarea ya estuviera en ese estado. *@
-                                @foreach (var e in _board.Estados.Where(x => x.Activo || x.Id == d.EstadoId))
-                                {
-                                    <option value="@e.Id">@e.Nombre</option>
-                                }
-                            </select>
+                            <label>Etapa</label>
+                            @* Lista buscable con chips (Alex 2026-11-26). Inactivas no se ofrecen, salvo la etapa actual. *@
+                            <ListaBuscable TriggerClass="tbc-lbx" OpcionesComoChip="true" Opciones="@OpcEstadosFicha(d.EstadoId)" Valor="@d.EstadoId.ToString()"
+                                           ValorChanged="@(v => OnCardEstadoChange(new ChangeEventArgs { Value = v }))">
+                                <TriggerContent><span class="lbx-trg-tx"><span class="lbx-chip" style="@Chip(EstadoColorDe(d.EstadoId))">@(_board.Estados.FirstOrDefault(x => x.Id == d.EstadoId)?.Nombre ?? "-")</span></span></TriggerContent>
+                            </ListaBuscable>
                         </div>
                         <div class="tbc-fld tbc-grow">
                             <label>Prioridad</label>
-                            <select value="@(d.PrioridadId ?? PrioridadBaseId)" @onchange="@(e => d.PrioridadId = ParsePrio(e))">
-                                @foreach (var pr in PrioridadesDelBoard)
-                                {
-                                    <option value="@pr.Id" selected="@((d.PrioridadId ?? PrioridadBaseId) == pr.Id)">@pr.Nombre</option>
-                                }
-                            </select>
+                            @{ var prioFicha = d.PrioridadId ?? PrioridadBaseId; }
+                            <ListaBuscable TriggerClass="tbc-lbx" OpcionesComoChip="true" Opciones="@OpcPrioridades" Valor="@(prioFicha?.ToString() ?? "")"
+                                           ValorChanged="@(v => d.PrioridadId = Guid.TryParse(v, out var gp) && gp != Guid.Empty ? gp : (Guid?)null)">
+                                <TriggerContent><span class="lbx-trg-tx"><span class="lbx-chip" style="@Chip(PrioFgById(prioFicha))">@(PrioridadesDelBoard.FirstOrDefault(x => x.Id == prioFicha)?.Nombre ?? "-")</span></span></TriggerContent>
+                            </ListaBuscable>
                         </div>
                     </div>
 
@@ -1143,6 +1140,15 @@ else
                                             {
                                                 <input type="text" class="tbc-total" readonly value="@CalcularTotal(c)" />
                                             }
+                                            else if (c.PermiteVarios && c.Tipo == TipoCampoTablero.Seleccion)
+                                            {
+                                                @* Lista multiple (Alex 2026-11-26): casillas con busqueda; el valor guarda una opcion por linea. *@
+                                                <ListaBuscable Multiple="true" TriggerClass="tbc-lbx" OpcionesComoChip="true" Opciones="@OpcCampoMulti(campo)"
+                                                               Valores="@ValoresMulti(CampoVal(campo.Id))"
+                                                               OnToggle="@(v => { if (_cardDraft is not null) _cardDraft.Campos[campo.Id] = ToggleMulti(CampoVal(campo.Id), v); })">
+                                                    <TriggerContent>@ChipsLista(campo, CampoVal(campo.Id), "Elegir...")</TriggerContent>
+                                                </ListaBuscable>
+                                            }
                                             else if (c.PermiteVarios)
                                             {
                                                 <textarea rows="2" value="@CampoVal(campo.Id)" @onchange="(e) => SetCampoVal(campo.Id, e)" placeholder="Un valor por linea"></textarea>
@@ -1174,10 +1180,10 @@ else
                                                         <input type="email" value="@CampoVal(campo.Id)" @onchange="(e) => SetCampoVal(campo.Id, e)" placeholder="correo@@ejemplo.com" />
                                                         break;
                                                     case TipoCampoTablero.Seleccion:
-                                                        <select value="@CampoVal(campo.Id)" @onchange="(e) => SetCampoVal(campo.Id, e)">
-                                                            <option value="">Seleccionar...</option>
-                                                            @foreach (var op in CampoOpciones(c)) { <option value="@op">@op</option> }
-                                                        </select>
+                                                        <ListaBuscable TriggerClass="tbc-lbx" OpcionesComoChip="true" Opciones="@OpcCampo(campo)" Valor="@(CampoVal(campo.Id) ?? "")"
+                                                                       ValorChanged="@(v => { if (_cardDraft is not null) _cardDraft.Campos[campo.Id] = string.IsNullOrEmpty(v) ? null : v; })">
+                                                            <TriggerContent>@ChipsLista(campo, CampoVal(campo.Id), "Seleccionar...")</TriggerContent>
+                                                        </ListaBuscable>
                                                         break;
                                                     case TipoCampoTablero.Booleano:
                                                         <label class="tbc-campo-bool"><input type="checkbox" checked="@CampoBool(campo.Id)" @onchange="(e) => SetCampoBool(campo.Id, e)" /> Si</label>
@@ -1605,11 +1611,11 @@ else
    el editor avanzado (requerido, valor por defecto, etc.) sigue en "Agregar campo" del gestor. *@
 @if (_crearCampoTAbierto && _board is not null)
 {
-    <CrearCampoModal Prefijo="tareas" RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
+    <CrearCampoModal Prefijo="tareas" Paleta="PaletaChips.UnicaHex" RutaCatalogo="@($"/api/tareas/tableros/{_board.Tablero.Id}/campos")"
                      EntidadConfig="tablero" RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
                      TituloSingular="tarea" Ejemplo="Ej. Horas estimadas, Responsable externo"
                      Catalogo="ColumnasSistemaCatalogo"
-                     Jwt="@_jwt" TiposAvanzados="true"
+                     Jwt="@_jwt" TiposAvanzados="true" OfreceListaMultiple="true"
                      Guardado="async () => { await RecargarBoard(); }"
                      Cerrado="() => _crearCampoTAbierto = false"
                      AbrirGestorAvanzado="async () => { _crearCampoTAbierto = false; await AbrirEditorCampo(new MouseEventArgs()); }" />
@@ -1623,9 +1629,9 @@ else
    AbrirGestorAvanzado -> AbrirEstadosEditor), anclado al chevron. El estado de CIERRE y sus motivos se
    gestionan aparte, en el editor del campo (SeccionExtra), no aqui. API: /api/tareas/estados. *@
 <GestionarEstadosColumna Visible="_estEditorOpen && _board is not null" Ancla="(_popX, _popY)" HaciaArriba="_popUp" Busy="_busy"
-                         Titulo="Estados (columnas)"
-                         Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Los estados son las columnas del tablero; el estado de cierre y los motivos se configuran en 'Editar campo'."
-                         PlaceholderNuevo="Nuevo estado (ej. En revision)..."
+                         Titulo="Etapas (columnas)" Paleta="PaletaChips.UnicaHex"
+                         Hint="Clic en el nombre para renombrar, en el color para cambiarlo, y las flechas para reordenar. Las etapas son las columnas del tablero; la etapa de cierre y los motivos se configuran en 'Editar campo'."
+                         PlaceholderNuevo="Nueva etapa (ej. En revisión)..."
                          Estados="EstadosVmTb()"
                          OnAgregar="AgregarEstadoTbAsync"
                          OnRenombrar="RenombrarEstadoTbAsync"
@@ -1647,14 +1653,28 @@ else
             <button type="button" class="tbfld-x" @onclick="() => _etiqEditorOpen = false" title="Cerrar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
         <div class="tbfld-pop-b">
-            <div class="tbcfg-help">Se crean y colorean aquí. Son exclusivas de este tablero. En las tarjetas solo se asignan.</div>
+            <div class="tbcfg-help">Se crean y colorean aquí (clic en el punto para el color). Son exclusivas de este tablero. En las tareas solo se asignan.</div>
             <div class="tbcfg-tags">
                 @foreach (var et in _etiquetasCat)
                 {
                     var tag = et;
                     var col = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
                     <div class="tbcfg-tag">
-                        <span class="tb-tag" style="background:@col;border-color:@col;color:@TagTextColor(col)">
+                        <span style="position:relative;display:inline-flex;">
+                            <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@PaletaChips.Cercano(col)" title="Cambiar color" @onclick="() => ToggleTagColor(et.Id)"></button>
+                            @if (_tagColorId == et.Id)
+                            {
+                                <div class="tb-tagpop-bd" @onclick="() => _tagColorId = null"></div>
+                                <div class="tb-tag-colors" @onclick:stopPropagation="true">
+                                    @foreach (var c in PaletaChips.Unica)
+                                    {
+                                        var cc = c;
+                                        <button type="button" class="tb-tag-copt @(PaletaChips.Cercano(col) == cc.Hex ? "on" : "")" style="background:@cc.Hex" title="@cc.Nombre" @onclick="() => GuardarTagColor(tag, cc.Hex)"></button>
+                                    }
+                                </div>
+                            }
+                        </span>
+                        <span class="tb-tag" style="@Chip(col)">
                             @if (_tagEditId == et.Id)
                             {
                                 <input class="tb-tag-inp" @bind="_tagEditVal" @bind:event="oninput" @onblur="() => GuardarTagNombre(tag)" @onkeydown="(e) => TagKeydown(e, tag)" />
@@ -1662,18 +1682,6 @@ else
                             else
                             {
                                 <span class="tb-tag-tx" title="Click para renombrar" @onclick="() => IniciarTagEdit(tag)">@et.Nombre</span>
-                            }
-                            <button type="button" class="tb-tag-sw" title="Cambiar color" @onclick:stopPropagation="true" @onclick="() => ToggleTagColor(et.Id)"></button>
-                            @if (_tagColorId == et.Id)
-                            {
-                                <div class="tb-tagpop-bd" @onclick="() => _tagColorId = null"></div>
-                                <div class="tb-tag-colors" @onclick:stopPropagation="true">
-                                    @foreach (var c in _colores)
-                                    {
-                                        var cc = c;
-                                        <button type="button" class="tb-tag-copt @(string.Equals(et.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarTagColor(tag, cc)"></button>
-                                    }
-                                </div>
                             }
                         </span>
                         <span class="tbcfg-tag-cnt" title="Tareas que la usan">@et.CantidadTareas</span>
@@ -1709,15 +1717,15 @@ else
                     var pr = _prios[iP]; var idxP = iP;
                     <div class="tbcfg-est">
                         <span style="position:relative;display:inline-flex;">
-                            <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@(pr.Color ?? "#6D4FE3")" title="Cambiar color" @onclick="() => _prioColorId = _prioColorId == pr.Id ? null : pr.Id"></button>
+                            <button type="button" class="tbcfg-dot tbcfg-dot-btn" style="background:@PaletaChips.Cercano(pr.Color ?? "#6D4FE3")" title="Cambiar color" @onclick="() => _prioColorId = _prioColorId == pr.Id ? null : pr.Id"></button>
                             @if (_prioColorId == pr.Id)
                             {
                                 <div class="tb-tagpop-bd" @onclick="() => _prioColorId = null"></div>
                                 <div class="tb-tag-colors" @onclick:stopPropagation="true">
-                                    @foreach (var c in _colores)
+                                    @foreach (var c in PaletaChips.Unica)
                                     {
                                         var cc = c;
-                                        <button type="button" class="tb-tag-copt @(string.Equals(pr.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" @onclick="() => GuardarPrioColor(pr, cc)"></button>
+                                        <button type="button" class="tb-tag-copt @(PaletaChips.Cercano(pr.Color) == cc.Hex ? "on" : "")" style="background:@cc.Hex" title="@cc.Nombre" @onclick="() => GuardarPrioColor(pr, cc.Hex)"></button>
                                     }
                                 </div>
                             }
@@ -1758,7 +1766,7 @@ else
        (pone _editSisClave = null) ANTES de invocar AbrirGestorAvanzado, asi que un lambda que leyera el
        campo recibiria null y AbrirGestorListaTb(null) no abriria nada. Con el local queda fijado a "est". *@
     var sisClave = _editSisClave;
-    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq" Paleta="PaletaChips.UnicaHex"
                              RutaConfig="@($"/api/tareas/tableros/{_board.Tablero.Id}/columnas-config")"
                              EntidadConfig="tablero" TituloSingular="tarjeta" Jwt="@_jwt"
                              OpcionesLista="@OpcionesVistaTb(_editSisClave)"
@@ -1786,7 +1794,7 @@ else
                         {
                             var e2 = estC;
                             <div class="ecs-cierre-est">
-                                <span class="tbcfg-dot" style="background:@(estC.Color ?? EstadoColorDefault)"></span>
+                                <span class="tbcfg-dot" style="background:@PaletaChips.Cercano(estC.Color ?? EstadoColorDefault)"></span>
                                 <span class="ecs-cierre-nom">@estC.Nombre</span>
                                 <button type="button" class="tbcfg-cierre @(estC.EsTerminal ? "on" : "")" disabled="@_busy"
                                         title="@(estC.EsTerminal ? "Estado de cierre (click para quitar)" : "Marcar como estado de cierre")"
@@ -2190,7 +2198,7 @@ else
             @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => sf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => SubfilaKeydown(e, padre))"></textarea></div> }
             @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
             <div class="tb-row-cell-est">
-                <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@FondoDe(EstadoColorDe(sf.EstadoId))" Opciones="@OpcEstados" Valor="@sf.EstadoId.ToString()"
+                <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@Chip(EstadoColorDe(sf.EstadoId))" OpcionesComoChip="true" Opciones="@OpcEstados" Valor="@sf.EstadoId.ToString()"
                                ValorChanged="@(v => { if (Guid.TryParse(v, out var g)) sf.EstadoId = g; })" />
             </div>
             @if (_colResp)
@@ -2206,7 +2214,7 @@ else
             {
                 <div class="tb-row-prio">
                     @{ var _sfPrioId = sf.PrioridadId ?? PrioridadBaseId; }
-                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@PillDe(PrioFgById(_sfPrioId), PrioBgById(_sfPrioId))" Opciones="@OpcPrioridades" Valor="@(_sfPrioId?.ToString() ?? "")"
+                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@Chip(PrioFgById(_sfPrioId))" OpcionesComoChip="true" Opciones="@OpcPrioridades" Valor="@(_sfPrioId?.ToString() ?? "")"
                                    ValorChanged="@(v => sf.PrioridadId = Guid.TryParse(v, out var g) ? g : (Guid?)null)" />
                 </div>
             }
@@ -2589,23 +2597,6 @@ else
     // La "opcion de color" de columna en el header se quito por pedido de Alex: ColorDot no renderiza nada.
     // (El popup de color y SetColColor quedan sin uso; los colores ya aplicados, si los hubiera, siguen via ColBg.)
     private RenderFragment ColorDot(string key) => (__b) => { };
-
-    // Color de texto (blanco / oscuro) para una etiqueta segun la luminancia de su color de fondo,
-    // para que el texto quede legible sobre el chip relleno.
-    // T-11: recibe y devuelve HEX concreto a proposito (parsea RGB para calcular luminancia); por eso los
-    // colores de etiqueta que se le pasan tampoco se pueden tokenizar (un var() no se puede parsear aqui).
-    private static string TagTextColor(string hex)
-    {
-        var h = (hex ?? "").TrimStart('#');
-        if (h.Length == 3) { h = string.Concat(h[0], h[0], h[1], h[1], h[2], h[2]); }
-        if (h.Length < 6
-            || !int.TryParse(h.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)
-            || !int.TryParse(h.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)
-            || !int.TryParse(h.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
-        { return "#ffffff"; }
-        var lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-        return lum > 0.62 ? "#1B2A3A" : "#ffffff";
-    }
 
     // Fila-resumen alineada a columnas (misma estructura condicional que el encabezado de la Lista).
     // interactivo=true (fila TOTAL): el valor es un boton que abre el menu de funcion por columna.
@@ -3395,7 +3386,8 @@ else
 
     // T-11: paletas de tonos ELEGIBLES por el usuario (colores de tablero/etiqueta y de avatar). Son DATOS,
     // no estilo ad-hoc: distintos matices sin token semantico -> hex literal a proposito.
-    private static readonly string[] _colores = { "#6D4FE3", "#2563EB", "#1A8754", "#F59E0B", "#EF4444", "#7C3AED", "#0EA5E9", "#EC4899" };
+    // Paleta unica de 10 colores (PaletaChips.Unica): la misma en etapas, prioridades, etiquetas y listas.
+    private static readonly IReadOnlyList<string> _colores = PaletaChips.UnicaHex;
     private static readonly string[] _avaColors = { "#6D4FE3", "#2563EB", "#1A8754", "#B45309", "#C0383C", "#0EA5E9", "#EC4899", "#7C3AED" };
 
     // Las vistas Tarjetas/Tabla/Calendario/Gantt las pinta el componente compartido TablaVistaToggle.
@@ -4164,6 +4156,12 @@ else
         if (r.Op == "vacio") return string.IsNullOrWhiteSpace(sv);
         if (r.Op == "no_vacio") return !string.IsNullOrWhiteSpace(sv);
         if (string.IsNullOrEmpty(r.Valor)) return true;
+        // Lista multiple (una opcion por linea): "es" = alguna de sus opciones es la elegida.
+        if (kind == "sel-din" && sv.Contains('\n') && r.Op is "es" or "no_es")
+        {
+            var tiene = ValoresMulti(sv).Any(x => string.Equals(x, r.Valor, StringComparison.OrdinalIgnoreCase));
+            return r.Op == "es" ? tiene : !tiene;
+        }
         return r.Op switch
         {
             "es" => string.Equals(sv, r.Valor, StringComparison.OrdinalIgnoreCase),
@@ -4533,7 +4531,7 @@ else
             <div class="tb-row-cell-est">
                 @if (!esHija)
                 {
-                    <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@FondoDe(t.EstadoColor ?? "var(--propia-brand)")" Opciones="@OpcEstados" Valor="@t.EstadoId.ToString()"
+                    <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@Chip(t.EstadoColor)" OpcionesComoChip="true" Opciones="@OpcEstados" Valor="@t.EstadoId.ToString()"
                                    ValorChanged="@(v => CambiarEstadoFila(tarea.Id, new ChangeEventArgs { Value = v }))" />
                 }
                 else { <span class="tb-subtag">Subtarea</span> }
@@ -4584,7 +4582,7 @@ else
                 <span class="tb-row-progv" style="color:@(t.Progreso >= 100 ? "var(--propia-success)" : "var(--propia-text-secondary)")">@t.Progreso%</span>
             </div>
             }
-            @* ---- ETIQUETAS (chips contenidos; texto editable inline + swatch de color al final) ---- *@
+            @* ---- ETIQUETAS (chips pastel; texto editable inline; el color se cambia en el editor de etiquetas) ---- *@
             @if (_colEtiq)
             {
                 <div class="tb-row-etiq">
@@ -4592,7 +4590,7 @@ else
                     {
                         var et = tag;
                         var etCol = string.IsNullOrWhiteSpace(et.Color) ? "#6D4FE3" : et.Color!;
-                        <span class="tb-tag" style="background:@etCol;border-color:@etCol;color:@TagTextColor(etCol)">
+                        <span class="tb-tag" style="@Chip(etCol)">
                             @if (_tagEditId == et.Id)
                             {
                                 <input class="tb-tag-inp" @bind="_tagEditVal" @bind:event="oninput" autofocus
@@ -4602,23 +4600,11 @@ else
                             {
                                 <span class="tb-tag-tx" title="Click para renombrar la etiqueta" @onclick="() => IniciarTagEdit(et)">@et.Nombre</span>
                             }
-                            <button type="button" class="tb-tag-sw" title="Cambiar color de la etiqueta" @onclick:stopPropagation="true" @onclick="() => ToggleTagColor(et.Id)"></button>
-                            @if (_tagColorId == et.Id)
-                            {
-                                <div class="tb-tagpop-bd" @onclick="() => _tagColorId = null"></div>
-                                <div class="tb-tag-colors" @onclick:stopPropagation="true">
-                                    @foreach (var c in _colores)
-                                    {
-                                        var cc = c;
-                                        <button type="button" class="tb-tag-copt @(string.Equals(et.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")" style="background:@cc" title="@cc" @onclick="() => GuardarTagColor(et, cc)"></button>
-                                    }
-                                </div>
-                            }
                         </span>
                     }
                     @* "+" abre la lista con busqueda y casillas (Alex 2026-11-22): marcar/desmarcar guarda al instante. *@
                     <span @onclick:stopPropagation="true">
-                        <ListaBuscable Multiple="true" WrapClass="lbx-wrap--inline" TriggerClass="tb-etq-add" Chevron="false" Title="Agregar etiqueta"
+                        <ListaBuscable Multiple="true" WrapClass="lbx-wrap--inline" TriggerClass="tb-etq-add" Chevron="false" Title="Agregar etiqueta" OpcionesComoChip="true"
                                        Opciones="@OpcEtiquetas" Valores="@(t.Etiquetas.Select(x => x.Id.ToString()))" TextoVacio="No hay etiquetas. Crea en Configurar."
                                        OnToggle="@(v => { if (Guid.TryParse(v, out var g)) return ToggleEtqTarea(tarea, g); return Task.CompletedTask; })">
                             <TriggerContent><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></TriggerContent>
@@ -4630,7 +4616,7 @@ else
             @if (_colPrio)
             {
                 <div class="tb-row-prio">
-                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@PillDe(PrioFgOf(t), PrioBgOf(t))" Placeholder="@PrioNombreOf(t)" Opciones="@OpcPrioridades" Valor="@(t.PrioridadId?.ToString() ?? "")"
+                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@Chip(PrioFgOf(t))" OpcionesComoChip="true" Placeholder="@PrioNombreOf(t)" Opciones="@OpcPrioridades" Valor="@(t.PrioridadId?.ToString() ?? "")"
                                    ValorChanged="@(v => CambiarPrioridadFila(tarea.Id, new ChangeEventArgs { Value = v }))" />
                 </div>
             }
@@ -4707,11 +4693,21 @@ else
                         <CampoDirectorio TriggerClass="lbx-plain" Jwt="@_jwt" Titulo="@campo.Label" Valor="@dv" Nombre="@NombreDirectorio(dv)"
                                          OnCambio="@(c => ElegirDirectorioFilaAsync(tarea.Id, campo.Id, c))" />
                     }
+                    else if (campo.Tipo == TipoCampoTablero.Seleccion && campo.PermiteVarios)
+                    {
+                        @* Lista multiple (Alex 2026-11-26): marcar/desmarcar guarda al instante (una opcion por linea). *@
+                        <ListaBuscable Multiple="true" TriggerClass="lbx-plain" Opciones="@OpcCampoMulti(campo)" Valores="@ValoresMulti(CampoValor(t, campo.Id))"
+                                       OnToggle="@(v => ToggleMultiFila(tarea.Id, campo.Id, v))">
+                            <TriggerContent>@ChipsLista(campo, CampoValor(t, campo.Id), "-")</TriggerContent>
+                        </ListaBuscable>
+                    }
                     else if (campo.Tipo == TipoCampoTablero.Seleccion)
                     {
                         @* Lista con busqueda (Airtable): elegir guarda de una vez. *@
-                        <ListaBuscable TriggerClass="lbx-plain" Placeholder="-" TextoVacio="-" Opciones="@OpcCampo(campo)" Valor="@(CampoValor(t, campo.Id) ?? "")"
-                                       ValorChanged="@(v => GuardarCampoValorDirecto(tarea.Id, campo.Id, v))" />
+                        <ListaBuscable TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcCampo(campo)" Valor="@(CampoValor(t, campo.Id) ?? "")"
+                                       ValorChanged="@(v => GuardarCampoValorDirecto(tarea.Id, campo.Id, v))">
+                            <TriggerContent>@ChipsLista(campo, CampoValor(t, campo.Id), "-")</TriggerContent>
+                        </ListaBuscable>
                     }
                     else if (EnEd(t.Id, "campo:" + campo.Id))
                     {
@@ -4789,6 +4785,24 @@ else
     private int _edPopX, _edPopY;
     private void IniciarEd(MouseEventArgs e, Guid id, string campo, string? actual) { _edPopX = (int)e.ClientX; _edPopY = (int)e.ClientY; IniciarEd(id, campo, actual); }
     private void CancelarEd() { _editKey = null; _editVal = ""; }
+
+    // Lista multiple en la fila: cada marca/desmarca se guarda EN COLA (una detras de otra) y se calcula sobre el valor
+    // vigente. Dos clics seguidos mandaban dos PUT a la vez y el servidor insertaba dos filas del mismo valor
+    // (tarea_campo_valores no tiene indice unico). Alex 2026-11-26.
+    private Task _colaMulti = Task.CompletedTask;
+    private Task ToggleMultiFila(Guid tareaId, Guid campoId, string? opcion)
+    {
+        var previo = _colaMulti;
+        _colaMulti = Encadenar();
+        return _colaMulti;
+
+        async Task Encadenar()
+        {
+            try { await previo; } catch { /* el fallo anterior ya se aviso */ }
+            var actual = _tareas.FirstOrDefault(x => x.Id == tareaId);
+            await GuardarCampoValorDirecto(tareaId, campoId, ToggleMulti(actual is null ? null : CampoValor(actual, campoId), opcion));
+        }
+    }
 
     private void PatchLocal(Guid id, Func<TareaListaDto, TareaListaDto> f)
     {
@@ -5013,7 +5027,7 @@ else
     private RenderFragment AltaEtqCell(NuevaFilaDraft d, Guid key) => __builder =>
     {
         <div class="tb-row-etiq tb-etq-cell">
-            <ListaBuscable Multiple="true" TriggerClass="tb-nf-inp lbx-etq" Chevron="false" Title="Etiquetas"
+            <ListaBuscable Multiple="true" TriggerClass="tb-nf-inp lbx-etq" Chevron="false" Title="Etiquetas" OpcionesComoChip="true"
                            Opciones="@OpcEtiquetas" Valores="@(d.Etiquetas.Select(x => x.ToString()))"
                            OnToggle="@(v => { if (Guid.TryParse(v, out var g)) ToggleEtqAlta(d, g); })">
                 <TriggerContent>
@@ -5026,7 +5040,7 @@ else
                         var et = _etiquetasCat.FirstOrDefault(x => x.Id == id);
                         if (et is null) { continue; }
                         var col = string.IsNullOrWhiteSpace(et.Color) ? "var(--propia-brand)" : et.Color!;
-                        <span class="tb-tag tb-tag-sm" style="background:@col;border-color:@col;color:@TagTextColor(col)">@et.Nombre</span>
+                        <span class="tb-tag tb-tag-sm" style="@Chip(col)">@et.Nombre</span>
                     }
                 </TriggerContent>
             </ListaBuscable>
@@ -5174,7 +5188,7 @@ else
             @if (_colDesc) { <div class="tb-row-desc"><textarea class="tb-nf-inp tb-nf-area" rows="1" placeholder="Descripcion" @oninput="@(e => nf.Descripcion = e.Value?.ToString() ?? string.Empty)" @onkeydown="@(e => AltaFlatKeydown(e, estadoId))"></textarea></div> }
             @if (_colCodigo) { <div class="tb-row-cod"><span class="tb-nf-mut">&mdash;</span></div> }
             <div class="tb-row-cell-est">
-                <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@FondoDe(EstadoColorDe(nf.EstadoId))" Opciones="@OpcEstados" Valor="@nf.EstadoId.ToString()"
+                <ListaBuscable TriggerClass="tb-est-sel" TriggerStyle="@Chip(EstadoColorDe(nf.EstadoId))" OpcionesComoChip="true" Opciones="@OpcEstados" Valor="@nf.EstadoId.ToString()"
                                ValorChanged="@(v => { if (Guid.TryParse(v, out var g)) nf.EstadoId = g; })" />
             </div>
             @if (_colResp)
@@ -5190,7 +5204,7 @@ else
             {
                 <div class="tb-row-prio">
                     @{ var _nfPrioId = nf.PrioridadId ?? PrioridadBaseId; var _nfPrio = PrioridadesDelBoard.FirstOrDefault(p => p.Id == _nfPrioId); }
-                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@PillDe(PrioFgById(_nfPrioId), PrioBgById(_nfPrioId))" Opciones="@OpcPrioridades" Valor="@(_nfPrioId?.ToString() ?? "")"
+                    <ListaBuscable TriggerClass="tb-prio-sel" TriggerStyle="@Chip(PrioFgById(_nfPrioId))" OpcionesComoChip="true" Opciones="@OpcPrioridades" Valor="@(_nfPrioId?.ToString() ?? "")"
                                    ValorChanged="@(v => nf.PrioridadId = Guid.TryParse(v, out var g) ? g : (Guid?)null)" />
                 </div>
             }
@@ -5932,7 +5946,8 @@ else
         Id = c.Id,
         Label = c.Label,
         Tipo = c.Tipo,
-        Opciones = c.Opciones ?? "",
+        // Seleccion: el textarea edita una opcion por linea aunque se guarde en JSON (ver CfgGuardarCampo).
+        Opciones = c.Tipo == TipoCampoTablero.Seleccion ? string.Join("\n", OpcionCampo.Parse(c.Opciones).Select(o => o.K)) : (c.Opciones ?? ""),
         MostrarEnFiltro = c.MostrarEnFiltro,
         Columna = c.Columna < 1 ? 1 : c.Columna,
         Descripcion = c.Descripcion ?? "",
@@ -5947,7 +5962,16 @@ else
         _busy = true;
         try
         {
-            var opciones = _campoDraft.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_campoDraft.Opciones) ? _campoDraft.Opciones.Trim() : null;
+            // Seleccion: se guarda en el formato compartido (JSON) conservando color/oculta de las opciones que ya existian.
+            string? opciones = null;
+            if (_campoDraft.Tipo == TipoCampoTablero.Seleccion && !string.IsNullOrWhiteSpace(_campoDraft.Opciones))
+            {
+                var previas = _campoDraft.Id is Guid pid ? OpcionCampo.Parse(_board.Tablero.Campos?.FirstOrDefault(x => x.Id == pid)?.Opciones) : new List<OpcionCampo>();
+                var lineas = _campoDraft.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (lineas.Count > 0)
+                    opciones = OpcionCampo.Serializar(lineas.Select(k => previas.FirstOrDefault(p => string.Equals(p.K, k, StringComparison.OrdinalIgnoreCase)) ?? new OpcionCampo(k)));
+            }
             var camposSuma = _campoDraft.Tipo == TipoCampoTablero.Total && _campoDraft.CamposSuma.Count > 0 ? string.Join(",", _campoDraft.CamposSuma) : null;
             var descripcion = string.IsNullOrWhiteSpace(_campoDraft.Descripcion) ? null : _campoDraft.Descripcion.Trim();
             var valorDef = string.IsNullOrWhiteSpace(_campoDraft.ValorPorDefecto) ? null : _campoDraft.ValorPorDefecto.Trim();
@@ -6025,9 +6049,21 @@ else
     private void SetCampoVal(Guid id, ChangeEventArgs e) { if (_cardDraft is not null) _cardDraft.Campos[id] = e.Value?.ToString(); }
     private bool CampoBool(Guid id) => string.Equals(_cardDraft?.Campos.GetValueOrDefault(id), "true", StringComparison.OrdinalIgnoreCase);
     private void SetCampoBool(Guid id, ChangeEventArgs e) { if (_cardDraft is not null) _cardDraft.Campos[id] = (e.Value is bool b && b) ? "true" : "false"; }
-    private static string[] CampoOpciones(TableroCampoDto c) => string.IsNullOrWhiteSpace(c.Opciones)
-        ? Array.Empty<string>()
-        : c.Opciones.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    // Alex 2026-11-26: las opciones se leen con el lector COMPARTIDO (OpcionCampo): el modal "Crear campo" las
+    // guarda en JSON [{K,Oculta,Color}] y antes se partian por linea -> la lista mostraba el JSON crudo. El lector
+    // tolera el formato viejo (una opcion por linea). Las ocultas no se ofrecen.
+    private static string[] CampoOpciones(TableroCampoDto c) => OpcionCampo.VisiblesK(c.Opciones);
+    // Lista multiple: el valor guarda una opcion por linea.
+    private static IEnumerable<string> ValoresMulti(string? v) =>
+        string.IsNullOrWhiteSpace(v) ? Array.Empty<string>() : v.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private static string? ToggleMulti(string? actual, string? opcion)
+    {
+        if (string.IsNullOrWhiteSpace(opcion)) return actual;
+        var l = ValoresMulti(actual).ToList();
+        var i = l.FindIndex(x => string.Equals(x, opcion, StringComparison.OrdinalIgnoreCase));
+        if (i >= 0) l.RemoveAt(i); else l.Add(opcion);
+        return l.Count == 0 ? null : string.Join('\n', l);
+    }
 
     // ===== Ola C-2: campos dinamicos del tablero editables en la fila de alta (padre y subtarea) =====
     private string CampoValAlta(NuevaFilaDraft d, Guid id) => d.Campos.GetValueOrDefault(id) ?? "";
@@ -6095,9 +6131,17 @@ else
                 case TipoCampoTablero.Email:
                     <input type="email" class="tb-nf-inp" value="@CampoValAlta(d, campo.Id)" @onchange="(e) => SetCampoValAlta(d, campo.Id, e)" />
                     break;
+                case TipoCampoTablero.Seleccion when campo.PermiteVarios:
+                    <ListaBuscable Multiple="true" TriggerClass="tb-nf-inp" OpcionesComoChip="true" Opciones="@OpcCampoMulti(campo)" Valores="@ValoresMulti(CampoValAlta(d, campo.Id))"
+                                   OnToggle="@(v => d.Campos[campo.Id] = ToggleMulti(CampoValAlta(d, campo.Id), v))">
+                        <TriggerContent>@ChipsLista(campo, CampoValAlta(d, campo.Id), "Elegir...")</TriggerContent>
+                    </ListaBuscable>
+                    break;
                 case TipoCampoTablero.Seleccion:
-                    <ListaBuscable TriggerClass="tb-nf-inp" Opciones="@OpcCampo(campo)" Valor="@CampoValAlta(d, campo.Id)"
-                                   ValorChanged="@(v => d.Campos[campo.Id] = v)" />
+                    <ListaBuscable TriggerClass="tb-nf-inp" OpcionesComoChip="true" Opciones="@OpcCampo(campo)" Valor="@CampoValAlta(d, campo.Id)"
+                                   ValorChanged="@(v => d.Campos[campo.Id] = v)">
+                        <TriggerContent>@ChipsLista(campo, CampoValAlta(d, campo.Id), "Elegir...")</TriggerContent>
+                    </ListaBuscable>
                     break;
                 case TipoCampoTablero.Booleano:
                     <label class="tb-nf-chk"><input type="checkbox" checked="@CampoBoolAlta(d, campo.Id)" @onchange="(e) => SetCampoBoolAlta(d, campo.Id, e)" /></label>
@@ -6622,7 +6666,7 @@ else
         _busy = true;
         try
         {
-            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Length];
+            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Count];
             var resp = await Auth().PostAsJsonAsync("/api/tareas/etiquetas", new CrearEtiquetaRequest(nombre, color, _board.Tablero.Id));
             if (resp.IsSuccessStatusCode)
             {
@@ -6690,7 +6734,7 @@ else
         _busy = true;
         try
         {
-            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Length];
+            var color = _colores[Math.Abs(nombre.GetHashCode()) % _colores.Count];
             var resp = await Auth().PostAsJsonAsync("/api/tareas/etiquetas", new CrearEtiquetaRequest(nombre, color));
             if (resp.IsSuccessStatusCode)
             {
@@ -6848,7 +6892,6 @@ else
     // T-11: paleta SEMANTICA de prioridad (texto/fondo por nivel). Son DATOS de color por prioridad; los
     // matices no calzan 1:1 con tokens (no son brand/success/danger), asi que se dejan como hex a proposito.
     private static string PrioFg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#C0383C", PrioridadTarea.Alta => "#B45309", PrioridadTarea.Normal => "#2563EB", _ => "#516F90" };
-    private static string PrioBg(PrioridadTarea p) => p switch { PrioridadTarea.Urgente => "#FDE7E7", PrioridadTarea.Alta => "#FEF3DC", PrioridadTarea.Normal => "#E6F2FB", _ => "#EEF3F8" };
 
     // Fase 2: prioridades configurables del tablero. El pill usa el color-acento de la opcion (texto) + una
     // tinta clara (fondo). Si la tarea aun no tiene opcion (legacy), cae al color por enum.
@@ -6861,16 +6904,6 @@ else
          ?? PrioridadesDelBoard.FirstOrDefault(p => p.EsBase)
          ?? PrioridadesDelBoard.OrderBy(p => p.Orden).FirstOrDefault())?.Id;
     private static Guid? ParsePrio(ChangeEventArgs e) => Guid.TryParse(e.Value?.ToString(), out var g) && g != Guid.Empty ? g : (Guid?)null;
-    private static string Tinte(string? hex, double alpha = 0.14)
-    {
-        if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith("#") || hex.Length < 7) return "var(--propia-bg-card-soft)";
-        try
-        {
-            int r = Convert.ToInt32(hex.Substring(1, 2), 16), g = Convert.ToInt32(hex.Substring(3, 2), 16), b = Convert.ToInt32(hex.Substring(5, 2), 16);
-            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha})");
-        }
-        catch { return "var(--propia-bg-card-soft)"; }
-    }
     // Color del pill en los selects de CREACION (resuelve por Id de opcion del tablero). Si no hay color en la
     // opcion (o la opcion no existe), cae a un gris neutro del canon.
     private string PrioFgById(Guid? id)
@@ -6878,13 +6911,7 @@ else
         var op = PrioridadesDelBoard.FirstOrDefault(p => p.Id == id);
         return !string.IsNullOrWhiteSpace(op?.Color) ? op!.Color! : "#516F90";
     }
-    private string PrioBgById(Guid? id)
-    {
-        var op = PrioridadesDelBoard.FirstOrDefault(p => p.Id == id);
-        return !string.IsNullOrWhiteSpace(op?.Color) ? Tinte(op!.Color) : "#EEF3F8";
-    }
     private string PrioFgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? t.PrioridadColor! : PrioFg(t.Prioridad);
-    private string PrioBgOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadColor) ? Tinte(t.PrioridadColor) : PrioBg(t.Prioridad);
     private string PrioNombreOf(TareaListaDto t) => !string.IsNullOrWhiteSpace(t.PrioridadNombre) ? t.PrioridadNombre! : t.Prioridad.ToString();
 
     // ===== Listas con busqueda (Shared/ListaBuscable) en la fila de alta y en la edicion de filas - 2026-11-21 =====
@@ -6896,7 +6923,39 @@ else
     // Fila de alta (tarea y subtarea): misma lista que la ficha (equipo primero, residentes al buscar). T-01.
     private IReadOnlyList<ListaBuscable.Opcion> OpcPersonas => OpcResponsables(null, true);
     private static IReadOnlyList<ListaBuscable.Opcion> OpcCampo(TableroCampoDto c) =>
-        new[] { new ListaBuscable.Opcion("", "Sin valor") }.Concat(CampoOpciones(c).Select(o => new ListaBuscable.Opcion(o, o))).ToList();
+        new[] { new ListaBuscable.Opcion("", "Sin valor") }.Concat(OpcCampoMulti(c)).ToList();
+    private static IReadOnlyList<ListaBuscable.Opcion> OpcCampoMulti(TableroCampoDto c) =>
+        OpcionCampo.Parse(c.Opciones).Where(o => !o.Oculta).Select(o => new ListaBuscable.Opcion(o.K, o.K, o.Color ?? PaletaChips.Neutro)).ToList();
+    // Etapas que ofrece la ficha: activas + la actual (aunque este inactiva).
+    private IReadOnlyList<ListaBuscable.Opcion> OpcEstadosFicha(Guid actual) =>
+        (_board?.Estados ?? (IReadOnlyList<EstadoTareaDto>)Array.Empty<EstadoTareaDto>())
+            .Where(e => e.Activo || e.Id == actual)
+            .Select(e => new ListaBuscable.Opcion(e.Id.ToString(), e.Nombre, e.Color ?? EstadoColorDefault)).ToList();
+    private static string? ColorOpcion(TableroCampoDto c, string v) =>
+        OpcionCampo.Parse(c.Opciones).FirstOrDefault(o => string.Equals(o.K, v, StringComparison.OrdinalIgnoreCase))?.Color;
+    // Valor(es) de un campo de lista como chips pastel (una opcion por linea en la lista multiple).
+    private RenderFragment ChipsLista(TableroCampoDto c, string? valor, string vacio) => __b =>
+    {
+        var vals = ValoresMulti(valor).ToList();
+        __b.OpenElement(0, "span");
+        __b.AddAttribute(1, "class", "lbx-trg-tx lbx-chips");
+        if (vals.Count == 0)
+        {
+            __b.OpenElement(2, "span");
+            __b.AddAttribute(3, "class", "lbx-chips-ph");
+            __b.AddContent(4, vacio);
+            __b.CloseElement();
+        }
+        foreach (var v in vals)
+        {
+            __b.OpenElement(10, "span");
+            __b.AddAttribute(11, "class", "lbx-chip");
+            __b.AddAttribute(12, "style", Chip(ColorOpcion(c, v)));
+            __b.AddContent(13, v);
+            __b.CloseElement();
+        }
+        __b.CloseElement();
+    };
     private static readonly IReadOnlyList<ListaBuscable.Opcion> OpcOrigenTipo = new[]
     {
         new ListaBuscable.Opcion("", "Sin relación"), new ListaBuscable.Opcion("inmueble", "Inmueble / unidad"),
@@ -6904,8 +6963,8 @@ else
     };
     private string EstadoColorDe(Guid estadoId) =>
         _board?.Estados.FirstOrDefault(e => e.Id == estadoId)?.Color is { Length: > 0 } c ? c : "var(--propia-brand)";
-    private static string FondoDe(string color) => "background:" + color;
-    private static string PillDe(string fg, string bg) => "color:" + fg + ";background:" + bg;
+    // Chip pastel de la paleta unica (fondo claro + texto del color). Etapa, prioridad, etiquetas y listas.
+    private static string Chip(string? color) => PaletaChips.ChipEstilo(color);
 
     // Campo de lista de una tarea existente: guarda de una vez al elegir (sin pasar por el editor de texto).
     private async Task GuardarCampoValorDirecto(Guid id, Guid campoId, string? val)
