@@ -1292,11 +1292,12 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
                 return dueno === box && (sel === '[data-foco]' || x.tabIndex >= 0);
             });
             var i = f.indexOf(el);
-            // Dentro de la fila de alta de Tareas (Origen, Alex 2026-11-26: "rebotaba"): Tab desde la ULTIMA parada o
-            // Shift+Tab desde la PRIMERA no da la vuelta: sale al campo vecino de la fila (o, si era el ultimo campo,
-            // al Tab final que guarda). Lo hacen altaAutoSave y el Tab de la fila (5), que tratan .lbx-pop como su disparador.
-            if (f.length && i >= 0 && box.closest('.tb-newrow, .tb-subadd-row')
-                && (e.shiftKey ? i === 0 : i === f.length - 1)) return;
+            // Mini modal de un CAMPO de la fila de alta de Tareas (Origen, Directorio: .lbx-pop; Alex 2026-11-26: "rebotaba"
+            // y hacian falta muchos Tab para salir, uno por cada resultado del Directorio): Tab / Shift+Tab NO recorren el
+            // modal: salen al campo siguiente / anterior de la fila (o, desde el ultimo campo, al Tab final que guarda), como
+            // en las listas. Dentro se elige con flechas + Enter. Lo hacen altaAutoSave y el Tab de la fila (5), que tratan
+            // .lbx-pop como su disparador. Un modal anidado (p.ej. "Crear contacto nuevo") sigue atrapando el foco.
+            if (box.matches('.lbx-pop') && box.closest('.tb-newrow, .tb-subadd-row')) return;
             e.preventDefault();
             e.stopImmediatePropagation();
             if (!f.length) return;
