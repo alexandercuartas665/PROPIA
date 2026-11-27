@@ -36,8 +36,8 @@ else
         <div class="fz-head-s">@_ficha.Zona.Categoria &middot; Aforo @(_aforo?.ToString() ?? "-") &middot; @_ficha.Zona.Estado</div>
     </div>
     @if (_reservable) { <span class="fz-badge-res">Reservable</span> }
-    <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
-                        MostrarEliminar="true" MostrarCancelar="true" Guardando="_busy"
+    <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha" && !SoloLectura)"
+                        MostrarEliminar="@(!SoloLectura)" MostrarCancelar="true" Guardando="_busy"
                         PuedeGuardar="@(!string.IsNullOrWhiteSpace(_form.Nombre))"
                         TituloEditar="Editar datos" TituloGuardar="Guardar cambios" TituloEliminar="Eliminar zona"
                         OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
@@ -51,6 +51,9 @@ else
     <button class="fz-tab @(_tab == "adjuntos" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "adjuntos"'>Documentos@(_ficha.Documentos.Count > 0 ? $" ({_ficha.Documentos.Count})" : "")</button>
     <button class="fz-tab @(_tab == "historial" ? "fz-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
 </div>
+@* Sin permiso de Editar (SoloLectura, Alex 2026-11-27): todo control de la ficha queda deshabilitado (imagen,
+   adjuntos, novedades, interruptores); display:contents no altera el layout. *@
+<fieldset disabled="@SoloLectura" style="display:contents">
 
 @if (_tab == "ficha" && !_editMode)
 {
@@ -250,6 +253,7 @@ else if (_tab == "historial")
     <HistorialRelacionadoPanel Jwt="@Jwt" Tipo="TipoEntidadHistorial.ZonaComun" EntidadId="@ZonaId" />
 </div>
 }
+</fieldset>
 }
 
 @* Confirmacion de borrado de la zona (type-to-confirm, patron compartido mha-cdel-*). *@
@@ -522,6 +526,9 @@ else if (_tab == "historial")
 
     // Cuando se abre recien creada (ojito), arranca en "Editar datos" para completar y guardar.
     [Parameter] public bool AbrirEnEdicion { get; set; }
+    /// <summary>Sin permiso de Editar en Mi Copropiedad (Alex 2026-11-27): la ficha abre en vista, sin editar ni
+    /// eliminar (el API igual bloquea las escrituras).</summary>
+    [Parameter] public bool SoloLectura { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -815,7 +822,7 @@ else if (_tab == "historial")
         _form.TarifaReserva = z.TarifaReserva;
         _form.ReglasUso = z.ReglasUso;
         _msg = "";
-        _editMode = true; _tab = "ficha";
+        _editMode = !SoloLectura; _tab = "ficha";
     }
 
     private async Task GuardarDatosAsync()

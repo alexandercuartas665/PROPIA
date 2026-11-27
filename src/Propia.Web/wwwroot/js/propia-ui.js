@@ -1137,7 +1137,7 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
         return orden.map(function (r) { return r.el; });
     }
     window.propiaUI.focosFilaAlta = focosDe;
-    // 6) Fila de alta de TAREAS (Alex 2026-11-26): al LLEGAR con Tab / Shift+Tab a una lista (Etapa, Responsable,
+    // 6) Fila de alta (Tareas y las tablas con data-alta-fila; Alex 2026-11-26): al LLEGAR con Tab / Shift+Tab a una lista (Etapa, Responsable,
     //    Etiquetas, Prioridad, campos de lista) se abre sola, como ya hacia Origen. Se abre con la misma tecla que la
     //    lista ya entiende (flecha abajo). Solo si el foco llego por Tab hace un instante: al volver al disparador por
     //    Enter/Esc de la propia lista no se reabre. Origen (.sora-trg) se abre solo al enfocarse.
@@ -1148,9 +1148,24 @@ window.propiaUI.explorerSplits = function (rootSelector, storageKey) {
             var el = e.target;
             if (!el || !el.matches || !el.matches('.lbx-trg') || el.matches('.sora-trg') || el.disabled) return;
             if (Date.now() - tabTs > 500) return;
-            var row = el.closest('.tb-newrow, .tb-subadd-row');
-            if (!row || row.classList.contains('tb-cta-row')) return;
+            // Tareas (fila y subfila) y cualquier fila de alta marcada data-alta-fila (Unidades, Equipos, Zonas...,
+            // Alex 2026-11-26: "migrar los ajustes de Tareas").
+            var row = filaAlta(el) || el.closest('.tb-subadd-row');
+            if (!row) return;
             el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }));
+        } catch (x) { }
+    });
+    // Guarda (2026-11-26): a veces la caja de la lista que se acaba de abrir se vuelve a pintar entre el anclaje y el foco
+    // y queda sin posicion (fuera de pantalla, top -9999px) aunque el buscador ya tiene el foco. Al recibir el foco el
+    // buscador, si su caja no esta anclada, se ancla a su disparador.
+    document.addEventListener('focusin', function (e) {
+        try {
+            var q = e.target;
+            if (!q || !q.matches || !q.matches('.lbx-q')) return;
+            var pop = q.closest('.lbx-pop');
+            if (!pop || !pop.id || pop.style.top) return;
+            var w = pop.closest('.lbx-wrap'), t = w && w.querySelector('.lbx-trg');
+            if (t && t.id) window.propiaUI.anchorFloatMenu('#' + t.id, '#' + pop.id);
         } catch (x) { }
     });
     // 5) Tab / Shift+Tab en una fila de alta: pasan al campo siguiente/anterior en el orden VISUAL (focosDe). Si el foco

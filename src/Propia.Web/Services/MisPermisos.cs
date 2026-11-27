@@ -29,11 +29,16 @@ public sealed class MisPermisos
     }
 
     public async Task<bool> PuedeAsync(string modulo, AccionPermiso accion)
+        => (await ObtenerAsync())?.Puede(modulo, accion) ?? false;
+
+    /// <summary>Todos los permisos del usuario actual (null si no se pudieron leer: prerender, sin sesion o
+    /// error). El menu lateral lo usa para ocultar los modulos sin permiso de Ver (Alex 2026-11-27).</summary>
+    public async Task<MisPermisosDto?> ObtenerAsync()
     {
         string? jwt;
         try { jwt = await _js.InvokeAsync<string?>("propiaAuth.get", "propia_jwt"); }
-        catch { return false; } // prerender / circuito caido
-        if (string.IsNullOrWhiteSpace(jwt)) return false;
+        catch { return null; } // prerender / circuito caido
+        if (string.IsNullOrWhiteSpace(jwt)) return null;
 
         if (_carga is null || jwt != _jwt || DateTimeOffset.UtcNow - _cargado > Vigencia)
         {
@@ -43,7 +48,7 @@ public sealed class MisPermisos
         }
         var p = await _carga;
         if (p is null) _carga = null; // no cachear el error: reintenta en la proxima consulta
-        return p?.Puede(modulo, accion) ?? false;
+        return p;
     }
 
     private async Task<MisPermisosDto?> CargarAsync(string jwt)

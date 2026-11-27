@@ -1,0 +1,55 @@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@* Filtro del menu lateral por permisos (Alex 2026-11-27). El NavMenu se pinta ESTATICO (sin JWT del lado del
+   servidor), asi que esta isla interactiva lee los permisos del usuario (Services/MisPermisos, con el JWT del
+   navegador) y emite una regla de estilo que oculta los items sin permiso de Ver (data-pnav-key) y las secciones que
+   quedan vacias (data-pnav-sec). La isla se conserva entre navegaciones, asi que la regla tambien. El administrador
+   ve todo. Si los permisos no se pueden leer, no oculta nada (el API sigue bloqueando las escrituras). *@
+@using Propia.Application.Navegacion
+@inject IMenuConfigService MenuSvc
+@inject Propia.Web.Services.MisPermisos Permisos
+
+@if (!string.IsNullOrEmpty(_css))
+{
+    <style>@_css</style>
+}
+
+@code {
+    private string? _css;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var p = await Permisos.ObtenerAsync();
+            if (p is null || p.EsAdministrador) return;
+            var menu = await MenuSvc.GetResolvedMenuAsync();
+            var reglas = new List<string>();
+            foreach (var s in menu.Sections)
+            {
+                var visibles = 0;
+                foreach (var it in s.Items.Where(i => !i.Hidden))
+                {
+                    var hijos = it.Children?.Where(c => !c.Hidden).ToList();
+                    bool ocultar;
+                    if (hijos is { Count: > 0 })
+                    {
+                        var hijosOcultos = hijos.Where(c => !Propia.Web.Services.MenuPermisos.PuedeVer(c.Key, p)).ToList();
+                        foreach (var c in hijosOcultos) reglas.Add(Sel("key", c.Key));
+                        ocultar = hijosOcultos.Count == hijos.Count;
+                    }
+                    else ocultar = !Propia.Web.Services.MenuPermisos.PuedeVer(it.Key, p);
+                    if (ocultar) reglas.Add(Sel("key", it.Key)); else visibles++;
+                }
+                if (visibles == 0) reglas.Add(Sel("sec", s.Key));
+            }
+            if (reglas.Count == 0) return;
+            _css = string.Join(",", reglas) + "{display:none !important}";
+            StateHasChanged();
+        }
+        catch { /* sin filtro: el menu queda completo */ }
+    }
+
+    // Las claves son del catalogo o "custom-..." (letras, numeros y guiones): se escapan comillas por si acaso.
+    private static string Sel(string tipo, string clave) => ".pnav [data-pnav-" + tipo + "=\"" + clave.Replace("\"", "") + "\"]";
+}

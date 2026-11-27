@@ -13,7 +13,10 @@
      detras del equipo de trabajo); con opciones ocultas se muestra TextoOcultas al pie. *@
 @inject IJSRuntime Js
 
-<span class="lbx-wrap @WrapClass" @ref="_wrap">
+@* Con la lista ABIERTA sus teclas (Enter elige, Esc cierra, flechas) no suben a un @onkeydown de la fila que la
+   contiene: en Unidades / Equipos / Zonas la fila de alta escucha Enter (guardar) y Esc (cancelar) a nivel de fila
+   (Alex 2026-11-26). Cerrada, el disparador se comporta como antes (Enter / Esc llegan a la fila). *@
+<span class="lbx-wrap @WrapClass" @ref="_wrap" @onkeydown:stopPropagation="_open">
     <button type="button" id="@_trgId" class="lbx-trg @TriggerClass @(_open ? "lbx-trg--open" : "")" style="@TriggerStyle"
             @ref="_trg" @onclick="() => Abrir(null)" @onkeydown="TrgKeyAsync" disabled="@Disabled" title="@Title" aria-haspopup="listbox" aria-expanded="@(_open ? "true" : "false")">
         @if (TriggerContent is not null)
@@ -115,6 +118,10 @@
     [Parameter] public string? Title { get; set; }
     /// <summary>Clase extra del contenedor (p.ej. "lbx-wrap--inline" para un disparador pequeno como el "+").</summary>
     [Parameter] public string? WrapClass { get; set; }
+    /// <summary>true = se abre sola al montarse. Para tablas grandes (Unidades): la celda se pinta como un boton
+    /// liviano y la lista se monta SOLO en la celda que se toca (cientos de listas montadas hacian lento cada
+    /// repintado de la tabla).</summary>
+    [Parameter] public bool AbrirAlMontar { get; set; }
 
     private readonly string _trgId = "lbx-t-" + Guid.NewGuid().ToString("N")[..10];
     private readonly string _popId = "lbx-p-" + Guid.NewGuid().ToString("N")[..10];
@@ -220,6 +227,12 @@
     // ("salta a la fecha y rebota a Etiquetas", Alex 2026-11-23). Si ya se fue, la caja se cierra.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender && AbrirAlMontar && !_open)
+        {
+            Abrir(null);
+            StateHasChanged();
+            return;
+        }
         if (_open && _anclar)
         {
             _anclar = false;
