@@ -7,6 +7,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@inject Propia.Web.Services.MisPermisos PermisosPantalla
 @implements IDisposable
 
 @if (!Embedded) { <PageTitle>Unidades Privadas - PROPIA</PageTitle> }
@@ -25,7 +26,7 @@
             <p class="dst-pagesub">Composicion de @(_resumen?.Identidad.Nombre ?? "la copropiedad") &mdash; unidades con su codigo y coeficiente.</p>
         </div>
     }
-    @if (!Embedded && _authChecked && _jwt is not null)
+    @if (!Embedded && _authChecked && _jwt is not null && _puedeCrear)
     {
         @* La DESCARGA de la plantilla vive UNICAMENTE en el hub Configuracion Copropiedad
            (componente HubCargaMasiva): se retiro de aqui por pedido de Alex para no duplicar el
@@ -180,7 +181,7 @@
    en el gestor completo (AbrirGestorAvanzado). *@
 @if (_crearCampoAbierto)
 {
-    <CrearCampoModal Prefijo="unidades"
+    <CrearCampoModal Prefijo="unidades" Paleta="PaletaChips.UnicaHex"
                      TituloSingular="unidad"
                      Ejemplo="Ej. N de medidor, Color de fachada"
                      Jwt="@_jwt"
@@ -198,7 +199,7 @@
     @* Clave capturada: "Gestionar colores y orden" abre el editor de la lista (color/ocultar/orden) DESPUES de
        que el modal corre Cerrado (que limpia _editSisClave), por eso se captura el valor aqui. *@
     var claveGestor = _editSisClave;
-    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq" Paleta="PaletaChips.UnicaHex"
                              EntidadConfig="unidad" TituloSingular="unidad" Jwt="@_jwt"
                              OpcionesLista="@(_editSisTipo == TipoCampoTablero.Seleccion ? OpcionesVistaDe(_editSisClave) : null)"
                              OnAgregarOpcion="@((t) => AgregarOpcionDesdeModalAsync(_editSisClave, t))"
@@ -290,7 +291,7 @@
                                         {
                                             <div class="ol-pal-bd" @onclick="() => _palSisIdx = null"></div>
                                             <div class="ol-pal">
-                                                @foreach (var c in PaletaChips.ColoresPasteles)
+                                                @foreach (var c in PaletaChips.UnicaHex)
                                                 {
                                                     var cc = c;
                                                     <button type="button" class="ol-pal-sw @(string.Equals(op.Color, cc, StringComparison.OrdinalIgnoreCase) ? "on" : "")"
@@ -518,7 +519,7 @@ else
                                 <span class="tbl-col-rz" title="Arrastra para ajustar el ancho | doble clic para autoajustar" @onmousedown="e => IniciarResize(e, clave)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true" @onclick:stopPropagation="true" @ondblclick="() => ResetResize(clave)" @ondblclick:stopPropagation="true"></span>
                             </th>
                         }
-                        <th class="tbl-addcol"><button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button></th>
+                        <th class="tbl-addcol">@if (_puedeEditar) { <button type="button" class="tbl-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampo"><i class="fi fi-rr-plus"></i></button> }</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -570,40 +571,48 @@ else
                                     switch (cdd.Tipo)
                                     {
                                         case TipoCampoTablero.Seleccion:
-                                            <td title="@cdd.Label"><select class="tbl-cell tbl-cell-lista" style="@SelectListaStyle(ColorCampoCelda(uu.Id, cdd))" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
-                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
-                                                @foreach (var o in OpcionCampo.Parse(cdd.Opciones).Where(x => !x.Oculta))
-                                                {
-                                                    <option value="@o.K" selected="@(string.Equals(raw, o.K, StringComparison.OrdinalIgnoreCase))">@o.K</option>
-                                                }
-                                            </select></td>
+                                            <td title="@cdd.Label">@if (EsCeldaLbx(uu.Id, cdd.Id.ToString()))
+                                            {
+                                                <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cdd.Opciones, raw)" Valor="@(raw ?? "")"
+                                                               ValorChanged="@(v => CerrarCeldaLbx(() => InlineCampoAsync(uu, cdd, v)))">
+                                                    <TriggerContent><ChipValor Texto="@raw" Color="@ColorCampoCelda(uu.Id, cdd)" /></TriggerContent>
+                                                </ListaBuscable>
+                                            }
+                                            else { @CeldaChip(uu.Id, cdd.Id.ToString(), raw, ColorCampoCelda(uu.Id, cdd), true) }</td>
                                             break;
                                         case TipoCampoTablero.Numero:
                                         case TipoCampoTablero.Moneda:
-                                            <td title="@cdd.Label"><input class="tbl-cell tbl-cell-num" type="number" step="any" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            <td title="@cdd.Label"><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="any" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
                                             break;
                                         case TipoCampoTablero.ModuloContributivo:
-                                            <td title="@cdd.Label"><input class="tbl-cell tbl-cell-num" type="number" step="0.00001" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            <td title="@cdd.Label"><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="0.00001" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
                                             break;
                                         case TipoCampoTablero.Fecha:
-                                            <td title="@cdd.Label"><input class="tbl-cell" type="date" value="@raw" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            <td title="@cdd.Label"><input readonly="@(!_puedeEditar)" class="tbl-cell" type="date" value="@raw" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
                                             break;
                                         case TipoCampoTablero.Booleano:
-                                            <td title="@cdd.Label"><select class="tbl-cell" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
-                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
-                                                <option value="Si" selected="@(raw == "Si")">Si</option>
-                                                <option value="No" selected="@(raw == "No")">No</option>
-                                            </select></td>
+                                            <td title="@cdd.Label">@if (EsCeldaLbx(uu.Id, cdd.Id.ToString()))
+                                            {
+                                                <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(raw ?? "")"
+                                                               ValorChanged="@(v => CerrarCeldaLbx(() => InlineCampoAsync(uu, cdd, v)))">
+                                                    <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(raw)" Chip="false" /></TriggerContent>
+                                                </ListaBuscable>
+                                            }
+                                            else { @CeldaChip(uu.Id, cdd.Id.ToString(), OpcionesListaBuscable.TextoSiNo(raw), null, false) }</td>
                                             break;
                                         case TipoCampoTablero.Formula:
                                             @* Calculado y de solo lectura: se computa en el backend. *@
                                             <td class="nf-mut" title="Se calcula automaticamente">@MostrarCampoCelda(uu.Id, cdd)</td>
                                             break;
                                         case TipoCampoTablero.Usuario:
-                                            <td title="@cdd.Label"><select class="tbl-cell" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())">
-                                                <option value="" selected="@(string.IsNullOrWhiteSpace(raw))">-</option>
-                                                @foreach (var us in _usuariosTenant) { <option value="@us.PersonaId" selected="@(raw == us.PersonaId.ToString())">@us.NombreCompleto</option> }
-                                            </select></td>
+                                            <td title="@cdd.Label">@if (EsCeldaLbx(uu.Id, cdd.Id.ToString()))
+                                            {
+                                                <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" Opciones="@OpcUsuariosUn" Valor="@(raw ?? "")"
+                                                               ValorChanged="@(v => CerrarCeldaLbx(() => InlineCampoAsync(uu, cdd, v)))">
+                                                    <TriggerContent><ChipValor Texto="@NombreUsuarioUn(raw)" Chip="false" /></TriggerContent>
+                                                </ListaBuscable>
+                                            }
+                                            else { @CeldaChip(uu.Id, cdd.Id.ToString(), NombreUsuarioUn(raw), null, false) }</td>
                                             break;
                                         case TipoCampoTablero.Directorio:
                                             @* El tipo Directorio (persona) se edita desde la ficha: un SelectorPersona por fila
@@ -611,7 +620,7 @@ else
                                             <td class="nf-mut" title="@cdd.Label - Editar desde la ficha">@MostrarCampoCelda(uu.Id, cdd)</td>
                                             break;
                                         default:
-                                            <td title="@cdd.Label"><input class="tbl-cell" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
+                                            <td title="@cdd.Label"><input readonly="@(!_puedeEditar)" class="tbl-cell" value="@raw" placeholder="-" @onchange="(e) => InlineCampoAsync(uu, cdd, e.Value?.ToString())" /></td>
                                             break;
                                     }
                                     continue;
@@ -619,68 +628,69 @@ else
                                 switch (it.Def!.Key)
                                 {
                                     case "num":
-                                        <td><input class="tbl-cell tbl-cell-cod" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-cod" value="@uu.Numero" @onchange="@(e => Inline(uu, "num", e))" /></td>
                                         break;
                                     case "piso":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" value="@(uu.Piso?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "piso", e))" /></td>
                                         break;
                                     case "tipo":
                                         @* Si el tipo de la unidad quedo oculto se ofrece igual: si no, el select
                                            mostraria otra opcion y al tocar la celda se guardaria un valor que
                                            nadie eligio. *@
-                                        <td><select class="tbl-cell tbl-cell-lista" style="@SelectListaStyle(ColorTipoCelda(uu))" @onchange="@(e => Inline(uu, "tipo", e))">
-                                            @foreach (var t in TiposBaseConVigente(uu))
-                                            {
-                                                <option value="@($"e:{t}")" selected="@(uu.TipoCustomId is null && uu.Tipo == t)">@Etiqueta(t)</option>
-                                            }
-                                            @{ var tcv = TiposCustomConVigente(uu); }
-                                            @if (tcv.Count > 0)
-                                            {
-                                                <optgroup label="Tipos propios">
-                                                    @foreach (var tc in tcv) { <option value="@($"c:{tc.Id}")" selected="@(uu.TipoCustomId == tc.Id)">@tc.Nombre</option> }
-                                                </optgroup>
-                                            }
-                                        </select></td>
+                                        <td>@if (EsCeldaLbx(uu.Id, "tipo"))
+                                        {
+                                            <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcTipoUn(TiposBaseConVigente(uu), TiposCustomConVigente(uu))" Valor="@TipoKeyUn(uu)"
+                                                           ValorChanged="@(v => CerrarCeldaLbx(() => Inline(uu, "tipo", new ChangeEventArgs { Value = v })))">
+                                                <TriggerContent><ChipValor Texto="@TextoTipoKeyUn(TipoKeyUn(uu))" Color="@ColorTipoCelda(uu)" /></TriggerContent>
+                                            </ListaBuscable>
+                                        }
+                                        else { @CeldaChip(uu.Id, "tipo", TextoTipoKeyUn(TipoKeyUn(uu)), ColorTipoCelda(uu), true) }</td>
                                         break;
                                     case "estado":
-                                        <td><select class="tbl-cell tbl-cell-lista" style="@SelectListaStyle(ColorEstadoCelda(uu.Estado))" @onchange="@(e => Inline(uu, "estado", e))">
-                                            @foreach (var es in EstadosConVigente(uu.Estado))
-                                            {
-                                                <option value="@es" selected="@(string.Equals(uu.Estado, es, StringComparison.OrdinalIgnoreCase))">@es</option>
-                                            }
-                                        </select></td>
+                                        <td>@if (EsCeldaLbx(uu.Id, "estado"))
+                                        {
+                                            <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcEstadoUn(EstadosConVigente(uu.Estado), false)" Valor="@(uu.Estado ?? "")"
+                                                           ValorChanged="@(v => CerrarCeldaLbx(() => Inline(uu, "estado", new ChangeEventArgs { Value = v })))">
+                                                <TriggerContent><ChipValor Texto="@uu.Estado" Color="@ColorEstadoCelda(uu.Estado)" /></TriggerContent>
+                                            </ListaBuscable>
+                                        }
+                                        else { @CeldaChip(uu.Id, "estado", uu.Estado, ColorEstadoCelda(uu.Estado), true) }</td>
                                         break;
                                     case "area":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("area")" value="@NumeroCelda(uu.AreaM2, "area")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("area")" value="@NumeroCelda(uu.AreaM2, "area")" placeholder="-" @onchange="@(e => Inline(uu, "area", e))" /></td>
                                         break;
                                     case "coef":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("coef")" value="@NumeroCelda(uu.CoeficientePropiedad, "coef")" @onchange="@(e => Inline(uu, "coef", e))" /></td>
                                         break;
                                     case { } mc when ModContribNumero(mc) is not null:
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe(mc)" placeholder="-"
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="@PasoDe(mc)" placeholder="-"
                                                value="@NumeroCelda(ModContribValor(uu, ModContribNumero(mc)!.Value), mc)"
                                                @onchange="@(e => Inline(uu, mc, e))" /></td>
                                         break;
                                     case "habitaciones":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" value="@(uu.Habitaciones?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "habitaciones", e))" /></td>
                                         break;
                                     case "banos":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Banos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "banos", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" value="@(uu.Banos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "banos", e))" /></td>
                                         break;
                                     case "parqueaderos":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" value="@(uu.Parqueaderos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "parqueaderos", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" value="@(uu.Parqueaderos?.ToString() ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "parqueaderos", e))" /></td>
                                         break;
                                     case "pagaadmin":
-                                        <td><select class="tbl-cell" @onchange="@(e => Inline(uu, "pagaadmin", e))">
-                                            <option value="true" selected="@(uu.PagaAdministracion)">Si</option>
-                                            <option value="false" selected="@(!uu.PagaAdministracion)">No</option>
-                                        </select></td>
+                                        <td>@if (EsCeldaLbx(uu.Id, "pagaadmin"))
+                                        {
+                                            <ListaBuscable AbrirAlMontar="true" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@(uu.PagaAdministracion ? "true" : "false")"
+                                                           ValorChanged="@(v => CerrarCeldaLbx(() => Inline(uu, "pagaadmin", new ChangeEventArgs { Value = v })))">
+                                                <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(uu.PagaAdministracion ? "true" : "false")" Chip="false" /></TriggerContent>
+                                            </ListaBuscable>
+                                        }
+                                        else { @CeldaChip(uu.Id, "pagaadmin", OpcionesListaBuscable.TextoSiNo(uu.PagaAdministracion ? "true" : "false"), null, false) }</td>
                                         break;
                                     case "cuota":
-                                        <td><input class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("cuota")" value="@NumeroCelda(uu.CuotaMensual, "cuota")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell tbl-cell-num" type="number" step="@PasoDe("cuota")" value="@NumeroCelda(uu.CuotaMensual, "cuota")" placeholder="-" @onchange="@(e => Inline(uu, "cuota", e))" /></td>
                                         break;
                                     case "observaciones":
-                                        <td><input class="tbl-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell" type="@TipoInput("observaciones")" maxlength="@MaxDe("observaciones")" value="@(uu.Observaciones ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "observaciones", e))" /></td>
                                         break;
                                     case "agrupacion":
                                         @* Solo lectura: la agrupacion (Individual / Principal) es derivada y los anexos
@@ -688,10 +698,10 @@ else
                                         <td class="tbl-ro" title="Los anexos se gestionan desde la ficha de la unidad">@AgrupacionDe(uu)</td>
                                         break;
                                     case "matricula":
-                                        <td><input class="tbl-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell" type="@TipoInput("matricula")" maxlength="@MaxDe("matricula")" value="@(uu.MatriculaInmobiliaria ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "matricula", e))" /></td>
                                         break;
                                     case "refpago":
-                                        <td><input class="tbl-cell" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" /></td>
+                                        <td><input readonly="@(!_puedeEditar)" class="tbl-cell" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" value="@(uu.ReferenciaPago ?? "")" placeholder="-" @onchange="@(e => Inline(uu, "refpago", e))" /></td>
                                         break;
                                     case "prop":
                                         <td>
@@ -701,9 +711,12 @@ else
                                                     <span class="tbl-prop-nom">@uu.PropietarioNombre</span>
                                                     @if (uu.PropietariosCount > 1) { <span class="dst-mas" title="@uu.PropietariosCount propietarios">+@(uu.PropietariosCount - 1)</span> }
                                                 }
+                                                @if (_puedeEditar)
+                                                {
                                                 <SelectorPersona Flotante="true" Jwt="@_jwt"
                                                                  Placeholder="@(string.IsNullOrWhiteSpace(uu.PropietarioNombre) ? "Asignar propietario..." : "Cambiar / agregar...")"
                                                                  SeleccionadaChanged="(c) => AsignarPropietarioAsync(uu, c)" />
+                                                }
                                             </div>
                                         </td>
                                         break;
@@ -714,7 +727,7 @@ else
                     }
                     @* Fila de alta inline: crear unidad desde la tabla (como Zonas/Seguros). El propietario
                        se asigna despues en la ficha (expander). El expander de esta fila crea y abre la ficha. *@
-                    @if (_altaAbierta)
+                    @if (_altaAbierta && _puedeCrear)
                     {
                     <tr class="newrow newrow--edit" data-alta-fila @onkeydown="OnAltaKeydown">
                         <td class="tbl-sel"></td>
@@ -732,13 +745,10 @@ else
                                 switch (cdd.Tipo)
                                 {
                                     case TipoCampoTablero.Seleccion:
-                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                            <option value="">- elegir -</option>
-                                            @foreach (var o in OpcionCampo.Parse(cdd.Opciones).Where(x => !x.Oculta))
-                                            {
-                                                <option value="@o.K" style="@(o.Color is null ? null : $"background:{o.Color}")">@o.K</option>
-                                            }
-                                        </select></td>
+                                        <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cdd.Opciones)" Valor="@(val ?? "")"
+                                                                           ValorChanged="@(v => _nuCampos[cdd.Id] = v)">
+                                            <TriggerContent><ChipValor Texto="@val" Color="@OpcionesListaBuscable.ColorDe(cdd.Opciones, val)" Vacio="Elegir..." /></TriggerContent>
+                                        </ListaBuscable></td>
                                         break;
                                     case TipoCampoTablero.Numero:
                                     case TipoCampoTablero.Moneda:
@@ -751,21 +761,16 @@ else
                                         <td class="nf-cell"><input class="nf-in" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" /></td>
                                         break;
                                     case TipoCampoTablero.Booleano:
-                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                            <option value="">- elegir -</option>
-                                            <option value="Si">Si</option>
-                                            <option value="No">No</option>
-                                        </select></td>
+                                        <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(val ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                                                           ValorChanged="@(v => _nuCampos[cdd.Id] = v)" /></td>
                                         break;
                                     case TipoCampoTablero.Formula:
                                         @* Calculado y de solo lectura: no se captura, se computa al guardar/leer. *@
                                         <td class="nf-mut" title="Se calcula automaticamente">(se calcula)</td>
                                         break;
                                     case TipoCampoTablero.Usuario:
-                                        <td class="nf-cell"><select class="nf-in" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                            <option value="">- elegir -</option>
-                                            @foreach (var u in _usuariosTenant) { <option value="@u.PersonaId">@u.NombreCompleto</option> }
-                                        </select></td>
+                                        <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" Opciones="@OpcUsuariosUn" Valor="@(val ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                                                           ValorChanged="@(v => _nuCampos[cdd.Id] = v)" /></td>
                                         break;
                                     case TipoCampoTablero.Directorio:
                                         <td class="nf-cell"><SelectorPersona Flotante="true" Jwt="@_jwt" Placeholder="Buscar persona..."
@@ -786,15 +791,10 @@ else
                                     <td class="nf-cell"><input class="nf-in nf-in-num" type="number" placeholder="-" @bind="_nuPiso" @bind:event="oninput" /></td>
                                     break;
                                 case "tipo":
-                                    <td class="nf-cell"><select class="nf-in" @bind="_nuTipoKey">
-                                        @foreach (var t in TiposBaseVisibles) { <option value="@($"e:{t}")">@Etiqueta(t)</option> }
-                                        @if (TiposCustomVisibles.Count > 0)
-                                        {
-                                            <optgroup label="Tipos propios">
-                                                @foreach (var tc in TiposCustomVisibles) { <option value="@($"c:{tc.Id}")">@tc.Nombre</option> }
-                                            </optgroup>
-                                        }
-                                    </select></td>
+                                    <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" OpcionesComoChip="true" Opciones="@OpcTipoUn(TiposBaseVisibles, TiposCustomVisibles)" Valor="@_nuTipoKey"
+                                                                       ValorChanged="@(v => _nuTipoKey = string.IsNullOrEmpty(v) ? _nuTipoKey : v)">
+                                        <TriggerContent><ChipValor Texto="@TextoTipoKeyUn(_nuTipoKey)" Color="@ColorTipoKeyUn(_nuTipoKey)" /></TriggerContent>
+                                    </ListaBuscable></td>
                                     break;
                                 case "area":
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("area")" placeholder="-" @bind="_nuArea" @bind:event="oninput" /></td>
@@ -813,10 +813,10 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="@TipoInput("refpago")" maxlength="@MaxDe("refpago")" placeholder="@AliasCampo("refpago", "Ref. pago")" @bind="_nuRefPago" @bind:event="oninput" /></td>
                                     break;
                                 case "estado":
-                                    <td class="nf-cell"><select class="nf-in" @bind="_nuEstado">
-                                        <option value="">- elegir -</option>
-                                        @foreach (var es in EstadosConfig()) { <option value="@es">@es</option> }
-                                    </select></td>
+                                    <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" OpcionesComoChip="true" Opciones="@OpcEstadoUn(EstadosConfig(), true)" Valor="@_nuEstado"
+                                                                       ValorChanged="@(v => _nuEstado = v ?? "")">
+                                        <TriggerContent><ChipValor Texto="@_nuEstado" Color="@ColorEstadoCelda(_nuEstado)" Vacio="Elegir..." /></TriggerContent>
+                                    </ListaBuscable></td>
                                     break;
                                 case "habitaciones":
                                     <td class="nf-cell"><input class="nf-in" type="number" placeholder="-" @bind="_nuHab" @bind:event="oninput" /></td>
@@ -828,10 +828,8 @@ else
                                     <td class="nf-cell"><input class="nf-in" type="number" placeholder="-" @bind="_nuParq" @bind:event="oninput" /></td>
                                     break;
                                 case "pagaadmin":
-                                    <td class="nf-cell"><select class="nf-in" @bind="_nuPagaAdmin">
-                                        <option value="true">Si</option>
-                                        <option value="false">No</option>
-                                    </select></td>
+                                    <td class="nf-cell"><ListaBuscable TriggerClass="nf-in" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@_nuPagaAdmin"
+                                                                       ValorChanged="@(v => _nuPagaAdmin = v ?? "true")" /></td>
                                     break;
                                 case "cuota":
                                     <td class="nf-cell"><input class="nf-in" type="number" step="@PasoDe("cuota")" placeholder="-" @bind="_nuCuota" @bind:event="oninput" /></td>
@@ -867,7 +865,7 @@ else
                         </td>
                     </tr>
                     }
-                    else
+                    else if (_puedeCrear)
                     {
                     <tr class="newrow" id="dst-cta-row">
                         <td class="tbl-sel"></td>
@@ -887,7 +885,7 @@ else
                     @if (_gruposU.Count == 0 && Mostradas < Filtradas.Count) { <span class="tbl-inf-dot"></span> <span>Cargando mas...</span> }
                 </div>
                 </div>
-                <button type="button" class="tbl-fab" hidden="@_ctaVisible" @onclick="FabAgregarAsync" title="Agregar registro">
+                <button type="button" class="tbl-fab" hidden="@(_ctaVisible || !_puedeCrear)" @onclick="FabAgregarAsync" title="Agregar registro">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     Agregar registro
                 </button>
@@ -1094,11 +1092,6 @@ else
         return v;
     }
 
-    // Estilo del select de Lista editable: lo tinta con el color de la opcion elegida (conserva el look del
-    // chip siendo editable). Sin color -> null (select plano).
-    private static string? SelectListaStyle(string? color)
-        => string.IsNullOrWhiteSpace(color) ? null : $"background:{color}; border-color:{color}; color:{PaletaChips.TextoSobre(color)};";
-
     // Color de la celda de TIPO (por la clave e:/c: de la unidad) y de ESTADO (por label), leido del override
     // de la copropiedad (config Opciones). Pinta la celda con el color elegido en "Gestionar colores y orden".
     private string? ColorTipoCelda(UnidadDto u)
@@ -1106,6 +1099,46 @@ else
         var clave = u.TipoCustomId is { } g ? "c:" + g : "e:" + u.Tipo;
         return LeerOpciones("tipo").FirstOrDefault(o => string.Equals(o.K, clave, StringComparison.OrdinalIgnoreCase))?.Color;
     }
+    // ListaBuscable con chips pastel (piloto Tareas replicado, Alex 2026-11-26). Tipo: clave "e:<enum>" o
+    // "c:<guid>" (tipo propio); Estado: texto; Usuario: PersonaId. Los valores guardados no cambian.
+    // Celdas de lista LIVIANAS (rendimiento, Alex 2026-11-26): con cientos de unidades, una ListaBuscable montada por
+    // celda hacia cada repintado de la tabla ~70% mas lento que con los select nativos (y una lista que se abria al
+    // llegar con Tab se cerraba sola por la demora). La celda se pinta como un boton con el chip y la ListaBuscable
+    // se monta (abierta) SOLO en la celda que se toca; al elegir vuelve a ser boton.
+    private (Guid Id, string Clave)? _celdaLbx;
+    private bool EsCeldaLbx(Guid id, string clave) => _celdaLbx is { } c && c.Id == id && c.Clave == clave;
+    private void AbrirCeldaLbx(Guid id, string clave) => _celdaLbx = (id, clave);
+    private async Task CerrarCeldaLbx(Func<Task> guardar) { _celdaLbx = null; await guardar(); }
+    private RenderFragment CeldaChip(Guid id, string clave, string? texto, string? color, bool chip) =>
+        @<button type="button" class="lbx-trg lbx-plain" disabled="@(!_puedeEditar)" @onclick="() => AbrirCeldaLbx(id, clave)">
+            <span class="lbx-trg-tx lbx-chips">
+                @if (string.IsNullOrWhiteSpace(texto)) { <span class="lbx-chips-ph">-</span> }
+                else if (chip) { <span class="lbx-chip" style="@PaletaChips.ChipEstilo(color ?? PaletaChips.Neutro)">@texto</span> }
+                else { <span>@texto</span> }
+            </span>
+            <svg class="lbx-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>;
+    private static string TipoKeyUn(UnidadDto u) => u.TipoCustomId is { } g ? "c:" + g : "e:" + u.Tipo;
+    private string? ColorTipoKeyUn(string? key)
+        => LeerOpciones("tipo").FirstOrDefault(o => string.Equals(o.K, key, StringComparison.OrdinalIgnoreCase))?.Color;
+    private string TextoTipoKeyUn(string? key)
+    {
+        if (string.IsNullOrEmpty(key) || key.Length < 3) return key ?? "";
+        if (key.StartsWith("c:") && Guid.TryParse(key[2..], out var g)) return _tiposCustom.FirstOrDefault(t => t.Id == g)?.Nombre ?? key;
+        return Enum.TryParse<TipoUnidad>(key[2..], out var t2) ? Etiqueta(t2) : key;
+    }
+    private IReadOnlyList<ListaBuscable.Opcion> OpcTipoUn(IEnumerable<TipoUnidad> bases, IEnumerable<TipoUnidadCustomDto> propios)
+        => bases.Select(t => new ListaBuscable.Opcion("e:" + t, Etiqueta(t), ColorTipoKeyUn("e:" + t) ?? PaletaChips.Neutro))
+            .Concat(propios.Select(tc => new ListaBuscable.Opcion("c:" + tc.Id, tc.Nombre, ColorTipoKeyUn("c:" + tc.Id) ?? PaletaChips.Neutro, "Tipo propio")))
+            .ToList();
+    private IReadOnlyList<ListaBuscable.Opcion> OpcEstadoUn(IEnumerable<string> estados, bool conVacio)
+        => (conVacio ? new[] { new ListaBuscable.Opcion("", "Sin estado") } : Array.Empty<ListaBuscable.Opcion>())
+            .Concat(estados.Select(e => new ListaBuscable.Opcion(e, e, ColorEstadoCelda(e) ?? PaletaChips.Neutro))).ToList();
+    private IReadOnlyList<ListaBuscable.Opcion> OpcUsuariosUn
+        => new[] { new ListaBuscable.Opcion("", "Sin valor") }
+            .Concat(_usuariosTenant.Select(u => new ListaBuscable.Opcion(u.PersonaId.ToString(), u.NombreCompleto))).ToList();
+    private string? NombreUsuarioUn(string? personaId)
+        => string.IsNullOrWhiteSpace(personaId) ? null : _usuariosTenant.FirstOrDefault(u => u.PersonaId.ToString() == personaId)?.NombreCompleto;
     private string? ColorEstadoCelda(string? estado)
         => string.IsNullOrWhiteSpace(estado) ? null
            : LeerOpciones("estado").FirstOrDefault(o => string.Equals(o.K, estado, StringComparison.OrdinalIgnoreCase))?.Color;
@@ -1141,7 +1174,8 @@ else
                 if (!_camposValores.TryGetValue(u.Id, out var m)) { m = new(); _camposValores[u.Id] = m; }
                 m[def.Id] = v;
             }
-            else { _inlineMsgU = "No se pudo guardar el campo."; }
+            // Motivo real del API (p.ej. "No tienes permiso para editar..."), como Zonas / Equipos (Alex 2026-11-26).
+            else { _inlineMsgU = await Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(resp); }
         }
         catch (Exception ex) { _inlineMsgU = "Error al guardar el campo: " + ex.Message; }
         StateHasChanged();
@@ -2177,8 +2211,10 @@ else
                 if (i >= 0) _unidades[i] = u with { Numero = numero, Tipo = tipo, TipoCustomId = tipoCustom, TipoCustomNombre = nombreCustom, Piso = piso, CoeficientePropiedad = coef, AreaM2 = area, Habitaciones = habitaciones, Banos = banos, Parqueaderos = parqueaderos, Estado = estado, Observaciones = observaciones, PagaAdministracion = pagaAdmin, CuotaMensual = cuota, MatriculaInmobiliaria = matricula, ReferenciaPago = refpago, ModuloContributivo1 = mc1, ModuloContributivo2 = mc2, ModuloContributivo3 = mc3, ModuloContributivo4 = mc4, ModuloContributivo5 = mc5 };
                 if (campo == "coef") AvisarSumaCoef();
             }
+            // Antes un rechazo del API (sin permiso, validacion) no mostraba nada: la celda volvia sola a su valor.
+            else _inlineMsgU = await Propia.Web.Services.HttpRespuestas.MensajeErrorAsync(r);
         }
-        catch { }
+        catch (Exception ex) { _inlineMsgU = "No se pudo guardar: " + ex.Message; }
     }
 
     private Task Inline(UnidadDto u, string campo, ChangeEventArgs e) => GuardarUnidadInline(u, campo, e.Value?.ToString());
@@ -2281,8 +2317,21 @@ else
         finally { _creandoUnidad = false; }
     }
 
+    // Permisos de la pantalla (Alex 2026-11-27): sin Crear en Mi Copropiedad no se ofrecen el alta, la carga de
+    // plantilla ni el FAB; sin Editar las celdas y la ficha quedan de solo lectura y no se crean columnas. Mientras no
+    // se leen (o si fallan) quedan habilitados: el API igual bloquea las escrituras con su mensaje.
+    private bool _puedeCrear = true, _puedeEditar = true;
+    private async Task CargarPermisosPantallaAsync()
+    {
+        var p = await PermisosPantalla.ObtenerAsync();
+        if (p is null) return;
+        _puedeCrear = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Crear);
+        _puedeEditar = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Editar);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender) { await CargarPermisosPantallaAsync(); StateHasChanged(); }
         if (firstRender && _jwt is null)
         {
             try
@@ -3129,7 +3178,7 @@ else
             try
             {
                 var flat = await http.GetFromJsonAsync<List<UnidadCampoValorFlatDto>>("/api/mi-copropiedad/unidades-campos-valores") ?? new();
-                _camposValores = flat.GroupBy(v => v.UnidadId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+                _camposValores = flat.GroupBy(v => v.UnidadId).ToDictionary(g => g.Key, g => g.GroupBy(x => x.DefinicionId).ToDictionary(x => x.Key, x => x.Last().Valor));
             }
             catch { _camposValores = new(); }
             // Fase 2: usuarios del tenant (para el picker/render de los campos tipo Usuario). Solo del
@@ -3333,7 +3382,8 @@ else
         var parameters = new ModalParameters()
             .Set("Jwt", _jwt)
             .Set("AgrupacionLabelSingular", LabelAgrupacionSingular)
-            .Set("PisoLabelSingular", LabelPisoSingular);
+            .Set("PisoLabelSingular", LabelPisoSingular)
+            .Set("SoloLectura", !_puedeEditar);
         // Clic en una fila -> abre en la ficha de esa unidad y oculta el arbol de torres (redundante
         // porque ya se eligio la unidad). El boton "Gestionar unidades" abre en modo navegacion.
         if (unidadId is not null)
@@ -3510,8 +3560,8 @@ else
     .dst-nf-inp { width: 100%; box-sizing: border-box; border: 1px dashed var(--propia-border-card); border-radius: 7px; padding: 5px 8px; font-size: 12.5px; color: var(--propia-text-body); background: var(--propia-bg-card); outline: none; font-family: inherit; }
     .dst-nf-inp:focus { border-style: solid; border-color: var(--propia-brand); box-shadow: 0 0 0 2px var(--propia-brand-soft); }
     /* Fila-aviso del alta invisible: recuerda como se guarda. Tenue, no interactiva. */
-    .dst-nf-hint { background: var(--propia-brand-soft-2, var(--propia-bg-subtle)); }
-    .dst-nf-hint:hover { background: var(--propia-brand-soft-2, var(--propia-bg-subtle)); }
+    .dst-nf-hint { background: var(--propia-bg-card); } /* Alex 2026-11-26: sin violeta, como Tareas */
+    .dst-nf-hint:hover { background: var(--propia-bg-card); }
     .dst-nf-hint > td { border-bottom: 1px solid var(--propia-border-divider); padding: 5px 16px; }
     .dst-nf-hint-txt { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--propia-text-faint); letter-spacing: .2px; }
     .dst-nf-hint-sep { opacity: .5; }

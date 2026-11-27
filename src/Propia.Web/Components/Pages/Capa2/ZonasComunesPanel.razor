@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@inject Propia.Web.Services.MisPermisos PermisosPantalla
 @implements IDisposable
 
 @* Zonas comunes: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
@@ -34,11 +35,14 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
                 Descargar plantilla
             </button>
+            @if (_puedeCrear)
+            {
             <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla Excel (crea o actualiza)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
                 <InputFile OnChange="OnPlantillaImport" accept=".xlsx,.xls" style="display:none" disabled="@_impBusy" />
             </label>
+            }
         </div>
     }
 </div>
@@ -209,7 +213,7 @@ else
                     </div>
                 </div>
             }
-            else
+            else if (_puedeCrear)
             {
                 <button type="button" class="zc-add-card" @onclick="AbrirComposer">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -279,7 +283,7 @@ else
                     }
                 }
                 <div></div>
-                <div class="zc-addcol-h"><button type="button" class="zc-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoZ"><i class="fi fi-rr-plus"></i></button></div>
+                <div class="zc-addcol-h">@if (_puedeEditar) { <button type="button" class="zc-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoZ"><i class="fi fi-rr-plus"></i></button> }</div>
             </div>
             @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaZonaTpl. *@
@@ -295,7 +299,7 @@ else
                 }
             }
             @* Alta inline. @@key limpia la fila al crear; @@oninput SIN value= evita perder pulsaciones. *@
-            @if (_altaAbiertaZ)
+            @if (_altaAbiertaZ && _puedeCrear)
             {
             <div class="zc-list-newrow zc-newrow--edit zc-grid" data-alta-fila style="@ZcGridStyle" @key="_nonce" @onkeydown="OnAltaKeydownZ">
                 <div class="zc-sel-cell"></div>
@@ -314,10 +318,10 @@ else
                         switch (cd.Tipo)
                         {
                             case TipoCampoTablero.Seleccion:
-                                <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                    <option value="">- elegir -</option>
-                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
-                                </select>
+                                <ListaBuscable TriggerClass="zc-row-inp" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cd.Opciones)" Valor="@(val ?? "")"
+                                               ValorChanged="@(v => _nuCampos[cdd.Id] = v)">
+                                    <TriggerContent><ChipValor Texto="@val" Color="@OpcionesListaBuscable.ColorDe(cdd.Opciones, val)" Vacio="Elegir..." /></TriggerContent>
+                                </ListaBuscable>
                                 break;
                             case TipoCampoTablero.Numero:
                             case TipoCampoTablero.Moneda:
@@ -327,9 +331,12 @@ else
                                 <input class="zc-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
                                 break;
                             case TipoCampoTablero.Booleano:
-                                <select class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                    <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
-                                </select>
+                                <ListaBuscable TriggerClass="zc-row-inp" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(val ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                               ValorChanged="@(v => _nuCampos[cdd.Id] = v)" />
+                                break;
+                            case TipoCampoTablero.Formula:
+                                @* Calculado y de solo lectura (como Unidades): no se captura en el alta. *@
+                                <div class="zc-list-c" title="Se calcula automaticamente">(se calcula)</div>
                                 break;
                             default:
                                 <input class="zc-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
@@ -344,15 +351,14 @@ else
                                    @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" />
                             break;
                         case "categoria":
-                            <select class="zc-row-inp" @bind="_draft.Categoria">
-                                @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { <option value="@c">@LblCatZn(c)</option> }
-                            </select>
+                            <ListaBuscable TriggerClass="zc-row-inp" OpcionesComoChip="true" Opciones="@OpcCatZn(_draft.Categoria)" Valor="@_draft.Categoria.ToString()"
+                                           ValorChanged="@(v => { if (Enum.TryParse<CategoriaZonaComun>(v, out var cz)) _draft.Categoria = cz; })">
+                                <TriggerContent><ChipValor Texto="@LblCatZn(_draft.Categoria)" Color="@ColorZn("categoria", LblCatZn(_draft.Categoria))" /></TriggerContent>
+                            </ListaBuscable>
                             break;
                         case "reservable":
-                            <select class="zc-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
-                                <option value="false" selected="@(!_draft.EsReservable)">No</option>
-                                <option value="true" selected="@_draft.EsReservable">Si</option>
-                            </select>
+                            <ListaBuscable TriggerClass="zc-row-inp" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@(_draft.EsReservable ? "true" : "false")"
+                                           ValorChanged="@(v => _draft.EsReservable = v == "true")" />
                             break;
                         case "aforo":
                             <input type="number" min="0" class="zc-row-inp" placeholder="-" @bind="_draft.Aforo" />
@@ -384,7 +390,7 @@ else
                 </div>
             </div>
             }
-            else
+            else if (_puedeCrear)
             {
             <div class="zc-list-newrow zc-newrow--cta zc-grid" style="@ZcGridStyle">
                 <div class="zc-sel-cell"></div>
@@ -399,7 +405,7 @@ else
             }
             </div>
             @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
-            <button type="button" class="tbl-fab" hidden="@(_ctaVisibleZ || _agrupadoZ)" @onclick="FabAgregarZ" title="Agregar registro">
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisibleZ || _agrupadoZ || !_puedeCrear)" @onclick="FabAgregarZ" title="Agregar registro">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
@@ -430,7 +436,7 @@ else
 @* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
 @if (_crearCampoAbiertoZ)
 {
-    <CrearCampoModal Prefijo="zonas"
+    <CrearCampoModal Prefijo="zonas" Paleta="PaletaChips.UnicaHex"
                      EntidadConfig="zona"
                      TituloSingular="zona"
                      Ejemplo="Ej. Aforo COVID, Piso"
@@ -445,7 +451,7 @@ else
 
 @if (_editSisClave is not null)
 {
-    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq" Paleta="PaletaChips.UnicaHex"
                              EntidadConfig="zona" TituloSingular="zona" Jwt="@_jwt"
                              OpcionesLista="@((_editSisClave is "categoria" or "estado") ? null : OpcionesVistaZn(_editSisClave))" PermiteAgregar="false"
                              ListaTenant="@(_editSisClave == "categoria" ? "zona.categoria" : _editSisClave == "estado" ? "zona.estado" : null)"
@@ -1160,27 +1166,31 @@ else
                 switch (cd.Tipo)
                 {
                     case TipoCampoTablero.Seleccion:
-                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                            <option value="">-</option>
-                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
-                        </select>
+                        <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cd.Opciones, vv)" Valor="@(vv ?? "")"
+                                       ValorChanged="@(v => GuardarCampoValorZona(zona, cdd, string.IsNullOrEmpty(v) ? null : v))">
+                            <TriggerContent><ChipValor Texto="@vv" Color="@OpcionesListaBuscable.ColorDe(cdd.Opciones, vv)" /></TriggerContent>
+                        </ListaBuscable>
                         break;
                     case TipoCampoTablero.Numero:
                     case TipoCampoTablero.Moneda:
-                        <input class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                        <input readonly="@(!_puedeEditar)" class="zc-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
                         break;
                     case TipoCampoTablero.Fecha:
-                        <input class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
+                        <input readonly="@(!_puedeEditar)" class="zc-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" />
                         break;
                     case TipoCampoTablero.Booleano:
-                        <select class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())">
-                            <option value="">-</option>
-                            <option value="Si" selected="@(vv == "Si")">Si</option>
-                            <option value="No" selected="@(vv == "No")">No</option>
-                        </select>
+                        <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(vv ?? "")"
+                                       ValorChanged="@(v => GuardarCampoValorZona(zona, cdd, string.IsNullOrEmpty(v) ? null : v))">
+                            <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(vv)" Chip="false" /></TriggerContent>
+                        </ListaBuscable>
+                        break;
+                    case TipoCampoTablero.Formula:
+                        @* Calculado y de solo lectura (como Unidades). Antes caia en el input de texto: se podia escribir
+                           sobre el resultado y quedaba un valor guardado que chocaba con el calculado. *@
+                        <div class="zc-list-c" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
                         break;
                     default:
-                        <input class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                        <input readonly="@(!_puedeEditar)" class="zc-cell" value="@vv" @onchange="(ev) => GuardarCampoValorZona(zona, cdd, ev.Value?.ToString())" title="@cd.Label" />
                         break;
                 }
                 continue;
@@ -1188,35 +1198,37 @@ else
             switch (k)
             {
                 case "nombre":
-                    <input class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
+                    <input readonly="@(!_puedeEditar)" class="zc-cell zc-cell-nom" value="@z.Nombre" @onchange="@(e => GuardarZonaInline(zona, "nombre", e))" />
                     break;
                 case "categoria":
-                    <select class="zc-cell" style="@SelStyleZn("categoria", LblCatZn(z.Categoria))" @onchange="@(e => GuardarZonaInline(zona, "categoria", e))">
-                        @foreach (var c in Enum.GetValues<CategoriaZonaComun>()) { if (OcultaZn("categoria", LblCatZn(c)) && z.Categoria != c) { continue; } <option value="@c" selected="@(z.Categoria == c)">@LblCatZn(c)</option> }
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcCatZn(z.Categoria)" Valor="@z.Categoria.ToString()"
+                                   ValorChanged="@(v => GuardarZonaInline(zona, "categoria", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@LblCatZn(z.Categoria)" Color="@ColorZn("categoria", LblCatZn(z.Categoria))" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "reservable":
-                    <select class="zc-cell" @onchange="@(e => GuardarZonaInline(zona, "reservable", e))">
-                        <option value="false" selected="@(!z.EsReservable)">No</option>
-                        <option value="true" selected="@z.EsReservable">Si</option>
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@(z.EsReservable ? "true" : "false")"
+                                   ValorChanged="@(v => GuardarZonaInline(zona, "reservable", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(z.EsReservable ? "true" : "false")" Chip="false" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "aforo":
-                    <input type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
+                    <input readonly="@(!_puedeEditar)" type="number" min="0" class="zc-cell zc-num" value="@z.CapacidadPersonas" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "aforo", e))" />
                     break;
                 case "estado":
-                    <select class="zc-cell zc-cell-est" style="@SelStyleZn("estado", LblEstZn(z.Estado))" @onchange="@(e => GuardarZonaInline(zona, "estado", e))">
-                        @foreach (var s in Enum.GetValues<EstadoZonaComunMantenimiento>()) { <option value="@s" selected="@(z.Estado == s)">@LblEstZn(s)</option> }
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcEstZn" Valor="@z.Estado.ToString()"
+                                   ValorChanged="@(v => GuardarZonaInline(zona, "estado", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@LblEstZn(z.Estado)" Color="@ColorZn("estado", LblEstZn(z.Estado))" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "descripcion":
-                    <input class="zc-cell" value="@z.Descripcion" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "descripcion", e))" />
+                    <input readonly="@(!_puedeEditar)" class="zc-cell" value="@z.Descripcion" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "descripcion", e))" />
                     break;
                 case "tarifa":
-                    <input type="number" step="any" min="0" class="zc-cell zc-num" value="@z.TarifaReserva" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "tarifa", e))" />
+                    <input readonly="@(!_puedeEditar)" type="number" step="any" min="0" class="zc-cell zc-num" value="@z.TarifaReserva" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "tarifa", e))" />
                     break;
                 case "reglas":
-                    <input class="zc-cell" value="@z.ReglasUso" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "reglas", e))" />
+                    <input readonly="@(!_puedeEditar)" class="zc-cell" value="@z.ReglasUso" placeholder="-" @onchange="@(e => GuardarZonaInline(zona, "reglas", e))" />
                     break;
             }
         }
@@ -1433,8 +1445,21 @@ else
         catch { }
     }
 
+    // Permisos de la pantalla (Alex 2026-11-27): sin Crear en Mi Copropiedad no se ofrecen el alta, la carga de
+    // plantilla ni el FAB; sin Editar las celdas y la ficha quedan de solo lectura y no se crean columnas. Mientras no
+    // se leen (o si fallan) quedan habilitados: el API igual bloquea las escrituras con su mensaje.
+    private bool _puedeCrear = true, _puedeEditar = true;
+    private async Task CargarPermisosPantallaAsync()
+    {
+        var p = await PermisosPantalla.ObtenerAsync();
+        if (p is null) return;
+        _puedeCrear = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Crear);
+        _puedeEditar = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Editar);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender) { await CargarPermisosPantallaAsync(); StateHasChanged(); }
         if (firstRender && _jwt is null)
         {
             // Mismo arranque que las demas paginas de Capa 2: el JWT vive en sessionStorage
@@ -1530,12 +1555,14 @@ else
         => UsaTenantZn(clave)
             ? RowZnPorLabel(clave, label) is { Activo: false }
             : OverrideZn(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-    private string? SelStyleZn(string clave, string? label)
-    {
-        var c = ColorZn(clave, label);
-        return string.IsNullOrWhiteSpace(c) ? null
-            : $"background:{c};border-color:{c};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(c!)};border-radius:7px;font-weight:700;";
-    }
+    // ListaBuscable con chips pastel (piloto Tareas replicado, Alex 2026-11-26): opciones de Categoria (sin las
+    // ocultas, salvo la que ya tiene la zona) y de Estado, con el color de la copropiedad.
+    private IReadOnlyList<ListaBuscable.Opcion> OpcCatZn(CategoriaZonaComun actual)
+        => Enum.GetValues<CategoriaZonaComun>().Where(c => c == actual || !OcultaZn("categoria", LblCatZn(c)))
+            .Select(c => new ListaBuscable.Opcion(c.ToString(), LblCatZn(c), ColorZn("categoria", LblCatZn(c)) ?? PaletaChips.Neutro)).ToList();
+    private IReadOnlyList<ListaBuscable.Opcion> OpcEstZn
+        => Enum.GetValues<EstadoZonaComunMantenimiento>()
+            .Select(s => new ListaBuscable.Opcion(s.ToString(), LblEstZn(s), ColorZn("estado", LblEstZn(s)) ?? PaletaChips.Neutro)).ToList();
 
     private async Task CargarAsync()
     {
@@ -1572,7 +1599,7 @@ else
         try
         {
             var flat = await Auth().GetFromJsonAsync<List<ZonaCampoValorFlatDto>>("/api/mi-copropiedad/zonas-campos-valores") ?? new();
-            _camposValores = flat.GroupBy(v => v.ZonaComunId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            _camposValores = flat.GroupBy(v => v.ZonaComunId).ToDictionary(g => g.Key, g => g.GroupBy(x => x.DefinicionId).ToDictionary(x => x.Key, x => x.Last().Valor));
         }
         catch { _camposValores = new(); }
         try
@@ -1656,7 +1683,7 @@ else
 
     private async Task AbrirFichaZonaAsync(ZonaComunDto zona, bool abrirEnEdicion = false)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona).Set("AbrirEnEdicion", abrirEnEdicion);
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Zona", zona).Set("AbrirEnEdicion", abrirEnEdicion).Set("SoloLectura", !_puedeEditar);
         var options = new ModalOptions { Width = "1280px", Height = "88vh" };
         var hubo = await Modals.OpenAsync<FichaZonaModal, bool>(parameters, options);
         if (hubo == true) { await CargarAsync(); Msg("Ficha de zona actualizada.", true); }
@@ -1906,8 +1933,9 @@ else
     .zc-scroll { overflow: auto; max-height: calc(100vh - 300px); overflow-anchor: none; }
     .zc-list .zc-list-head { position: sticky; top: 0; z-index: 6; }
     .zc-list .tbl-fab { bottom: 54px; }
-    .zc-list-row.zc-row-new { background: var(--propia-brand-soft-2); box-shadow: inset 3px 0 0 var(--propia-brand); }
-    .zc-list-row.zc-row-new:hover { background: var(--propia-brand-soft-2); }
+    /* Alex 2026-11-26: fila recien creada en violeta mas marcado (brand 14% sobre la tarjeta), como Tareas. */
+    .zc-list-row.zc-row-new { background: color-mix(in srgb, var(--propia-brand) 14%, var(--propia-bg-card)); box-shadow: inset 3px 0 0 var(--propia-brand); }
+    .zc-list-row.zc-row-new:hover { background: color-mix(in srgb, var(--propia-brand) 14%, var(--propia-bg-card)); }
     /* Primera columna fija (34px) para el expansor: abrir/editar la ficha del registro. */
     /* Columnas via estilo inline (ZcGridStyle) para soportar orden/visibilidad configurables. */
     .zc-grid { display: grid; gap: 10px; align-items: center; min-width: max-content; }
@@ -2036,7 +2064,10 @@ else
     .zc-newrow--cta { cursor: default; }
     .zc-nf-ctacell { display: flex; align-items: center; }
     .zc-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; display: inline-flex; align-items: center; justify-content: center; }
-    .zc-newrow--edit { background: var(--propia-brand-soft-2); }
+    /* Alex 2026-11-26 (piloto Tareas replicado): fila de alta sin fondo violeta; recuadro gris + sombra mini (anillo inset: no corre columnas). */
+    .zc-newrow--edit { background: var(--propia-bg-card); position: relative; box-shadow: inset 0 0 0 1px var(--propia-text-secondary), 0 1px 4px color-mix(in srgb, var(--propia-text-body) 16%, transparent); }
+    [data-bs-theme="dark"] .zc-newrow--edit { box-shadow: inset 0 0 0 1px var(--propia-text-muted), 0 1px 4px color-mix(in srgb, black 45%, transparent); }
+    .zc-list-newrow.tbl-nf-hintrow, .zc-list-newrow.tbl-nf-hintrow:hover { background: var(--propia-bg-card); }
     .zc-newrow--edit .zc-row-inp { border: 1px solid transparent; background: transparent; border-radius: 8px; box-shadow: none; padding: 10px 12px; font-size: 13px; }
     .zc-newrow--edit .zc-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
     .zc-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }

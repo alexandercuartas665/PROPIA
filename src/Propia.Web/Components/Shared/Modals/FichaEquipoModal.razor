@@ -50,8 +50,8 @@ else
             </div>
         </div>
         <span class="fem-estado fem-estado--@EstadoBadge(eq.Estado)">@EstadoTxt(eq.Estado)</span>
-        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha")"
-                            MostrarEliminar="true" MostrarCancelar="true" Guardando="_busy"
+        <ModalHeaderActions EnEdicion="@(_editMode && _tab == "ficha")" MostrarEditar="@(_tab == "ficha" && !SoloLectura)"
+                            MostrarEliminar="@(!SoloLectura)" MostrarCancelar="true" Guardando="_busy"
                             TituloEditar="Editar datos" TituloGuardar="Guardar cambios" TituloEliminar="Eliminar equipo"
                             OnEntrarEdicion="IniciarEdicion" OnGuardar="GuardarDatosAsync"
                             OnEliminar="AbrirConfirmEliminar"
@@ -65,6 +65,9 @@ else
         <button class="fem-tab @(_tab == "documentos" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "documentos"'>Documentos@(_ficha.Documentos.Count > 0 ? $" ({_ficha.Documentos.Count})" : "")</button>
         <button class="fem-tab @(_tab == "historial" ? "fem-tab--on" : "")" type="button" @onclick='() => _tab = "historial"'>Historial</button>
     </div>
+@* Sin permiso de Editar (SoloLectura, Alex 2026-11-27): todo control de la ficha queda deshabilitado (imagen,
+   adjuntos, novedades, interruptores); display:contents no altera el layout. *@
+<fieldset disabled="@SoloLectura" style="display:contents">
 
     @if (_tab == "ficha" && !_editMode)
     {
@@ -479,6 +482,7 @@ else
             <HistorialRelacionadoPanel Jwt="@Jwt" Tipo="TipoEntidadHistorial.Equipo" EntidadId="@EqId" />
         </div>
     }
+</fieldset>
 }
 
 @if (!string.IsNullOrEmpty(_msg))
@@ -819,6 +823,9 @@ else
 
     // Cuando se abre recien creado (ojito), arranca en "Editar datos" para completar y guardar.
     [Parameter] public bool AbrirEnEdicion { get; set; }
+    /// <summary>Sin permiso de Editar en Mi Copropiedad (Alex 2026-11-27): la ficha abre en vista, sin editar ni
+    /// eliminar (el API igual bloquea las escrituras).</summary>
+    [Parameter] public bool SoloLectura { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -898,7 +905,7 @@ else
     private void IniciarEdicion()
     {
         if (_ficha is not null) _form = FormState.From(_ficha.Equipo);
-        _editMode = true; _tab = "ficha";
+        _editMode = !SoloLectura; _tab = "ficha";
     }
 
     private void AbrirConfirmEliminar() { _confirmText = ""; _delError = null; _confirmDel = true; }

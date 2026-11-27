@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IModalService Modals
+@inject Propia.Web.Services.MisPermisos PermisosPantalla
 @implements IDisposable
 
 @* Equipos y activos: modulo propio (antes era una seccion del acordeon de Mi copropiedad).
@@ -34,11 +35,14 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
                 Descargar plantilla
             </button>
+            @if (_puedeCrear)
+            {
             <label class="propia-btn-brand @(_impBusy ? "is-busy" : "")" style="cursor:pointer;" title="Cargar plantilla Excel (crea o actualiza)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
                 @(_impBusy ? "Cargando..." : "Cargar plantilla")
                 <InputFile OnChange="OnPlantillaImport" accept=".xlsx,.xls" style="display:none" disabled="@_impBusy" />
             </label>
+            }
         </div>
     }
 </div>
@@ -223,7 +227,7 @@ else
                     </div>
                 </div>
             }
-            else
+            else if (_puedeCrear)
             {
                 <button type="button" class="ea-add-card" @onclick="AbrirComposer">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -291,7 +295,7 @@ else
                     }
                 }
                 <div></div>
-                <div class="ea-addcol-h"><button type="button" class="ea-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoE"><i class="fi fi-rr-plus"></i></button></div>
+                <div class="ea-addcol-h">@if (_puedeEditar) { <button type="button" class="ea-addcol-btn" title="Crear campo nuevo (columna)" @onclick="AbrirCrearCampoE"><i class="fi fi-rr-plus"></i></button> }</div>
             </div>
             @* Filas: con agrupacion activa las pinta el render compartido (TablaGruposRender, arbol de
                TablaAgrupador, N niveles); sin agrupacion, la pagina actual. La fila hoja es FilaETpl. *@
@@ -307,7 +311,7 @@ else
                 }
             }
             @* Alta "nace fila": CTA morado -> fila editable con foco redondeado + ✓/×. *@
-            @if (_altaAbiertaE)
+            @if (_altaAbiertaE && _puedeCrear)
             {
             <div class="ea-list-newrow ea-newrow--edit ea-listgrid" style="@EaGridStyle" @key="_nonce" data-alta-fila @onkeydown="OnAltaKeydownE">
                 <div class="ea-sel-cell"></div>
@@ -326,10 +330,10 @@ else
                         switch (cd.Tipo)
                         {
                             case TipoCampoTablero.Seleccion:
-                                <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                    <option value="">- elegir -</option>
-                                    @foreach (var op in OpcionesDe(cd)) { <option value="@op">@op</option> }
-                                </select>
+                                <ListaBuscable TriggerClass="ea-row-inp" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cd.Opciones)" Valor="@(val ?? "")"
+                                               ValorChanged="@(v => _nuCampos[cdd.Id] = v)">
+                                    <TriggerContent><ChipValor Texto="@val" Color="@OpcionesListaBuscable.ColorDe(cdd.Opciones, val)" Vacio="Elegir..." /></TriggerContent>
+                                </ListaBuscable>
                                 break;
                             case TipoCampoTablero.Numero:
                             case TipoCampoTablero.Moneda:
@@ -339,9 +343,12 @@ else
                                 <input class="ea-row-inp" type="date" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" />
                                 break;
                             case TipoCampoTablero.Booleano:
-                                <select class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()">
-                                    <option value="">- elegir -</option><option value="Si">Si</option><option value="No">No</option>
-                                </select>
+                                <ListaBuscable TriggerClass="ea-row-inp" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(val ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                               ValorChanged="@(v => _nuCampos[cdd.Id] = v)" />
+                                break;
+                            case TipoCampoTablero.Formula:
+                                @* Calculado y de solo lectura (como Unidades): no se captura en el alta. *@
+                                <div class="ea-list-c" title="Se calcula automaticamente">(se calcula)</div>
                                 break;
                             default:
                                 <input class="ea-row-inp" value="@val" @onchange="(e) => _nuCampos[cdd.Id] = e.Value?.ToString()" placeholder="@cd.Label" />
@@ -356,24 +363,23 @@ else
                                    @oninput="@(e => _draft.Nombre = e.Value?.ToString() ?? string.Empty)" />
                             break;
                         case "categoria":
-                            <select class="ea-row-inp" @bind="_draft.Categoria">
-                                @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { <option value="@c">@LblCatEq(c)</option> }
-                            </select>
+                            <ListaBuscable TriggerClass="ea-row-inp" OpcionesComoChip="true" Opciones="@OpcCatEq(_draft.Categoria)" Valor="@_draft.Categoria.ToString()"
+                                           ValorChanged="@(v => { if (Enum.TryParse<CategoriaEquipo>(v, out var ce)) _draft.Categoria = ce; })">
+                                <TriggerContent><ChipValor Texto="@LblCatEq(_draft.Categoria)" Color="@ColorEq("categoria", LblCatEq(_draft.Categoria))" /></TriggerContent>
+                            </ListaBuscable>
                             break;
                         case "tipo":
-                            <select class="ea-row-inp" @bind="_draft.Tipo">
-                                <option value="@TipoElemento.Equipo">@LblTipoEq(TipoElemento.Equipo)</option>
-                                <option value="@TipoElemento.Activo">@LblTipoEq(TipoElemento.Activo)</option>
-                            </select>
+                            <ListaBuscable TriggerClass="ea-row-inp" OpcionesComoChip="true" Opciones="@OpcTipoEq(_draft.Tipo)" Valor="@_draft.Tipo.ToString()"
+                                           ValorChanged="@(v => { if (Enum.TryParse<TipoElemento>(v, out var te)) _draft.Tipo = te; })">
+                                <TriggerContent><ChipValor Texto="@LblTipoEq(_draft.Tipo)" Color="@ColorEq("tipo", LblTipoEq(_draft.Tipo))" /></TriggerContent>
+                            </ListaBuscable>
                             break;
                         case "cantidad":
                             <input type="number" min="1" class="ea-row-inp" @bind="_draft.Cantidad" disabled="@(_draft.Tipo == TipoElemento.Equipo)" />
                             break;
                         case "reservable":
-                            <select class="ea-row-inp" @onchange="@(e => _draft.EsReservable = e.Value?.ToString() == "true")">
-                                <option value="false" selected="@(!_draft.EsReservable)">No</option>
-                                <option value="true" selected="@_draft.EsReservable">Si</option>
-                            </select>
+                            <ListaBuscable TriggerClass="ea-row-inp" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@(_draft.EsReservable ? "true" : "false")"
+                                           ValorChanged="@(v => _draft.EsReservable = v == "true")" />
                             break;
                         case "estado":
                             <div class="ea-list-c">Operativo</div>
@@ -402,7 +408,7 @@ else
                 </div>
             </div>
             }
-            else
+            else if (_puedeCrear)
             {
             <div class="ea-list-newrow ea-newrow--cta ea-listgrid" style="@EaGridStyle">
                 <div class="ea-sel-cell"></div>
@@ -417,7 +423,7 @@ else
             }
             </div>
             @* FAB flotante: aparece solo cuando la fila "+ Agregar registro" en linea no esta a la vista. *@
-            <button type="button" class="tbl-fab" hidden="@(_ctaVisibleE || _agrupadoE)" @onclick="FabAgregarE" title="Agregar registro">
+            <button type="button" class="tbl-fab" hidden="@(_ctaVisibleE || _agrupadoE || !_puedeCrear)" @onclick="FabAgregarE" title="Agregar registro">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Agregar registro
             </button>
@@ -448,7 +454,7 @@ else
 @* Crear / editar UN campo (modal focalizado, replica de la maqueta). "+" crea; engranaje edita. *@
 @if (_crearCampoAbiertoE)
 {
-    <CrearCampoModal Prefijo="equipos"
+    <CrearCampoModal Prefijo="equipos" Paleta="PaletaChips.UnicaHex"
                      EntidadConfig="equipo"
                      TituloSingular="equipo"
                      Ejemplo="Ej. Aseguradora, Responsable"
@@ -463,7 +469,7 @@ else
 
 @if (_editSisClave is not null)
 {
-    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq"
+    <EditarCampoSistemaModal Clave="@_editSisClave" DefLabel="@_editSisLabel" Tipo="_editSisTipo" Requerido="_editSisReq" Paleta="PaletaChips.UnicaHex"
                              EntidadConfig="equipo" TituloSingular="equipo" Jwt="@_jwt"
                              OpcionesLista="@((_editSisClave is "categoria" or "tipo" or "estado") ? null : OpcionesVistaEq(_editSisClave))" PermiteAgregar="false"
                              ListaTenant="@(_editSisClave == "categoria" ? "equipo.categoria" : _editSisClave == "tipo" ? "equipo.tipo" : _editSisClave == "estado" ? "equipo.estado" : null)"
@@ -646,8 +652,21 @@ else
         catch { }
     }
 
+    // Permisos de la pantalla (Alex 2026-11-27): sin Crear en Mi Copropiedad no se ofrecen el alta, la carga de
+    // plantilla ni el FAB; sin Editar las celdas y la ficha quedan de solo lectura y no se crean columnas. Mientras no
+    // se leen (o si fallan) quedan habilitados: el API igual bloquea las escrituras con su mensaje.
+    private bool _puedeCrear = true, _puedeEditar = true;
+    private async Task CargarPermisosPantallaAsync()
+    {
+        var p = await PermisosPantalla.ObtenerAsync();
+        if (p is null) return;
+        _puedeCrear = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Crear);
+        _puedeEditar = p.Puede(Propia.Domain.Enums.ModuloCodigo.MiCopropiedad, Propia.Domain.Enums.AccionPermiso.Editar);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender) { await CargarPermisosPantallaAsync(); StateHasChanged(); }
         if (firstRender && _jwt is null)
         {
             try
@@ -736,7 +755,7 @@ else
         try
         {
             var flat = await Auth().GetFromJsonAsync<List<EquipoCampoValorFlatDto>>("/api/mi-copropiedad/equipos-campos-valores") ?? new();
-            _camposValores = flat.GroupBy(v => v.EquipoActivoId).ToDictionary(g => g.Key, g => g.ToDictionary(x => x.DefinicionId, x => x.Valor));
+            _camposValores = flat.GroupBy(v => v.EquipoActivoId).ToDictionary(g => g.Key, g => g.GroupBy(x => x.DefinicionId).ToDictionary(x => x.Key, x => x.Last().Valor));
         }
         catch { _camposValores = new(); }
         try
@@ -1308,27 +1327,31 @@ else
                 switch (cd.Tipo)
                 {
                     case TipoCampoTablero.Seleccion:
-                        <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                            <option value="">-</option>
-                            @foreach (var op in OpcionesDe(cd)) { <option value="@op" selected="@(vv == op)">@op</option> }
-                        </select>
+                        <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcionesListaBuscable.DeCampo(cd.Opciones, vv)" Valor="@(vv ?? "")"
+                                       ValorChanged="@(v => GuardarCampoValorEquipo(eq, cdd, string.IsNullOrEmpty(v) ? null : v))">
+                            <TriggerContent><ChipValor Texto="@vv" Color="@OpcionesListaBuscable.ColorDe(cdd.Opciones, vv)" /></TriggerContent>
+                        </ListaBuscable>
                         break;
                     case TipoCampoTablero.Numero:
                     case TipoCampoTablero.Moneda:
-                        <input class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                        <input readonly="@(!_puedeEditar)" class="ea-cell" type="number" step="any" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
                         break;
                     case TipoCampoTablero.Fecha:
-                        <input class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
+                        <input readonly="@(!_puedeEditar)" class="ea-cell" type="date" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" />
                         break;
                     case TipoCampoTablero.Booleano:
-                        <select class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())">
-                            <option value="">-</option>
-                            <option value="Si" selected="@(vv == "Si")">Si</option>
-                            <option value="No" selected="@(vv == "No")">No</option>
-                        </select>
+                        <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoCampo" Valor="@(vv ?? "")"
+                                       ValorChanged="@(v => GuardarCampoValorEquipo(eq, cdd, string.IsNullOrEmpty(v) ? null : v))">
+                            <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(vv)" Chip="false" /></TriggerContent>
+                        </ListaBuscable>
+                        break;
+                    case TipoCampoTablero.Formula:
+                        @* Calculado y de solo lectura (como Unidades). Antes caia en el input de texto: se podia escribir
+                           sobre el resultado y quedaba un valor guardado que chocaba con el calculado. *@
+                        <div class="ea-list-c" title="Se calcula automaticamente">@(string.IsNullOrWhiteSpace(vv) ? "-" : vv)</div>
                         break;
                     default:
-                        <input class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
+                        <input readonly="@(!_puedeEditar)" class="ea-cell" value="@vv" @onchange="(ev) => GuardarCampoValorEquipo(eq, cdd, ev.Value?.ToString())" title="@cd.Label" />
                         break;
                 }
                 continue;
@@ -1336,71 +1359,73 @@ else
             switch (k)
             {
                 case "nombre":
-                    <input class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell ea-cell-nom" value="@e.Nombre" @onchange="@(ev => GuardarEquipoInline(eq, "nombre", ev))" />
                     break;
                 case "categoria":
-                    <select class="ea-cell" style="@SelStyleEq("categoria", LblCatEq(e.Categoria))" @onchange="@(ev => GuardarEquipoInline(eq, "categoria", ev))">
-                        @foreach (var c in Enum.GetValues<CategoriaEquipo>()) { if (OcultaEq("categoria", LblCatEq(c)) && e.Categoria != c) { continue; } <option value="@c" selected="@(e.Categoria == c)">@LblCatEq(c)</option> }
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcCatEq(e.Categoria)" Valor="@e.Categoria.ToString()"
+                                   ValorChanged="@(v => GuardarEquipoInline(eq, "categoria", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@LblCatEq(e.Categoria)" Color="@ColorEq("categoria", LblCatEq(e.Categoria))" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "tipo":
-                    <select class="ea-cell" style="@SelStyleEq("tipo", LblTipoEq(e.Tipo))" @onchange="@(ev => GuardarEquipoInline(eq, "tipo", ev))">
-                        @if (!(OcultaEq("tipo", LblTipoEq(TipoElemento.Equipo)) && e.Tipo != TipoElemento.Equipo)) { <option value="@TipoElemento.Equipo" selected="@(e.Tipo == TipoElemento.Equipo)">@LblTipoEq(TipoElemento.Equipo)</option> }
-                        @if (!(OcultaEq("tipo", LblTipoEq(TipoElemento.Activo)) && e.Tipo != TipoElemento.Activo)) { <option value="@TipoElemento.Activo" selected="@(e.Tipo == TipoElemento.Activo)">@LblTipoEq(TipoElemento.Activo)</option> }
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcTipoEq(e.Tipo)" Valor="@e.Tipo.ToString()"
+                                   ValorChanged="@(v => GuardarEquipoInline(eq, "tipo", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@LblTipoEq(e.Tipo)" Color="@ColorEq("tipo", LblTipoEq(e.Tipo))" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "cantidad":
-                    <input type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="number" min="1" class="ea-cell ea-num" value="@e.Cantidad" @onchange="@(ev => GuardarEquipoInline(eq, "cantidad", ev))" />
                     break;
                 case "estado":
-                    <select class="ea-cell ea-cell-est" style="@SelStyleEq("estado", EstadoTextoCorto(e.Estado))" @onchange="@(ev => GuardarEquipoInline(eq, "estado", ev))">
-                        @foreach (var s in Enum.GetValues<EstadoEquipoActivo>()) { <option value="@s" selected="@(e.Estado == s)">@EstadoTextoCorto(s)</option> }
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" OpcionesComoChip="true" Opciones="@OpcEstEq" Valor="@e.Estado.ToString()"
+                                   ValorChanged="@(v => GuardarEquipoInline(eq, "estado", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@EstadoTextoCorto(e.Estado)" Color="@ColorEq("estado", EstadoTextoCorto(e.Estado))" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "reservable":
-                    <select class="ea-cell" @onchange="@(ev => GuardarEquipoInline(eq, "reservable", ev))">
-                        <option value="false" selected="@(!e.EsReservable)">No</option>
-                        <option value="true" selected="@e.EsReservable">Si</option>
-                    </select>
+                    <ListaBuscable Disabled="@(!_puedeEditar)" TriggerClass="lbx-plain" Opciones="@OpcionesListaBuscable.SiNoBool" Valor="@(e.EsReservable ? "true" : "false")"
+                                   ValorChanged="@(v => GuardarEquipoInline(eq, "reservable", new ChangeEventArgs { Value = v }))">
+                        <TriggerContent><ChipValor Texto="@OpcionesListaBuscable.TextoSiNo(e.EsReservable ? "true" : "false")" Chip="false" /></TriggerContent>
+                    </ListaBuscable>
                     break;
                 case "modelo":
-                    <input class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.Modelo" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "modelo", ev))" />
                     break;
                 case "serie":
-                    <input class="ea-cell cod-key" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell cod-key" value="@e.NumeroSerie" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "serie", ev))" />
                     break;
                 case "ubicacion":
-                    <input class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.Ubicacion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "ubicacion", ev))" />
                     break;
                 case "observaciones":
-                    <input class="ea-cell" value="@e.Observaciones" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "observaciones", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.Observaciones" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "observaciones", ev))" />
                     break;
                 case "vidautil":
-                    <input type="number" min="0" class="ea-cell ea-num" value="@e.VidaUtilAnios" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "vidautil", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="number" min="0" class="ea-cell ea-num" value="@e.VidaUtilAnios" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "vidautil", ev))" />
                     break;
                 case "valoradq":
-                    <input type="number" step="any" min="0" class="ea-cell ea-num" value="@e.ValorAdquisicion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "valoradq", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="number" step="any" min="0" class="ea-cell ea-num" value="@e.ValorAdquisicion" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "valoradq", ev))" />
                     break;
                 case "proveedor":
-                    <input class="ea-cell" value="@e.Proveedor" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "proveedor", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.Proveedor" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "proveedor", ev))" />
                     break;
                 case "numfactura":
-                    <input class="ea-cell" value="@e.NumeroFactura" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "numfactura", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.NumeroFactura" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "numfactura", ev))" />
                     break;
                 case "marca":
-                    <input class="ea-cell" value="@e.Marca" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "marca", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.Marca" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "marca", ev))" />
                     break;
                 case "codigobarra":
-                    <input class="ea-cell" value="@e.CodigoBarra" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "codigobarra", ev))" />
+                    <input readonly="@(!_puedeEditar)" class="ea-cell" value="@e.CodigoBarra" placeholder="-" @onchange="@(ev => GuardarEquipoInline(eq, "codigobarra", ev))" />
                     break;
                 case "fechainstalacion":
-                    <input type="date" class="ea-cell" value="@(e.FechaInstalacion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechainstalacion", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="date" class="ea-cell" value="@(e.FechaInstalacion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechainstalacion", ev))" />
                     break;
                 case "garantiahasta":
-                    <input type="date" class="ea-cell" value="@(e.GarantiaHasta?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "garantiahasta", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="date" class="ea-cell" value="@(e.GarantiaHasta?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "garantiahasta", ev))" />
                     break;
                 case "fechaadquisicion":
-                    <input type="date" class="ea-cell" value="@(e.FechaAdquisicion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechaadquisicion", ev))" />
+                    <input readonly="@(!_puedeEditar)" type="date" class="ea-cell" value="@(e.FechaAdquisicion?.ToString("yyyy-MM-dd"))" @onchange="@(ev => GuardarEquipoInline(eq, "fechaadquisicion", ev))" />
                     break;
             }
         }
@@ -1676,7 +1701,7 @@ else
 
     private async Task AbrirFichaEquipoAsync(EquipoActivoDto equipo, bool abrirEnEdicion = false)
     {
-        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo).Set("AbrirEnEdicion", abrirEnEdicion);
+        var parameters = new ModalParameters().Set("Jwt", _jwt).Set("Equipo", equipo).Set("AbrirEnEdicion", abrirEnEdicion).Set("SoloLectura", !_puedeEditar);
         var options = new ModalOptions { Width = "1280px", Height = "88vh" };
         var hubo = await Modals.OpenAsync<FichaEquipoModal, bool>(parameters, options);
         if (hubo == true) { await CargarAsync(); Msg("Ficha actualizada.", true); }
@@ -1900,12 +1925,17 @@ else
         => UsaTenantEq(clave)
             ? RowEqPorLabel(clave, label) is { Activo: false }
             : OverrideEq(clave).Any(o => o.Oculta && string.Equals((o.K ?? "").Trim(), (label ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-    private string? SelStyleEq(string clave, string? label)
-    {
-        var c = ColorEq(clave, label);
-        return string.IsNullOrWhiteSpace(c) ? null
-            : $"background:{c};border-color:{c};color:{Propia.Web.Components.Shared.PaletaChips.TextoSobre(c!)};border-radius:7px;font-weight:700;";
-    }
+    // ListaBuscable con chips pastel (piloto Tareas replicado, Alex 2026-11-26): opciones de Categoria y Tipo (sin
+    // las ocultas, salvo la que ya tiene el registro) y de Estado, con el color de la copropiedad.
+    private IReadOnlyList<ListaBuscable.Opcion> OpcCatEq(CategoriaEquipo actual)
+        => Enum.GetValues<CategoriaEquipo>().Where(c => c == actual || !OcultaEq("categoria", LblCatEq(c)))
+            .Select(c => new ListaBuscable.Opcion(c.ToString(), LblCatEq(c), ColorEq("categoria", LblCatEq(c)) ?? PaletaChips.Neutro)).ToList();
+    private IReadOnlyList<ListaBuscable.Opcion> OpcTipoEq(TipoElemento actual)
+        => new[] { TipoElemento.Equipo, TipoElemento.Activo }.Where(t => t == actual || !OcultaEq("tipo", LblTipoEq(t)))
+            .Select(t => new ListaBuscable.Opcion(t.ToString(), LblTipoEq(t), ColorEq("tipo", LblTipoEq(t)) ?? PaletaChips.Neutro)).ToList();
+    private IReadOnlyList<ListaBuscable.Opcion> OpcEstEq
+        => Enum.GetValues<EstadoEquipoActivo>()
+            .Select(s => new ListaBuscable.Opcion(s.ToString(), EstadoTextoCorto(s), ColorEq("estado", EstadoTextoCorto(s)) ?? PaletaChips.Neutro)).ToList();
 
     private static async Task<string> MensajeDeError(HttpResponseMessage resp, string porDefecto)
     {
@@ -2021,7 +2051,10 @@ else
     .ea-newrow--cta { cursor: default; }
     .ea-nf-ctacell { display: flex; align-items: center; }
     .ea-exp-mut { opacity: 1 !important; color: var(--propia-text-faint) !important; cursor: default; display: inline-flex; align-items: center; justify-content: center; }
-    .ea-newrow--edit { background: var(--propia-brand-soft-2); }
+    /* Alex 2026-11-26 (piloto Tareas replicado): fila de alta sin fondo violeta; recuadro gris + sombra mini (anillo inset: no corre columnas). */
+    .ea-newrow--edit { background: var(--propia-bg-card); position: relative; box-shadow: inset 0 0 0 1px var(--propia-text-secondary), 0 1px 4px color-mix(in srgb, var(--propia-text-body) 16%, transparent); }
+    [data-bs-theme="dark"] .ea-newrow--edit { box-shadow: inset 0 0 0 1px var(--propia-text-muted), 0 1px 4px color-mix(in srgb, black 45%, transparent); }
+    .ea-list-newrow.tbl-nf-hintrow, .ea-list-newrow.tbl-nf-hintrow:hover { background: var(--propia-bg-card); }
     .ea-newrow--edit .ea-row-inp { border: 1px solid transparent; background: transparent; border-radius: 8px; box-shadow: none; padding: 10px 12px; font-size: 13px; }
     .ea-newrow--edit .ea-row-inp:focus { outline: none; border: 1.5px solid var(--propia-brand); box-shadow: 0 0 0 3px rgba(109,79,227,.14); border-radius: 8px; }
     .ea-nf-actbtns { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
@@ -2081,8 +2114,9 @@ else
     .ea-scroll { overflow: auto; max-height: calc(100vh - 300px); overflow-anchor: none; }
     .ea-list .ea-list-head { position: sticky; top: 0; z-index: 6; }
     .ea-list .tbl-fab { bottom: 54px; }
-    .ea-list-row.ea-row-new { background: var(--propia-brand-soft-2); box-shadow: inset 3px 0 0 var(--propia-brand); }
-    .ea-list-row.ea-row-new:hover { background: var(--propia-brand-soft-2); }
+    /* Alex 2026-11-26: fila recien creada en violeta mas marcado (brand 14% sobre la tarjeta), como Tareas. */
+    .ea-list-row.ea-row-new { background: color-mix(in srgb, var(--propia-brand) 14%, var(--propia-bg-card)); box-shadow: inset 3px 0 0 var(--propia-brand); }
+    .ea-list-row.ea-row-new:hover { background: color-mix(in srgb, var(--propia-brand) 14%, var(--propia-bg-card)); }
     /* Sin min-width:max-content (dependia del contenido y desalineaba header vs filas). Las pistas flexibles
        llevan piso en px (minmax en ColWidth): cuando la suma de pisos supera el ancho de .ea-scroll, el grid
        crece a ese minimo (igual en header y filas) y .ea-scroll (overflow:auto) da scroll horizontal; cuando

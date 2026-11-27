@@ -113,6 +113,7 @@
                         </div>
                     </div>
                     <ModalHeaderActions EnEdicion="_editMode"
+                                        MostrarEditar="@(!SoloLectura)" MostrarEliminar="@(!SoloLectura)"
                                         Guardando="_busy"
                                         TituloEditar="Editar ficha"
                                         TituloEliminar="Eliminar unidad"
@@ -132,8 +133,10 @@
 
                 <div class="cpe-body">
                     @* ===== DETALLE: campos de la unidad, edicion inline (misma tabla Unidades Privadas) ===== *@
+                    @* Sin permiso de Editar (SoloLectura, Alex 2026-11-27): controles de la pestana deshabilitados. *@
                     @if (_fichaTab == "detalle")
                     {
+                        <fieldset disabled="@SoloLectura" style="display:contents">
                         <div class="cpe-field">
                             <label class="cpe-flabel"><i class="fi fi-rr-home"></i> @AliasCampo("num", "ID UNIDAD")</label>
                             <input class="cpe-fin" value="@IdUnidad" disabled />
@@ -193,6 +196,19 @@
                                                 <option value="No">No</option>
                                             </select>
                                             break;
+                                        @* Alex 2026-11-27: Formula / Usuario / Directorio caian en el input de texto (se veia el id
+                                           interno y se podia sobrescribir el dato a mano). *@
+                                        case TipoCampoTablero.Formula:
+                                            <input class="cpe-fin" value="@(string.IsNullOrWhiteSpace(c.Valor) ? "(se calcula)" : c.Valor)" disabled title="Se calcula automaticamente" />
+                                            break;
+                                        case TipoCampoTablero.Usuario:
+                                            <ListaBuscable TriggerClass="cpe-fin" Opciones="@OpcUsuariosFicha" Valor="@(c.Valor ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                                           ValorChanged="@(v => GuardarValorCampo(cc, v))" />
+                                            break;
+                                        case TipoCampoTablero.Directorio:
+                                            <SelectorPersona Flotante="true" Jwt="@Jwt" Placeholder="Buscar persona..." Seleccionada="@PersonaDe(c.Valor)"
+                                                             SeleccionadaChanged="(per) => GuardarValorCampo(cc, per?.PersonaId.ToString())" />
+                                            break;
                                         default:
                                             <input class="cpe-fin" value="@c.Valor" @onchange="(e) => GuardarValorCampo(cc, e.Value?.ToString())" placeholder="Sin dato" />
                                             break;
@@ -200,7 +216,7 @@
                                 }
                                 else
                                 {
-                                    <input class="cpe-fin" value="@(string.IsNullOrWhiteSpace(c.Valor) ? "-" : c.Valor)" disabled />
+                                    <input class="cpe-fin" value="@TextoCampoFicha(c.Tipo, c.Valor)" disabled />
                                 }
                             </div>
                         }
@@ -217,6 +233,7 @@
                             <button class="cpe-addfield" type="button" @onclick="() => _cfOpen = true"><i class="fi fi-rr-plus"></i> Agregar campo</button>
                         }
 
+                        </fieldset>
                     }
 
                     @* ===== UNIDADES ANEXAS: pestana propia (parqueaderos, depositos, etc. vinculados).
@@ -224,6 +241,7 @@
                            edita y mueve a otra unidad privada. Diseno .cpe-anx-* (maqueta editor-ficha). ===== *@
                     @if (_fichaTab == "anexas")
                     {
+                        <fieldset disabled="@SoloLectura" style="display:contents">
                         <div class="gum-unit-eyebrow">UNIDADES ANEXAS</div>
                         <p class="cpe-anx-help">Parqueaderos, depósitos y demás unidades vinculadas a esta unidad privada. Cada unidad anexa tiene los <b>mismos campos</b> de la tabla Unidades Privadas; desde aquí las vinculas, las creas, las <b>editas</b> o las <b>mueves</b> a otra unidad privada.</p>
                         @if (_vinculos.Count == 0)
@@ -342,6 +360,17 @@
                                             case TipoCampoTablero.AreaTexto:
                                                 <textarea class="cpe-fin" rows="2" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato">@av</textarea>
                                                 break;
+                                            case TipoCampoTablero.Formula:
+                                                <input class="cpe-fin" value="(se calcula)" disabled title="Se calcula automaticamente" />
+                                                break;
+                                            case TipoCampoTablero.Usuario:
+                                                <ListaBuscable TriggerClass="cpe-fin" Opciones="@OpcUsuariosFicha" Valor="@(av ?? "")" Placeholder="Elegir..." TextoVacio="Elegir..."
+                                                               ValorChanged="@(v => _anxCampos[cc.DefinicionId] = v)" />
+                                                break;
+                                            case TipoCampoTablero.Directorio:
+                                                <SelectorPersona Flotante="true" Jwt="@Jwt" Placeholder="Buscar persona..." Seleccionada="@PersonaDe(av)"
+                                                                 SeleccionadaChanged="(per) => _anxCampos[cc.DefinicionId] = per?.PersonaId.ToString()" />
+                                                break;
                                             default:
                                                 <input class="cpe-fin" value="@av" @onchange="(e) => _anxCampos[cc.DefinicionId] = e.Value?.ToString()" placeholder="Sin dato" />
                                                 break;
@@ -356,6 +385,7 @@
                                 </div>
                             </div>
                         }
+                        </fieldset>
                     }
 
 
@@ -392,6 +422,7 @@
 
                 @* === DOCUMENTOS: canon compartido (miniaturas + visor inline), igual que zonas comunes === *@
                 @if (_fichaTab == "documentos") {
+                    <fieldset disabled="@SoloLectura" style="display:contents">
                 <div class="gum-unit-card">
                     <div class="gum-unit-eyebrow">DOCUMENTOS</div>
                     <DocumentosPanel Documentos="@DocItems()"
@@ -401,6 +432,7 @@
                                      OnSubir="SubirDocumento"
                                      OnEliminar="EliminarDocumento" />
                 </div>
+                    </fieldset>
                 }
 
             </div>
@@ -489,6 +521,9 @@
     /// redundante. El usuario puede traerlo de vuelta con el boton de lista de la cabecera.
     /// </summary>
     [Parameter] public bool OcultarArbol { get; set; }
+    /// <summary>Sin permiso de Editar en Mi Copropiedad (Alex 2026-11-27): la ficha abre en vista, sin editar ni
+    /// eliminar (el API igual bloquea las escrituras).</summary>
+    [Parameter] public bool SoloLectura { get; set; }
 
     private List<UnidadDto> _unidades = new();
     private UnidadDto? _selected;
@@ -517,6 +552,39 @@
     private decimal? _nuevoArrValor;
     private string _nuevoArrRef = "";
 
+
+    // Campos Usuario / Directorio de la ficha (Alex 2026-11-27): nombres de las personas vinculadas a la copropiedad
+    // (mismo origen que la tabla de Unidades) y usuarios del tenant para la lista del campo Usuario.
+    private sealed record UsuarioOpcFicha(Guid PersonaId, string NombreCompleto, string? Email);
+    private List<UsuarioOpcFicha> _usuariosFicha = new();
+    private Dictionary<Guid, string> _nombresFicha = new();
+    private async Task CargarPersonasCamposAsync()
+    {
+        try { _usuariosFicha = await Auth().GetFromJsonAsync<List<UsuarioOpcFicha>>("/api/usuarios") ?? new(); } catch { _usuariosFicha = new(); }
+        try
+        {
+            var vinc = await Auth().GetFromJsonAsync<List<UsuarioOpcFicha>>("/api/mi-copropiedad/personas-vinculadas") ?? new();
+            _nombresFicha = vinc.GroupBy(v => v.PersonaId).ToDictionary(g => g.Key, g => g.First().NombreCompleto);
+        }
+        catch { _nombresFicha = new(); }
+        foreach (var u in _usuariosFicha) _nombresFicha.TryAdd(u.PersonaId, u.NombreCompleto);
+    }
+    private IReadOnlyList<ListaBuscable.Opcion> OpcUsuariosFicha
+        => new[] { new ListaBuscable.Opcion("", "Sin valor") }
+            .Concat(_usuariosFicha.Select(u => new ListaBuscable.Opcion(u.PersonaId.ToString(), u.NombreCompleto))).ToList();
+    private string? NombrePersonaFicha(string? v)
+        => Guid.TryParse(v, out var g) && _nombresFicha.TryGetValue(g, out var n) ? n : null;
+    // Persona ya elegida -> chip del selector (con su "x" para cambiarla). Sin nombre conocido se muestra el buscador.
+    private PersonaCandidatoDto? PersonaDe(string? v)
+        => Guid.TryParse(v, out var g) && NombrePersonaFicha(v) is { } n
+            ? new PersonaCandidatoDto(g, n, TipoDocumento.CC, "", true, Array.Empty<string>())
+            : null;
+    private string TextoCampoFicha(TipoCampoTablero tipo, string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return tipo == TipoCampoTablero.Formula ? "(se calcula)" : "-";
+        if (tipo is TipoCampoTablero.Usuario or TipoCampoTablero.Directorio) return NombrePersonaFicha(v) ?? "(persona no encontrada)";
+        return v;
+    }
 
     private class CampoVM
     {
@@ -590,6 +658,7 @@
     protected override async Task OnInitializedAsync()
     {
         await CargarAsync();
+        await CargarPersonasCamposAsync();
         // Entrada desde la tabla de Distribucion: con UnidadInicialId abre la ficha de esa unidad;
         // sin ella (o si no se encuentra), abre en modo "nueva unidad" (misma ficha, vacia).
         if (UnidadInicialId is Guid id)
@@ -724,7 +793,7 @@
 
     private void EntrarEdicion()
     {
-        if (_selected is null) return;
+        if (_selected is null || SoloLectura) return;
         _edit = new EditUnidadForm
         {
             Numero = _selected.Numero,

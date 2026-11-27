@@ -31,14 +31,17 @@
                     <div class="sp-chip-doc">@Seleccionada.TipoDocumento @Seleccionada.DocumentoEnmascarado</div>
                 }
             </div>
-            <button type="button" class="sp-chip-x" title="Cambiar persona" @onclick="Limpiar">
+            <button type="button" class="sp-chip-x" title="Cambiar persona" @ref="_refChipX" @onclick="Limpiar">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
         </div>
     }
     else
     {
-        <div class="sp-search" @ref="_anchorRef">
+        @* Con texto en el buscador (resultados a la vista) sus teclas no suben a un @onkeydown de la fila que lo
+           contiene: en las filas de alta de Unidades / Equipos / Zonas Enter guarda la fila y Esc la cancela
+           (Alex 2026-11-26: Enter para elegir a la persona guardaba la unidad). Esc aqui cierra los resultados. *@
+        <div class="sp-search" @ref="_anchorRef" @onkeydown:stopPropagation="_q.Length > 0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             @* Sin value=: en Blazor Server reafirmarlo en cada re-render se come pulsaciones. *@
             <input class="sp-search-inp" placeholder="@Placeholder" @ref="_refBuscar" @oninput="OnBuscarInput" @onkeydown="OnKeydown" />
@@ -221,7 +224,10 @@
     private string? _popStyle;
 
     // Modal de alta: foco al primer campo obligatorio vacio cuando se abre.
-    private ElementReference _refDoc, _refNombres, _refApellidos, _refBuscar;
+    private ElementReference _refDoc, _refNombres, _refApellidos, _refBuscar, _refChipX;
+    // Modo flotante (filas de tabla): tras elegir, el input desaparece (se pinta el chip) y el foco se perdia en la
+    // pagina; se deja en la "x" del chip para seguir con Tab al campo siguiente.
+    private bool _focoChip;
     private bool _focoPendiente, _focoBuscar;
     private string TituloAlta => PermiteEmpresa ? "Nuevo contacto en el Directorio" : "Nueva persona en el Directorio";
 
@@ -260,6 +266,11 @@
     // cada render mientras hay busqueda visible; se estabiliza porque el top depende solo del input.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focoChip && Seleccionada is not null)
+        {
+            _focoChip = false;
+            try { await _refChipX.FocusAsync(); } catch { }
+        }
         if (_focoPendiente && _creando)
         {
             _focoPendiente = false;
@@ -320,6 +331,7 @@
             _hi = e.Key == "ArrowDown" ? Math.Min(_hi + 1, max) : Math.Max(_hi - 1, 0);
             return;
         }
+        if (e.Key == "Escape" && _q.Length > 0) { _q = ""; _candidatos.Clear(); _hi = -1; return; }
         if (e.Key != "Enter") return;
         if (_hi >= 0 && _hi < _candidatos.Count) await ElegirAsync(_candidatos[_hi]);
         else if (_hi == _candidatos.Count && _q.Trim().Length >= 3) AbrirCrear();
@@ -367,6 +379,7 @@
             Seleccionada = c;
             await SeleccionadaChanged.InvokeAsync(c);
             _q = ""; _candidatos.Clear(); _creando = false;
+            _focoChip = Flotante;
         }
         catch (Exception ex) { _msg = ex.Message; }
         _busy = false;
