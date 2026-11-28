@@ -1,5 +1,16 @@
 # HAND-OFF DEPLOY - PROPIA
 
+> **v0.0.333 (2026-11-28): borde fila de alta un poco mas gris. Solo Web, sin migracion.**
+> - Incluye los commits 3fdaff00 (Tab sale de Directorio/Origen sin recorrer resultados), b91ca442 (Unidades/Equipos/Zonas:
+>   fila de alta tipo Tareas, permisos en pantalla, menu oculta modulos sin Ver; Servicios publicos/Seguros/IA/Informes
+>   solo Administrador) y 31d1fdc0 (borde de la fila de alta un poco mas claro + sombra mini via token nuevo
+>   `--fila-alta-borde` en `propia-tokens.css`).
+> - Verificar tras Ctrl+F5: (1) Tareas/Unidades/Equipos/Zonas: fila de alta con borde gris mas claro + sombra mini;
+>   Tab desde Directorio u Origen sale sin recorrer resultados. (2) Unidades/Equipos/Zonas: listas abren con Tab,
+>   chips pastel, fila recien creada violeta fuerte. Ficha de unidad muestra nombre en Directorio y Usuario (Formula
+>   es solo lectura). (3) Usuario no admin: sin Crear => sin fila de alta ni "Cargar plantilla" ni boton flotante;
+>   sin Editar => celdas y ficha solo lectura; menu oculta modulos sin permiso Ver.
+
 > **MODULO BUZONES DE CORREO (2026-11-22): 1 MIGRACION NUEVA, ADITIVA. API y Web.**
 > - Pagina nueva `/buzones` (menu Configuracion > "Buzones de correo"): crear/editar/probar/eliminar las cuentas de correo
 >   de la copropiedad. Gestion de correos (boton "Buzones" de /correos) ahora solo elige QUE buzones lee y como (temas,
